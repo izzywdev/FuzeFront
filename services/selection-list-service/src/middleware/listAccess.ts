@@ -33,7 +33,7 @@
 
 import { NextFunction, Request, RequestHandler, Response } from 'express';
 import { db } from '../db';
-import { getLog } from '../lib/logger';
+import { getLog, timed } from '../lib/logger';
 import { callerInPlatformOrg, memoPerRequest, resolvePlatformOrgId, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
 import {
   bearer,
@@ -51,9 +51,17 @@ export interface ListAccessRow {
   status?: string;
 }
 
-/** The list row by id, ANY organization. Only ever used to decide which of 404 / 403 / 409 to answer. */
-export async function lookupList(listId: string): Promise<ListAccessRow | undefined> {
-  const row = await db('selection_lists').where({ id: listId }).first('id', 'organization_id', 'visibility', 'status');
+/**
+ * The list row by id, ANY organization. Only ever used to decide which of 404 / 403 / 409 to answer — never
+ * returned to the caller. Boundary-logged (start/end/elapsed) like the other pre-checks.
+ */
+export async function lookupList(req: Request, listId: string): Promise<ListAccessRow | undefined> {
+  const row = await timed(
+    getLog(req),
+    'db.selection_lists.lookup',
+    () => db('selection_lists').where({ id: listId }).first('id', 'organization_id', 'visibility', 'status'),
+    { listId },
+  );
   return row as ListAccessRow | undefined;
 }
 
@@ -139,7 +147,7 @@ export function requireListRead(): RequestHandler {
 
     const listId = req.params['listId'];
     try {
-      const row = await lookupList(listId);
+      const row = await lookupList(req, listId);
       // Unknown, unreadable and another organization's private list are one and the same answer: 404.
       if (!row || !(await canRead(req, row))) return void notFound(res);
       next();
@@ -169,7 +177,7 @@ export function requireListMutation(action: string, opts: MutationOptions = {}):
 
     const listId = req.params['listId'];
     try {
-      const row = await lookupList(listId);
+      const row = await lookupList(req, listId);
       // Unknown id, or one of the caller's own org: the 4.0.0 guard answers (its own org-scoped pre-check
       // gives the 404 / the instance decision).
       if (!row || row.organization_id === orgId) return legacy(req, res, next);
@@ -237,7 +245,7 @@ export function requirePublishForPlatformList(when: (req: Request) => boolean): 
   return async function publishOnPlatformPurge(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!when(req) || !(await sharedListsOn(req))) return next();
     try {
-      const row = await lookupList(req.params['listId']);
+      const row = await lookupList(req, req.params['listId']);
       if (!row || row.visibility !== 'platform') return next();
       if (await mayPublishPlatform(req)) return next();
       getLog(req).info({ userId: req.userId, orgId: req.orgId, listId: row.id }, 'purge of a common list denied (needs publish_platform)');

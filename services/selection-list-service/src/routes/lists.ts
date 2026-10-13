@@ -1,14 +1,17 @@
 // lists.ts — SelectionList CRUD routes (S4 — FFRNT-187).
 //
 // All routes require a valid JWT (authMiddleware upstream).
-// All DB queries are scoped to req.orgId — never cross-org.
+// All WRITE queries are scoped to req.orgId — never cross-org. READ queries are scoped to req.orgId plus, when
+// the release flag `fuzefront.selection-lists.shared-lists` is ON, the common (`platform`) lists
+// (services/sharedReads.ts); who may read what is decided by middleware/listAccess.ts, not by this scope.
 //
 // Authorization (middleware/authz.ts; matrix: docs/planning/selection-lists-permit-actions.md):
 //   - tenant-level routes use the keyless SelectionListCatalog resource:
 //     GET / -> `list`, POST / -> `create`. GET / additionally filters every
 //     returned list through the per-list SelectionList `read` action.
-//   - every :listId route carries requireAuthzCheck('SelectionList', <action>)
-//     keyed on the list id.
+//   - every :listId route carries a SelectionList guard keyed on the list id: requireListRead (the shared-read
+//     operations) / requireListMutation (every mutation) from middleware/listAccess.ts, which delegate to the
+//     4.0.0 requireAuthzCheck unchanged while the shared-lists flag is OFF and for lists of the caller's org.
 //
 // Pagination: cursor-based (opaque base64url JSON cursor), newest-first.
 //   DEFAULT_PAGE_SIZE = 50, MAX_PAGE_SIZE = 200.
@@ -53,7 +56,7 @@ import {
   requirePublishForPlatformList,
   requirePublishWhenBodyIsPlatform,
 } from '../middleware/listAccess';
-import { callerInPlatformOrg, isVisibility, orgForms, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
+import { isVisibility, orgForms, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
 import { editableIds, getReadScope, readableByOrg } from '../services/sharedReads';
 import { formatList, LIST_COLUMNS, singleCtx, type ListRow } from './listShape';
 import { lockOrgOutbox, wireUserId } from '../events/outbox';

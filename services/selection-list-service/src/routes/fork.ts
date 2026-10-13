@@ -91,7 +91,7 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
 
   try {
     // The source must be readable by the caller (grant or shared read) — else it does not exist for them.
-    const source = await lookupList(sourceId);
+    const source = await lookupList(req, sourceId);
     if (!source || !(await canRead(req, source))) {
       res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
       return;
@@ -203,7 +203,7 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
 
 /** The organization already holds a fork of this source: 200 with it if the caller can read it, else 409 fork_exists. */
 async function answerExisting(req: Request, res: Response, existingId: string): Promise<void> {
-  const access = await lookupList(existingId);
+  const access = await lookupList(req, existingId);
   if (!access || !(await canRead(req, access))) {
     res.status(409).json({
       code: 'CONFLICT',
