@@ -18,7 +18,9 @@
  *            the service mints every id; additionalProperties:false.
  *   404      unreadable source (other org's list, private list of the platform org, never-existed id).
  *   authz    `SelectionListCatalog:create` + read on the source: a viewer (no `create`) gets 403.
- * Also: concurrency (parallel forks of one source create exactly one fork) and copy-on-write independence.
+ * Also: concurrency (parallel forks of one source create exactly one fork), copy-on-write independence, and the
+ * data-contract `keep` policy for provenance references: purging / archiving the SOURCE leaves forks untouched
+ * (`forked_from` keeps naming the purged id; the fork's own ids keep resolving, the purged common ids go `missing`).
  */
 import {
   actor, addItem, call, createList, createPlatformList, expectError, forkList, L, newOrg, PLATFORM_ORG_ID, rnd,
@@ -190,6 +192,37 @@ describe('201: the first fork copies everything and records provenance', () => {
     expect(res.status).toBe(201);
     expect(res.body.visibility).toBe('private');
     expect((await call(V, 'GET', L(res.body.id))).status).toBe(404); // a draft is not shared with members
+  });
+});
+
+describe('on-delete of the SOURCE (data-contract: provenance references are `keep`) — forks outlive their source', () => {
+  it('purging the common list leaves the fork intact: forked_from keeps naming the purged id, items keep their origin_item_id, the fork still reads, resolves and edits', async () => {
+    const p = await createPlatformList({ itemCodes: ['A', 'B'] });
+    const mk = await forkList(A, p.list.id);
+    expect(mk.status).toBe(201);
+    const before = await walkItems(A, mk.body.id, 'all');
+    expect((await call(p.owner, 'DELETE', `${L(p.list.id)}?purge=true`)).status).toBe(204);
+    expect((await call(A, 'GET', L(p.list.id))).status).toBe(404); // control: the source really is gone
+    const after = await call(A, 'GET', L(mk.body.id));
+    expect(after.status).toBe(200);
+    expect(after.body.forked_from).toMatchObject({ list_id: p.list.id, organization_id: PLATFORM_ORG_ID }); // dangling provenance is legal
+    const items = await walkItems(A, mk.body.id, 'all');
+    expect(items.map((i) => [i.id, i.origin_item_id])).toEqual(before.map((i) => [i.id, i.origin_item_id]));
+    expect(items.every((i) => p.items.some((s) => s.id === i.origin_item_id))).toBe(true);
+    // the fork's own ids resolve; the purged common ids are now `missing`
+    const resolved = await call(A, 'POST', '/v1/resolve', { ids: [items[0].id, p.items[0].id] });
+    expect(Object.keys(resolved.body.results)).toEqual([items[0].id]);
+    expect(resolved.body.missing).toEqual([p.items[0].id]);
+    expect((await call(A, 'PATCH', L(mk.body.id), { name: 'Still ours' })).status).toBe(200);
+  });
+
+  it('archiving the common list does not touch the fork either (and the common ids keep resolving)', async () => {
+    const p = await createPlatformList({ itemCodes: ['A'] });
+    const mk = await forkList(A, p.list.id);
+    expect((await call(p.owner, 'POST', `${L(p.list.id)}/archive`)).status).toBe(200);
+    expect((await call(A, 'GET', L(mk.body.id))).body).toMatchObject({ status: 'active', forked_from: { list_id: p.list.id } });
+    const resolved = await call(A, 'POST', '/v1/resolve', { ids: [p.items[0].id] });
+    expect(resolved.body.missing).toEqual([]);
   });
 });
 

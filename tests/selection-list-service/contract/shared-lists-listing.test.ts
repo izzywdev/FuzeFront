@@ -28,7 +28,6 @@ const ORG_L = newOrg('lstl');
 const ORG_M = newOrg('lstm');
 const owner = actor('own', ORG_L, 'admin');
 const viewer = actor('vw', ORG_L, 'viewer');
-const editor = actor('ed', ORG_L, 'editor');
 const mViewer = actor('mvw', ORG_M, 'viewer');
 
 let lp: ListLike; // private
@@ -198,6 +197,36 @@ describe('§11.3 / D8: shadowing and the `visibility` filter', () => {
     expectError(await call(viewer, 'GET', '/v1/selection-lists?visibility=public'), 400, 'VALIDATION_ERROR');
     expectError(await call(viewer, 'GET', '/v1/selection-lists?include_shared=maybe'), 400, 'VALIDATION_ERROR');
     expect((await call(viewer, 'GET', '/v1/selection-lists?visibility=org&include_shared=true')).status).toBe(200); // control
+  });
+});
+
+describe('the ITEMS of a common list are pageable by a shared reader (x-pagination: cursor, limit enforced)', () => {
+  it('a member with no grant walks a 5-item common list with limit=2: every item once, hasMore agrees with nextCursor, ends with nextCursor null', async () => {
+    const p = await createPlatformList({ itemCodes: ['A', 'B', 'C', 'D', 'E'] });
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const qs: string = `limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+      const res = await call(viewer, 'GET', `${L(p.list.id)}/items?${qs}`);
+      expect(res.status).toBe(200);
+      assertResponse('GET', '/v1/selection-lists/{listId}/items', 200, res.body);
+      expect(res.body.items.length).toBeLessThanOrEqual(2);
+      expect(res.body.page.hasMore).toBe(res.body.page.nextCursor !== null);
+      seen.push(...res.body.items.map((i: any) => i.id));
+      cursor = res.body.page.nextCursor;
+      pages++;
+    } while (cursor && pages < 50);
+    expect(pages).toBe(3);
+    expect(seen.sort()).toEqual(p.items.map((i) => i.id).sort()); // no gaps, no dupes
+  });
+
+  it('limit is clamped to 200 for a shared reader too, and a malformed cursor is 400', async () => {
+    const p = await createPlatformList({ itemCodes: ['A', 'B'] });
+    const big = await call(viewer, 'GET', `${L(p.list.id)}/items?limit=9999`);
+    expect(big.status).toBe(200);
+    expect(big.body.items.length).toBeLessThanOrEqual(200);
+    expectError(await call(viewer, 'GET', `${L(p.list.id)}/items?cursor=NOT_A_REAL_CURSOR`), 400, 'VALIDATION_ERROR');
   });
 });
 

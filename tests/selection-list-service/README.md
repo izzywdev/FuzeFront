@@ -133,6 +133,54 @@ machine-token grant route (the support path of docs/planning/selection-lists-per
 spec. They keep CI green while the defect stays provable; when the service is fixed they go red ("expected
 to fail but passed") and the `.failing` must be removed in the same PR. Never weaken the assertion.
 
+## SL9 — shared / common lists and copy-on-write fork (contract 4.1.0)
+
+Design record: `docs/planning/selection-lists-shared-and-fork.md` (§4 authz matrix, §6 algorithms, §7 flag,
+§11 test plan). The suites below pin §11 items 1-11 against the frozen `openapi.yaml` 4.1.0; each file's header
+comment names the design-record rows it pins. R7 (existing 4.0.0 behaviour for existing data) is covered by the
+suites above, which run unchanged against a flag-ON service.
+
+```
+contract/
+  shared-lists-listing.test.ts        include_shared / visibility filter / shadowing / pagination / editable hint / 4.1.0 shapes
+  shared-lists-precedence.test.ts     which list a key means: own readable active list > common list; archived + private forks
+  shared-lists-fork.test.ts           POST …/fork: 201 / 200 / 409 fork_exists | fork_not_applicable | key-taken / 403 quota / 400 / 404;
+                                      copies items (archived too) + translations + origin_item_id + forked_from + owner grant; COW; concurrency; on-delete keep
+  shared-lists-fork-size.test.ts      the 5000-item cap (5001 -> 400, 5000 -> 201 with a 5000-entry itemMap); bulk rows inserted by SQL
+  shared-lists-fork-required.test.ts  every per-list mutation on a common list: 409 fork_required (+fork_url, source_list_id) / 403 / 404 order
+  shared-lists-visibility.test.ts     visibility on create + PATCH, platform one-way (409 visibility_locked), read-only fields rejected
+  shared-lists-resolve.test.ts        platform ids resolve from every org, effective_item_id redirect, private/archived fork no redirect, ETag varies
+  shared-lists-events.test.ts         outbox: list.forked / visibility.changed / created snapshots; one transaction (xmin); nothing on refusals
+  shared-lists-flag-off.test.ts       flag OFF: 4.0.0 behaviour with 4.1.0 shapes (needs the second, flag-OFF instance — see below)
+security/
+  shared-read-authz.test.ts           shared read per tenant role (developer -> 404), cross-org 404, nobody mutates via shared read, id is not a capability
+  shared-lists-privileged-ops.test.ts publish_platform (platform org only), promotion, owner-only visibility, purge of common lists
+  shared-lists-fake-policy.test.ts    the stand-in Security API evaluates read_shared / publish_platform as the Permit schema defines them
+```
+
+### Turning the feature on (and off) in the harness
+
+The flag `fuzefront.selection-lists.shared-lists` is process-wide, so "both states" means **two service
+instances on the same database**, both started like the CI job does (`NODE_ENV=test`, stand-in Security API):
+
+| | main instance (`SERVICE_BASE_URL`) | flag-OFF instance (`SHARED_LISTS_FLAG_OFF_URL`) |
+|---|---|---|
+| `FLAGS_FORCE_ON` | `fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists` | `fuzefront.selection-lists.service` |
+| `SELECTION_LIST_PLATFORM_ORG_ID` | `org_01test00000000platform00000` | the same |
+| `PORT` | e.g. `3011` | e.g. `3012` |
+
+* `TEST_PLATFORM_ORG_ID` (default `org_01test00000000platform00000`) must equal the service's
+  `SELECTION_LIST_PLATFORM_ORG_ID`. The suites tell the stand-in Security API which org is the platform org
+  through `POST /__fixture/platform-org`; `publish_platform` is effective only in that tenant.
+* Every flag-ON suite starts with a precondition probe (`assertSharedListsOn`): a service without the feature fails
+  with an explicit `PRECONDITION:` message instead of a cascade of 400s. The OFF suite does the mirror probe and
+  fails (never skips) when `SHARED_LISTS_FLAG_OFF_URL` is unset.
+* The suites mint per-run orgs/users, so re-running against the same database is safe; the only fixed orgs are the
+  quota-override rows seeded by `helpers/global-setup.ts` (platform org, fork quota orgs). A fresh database per run
+  (as CI has) is still the reference.
+* Run the outbox-observing suites without `KAFKA_BROKERS` (as above): `shared-lists-events` identifies one
+  transaction by the rows' `xmin`, which a live relay rewrites when it marks rows `sent`.
+
 ## FFRNT-242 — mirror-not-authority
 
 `security/mirror-not-authority.test.ts` is the **critical security regression test**.
