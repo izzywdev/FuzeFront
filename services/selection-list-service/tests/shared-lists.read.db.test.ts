@@ -11,6 +11,7 @@ import type { Knex } from 'knex';
 import { dbDescribe } from './helpers/testDb';
 import { createWorld, ORG_A, ORG_B, P, PLATFORM, publishPriorityList, World } from './helpers/sharedWorld';
 import { flagClientWith } from './helpers/flagClient';
+import { assertConforms } from './helpers/openapi';
 
 const state: { db: Knex | undefined } = { db: undefined };
 jest.mock('../src/db', () => ({
@@ -376,6 +377,26 @@ dbDescribe('shared lists — read path (real Postgres)', () => {
         expect(w.authz.since(m2)).toEqual(['catalog:list', 'list:read', 'list:read']);
       });
     });
+  });
+
+  it('every response conforms to the 4.1.0 contract (SelectionList / SelectionListItem), flag ON and OFF', async () => {
+    const check = async () => {
+      const one = await w.api(P.aMember).get(`/v1/selection-lists/${aOrgList}`);
+      const list = await w.api(P.aMember).get('/v1/selection-lists?include_shared=true');
+      const items = await w.api(P.bMember).get(`/v1/selection-lists/${platform.listId}/items?status=all`);
+      const admin = await w.api(P.aAdmin).get(`/v1/selection-lists/${aOrgList}`);
+      for (const r of [one, admin]) if (r.status === 200) assertConforms('SelectionList', r.body);
+      for (const l of list.body.items ?? []) assertConforms('SelectionList', l);
+      for (const i of items.body.items ?? []) assertConforms('SelectionListItem', i);
+    };
+    await check();
+    const { setFlagClient } = await import('../src/flags');
+    setFlagClient(flagClientWith(false));
+    try {
+      await check();
+    } finally {
+      setFlagClient(flagClientWith(true));
+    }
   });
 
   it('the ORG_A/ORG_B/PLATFORM fixtures are three different organizations', () => {

@@ -1,0 +1,314 @@
+// shared-lists.write.db.test.ts — the WRITE path of shared / common lists (design record D5, D7, D10;
+// openapi `x-permit-additional-actions`) through the real app, routes and REAL Postgres.
+//
+// Pins: every per-list mutation of a common list is `409 fork_required` (+ fork_url / source_list_id) for a
+// caller holding SelectionListCatalog:create, `403` without it, `404` when it cannot read it, access
+// management is always `403`; create/PATCH `visibility` with `manage_access`, `publish_platform` evaluated in
+// the PLATFORM tenant, platform-org ownership and the one-way `platform` lock (`409 visibility_locked`);
+// purge of a platform list (or one of its items) needs `publish_platform`; every extra check is asked of the
+// Security API; visibility.changed events; fail-closed behaviour.
+
+import type { Knex } from 'knex';
+import { TOPICS } from '@fuzefront/shared/kafka';
+import { dbDescribe } from './helpers/testDb';
+import { createWorld, ORG_A, P, PLATFORM, Principal, publishPriorityList, World } from './helpers/sharedWorld';
+import { assertConforms } from './helpers/openapi';
+
+const state: { db: Knex | undefined } = { db: undefined };
+jest.mock('../src/db', () => ({
+  get db() {
+    return state.db;
+  },
+}));
+
+dbDescribe('shared lists — write path (real Postgres)', () => {
+  let w: World;
+  let platform: { listId: string; low: string; mid: string; old: string };
+
+  beforeAll(async () => {
+    w = await createWorld(state);
+    platform = await publishPriorityList(w);
+  });
+  afterAll(() => w.teardown());
+
+  const base = () => `/v1/selection-lists/${platform.listId}`;
+
+  describe('create with a visibility', () => {
+    it('org / private need nothing extra; the default is private', async () => {
+      const a = await w.api(P.aMember).post('/v1/selection-lists', { key: 'wp-org', name: 'Org', visibility: 'org' });
+      expect(a.status).toBe(201);
+      expect(a.body).toMatchObject({ visibility: 'org', editable: true, forked_from: null });
+      const b = await w.api(P.aMember).post('/v1/selection-lists', { key: 'wp-default', name: 'D' });
+      expect(b.body.visibility).toBe('private');
+      expect((await w.api(P.aMember).post('/v1/selection-lists', { key: 'wp-bad', name: 'B', visibility: 'public' })).status).toBe(400);
+    });
+
+    it('platform: the platform operator publishes (201, owned by the platform org, owner grant in the platform tenant)', async () => {
+      const mark = w.authz.asked.length;
+      const res = await w.api(P.op).post('/v1/selection-lists', { key: 'wp-common', name: 'Common', visibility: 'platform' });
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ visibility: 'platform', organization_id: PLATFORM });
+      expect(w.authz.since(mark)).toEqual(['catalog:create', 'catalog:publish_platform']);
+      const asked = w.authz.asked.slice(mark).find((q) => q.action === 'publish_platform')!;
+      expect(asked.tenant).toBe(PLATFORM); // evaluated in the PLATFORM tenant
+      const events = await w.newEvents();
+      expect(events.some((e) => e.topic === TOPICS.SELECTION_LISTS_LIST_CREATED && e.p.list.visibility === 'platform')).toBe(true);
+    });
+
+    it('platform: a customer-org admin HOLDS publish_platform in its own tenant and still gets 403', async () => {
+      expect(w.authz.catalog.get(`${ORG_A}|${P.aAdmin.userId}`)?.has('publish_platform')).toBe(true);
+      const res = await w.api(P.aAdmin).post('/v1/selection-lists', { key: 'wp-nope', name: 'Nope', visibility: 'platform' });
+      expect(res.status).toBe(403);
+      expect(await w.db('selection_lists').where({ key: 'wp-nope' }).first()).toBeUndefined();
+    });
+
+    it('platform: a platform-org member WITHOUT publish_platform gets 403', async () => {
+      const res = await w.api(P.opEditor).post('/v1/selection-lists', { key: 'wp-nope2', name: 'Nope', visibility: 'platform' });
+      expect(res.status).toBe(403);
+    });
+
+    it('platform: fails closed when the Security API is down', async () => {
+      w.authz.down = new Error('DECISION_UNAVAILABLE');
+      try {
+        expect((await w.api(P.op).post('/v1/selection-lists', { key: 'wp-down', name: 'Down', visibility: 'platform' })).status).toBe(403);
+      } finally {
+        w.authz.down = null;
+      }
+    });
+
+    it('rejects a client-supplied id and unknown properties (identifier standard)', async () => {
+      const res = await w.api(P.aMember).post('/v1/selection-lists', { key: 'wp-id', name: 'Id', id: 'front_sl_zzzz', visibility: 'org' });
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('a mutation of a common list owned by ANOTHER org', () => {
+    const mutations: Array<{ name: string; call: (p: Principal) => Promise<any>; access?: boolean }> = [
+      { name: 'PATCH list', call: (p) => w.api(p).patch(base(), { name: 'Hijacked' }) },
+      { name: 'DELETE list (archive)', call: (p) => w.api(p).del(base()) },
+      { name: 'DELETE list (purge)', call: (p) => w.api(p).del(`${base()}?purge=true`) },
+      { name: 'POST archive', call: (p) => w.api(p).post(`${base()}/archive`) },
+      { name: 'POST item', call: (p) => w.api(p).post(`${base()}/items`, { code: 'NEW', label: 'New' }) },
+      { name: 'PUT reorder', call: (p) => w.api(p).put(`${base()}/items/reorder`, { item_ids: [platform.mid, platform.low] }) },
+      { name: 'PATCH item', call: (p) => w.api(p).patch(`${base()}/items/${platform.low}`, { label: 'X' }) },
+      { name: 'DELETE item (archive)', call: (p) => w.api(p).del(`${base()}/items/${platform.low}`) },
+      { name: 'DELETE item (purge)', call: (p) => w.api(p).del(`${base()}/items/${platform.low}?purge=true`) },
+      { name: 'POST item archive', call: (p) => w.api(p).post(`${base()}/items/${platform.low}/archive`) },
+      { name: 'PUT list translation', call: (p) => w.api(p).put(`${base()}/translations/de`, { name: 'Prio' }) },
+      { name: 'DELETE list translation', call: (p) => w.api(p).del(`${base()}/translations/fr`) },
+      { name: 'PUT item translation', call: (p) => w.api(p).put(`${base()}/items/${platform.low}/translations/de`, { label: 'Niedrig' }) },
+      { name: 'DELETE item translation', call: (p) => w.api(p).del(`${base()}/items/${platform.low}/translations/fr`) },
+      { name: 'POST autofill', call: (p) => w.api(p).post(`${base()}/translations/de/autofill`, {}) },
+    ];
+
+    it.each(mutations.map((m) => [m.name, m] as const))('%s -> 409 fork_required for a caller with `create`', async (_n, m) => {
+      const res = await m.call(P.aMember);
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({
+        code: 'CONFLICT',
+        message: expect.any(String),
+        reason: 'fork_required',
+        source_list_id: platform.listId,
+        fork_url: `/v1/selection-lists/${platform.listId}/fork`,
+      });
+      expect(res.body.fork_url).toMatch(/^\/v1\/selection-lists\/front_sl_[0-9a-z]+\/fork$/); // same-origin relative
+    });
+
+    it.each(mutations.map((m) => [m.name, m] as const))('%s -> 403 for a reader WITHOUT `create` (viewer)', async (_n, m) => {
+      const res = await m.call(P.aViewer);
+      expect(res.status).toBe(403);
+      expect(res.body.reason).toBeUndefined();
+    });
+
+    it.each(mutations.map((m) => [m.name, m] as const))('%s -> 404 when the caller cannot even read it (developer)', async (_n, m) => {
+      expect((await m.call(P.aDeveloper)).status).toBe(404);
+    });
+
+    it('the fork_required / visibility_locked / created bodies conform to the contract (Error, SelectionList)', async () => {
+      assertConforms('Error', (await w.api(P.aMember).patch(base(), { name: 'x' })).body);
+      assertConforms('Error', (await w.api(P.op).patch(base(), { visibility: 'org' })).body);
+      assertConforms('Error', (await w.api(P.aViewer).patch(base(), { name: 'x' })).body);
+      const created = await w.api(P.op).post('/v1/selection-lists', { key: 'conform-common', name: 'C', visibility: 'platform' });
+      assertConforms('SelectionList', created.body);
+    });
+
+    it('nothing was written by any of them', async () => {
+      const row = await w.db('selection_lists').where({ id: platform.listId }).first();
+      expect(row.status).toBe('active');
+      const items = await w.db('selection_list_items').where({ list_id: platform.listId }).orderBy('code');
+      expect(items.map((i: any) => [i.code, i.status])).toEqual([['LOW', 'active'], ['MID', 'active'], ['OLD', 'archived']]);
+      const t = await w.db('selection_list_translations').where({ list_id: platform.listId });
+      expect(t.map((x: any) => x.locale).sort()).toEqual(['en', 'fr']);
+    });
+
+    it('access management of a common list is ALWAYS 403 for a customer (never fork_required), 404 if unreadable', async () => {
+      for (const p of [P.aMember, P.aViewer, P.aAdmin]) {
+        expect((await w.api(p).get(`${base()}/access`)).status).toBe(403);
+        expect((await w.api(p).put(`${base()}/access/${P.aViewer.userId}`, { role: 'list-viewer' })).status).toBe(403);
+        expect((await w.api(p).del(`${base()}/access/${P.aViewer.userId}`)).status).toBe(403);
+      }
+      expect((await w.api(P.aDeveloper).get(`${base()}/access`)).status).toBe(404);
+    });
+
+    it('fails closed (403) when the Security API cannot answer', async () => {
+      w.authz.down = new Error('DECISION_UNAVAILABLE');
+      try {
+        expect((await w.api(P.aMember).patch(base(), { name: 'x' })).status).toBe(403);
+      } finally {
+        w.authz.down = null;
+      }
+    });
+
+    it('the platform org owner still mutates it normally (instance role), no fork involved', async () => {
+      const res = await w.api(P.op).patch(base(), { description: 'How urgent, really' });
+      expect(res.status).toBe(200);
+      expect(res.body.description).toBe('How urgent, really');
+      // a platform-org member who is NOT an owner is a plain 403 (it is their own org's list)
+      const denied = await w.api(P.opEditor).patch(base(), { description: 'nope' });
+      expect(denied.status).toBe(403);
+      expect(denied.body.reason).toBeUndefined();
+    });
+  });
+
+  describe('PATCH visibility', () => {
+    let listId: string;
+    beforeAll(async () => {
+      const r = await w.api(P.aAdmin).post('/v1/selection-lists', { key: 'vis-test', name: 'Vis' });
+      listId = r.body.id;
+      await w.newEvents();
+    });
+    const url = () => `/v1/selection-lists/${listId}`;
+
+    it('the owner changes private -> org -> private; each change emits visibility.changed with its own revision', async () => {
+      const mark = w.authz.asked.length;
+      const a = await w.api(P.aAdmin).patch(url(), { visibility: 'org' });
+      expect(a.status).toBe(200);
+      expect(a.body).toMatchObject({ visibility: 'org', editable: true });
+      // update (base) + manage_access (the access decision) — nothing else for a non-platform visibility
+      expect(w.authz.since(mark).slice(0, 2)).toEqual(['list:update', 'list:manage_access']);
+      let ev = await w.newEvents();
+      expect(ev.map((e) => e.topic)).toEqual([TOPICS.SELECTION_LISTS_VISIBILITY_CHANGED]);
+      expect(ev[0].p).toMatchObject({ previousVisibility: 'private', visibility: 'org', list: { visibility: 'org', listId } });
+      const rev1 = ev[0].p.listRevision;
+
+      const b = await w.api(P.aAdmin).patch(url(), { visibility: 'private' });
+      expect(b.body.visibility).toBe('private');
+      ev = await w.newEvents();
+      expect(ev[0].p).toMatchObject({ previousVisibility: 'org', visibility: 'private' });
+      expect(ev[0].p.listRevision).toBeGreaterThan(rev1);
+    });
+
+    it('a combined PATCH emits list.updated (other fields) then visibility.changed, both in one transaction', async () => {
+      const res = await w.api(P.aAdmin).patch(url(), { name: 'Vis 2', visibility: 'org' });
+      expect(res.status).toBe(200);
+      const ev = await w.newEvents();
+      expect(ev.map((e) => e.topic)).toEqual([TOPICS.SELECTION_LISTS_LIST_UPDATED, TOPICS.SELECTION_LISTS_VISIBILITY_CHANGED]);
+      expect(ev[1].p.listRevision).toBeGreaterThan(ev[0].p.listRevision);
+      await w.api(P.aAdmin).patch(url(), { visibility: 'private' });
+      await w.newEvents();
+    });
+
+    it('sending the CURRENT visibility is a no-op (no event) that still requires manage_access', async () => {
+      const ok = await w.api(P.aAdmin).patch(url(), { visibility: 'private' });
+      expect(ok.status).toBe(200);
+      expect(await w.newEvents()).toEqual([]);
+      // a list-editor (update, no manage_access) is refused even for the no-op
+      w.authz.give(ORG_A, P.aMember.userId, listId, 'list-editor');
+      const denied = await w.api(P.aMember).patch(url(), { visibility: 'private' });
+      expect(denied.status).toBe(403);
+    });
+
+    it('an editor can still edit every OTHER field; only the visibility needs manage_access', async () => {
+      w.authz.give(ORG_A, P.aMember.userId, listId, 'list-editor');
+      const res = await w.api(P.aMember).patch(url(), { description: 'editor was here' });
+      expect(res.status).toBe(200);
+      const denied = await w.api(P.aMember).patch(url(), { visibility: 'org' });
+      expect(denied.status).toBe(403);
+      expect((await w.db('selection_lists').where({ id: listId }).first()).visibility).toBe('private');
+    });
+
+    it('promoting to platform: a customer org owner gets 403 (not the platform org) and nothing changes', async () => {
+      const res = await w.api(P.aAdmin).patch(url(), { visibility: 'platform' });
+      expect(res.status).toBe(403);
+      expect((await w.db('selection_lists').where({ id: listId }).first()).visibility).toBe('private');
+    });
+
+    it('promoting to platform: the platform operator promotes a platform-org list (publish_platform in the platform tenant)', async () => {
+      const mk = await w.api(P.op).post('/v1/selection-lists', { key: 'to-common', name: 'To common' });
+      const id = mk.body.id;
+      const mark = w.authz.asked.length;
+      const res = await w.api(P.op).patch(`/v1/selection-lists/${id}`, { visibility: 'platform' });
+      expect(res.status).toBe(200);
+      expect(res.body.visibility).toBe('platform');
+      expect(w.authz.since(mark)).toEqual(['list:update', 'list:manage_access', 'catalog:publish_platform']);
+      expect(w.authz.asked.slice(mark).pop()!.tenant).toBe(PLATFORM);
+      // ...and a platform-org owner WITHOUT publish_platform may not
+      const mk2 = await w.api(P.opEditor).post('/v1/selection-lists', { key: 'to-common-2', name: 'To common 2' });
+      const denied = await w.api(P.opEditor).patch(`/v1/selection-lists/${mk2.body.id}`, { visibility: 'platform' });
+      expect(denied.status).toBe(403);
+    });
+
+    it('a platform list can NEVER be demoted: 409 visibility_locked (archive it instead), for the operator too', async () => {
+      for (const target of ['private', 'org']) {
+        const res = await w.api(P.op).patch(base(), { visibility: target });
+        expect(res.status).toBe(409);
+        expect(res.body).toMatchObject({ code: 'CONFLICT', reason: 'visibility_locked' });
+      }
+      expect((await w.db('selection_lists').where({ id: platform.listId }).first()).visibility).toBe('platform');
+      // sending platform again is a no-op
+      expect((await w.api(P.op).patch(base(), { visibility: 'platform' })).status).toBe(200);
+      // archive is allowed and archived items keep resolving
+      expect((await w.api(P.op).post(`${base()}/archive`)).status).toBe(200);
+      expect((await w.api(P.op).patch(base(), { status: 'active' })).status).toBe(200);
+    });
+
+    it('a customer cannot reach the visibility of a common list at all (fork_required, not visibility_locked)', async () => {
+      const res = await w.api(P.aMember).patch(base(), { visibility: 'private' });
+      expect(res.status).toBe(409);
+      expect(res.body.reason).toBe('fork_required');
+    });
+  });
+
+  describe('purge of a platform list or one of its items needs publish_platform', () => {
+    let common: { listId: string; low: string };
+    const mkCommon = async (key: string) => {
+      const l = await w.api(P.op).post('/v1/selection-lists', { key, name: key, visibility: 'platform' });
+      const i = await w.api(P.op).post(`/v1/selection-lists/${l.body.id}/items`, { code: 'A', label: 'A' });
+      return { listId: l.body.id as string, low: i.body.id as string };
+    };
+    beforeAll(async () => {
+      common = await mkCommon('purge-me');
+    });
+
+    it('an OWNER of the common list in the platform org without publish_platform is refused (403); nothing is deleted', async () => {
+      w.authz.give(PLATFORM, P.opEditor.userId, common.listId, 'list-owner');
+      const item = await w.api(P.opEditor).del(`/v1/selection-lists/${common.listId}/items/${common.low}?purge=true`);
+      expect(item.status).toBe(403);
+      const list = await w.api(P.opEditor).del(`/v1/selection-lists/${common.listId}?purge=true`);
+      expect(list.status).toBe(403);
+      expect(await w.db('selection_list_items').where({ id: common.low }).first()).toBeDefined();
+      expect(await w.db('selection_lists').where({ id: common.listId }).first()).toBeDefined();
+      // archive is reversible and stays with the instance owner
+      expect((await w.api(P.opEditor).del(`/v1/selection-lists/${common.listId}/items/${common.low}`)).status).toBe(200);
+    });
+
+    it('with publish_platform (the operator) the item purge and the list purge succeed; asked in order', async () => {
+      const mark = w.authz.asked.length;
+      const item = await w.api(P.op).del(`/v1/selection-lists/${common.listId}/items/${common.low}?purge=true`);
+      expect(item.status).toBe(204);
+      expect(w.authz.since(mark)).toEqual(['list:remove_value', 'list:delete', 'catalog:publish_platform']);
+      const mark2 = w.authz.asked.length;
+      const list = await w.api(P.op).del(`/v1/selection-lists/${common.listId}?purge=true`);
+      expect(list.status).toBe(204);
+      expect(w.authz.since(mark2)).toEqual(['list:delete', 'catalog:publish_platform']);
+      expect(await w.db('selection_lists').where({ id: common.listId }).first()).toBeUndefined();
+    });
+
+    it('a private/org list purge does NOT ask publish_platform', async () => {
+      const r = await w.api(P.aAdmin).post('/v1/selection-lists', { key: 'purge-private', name: 'P' });
+      const mark = w.authz.asked.length;
+      expect((await w.api(P.aAdmin).del(`/v1/selection-lists/${r.body.id}?purge=true`)).status).toBe(204);
+      expect(w.authz.since(mark)).toEqual(['list:delete']);
+    });
+  });
+});
