@@ -42,3 +42,17 @@ db45b8ea8db4931e4248b57f1df8dcdf13c4cd72:packages/selection-list-client-py/src/f
 
 # Dummy attestation token fixture in the selection-list acceptance tests (not a credential; entropy just over the generic-api-key threshold). Replaced with a low-entropy placeholder in a later commit, but the PR-range scan still sees this commit.
 21641303996c65515669294fa64a61aa066f3042:tests/selection-list-service/contract/seeding.test.ts:generic-api-key:717
+
+# Full-history triage: the external-app registration example uses a visibly
+# truncated dummy heartbeat token ending in "...", not an issued credential.
+# These exact historical documentation occurrences are pinned so new tokens
+# in documentation continue to be scanned.
+6080f54ccdf73c8ca11de8f12548068e503dd8ed:docs/examples/external-app-registration.md:generic-api-key:90
+6080f54ccdf73c8ca11de8f12548068e503dd8ed:docs/examples/external-app-registration.md:curl-auth-header:163
+
+# Historical npm cache security-advisory keys: these are public advisory
+# cache identifiers containing package names and content hashes. The JSON
+# records contain only key, integrity, time, and size; no authentication data.
+# Suppress only these two exact historical records, not arbitrary cache files.
+0cb7b10f1985cf9ecc9e0046786dba774c27dd75:.npm-cache/_cacache/index-v5/01/f0/82513ae0c1c3a0589d7fe59d114d283ca69e14a6ddcf31e71f5d11016f56:generic-api-key:2
+0cb7b10f1985cf9ecc9e0046786dba774c27dd75:.npm-cache/_cacache/index-v5/cc/aa/a0760f45446f35f11a48783706140f28044e3c472eeb4e712b474c7e2696:generic-api-key:2

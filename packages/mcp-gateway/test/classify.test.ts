@@ -25,7 +25,7 @@ describe('deriveFromMethod', () => {
   });
 
   it('treats query-shaped POSTs as reads', () => {
-    for (const p of ['/tickets/search', '/kb/query', '/tickets/preview']) {
+    for (const p of ['/tickets/search', '/kb/query', '/tickets/preview', '/v1/resolve']) {
       const c = deriveFromMethod('post', p);
       expect(c.mutates, p).toBe(false);
     }

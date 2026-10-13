@@ -225,13 +225,11 @@ const FAKE_SECURITY_URL = process.env['FAKE_SECURITY_URL'] ?? 'http://localhost:
  * over HTTP. Targets the stand-in Security API the service itself authorizes against.
  */
 export async function supportGrantOwner(orgWire: string, userWire: string, listId: string): Promise<void> {
-  const tok = await fetch(`${FAKE_SECURITY_URL}/api/v1/security/tokens`, {
+  const tok = await fetch(`${FAKE_SECURITY_URL}/api/v1/security/tokens/workload`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      clientId: process.env['SELECTION_LIST_SERVICE_CLIENT_ID'] ?? 'selection-list-service-ci',
-      clientSecret: process.env['SELECTION_LIST_SERVICE_CLIENT_SECRET'] ?? 'ci-only-fixture-client-secret',
-      scope: 'authz:admin',
+      serviceAccountToken: 'selection-list-service-ci-projected-token',
     }),
   });
   if (tok.status !== 200) throw new Error(`stand-in Security API refused to issue a machine token (${tok.status})`);
