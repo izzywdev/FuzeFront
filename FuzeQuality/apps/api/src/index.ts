@@ -53,6 +53,7 @@ import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } 
 import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
 import { repositoryAnalysisStatusSchema } from './repository-analysis-status'
 import { reviewedPerformanceWorkflowPaths } from './latest-performance-executions'
+import { repositoryProcessingStatus } from './repository-processing-status'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -900,6 +901,13 @@ app.post('/api/v1/repositories/:id/scans', mayScanRepositories, async (request, 
     const result = publicAccessError(error)
     response.status(result.status).json(result.body)
   }
+})
+app.get('/api/v1/repositories/:id/processing-status', mayReadRepositories, async (request, response) => {
+  const tenantId = requestIdentity(request)!.tenantId
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  response.json(repositoryProcessingStatus(repository))
 })
 app.patch('/api/v1/repositories/:id/administration', mayManageRepositoryAdministration, async (request, response) => {
   const parsed = repositoryAdministrationSchema.safeParse(request.body)

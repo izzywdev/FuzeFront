@@ -78,6 +78,7 @@ import { FlowInspector } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
 import { governanceEvidenceSelection } from './governanceEvidence'
+import { applyRepositoryProcessingStatus, repositoryNeedsProcessingPoll } from './repositoryProcessing'
 
 export type View =
   | 'overview'
@@ -842,16 +843,19 @@ function Overview({
   )
 }
 
-function Repositories({
+export function Repositories({
   data,
   reload,
+  updateProcessingStatus,
 }: {
   data: Portfolio
   reload: () => Promise<void>
+  updateProcessingStatus: (status: import('@fuzequality/contracts').RepositoryProcessingStatus) => void
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [pollError, setPollError] = useState('')
   const [history, setHistory] = useState<
     Record<string, RepositoryScanHistoryPage>
   >({})
@@ -866,6 +870,37 @@ function Repositories({
     installationId: '',
     storybookBaseUrl: '',
   })
+  const processingRepositoryIds = data.repositories
+    .filter(repositoryNeedsProcessingPoll)
+    .map(repository => repository.id)
+    .sort()
+    .join(',')
+  useEffect(() => {
+    if (!processingRepositoryIds) return
+    let active = true
+    let refreshing = false
+    const refresh = async () => {
+      if (refreshing) return
+      refreshing = true
+      const ids = processingRepositoryIds.split(',')
+      const results = await Promise.allSettled(ids.map(id => api.repositoryProcessingStatus(id)))
+      if (active) {
+        results.forEach(result => {
+          if (result.status === 'fulfilled') updateProcessingStatus(result.value)
+        })
+        setPollError(results.some(result => result.status === 'rejected')
+          ? 'Repository processing status is temporarily unavailable; the scan continues in the background.'
+          : '')
+      }
+      refreshing = false
+    }
+    void refresh()
+    const interval = window.setInterval(() => void refresh(), 3_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [processingRepositoryIds, updateProcessingStatus])
   async function submit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
@@ -936,6 +971,7 @@ function Repositories({
         }
       />
       <section className="repo-cards">
+        {pollError && <p className="form-error" role="alert">{pollError}</p>}
         {data.repositories.map(repository => {
           const diagnostics = data.diagnostics.filter(
             item => item.repositoryId === repository.id
@@ -5042,6 +5078,12 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   const [loading, setLoading] = useState(true)
   const portalContext = usePortalContextKey()
   const embedded = Boolean(runtimeBridge()?.menu)
+  const updateProcessingStatus = useCallback((status: import('@fuzequality/contracts').RepositoryProcessingStatus) => {
+    setData(current => current ? {
+      ...current,
+      repositories: current.repositories.map(repository => applyRepositoryProcessingStatus(repository, status)),
+    } : current)
+  }, [])
   usePortalMenu(setView)
   const navigateToView = (nextView: View) => {
     navigatePortalView(nextView, embedded)
@@ -5163,7 +5205,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
                 <Overview data={data} onNavigate={navigateToView} />
               )}
               {view === 'repositories' && (
-                <Repositories data={data} reload={reload} />
+                <Repositories data={data} reload={reload} updateProcessingStatus={updateProcessingStatus} />
               )}
               {view === 'api' && <ApiCatalogPage data={data} />}
               {view === 'frontend' && (

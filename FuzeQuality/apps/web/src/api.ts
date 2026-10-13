@@ -150,6 +150,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ localPath }),
     }),
+  repositoryProcessingStatus: (id: string) => request<import('@fuzequality/contracts').RepositoryProcessingStatus>(`/api/v1/repositories/${id}/processing-status`),
   decideSuggestion: (id: string, value: Record<string, unknown>) =>
     request(`/api/v1/suggestions/${id}/decision`, {
       method: 'POST',

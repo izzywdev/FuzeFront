@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.19.0
+  version: 0.20.0
   license:
     name: UNLICENSED
 servers:
@@ -734,6 +734,27 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ExecutionEvidenceConflict' }
 
+  /api/v1/repositories/{repositoryId}/processing-status:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: getRepositoryProcessingStatus
+      summary: Read current scan and reviewed-analysis lifecycle state
+      description: >-
+        Tenant-scoped lightweight status used while a repository scan or FuzeInfra LiteLLM
+        review is active. It excludes repository configuration and installation metadata.
+      tags: [repositories]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: Current repository processing lifecycle.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RepositoryProcessingStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/repositories/{repositoryId}/test-executions:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
@@ -1082,6 +1103,36 @@ components:
           type: array
           items: { $ref: '#/components/schemas/RepositoryScanHistoryEntry' }
         page: { $ref: '#/components/schemas/HistoryCursorPage' }
+    RepositoryProcessingStatus:
+      type: object
+      additionalProperties: false
+      required: [id, lastScanStatus]
+      properties:
+        id: { type: string, format: uuid }
+        lastScanAt: { type: string, format: date-time }
+        lastScanRevision: { type: string }
+        lastScanStatus: { type: string, enum: [never, queued, running, complete, failed] }
+        lastScanDetails:
+          type: object
+          additionalProperties: true
+        lastAnalysis:
+          type: object
+          additionalProperties: false
+          required: [revision, status]
+          properties:
+            revision: { type: string }
+            status: { type: string, enum: [queued, running, complete, failed] }
+            startedAt: { type: string, format: date-time }
+            finishedAt: { type: string, format: date-time }
+            errorCode: { type: string, enum: [INTELLIGENCE_UNAVAILABLE] }
+            counts:
+              type: object
+              additionalProperties: false
+              required: [deterministic, evaluations, proposed]
+              properties:
+                deterministic: { type: integer, minimum: 0 }
+                evaluations: { type: integer, minimum: 0 }
+                proposed: { type: integer, minimum: 0 }
     FlowStep:
       type: object
       required: [actor, action, expectedOutcome, targetIds]

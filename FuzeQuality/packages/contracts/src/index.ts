@@ -63,6 +63,10 @@ export type RepositoryAnalysisStatus = {
   errorCode?: 'INTELLIGENCE_UNAVAILABLE'
 }
 
+export type RepositoryProcessingStatus = Pick<Repository,
+  'id' | 'lastScanAt' | 'lastScanRevision' | 'lastScanStatus' | 'lastScanDetails' | 'lastAnalysis'
+>
+
 /** Local, event-carried projection of the FuzeFront identity hierarchy. */
 export type QualityTenant = {
   id: string
