@@ -129,6 +129,9 @@ function hashText(text: string): string {
   return hash.toString(16);
 }
 
+/** `created_by` shown for rows of another organization's list (never that organization's user ids). */
+const FOREIGN_AUTHOR = 'system:platform';
+
 // ─── Row formatter ────────────────────────────────────────────────────────────
 
 interface ItemRow {
@@ -162,8 +165,13 @@ function formatSeed(row: ItemRow) {
   };
 }
 
-/** `shared`: the shared-lists flag is ON, so `origin_item_id` is the stored provenance; OFF reports null (4.0.0). */
-function formatItem(row: ItemRow, shared = false) {
+/**
+ * `shared`: the shared-lists flag is ON, so `origin_item_id` is the stored provenance; OFF reports null (4.0.0).
+ * `foreign`: the item belongs to a list of ANOTHER organization (a common list read through visibility): its
+ * author is that organization's business, so `created_by` is rendered as the system principal `system:platform`
+ * (a valid AuthorPrincipal) instead of leaking the platform operator's user id to every tenant.
+ */
+function formatItem(row: ItemRow, shared = false, foreign = false) {
   return {
     id: row.id,
     list_id: row.list_id,
@@ -174,7 +182,7 @@ function formatItem(row: ItemRow, shared = false) {
     description: row.description ?? null,
     resolved_locale: row.resolved_locale ?? 'en',
     is_machine: row.is_machine ?? false,
-    created_by: row.created_by,
+    created_by: foreign ? FOREIGN_AUTHOR : row.created_by,
     seed: formatSeed(row),
     origin_item_id: shared ? (row.origin_item_id ?? null) : null,
     created_at: row.created_at instanceof Date
@@ -207,13 +215,15 @@ async function getReadableListSourceLocale(
   req: Request,
   listId: string,
   orgId: string,
-): Promise<string | null> {
+): Promise<{ sourceLocale: string; foreign: boolean } | null> {
   const readable = readableByOrg('', orgId, await getReadScope(req));
-  const result = await db.raw<{ rows: [{ source_locale: string }] }>(
-    `SELECT source_locale FROM selection_lists WHERE id = ? AND ${readable.sql}`,
+  const result = await db.raw<{ rows: [{ source_locale: string; organization_id?: string }] }>(
+    `SELECT source_locale, organization_id FROM selection_lists WHERE id = ? AND ${readable.sql}`,
     [listId, ...readable.params],
   );
-  return result.rows[0]?.source_locale ?? null;
+  const row = result.rows[0];
+  if (!row) return null;
+  return { sourceLocale: row.source_locale, foreign: row.organization_id !== undefined && row.organization_id !== orgId };
 }
 
 // ─── GET /:listId/items ───────────────────────────────────────────────────────
@@ -232,11 +242,12 @@ router.get('/:listId/items', requireListRead(), async (req: Request, res: Respon
   const { listId } = req.params;
 
   // Verify the list exists and is readable by this org (its own, or a common list)
-  const sourceLocale = await getReadableListSourceLocale(req, listId, req.orgId);
-  if (!sourceLocale) {
+  const readableList = await getReadableListSourceLocale(req, listId, req.orgId);
+  if (!readableList) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
   }
+  const { sourceLocale, foreign } = readableList;
 
   // Parse + clamp pagination
   const limit = parseLimitParam(req, res, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
@@ -327,7 +338,7 @@ router.get('/:listId/items', requireListRead(), async (req: Request, res: Respon
 
     const shared = await sharedListsOn(req);
     res.status(200).json({
-      items: items.map((r) => formatItem(r, shared)),
+      items: items.map((r) => formatItem(r, shared, foreign)),
       page: {
         nextCursor,
         hasMore,

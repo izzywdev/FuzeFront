@@ -23,11 +23,13 @@ const mockTrx = {
 };
 const mockTransaction = jest.fn(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
 
+// `db('selection_lists').where(..).first(..)` is the purge guard's visibility lookup (listAccess.lookupList), which
+// runs whatever the shared-lists flag says; in these 4.0.0 suites no list is a common list.
 jest.mock('../src/db', () => ({
-  db: {
+  db: Object.assign(() => ({ where: () => ({ first: async () => undefined }) }), {
     raw: (...args: any[]) => mockRaw(...args),
     transaction: (...args: any[]) => mockTransaction(...args),
-  },
+  }),
 }));
 
 // ─── Identity mock (mintId) ───────────────────────────────────────────────────

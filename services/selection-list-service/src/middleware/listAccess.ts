@@ -239,13 +239,20 @@ export function requirePublishWhenBodyIsPlatform(): RequestHandler {
 /**
  * `publish_platform` for the IRREVERSIBLE acts on a common list (purge of the list, or of one of its items):
  * it turns stored ids in every tenant into `missing`. Applies only when the target list is a `platform` list
- * and the flag is ON; `when` narrows it (e.g. to `?purge=true`).
+ * (whatever the release flag says: a `platform` row cannot exist under 4.0.0, so there is nothing for the flag to
+ * protect, and a guard that vanished with the flag would be a bypass if the flag is turned OFF after use);
+ * `when` narrows it (e.g. to `?purge=true`).
  */
 export function requirePublishForPlatformList(when: (req: Request) => boolean): RequestHandler {
   return async function publishOnPlatformPurge(req: Request, res: Response, next: NextFunction): Promise<void> {
-    if (!when(req) || !(await sharedListsOn(req))) return next();
+    if (!when(req)) return next();
+    let row: ListAccessRow | undefined;
     try {
-      const row = await lookupList(req, req.params['listId']);
+      row = await lookupList(req, req.params['listId']);
+    } catch (err) {
+      return next(err); // a database fault is a contract 500 (nothing proceeds), not an authorization answer
+    }
+    try {
       if (!row || row.visibility !== 'platform') return next();
       if (await mayPublishPlatform(req)) return next();
       getLog(req).info({ userId: req.userId, orgId: req.orgId, listId: row.id }, 'purge of a common list denied (needs publish_platform)');

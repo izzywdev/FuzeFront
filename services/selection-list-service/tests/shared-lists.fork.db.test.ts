@@ -11,7 +11,9 @@
 import type { Knex } from 'knex';
 import { TOPICS, schemaForTopic } from '@fuzefront/shared/kafka';
 import { dbDescribe } from './helpers/testDb';
+import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { createWorld, ORG_A, ORG_B, P, PLATFORM, publishPriorityList, World } from './helpers/sharedWorld';
+import { parseId } from '@izzywdev/fuzefront-identity';
 import { flagClientWith } from './helpers/flagClient';
 import { assertConforms } from './helpers/openapi';
 
@@ -46,6 +48,10 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       forkBody = res.body;
       forkId = res.body.id;
       assertConforms('SelectionList', res.body);
+      // ids are service-minted with the registry prefixes and pass the strict TypeID validator
+      expect(forkId.startsWith('front_sl_')).toBe(true);
+      expect(() => parseId('selectionList', forkId)).not.toThrow();
+      expect(() => parseId('selectionListItem', forkId)).toThrow(); // a list id is not an item id
       expect(forkId).toMatch(/^front_sl_[0-9a-z]+$/);
       expect(forkId).not.toBe(platform.listId);
       expect(res.body).toMatchObject({
@@ -79,6 +85,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       expect(items.map((i: any) => [i.code, i.status, i.sort_order, i.origin_item_id, i.created_by])).toEqual(
         src.map((i: any) => [i.code, i.status, i.sort_order, i.id, P.aMember.userId]),
       );
+      for (const i of items) expect(() => parseId('selectionListItem', i.id)).not.toThrow();
       expect(items.every((i: any) => /^front_sli_[0-9a-z]+$/.test(i.id) && !src.some((s: any) => s.id === i.id))).toBe(true);
       expect(items.every((i: any) => i.seed_source === null)).toBe(true);
       const it = await w.db('selection_list_item_translations').whereIn('item_id', items.map((i: any) => i.id)).orderBy(['item_id', 'locale']);
@@ -326,7 +333,56 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     });
   });
 
+  describe('one organization, two renderings of its id (bare UUID and org_ TypeID)', () => {
+    it('cannot fork the same source twice (nor take its key) by presenting the other rendering', async () => {
+      const uuid = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7ebb';
+      const typeId = fromUuid('organization', uuid);
+      const byTypeId = { userId: 'usr_01render0000000000000000000a', orgId: typeId };
+      const byUuid = { userId: 'usr_01render0000000000000000000b', orgId: uuid };
+      for (const p of [byTypeId, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
+      expect((await fork(byTypeId)).status).toBe(201);
+      const again = await fork(byUuid);
+      expect(again.status).not.toBe(201);
+      expect([200, 409]).toContain(again.status);
+      expect((await w.db('selection_lists').whereIn('organization_id', [uuid, typeId]).where({ key: 'priority' })).length).toBe(1);
+      // the other order, on a second common list
+      const other = await w.api(P.op).post('/v1/selection-lists', { key: 'render-common', name: 'R', visibility: 'platform' });
+      expect((await fork(byUuid, {}, other.body.id)).status).toBe(201);
+      expect((await fork(byTypeId, {}, other.body.id)).status).not.toBe(201);
+      expect((await w.db('selection_lists').whereIn('organization_id', [uuid, typeId]).where({ key: 'render-common' })).length).toBe(1);
+    });
+  });
+
   describe('atomicity, compensation and concurrency', () => {
+    it('a failure AFTER the transaction committed keeps the creator\'s owner grant (no compensation); a retry returns the fork (200)', async () => {
+      const listShape = await import('../src/routes/listShape');
+      const spy = jest.spyOn(listShape, 'formatList').mockImplementationOnce(() => {
+        throw new Error('boom: formatting after commit');
+      });
+      const p = { userId: 'usr_01commit0000000000000000000a', orgId: 'org_01commit0000000000000000000a' };
+      w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
+      const grantsBefore = w.authz.grants.length;
+      const revokesBefore = w.authz.revokes.length;
+      let res: any;
+      try {
+        res = await fork(p);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(res.status).toBe(500);
+      expect(res.body.message).toMatch(/repeat the request/);
+      const row = await w.db('selection_lists').where({ organization_id: p.orgId, key: 'priority' }).first();
+      expect(row).toBeDefined(); // committed
+      expect(w.authz.revokes.length).toBe(revokesBefore); // the owner grant was NOT taken back
+      const granted = w.authz.grants.slice(grantsBefore);
+      expect(granted).toHaveLength(1);
+      expect(w.authz.roles.get(`${p.orgId}|${p.userId}|${row.id}`)).toBe('list-owner');
+      // retry-safe: the repeat answers the existing fork, with the creator still its owner
+      const retry = await fork(p);
+      expect(retry.status).toBe(200);
+      expect(retry.body).toMatchObject({ id: row.id, editable: true });
+    });
+
     it('a failure after the owner grant rolls EVERYTHING back and takes the grant back (compensation)', async () => {
       const emitters = await import('../src/events/emitters');
       const spy = jest.spyOn(emitters, 'emitForkEvents').mockRejectedValueOnce(new Error('boom: outbox unavailable'));

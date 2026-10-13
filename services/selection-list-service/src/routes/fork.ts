@@ -23,7 +23,7 @@ import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { requireCatalogCheck, bearer } from '../middleware/authz';
 import { canRead, lookupList } from '../middleware/listAccess';
-import { resolvePlatformOrgId, sharedListsOn } from '../lib/sharedLists';
+import { canonicalOrgId, orgForms, resolvePlatformOrgId, sameOrg, sharedListsOn } from '../lib/sharedLists';
 import { QuotaExceededError } from '../services/quota.service';
 import { sendQuotaExceeded } from '../middleware/quota';
 import { forkList, FORK_MAX_ITEMS } from '../services/fork.service';
@@ -88,6 +88,9 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
   // The fork id is minted here, never accepted (and so the route can compensate the grant by id).
   const forkId = mintId('selectionList');
   let grantAttempted = false;
+  // Set the moment the fork transaction has COMMITTED. From then on the list exists and the creator's owner
+  // grant is legitimate: a later failure (reading the row back, formatting) must never take it away.
+  let committed = false;
 
   try {
     // The source must be readable by the caller (grant or shared read) — else it does not exist for them.
@@ -96,7 +99,7 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
       res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
       return;
     }
-    if (source.organization_id === orgId) {
+    if (sameOrg(source.organization_id, orgId)) {
       res.status(409).json({
         code: 'CONFLICT',
         reason: 'fork_not_applicable',
@@ -124,6 +127,7 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
       },
     });
 
+    committed = outcome.kind === 'created';
     switch (outcome.kind) {
       case 'created': {
         const row = await readFork(forkId);
@@ -162,6 +166,15 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
     // The Security API grant is not part of the database transaction: if it was attempted and the
     // transaction (or anything after the grant) failed, take the new role assignment back so no assignment
     // outlives a list that was never created. Best-effort and idempotent; never masks the original error.
+    if (committed) {
+      // The fork is committed (and idempotent per (org, source)): answer retry-safely, keep the grant.
+      getLog(req).error({ err, forkId, op: 'lists POST /:listId/fork post-commit' }, 'fork committed but the response could not be built; owner grant kept');
+      res.status(500).json({
+        code: 'INTERNAL_ERROR',
+        message: 'The list was forked but the response could not be built; repeat the request to fetch it.',
+      });
+      return;
+    }
     if (grantAttempted) {
       await restoreAuthority({
         op: 'put',
@@ -184,7 +197,7 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
     if (pg?.code === '23505') {
       if (pg.constraint === 'ux_sl_fork_per_org') {
         // Lost a race with a concurrent fork of the same source: answer as the idempotent repeat.
-        const winner = await db('selection_lists').where({ organization_id: orgId, forked_from_list_id: sourceId }).first('id');
+        const winner = await db('selection_lists').whereIn('organization_id', orgForms(canonicalOrgId(orgId) ?? orgId)).where({ forked_from_list_id: sourceId }).first('id');
         if (winner) {
           await answerExisting(req, res, winner.id);
           return;

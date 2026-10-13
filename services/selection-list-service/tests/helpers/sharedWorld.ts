@@ -87,6 +87,10 @@ export async function createWorld(state: { db: Knex | undefined }): Promise<Worl
   process.env.JWT_SECRET = JWT_SECRET;
   process.env.FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED = 'true'; // non-production: real decisions
   process.env.SELECTION_LIST_PLATFORM_ORG_ID = PLATFORM;
+  // The configured platform org is usable only once the org projection CONFIRMS it (type 'platform').
+  await t.db('selection_list_ref_index').insert({
+    entity_type: 'organization', entity_id: '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e00', wire_id: PLATFORM, org_type: 'platform', is_active: true,
+  });
   _resetPlatformOrgCacheForTesting();
   setFlagClient({ getBooleanValue: allFlagsOn });
   const authz = new FakeAuthz();

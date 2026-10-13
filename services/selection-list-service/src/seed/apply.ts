@@ -60,7 +60,7 @@ import {
 } from '../events/emitters';
 import { enqueueEvent, lockOrgOutbox, mintEventId, wireOrgId } from '../events/outbox';
 import { logger } from '../lib/logger';
-import { resolvePlatformOrgId, sameOrg, type Visibility } from '../lib/sharedLists';
+import { resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
 import { getQuota, lockQuotaScope } from '../services/quota.service';
 import { canonicalJson, computeSourceHash, hashCanonical, hashText } from './canonical';
 import {
@@ -351,7 +351,24 @@ async function applyVisibilityRules(
   const platformSkipped = new Set<string>();
   if (req.honorVisibility !== true) return { applied: all, visibilityByKey, platformSkipped };
 
-  const platformOrg = all.some((l) => l.visibility === 'platform') ? await resolvePlatformOrgId(trx) : null;
+  const hasPlatformLists = all.some((l) => l.visibility === 'platform');
+  const platformOrg = hasPlatformLists ? await resolvePlatformOrgId(trx) : null;
+  if (hasPlatformLists && platformOrg === null) {
+    // Unresolved platform org (unset, or not yet confirmed by the org projection). Skipping the common lists
+    // is right for an ordinary org, but THIS org may be the platform org itself; skipping there would record
+    // the pack version as applied with its common lists missing, permanently. So if the target could be the
+    // platform org (the root org's TypeID, or the projection types it 'platform' - a claim that can only make
+    // this org's OWN seeding fail), refuse retryably instead of recording the version.
+    const proj = await readOrgProjection(trx, req.organizationId);
+    if (sameOrg(req.organizationId, ROOT_PLATFORM_ORG_WIRE) || proj?.orgType === 'platform') {
+      throw new SeedFailure(
+        'INTERNAL_ERROR',
+        'The platform organization is not resolved yet, so its common lists cannot be seeded; nothing was written. Retry once SELECTION_LIST_PLATFORM_ORG_ID is configured and the org projection confirms it.',
+        [],
+        true,
+      );
+    }
+  }
   const targetIsPlatform = platformOrg !== null && sameOrg(req.organizationId, platformOrg);
   for (const spec of all) {
     const v: Visibility = spec.visibility ?? 'private';

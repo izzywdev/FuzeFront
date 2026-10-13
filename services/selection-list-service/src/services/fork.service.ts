@@ -23,7 +23,7 @@ import { db } from '../db';
 import { grantListOwner } from '../middleware/authz';
 import { emitForkEvents, EventContext } from '../events/emitters';
 import { lockOrgOutbox, wireOrgId, wireUserId } from '../events/outbox';
-import { sameOrg } from '../lib/sharedLists';
+import { canonicalOrgId, orgForms, sameOrg } from '../lib/sharedLists';
 import { checkForkQuota, checkListQuota, lockQuotaScope } from './quota.service';
 
 /** Hard bound on the items of a fork source: the bound of the `list.forked` itemMap (shared 1.3.0). */
@@ -71,19 +71,26 @@ interface SourceRow {
 export async function forkList(input: ForkInput): Promise<ForkOutcome> {
   const { forkId, orgId, userId, sourceId, ctx } = input;
 
+  // The org claim is passed verbatim by the auth middleware and may be a bare UUID or the org_ TypeID of the SAME
+  // organization. Every check that decides idempotency / key ownership matches ALL renderings, and the quota
+  // lock is taken on the canonical form, so one org cannot fork (or take a key) once per representation. The
+  // row itself is stored under the caller's own rendering, like every list of this service.
+  const orgKey = canonicalOrgId(orgId) ?? orgId;
+  const orgRenderings = [...new Set([orgId, ...orgForms(orgKey)])];
+
   return db.transaction(async (trx): Promise<ForkOutcome> => {
     await lockOrgOutbox(trx, orgId);
 
     // 2. idempotency
     const existing = await trx.raw(
-      `SELECT id FROM selection_lists WHERE organization_id = ? AND forked_from_list_id = ?`,
-      [orgId, sourceId],
+      `SELECT id FROM selection_lists WHERE organization_id = ANY(?) AND forked_from_list_id = ?`,
+      [orgRenderings, sourceId],
     );
     const already = (existing as { rows?: Array<{ id: string }> }).rows?.[0];
     if (already) return { kind: 'exists', listId: already.id };
 
     // 4a. serialise list creation in this org, then 3. snapshot the source
-    await lockQuotaScope(trx, `org_lists:${orgId}`);
+    await lockQuotaScope(trx, `org_lists:${orgKey}`);
     const srcRes = await trx.raw(
       `SELECT id, organization_id, key, source_locale, status, revision, visibility
          FROM selection_lists WHERE id = ? FOR SHARE`,
@@ -91,7 +98,7 @@ export async function forkList(input: ForkInput): Promise<ForkOutcome> {
     );
     const src = (srcRes as { rows?: SourceRow[] }).rows?.[0];
     if (!src) return { kind: 'source-gone' };
-    if (src.organization_id === orgId || sameOrg(src.organization_id, orgId)) return { kind: 'own-org' };
+    if (sameOrg(src.organization_id, orgId)) return { kind: 'own-org' };
     if (src.visibility !== 'platform' || !sameOrg(src.organization_id, input.platformOrg)) return { kind: 'source-gone' };
 
     const countsRes = await trx.raw(
@@ -110,7 +117,7 @@ export async function forkList(input: ForkInput): Promise<ForkOutcome> {
     await checkForkQuota(orgId, { active: counts.active, stored: counts.stored, locales: localeCount }, trx);
 
     // key held by a DIFFERENT list of the organization (it cannot be a fork of this source: step 2)
-    const keyRes = await trx.raw(`SELECT 1 FROM selection_lists WHERE organization_id = ? AND key = ?`, [orgId, src.key]);
+    const keyRes = await trx.raw(`SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ?`, [orgRenderings, src.key]);
     if ((keyRes as { rows?: unknown[] }).rows?.length) return { kind: 'key-taken' };
 
     // 5. the copy

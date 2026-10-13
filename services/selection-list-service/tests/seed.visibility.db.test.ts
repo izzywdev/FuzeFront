@@ -140,6 +140,32 @@ dbDescribe('seeding with list visibility (real Postgres)', () => {
       }
     });
 
+    it('platform org not resolved but THIS org is (or claims to be) the platform org: the request FAILS retryably and records no ledger row', async () => {
+      const keep = process.env[PLATFORM_ORG_ENV];
+      delete process.env[PLATFORM_ORG_ENV];
+      _resetPlatformOrgCacheForTesting();
+      try {
+        // the projection types the target 'platform' (PLATFORM is projected as such)
+        const res = failed(await applySeedRequest(db, platformRequest(PLATFORM, lists().map((l) => ({ ...l, key: `r-${l.key}` })), { honorVisibility: true, pack: { key: 'retry-pack', version: 1 } })));
+        expect(res).toMatchObject({ reason: 'INTERNAL_ERROR', retryable: true });
+        expect(await db('selection_list_seed_ledger').where({ organization_id: PLATFORM, seed_key: 'retry-pack' }).first()).toBeUndefined();
+        expect(await db('selection_lists').where({ organization_id: PLATFORM, key: 'r-v-common' }).first()).toBeUndefined();
+        // an ordinary org is NOT blocked: skipping is right for it
+        const org = nextOrg();
+        await projectOrg(db, org);
+        completed(await applySeedRequest(db, platformRequest(org, lists().map((l) => ({ ...l, key: `r-${l.key}` })), { honorVisibility: true, pack: { key: 'retry-pack', version: 1 } })));
+        // once the platform org is configured the same request applies, common list included
+        process.env[PLATFORM_ORG_ENV] = PLATFORM;
+        _resetPlatformOrgCacheForTesting();
+        const ok = completed(await applySeedRequest(db, platformRequest(PLATFORM, lists().map((l) => ({ ...l, key: `r-${l.key}` })), { honorVisibility: true, pack: { key: 'retry-pack', version: 1 } })));
+        expect(ok.lists.map((l) => l.key)).toContain('r-v-common');
+        expect((await vis(PLATFORM))['r-v-common']).toBe('platform');
+      } finally {
+        process.env[PLATFORM_ORG_ENV] = keep;
+        _resetPlatformOrgCacheForTesting();
+      }
+    });
+
     it('visibility is applied at CREATION only: a later version never changes the visibility of a list it already seeded', async () => {
       const org = nextOrg();
       await projectOrg(db, org);

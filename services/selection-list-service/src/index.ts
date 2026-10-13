@@ -123,10 +123,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Platform organization (common lists, design record D2): SELECTION_LIST_PLATFORM_ORG_ID must be an
-  // org_... TypeID and must not be contradicted by the org projection (a wrong value would let an
-  // ordinary org publish a list to every tenant). Unset is allowed (platform features then resolve the
-  // org from the projection, or fail closed); an unconfirmed value is accepted with a warning.
+  // Platform organization (common lists, design record D2): SELECTION_LIST_PLATFORM_ORG_ID is the ONLY source
+  // (no fallback to the org projection: its org_type is user-controllable). It must be an org_... TypeID and
+  // must not be contradicted by the org projection. Unset => platform features are disabled (fail closed);
+  // an unconfirmed value is accepted with a warning.
   try {
     await verifyPlatformOrgConfig(db);
   } catch (err) {

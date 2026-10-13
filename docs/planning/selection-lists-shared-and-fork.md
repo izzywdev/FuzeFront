@@ -95,10 +95,18 @@ Concrete flaws of `null` that this avoids:
 seeding (`system:selection-list-service`).
 
 The service learns the platform org's wire id from configuration
-(`SELECTION_LIST_PLATFORM_ORG_ID`, the `org_…` TypeID of `ROOT_ORG_ID`), with a
-fallback to the `selection_list_ref_index` row whose `org_type = 'platform'`;
-if neither resolves, every platform feature **fails closed** (no `platform`
-lists are served or created, nothing else changes).
+(`SELECTION_LIST_PLATFORM_ORG_ID`, the `org_…` TypeID of `ROOT_ORG_ID`) and
+**only** from configuration. There is deliberately **no** fallback to the
+`selection_list_ref_index` row whose `org_type = 'platform'`: that column comes
+from `identity.org.created.type`, which a logged-in user controls
+(`POST /api/organizations {type: 'platform'}`), so "the org the projection calls
+platform" is attacker-chosen and would let any user publish common lists into
+every tenant. The projection is only a **veto** on a configured value (a row
+saying the configured org is not an active platform org, or is deleted, makes it
+untrusted; the boot check refuses to start on that contradiction). If the
+variable is unset or does not resolve, every platform feature **fails closed**
+(no `platform` list is served, created, promoted or resolved, nothing else
+changes).
 
 ### D3 ⚠ — `SelectionListCatalog:read_shared` for every **customer** tenant role (not `developer`)
 

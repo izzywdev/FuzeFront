@@ -304,6 +304,30 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
       expect(await w.db('selection_lists').where({ id: common.listId }).first()).toBeUndefined();
     });
 
+    it('the guard does not depend on the flag: with shared-lists OFF a platform row still needs publish_platform to be purged', async () => {
+      const c = await mkCommon('purge-flag-off');
+      w.authz.give(PLATFORM, P.opEditor.userId, c.listId, 'list-owner');
+      const { setFlagClient } = await import('../src/flags');
+      const { flagClientWith } = await import('./helpers/flagClient');
+      setFlagClient(flagClientWith(false));
+      try {
+        // owner without publish_platform: refused for the item and the list, nothing deleted
+        expect((await w.api(P.opEditor).del(`/v1/selection-lists/${c.listId}/items/${c.low}?purge=true`)).status).toBe(403);
+        expect((await w.api(P.opEditor).del(`/v1/selection-lists/${c.listId}?purge=true`)).status).toBe(403);
+        expect(await w.db('selection_list_items').where({ id: c.low }).first()).toBeDefined();
+        expect(await w.db('selection_lists').where({ id: c.listId }).first()).toBeDefined();
+        // archive stays with the owner
+        expect((await w.api(P.opEditor).del(`/v1/selection-lists/${c.listId}/items/${c.low}`)).status).toBe(200);
+        // with publish_platform it goes through
+        const mark = w.authz.asked.length;
+        expect((await w.api(P.op).del(`/v1/selection-lists/${c.listId}/items/${c.low}?purge=true`)).status).toBe(204);
+        expect(w.authz.since(mark)).toEqual(['list:remove_value', 'list:delete', 'catalog:publish_platform']);
+        expect((await w.api(P.op).del(`/v1/selection-lists/${c.listId}?purge=true`)).status).toBe(204);
+      } finally {
+        setFlagClient(flagClientWith(true));
+      }
+    });
+
     it('a private/org list purge does NOT ask publish_platform', async () => {
       const r = await w.api(P.aAdmin).post('/v1/selection-lists', { key: 'purge-private', name: 'P' });
       const mark = w.authz.asked.length;

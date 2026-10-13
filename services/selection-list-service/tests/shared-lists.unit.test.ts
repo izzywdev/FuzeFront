@@ -15,9 +15,11 @@ import {
   PlatformOrgConfigError,
   resolvePlatformOrgId,
   sameOrg,
+  ROOT_PLATFORM_ORG_WIRE,
   sharedPredicate,
   verifyPlatformOrgConfig,
 } from '../src/lib/sharedLists';
+import { readableByOrg } from '../src/services/sharedReads';
 import { PRODUCED_TOPICS } from '../src/events/outbox';
 import { loadSchema } from './helpers/schema';
 
@@ -76,6 +78,22 @@ describe('sharedPredicate — the service-owned half of readable(L, C)', () => {
   });
 });
 
+describe('readableByOrg - SQL shape', () => {
+  it('an empty alias emits UNQUALIFIED column names (no ".organization_id", no quoted empty identifier)', () => {
+    for (const platformOrg of [null, PLATFORM]) {
+      const q = readableByOrg('', OTHER, { shared: true, platformOrg });
+      expect(q.sql).not.toMatch(/\.|"/);
+      expect(q.sql).toMatch(/^\(?organization_id = \?/);
+    }
+    expect(readableByOrg('', OTHER, { shared: false, platformOrg: null })).toEqual({ sql: 'organization_id = ?', params: [OTHER] });
+  });
+  it('a real alias qualifies every column', () => {
+    const q = readableByOrg('sl', OTHER, { shared: true, platformOrg: PLATFORM });
+    expect(q.sql).toBe("(sl.organization_id = ? OR (sl.visibility = 'platform' AND sl.organization_id = ANY(?)))");
+    expect(q.params).toEqual([OTHER, orgForms(PLATFORM)]);
+  });
+});
+
 describe('memoPerRequest', () => {
   it('runs once per (request, key), also for a rejection; a different request or key runs again', async () => {
     const req = {};
@@ -114,11 +132,28 @@ describe('platform organization resolution', () => {
     expect(configuredPlatformOrgId({})).toBeNull();
   });
 
-  it('configured and not contradicted (no projection row / a platform row): resolves', async () => {
+  it('configured AND confirmed by the projection (active, org_type platform): resolves', async () => {
     process.env[PLATFORM_ORG_ENV] = PLATFORM;
-    expect(await resolvePlatformOrgId(exec({}))).toBe(PLATFORM);
-    _resetPlatformOrgCacheForTesting();
     expect(await resolvePlatformOrgId(exec({ 'wire_id = ?': [{ org_type: 'platform', status: 'active', wire_id: PLATFORM }] }))).toBe(PLATFORM);
+  });
+
+  it('configured but NOT confirmed (no projection row, or no type yet): unresolved => null, fail closed', async () => {
+    process.env[PLATFORM_ORG_ENV] = PLATFORM;
+    expect(await resolvePlatformOrgId(exec({}))).toBeNull();
+    _resetPlatformOrgCacheForTesting();
+    expect(await resolvePlatformOrgId(exec({ 'wire_id = ?': [{ org_type: null, status: 'active', wire_id: PLATFORM }] }))).toBeNull();
+  });
+
+  it('an UNRESOLVED answer is cached only briefly (5 s), a confirmed one for 30 s', async () => {
+    process.env[PLATFORM_ORG_ENV] = PLATFORM;
+    const pending = exec({});
+    await resolvePlatformOrgId(pending, 1_000);
+    await resolvePlatformOrgId(pending, 3_000);
+    expect(pending.raw).toHaveBeenCalledTimes(1);
+    const confirmed = exec({ 'wire_id = ?': [{ org_type: 'platform', status: 'active', wire_id: PLATFORM }] });
+    expect(await resolvePlatformOrgId(confirmed, 1_000 + 6_000)).toBe(PLATFORM); // negative entry expired after 5 s
+    await resolvePlatformOrgId(confirmed, 1_000 + 20_000);
+    expect(confirmed.raw).toHaveBeenCalledTimes(1);
   });
 
   it('configured but the projection says it is an ordinary or a deleted org: fails closed (null)', async () => {
@@ -128,18 +163,16 @@ describe('platform organization resolution', () => {
     expect(await resolvePlatformOrgId(exec({ 'wire_id = ?': [{ org_type: 'platform', status: 'deleted', wire_id: PLATFORM }] }))).toBeNull();
   });
 
-  it('unset: the single active platform org of the projection; none or several: null', async () => {
-    expect(await resolvePlatformOrgId(exec({ "org_type = 'platform'": [{ org_type: 'platform', status: 'active', wire_id: PLATFORM }] }))).toBe(PLATFORM);
-    _resetPlatformOrgCacheForTesting();
-    expect(await resolvePlatformOrgId(exec({}))).toBeNull();
-    _resetPlatformOrgCacheForTesting();
-    const two = [{ wire_id: PLATFORM }, { wire_id: OTHER }];
-    expect(await resolvePlatformOrgId(exec({ "org_type = 'platform'": two }))).toBeNull();
+  it('unset: ALWAYS null — the projection is never a source of the platform org (its org_type is user-controllable)', async () => {
+    // a projection full of rows typed 'platform' (anyone can create such an org) must not be consulted at all
+    const e = exec({ "org_type = 'platform'": [{ org_type: 'platform', status: 'active', wire_id: OTHER }], 'wire_id': [{ org_type: 'platform', status: 'active', wire_id: OTHER }] });
+    expect(await resolvePlatformOrgId(e)).toBeNull();
+    expect(e.raw).not.toHaveBeenCalled();
   });
 
   it('caches for a short TTL (one lookup), and does not cache a database failure', async () => {
     process.env[PLATFORM_ORG_ENV] = PLATFORM;
-    const e = exec({});
+    const e = exec({ 'wire_id = ?': [{ org_type: 'platform', status: 'active', wire_id: PLATFORM }] });
     await resolvePlatformOrgId(e, 1_000);
     await resolvePlatformOrgId(e, 2_000);
     expect(e.raw).toHaveBeenCalledTimes(1);
@@ -155,7 +188,13 @@ describe('platform organization resolution', () => {
 });
 
 describe('verifyPlatformOrgConfig — the boot check', () => {
-  it('unset: allowed (the projection is the fallback)', async () => {
+  it('the root platform org TypeID is the encoding of ROOT_ORG_ID; any other configured value is accepted (configurable)', async () => {
+    expect(ROOT_PLATFORM_ORG_WIRE).toBe(fromUuid('organization', '00000000-0000-0000-0000-000000000010'));
+    const e = exec({ 'wire_id = ?': [{ org_type: 'platform', status: 'active', wire_id: PLATFORM }] });
+    expect(await verifyPlatformOrgConfig(e, { [PLATFORM_ORG_ENV]: PLATFORM })).toBe('confirmed');
+  });
+
+  it('unset: allowed, platform features are disabled (no projection fallback)', async () => {
     expect(await verifyPlatformOrgConfig(exec({}), {})).toBe('unset');
   });
 

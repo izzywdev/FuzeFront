@@ -82,7 +82,15 @@ export interface FormatCtx {
   shared: boolean;
   /** The caller-relative `editable` hint; omitted (= "unknown", the contract's 4.0.0 reading) when undefined. */
   editable?: boolean;
+  /**
+   * The caller's organization. A list of ANOTHER organization (a common list) renders `created_by` as the
+   * system principal `system:platform` rather than leaking that organization's user ids to every tenant.
+   */
+  callerOrgId?: string;
 }
+
+/** `created_by` shown for a list owned by another organization. A valid AuthorPrincipal (`^system:[a-z0-9-]+$`). */
+export const FOREIGN_AUTHOR = 'system:platform';
 
 export function formatList(row: ListRow, ctx: FormatCtx = { shared: false }) {
   return {
@@ -98,7 +106,7 @@ export function formatList(row: ListRow, ctx: FormatCtx = { shared: false }) {
     item_count: row.item_count !== undefined && row.item_count !== null
       ? Number(row.item_count)
       : undefined,
-    created_by: row.created_by,
+    created_by: ctx.callerOrgId !== undefined && row.organization_id !== ctx.callerOrgId ? FOREIGN_AUTHOR : row.created_by,
     seed: formatSeed(row),
     // 4.1.0: always emitted. Flag OFF = the 4.0.0 state of every list (private, not a fork).
     visibility: ctx.shared && isVisibility(row.visibility) ? row.visibility : 'private',
@@ -121,6 +129,6 @@ export function formatList(row: ListRow, ctx: FormatCtx = { shared: false }) {
 export async function singleCtx(req: Request, row: ListRow, knownEditable?: boolean): Promise<FormatCtx> {
   const shared = await sharedListsOn(req);
   if (!shared) return { shared: false };
-  if (knownEditable !== undefined) return { shared, editable: knownEditable };
-  return { shared, editable: (await editableIds(req, [row])).has(row.id) };
+  if (knownEditable !== undefined) return { shared, editable: knownEditable, callerOrgId: req.orgId };
+  return { shared, editable: (await editableIds(req, [row])).has(row.id), callerOrgId: req.orgId };
 }

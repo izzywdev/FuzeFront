@@ -433,7 +433,7 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
     const editable = shared ? await editableIds(req, items) : undefined;
 
     res.status(200).json({
-      items: items.map((r) => formatList(r, { shared, editable: editable ? editable.has(r.id) : undefined })),
+      items: items.map((r) => formatList(r, { shared, editable: editable ? editable.has(r.id) : undefined, callerOrgId: req.orgId })),
       page: authzEnforced ? { nextCursor, hasMore } : { nextCursor, hasMore, total },
     });
   } catch (err) {

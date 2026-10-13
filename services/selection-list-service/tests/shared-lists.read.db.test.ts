@@ -163,6 +163,30 @@ dbDescribe('shared lists — read path (real Postgres)', () => {
     });
   });
 
+  describe('authorship of another organization\'s rows is not leaked', () => {
+    it('a common list and its items read by another org show created_by as system:platform; the owning org sees the real user', async () => {
+      const foreign = await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}`);
+      expect(foreign.body.created_by).toBe('system:platform');
+      assertConforms('SelectionList', foreign.body);
+      const active = await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}/items`);
+      const archived = await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}/items?status=archived`);
+      const all = [...active.body.items, ...archived.body.items];
+      expect(all.length).toBe(3);
+      for (const i of all) {
+        expect(i.created_by).toBe('system:platform');
+        assertConforms('SelectionListItem', i);
+      }
+      const listing = await w.api(P.bMember).get('/v1/selection-lists?include_shared=true&key=priority');
+      expect(listing.body.items[0].created_by).toBe('system:platform');
+      // the owning (platform) org sees who wrote it; so does a member of the same org for its own org lists
+      expect((await w.api(P.op).get(`/v1/selection-lists/${platform.listId}`)).body.created_by).toBe(P.op.userId);
+      expect((await w.api(P.op).get(`/v1/selection-lists/${platform.listId}/items`)).body.items[0].created_by).toBe(P.op.userId);
+      expect((await w.api(P.aMember).get(`/v1/selection-lists/${aOrgList}`)).body.created_by).toBe(P.aAdmin.userId);
+      // the stored value is untouched
+      expect((await w.db('selection_lists').where({ id: platform.listId }).first()).created_by).toBe(P.op.userId);
+    });
+  });
+
   describe('GET /v1/selection-lists — include_shared, visibility, shadowing, pagination', () => {
     const ids = (res: any) => res.body.items.map((i: any) => i.key).sort();
 
@@ -272,18 +296,40 @@ dbDescribe('shared lists — read path (real Postgres)', () => {
       }
     });
 
-    it('falls back to the single active org_type=platform row of the org projection', async () => {
+    it('NO fallback to the projection: env unset + an org the projection types "platform" (user-controllable) => platform features stay disabled', async () => {
       const { _resetPlatformOrgCacheForTesting } = await import('../src/lib/sharedLists');
       const prev = process.env.SELECTION_LIST_PLATFORM_ORG_ID;
       delete process.env.SELECTION_LIST_PLATFORM_ORG_ID;
+      // an attacker's org, registered as type 'platform' (POST /api/organizations {type:'platform'})
       await w.db('selection_list_ref_index').insert({
-        entity_type: 'organization', entity_id: '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e00', wire_id: PLATFORM, org_type: 'platform', is_active: true,
+        entity_type: 'organization', entity_id: '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7eaa', wire_id: ORG_A, org_type: 'platform', is_active: true,
       });
       _resetPlatformOrgCacheForTesting();
+      let ownId: string | undefined;
       try {
-        expect((await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}`)).status).toBe(200);
+        // reads: the (real) common list is not served
+        expect((await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}`)).status).toBe(404);
+        expect((await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}/items`)).status).toBe(404);
+        const listing = await w.api(P.aMember).get('/v1/selection-lists?include_shared=true');
+        expect(listing.body.items.map((i: any) => i.key)).toEqual(['a-org']);
+        // resolve: platform ids are not resolvable
+        const res = await w.api(P.bMember).post('/v1/resolve', { ids: [platform.low] });
+        expect(res.body).toEqual({ results: {}, missing: [platform.low] });
+        // publish: neither the attacker's org admin (holds publish_platform in his own tenant)...
+        const evil = await w.api(P.aAdmin).post('/v1/selection-lists', { key: 'evil-common', name: 'Evil', visibility: 'platform' });
+        expect(evil.status).toBe(403);
+        // ...nor the real platform operator can publish while the platform org is not configured
+        expect((await w.api(P.op).post('/v1/selection-lists', { key: 'op-common', name: 'Op', visibility: 'platform' })).status).toBe(403);
+        // promotion is refused too
+        const own = await w.api(P.aAdmin).post('/v1/selection-lists', { key: 'evil-promote', name: 'E' });
+        ownId = own.body.id;
+        expect((await w.api(P.aAdmin).patch(`/v1/selection-lists/${own.body.id}`, { visibility: 'platform' })).status).toBe(403);
+        expect(await w.db('selection_lists').where({ visibility: 'platform', organization_id: ORG_A }).first()).toBeUndefined();
+        // a fork of the common list is a 404 as well
+        expect((await w.api(P.bMember).post(`/v1/selection-lists/${platform.listId}/fork`, {})).status).toBe(404);
       } finally {
-        await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).delete();
+        if (ownId) await w.api(P.aAdmin).del(`/v1/selection-lists/${ownId}?purge=true`);
+        await w.db('selection_list_ref_index').where({ wire_id: ORG_A }).delete();
         process.env.SELECTION_LIST_PLATFORM_ORG_ID = prev;
         _resetPlatformOrgCacheForTesting();
       }
@@ -291,9 +337,7 @@ dbDescribe('shared lists — read path (real Postgres)', () => {
 
     it('a configured value the projection CONTRADICTS (not a platform org) is not trusted: fail closed', async () => {
       const { _resetPlatformOrgCacheForTesting } = await import('../src/lib/sharedLists');
-      await w.db('selection_list_ref_index').insert({
-        entity_type: 'organization', entity_id: '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e00', wire_id: PLATFORM, org_type: 'organization', is_active: true,
-      });
+      await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).update({ org_type: 'organization' });
       _resetPlatformOrgCacheForTesting();
       try {
         expect((await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}`)).status).toBe(404);
@@ -301,9 +345,30 @@ dbDescribe('shared lists — read path (real Postgres)', () => {
         const pub = await w.api(P.op).post('/v1/selection-lists', { key: 'x-common', name: 'X', visibility: 'platform' });
         expect(pub.status).toBe(403);
       } finally {
-        await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).delete();
+        await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).update({ org_type: 'platform' });
         _resetPlatformOrgCacheForTesting();
       }
+    });
+
+    it('a configured id the projection has NOT confirmed (no row yet, or no type yet) is UNRESOLVED: disabled until confirmed, then enabled', async () => {
+      const { _resetPlatformOrgCacheForTesting } = await import('../src/lib/sharedLists');
+      const row = await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).first();
+      for (const state of ['absent', 'untyped'] as const) {
+        if (state === 'absent') await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).delete();
+        else await w.db('selection_list_ref_index').insert({ ...row, org_type: null });
+        _resetPlatformOrgCacheForTesting();
+        try {
+          expect((await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}`)).status).toBe(404);
+          expect((await w.api(P.bMember).post('/v1/resolve', { ids: [platform.low] })).body.missing).toEqual([platform.low]);
+          expect((await w.api(P.op).post('/v1/selection-lists', { key: `late-${state}`, name: 'L', visibility: 'platform' })).status).toBe(403);
+        } finally {
+          await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).delete();
+        }
+      }
+      // the projection catches up: enabled again (the negative result is cached only briefly)
+      await w.db('selection_list_ref_index').insert(row);
+      _resetPlatformOrgCacheForTesting();
+      expect((await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}`)).status).toBe(200);
     });
   });
 
