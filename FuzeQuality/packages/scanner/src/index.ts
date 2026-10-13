@@ -199,6 +199,20 @@ function isPostProductionWorkflow(sourcePath: string, source: string): boolean {
   }
 }
 
+/** Detects integration suites without double-counting post-production workflows. */
+function isIntegrationWorkflow(sourcePath: string, source: string): boolean {
+  if (!sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(sourcePath)) return false
+  if (isPostProductionWorkflow(sourcePath, source)) return false
+  try {
+    const document = parseYaml(source) as { name?: unknown; env?: Record<string, unknown> } | undefined
+    if (document?.env?.FUZEQUALITY_STAGE === 'integration') return true
+    const identity = `${sourcePath} ${typeof document?.name === 'string' ? document.name : ''}`
+    return /\bintegration\b/i.test(identity)
+  } catch {
+    return false
+  }
+}
+
 async function discoverQualityArtifacts(root: string, repository: Repository, ignore: string[]): Promise<{ artifacts: QualityArtifact[]; fingerprints: string[]; diagnostics: ScanDiagnostic[] }> {
   const artifacts = new Map<string, QualityArtifact>()
   const fingerprints = new Map<string, string>()
@@ -251,6 +265,7 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
       if (candidate.kind === 'gate') {
         record('gate')
         if (isPostProductionWorkflow(sourcePath, source)) record('post-production-test')
+        if (isIntegrationWorkflow(sourcePath, source)) record('integration-test')
         if (performance) record(performance.kind, performance.execution)
       } else if (performance) {
         record(performance.kind, performance.execution)

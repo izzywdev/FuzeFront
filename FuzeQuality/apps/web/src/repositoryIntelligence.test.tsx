@@ -133,6 +133,12 @@ const postProductionArtifact: QualityArtifact = {
   summary: 'Post-production workflow', evidence: ['playwright test:post-prod'],
 }
 
+const integrationArtifact: QualityArtifact = {
+  id: 'artifact-integration-1', repositoryId: repository.id, kind: 'integration-test',
+  title: 'Integration', sourcePath: '.github/workflows/integration.yml',
+  summary: 'Integration workflow', evidence: ['npm run test:integration'],
+}
+
 const policyArtifact: QualityArtifact = {
   id: 'policy-auth', repositoryId: repository.id, kind: 'policy',
   title: 'Authentication policy', sourcePath: 'governance/auth.md',
@@ -200,12 +206,21 @@ const postProductionExecution: TestExecution = {
   summary: 'Production journeys passed.',
 }
 
+const integrationExecution: TestExecution = {
+  ...loadExecution,
+  id: 'execution-integration-1', externalRunId: '56789', kind: 'integration', status: 'passed',
+  name: 'Integration', workflowPath: integrationArtifact.sourcePath,
+  sourceUrl: 'https://github.com/fuze/front/actions/runs/56789', thresholds: [],
+  summary: 'Integration suites passed.',
+}
+
 function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifacts').mockResolvedValue([])
   vi.spyOn(api, 'qualityArtifactsByIds').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
   vi.spyOn(api, 'latestPerformanceExecutions').mockResolvedValue({ items: [] })
+  vi.spyOn(api, 'latestIntegrationExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'latestPostProductionExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'executionTrend').mockResolvedValue([])
   vi.spyOn(api, 'executionPerformance').mockResolvedValue([])
@@ -1299,6 +1314,21 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(outcome).toHaveTextContent('passed · revision-1')
     expect(outcome).toHaveTextContent('Production journeys passed.')
     expect(api.latestPostProductionExecutions).toHaveBeenCalledWith(repository.id)
+  })
+
+  it('shows detected integration workflow inventory with its latest exact-path outcome', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([integrationArtifact])
+    vi.mocked(api.latestIntegrationExecutions).mockResolvedValue({ items: [integrationExecution] })
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByRole('heading', { name: 'Integration tests' })).toBeVisible()
+    const outcome = await screen.findByLabelText(`Latest execution for ${integrationArtifact.title}`)
+    expect(outcome).toHaveTextContent('passed · revision-1')
+    expect(outcome).toHaveTextContent('Integration suites passed.')
+    expect(api.latestIntegrationExecutions).toHaveBeenCalledWith(repository.id)
   })
 
   it('keeps repository and governance evidence visible when optional performance history fails', async () => {

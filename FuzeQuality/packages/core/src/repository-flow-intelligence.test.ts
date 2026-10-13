@@ -64,6 +64,7 @@ describe('repository flow wireframes', () => {
     const additional = [
       { ...artifacts[0], id: 'story-1', kind: 'story' as const, title: 'Checkout story' },
       { ...artifacts[0], id: 'test-1', kind: 'test-plan' as const, title: 'Checkout test' },
+      { ...artifacts[0], id: 'integration-1', kind: 'integration-test' as const, title: 'Integration workflow' },
       { ...artifacts[0], id: 'post-prod-1', kind: 'post-production-test' as const, title: 'Post-production journey' },
       { ...artifacts[0], id: 'docs-1', kind: 'documentation' as const, title: 'Checkout docs' },
     ]
@@ -79,7 +80,7 @@ describe('repository flow wireframes', () => {
     await analyzer.analyze(repository, 'abc', [...manyRoutes, ...additional])
 
     expect(requestKinds).toHaveLength(100)
-    expect(new Set(requestKinds)).toEqual(new Set(['route', 'story', 'test-plan', 'post-production-test', 'documentation']))
+    expect(new Set(requestKinds)).toEqual(new Set(['route', 'story', 'test-plan', 'integration-test', 'post-production-test', 'documentation']))
   })
 
   it('selects the same bounded prompt artifacts regardless of store ordering', async () => {

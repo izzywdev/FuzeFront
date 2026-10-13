@@ -79,8 +79,10 @@ describe('repository scanner', () => {
     await writeFile(join(root, 'stories', 'Checkout.stories.tsx'), `export default { title: 'Checkout' }; export const Complete = { play: async () => {} }; export const Empty = {}`)
     await writeFile(join(root, 'tests', 'checkout.spec.ts'), `import { test } from '@playwright/test'; test('customer completes checkout', async () => {}); test('customer sees an empty basket', async () => {})`)
     await writeFile(join(root, '.github', 'workflows', 'ci.yml'), 'name: CI\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test')
-    await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
+    await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production integration\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
     await writeFile(join(root, '.github', 'workflows', 'verify-live.yml'), 'name: Verify live journeys\nenv:\n  FUZEQUALITY_STAGE: post-production\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:live')
+    await writeFile(join(root, '.github', 'workflows', 'integration.yml'), 'name: Integration tests\njobs:\n  integration:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:integration')
+    await writeFile(join(root, '.github', 'workflows', 'verify-system.yml'), 'name: Verify system\nenv:\n  FUZEQUALITY_STAGE: integration\njobs:\n  integration:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:system')
     await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
     await writeFile(join(root, '.github', 'workflows', 'load-test.yml'), 'name: Invalid legacy marker\nx-fuzequality-performance: load\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
     await writeFile(join(root, '.github', 'workflows', 'stress.yml'), 'name: Stress test\nenv:\n  FUZEQUALITY_PERFORMANCE: stress\non: [workflow_dispatch]\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
@@ -99,6 +101,8 @@ describe('repository scanner', () => {
       expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/post-prod.yml' }),
       expect.objectContaining({ kind: 'post-production-test', sourcePath: '.github/workflows/post-prod.yml' }),
       expect.objectContaining({ kind: 'post-production-test', sourcePath: '.github/workflows/verify-live.yml' }),
+      expect.objectContaining({ kind: 'integration-test', sourcePath: '.github/workflows/integration.yml' }),
+      expect.objectContaining({ kind: 'integration-test', sourcePath: '.github/workflows/verify-system.yml' }),
       expect.objectContaining({ kind: 'load-test', sourcePath: 'load/k6-test.js' }),
       expect.objectContaining({ kind: 'load-test', sourcePath: 'load-tests/scenario.js' }),
       expect.objectContaining({ kind: 'stress-test', sourcePath: 'stress-tests/scenario.js' }),
@@ -153,6 +157,7 @@ describe('repository scanner', () => {
       ['load-test', 'stress-test'].includes(item.kind)
     )).toBe(false)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'post-production-test')).toHaveLength(2)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'integration-test')).toHaveLength(2)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'story' && item.sourcePath === 'stories/Checkout.stories.tsx')).toHaveLength(2)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'test-plan' && item.sourcePath === 'tests/checkout.spec.ts')).toHaveLength(2)
 

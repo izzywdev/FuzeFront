@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
-import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionSourceLink, ExecutionThresholdEvidence, latestPerformanceExecution, latestPostProductionExecution } from './executionEvidence'
+import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionSourceLink, ExecutionThresholdEvidence, latestIntegrationExecution, latestPerformanceExecution, latestPostProductionExecution } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -107,6 +107,16 @@ describe('ExecutionThresholdEvidence', () => {
     const run = { ...execution, kind: 'post-production' as const, workflowPath: artifact.sourcePath }
     expect(latestPostProductionExecution(artifact, [run])).toBe(run)
     expect(latestPostProductionExecution(artifact, [{ ...run, kind: 'ci' }])).toBeUndefined()
+  })
+
+  it('matches integration evidence only by detected workflow identity', () => {
+    const artifact: QualityArtifact = {
+      id: 'integration-workflow', repositoryId: execution.repositoryId, kind: 'integration-test',
+      title: 'Integration', sourcePath: '.github/workflows/integration.yml', summary: 'Integration tests', evidence: [],
+    }
+    const run = { ...execution, kind: 'integration' as const, workflowPath: artifact.sourcePath }
+    expect(latestIntegrationExecution(artifact, [run])).toBe(run)
+    expect(latestIntegrationExecution(artifact, [{ ...run, kind: 'ci' }])).toBeUndefined()
   })
 
   it('renders the workflow file with the provider-owned run identity', () => {

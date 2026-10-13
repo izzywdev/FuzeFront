@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.23.0
+  version: 0.24.0
   license:
     name: UNLICENSED
 servers:
@@ -852,6 +852,35 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/repositories/{repositoryId}/integration-test-executions/latest:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listLatestIntegrationTestExecutions
+      summary: Read the latest execution for every current detected integration workflow
+      description: >-
+        Resolves workflow paths only from the repository current analyzed integration-test
+        artifacts, then returns at most one latest execution per path. This read model is
+        independent of mixed execution-history filters and pagination.
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: Latest integration execution evidence keyed by detected workflow path.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/TestExecution' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/repositories/{repositoryId}/post-production-test-executions/latest:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
@@ -1119,7 +1148,7 @@ components:
         repositoryId: { type: string, format: uuid }
         kind:
           type: string
-          enum: [route, story, documentation, policy, gate, test-plan, post-production-test, load-test, stress-test]
+          enum: [route, story, documentation, policy, gate, test-plan, integration-test, post-production-test, load-test, stress-test]
         title: { type: string }
         sourcePath: { type: string }
         summary: { type: string }

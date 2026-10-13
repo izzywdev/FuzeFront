@@ -83,6 +83,27 @@ export function latestPostProductionExecution(
       return comparableRight - comparableLeft || right.attempt - left.attempt
     })[0]
 }
+
+/** Finds the newest ingested run for one scanner-detected integration workflow. */
+export function latestIntegrationExecution(
+  artifact: QualityArtifact,
+  executions: TestExecution[]
+): TestExecution | undefined {
+  if (artifact.kind !== 'integration-test') return undefined
+  return executions
+    .filter(execution =>
+      execution.repositoryId === artifact.repositoryId &&
+      execution.kind === 'integration' &&
+      execution.workflowPath === artifact.sourcePath
+    )
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.completedAt ?? left.startedAt ?? '')
+      const rightTime = Date.parse(right.completedAt ?? right.startedAt ?? '')
+      const comparableLeft = Number.isFinite(leftTime) ? leftTime : -Infinity
+      const comparableRight = Number.isFinite(rightTime) ? rightTime : -Infinity
+      return comparableRight - comparableLeft || right.attempt - left.attempt
+    })[0]
+}
 export function executionDurationLabel(
   startedAt?: string,
   completedAt?: string

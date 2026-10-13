@@ -430,7 +430,7 @@ export type ScanResult = {
 export type QualityArtifact = {
   id: string
   repositoryId: string
-  kind: 'route' | 'story' | 'documentation' | 'policy' | 'gate' | 'test-plan' | 'post-production-test' | 'load-test' | 'stress-test'
+  kind: 'route' | 'story' | 'documentation' | 'policy' | 'gate' | 'test-plan' | 'integration-test' | 'post-production-test' | 'load-test' | 'stress-test'
   title: string
   sourcePath: string
   summary: string
