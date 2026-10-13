@@ -547,5 +547,5 @@
     ],
     "designSystemAdditionsNote": "Composed locally in frame.css for the frames ONLY. frontend-engineer is the sole editor of design-system/ and adds RadioCardGroup and SegmentedControl as a foundation PR; Tooltip and Combobox were already requested by design/frames/selection-lists and are not re-requested. product-designer specifies the primitives; it does not write them."
   },
-  "stamp": "3ad69d2e878dac67411a744daae7e74d2693155145d64633e07128078a92d29d"
+  "stamp": "4f5b0f531e48cff61bcabf3d0bea30b572b2e3db710f8e1720318a837e31ffef"
 }

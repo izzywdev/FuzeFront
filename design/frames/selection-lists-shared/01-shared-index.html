@@ -66,7 +66,7 @@
           <thead>
             <tr>
               <th scope="col">Name</th>
-              <th scope="col">Key</th>
+              <th scope="col" class="sl-hide-sm">Key</th>
               <th scope="col">Visibility</th>
               <th scope="col">Your access</th>
               <th scope="col" class="num sl-hide-sm">Values</th>
@@ -77,7 +77,7 @@
             <tr class="sl-group-row" data-group="own"><td colspan="6"><b>Your organization</b> · Acme Logistics · 3 loaded</td></tr>
             <tr data-list="priority" data-source="own">
               <td class="name"><a href="07-fork-detail.html">Priority</a></td>
-              <td><span class="sl-key">priority</span></td>
+              <td class="sl-hide-sm"><span class="sl-key">priority</span></td>
               <td><span class="sl-vis sl-vis--org" data-visibility="org">◉ Organization</span> <span class="sl-fork" data-badge="fork" title="forked_from: common list priority">⑂ Fork</span></td>
               <td><span class="sl-rw" data-editable="true">✎ You can edit</span></td>
               <td class="num sl-hide-sm">5</td>
@@ -85,7 +85,7 @@
             </tr>
             <tr data-list="lead-sources" data-source="own">
               <td class="name"><a href="03-readonly-states.html">Lead sources</a></td>
-              <td><span class="sl-key">lead-sources</span></td>
+              <td class="sl-hide-sm"><span class="sl-key">lead-sources</span></td>
               <td><span class="sl-vis sl-vis--org" data-visibility="org">◉ Organization</span></td>
               <td><span class="sl-ro" data-editable="false"><span aria-hidden="true">🔒</span> Read-only</span></td>
               <td class="num sl-hide-sm">3</td>
@@ -93,7 +93,7 @@
             </tr>
             <tr data-list="warehouse-zones" data-source="own">
               <td class="name"><a href="../selection-lists/03-list-detail.html">Warehouse zones</a></td>
-              <td><span class="sl-key">warehouse-zones</span></td>
+              <td class="sl-hide-sm"><span class="sl-key">warehouse-zones</span></td>
               <td><span class="sl-vis sl-vis--private" data-visibility="private">○ Private</span></td>
               <td><span class="sl-rw" data-editable="true">✎ You can edit</span></td>
               <td class="num sl-hide-sm">12</td>
@@ -102,7 +102,7 @@
             <tr class="sl-group-row" data-group="common"><td colspan="6"><b>Common lists</b> · provided by FuzeFront to every organization · 2 loaded</td></tr>
             <tr data-list="yes-no" data-source="platform">
               <td class="name"><a href="02-common-detail.html">Yes / No</a></td>
-              <td><span class="sl-key">yes-no</span></td>
+              <td class="sl-hide-sm"><span class="sl-key">yes-no</span></td>
               <td><span class="sl-vis sl-vis--platform" data-visibility="platform" data-badge="common">◎ Common</span></td>
               <td><span class="sl-ro" data-editable="false"><span aria-hidden="true">🔒</span> Read-only</span></td>
               <td class="num sl-hide-sm">2</td>
@@ -110,7 +110,7 @@
             </tr>
             <tr data-list="work-status" data-source="platform">
               <td class="name"><a href="02-common-detail.html">Work status</a></td>
-              <td><span class="sl-key">work-status</span></td>
+              <td class="sl-hide-sm"><span class="sl-key">work-status</span></td>
               <td><span class="sl-vis sl-vis--platform" data-visibility="platform" data-badge="common">◎ Common</span></td>
               <td><span class="sl-ro" data-editable="false"><span aria-hidden="true">🔒</span> Read-only</span></td>
               <td class="num sl-hide-sm">6</td>
@@ -133,21 +133,21 @@
         <section class="sl-panel" data-panel="list-index" data-state="ready" data-visibility-filter-active="platform">
           <div class="sl-panel__seam"></div>
           <table class="sl-table">
-            <thead><tr><th scope="col">Name</th><th scope="col">Key</th><th scope="col">Visibility</th><th scope="col">Your access</th></tr></thead>
+            <thead><tr><th scope="col">Name</th><th scope="col" class="sl-hide-sm">Key</th><th scope="col">Visibility</th><th scope="col">Your access</th></tr></thead>
             <tbody>
               <tr data-list="priority" data-source="platform">
                 <td class="name"><a href="03-readonly-states.html#shadowed">Priority</a></td>
-                <td><span class="sl-key">priority</span></td>
+                <td class="sl-hide-sm"><span class="sl-key">priority</span></td>
                 <td><span class="sl-vis sl-vis--platform" data-badge="common">◎ Common</span></td>
                 <td><span class="sl-ro"><span aria-hidden="true">🔒</span> Read-only</span></td>
               </tr>
               <tr data-list="yes-no" data-source="platform">
-                <td class="name"><a href="02-common-detail.html">Yes / No</a></td><td><span class="sl-key">yes-no</span></td>
+                <td class="name"><a href="02-common-detail.html">Yes / No</a></td><td class="sl-hide-sm"><span class="sl-key">yes-no</span></td>
                 <td><span class="sl-vis sl-vis--platform" data-badge="common">◎ Common</span></td>
                 <td><span class="sl-ro"><span aria-hidden="true">🔒</span> Read-only</span></td>
               </tr>
               <tr data-list="work-status" data-source="platform">
-                <td class="name"><a href="02-common-detail.html">Work status</a></td><td><span class="sl-key">work-status</span></td>
+                <td class="name"><a href="02-common-detail.html">Work status</a></td><td class="sl-hide-sm"><span class="sl-key">work-status</span></td>
                 <td><span class="sl-vis sl-vis--platform" data-badge="common">◎ Common</span></td>
                 <td><span class="sl-ro"><span aria-hidden="true">🔒</span> Read-only</span></td>
               </tr>
@@ -226,9 +226,9 @@
                 <select class="sl-input sl-select" aria-label="Status"><option selected>Active</option></select>
               </div>
               <table class="sl-table">
-                <thead><tr><th scope="col">Name</th><th scope="col">Key</th><th scope="col">Status</th></tr></thead>
+                <thead><tr><th scope="col">Name</th><th scope="col" class="sl-hide-sm">Key</th><th scope="col">Status</th></tr></thead>
                 <tbody>
-                  <tr><td class="name">Warehouse zones</td><td><span class="sl-key">warehouse-zones</span></td><td><span class="sl-pill sl-pill--active">active</span></td></tr>
+                  <tr><td class="name">Warehouse zones</td><td class="sl-hide-sm"><span class="sl-key">warehouse-zones</span></td><td><span class="sl-pill sl-pill--active">active</span></td></tr>
                 </tbody>
               </table>
               <p class="sl-field__hint">Absent, not disabled: no “Include common lists” switch, no visibility filter, no group rows, no Visibility or

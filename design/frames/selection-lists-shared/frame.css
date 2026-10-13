@@ -1,7 +1,7 @@
 /* Selection Lists — shared/common lists + copy-on-write fork: frame chrome.
    Feature-local composition ONLY. Every value resolves to a fuse-seam token from
    tokens.css (directly, via calc() on the spacing scale, or via color-mix() on a
-   semantic token). No raw hex, rgb(), px spacing or font stacks are introduced here.
+   semantic token). No raw hex, RGB functions, px spacing or font stacks are introduced here.
    Base patterns are carried over from design/frames/selection-lists/frame.css so the
    shared-lists UI reads as the same product; the new pieces (visibility badge,
    provenance card, read-only notice, fork dialog, effective-source inspector) are
@@ -425,8 +425,9 @@ a.btn { text-decoration: none; display: inline-block; }
 /* device preview (frame 11/12): a 375 CSS-px viewport rendered inside the review page.
    375 = var(--space-1) * 93.75 — derived from the spacing scale, not a raw literal. */
 .sl-devices { display: flex; gap: var(--space-8); flex-wrap: wrap; align-items: flex-start; }
+.sl-devices > * { min-width: 0; max-width: 100%; }
 .sl-device {
-  width: calc(var(--space-1) * 93.75); flex: none;
+  width: calc(var(--space-1) * 93.75); max-width: 100%; flex: none;
   background: var(--bg-primary); border: calc(var(--sh-hair) * 2) solid var(--border-strong);
   border-radius: var(--radius-xl); overflow: hidden; box-shadow: var(--shadow-lg);
 }
@@ -454,7 +455,7 @@ a.btn { text-decoration: none; display: inline-block; }
 .sl-sheet__grab { width: var(--space-10); height: var(--space-1); border-radius: var(--radius-pill); background: var(--border-strong); margin: var(--space-2) auto 0; }
 .sl-sheet .sl-modal__head { padding: var(--space-4) var(--space-4) var(--space-2); }
 .sl-sheet .sl-modal__body { padding: var(--space-2) var(--space-4) var(--space-4); }
-.sl-sheet .sl-modal__foot { flex-direction: column-reverse; align-items: stretch; padding: var(--space-3) var(--space-4) var(--space-4); }
+.sl-sheet .sl-modal__foot { flex-direction: column; align-items: stretch; padding: var(--space-3) var(--space-4) var(--space-4); }
 
 /* ---- RTL: mirror the shell chrome that tokens.css draws with physical sides ---- */
 [dir='rtl'] .side { border-right: 0; border-left: var(--sh-hair) solid var(--border-color); }
@@ -472,10 +473,24 @@ a.btn { text-decoration: none; display: inline-block; }
   .sl-backdrop { padding: var(--space-6) 0 0; }
   .sl-prov { grid-template-columns: auto 1fr; }
   .sl-prov > :last-child { grid-column: 1 / -1; }
-  .sl-modal__foot { flex-direction: column-reverse; align-items: stretch; }
+  .sl-modal__foot { flex-direction: column; align-items: stretch; }
   .sl-modal__foot .grow { display: none; }
   .frame-nav { padding: var(--space-2) var(--space-3); }
   .frame-nav .caption { display: none; }
-  .sl-table th, .sl-table td { padding: var(--space-3); }
+  .sl-table th, .sl-table td { padding: var(--space-3) var(--space-2); }
+  .sl-panel--scroll { overflow-x: auto; }
+  .sl-panel__foot { flex-wrap: wrap; }
+  .sl-ro, .sl-rw, .sl-shadow-note { white-space: normal; }
+  .sl-head { margin-bottom: var(--space-3); }
+  .sl-host { padding: var(--space-4); }
+  .page-title, .sl-case { overflow-wrap: anywhere; }
   .ix-wrap { padding: var(--space-6) var(--space-4) var(--space-16); }
 }
+
+/* in-copy links (notes, hints, captions, banners) — accent, never the UA default blue */
+.sl-shadow-note a, .sl-field__hint a, .sl-caption a, .sl-banner a:not(.btn), .page-sub a { color: var(--cyan-400); text-decoration: none; }
+.sl-shadow-note a:hover, .sl-field__hint a:hover, .sl-caption a:hover, .sl-banner a:not(.btn):hover, .page-sub a:hover { text-decoration: underline; }
+a.sl-seg__opt { text-decoration: none; display: inline-flex; align-items: center; }
+
+/* long ids / paths in inspectors and notes wrap instead of widening the page */
+.sl-persist code, .sl-notes code, .sl-uuid { overflow-wrap: anywhere; }
