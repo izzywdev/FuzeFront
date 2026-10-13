@@ -60,6 +60,19 @@ export function payloadErrors(topic: string, payload: unknown): string[] {
 }
 
 /**
+ * Distinct writer-transaction ids (`xmin`) of the given outbox rows: exactly ONE value <=> every row was
+ * written by the same transaction. (`created_at` cannot prove it: the writer stamps `clock_timestamp()`.)
+ * `xmin` of a row is its inserting transaction only while the row is untouched, so this holds for runs WITHOUT
+ * a live relay, i.e. without KAFKA_BROKERS - the CI default, and the precondition of the other outbox suites
+ * (a relay marking rows `sent` would rewrite their `xmin`).
+ */
+export async function transactionIds(rows: Array<{ id: string }>): Promise<string[]> {
+  if (rows.length === 0) return [];
+  const res = await dbQuery<{ x: string }>('SELECT DISTINCT xmin::text AS x FROM event_outbox WHERE id = ANY($1::uuid[])', [rows.map((r) => r.id)]);
+  return res.map((r) => r.x);
+}
+
+/**
  * Run one action and return exactly the org's outbox rows it produced, in order.
  * (Runs sequentially within a test file; each test file uses its own org so parallel jest
  * workers never see each other's rows.)

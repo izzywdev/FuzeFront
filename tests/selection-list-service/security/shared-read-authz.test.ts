@@ -23,7 +23,7 @@
  */
 import {
   actor, call, createList, addItem, createPlatformList, expectError, fixtureGrant, L, newOrg, PLATFORM_ORG_ID,
-  assertSharedListsOn, walkLists, platformAdmin, type Actor, type ItemLike, type ListLike,
+  assertSharedListsOn, walkLists, walkItems, platformAdmin, type Actor, type ItemLike, type ListLike,
 } from '../helpers/shared-lists';
 import { closeDb } from '../helpers/db';
 import { assertResponse } from '../helpers/openapi';
@@ -203,12 +203,12 @@ describe('§11.2: nobody can mutate via the shared read (an `org` list -> 403, s
 
   const snapshot = async () => {
     const list = await call(owner, 'GET', L(orgX.id));
-    const items = await call(owner, 'GET', `${L(orgX.id)}/items?status=all&limit=200`);
+    const items = await walkItems(owner, orgX.id, 'all');
     const roster = await call(owner, 'GET', `${L(orgX.id)}/access`);
     const trs = await call(owner, 'GET', `${L(orgX.id)}/translations`);
     return JSON.stringify({
       list: { name: list.body.name, status: list.body.status, visibility: list.body.visibility, updated_at: list.body.updated_at },
-      items: items.body.items.map((i: ItemLike) => [i.id, i.code, i.label, i.status, i.sort_order]),
+      items: items.map((i: ItemLike) => [i.id, i.code, i.label, i.status, i.sort_order]),
       roster: roster.body.items?.map((g: any) => [g.user_id, g.role]),
       locales: trs.body.map((t: any) => t.locale),
     });
@@ -231,8 +231,8 @@ describe('§11.2: nobody can mutate via the shared read (an `org` list -> 403, s
     expect(renamed.body.name).toBe('Org X (renamed by owner)');
     const added = await call(owner, 'POST', `${L(orgX.id)}/items`, { code: 'OWNERADD', label: 'Owner added' });
     expect(added.status).toBe(201);
-    const seen = await call(x.viewer, 'GET', `${L(orgX.id)}/items?status=all&limit=200`);
-    expect(seen.body.items.map((i: ItemLike) => i.code)).toContain('OWNERADD');
+    const seen = await walkItems(x.viewer, orgX.id, 'all');
+    expect(seen.map((i: ItemLike) => i.code)).toContain('OWNERADD');
   });
 
   it('a member of ANOTHER org is 404 (not 403) for the same mutations — the deny reasons differ, as the matrix says', async () => {
@@ -242,9 +242,15 @@ describe('§11.2: nobody can mutate via the shared read (an `org` list -> 403, s
     }
   });
 
-  it('a `developer` is 404 on the mutations too (unreadable first)', async () => {
-    const res = await call(x.developer, 'PATCH', L(orgX.id), { name: 'x' });
-    expect(res.status).toBe(404);
+  it('a `developer` (no read_shared) is refused the mutations too — 403 like any same-org caller without a grant (4.0.0 precedent, R7) or 404; never 2xx, nothing changes', async () => {
+    const before = await snapshot();
+    for (const [name, method, path, body] of mutations()) {
+      const res = await call(x.developer, method, path, body);
+      expect({ name, ok: [403, 404].includes(res.status) }).toEqual({ name, ok: true });
+    }
+    expect(await snapshot()).toBe(before);
+    // control: the READ side of the same list is where the developer\'s deny reason is pinned (404)
+    expect((await call(x.developer, 'GET', L(orgX.id))).status).toBe(404);
   });
 });
 
@@ -294,9 +300,9 @@ describe('D1/D4: a customer-tenant instance grant on a common list does not make
     const after = (await call(platOwner, 'GET', L(plat.id))).body;
     expect(after.name).toBe(victim.name);
     expect(after.status).toBe('active');
-    const items = await call(platOwner, 'GET', `${L(plat.id)}/items?status=all&limit=200`);
-    expect(items.body.items.map((i: ItemLike) => i.code).sort()).toEqual(['A', 'B']);
-    expect(items.body.items.find((i: ItemLike) => i.id === platItem.id).label).toBe(platItem.label);
+    const items = await walkItems(platOwner, plat.id, 'all');
+    expect(items.map((i: ItemLike) => i.code).sort()).toEqual(['A', 'B']);
+    expect(items.find((i: ItemLike) => i.id === platItem.id)!.label).toBe(platItem.label);
   });
 
   it('control: the identical fixture grant on an `org` list of X DOES let the grantee mutate it (so the deny above is the platform rule)', async () => {
@@ -321,9 +327,10 @@ describe('an id is never a capability (identifier standard): knowing B\'s id gra
     expect((await call(x.admin, 'GET', `${L(mine.id)}/items/${orgXItem2.id}/translations`)).status).toBe(404);
     // B's own path: readable (org visibility) but not writable
     expect((await call(x.admin, 'PATCH', `${L(orgX.id)}/items/${orgXItem2.id}`, { label: 'x' })).status).toBe(403);
-    // a PRIVATE list B in the same org: the id alone buys nothing at all
+    // a PRIVATE list B in the same org: the id alone buys nothing at all (a read stays 404, a write stays 403 — R7, 4.0.0 behaviour)
     expect((await call(x.admin, 'GET', L(privX.id))).status).toBe(404);
-    expect((await call(x.admin, 'PATCH', L(privX.id), { name: 'x' })).status).toBe(404);
+    expect((await call(x.admin, 'PATCH', L(privX.id), { name: 'x' })).status).toBe(403);
+    expect((await call(owner, 'GET', L(privX.id))).body.name).toBe('Private X'); // and it did not change
     // a common list's item id under A's path
     expect((await call(x.admin, 'PATCH', `${L(mine.id)}/items/${platItem.id}`, { label: 'x' })).status).toBe(404);
   });
@@ -358,9 +365,11 @@ describe('§11.3 security angle: include_shared=true never leaks past visibility
   });
 
   it('without include_shared the shared lists are NOT listed (the 4.0.0 default)', async () => {
-    const { rows } = await walkLists(x.viewer, '');
+    const fresh = actor('fresh', ORG_X, 'viewer'); // never granted anything (x.viewer was granted an instance role by a control above)
+    const { rows } = await walkLists(fresh, '');
     const ids = rows.map((r) => r.id);
     expect(ids).not.toContain(orgX.id);
     expect(ids).not.toContain(plat.id);
+    expect((await walkLists(fresh, 'include_shared=true')).rows.map((r) => r.id)).toEqual(expect.arrayContaining([orgX.id, plat.id])); // control: the opt-in adds them
   });
 });

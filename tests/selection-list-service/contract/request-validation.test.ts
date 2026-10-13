@@ -18,6 +18,8 @@
  *       `missing`; the spec says 400 VALIDATION_ERROR. It also accepted duplicate ids (`uniqueItems`),
  *       an unsupported `locale`, and an empty `ids` (`minItems: 1`) with 200.
  *   D3  `limit=0` on the paginated GETs (spec `minimum: 1`) was silently treated as the default.
+ *   D4  (OPEN, `it.failing` at the bottom) `GET .../items?status=all` answers 400 although the spec's items
+ *       `status` enum is [active, archived, all].
  */
 import { mintTestToken } from '../helpers/auth';
 import { rawFetch } from '../helpers/client';
@@ -141,5 +143,26 @@ describe('what the service already enforces (regression pins)', () => {
     const res = await call('POST', '/v1/resolve', { ids: [itemId], locale: 'en' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ results: { [itemId]: { label: 'One', status: 'active' } }, missing: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D4 - KNOWN, TICKETED DEVIATION (found by the SL9 suites; pre-existing on master, unrelated to SL9).
+// openapi.yaml declares the items `status` filter as `enum: [active, archived, all]`;
+// `GET /v1/selection-lists/{listId}/items?status=all` answers 400 "status must be active or archived."
+// (src/routes/items.ts). Pinned `it.failing`: when the service is fixed this goes red ("expected to fail
+// but passed") and the `.failing` must be removed in the same PR. Never weaken the assertion.
+// The SL9 suites avoid the parameter (helpers/shared-lists.ts walkItems composes active + archived).
+// ---------------------------------------------------------------------------
+describe('D4: items status=all (a documented filter value)', () => {
+  it.failing('GET .../items?status=all returns active AND archived items (spec enum [active, archived, all])', async () => {
+    const second = await call('POST', `${L()}/items`, { code: 'V2', label: 'Two' });
+    expect(second.status).toBe(201);
+    const id = (second.body as { id: string }).id;
+    expect((await call('POST', `${L()}/items/${id}/archive`)).status).toBe(200);
+    const all = await call('GET', `${L()}/items?status=all&limit=200`);
+    expect(all.status).toBe(200);
+    const codes = (all.body as { items: Array<{ code: string }> }).items.map((i) => i.code).sort();
+    expect(codes).toEqual(['V1', 'V2']);
   });
 });

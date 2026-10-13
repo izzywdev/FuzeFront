@@ -19,7 +19,7 @@
  */
 import {
   actor, call, createList, addItem, createPlatformList, expectError, L, newOrg, PLATFORM_ORG_ID, platformAdmin,
-  assertSharedListsOn, permitPublishAnywhere, rnd, type Actor, type ListLike,
+  assertSharedListsOn, permitPublishAnywhere, rnd, walkItems,
 } from '../helpers/shared-lists';
 import { closeDb, dbQuery } from '../helpers/db';
 import { assertResponse } from '../helpers/openapi';
@@ -168,11 +168,12 @@ describe('D10 / §11.7: private <-> org is an access decision — owner only', (
     expect(after).toMatchObject({ name: 'Renamed by editor', visibility: 'private' }); // all-or-nothing: the rename in the denied PATCH did not apply
   });
 
-  it('tenant admin WITHOUT an instance role: 403 on a readable (`org`) list, 404 on a private one — and neither changes anything', async () => {
+  it('tenant admin WITHOUT an instance role: 403 on both a readable (`org`) list and a private one (R7: 4.0.0 answers a write without a grant 403) — and neither changes anything', async () => {
     const orgList = await createList(cust.editor, { name: 'Editor org list', visibility: 'org' });
     const privList = await createList(cust.editor, { name: 'Editor private list' });
     expect((await call(cust.admin, 'PATCH', L(orgList.id), { visibility: 'private' })).status).toBe(403);
-    expect((await call(cust.admin, 'PATCH', L(privList.id), { visibility: 'org' })).status).toBe(404);
+    expect((await call(cust.admin, 'PATCH', L(privList.id), { visibility: 'org' })).status).toBe(403);
+    expect((await call(cust.admin, 'GET', L(privList.id))).status).toBe(404); // while a READ of it stays 404 (no existence oracle)
     expect((await call(cust.editor, 'GET', L(orgList.id))).body.visibility).toBe('org');
     expect((await call(cust.editor, 'GET', L(privList.id))).body.visibility).toBe('private');
   });
@@ -201,8 +202,8 @@ describe('§11.8: purge on common lists needs publish_platform (owner alone is n
     expectError(purgeList, 403, 'FORBIDDEN');
 
     // intact
-    const items = await call(p.owner, 'GET', `${L(p.list.id)}/items?status=all&limit=200`);
-    expect(items.body.items.map((i: any) => i.code).sort()).toEqual(['A', 'B']);
+    const items = await walkItems(p.owner, p.list.id, 'all');
+    expect(items.map((i) => i.code).sort()).toEqual(['A', 'B']);
     expect((await call(p.owner, 'GET', L(p.list.id))).status).toBe(200);
 
     // controls: the owner's reversible operations need no publish_platform
@@ -219,8 +220,8 @@ describe('§11.8: purge on common lists needs publish_platform (owner alone is n
     const stranger = actor('rd', newOrg('reader'), 'viewer');
     expect((await call(stranger, 'GET', L(p.list.id))).status).toBe(200);
     expect((await call(p.owner, 'DELETE', `${L(p.list.id)}/items/${p.items[0].id}?purge=true`)).status).toBe(204);
-    const left = await call(p.owner, 'GET', `${L(p.list.id)}/items?status=all&limit=200`);
-    expect(left.body.items.map((i: any) => i.code)).toEqual(['B']);
+    const left = await walkItems(p.owner, p.list.id, 'all');
+    expect(left.map((i) => i.code)).toEqual(['B']);
     expect((await call(p.owner, 'DELETE', `${L(p.list.id)}?purge=true`)).status).toBe(204);
     expect((await call(p.owner, 'GET', L(p.list.id))).status).toBe(404);
     expect((await call(stranger, 'GET', L(p.list.id))).status).toBe(404);

@@ -235,8 +235,18 @@ export async function walkLists(who: Actor, query: string, limit = 50, baseUrl?:
   return { rows, pages };
 }
 
-/** Walk all items of a list (status=all by default), returning every row. */
+/**
+ * Walk all items of a list (`status` 'all' by default: active then archived), returning every row.
+ *
+ * NOTE: 'all' is composed from two `status=active` / `status=archived` walks on purpose. The frozen
+ * contract lists `all` as a valid items `status` filter, but master's `GET …/items?status=all` answers
+ * 400 (pre-existing defect, pinned as an `it.failing` in contract/request-validation.test.ts), and the SL9
+ * suites must not turn red for an unrelated reason.
+ */
 export async function walkItems(who: Actor, listId: string, status = 'all', baseUrl?: string): Promise<ItemLike[]> {
+  if (status === 'all') {
+    return [...(await walkItems(who, listId, 'active', baseUrl)), ...(await walkItems(who, listId, 'archived', baseUrl))];
+  }
   const rows: ItemLike[] = [];
   let cursor: string | null = null;
   let guard = 0;

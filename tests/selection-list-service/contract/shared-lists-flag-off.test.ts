@@ -80,10 +80,9 @@ describe('shapes: 4.1.0 fields with the 4.0.0 values', () => {
       assertResponse('GET', '/v1/selection-lists/{listId}', 200, res.body);
       expect({ id: l.id, visibility: res.body.visibility, forked_from: res.body.forked_from }).toEqual({ id: l.id, visibility: 'private', forked_from: null });
     }
-    const items = await off(owner, 'GET', `${L(fork.id)}/items?status=all`);
-    expect(items.status).toBe(200);
-    expect(items.body.items.length).toBe(forkItems.length);
-    for (const i of items.body.items) expect(i.origin_item_id).toBeNull();
+    const items = await walkItems(owner, fork.id, 'all', OFF);
+    expect(items.length).toBe(forkItems.length);
+    for (const i of items) expect(i.origin_item_id).toBeNull();
     // control: the ON instance reports the real values for the same rows
     const on = await call(owner, 'GET', L(fork.id));
     expect(on.body).toMatchObject({ visibility: 'org', forked_from: { list_id: common.list.id } });
@@ -108,9 +107,11 @@ describe('include_shared / visibility are accepted and IGNORED', () => {
     }
     expect(plain).not.toContain(orgList.id);
     expect(plain).not.toContain(common.list.id);
-    // control: the same member through the ON instance DOES get them
+    // control: the same member through the ON instance DOES get them - the org list, and the org's fork in the common
+    // list's place (the common list itself is shadowed by that fork)
     const on = (await walkLists(member, 'include_shared=true')).rows.map((r) => r.id);
-    expect(on).toEqual(expect.arrayContaining([orgList.id, common.list.id]));
+    expect(on).toEqual(expect.arrayContaining([orgList.id, fork.id]));
+    expect(on).not.toContain(common.list.id);
   });
 
   it('the owner: the visibility filter is ignored (private rows are still returned under visibility=platform)', async () => {
@@ -120,10 +121,13 @@ describe('include_shared / visibility are accepted and IGNORED', () => {
     expect(filtered).toContain(privList.id);
   });
 
-  it('an unknown visibility value is still validated (400) — the parameter is parsed, then ignored', async () => {
-    // "accepted" means a legal value is not an error; the enum itself is part of the 4.1.0 contract
-    expect((await off(owner, 'GET', '/v1/selection-lists?visibility=org')).status).toBe(200);
-    expectError(await off(owner, 'GET', '/v1/selection-lists?visibility=public'), 400, 'VALIDATION_ERROR');
+  it('the parameters are ignored whatever their value (4.0.0 never looked at them): a legal and a junk visibility both return the plain listing', async () => {
+    const plain = ids((await walkLists(owner, '', 50, OFF)).rows);
+    for (const qs of ['visibility=org', 'visibility=public', 'include_shared=maybe']) {
+      const res = await off(owner, 'GET', `/v1/selection-lists?${qs}&limit=200`);
+      expect({ qs, status: res.status }).toEqual({ qs, status: 200 });
+      expect({ qs, ids: ids(res.body.items) }).toEqual({ qs, ids: plain });
+    }
   });
 
   it('key lookup keeps the 4.0.0 semantics: a member finds nothing for the common key even with include_shared=true; the owner finds its own fork', async () => {
@@ -208,7 +212,8 @@ describe('authorization never routes through the flag', () => {
   it('the OFF instance still enforces the instance roles: a viewer member cannot mutate the owner\'s list, the owner can', async () => {
     const mine = await off(owner, 'POST', '/v1/selection-lists', { key: `offauthz-${rnd()}-${rnd()}`, name: 'Mine' });
     expect(mine.status).toBe(201);
-    expectError(await off(member, 'PATCH', L(mine.body.id), { name: 'x' }), 404, 'NOT_FOUND'); // 4.0.0: unreadable without a grant
+    expectError(await off(member, 'PATCH', L(mine.body.id), { name: 'x' }), 403, 'FORBIDDEN'); // 4.0.0 (R7): a same-org write without a grant is 403
+    expectError(await off(member, 'GET', L(mine.body.id)), 404, 'NOT_FOUND'); // ...while the read stays 404
     expect((await off(owner, 'PATCH', L(mine.body.id), { name: 'y' })).status).toBe(200);
     expect((await off(null, 'GET', L(mine.body.id))).status).toBe(401);
     const item = await addItem(owner, orgList.id, `Z${rnd()}`, 'z'); // ON write, to keep the ON/OFF split honest

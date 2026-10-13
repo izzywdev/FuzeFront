@@ -30,7 +30,13 @@ import { closeDb, dbQuery } from '../helpers/db';
 
 const ORG_F = newOrg('frk');
 const ORG_G = newOrg('frg');
-const A = actor('a', ORG_F, 'admin'); // forks (create), becomes the fork's list-owner
+const A1 = actor('a1', ORG_F, 'admin'); // forks the rich source in the first describe, becomes that fork's list-owner
+// Every OTHER test gets a fresh admin of the same org: `user_lists` caps one user at 20 active lists and this suite
+// makes dozens of forks, so a shared user would hit QUOTA_EXCEEDED for reasons unrelated to what is under test.
+let A = actor('a', ORG_F, 'admin');
+beforeEach(() => {
+  A = actor('a', ORG_F, 'admin');
+});
 const E2 = actor('e2', ORG_F, 'editor'); // holds `create`, no instance grant
 const V = actor('v', ORG_F, 'viewer'); // no `create`
 const G = actor('g', ORG_G, 'admin'); // a different customer org
@@ -71,7 +77,7 @@ describe('201: the first fork copies everything and records provenance', () => {
   let fork: any;
 
   beforeAll(async () => {
-    const res = await forkList(A, src.list.id);
+    const res = await forkList(A1, src.list.id);
     expect(res.status).toBe(201);
     fork = res.body;
   });
@@ -86,11 +92,11 @@ describe('201: the first fork copies everything and records provenance', () => {
       visibility: 'org', // default
       status: 'active',
       seed: null,
-      created_by: A.userId,
+      created_by: A1.userId,
       source_locale: src.list.source_locale,
       name: src.list.name,
       description: 'Source description',
-      item_count: 2, // A, C — B is archived, D was purged
+      item_count: 2, // A and C - B is archived, D was purged
       editable: true,
     });
   });
@@ -103,7 +109,7 @@ describe('201: the first fork copies everything and records provenance', () => {
   });
 
   it('copies every NON-PURGED item (active and archived) under NEW ids with origin_item_id, preserving code / status / sort_order / label', async () => {
-    const items = await walkItems(A, fork.id, 'all');
+    const items = await walkItems(A1, fork.id, 'all');
     expect(items.map((i) => i.code).sort()).toEqual(['A', 'B', 'C']); // D (purged) is not copied
     for (const copy of items) {
       const origin = srcItemsByCode.get(copy.code)!;
@@ -115,7 +121,7 @@ describe('201: the first fork copies everything and records provenance', () => {
         code: origin.code, status: origin.status, sort_order: origin.sort_order, label: origin.label,
       });
       expect(copy.seed).toBeNull();
-      expect(copy.created_by).toBe(A.userId);
+      expect(copy.created_by).toBe(A1.userId);
     }
     expect(items.find((i) => i.code === 'B')!.status).toBe('archived'); // archived items keep a mapping
     // the source side is untouched: its items are not "forked items"
@@ -146,16 +152,16 @@ describe('201: the first fork copies everything and records provenance', () => {
 
     // and the same through the API: the translation workbench of the fork mirrors the source's
     const apiSrc = (await call(src.owner, 'GET', `${L(src.list.id)}/translations`)).body;
-    const apiFork = (await call(A, 'GET', `${L(fork.id)}/translations`)).body;
+    const apiFork = (await call(A1, 'GET', `${L(fork.id)}/translations`)).body;
     const view = (rows: any[]) => rows.map((r) => [r.locale, r.machine_translated]).sort();
     expect(view(apiFork)).toEqual(view(apiSrc));
   });
 
   it('the caller is the fork\'s list-owner (and only the caller)', async () => {
-    const roster = await call(A, 'GET', `${L(fork.id)}/access`);
+    const roster = await call(A1, 'GET', `${L(fork.id)}/access`);
     expect(roster.status).toBe(200);
-    expect(roster.body.items.map((g: any) => [g.user_id, g.role])).toEqual([[A.userId, 'list-owner']]);
-    expect((await call(A, 'PATCH', L(fork.id), { name: 'Our version' })).status).toBe(200);
+    expect(roster.body.items.map((g: any) => [g.user_id, g.role])).toEqual([[A1.userId, 'list-owner']]);
+    expect((await call(A1, 'PATCH', L(fork.id), { name: 'Our version' })).status).toBe(200);
   });
 
   it('the fork is an `org` list: members read it, but only the owner writes (members: 403, not fork_required)', async () => {
@@ -166,21 +172,21 @@ describe('201: the first fork copies everything and records provenance', () => {
   });
 
   it('copy-on-write: edits to the fork do not touch the source, and edits to the source do not reach the fork', async () => {
-    const forkA = (await walkItems(A, fork.id, 'all')).find((i) => i.code === 'A')!;
+    const forkA = (await walkItems(A1, fork.id, 'all')).find((i) => i.code === 'A')!;
     const srcA = srcItemsByCode.get('A')!;
-    expect((await call(A, 'PATCH', `${L(fork.id)}/items/${forkA.id}`, { label: 'Fork-only label' })).status).toBe(200);
+    expect((await call(A1, 'PATCH', `${L(fork.id)}/items/${forkA.id}`, { label: 'Fork-only label' })).status).toBe(200);
     expect((await walkItems(src.owner, src.list.id, 'all')).find((i) => i.code === 'A')!.label).toBe(srcA.label);
     expect((await call(src.owner, 'PATCH', `${L(src.list.id)}/items/${srcA.id}`, { label: 'Source-only label' })).status).toBe(200);
-    expect((await walkItems(A, fork.id, 'all')).find((i) => i.code === 'A')!.label).toBe('Fork-only label');
+    expect((await walkItems(A1, fork.id, 'all')).find((i) => i.code === 'A')!.label).toBe('Fork-only label');
     // and the fork can add what the source does not have; the source gets no such item
-    await addItem(A, fork.id, 'EXTRA');
+    await addItem(A1, fork.id, 'EXTRA');
     expect((await walkItems(src.owner, src.list.id, 'all')).map((i) => i.code)).not.toContain('EXTRA');
-    expect((await walkItems(A, fork.id, 'all')).find((i) => i.code === 'EXTRA')!.origin_item_id).toBeNull(); // added later => no origin
+    expect((await walkItems(A1, fork.id, 'all')).find((i) => i.code === 'EXTRA')!.origin_item_id).toBeNull(); // added later => no origin
   });
 
   it('a body {visibility:"private"} makes a draft fork', async () => {
     const other = await createPlatformList({ itemCodes: ['X'] });
-    const res = await forkList(A, other.list.id, { visibility: 'private' });
+    const res = await forkList(A1, other.list.id, { visibility: 'private' });
     expect(res.status).toBe(201);
     expect(res.body.visibility).toBe('private');
     expect((await call(V, 'GET', L(res.body.id))).status).toBe(404); // a draft is not shared with members
@@ -277,28 +283,43 @@ describe('409 CONFLICT, refined by `reason`', () => {
 describe('403: quota is enforced, atomically', () => {
   it('org_lists: an org at its active-list ceiling cannot fork (QUOTA_EXCEEDED, scope, limit, current); freeing a slot lets the same fork through', async () => {
     const q = actor('q1', FORK_QUOTA_LISTS_ORG_ID, 'admin'); // ceiling: 1 active list
-    const mine = await createList(q, { name: 'Fills the quota' });
-    const p = await createPlatformList({ itemCodes: ['A'] });
-    const res = await forkList(q, p.list.id);
-    expectError(res, 403, 'QUOTA_EXCEEDED');
-    assertResponse('POST', FORK_PATH, 403, res.body);
-    expect(res.body).toMatchObject({ scope: 'org_lists', limit: 1, current: 1 });
-    expect((await walkLists(q, 'status=all')).rows.map((l) => l.id)).toEqual([mine.id]); // atomic: no partial fork
-    // control: archive frees the allowance, and the identical request now succeeds
-    expect((await call(q, 'POST', `${L(mine.id)}/archive`)).status).toBe(200);
-    expect((await forkList(q, p.list.id)).status).toBe(201);
+    const made: string[] = []; // purged in `finally` so a re-run on the same database starts with an empty org
+    try {
+      const mine = await createList(q, { name: 'Fills the quota' });
+      made.push(mine.id);
+      const p = await createPlatformList({ itemCodes: ['A'] });
+      const res = await forkList(q, p.list.id);
+      expectError(res, 403, 'QUOTA_EXCEEDED');
+      assertResponse('POST', FORK_PATH, 403, res.body);
+      expect(res.body).toMatchObject({ scope: 'org_lists', limit: 1, current: 1 });
+      expect((await walkLists(q, 'status=all')).rows.map((l) => l.id)).toEqual([mine.id]); // atomic: no partial fork
+      // control: archive frees the allowance, and the identical request now succeeds
+      expect((await call(q, 'POST', `${L(mine.id)}/archive`)).status).toBe(200);
+      const ok = await forkList(q, p.list.id);
+      expect(ok.status).toBe(201);
+      made.push(ok.body.id);
+    } finally {
+      for (const id of made) await call(q, 'DELETE', `${L(id)}?purge=true`);
+    }
   });
 
   it('list_items: a source with more items than the org\'s per-list ceiling is refused, and nothing is created', async () => {
     const q = actor('q2', FORK_QUOTA_ITEMS_ORG_ID, 'admin'); // ceiling: 2 items per list
-    const big = await createPlatformList({ itemCodes: ['A', 'B', 'C'] });
-    const res = await forkList(q, big.list.id);
-    expectError(res, 403, 'QUOTA_EXCEEDED');
-    expect(res.body).toMatchObject({ scope: 'list_items', limit: 2 });
-    expect((await walkLists(q, 'status=all')).rows).toEqual([]);
-    // control: a source that fits is forked by the very same caller
-    const small = await createPlatformList({ itemCodes: ['A', 'B'] });
-    expect((await forkList(q, small.list.id)).status).toBe(201);
+    const made: string[] = [];
+    try {
+      const big = await createPlatformList({ itemCodes: ['A', 'B', 'C'] });
+      const res = await forkList(q, big.list.id);
+      expectError(res, 403, 'QUOTA_EXCEEDED');
+      expect(res.body).toMatchObject({ scope: 'list_items', limit: 2 });
+      expect((await walkLists(q, 'status=all')).rows).toEqual([]);
+      // control: a source that fits is forked by the very same caller
+      const small = await createPlatformList({ itemCodes: ['A', 'B'] });
+      const ok = await forkList(q, small.list.id);
+      expect(ok.status).toBe(201);
+      made.push(ok.body.id);
+    } finally {
+      for (const id of made) await call(q, 'DELETE', `${L(id)}?purge=true`);
+    }
   });
 });
 
