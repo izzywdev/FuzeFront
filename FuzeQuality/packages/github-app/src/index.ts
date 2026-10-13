@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
-import { normalizeWorkflowPath } from '@fuzequality/contracts'
+import { normalizeWorkflowPath, type TestExecutionEvidenceLink } from '@fuzequality/contracts'
 
 export const GITHUB_APP_PERMISSIONS = {
   metadata: 'read',
@@ -51,7 +51,7 @@ export type WorkflowExecutionCommand = {
   sourceUrl?: string
   startedAt?: string
   completedAt?: string
-  evidenceLinks: Array<{ kind: 'report'; name: string; url: string }>
+  evidenceLinks: TestExecutionEvidenceLink[]
   summary?: string
 }
 

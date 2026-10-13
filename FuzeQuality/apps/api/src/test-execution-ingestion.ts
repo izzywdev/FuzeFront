@@ -59,6 +59,15 @@ export async function linkExecutionToRevisionArtifacts(
 
 type RevisionArtifactLinks = Awaited<ReturnType<typeof linkExecutionToRevisionArtifacts>>
 
+export function mergeExecutionEvidenceLinks(
+  existing: WorkflowExecutionCommand['evidenceLinks'],
+  discovered: WorkflowExecutionCommand['evidenceLinks'],
+) {
+  return [...new Map(
+    [...existing, ...discovered].map(link => [`${link.kind}:${link.url}`, link])
+  ).values()].slice(0, 100)
+}
+
 /**
  * Builds a GitHub webhook execution with exact-revision catalog evidence.
  * Catalog-derived links and performance kind are authoritative over the

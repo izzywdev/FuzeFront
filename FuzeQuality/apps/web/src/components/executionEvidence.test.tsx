@@ -146,7 +146,10 @@ describe('ExecutionThresholdEvidence', () => {
   })
 
   it('renders watchable video and report links for the run', () => {
-    render(<ExecutionEvidenceLinks execution={execution} />)
+    const { container } = render(<ExecutionEvidenceLinks execution={{
+      ...execution,
+      evidenceLinks: [...execution.evidenceLinks].reverse(),
+    }} />)
 
     expect(screen.getByRole('region', { name: 'Run evidence' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Watch FuzeQuality production journey' })).toHaveAttribute(
@@ -157,6 +160,10 @@ describe('ExecutionThresholdEvidence', () => {
       'href',
       'https://evidence.example/run-42/report/'
     )
+    expect([...container.querySelectorAll('a')].map(link => link.textContent)).toEqual([
+      'Watch FuzeQuality production journey',
+      'Open Playwright HTML report',
+    ])
   })
 
   it('renders only the latest label for a stable evidence link', () => {
@@ -172,6 +179,24 @@ describe('ExecutionThresholdEvidence', () => {
     expect(screen.queryByRole('link', { name: 'Open Pending report' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Final Playwright report' })).toHaveAttribute('href', report.url)
     expect(container.querySelectorAll('a')).toHaveLength(1)
+  })
+
+  it('labels a provider-hosted video archive as a download', () => {
+    render(<ExecutionEvidenceLinks execution={{
+      ...execution,
+      evidenceLinks: [{
+        kind: 'video',
+        name: 'fuzequality-post-prod-playwright-video',
+        url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/11',
+      }],
+    }} />)
+
+    expect(screen.getByRole('link', {
+      name: 'Download fuzequality-post-prod-playwright-video',
+    })).toHaveAttribute(
+      'href',
+      'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/11'
+    )
   })
 
   it('does not render unsafe legacy evidence or provider URLs', () => {

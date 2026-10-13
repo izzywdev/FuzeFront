@@ -1,8 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
 import { testExecutionInputSchema } from '@fuzequality/contracts'
-import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
+  it('merges provider artifacts without duplicating or overflowing evidence', () => {
+    const generic = { kind: 'report' as const, name: 'Run artifacts', url: 'https://github.com/run/42#artifacts' }
+    const discovered = Array.from({ length: 101 }, (_, index) => ({
+      kind: (index === 0 ? 'video' : 'other') as 'video' | 'other',
+      name: index === 0 ? 'Final video' : `Artifact ${index}`,
+      url: index === 0 ? 'https://github.com/run/42/video' : `https://github.com/run/42/artifact/${index}`,
+    }))
+    expect(mergeExecutionEvidenceLinks([generic], [generic, ...discovered])).toEqual([
+      generic,
+      ...discovered.slice(0, 99),
+    ])
+  })
+
   it('makes exact-revision links authoritative in webhook execution records', () => {
     const execution = {
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

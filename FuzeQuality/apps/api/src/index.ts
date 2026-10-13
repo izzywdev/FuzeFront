@@ -31,7 +31,7 @@ import {
   webhookScanCommands,
   webhookWorkflowExecutions,
 } from '@fuzequality/github-app'
-import { dispatchPerformanceWorkflow, githubInstallationToken } from '../../workers/src/github'
+import { dispatchPerformanceWorkflow, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { qualityResources } from './platform-permissions'
@@ -40,7 +40,7 @@ import { createOpenApiSurface } from './openapi'
 import { executionPerformanceFilterSchema, executionPageFilterSchema } from './execution-filter'
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
-import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
@@ -1147,15 +1147,36 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
   for (const execution of workflowExecutions) {
     const repository = repositories.find(item => item.id === execution.repositoryId)
     if (!repository?.tenantId) continue
+    let executionWithEvidence = execution
+    if (execution.status !== 'running' && repository.installationId) {
+      try {
+        const discovered = await githubWorkflowArtifactEvidence({
+          owner: repository.owner,
+          name: repository.name,
+          runId: execution.externalRunId,
+          installationId: repository.installationId,
+        })
+        executionWithEvidence = {
+          ...execution,
+          evidenceLinks: mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered),
+        }
+      } catch {
+        console.warn(JSON.stringify({
+          event: 'github_workflow_artifact_discovery_failed',
+          repositoryId: repository.id,
+          externalRunId: execution.externalRunId,
+        }))
+      }
+    }
     const links = await linkExecutionToRevisionArtifacts(
-      execution,
+      executionWithEvidence,
       repository.tenantId,
       (repositoryId, tenantId, sourceRevision) =>
         store.catalogRevisionForSource(repositoryId, tenantId, sourceRevision),
       (repositoryId, tenantId, revision) =>
         store.qualityArtifacts(repositoryId, tenantId, revision)
     )
-    await store.saveTestExecution(webhookExecutionRecord(execution, repository.tenantId, links))
+    await store.saveTestExecution(webhookExecutionRecord(executionWithEvidence, repository.tenantId, links))
   }
   for (const command of commands) {
     let commitSha = command.commitSha
