@@ -133,6 +133,18 @@ const postProductionArtifact: QualityArtifact = {
   summary: 'Post-production workflow', evidence: ['playwright test:post-prod'],
 }
 
+const policyArtifact: QualityArtifact = {
+  id: 'policy-auth', repositoryId: repository.id, kind: 'policy',
+  title: 'Authentication policy', sourcePath: 'governance/auth.md',
+  summary: 'Authentication must be verified.', evidence: ['Authentication must be verified.'],
+}
+
+const gateArtifact: QualityArtifact = {
+  id: 'gate-auth', repositoryId: repository.id, kind: 'gate',
+  title: 'Authentication gate', sourcePath: '.github/workflows/auth.yml',
+  summary: 'Authentication required check.', evidence: ['Authentication check is required.'],
+}
+
 const governanceEvaluation: PolicyGateEvaluation = {
   id: 'evaluation-1',
   repositoryId: repository.id,
@@ -149,6 +161,23 @@ const governanceEvaluation: PolicyGateEvaluation = {
   recommendation: 'Add an authentication gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T00:00:00.000Z',
+}
+
+const guardedEvaluation: PolicyGateEvaluation = {
+  ...governanceEvaluation,
+  id: 'evaluation-guarded-1',
+  kind: 'guarded-policy',
+  severity: 'low',
+  title: 'Policy is guarded: Authentication policy / Authentication gate',
+  detail: '.github/workflows/auth.yml shares enforceable subjects with governance/auth.md.',
+  policyArtifactIds: [policyArtifact.id],
+  gateArtifactIds: [gateArtifact.id],
+  scope: { sourcePaths: [policyArtifact.sourcePath, gateArtifact.sourcePath], subjects: ['authentication'] },
+  evidencePassages: [
+    { artifactId: policyArtifact.id, sourcePath: policyArtifact.sourcePath, text: policyArtifact.evidence[0], signal: 'obligation' },
+    { artifactId: gateArtifact.id, sourcePath: gateArtifact.sourcePath, text: gateArtifact.evidence[0], signal: 'gate' },
+  ],
+  recommendation: 'Keep the policy and gate aligned.',
 }
 
 const loadExecution: TestExecution = {
@@ -190,6 +219,28 @@ afterEach(() => {
 })
 
 describe('RepositoryIntelligence flow inventory', () => {
+  it('shows reviewable policy-to-gate relationships from repository analysis', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([policyArtifact, gateArtifact])
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([guardedEvaluation])
+    const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    const view = render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByLabelText('Relationship or anomaly')).toHaveValue('')
+    expect(screen.getByRole('option', { name: 'guarded-policy' })).toBeVisible()
+    expect(screen.getAllByText(guardedEvaluation.title)).toHaveLength(2)
+    expect(screen.getAllByText('policy · governance/auth.md')).not.toHaveLength(0)
+    expect(screen.getAllByText('gate · .github/workflows/auth.yml')).not.toHaveLength(0)
+    await waitFor(() => {
+      expect(flowRequest).toHaveBeenCalled()
+      expect(api.qualityArtifactsByIds).toHaveBeenCalled()
+      expect(api.testExecutions).toHaveBeenCalled()
+      expect(api.executionPerformance).toHaveBeenCalled()
+    })
+    view.unmount()
+  })
+
   it('keeps completed policy reviews authoritative when a stale page arrives', () => {
     const accepted = { ...governanceEvaluation, reviewStatus: 'accepted' as const }
     const stale = { ...governanceEvaluation, reviewStatus: 'proposed' as const }
@@ -965,7 +1016,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     await screen.findByText(candidate.title)
     fireEvent.click(screen.getByText('Source evidence'))
 
-    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [historicalArtifact.id])
+    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [historicalArtifact.id]))
     expect(await screen.findByText('story · src/Checkout.stories.tsx')).toBeVisible()
     expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
   })

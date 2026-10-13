@@ -117,6 +117,33 @@ export function evaluatePolicyGates(repository: Repository, revision: string, ar
       const decision = policyPolarity(policy)
       const title = `Policy has no detected gate: ${policy.title}`
       result.push({ id: id(repository.id, revision, 'unguarded-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'unguarded-policy', severity: 'high', title, detail: `No gate evidence shares an enforceable subject with ${policy.sourcePath}.`, policyArtifactIds: [policy.id], gateArtifactIds: [], confidence: 0.75, scope: scope([policy]), evidencePassages: [passageWithSignal(policy, decision?.polarity ?? 'policy', [], decision?.text)].filter(item => item !== undefined), recommendation: 'Define a named CI or post-production gate that verifies this policy and cite the policy in its configuration.', reviewStatus: 'proposed', createdAt })
+    } else {
+      for (const gate of matching) {
+        const subjects = sharedTerms(policy, gate)
+        const decision = policyPolarity(policy, subjects)
+        const title = `Policy is guarded: ${policy.title} / ${gate.title}`
+        result.push({
+          id: id(repository.id, revision, 'guarded-policy', title),
+          repositoryId: repository.id,
+          tenantId,
+          revision,
+          kind: 'guarded-policy',
+          severity: 'low',
+          title,
+          detail: `${gate.sourcePath} shares enforceable subjects with ${policy.sourcePath}.`,
+          policyArtifactIds: [policy.id],
+          gateArtifactIds: [gate.id],
+          confidence: Math.min(0.95, 0.75 + subjects.length * 0.05),
+          scope: scope([policy, gate], subjects),
+          evidencePassages: [
+            passageWithSignal(policy, decision?.polarity ?? 'policy', subjects, decision?.text),
+            passageWithSignal(gate, 'gate', subjects),
+          ].filter(item => item !== undefined),
+          recommendation: 'Review the detected relationship and keep the policy reference and measurable gate criteria aligned.',
+          reviewStatus: 'proposed',
+          createdAt,
+        })
+      }
     }
   }
   for (const gate of gates) {

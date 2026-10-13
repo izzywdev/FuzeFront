@@ -13,7 +13,7 @@ const policyGateEvaluationSchema = z.object({
   repositoryId: z.string().uuid(),
   tenantId: z.string().trim().min(1).max(200),
   revision: z.string().trim().min(1).max(500),
-  kind: z.enum(['unguarded-policy', 'guard-without-policy', 'contradictory-policy', 'ambiguous-policy']),
+  kind: z.enum(['guarded-policy', 'unguarded-policy', 'guard-without-policy', 'contradictory-policy', 'ambiguous-policy']),
   severity: z.enum(['high', 'medium', 'low']),
   title: z.string().trim().min(1).max(500),
   detail: z.string().trim().min(1).max(5000),

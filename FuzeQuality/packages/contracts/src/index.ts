@@ -508,7 +508,7 @@ export type PolicyGateEvaluation = {
   repositoryId: string
   tenantId: string
   revision: string
-  kind: 'unguarded-policy' | 'guard-without-policy' | 'contradictory-policy' | 'ambiguous-policy'
+  kind: 'guarded-policy' | 'unguarded-policy' | 'guard-without-policy' | 'contradictory-policy' | 'ambiguous-policy'
   severity: 'high' | 'medium' | 'low'
   title: string
   detail: string

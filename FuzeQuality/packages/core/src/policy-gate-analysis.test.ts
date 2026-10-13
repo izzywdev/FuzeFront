@@ -39,12 +39,27 @@ describe('policy gate evaluation', () => {
     expect(results.find(item => item.kind === 'unguarded-policy')?.evidencePassages).toEqual([])
   })
 
-  it('does not call a gate ungoverned when it shares an enforceable subject', () => {
+  it('persists a reviewable guarded relationship when policy and gate share an enforceable subject', () => {
     const results = evaluatePolicyGates(repository, 'abc', [
       { id: 'policy-auth', repositoryId: 'repo-1', kind: 'policy', title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Authentication required.', evidence: ['authentication required'] },
       { id: 'gate-auth', repositoryId: 'repo-1', kind: 'gate', title: 'Authentication gate', sourcePath: '.github/auth.yml', summary: 'Authentication required check.', evidence: ['authentication check'] },
     ])
-    expect(results).toEqual([])
+    expect(results).toEqual([
+      expect.objectContaining({
+        kind: 'guarded-policy',
+        severity: 'low',
+        policyArtifactIds: ['policy-auth'],
+        gateArtifactIds: ['gate-auth'],
+        scope: {
+          sourcePaths: ['governance/auth.md', '.github/auth.yml'],
+          subjects: ['authentication'],
+        },
+      }),
+    ])
+    expect(results[0].evidencePassages).toEqual([
+      expect.objectContaining({ artifactId: 'policy-auth', sourcePath: 'governance/auth.md' }),
+      expect.objectContaining({ artifactId: 'gate-auth', sourcePath: '.github/auth.yml', signal: 'gate' }),
+    ])
   })
 
   it('flags discretionary policy wording as ambiguous rather than silently gateable', () => {

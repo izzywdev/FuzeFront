@@ -6,6 +6,7 @@ export const policyGateFilterSchema = z
   .object({
     kind: z
       .enum([
+        'guarded-policy',
         'unguarded-policy',
         'guard-without-policy',
         'contradictory-policy',

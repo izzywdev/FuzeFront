@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.22.0
+  version: 0.23.0
   license:
     name: UNLICENSED
 servers:
@@ -602,7 +602,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
+            enum: [guarded-policy, unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
         - name: severity
           in: query
           schema: { type: string, enum: [high, medium, low] }
@@ -1266,6 +1266,9 @@ components:
         reviewedBy: { type: string }
         reason: { type: string }
         createdAt: { type: string, format: date-time }
+    PolicyGateFindingKind:
+      type: string
+      enum: [guarded-policy, unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
     PolicyGateEvidencePassage:
       type: object
       additionalProperties: false
@@ -1288,7 +1291,7 @@ components:
         revision: { type: string, minLength: 1, maxLength: 500 }
         kind:
           type: string
-          enum: [unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
+          enum: [guarded-policy, unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
         severity: { type: string, enum: [high, medium, low] }
         title: { type: string, minLength: 1, maxLength: 500 }
         detail: { type: string, minLength: 1, maxLength: 5000 }
@@ -1333,7 +1336,7 @@ components:
         revision: { type: string }
         kind:
           type: string
-          enum: [unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
+          enum: [guarded-policy, unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
         severity: { type: string, enum: [high, medium, low] }
         title: { type: string }
         detail: { type: string }

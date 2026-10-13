@@ -4287,7 +4287,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             aria-label="Policy and gate finding filters"
           >
             <label>
-              Anomaly
+              Relationship or anomaly
               <select
                 value={policyGateKind}
                 onChange={event =>
@@ -4296,8 +4296,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   )
                 }
               >
-                <option value="">All anomalies</option>
+                <option value="">All relationships and anomalies</option>
                 {[
+                  'guarded-policy',
                   'unguarded-policy',
                   'guard-without-policy',
                   'contradictory-policy',

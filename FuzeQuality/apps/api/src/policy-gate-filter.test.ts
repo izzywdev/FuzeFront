@@ -60,6 +60,13 @@ describe('policy-gate inventory filter', () => {
     ])
   })
 
+  it('accepts successful guarded relationships as first-class evidence', () => {
+    const guarded = evaluation({ kind: 'guarded-policy', severity: 'low' })
+    const filter = policyGateFilterSchema.parse({ kind: 'guarded-policy' })
+
+    expect(filterPolicyGateEvaluations([evaluation(), guarded], filter)).toEqual([guarded])
+  })
+
   it('rejects unknown query keys and invalid filter values', () => {
     expect(
       policyGateFilterSchema.safeParse({ kind: 'missing-owner' }).success
