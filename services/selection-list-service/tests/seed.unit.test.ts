@@ -68,13 +68,21 @@ describe('shipped platform packs (S8)', () => {
     const packs = loadPlatformPacks();
     expect(packs.length).toBeGreaterThanOrEqual(1);
     for (const { pack, file } of packs) {
-      expect(selectionListSeedPackSchemaV1.safeParse(JSON.parse(fs.readFileSync(file, 'utf8'))).success).toBe(true);
+      // the shared schema is strict; `translationProvenance` is the loader's own key (see seed/packs.ts)
+      const { translationProvenance, ...raw } = JSON.parse(fs.readFileSync(file, 'utf8'));
+      expect(translationProvenance === undefined || translationProvenance === 'human' || translationProvenance === 'machine').toBe(true);
+      expect(selectionListSeedPackSchemaV1.safeParse(raw).success).toBe(true);
       expect(path.basename(file)).toBe(`${pack.packKey}.v${pack.version}.json`);
     }
   });
 
-  it('platform-defaults v1 is the plan catalogue: yes-no, priority, work-status - 3 lists, 10 items, all 11 locales, human (not machine) text', () => {
+  it('platform-defaults v1 is the plan catalogue: yes-no, priority, work-status - 3 lists, 10 items, all 11 locales, declared MACHINE-translated (LLM-reviewed, not native-reviewed)', () => {
     const pack = loadPlatformPack('platform-defaults', 1);
+    // Provenance must stay honest: these strings were AI-written and then LLM-reviewed (2026-10-05, owner-approved
+    // in place of native review; docs/runbooks/selection-lists-seeding-operations.md section 2.5). That is still
+    // machine output. Flipping this to 'human' is only correct once a human has reviewed every locale - and since
+    // an applied version is immutable, that ships as platform-defaults.v2.json.
+    expect(pack.translationProvenance).toBe('machine');
     expect(pack.appliesTo).toEqual(['organization', 'personal']); // never the root `platform` org by default
     expect(pack.lists.map((l) => [l.key, l.items.map((i) => i.code)])).toEqual([
       ['yes-no', ['YES', 'NO']],
@@ -91,6 +99,63 @@ describe('shipped platform packs (S8)', () => {
     // within the contract limits
     expect(pack.lists.length).toBeLessThanOrEqual(SELECTION_LIST_LIMITS.MAX_LISTS_PER_SEED);
     expect(pack.lists.every((l) => l.items.length <= SELECTION_LIST_LIMITS.MAX_ITEMS_PER_LIST)).toBe(true);
+  });
+
+  describe('platform-defaults v1 locale review (2026-10-05, two-pass LLM review; still machine provenance)', () => {
+    const pack = loadPlatformPack('platform-defaults', 1);
+    const strings = (loc: string): Record<string, string> => {
+      const out: Record<string, string> = {};
+      for (const l of pack.lists) {
+        out[`${l.key}`] = (l.translations ?? []).find((t) => t.locale === loc)!.name;
+        for (const i of l.items) out[`${l.key}.${i.code}`] = (i.translations ?? []).find((t) => t.locale === loc)!.label;
+      }
+      return out;
+    };
+
+    it('every string is NFC, has no directional/format control characters, no trailing punctuation, and stays dropdown-short', () => {
+      const all: string[] = [];
+      for (const l of pack.lists) {
+        all.push(l.name, ...(l.translations ?? []).map((t) => t.name));
+        for (const i of l.items) all.push(i.label, ...(i.translations ?? []).map((t) => t.label));
+      }
+      expect(all.length).toBe(3 * 11 + 10 * 11);
+      for (const s of all) {
+        expect(s.normalize('NFC')).toBe(s);
+        expect(s).toBe(s.trim());
+        expect(s).not.toMatch(/[​-‏‪-‮⁦-⁩؜﻿]/); // ZW*, LRM/RLM, embeddings/isolates, ALM, BOM
+        expect(s).not.toMatch(/[.:;!?،。]$/);
+        expect(s.length).toBeLessThanOrEqual(24);
+      }
+      // the RTL locales carry no Latin letters (a stray LTR run is the classic bidi defect)
+      for (const loc of ['ar', 'he']) for (const s of Object.values(strings(loc))) expect(s).not.toMatch(/[A-Za-z]/);
+    });
+
+    it('pins the review decisions so a regression to the earlier flagged wording is caught', () => {
+      // ar: "blocked" in the status sense (not "محظور" = forbidden); DONE not the terse "تم"
+      expect(strings('ar')['work-status.BLOCKED']).toBe('متوقف');
+      expect(strings('ar')['work-status.DONE']).toBe('مكتمل');
+      // hi: one register (formal) for the priority scale; URGENT is the short "तत्काल"
+      expect(strings('hi')['priority.LOW']).toBe('निम्न');
+      expect(strings('hi')['priority.URGENT']).toBe('तत्काल');
+      // zh: 受阻 (plain-business) rather than the technical calque 已阻塞
+      expect(strings('zh')['work-status.BLOCKED']).toBe('受阻');
+      // de: "Arbeitsstatus" reads as employment/work-permit status
+      expect(strings('de')['work-status']).toBe('Bearbeitungsstatus');
+      // es: DONE parallels the other formal participles
+      expect(strings('es')['work-status.DONE']).toBe('Completado');
+      // pt: ONE variety (pt-BR-neutral, natural in pt-PT) - no European-leaning "Estado do trabalho"
+      expect(strings('pt')['work-status']).toBe('Situação do trabalho');
+      expect(strings('pt')['work-status.IN_PROGRESS']).toBe('Em andamento');
+    });
+
+    it('priority labels agree with the grammatical gender of the list name (feminine fr/es/ar)', () => {
+      const fr = strings('fr');
+      expect(['priority.LOW', 'priority.MEDIUM', 'priority.HIGH', 'priority.URGENT'].map((k) => fr[k])).toEqual(['Basse', 'Moyenne', 'Haute', 'Urgente']);
+      const es = strings('es');
+      expect(['priority.LOW', 'priority.MEDIUM', 'priority.HIGH', 'priority.URGENT'].map((k) => es[k])).toEqual(['Baja', 'Media', 'Alta', 'Urgente']);
+      const ar = strings('ar');
+      expect(['priority.LOW', 'priority.MEDIUM', 'priority.HIGH', 'priority.URGENT'].map((k) => ar[k])).toEqual(['منخفضة', 'متوسطة', 'عالية', 'عاجلة']);
+    });
   });
 
   it('the default loader resolves the highest version; currentPlatformPacks yields one pack per key', () => {
@@ -128,6 +193,20 @@ describe('platform pack loader refusals (the service refuses to start on a bad p
     expect(() => loadPlatformPacks(dir)).toThrow(/source locale/);
     write(dir, 'mini.v1.json', minimalPack({ lists: [{ key: 'mini-list', sourceLocale: 'en', name: 'M', items: [{ code: 'A', label: 'a' }, { code: 'A', label: 'b' }] }] }));
     expect(() => loadPlatformPacks(dir)).toThrow(/duplicate item code/);
+  });
+
+  it('translationProvenance: defaults to human, accepts machine, refuses anything else, and the rest of the file still goes through the strict schema', () => {
+    const dir = tmp();
+    write(dir, 'mini.v1.json', minimalPack());
+    expect(loadPlatformPack('mini', 1, dir).translationProvenance).toBe('human');
+    write(dir, 'mini.v1.json', minimalPack({ translationProvenance: 'machine' }));
+    expect(loadPlatformPack('mini', 1, dir).translationProvenance).toBe('machine');
+    write(dir, 'mini.v1.json', minimalPack({ translationProvenance: 'human' }));
+    expect(loadPlatformPack('mini', 1, dir).translationProvenance).toBe('human');
+    write(dir, 'mini.v1.json', minimalPack({ translationProvenance: 'ai' }));
+    expect(() => loadPlatformPacks(dir)).toThrow(/translationProvenance/);
+    write(dir, 'mini.v1.json', minimalPack({ translationProvenance: 'machine', surprise: true }));
+    expect(() => loadPlatformPacks(dir)).toThrow(SeedPackError); // other unknown keys are still refused
   });
 
   it('refuses a file whose name disagrees with its content, a bad file name, unparseable JSON, and an unreadable directory', () => {
