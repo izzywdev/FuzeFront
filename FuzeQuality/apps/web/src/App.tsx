@@ -3759,15 +3759,18 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             executions: { items: [] as TestExecution[], page: { nextCursor: null, hasMore: false } },
             performance: { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } },
             trend: { items: [] as ExecutionOutcomeTrend[], page: { nextCursor: null, hasMore: false } },
+            performanceExecutions: [] as TestExecution[],
             executionFailed: false,
+            performanceExecutionsFailed: false,
             performanceFailed: false,
             trendFailed: false,
           }
         }
-        const [executionResult, performanceResult, trendResult] = await Promise.allSettled([
+        const [executionResult, performanceResult, trendResult, performanceExecutionsResult] = await Promise.allSettled([
           api.testExecutions(repository.id, executionFilter),
           api.executionPerformance(repository.id, executionFilter),
           api.executionTrend(repository.id, executionFilter),
+          api.latestPerformanceExecutions(repository.id),
         ])
         return {
           repositoryId: repository.id,
@@ -3780,7 +3783,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           trend: trendResult.status === 'fulfilled'
             ? normalizeHistoryPage(trendResult.value)
             : { items: [] as ExecutionOutcomeTrend[], page: { nextCursor: null, hasMore: false } },
+          performanceExecutions: performanceExecutionsResult.status === 'fulfilled'
+            ? performanceExecutionsResult.value.items
+            : [],
           executionFailed: executionResult.status === 'rejected',
+          performanceExecutionsFailed: performanceExecutionsResult.status === 'rejected',
           performanceFailed: performanceResult.status === 'rejected',
           trendFailed: trendResult.status === 'rejected',
         }
@@ -3790,11 +3797,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         if (active) {
           const loadedExecutions = groups.flatMap(group => group.executions.items)
           setExecutions(loadedExecutions)
-          setPerformanceExecutions(loadedExecutions.filter(execution =>
-            execution.kind === 'load' || execution.kind === 'stress'
-          ))
+          setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions))
           setPerformanceEvidenceFailures(groups
-            .filter(group => group.executionFailed)
+            .filter(group => group.performanceExecutionsFailed)
             .map(group => group.repositoryId))
           setExecutionNextCursors(Object.fromEntries(
             groups.flatMap(group => group.executions.page.nextCursor

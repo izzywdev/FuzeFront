@@ -9,6 +9,32 @@ describe('test execution evidence', () => {
     await expect(store.testExecutions('repo-1', 'org-2')).resolves.toEqual([])
   })
 
+  it('returns the latest load or stress execution for every reviewed workflow independently of mixed history', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', status: 'passed' as const, name: 'run', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+    for (let index = 0; index < 60; index++) await store.saveTestExecution({ id: `ci-${index}`, ...base, externalRunId: `ci-${index}`, kind: 'ci', completedAt: `2026-10-13T12:${String(index).padStart(2, '0')}:00.000Z` })
+    await store.saveTestExecution({ id: 'load-old', ...base, externalRunId: 'load-old', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-10T00:00:00.000Z' })
+    await store.saveTestExecution({ id: 'load-new', ...base, externalRunId: 'load-new', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-11T00:00:00.000Z' })
+    await store.saveTestExecution({ id: 'stress', ...base, externalRunId: 'stress', kind: 'stress', workflowPath: '.github/workflows/stress.yml', completedAt: '2026-10-09T00:00:00.000Z' })
+
+    await expect(store.latestPerformanceExecutions('repo-1', 'org-1', ['.github/workflows/load.yml', '.github/workflows/stress.yml'])).resolves.toEqual([
+      expect.objectContaining({ id: 'load-new' }),
+      expect.objectContaining({ id: 'stress' }),
+    ])
+  })
+
+  it('pushes tenant and reviewed workflow paths into the latest-performance Postgres query', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+    await store.latestPerformanceExecutions('repo-1', 'org-1', ['.github/workflows/load.yml'])
+    const [sql, parameters] = query.mock.calls[0]
+    expect(String(sql)).toContain("kind IN ('load','stress')")
+    expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
+    expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
+    expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/load.yml']])
+  })
+
   it('updates a run lifecycle in place but preserves reruns without a source URL', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '456', revision: 'abc', kind: 'ci' as const, name: 'CI', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }

@@ -171,6 +171,7 @@ export interface CatalogStore {
   reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }, expectedRevision?: string): Promise<PolicyGateEvaluation | undefined>
   policyGateReviewHistory(evaluationId: string, tenantId: string, query?: ReviewHistoryQuery): Promise<PolicyGateReviewHistoryEntry[]>
   testExecutions(repositoryId: string, tenantId: string, query?: TestExecutionQuery): Promise<TestExecution[]>
+  latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]): Promise<TestExecution[]>
   executionOutcomeTrend(repositoryId: string, tenantId: string, query?: ExecutionOutcomeTrendQuery): Promise<ExecutionOutcomeTrend[]>
   policyGatePerformance(repositoryId: string, tenantId: string, query?: PolicyGatePerformanceQuery): Promise<PolicyGatePerformance[]>
   saveTestExecution(execution: TestExecution): Promise<void>
@@ -458,6 +459,21 @@ export class MemoryCatalogStore implements CatalogStore {
       .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
       .filter(item => !query.after || testExecutionOccurredAtMillis(item) < after! || (testExecutionOccurredAtMillis(item) === after && item.id < query.after.id))
     return query.limit === undefined ? items : items.slice(0, query.limit)
+  }
+
+  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]) {
+    const allowed = new Set(workflowPaths)
+    const latest = new Map<string, TestExecution>()
+    for (const execution of this.executions
+      .filter(item =>
+        item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        (item.kind === 'load' || item.kind === 'stress') &&
+        Boolean(item.workflowPath && allowed.has(item.workflowPath))
+      )
+      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))) {
+      if (execution.workflowPath && !latest.has(execution.workflowPath)) latest.set(execution.workflowPath, execution)
+    }
+    return [...latest.values()]
   }
 
   async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}) {
@@ -1157,6 +1173,20 @@ export class PostgresCatalogStore implements CatalogStore {
        ORDER BY COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC
        LIMIT COALESCE($12::integer, 2147483647)`,
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+    )
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
+  }
+
+  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]): Promise<TestExecution[]> {
+    if (!workflowPaths.length) return []
+    const result = await this.pool.query(
+      `SELECT DISTINCT ON (workflow_path) *
+       FROM fuzequality.test_executions
+       WHERE repository_id=$1 AND tenant_id=$2
+         AND kind IN ('load','stress')
+         AND workflow_path=ANY($3::text[])
+       ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
+      [repositoryId, tenantId, workflowPaths],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
