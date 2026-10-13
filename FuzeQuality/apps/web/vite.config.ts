@@ -8,6 +8,11 @@ const appRoot = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
   root: resolve(appRoot),
+  resolve: {
+    // Shared Design System modules resolve from the monorepo root. Dedupe them
+    // onto the remote's singleton React runtime before federation packaging.
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
+  },
   // Served by the host shell at https://<host>/apps/fuzequality/ — the FuzeFront
   // ingress proxies that prefix straight to this app's in-cluster Service, so the
   // remote never re-enters the public edge. `base` must match that prefix (and

@@ -22,6 +22,12 @@ const evaluation: PolicyGateEvaluation = {
     sourcePaths: ['governance/auth.md'],
     subjects: ['authentication'],
   },
+  evidencePassages: [{
+    artifactId: 'policy-auth',
+    sourcePath: 'governance/auth.md',
+    text: 'Authentication is required.',
+    signal: 'obligation',
+  }],
   recommendation: 'Add a gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T08:00:00.000Z',
@@ -44,8 +50,49 @@ describe('PolicyGateEvidence', () => {
     expect(screen.getByText('75%')).toBeInTheDocument()
     expect(screen.getByText('abc123')).toBeInTheDocument()
     expect(screen.getByText('Matched subjects: authentication')).toBeInTheDocument()
-    expect(screen.getByText('Authentication policy')).toBeInTheDocument()
+    expect(screen.getAllByText('Authentication policy')).toHaveLength(2)
     expect(screen.getByText('policy · governance/auth.md')).toBeInTheDocument()
+    expect(screen.getByRole('generic', { name: 'Decisive policy passages' })).toHaveTextContent('Authentication is required.')
+    expect(screen.getByText('Requires')).toBeInTheDocument()
+  })
+
+  it('compares contradiction polarity with the resolved policy sources', () => {
+    const contradictory: PolicyGateEvaluation = {
+      ...evaluation,
+      kind: 'contradictory-policy',
+      title: 'Conflicting deployment policies',
+      policyArtifactIds: ['policy-auth', 'policy-exception'],
+      evidencePassages: [
+        { ...evaluation.evidencePassages![0], signal: 'obligation' },
+        {
+          artifactId: 'policy-exception',
+          sourcePath: 'governance/exceptions.md',
+          text: 'Emergency authentication must not require approval.',
+          signal: 'prohibition',
+        },
+      ],
+    }
+    const view = render(
+      <PolicyGateEvidence
+        evaluation={contradictory}
+        artifacts={[
+          ...artifacts,
+          {
+            ...artifacts[0],
+            id: 'policy-exception',
+            title: 'Emergency authentication exception',
+            sourcePath: 'governance/exceptions.md',
+          },
+        ]}
+      />,
+    )
+
+    const passages = view.container.querySelector('.governance-passages')
+    expect(passages).toHaveTextContent('Requires')
+    expect(passages).toHaveTextContent('Prohibits')
+    expect(passages).toHaveTextContent('Authentication policy')
+    expect(passages).toHaveTextContent('Emergency authentication exception')
+    expect(passages).toHaveTextContent('governance/exceptions.md')
   })
 
   it('keeps legacy evaluations without confidence or scope reviewable', () => {
@@ -59,5 +106,12 @@ describe('PolicyGateEvidence', () => {
 
     expect(screen.getByText('Unknown')).toBeInTheDocument()
     expect(screen.getByText('Repository scope was not recorded for this legacy evaluation.')).toBeInTheDocument()
+  })
+
+  it('does not render generated metadata as a decisive repository passage', () => {
+    const view = render(<PolicyGateEvidence evaluation={{ ...evaluation, evidencePassages: [] }} artifacts={artifacts} />)
+
+    expect(view.container.querySelector('.governance-passages')).toBeNull()
+    expect(view.container).not.toHaveTextContent('policy evidence discovered during repository analysis')
   })
 })

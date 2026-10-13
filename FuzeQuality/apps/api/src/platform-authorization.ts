@@ -20,8 +20,26 @@ export function requirePlatformPermission(resource: string, action: string) {
     if (!baseUrl) return response.status(503).json({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
     try {
       const identityHeaders: Record<string, string> = { authorization }
-      const sessionResponse = await fetch(`${baseUrl}/api/v1/security/session`, { headers: identityHeaders })
-      if (!sessionResponse.ok) return response.status(401).json({ error: 'Authentication required', code: 'IDENTITY_INVALID' })
+      // The session token identifies the principal, while the portal's current
+      // workspace selects the tenant. Treat the header only as a hint: the
+      // FuzeFront Security endpoint canonicalizes it and proves active
+      // membership before returning identity.tenantId.
+      const tenantHint = request.header('x-fuzefront-tenant-id')
+      const sessionUrl = new URL(`${baseUrl}/api/v1/security/session`)
+      if (tenantHint) sessionUrl.searchParams.set('tenant', tenantHint)
+      const sessionResponse = await fetch(sessionUrl, { headers: identityHeaders })
+      if (!sessionResponse.ok) {
+        if (sessionResponse.status === 400) {
+          return response.status(400).json({ error: 'Invalid tenant selection', code: 'TENANT_INVALID' })
+        }
+        if (sessionResponse.status === 403) {
+          return response.status(403).json({ error: 'Active tenant membership required', code: 'TENANT_FORBIDDEN' })
+        }
+        if (sessionResponse.status >= 500) {
+          return response.status(503).json({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
+        }
+        return response.status(401).json({ error: 'Authentication required', code: 'IDENTITY_INVALID' })
+      }
       const body = await sessionResponse.json() as { identity?: Partial<Identity> }
       if (!body.identity?.userId || !body.identity.tenantId) return response.status(403).json({ error: 'A tenant-scoped identity is required', code: 'TENANT_UNRESOLVED' })
       const identity = body.identity as PlatformIdentity

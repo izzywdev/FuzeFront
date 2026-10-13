@@ -20,6 +20,7 @@ const baseFiles = {
     startUrl: '/',
     fullScopeUrl: 'https://mobile.fuzefront.com/',
     webManifestUrl: 'https://mobile.fuzefront.com/manifest.webmanifest',
+    minSdkVersion: 24,
     name: 'Mobile App',
     signingKey: { alias: 'release' },
     fingerprints: [{ name: 'release', value: fingerprint }],
@@ -85,6 +86,27 @@ test('rejects malformed signing fingerprints', () => {
   })
   assert.equal(result.status, 1)
   assert.match(result.stderr, /invalid TWA signing fingerprint/)
+})
+
+test('rejects an Android SDK floor below Android Browser Helper requirements', () => {
+  const twa = structuredClone(baseFiles['android/twa-manifest.json'])
+  twa.minSdkVersion = 21
+  const result = runGate({ 'android/twa-manifest.json': twa })
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /minSdkVersion must be at least 24/)
+})
+
+test('supports a nested product using the Vite apps/web public directory', () => {
+  const files = {
+    '.fuze/manifest.json': null,
+    'frontend/public/manifest.webmanifest': null,
+    'frontend/public/.well-known/assetlinks.json': null,
+    'apps/web/public/manifest.webmanifest': {},
+    'apps/web/public/.well-known/assetlinks.json': baseFiles['frontend/public/.well-known/assetlinks.json'],
+  }
+  const result = runGate(files)
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /is consistent/)
 })
 
 test('rejects assetlinks without URL-handling delegation', () => {

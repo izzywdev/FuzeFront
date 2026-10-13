@@ -2,9 +2,11 @@ import type {
   AdminTenantContext,
   OrganizationQualitySummary,
   Portfolio,
+  QualityArtifact,
+  QualityArtifactPage,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
-import type { Identity, SecurityErrorCode } from '@fuzefront/security-client'
+import type { Identity } from '@fuzefront/security-client'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | 'viewer'
 export type OrganizationMember = { id: string; email?: string; name?: string; displayName?: string; userId?: string; user_id?: string; role: OrganizationRole; status?: string }
@@ -30,6 +32,21 @@ function portalToken(): string | null | undefined {
   return context?.getAccessToken?.()
 }
 
+function portalTenant(): string | null {
+  const hostWindow = window as Window & {
+    __FUZEFRONT__?: { getContext?: () => { tenantId?: string | null; activeOrganization?: { id: string } | null } }
+    __FRONTFUSE_CONTEXT__?: { session?: { tenantId?: string | null } | null }
+  }
+  const context = hostWindow.__FUZEFRONT__?.getContext?.()
+  // The aggregate runtime bridge is canonical. The federation loader context
+  // is an equivalent host-owned fallback during the short interval before the
+  // bridge's React effect publishes its first organization snapshot.
+  return context?.tenantId
+    ?? context?.activeOrganization?.id
+    ?? hostWindow.__FRONTFUSE_CONTEXT__?.session?.tenantId
+    ?? null
+}
+
 /**
  * Receives the portal account-vault token from the Module Federation host.
  * A remote must never read the host's storage directly: the host remains the
@@ -40,25 +57,38 @@ export function configurePlatformSecurity(getToken?: TokenProvider) {
 }
 
 export type PlatformSession = Pick<Identity, 'userId' | 'tenantId' | 'roles'>
-type SecurityFailure = { error?: string; code?: SecurityErrorCode }
+type ApiFailure = { error?: string; code?: string }
+
+export class CatalogApiError extends Error {
+  constructor(message: string, readonly code?: string, readonly status?: number) {
+    super(message)
+    this.name = 'CatalogApiError'
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
     const token = platformToken?.() ?? portalToken()
+    const tenant = portalTenant()
     const response = await fetch(`${API_BASE}${path}`, {
       ...init,
       signal: controller.signal,
       headers: {
         'content-type': 'application/json',
         ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(tenant ? { 'x-fuzefront-tenant-id': tenant } : {}),
         ...init?.headers,
       },
     })
     if (!response.ok) {
-      const error = await response.json().catch(() => null) as SecurityFailure | null
-      throw new Error(error?.error ?? `Request failed: ${response.status}`)
+      const error = await response.json().catch(() => null) as ApiFailure | null
+      throw new CatalogApiError(
+        error?.error ?? `Request failed: ${response.status}`,
+        error?.code,
+        response.status
+      )
     }
     return response.json() as Promise<T>
   } catch (error) {
@@ -71,22 +101,50 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+async function qualityArtifacts(id: string, revision?: string, cursor?: string): Promise<QualityArtifactPage | QualityArtifact[]> {
+  const query = new URLSearchParams()
+  if (revision) query.set('revision', revision)
+  if (cursor) query.set('cursor', cursor)
+  return request<QualityArtifactPage | QualityArtifact[]>(
+    `/api/v1/repositories/${id}/quality-artifacts${query.size ? `?${query}` : ''}`
+  )
+}
+
 export const api = {
   portfolio: () => request<Portfolio>('/api/v1/portfolio'),
   requirementFreshness: () => request<{ freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'; lastSuccessAt?: string }>('/api/v1/requirements/freshness'),
   addRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
-  repositoryScanHistory: (id: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history`),
-  qualityArtifacts: (id: string) => request<import('@fuzequality/contracts').QualityArtifact[]>(`/api/v1/repositories/${id}/quality-artifacts`),
-  repositoryFlowCandidates: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').RepositoryFlowCandidate[]>(`/api/v1/repositories/${id}/flow-candidates?${new URLSearchParams(filter)}`),
+  repositoryScanHistory: (id: string, cursor?: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryPage | import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
+  qualityArtifacts,
+  qualityArtifactsByIds: (id: string, artifactIds: string[]) => {
+    const query = new URLSearchParams()
+    artifactIds.forEach(artifactId => query.append('id', artifactId))
+    return request<{ items: import('@fuzequality/contracts').QualityArtifact[] }>(
+      `/api/v1/repositories/${id}/quality-artifacts/by-ids?${query}`
+    )
+  },
+  repositoryFlowCandidates: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').RepositoryFlowCandidatePage | import('@fuzequality/contracts').RepositoryFlowCandidate[]>(`/api/v1/repositories/${id}/flow-candidates?${new URLSearchParams(filter)}`),
+  repositoryFlowCandidate: (repositoryId: string, candidateId: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}`),
   reviewRepositoryFlowCandidate: (repositoryId: string, candidateId: string, status: 'confirmed' | 'rejected', reason?: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),
-  repositoryFlowReviewHistory: (repositoryId: string, candidateId: string) => request<import('@fuzequality/contracts').RepositoryFlowReviewHistoryEntry[]>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/history`),
-  policyGateEvaluations: (id: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation[]>(`/api/v1/repositories/${id}/policy-gate-evaluations`),
-  policyGateReviewHistory: (repositoryId: string, evaluationId: string) => request<Array<{ status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string; createdAt: string }>>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/history`),
+  repositoryFlowReviewHistory: (repositoryId: string, candidateId: string, cursor?: string) => request<import('@fuzequality/contracts').RepositoryFlowReviewHistoryPage | import('@fuzequality/contracts').RepositoryFlowReviewHistoryEntry[]>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
+  policyGateEvaluations: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').PolicyGateEvaluationPage | import('@fuzequality/contracts').PolicyGateEvaluation[]>(`/api/v1/repositories/${id}/policy-gate-evaluations?${new URLSearchParams(filter)}`),
+  policyGateReviewHistory: (repositoryId: string, evaluationId: string, cursor?: string) => request<import('@fuzequality/contracts').PolicyGateReviewHistoryPage | import('@fuzequality/contracts').PolicyGateReviewHistoryEntry[]>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
   reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed', reason?: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),
-  testExecutions: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions?${new URLSearchParams(filter)}`),
-  executionPerformance: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance?${new URLSearchParams(filter)}`),
-  runPerformanceTest: (repositoryId: string, artifactId: string) => request<{ status: string }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, { method: 'POST' }),
+  testExecutions: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').TestExecutionPage | import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions?${new URLSearchParams(filter)}`),
+  latestPerformanceExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/performance-test-executions/latest`),
+  executionTrend: (id: string, filter: Record<string, string> = {}) => request<{
+    items: import('@fuzequality/core').ExecutionOutcomeTrend[]
+    page: { nextCursor: string | null; hasMore: boolean }
+  } | import('@fuzequality/core').ExecutionOutcomeTrend[]>(`/api/v1/repositories/${id}/execution-trend?${new URLSearchParams(filter)}`),
+  executionPerformance: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/core').PolicyGatePerformancePage | import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance?${new URLSearchParams(filter)}`),
+  runPerformanceTest: (repositoryId: string, artifactId: string) => request<{
+    status: 'dispatched'
+    artifactId: string
+    workflowPath: string
+    ref: string
+    sourceRevision: string
+  }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, { method: 'POST' }),
   scanRepository: (id: string, localPath?: string) =>
     request(`/api/v1/repositories/${id}/scans`, {
       method: 'POST',

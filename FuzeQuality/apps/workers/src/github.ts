@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { importPKCS8, SignJWT } from 'jose'
 import { GITHUB_APP_PERMISSIONS } from '@fuzequality/github-app'
+import type { TestExecutionEvidenceLink } from '@fuzequality/contracts'
 
 const execFileAsync = promisify(execFile)
 const githubIdentifier = /^[A-Za-z0-9_.-]+$/
@@ -55,6 +56,13 @@ function assertIdentifier(value: string, label: string): void {
   if (!githubIdentifier.test(value) || value === '.' || value === '..') {
     throw new Error(`Invalid GitHub ${label}`)
   }
+}
+
+function isGithubBranchName(value: string): boolean {
+  if (!value || value.length > 255 || value.startsWith('refs/') || value.startsWith('/') || value.endsWith('/') || value.endsWith('.')) return false
+  if (value.includes('..') || value.includes('//') || value.includes('@{')) return false
+  if ([...value].some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127 || '~^:?*[\\'.includes(character))) return false
+  return !value.split('/').some(part => part.startsWith('.') || part.endsWith('.lock'))
 }
 
 function credentialFreeUrl(owner: string, name: string): string {
@@ -124,31 +132,96 @@ export async function githubInstallationToken(installationId: string): Promise<s
   return body.token
 }
 
-/** Dispatches only a repository-owned workflow on its configured default branch. */
+function workflowArtifactKind(name: string): TestExecutionEvidenceLink['kind'] {
+  if (/video|recording|\.webm\b|\.mp4\b/i.test(name)) return 'video'
+  if (/trace/i.test(name)) return 'trace'
+  if (/screen(?:shot)?/i.test(name)) return 'screenshot'
+  if (/\blog(?:s)?\b/i.test(name)) return 'log'
+  if (/report|result|junit|coverage|playwright/i.test(name)) return 'report'
+  return 'other'
+}
+
+/** Discovers durable, browser-accessible evidence uploaded by one completed run. */
+export async function githubWorkflowArtifactEvidence(input: {
+  owner: string
+  name: string
+  runId: string
+  installationId: string
+  tokenProvider?: (installationId: string) => Promise<string>
+  fetcher?: typeof fetch
+}): Promise<TestExecutionEvidenceLink[]> {
+  assertIdentifier(input.owner, 'owner')
+  assertIdentifier(input.name, 'repository name')
+  if (!/^\d+$/.test(input.runId)) throw new Error('Invalid GitHub Actions run ID')
+  if (!/^\d+$/.test(input.installationId)) throw new Error('Invalid GitHub App installation ID')
+  const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
+  const response = await (input.fetcher ?? fetch)(
+    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}/artifacts?per_page=100`,
+    { headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' } },
+  )
+  if (!response.ok) throw new Error(`GitHub workflow artifact discovery failed: ${response.status}`)
+  const body = (await response.json()) as { artifacts?: unknown }
+  if (!Array.isArray(body.artifacts)) throw new Error('GitHub workflow artifact response was invalid')
+  return body.artifacts.flatMap((value): TestExecutionEvidenceLink[] => {
+    if (!value || typeof value !== 'object') return []
+    const artifact = value as { id?: unknown; name?: unknown; expired?: unknown }
+    if (
+      typeof artifact.id !== 'number' || !Number.isSafeInteger(artifact.id) || artifact.id <= 0 ||
+      typeof artifact.name !== 'string' || !artifact.name.trim() || artifact.expired === true
+    ) return []
+    const name = artifact.name.trim().slice(0, 200)
+    return [{
+      kind: workflowArtifactKind(name),
+      name,
+      url: `https://github.com/${input.owner}/${input.name}/actions/runs/${input.runId}/artifacts/${artifact.id}`,
+    }]
+  }).slice(0, 99)
+}
+
+/** Dispatches only a repository-owned workflow at an immutable analyzed commit. */
 export async function dispatchPerformanceWorkflow(input: {
   owner: string
   name: string
-  defaultBranch: string
+  sourceRevision: string
+  sourceRef: string
   installationId: string
   workflowPath: string
   tokenProvider?: (installationId: string) => Promise<string>
   fetcher?: typeof fetch
-}): Promise<void> {
+}): Promise<{ ref: string; sourceRevision: string }> {
   assertIdentifier(input.owner, 'owner')
   assertIdentifier(input.name, 'repository name')
-  if (!input.workflowPath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(input.workflowPath) || input.workflowPath.includes('..')) {
+  if (!immutableCommit.test(input.sourceRevision)) {
+    throw new Error('An exact analyzed commit SHA is required for performance dispatch')
+  }
+  if (!isGithubBranchName(input.sourceRef)) {
+    throw new Error('A valid analyzed branch is required for performance dispatch')
+  }
+  if (!/^\.github\/workflows\/[^/]+\.ya?ml$/i.test(input.workflowPath)) {
     throw new Error('Only a scanned .github/workflows YAML performance workflow may be dispatched')
   }
   const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
-  const response = await (input.fetcher ?? fetch)(
-    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/workflows/${encodeURIComponent(input.workflowPath)}/dispatches`,
+  const fetchGithub = input.fetcher ?? fetch
+  const headers = { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' }
+  const branchResponse = await fetchGithub(
+    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/branches/${encodeURIComponent(input.sourceRef)}`,
+    { headers },
+  )
+  if (!branchResponse.ok) throw new Error(`GitHub analyzed branch verification failed: ${branchResponse.status}`)
+  const branch = (await branchResponse.json()) as { commit?: { sha?: string } }
+  if (branch.commit?.sha?.toLowerCase() !== input.sourceRevision.toLowerCase()) {
+    throw new Error('Analyzed branch has advanced; rescan the repository before dispatch')
+  }
+  const response = await fetchGithub(
+    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/workflows/${encodeURIComponent(basename(input.workflowPath))}/dispatches`,
     {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'content-type': 'application/json' },
-      body: JSON.stringify({ ref: input.defaultBranch }),
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ ref: input.sourceRef }),
     },
   )
   if (!response.ok) throw new Error(`GitHub performance workflow dispatch failed: ${response.status}`)
+  return { ref: input.sourceRef, sourceRevision: input.sourceRevision }
 }
 
 /**

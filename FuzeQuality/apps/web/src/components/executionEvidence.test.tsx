@@ -3,8 +3,8 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { TestExecution } from '@fuzequality/contracts'
-import { ExecutionEvidenceLinks, ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
+import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
+import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionSourceLink, ExecutionThresholdEvidence, latestPerformanceExecution } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -17,6 +17,7 @@ const execution: TestExecution = {
   kind: 'load',
   status: 'failed',
   name: 'Checkout load test',
+  workflowPath: '.github/workflows/load-test.yml',
   policyArtifactIds: [],
   gateArtifactIds: [],
   gateEvaluations: [{
@@ -49,7 +50,62 @@ const execution: TestExecution = {
   ],
 }
 
+const artifacts = [
+  {
+    id: 'policy-performance',
+    repositoryId: execution.repositoryId,
+    kind: 'policy' as const,
+    title: 'Performance budget policy',
+    sourcePath: 'governance/performance.md',
+    summary: 'Latency budget policy',
+    evidence: ['p95 latency must remain below 400 ms'],
+  },
+  {
+    id: 'gate-load-budget',
+    repositoryId: execution.repositoryId,
+    kind: 'gate' as const,
+    title: 'Load budget workflow',
+    sourcePath: '.github/workflows/load-test.yml',
+    summary: 'Load budget gate',
+    evidence: ['Run the load budget gate'],
+  },
+]
+
 describe('ExecutionThresholdEvidence', () => {
+  it('matches a scanner-verified performance workflow despite heuristic run kind differences', () => {
+    const artifact: QualityArtifact = {
+      id: 'performance-workflow',
+      repositoryId: execution.repositoryId,
+      kind: 'load-test',
+      title: 'Performance workflow',
+      sourcePath: '.github/workflows/load-test.yml',
+      summary: 'Load and soak coverage',
+      evidence: [],
+      execution: {
+        provider: 'github-actions',
+        workflowPath: '.github/workflows/load-test.yml',
+        trigger: 'workflow_dispatch',
+      },
+    }
+    const heuristicStressRun = { ...execution, kind: 'stress' as const }
+
+    expect(latestPerformanceExecution(artifact, [heuristicStressRun])).toBe(
+      heuristicStressRun
+    )
+    expect(
+      latestPerformanceExecution(artifact, [
+        { ...heuristicStressRun, workflowPath: '.github/workflows/other.yml' },
+      ])
+    ).toBeUndefined()
+  })
+
+  it('renders the workflow file with the provider-owned run identity', () => {
+    render(<ExecutionEvidenceMetadata execution={execution} />)
+
+    expect(screen.getByText('.github/workflows/load-test.yml')).toBeInTheDocument()
+    expect(screen.getByText('external · load-42')).toBeInTheDocument()
+  })
+
   it('renders observed-versus-target values and evaluated outcomes', () => {
     render(<ExecutionThresholdEvidence execution={execution} />)
 
@@ -71,20 +127,29 @@ describe('ExecutionThresholdEvidence', () => {
   })
 
   it('renders explicit policy-gate outcomes without inferring pairs', () => {
-    render(<ExecutionGateEvidence execution={execution} />)
+    render(
+      <ExecutionGateEvidence execution={execution} artifacts={artifacts} />
+    )
 
     expect(
       screen.getByRole('region', { name: 'Policy gate evidence' })
     ).toBeInTheDocument()
+    expect(screen.getByText('Performance budget policy')).toBeInTheDocument()
+    expect(screen.getByText('Load budget workflow')).toBeInTheDocument()
     expect(
-      screen.getByText('policy-performance → gate-load-budget')
+      screen.getByText(
+        'governance/performance.md → .github/workflows/load-test.yml'
+      )
     ).toBeInTheDocument()
     expect(screen.getByText('Latency budget exceeded.')).toBeInTheDocument()
     expect(screen.getByText('failed')).toBeInTheDocument()
   })
 
   it('renders watchable video and report links for the run', () => {
-    render(<ExecutionEvidenceLinks execution={execution} />)
+    const { container } = render(<ExecutionEvidenceLinks execution={{
+      ...execution,
+      evidenceLinks: [...execution.evidenceLinks].reverse(),
+    }} />)
 
     expect(screen.getByRole('region', { name: 'Run evidence' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Watch FuzeQuality production journey' })).toHaveAttribute(
@@ -95,6 +160,114 @@ describe('ExecutionThresholdEvidence', () => {
       'href',
       'https://evidence.example/run-42/report/'
     )
+    expect([...container.querySelectorAll('a')].map(link => link.textContent)).toEqual([
+      'Watch FuzeQuality production journey',
+      'Open Playwright HTML report',
+    ])
+  })
+
+  it('renders only the latest label for a stable evidence link', () => {
+    const report = execution.evidenceLinks.find(link => link.kind === 'report')!
+    const { container } = render(<ExecutionEvidenceLinks execution={{
+      ...execution,
+      evidenceLinks: [
+        { ...report, name: 'Pending report' },
+        { ...report, name: 'Final Playwright report' },
+      ],
+    }} />)
+
+    expect(screen.queryByRole('link', { name: 'Open Pending report' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open Final Playwright report' })).toHaveAttribute('href', report.url)
+    expect(container.querySelectorAll('a')).toHaveLength(1)
+  })
+
+  it('labels a provider-hosted video archive as a download', () => {
+    render(<ExecutionEvidenceLinks execution={{
+      ...execution,
+      evidenceLinks: [{
+        kind: 'video',
+        name: 'fuzequality-post-prod-playwright-video',
+        url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/11',
+      }],
+    }} />)
+
+    expect(screen.getByRole('link', {
+      name: 'Download fuzequality-post-prod-playwright-video',
+    })).toHaveAttribute(
+      'href',
+      'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/11'
+    )
+  })
+
+  it('does not render unsafe legacy evidence or provider URLs', () => {
+    const { container, rerender } = render(<ExecutionEvidenceLinks execution={{
+      ...execution,
+      evidenceLinks: [
+        { kind: 'video', name: 'Unsafe video', url: 'javascript:alert(1)' },
+        { kind: 'report', name: 'Insecure report', url: 'http://evidence.example/report' },
+      ],
+    }} />)
+
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(<ExecutionSourceLink execution={{ ...execution, sourceUrl: 'javascript:alert(1)' }} />)
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(<ExecutionSourceLink execution={{
+      ...execution,
+      sourceUrl: 'https://github.com/izzywdev/FuzeFront/actions/runs/42',
+    }} />)
+    expect(container.querySelector('a')).toHaveAttribute(
+      'href',
+      'https://github.com/izzywdev/FuzeFront/actions/runs/42'
+    )
+  })
+
+  it('summarizes detailed evidence and flags a lifecycle-only performance run', () => {
+    const { rerender } = render(<ExecutionEvidenceCoverage execution={execution} />)
+
+    expect(screen.getByRole('region', { name: 'Execution evidence coverage' })).toHaveTextContent(
+      '2 thresholds · 2 artifacts · 1 policy–gate outcomes'
+    )
+    expect(screen.queryByText(/No performance threshold/)).not.toBeInTheDocument()
+
+    rerender(
+      <ExecutionEvidenceCoverage
+        execution={{ ...execution, thresholds: [], evidenceLinks: [], gateEvaluations: [] }}
+      />
+    )
+    expect(screen.getByText('No performance threshold observations ingested')).toBeVisible()
+  })
+
+  it('distinguishes explicit outcomes from legacy, ambiguous, and missing linkage', () => {
+    const { rerender } = render(<ExecutionLinkageEvidence execution={execution} />)
+    expect(screen.getByText('Explicit outcome linkage')).toBeVisible()
+    expect(screen.getByText('1 policy–gate pair evaluated for this run')).toBeVisible()
+
+    rerender(<ExecutionLinkageEvidence execution={{
+      ...execution,
+      policyArtifactIds: ['policy-performance'],
+      gateArtifactIds: ['gate-load-budget'],
+      gateEvaluations: [],
+    }} />)
+    expect(screen.getByText('Legacy one-to-one linkage')).toBeVisible()
+
+    rerender(<ExecutionLinkageEvidence execution={{
+      ...execution,
+      policyArtifactIds: ['policy-1', 'policy-2'],
+      gateArtifactIds: ['gate-1'],
+      gateEvaluations: [],
+    }} />)
+    expect(screen.getByText('Inventory linkage only')).toBeVisible()
+    expect(screen.getByText(/no unambiguous pair outcome exists/i)).toBeVisible()
+
+    rerender(<ExecutionLinkageEvidence execution={{
+      ...execution,
+      policyArtifactIds: [],
+      gateArtifactIds: [],
+      gateEvaluations: [],
+    }} />)
+    expect(screen.getByText('No policy–gate linkage')).toBeVisible()
   })
 
   it('renders legacy executions without optional evidence collections safely', () => {

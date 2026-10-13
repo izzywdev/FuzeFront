@@ -49,6 +49,18 @@ export type Repository = RepositoryInput & {
   lastScanRevision?: string
   lastScanStatus: 'never' | 'queued' | 'running' | 'complete' | 'failed'
   lastScanDetails?: RepositoryScanDetails
+  /** Revision-scoped lifecycle for deterministic governance plus reviewed LiteLLM proposals. */
+  lastAnalysis?: RepositoryAnalysisStatus
+}
+
+export type RepositoryAnalysisStatus = {
+  revision: string
+  status: 'queued' | 'running' | 'complete' | 'failed'
+  startedAt?: string
+  finishedAt?: string
+  counts?: { deterministic: number; evaluations: number; proposed: number }
+  /** Stable, non-sensitive failure classification; raw provider errors are never exposed. */
+  errorCode?: 'INTELLIGENCE_UNAVAILABLE'
 }
 
 /** Local, event-carried projection of the FuzeFront identity hierarchy. */
@@ -77,12 +89,19 @@ export type QualityMembership = {
 }
 
 export type RepositoryScanHistoryEntry = {
+  /** Stable revision-row identity used for audit links and keyset pagination. */
+  id: string
   revision: string
   branch: string
   status: Repository['lastScanStatus']
   scannedAt?: string
   trigger: 'manual' | 'push' | 'reconcile'
   counts: { operations: number; surfaces: number; tests: number; diagnostics: number }
+}
+
+export type RepositoryScanHistoryPage = {
+  items: RepositoryScanHistoryEntry[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 export type RepositoryScanCandidate = {
@@ -378,7 +397,7 @@ export type SuggestionDecision = {
 
 export type ScanDiagnostic = {
   sourcePath: string
-  category: 'openapi' | 'test' | 'frontend' | 'storybook'
+  category: 'openapi' | 'test' | 'frontend' | 'storybook' | 'repository'
   severity: 'error' | 'warning'
   code: string
   message: string
@@ -407,11 +426,24 @@ export type ScanResult = {
 export type QualityArtifact = {
   id: string
   repositoryId: string
-  kind: 'route' | 'policy' | 'gate' | 'test-plan' | 'load-test' | 'stress-test'
+  kind: 'route' | 'story' | 'documentation' | 'policy' | 'gate' | 'test-plan' | 'load-test' | 'stress-test'
   title: string
   sourcePath: string
   summary: string
   evidence: string[]
+  /** Scanner-verified execution entry point. Its absence means inventory-only evidence. */
+  execution?: {
+    provider: 'github-actions'
+    workflowPath: string
+    trigger: 'workflow_dispatch'
+    /** Required workflow inputs that have no repository-defined default. */
+    requiredInputs?: string[]
+  }
+}
+
+export type QualityArtifactPage = {
+  items: QualityArtifact[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 export type RepositoryQualitySnapshot = {
@@ -447,12 +479,23 @@ export type RepositoryFlowCandidate = {
 }
 
 export type RepositoryFlowReviewHistoryEntry = {
+  id: string
   candidateId: string
   tenantId: string
   status: 'confirmed' | 'rejected'
   reviewedBy: string
   reason?: string
   createdAt: string
+}
+
+export type RepositoryFlowReviewHistoryPage = {
+  items: RepositoryFlowReviewHistoryEntry[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
+export type RepositoryFlowCandidatePage = {
+  items: RepositoryFlowCandidate[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 /** A reviewable relationship between a detected repository policy and CI gate. */
@@ -471,6 +514,13 @@ export type PolicyGateEvaluation = {
   confidence: number
   /** Repository locations and matched subjects that bounded this finding. */
   scope: { sourcePaths: string[]; subjects: string[] }
+  /** Exact repository passages that caused the deterministic finding. */
+  evidencePassages?: Array<{
+    artifactId: string
+    sourcePath: string
+    text: string
+    signal: 'policy' | 'gate' | 'obligation' | 'prohibition' | 'ambiguous'
+  }>
   recommendation: string
   /** Human review is required before a remediation recommendation is acted on. */
   reviewStatus: 'proposed' | 'accepted' | 'dismissed'
@@ -478,6 +528,26 @@ export type PolicyGateEvaluation = {
   reviewedBy?: string
   reviewReason?: string
   createdAt: string
+}
+
+export type PolicyGateEvaluationPage = {
+  items: PolicyGateEvaluation[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
+export type PolicyGateReviewHistoryEntry = {
+  id: string
+  evaluationId: string
+  tenantId: string
+  status: 'accepted' | 'dismissed'
+  reviewedBy: string
+  reason?: string
+  createdAt: string
+}
+
+export type PolicyGateReviewHistoryPage = {
+  items: PolicyGateReviewHistoryEntry[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 export type TestExecution = {
@@ -494,6 +564,8 @@ export type TestExecution = {
   kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
   status: 'passed' | 'failed' | 'cancelled' | 'running'
   name: string
+  /** Repository-relative CI workflow that produced this execution. */
+  workflowPath?: string
   sourceUrl?: string
   startedAt?: string
   completedAt?: string
@@ -508,19 +580,26 @@ export type TestExecution = {
   summary?: string
 }
 
+export type TestExecutionPage = {
+  items: TestExecution[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
 export type TestExecutionEvidenceLink = {
   kind: 'video' | 'report' | 'trace' | 'screenshot' | 'log' | 'other'
   name: string
   url: string
 }
 
+const httpsEvidenceUrlSchema = z.string().url().max(2000).refine(
+  value => value.startsWith('https://'),
+  'Execution evidence URL must use HTTPS',
+)
+
 export const testExecutionEvidenceLinkSchema = z.object({
   kind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']),
   name: z.string().trim().min(1).max(200),
-  url: z.string().url().max(2000).refine(
-    value => value.startsWith('https://'),
-    'Evidence URL must use HTTPS',
-  ),
+  url: httpsEvidenceUrlSchema,
 }).strict()
 
 export type TestExecutionGateEvaluation = {
@@ -528,6 +607,12 @@ export type TestExecutionGateEvaluation = {
   gateArtifactId: string
   status: 'passed' | 'failed' | 'cancelled' | 'running'
   detail?: string
+}
+
+/** GitHub qualifies workflow_run.path with @ref; catalog artifacts use the repository path. */
+export function normalizeWorkflowPath(path?: string) {
+  if (!path) return undefined
+  return path.match(/^(.+\.ya?ml)@.+$/i)?.[1] ?? path
 }
 
 export const testExecutionGateEvaluationSchema = z.object({
@@ -562,7 +647,8 @@ export const testExecutionInputSchema = z.object({
   attempt: z.number().int().positive().default(1),
   kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
   status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
-  sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
+  workflowPath: z.string().trim().min(1).max(1000).optional(),
+  sourceUrl: httpsEvidenceUrlSchema.optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
   policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]),
   gateEvaluations: z.array(testExecutionGateEvaluationSchema).max(100).default([]),
   thresholds: z.array(testExecutionThresholdInputSchema).max(100).default([]),

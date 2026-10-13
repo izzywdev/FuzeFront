@@ -17,6 +17,9 @@
 # Optional env:
 #   REGISTRATION_DIR   directory holding manifest.json (default: /registration)
 #   SKIP_ACTIVATE      "true" to register but not activate (staged rollout)
+#   FUZEFRONT_REMOTE_HEALTH_URL  primary deployed federation asset override
+#   FUZEFRONT_REMOTE_HEALTH_URLS JSON object mapping surface slugs to health URLs
+#   FUZEFRONT_PORTAL_URL          public portal origin used to resolve /apps/... probes
 #
 # Exit codes: 0 = registered/activated (or already was). 1 = anything else.
 
@@ -71,11 +74,6 @@ fi
 API="${FUZEFRONT_API_URL%/}/api/v1/app-registry"
 AUTH="Authorization: Bearer ${FUZEFRONT_REGISTRATION_TOKEN}"
 
-_count=0
-for _m in $MANIFESTS; do _count=$((_count + 1)); done
-log "primary=${SLUG} surfaces=${_count} api=${API}"
-
-# ---- helpers -----------------------------------------------------------------
 # Emits the HTTP status on stdout and writes the body to $2. Retries transient
 # failures (connection refused / 5xx) — the platform may still be starting up.
 http() {
@@ -108,6 +106,96 @@ http() {
 BODY="$(mktemp)"
 # shellcheck disable=SC2064  # expand BODY now, on purpose
 trap "rm -f '$BODY'" EXIT
+
+# An activated registry row is harmful when any suite surface points at a 404 or
+# an HTML ingress fallback. Validate the complete suite before the first registry
+# write so a healthy primary cannot publish broken siblings. A staged first
+# registration may defer the probe; a staged refresh of an active row may not.
+probe_federation_asset() {
+  _url="$1"; _slug="$2"
+  REMOTE_BODY="$(mktemp)"
+  if ! curl -L -fsS --retry 4 --retry-all-errors --retry-delay 2 \
+    --connect-timeout 10 --max-time 30 -o "$REMOTE_BODY" "$_url"; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset for ${_slug} is unreachable at ${_url}"
+  fi
+  # Only an HTML document prefix is invalid. JavaScript bundles may legitimately
+  # contain strings or templates with <html>, <head>, or <body> later in the file.
+  if [ ! -s "$REMOTE_BODY" ] || head -c 512 "$REMOTE_BODY" | \
+    grep -Eiq '^[[:space:]]*(<!doctype[[:space:]]+html|<(html|head|body)([[:space:]>]))'; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset for ${_slug} is empty or HTML at ${_url}"
+  fi
+  if ! grep -Eq '(__federation|(^|[;[:space:]])(const|let|var|function|import|export)[[:space:]])' "$REMOTE_BODY"; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset for ${_slug} does not look like JavaScript at ${_url}"
+  fi
+  rm -f "$REMOTE_BODY"
+  log "federation asset healthy for ${_slug} at ${_url}"
+}
+
+resolve_federation_probe_url() {
+  _candidate="$1"
+  case "$_candidate" in
+    /*)
+      _portal_base="${FUZEFRONT_PORTAL_URL:-${FUZEFRONT_API_URL}}"
+      case "$_portal_base" in
+        http://*|https://*) ;;
+        *) die "FUZEFRONT_PORTAL_URL must be an absolute http(s) URL when probing ${_candidate}" ;;
+      esac
+      _portal_origin="$(printf '%s' "$_portal_base" | sed -E 's#^(https?://[^/]+).*$#\1#')"
+      printf '%s%s\n' "${_portal_origin%/}" "$_candidate"
+      ;;
+    http://*|https://*|file://*) printf '%s\n' "$_candidate" ;;
+    *) die "federation health URL must be absolute or a same-origin /path: ${_candidate}" ;;
+  esac
+}
+
+if [ -n "${FUZEFRONT_REMOTE_HEALTH_URLS:-}" ]; then
+  printf '%s' "$FUZEFRONT_REMOTE_HEALTH_URLS" | jq -e 'type == "object"' >/dev/null 2>&1 \
+    || die "FUZEFRONT_REMOTE_HEALTH_URLS must be a JSON object"
+fi
+
+for _manifest in $MANIFESTS; do
+  jq empty "$_manifest" 2>/dev/null || die "$_manifest is not valid JSON"
+  _slug="$(jq -r '.slug // empty' "$_manifest")"
+  [ -n "$_slug" ] || die "$_manifest has no .slug"
+  _remote=""
+  if [ -n "${FUZEFRONT_REMOTE_HEALTH_URLS:-}" ]; then
+    _remote="$(printf '%s' "$FUZEFRONT_REMOTE_HEALTH_URLS" | jq -r --arg slug "$_slug" '.[$slug] // empty')"
+  fi
+  if [ -z "$_remote" ] && [ "$_manifest" = "$MANIFEST" ] && [ -n "${FUZEFRONT_REMOTE_HEALTH_URL:-}" ]; then
+    _remote="$FUZEFRONT_REMOTE_HEALTH_URL"
+  fi
+  if [ -z "$_remote" ] && [ "$(jq -r '.integration.type // empty' "$_manifest")" = "module-federation" ]; then
+    _remote="$(jq -r '.integration.remoteEntry // empty' "$_manifest")"
+  fi
+  if [ -n "$_remote" ]; then
+    _remote="$(resolve_federation_probe_url "$_remote")"
+  fi
+
+  _probe="false"
+  if [ "${SKIP_ACTIVATE:-false}" != "true" ]; then
+    _probe="true"
+  elif [ -n "$_remote" ]; then
+    # A staged first registration is intentionally allowed before its remote is
+    # deployed. An already-active row is different: the PUT below changes the
+    # live portal immediately, so its replacement must pass the same probe.
+    _lookup_code="$(http GET "${API}/apps/${_slug}" "$BODY")"
+    if [ "$_lookup_code" = "200" ] && [ "$(jq -r '.status // empty' "$BODY")" = "activated" ]; then
+      _probe="true"
+    fi
+  fi
+  [ "$_probe" != "true" ] || [ -z "$_remote" ] || probe_federation_asset "$_remote" "$_slug"
+done
+
+if [ "${SKIP_ACTIVATE:-false}" = "true" ]; then
+  log "SKIP_ACTIVATE=true — inactive registrations defer federation health checks until activation"
+fi
+
+_count=0
+for _m in $MANIFESTS; do _count=$((_count + 1)); done
+log "primary=${SLUG} surfaces=${_count} api=${API}"
 
 # ---- 1+2. register + activate, once per surface ------------------------------
 # Run for the primary manifest and for every apps/*.json sibling. A failure on ANY

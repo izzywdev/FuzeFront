@@ -1,0 +1,20 @@
+{
+  "name": "FuzeQuality",
+  "short_name": "Quality",
+  "description": "Repository quality intelligence, UX flows, policy gates and test evidence.",
+  "start_url": "/",
+  "scope": "/",
+  "id": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#08131f",
+  "theme_color": "#2dd4bf",
+  "lang": "en",
+  "categories": ["productivity", "developer-tools"],
+  "icons": [
+    { "src": "/icons/pwa-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/pwa-512x512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/pwa-maskable-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/pwa-maskable-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

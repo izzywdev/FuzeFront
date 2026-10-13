@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { MemoryCatalogStore } from './store'
+import { MemoryCatalogStore, PostgresCatalogStore } from './store'
 
 const candidate: RepositoryFlowCandidate = {
   id: 'flow-candidate-1',
@@ -18,6 +18,24 @@ const candidate: RepositoryFlowCandidate = {
 }
 
 describe('repository flow review lifecycle', () => {
+  it('paginates newest-first history with a stable timestamp and id cursor', async () => {
+    const store = new MemoryCatalogStore()
+    const sameTime = '2026-10-09T00:00:00.000Z'
+    await store.saveRepositoryFlowCandidates([
+      { ...candidate, id: 'flow-c', title: 'Flow C', createdAt: sameTime },
+      { ...candidate, id: 'flow-b', title: 'Flow B', createdAt: sameTime },
+      { ...candidate, id: 'flow-a', title: 'Flow A', createdAt: '2026-10-08T00:00:00.000Z' },
+      { ...candidate, id: 'other-tenant', title: 'Other tenant', tenantId: 'tenant-2', createdAt: '2026-10-10T00:00:00.000Z' },
+    ])
+
+    const first = await store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { limit: 2 })
+    expect(first.map(item => item.id)).toEqual(['flow-c', 'flow-b'])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, {
+      after: { createdAt: first[1].createdAt, id: first[1].id },
+      limit: 2,
+    })).resolves.toEqual([expect.objectContaining({ id: 'flow-a' })])
+  })
+
   it('persists FuzeInfra LiteLLM analysis provenance', async () => {
     const store = new MemoryCatalogStore()
     const analysis = {
@@ -69,12 +87,39 @@ describe('repository flow review lifecycle', () => {
     })
 
     await expect(store.repositoryFlowReviewHistory(candidate.id, candidate.tenantId)).resolves.toEqual([
-      expect.objectContaining({ status: 'rejected', reviewedBy: 'reviewer-2', reason: 'The route was removed.', createdAt: expect.any(String) }),
-      expect.objectContaining({ status: 'confirmed', reviewedBy: 'reviewer-1', reason: 'Evidence is complete.', createdAt: expect.any(String) }),
+      expect.objectContaining({ id: expect.any(String), status: 'rejected', reviewedBy: 'reviewer-2', reason: 'The route was removed.', createdAt: expect.any(String) }),
+      expect.objectContaining({ id: expect.any(String), status: 'confirmed', reviewedBy: 'reviewer-1', reason: 'Evidence is complete.', createdAt: expect.any(String) }),
     ])
+    const [first] = await store.repositoryFlowReviewHistory(candidate.id, candidate.tenantId, { limit: 1 })
+    await expect(store.repositoryFlowReviewHistory(candidate.id, candidate.tenantId, {
+      after: { createdAt: first.createdAt, id: first.id },
+      limit: 1,
+    })).resolves.toEqual([expect.objectContaining({ reviewedBy: 'reviewer-1' })])
     await expect(store.repositoryFlowReviewHistory(candidate.id, 'tenant-2')).resolves.toEqual([])
     await expect(store.reviewRepositoryFlowCandidate(candidate.id, 'tenant-2', {
       status: 'confirmed', reviewedBy: 'cross-tenant-reviewer',
     })).resolves.toBeUndefined()
+  })
+
+  it('atomically rejects a review when the repository revision changed', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = {
+      connect: vi.fn().mockResolvedValue({ query, release }),
+    }
+
+    await expect(store.reviewRepositoryFlowCandidate(candidate.id, candidate.tenantId, {
+      status: 'confirmed',
+      reviewedBy: 'reviewer-1',
+    }, candidate.revision)).resolves.toBeUndefined()
+
+    const [statement, parameters] = query.mock.calls[1]
+    expect(String(statement)).toContain('candidate.revision=$6')
+    expect(String(statement)).toContain('repository.last_scan_revision=$6')
+    expect(String(statement)).toContain('FOR UPDATE')
+    expect(parameters[5]).toBe(candidate.revision)
+    expect(query).toHaveBeenCalledTimes(3)
+    expect(release).toHaveBeenCalledOnce()
   })
 })

@@ -53,6 +53,10 @@ CMD ["npm", "run", "start:api"]
 
 FROM nginx:1.27-alpine AS web
 COPY --from=verify /workspace/FuzeQuality/dist /usr/share/nginx/html
+# Reuse the FuzeFront Design System's maintained PWA icon family. FuzeQuality
+# owns its manifest and Android identity, while the shared artwork stays sourced
+# from the platform package instead of becoming an untracked binary fork.
+COPY frontend/public/icons /usr/share/nginx/html/icons
 COPY FuzeQuality/docker/nginx.conf /etc/nginx/conf.d/default.conf
 RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /var/run
 USER nginx

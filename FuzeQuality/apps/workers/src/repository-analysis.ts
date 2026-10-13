@@ -1,5 +1,19 @@
-import type { PolicyGateEvaluation, QualityArtifact, Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
+import type { PolicyGateEvaluation, QualityArtifact, Repository, RepositoryAnalysisStatus, RepositoryFlowCandidate } from '@fuzequality/contracts'
 import { deterministicRepositoryFlows, evaluatePolicyGates, type LiteLlmRepositoryFlowAnalyzer } from '@fuzequality/core'
+
+export const POLICY_GATE_EVALUATION_BATCH_SIZE = 200
+
+function evaluationBatches(evaluations: PolicyGateEvaluation[]) {
+  if (!evaluations.length) return [[]]
+  const batches: PolicyGateEvaluation[][] = []
+  for (let index = 0; index < evaluations.length; index += POLICY_GATE_EVALUATION_BATCH_SIZE) {
+    batches.push(evaluations.slice(index, index + POLICY_GATE_EVALUATION_BATCH_SIZE))
+  }
+  return batches
+}
+
+export const repositoryQualityArtifactsPath = (repositoryId: string, revision: string) =>
+  `/api/v1/internal/repositories/${encodeURIComponent(repositoryId)}/quality-artifacts?revision=${encodeURIComponent(revision)}`
 
 export async function runRepositoryInventoryAnalysis(
   repository: Repository,
@@ -18,9 +32,33 @@ export async function runRepositoryInventoryAnalysis(
   // them before making the fallible gateway call; each persistence API is
   // idempotent for the same repository revision.
   await dependencies.persistCandidates(deterministic)
-  await dependencies.persistEvaluations(evaluations)
+  for (const batch of evaluationBatches(evaluations)) {
+    await dependencies.persistEvaluations(batch)
+  }
 
   const proposed = await dependencies.analyzer.analyze(repository, revision, artifacts)
   if (proposed.length) await dependencies.persistCandidates(proposed)
   return { deterministic: deterministic.length, evaluations: evaluations.length, proposed: proposed.length }
+}
+
+export async function runTrackedRepositoryInventoryAnalysis(
+  repository: Repository,
+  revision: string,
+  artifacts: QualityArtifact[],
+  dependencies: Parameters<typeof runRepositoryInventoryAnalysis>[3] & {
+    persistStatus: (status: RepositoryAnalysisStatus) => Promise<void>
+    now?: () => string
+  },
+) {
+  const now = dependencies.now ?? (() => new Date().toISOString())
+  const startedAt = now()
+  await dependencies.persistStatus({ revision, status: 'running', startedAt })
+  try {
+    const counts = await runRepositoryInventoryAnalysis(repository, revision, artifacts, dependencies)
+    await dependencies.persistStatus({ revision, status: 'complete', startedAt, finishedAt: now(), counts })
+    return counts
+  } catch (error) {
+    await dependencies.persistStatus({ revision, status: 'failed', startedAt, finishedAt: now(), errorCode: 'INTELLIGENCE_UNAVAILABLE' }).catch(() => undefined)
+    throw error
+  }
 }

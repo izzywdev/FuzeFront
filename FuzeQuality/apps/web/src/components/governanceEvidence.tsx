@@ -1,5 +1,13 @@
 import type { PolicyGateEvaluation, QualityArtifact } from '@fuzequality/contracts'
 
+const evidenceSignalLabels = {
+  policy: 'Policy statement',
+  gate: 'Gate statement',
+  obligation: 'Requires',
+  prohibition: 'Prohibits',
+  ambiguous: 'Ambiguous',
+} as const
+
 /** App-specific governance evidence composed from semantic HTML primitives. */
 export function PolicyGateEvidence({
   evaluation,
@@ -20,6 +28,7 @@ export function PolicyGateEvidence({
     ? `${Math.round(evaluation.confidence * 100)}%`
     : 'Unknown'
   const scope = evaluation.scope ?? { sourcePaths: [], subjects: [] }
+  const passages = evaluation.evidencePassages ?? []
 
   return (
     <section
@@ -65,6 +74,28 @@ export function PolicyGateEvidence({
           })}
         </ul>
       </div>
+      {passages.length > 0 && (
+        <div className="governance-passages" aria-label="Decisive policy passages">
+          <strong>Decisive passages</strong>
+          <ul>
+            {passages.map((passage, index) => {
+              const artifact = artifactsById.get(passage.artifactId)
+              return (
+                <li key={`${passage.artifactId}:${passage.signal}:${index}`}>
+                  <span className={`status-pill governance-signal-${passage.signal}`}>
+                    {evidenceSignalLabels[passage.signal]}
+                  </span>
+                  <q>{passage.text}</q>
+                  <div className="governance-passage-source">
+                    <strong>{artifact?.title ?? passage.artifactId}</strong>
+                    <code>{passage.sourcePath}</code>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
     </section>
   )
 }

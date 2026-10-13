@@ -53,7 +53,7 @@ jobs:
           packages: 'platform-tools'
 
       - name: Install Bubblewrap CLI
-        run: npm install -g @bubblewrap/cli
+        run: npm install -g @bubblewrap/cli@1.27.0
 
       - name: Pre-configure Bubblewrap to skip interactive JDK/SDK prompts
         run: |
@@ -138,6 +138,7 @@ jobs:
           sleep 1
           # bubblewrap update reads twa-manifest.json and scaffolds the Android Gradle project
           bubblewrap update --skipPwaValidation --skipVersionUpgrade
+          node ../scripts/prepare-bubblewrap-project.mjs .
           kill $HTTP_PID || true
 
       - name: Build APK
