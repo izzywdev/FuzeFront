@@ -181,6 +181,7 @@ export interface CatalogStore {
     value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
   ): Promise<Repository | undefined>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
+  setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>): Promise<void>
   saveScan(result: ScanResult): Promise<void>
   syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor | undefined>
   markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<void>
@@ -555,6 +556,11 @@ export class MemoryCatalogStore implements CatalogStore {
     if (repository) repository.lastScanStatus = status
   }
 
+  async setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>) {
+    const repository = this.data.repositories.find(item => item.id === id)
+    if (repository?.lastScanRevision === analysis.revision) repository.lastAnalysis = analysis
+  }
+
   async saveScan(result: ScanResult) {
     const repository = this.data.repositories.find(item => item.id === result.repository.id)
     if (repository) {
@@ -563,6 +569,7 @@ export class MemoryCatalogStore implements CatalogStore {
         lastScanRevision: result.revision,
         lastScanStatus: 'complete',
         lastScanDetails: result.scanDetails,
+        lastAnalysis: { revision: result.revision, status: 'queued' },
       })
     }
     if (result.scanDetails.sourceRevision) {
@@ -883,6 +890,7 @@ export class PostgresCatalogStore implements CatalogStore {
         lastScanRevision: row.last_scan_revision ?? undefined,
         lastScanStatus: row.last_scan_status,
         lastScanDetails: row.last_scan_details ?? undefined,
+        lastAnalysis: row.last_analysis ?? undefined,
       })),
       operations: operations.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, documentPath: row.document_path, operationId: row.operation_id ?? undefined, method: row.method, path: row.path, summary: row.summary, tags: row.tags, security: row.security, parameters: row.parameters, responses: row.responses, ...(row.details ?? {}) })),
       surfaces: surfaces.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, packageName: row.package_name, kind: row.kind, name: row.name, sourcePath: row.source_path, routePath: row.route_path ?? undefined, public: row.is_public, states: row.states, hasStory: row.has_story, stories: row.stories ?? [] })),
@@ -1577,6 +1585,14 @@ export class PostgresCatalogStore implements CatalogStore {
     await this.pool.query('UPDATE fuzequality.repositories SET last_scan_status=$2, updated_at=now() WHERE id=$1', [id, status])
   }
 
+
+  async setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>) {
+    await this.pool.query(
+      'UPDATE fuzequality.repositories SET last_analysis=$2, updated_at=now() WHERE id=$1 AND last_scan_revision=$3',
+      [id, JSON.stringify(analysis), analysis.revision],
+    )
+  }
+
   async saveScan(result: ScanResult) {
     const client = await this.pool.connect()
     try {
@@ -1620,7 +1636,7 @@ export class PostgresCatalogStore implements CatalogStore {
          ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,execution_target=EXCLUDED.execution_target,discovered_at=now()`,
         [item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence), item.execution ? JSON.stringify(item.execution) : null],
       )
-      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails)])
+      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,last_analysis=$5,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails),JSON.stringify({ revision: result.revision, status: 'queued' })])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }

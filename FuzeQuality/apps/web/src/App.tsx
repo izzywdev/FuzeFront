@@ -75,6 +75,7 @@ import {
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector } from './components/flowInspector'
+import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
 import { governanceEvidenceSelection } from './governanceEvidence'
 
@@ -953,6 +954,7 @@ function Repositories({
               </div>
               <h3>{repository.name}</h3>
               <p>{repository.canonicalUrl}</p>
+              <RepositoryAnalysisStatus analysis={repository.lastAnalysis} />
               <dl>
                 <div>
                   <dt>Branch</dt>

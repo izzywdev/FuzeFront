@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { POLICY_GATE_EVALUATION_BATCH_SIZE, repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis } from './repository-analysis'
+import { POLICY_GATE_EVALUATION_BATCH_SIZE, repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
 
 const repository = { id: 'repo-1', tenantId: 'tenant-1', owner: 'fuze', name: 'front', canonicalUrl: 'https://example.test/front', defaultBranch: 'main', kind: 'application' as const, includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true, lastScanStatus: 'complete' as const }
 const artifacts = [{ id: 'route-1', repositoryId: 'repo-1', kind: 'route' as const, title: 'Checkout', sourcePath: 'apps/web/Checkout.tsx', summary: 'Open checkout', evidence: [] }]
@@ -61,5 +61,21 @@ describe('repository inventory analysis ordering', () => {
     expect(persisted).toEqual([POLICY_GATE_EVALUATION_BATCH_SIZE, 5])
     expect(maxConcurrent).toBe(1)
     expect(analyzer.analyze).toHaveBeenCalledOnce()
+  })
+
+  it('records safe revision-scoped lifecycle state around a LiteLLM failure', async () => {
+    const states: Array<{ status: string; errorCode?: string }> = []
+    await expect(runTrackedRepositoryInventoryAnalysis(repository, 'abc', artifacts, {
+      analyzer: { analyze: vi.fn(async () => { throw new Error('provider leaked detail') }) },
+      persistCandidates: vi.fn(async () => undefined),
+      persistEvaluations: vi.fn(async () => undefined),
+      persistStatus: vi.fn(async status => { states.push(status) }),
+      now: () => '2026-10-13T00:00:00.000Z',
+    })).rejects.toThrow('provider leaked detail')
+
+    expect(states).toEqual([
+      { revision: 'abc', status: 'running', startedAt: '2026-10-13T00:00:00.000Z' },
+      { revision: 'abc', status: 'failed', startedAt: '2026-10-13T00:00:00.000Z', finishedAt: '2026-10-13T00:00:00.000Z', errorCode: 'INTELLIGENCE_UNAVAILABLE' },
+    ])
   })
 })

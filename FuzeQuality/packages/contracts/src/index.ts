@@ -49,6 +49,18 @@ export type Repository = RepositoryInput & {
   lastScanRevision?: string
   lastScanStatus: 'never' | 'queued' | 'running' | 'complete' | 'failed'
   lastScanDetails?: RepositoryScanDetails
+  /** Revision-scoped lifecycle for deterministic governance plus reviewed LiteLLM proposals. */
+  lastAnalysis?: RepositoryAnalysisStatus
+}
+
+export type RepositoryAnalysisStatus = {
+  revision: string
+  status: 'queued' | 'running' | 'complete' | 'failed'
+  startedAt?: string
+  finishedAt?: string
+  counts?: { deterministic: number; evaluations: number; proposed: number }
+  /** Stable, non-sensitive failure classification; raw provider errors are never exposed. */
+  errorCode?: 'INTELLIGENCE_UNAVAILABLE'
 }
 
 /** Local, event-carried projection of the FuzeFront identity hierarchy. */

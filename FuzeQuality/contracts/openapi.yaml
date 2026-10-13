@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.17.0
+  version: 0.18.0
   license:
     name: UNLICENSED
 servers:
@@ -479,6 +479,42 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/internal/repositories/{repositoryId}/analysis-status:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    post:
+      operationId: recordRepositoryAnalysisStatus
+      summary: Record the revision-scoped FuzeInfra LiteLLM review lifecycle
+      tags: [worker-intelligence]
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision, status]
+              properties:
+                revision: { type: string, minLength: 1, maxLength: 500 }
+                status: { type: string, enum: [queued, running, complete, failed] }
+                startedAt: { type: string, format: date-time }
+                finishedAt: { type: string, format: date-time }
+                errorCode: { type: string, enum: [INTELLIGENCE_UNAVAILABLE] }
+                counts:
+                  type: object
+                  additionalProperties: false
+                  required: [deterministic, evaluations, proposed]
+                  properties:
+                    deterministic: { type: integer, minimum: 0 }
+                    evaluations: { type: integer, minimum: 0 }
+                    proposed: { type: integer, minimum: 0 }
+      responses:
+        '202': { $ref: '#/components/responses/Accepted' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations:

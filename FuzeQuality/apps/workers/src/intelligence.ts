@@ -10,7 +10,7 @@ import {
 } from '@fuzequality/core'
 import { apiRequest, failureCode, runConsumer } from './runtime'
 import { searchJira } from './jira'
-import { repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis } from './repository-analysis'
+import { repositoryQualityArtifactsPath, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
 
 await runConsumer(
   'fuzequality-intelligence-v1',
@@ -26,10 +26,12 @@ await runConsumer(
       const repository = await apiRequest<Repository>(`/api/v1/internal/repositories/${inventory.repositoryId}`)
       const artifacts = await apiRequest<QualityArtifact[]>(repositoryQualityArtifactsPath(inventory.repositoryId, inventory.revision))
       const analyzer = new LiteLlmRepositoryFlowAnalyzer(process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1', process.env.FUZEQUALITY_LLM_MODEL ?? 'quality-analysis', process.env.LITELLM_MASTER_KEY)
-      await runRepositoryInventoryAnalysis(repository, inventory.revision, artifacts, {
+      const analysisPath = `/api/v1/internal/repositories/${encodeURIComponent(inventory.repositoryId)}/analysis-status`
+      await runTrackedRepositoryInventoryAnalysis(repository, inventory.revision, artifacts, {
         analyzer,
         persistCandidates: candidates => apiRequest('/api/v1/internal/repository-flow-candidates', { method: 'POST', body: JSON.stringify({ candidates }) }),
         persistEvaluations: evaluations => apiRequest('/api/v1/internal/policy-gate-evaluations', { method: 'POST', body: JSON.stringify({ evaluations }) }),
+        persistStatus: status => apiRequest(analysisPath, { method: 'POST', body: JSON.stringify(status) }),
       })
       return
     }
