@@ -15,6 +15,7 @@ export const executionFilterSchema = z.object({
   revision: z.string().trim().min(1).max(200).optional(),
   workflowPath: z.string().trim().min(1).max(1000).optional(),
   attemptScope: z.enum(['initial', 'retry', 'recovered']).optional(),
+  minimumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
   from: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
 }).strict().superRefine((value, context) => {
@@ -34,6 +35,7 @@ export const executionPageFilterSchema = z.object({
   revision: z.string().trim().min(1).max(200).optional(),
   workflowPath: z.string().trim().min(1).max(1000).optional(),
   attemptScope: z.enum(['initial', 'retry', 'recovered']).optional(),
+  minimumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
   from: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
   ...historyPageQueryFields,

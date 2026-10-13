@@ -3371,6 +3371,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   >('')
   const [executionRevision, setExecutionRevision] = useState('')
   const [executionWorkflowPath, setExecutionWorkflowPath] = useState('')
+  const [executionMinimumDurationSeconds, setExecutionMinimumDurationSeconds] = useState('')
   const [executionFrom, setExecutionFrom] = useState('')
   const [executionUntil, setExecutionUntil] = useState('')
   const invalidExecutionRange = Boolean(
@@ -3556,11 +3557,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         attemptScope: executionAttemptScope,
         revision: executionRevision.trim(),
         workflowPath: executionWorkflowPath.trim(),
+        minimumDurationMs: executionMinimumDurationSeconds
+          ? String(Math.round(Number(executionMinimumDurationSeconds) * 1000))
+          : '',
         from: iso(executionFrom),
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionAttemptScope, executionRevision, executionWorkflowPath, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5007,6 +5011,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 maxLength={1000}
                 placeholder=".github/workflows/load.yml"
                 onChange={event => setExecutionWorkflowPath(event.target.value)}
+              />
+            </label>
+            <label>
+              Minimum duration (seconds)
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={executionMinimumDurationSeconds}
+                placeholder="Any duration"
+                onChange={event => setExecutionMinimumDurationSeconds(event.target.value)}
               />
             </label>
             <label>

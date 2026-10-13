@@ -70,6 +70,7 @@ export type TestExecutionQuery = {
   revision?: string
   workflowPath?: string
   attemptScope?: 'initial' | 'retry' | 'recovered'
+  minimumDurationMs?: number
   from?: string
   until?: string
   after?: HistoryCursor
@@ -1211,12 +1212,18 @@ export class PostgresCatalogStore implements CatalogStore {
                AND previous.attempt<executions.attempt
                AND previous.status='failed'
            )))
-         AND ($9::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) >= $9)
-         AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $10)
-         AND ($11::timestamptz IS NULL OR (COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz),executions.id) < ($11::timestamptz,$12::text))
+         AND ($9::bigint IS NULL OR (
+           executions.started_at IS NOT NULL
+           AND executions.completed_at IS NOT NULL
+           AND executions.completed_at >= executions.started_at
+           AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9
+         ))
+         AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) >= $10)
+         AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $11)
+         AND ($12::timestamptz IS NULL OR (COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz),executions.id) < ($12::timestamptz,$13::text))
        ORDER BY COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) DESC,executions.id DESC
-       LIMIT COALESCE($13::integer, 2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+       LIMIT COALESCE($14::integer, 2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
@@ -1270,7 +1277,7 @@ export class PostgresCatalogStore implements CatalogStore {
                 repository_id,provider,external_run_id,attempt,revision,kind,status,workflow_path,started_at,completed_at
          FROM fuzequality.test_execution_versions
          WHERE repository_id=$1 AND tenant_id=$2
-           AND ($12::timestamptz IS NULL OR versioned_at <= $12)
+           AND ($13::timestamptz IS NULL OR versioned_at <= $13)
          ORDER BY repository_id,provider,external_run_id,attempt,versioned_at DESC,version_id DESC
        )
        SELECT to_char((COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS date,
@@ -1315,13 +1322,19 @@ export class PostgresCatalogStore implements CatalogStore {
                AND previous.attempt<executions.attempt
                AND previous.status='failed'
            )))
-         AND ($9::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) >= $9)
-         AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $10)
-         AND ($11::date IS NULL OR (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date < $11)
+         AND ($9::bigint IS NULL OR (
+           executions.started_at IS NOT NULL
+           AND executions.completed_at IS NOT NULL
+           AND executions.completed_at >= executions.started_at
+           AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9
+         ))
+         AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) >= $10)
+         AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $11)
+         AND ($12::date IS NULL OR (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date < $12)
        GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
        ORDER BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date DESC
-       LIMIT COALESCE($13::integer, 2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null],
+       LIMIT COALESCE($14::integer, 2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({
       date: row.date,
@@ -1346,7 +1359,7 @@ export class PostgresCatalogStore implements CatalogStore {
                 policy_artifact_ids,gate_artifact_ids,gate_evaluations
          FROM fuzequality.test_execution_versions
          WHERE repository_id=$1 AND tenant_id=$2
-           AND ($11::timestamptz IS NULL OR versioned_at <= $11)
+           AND ($12::timestamptz IS NULL OR versioned_at <= $12)
          ORDER BY repository_id,provider,external_run_id,attempt,versioned_at DESC,version_id DESC
        ), filtered_executions AS (
          SELECT repository_id,revision,status,completed_at,
@@ -1368,8 +1381,14 @@ export class PostgresCatalogStore implements CatalogStore {
                  AND previous.attempt<executions.attempt
                  AND previous.status='failed'
              )))
-           AND ($9::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) >= $9)
-           AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $10)
+           AND ($9::bigint IS NULL OR (
+             executions.started_at IS NOT NULL
+             AND executions.completed_at IS NOT NULL
+             AND executions.completed_at >= executions.started_at
+             AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9
+           ))
+           AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) >= $10)
+           AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $11)
        ), explicit_pairs AS (
          SELECT execution.repository_id,execution.revision,execution.completed_at,execution.occurred_at,
                 pair.value->>'policyArtifactId' AS policy_artifact_id,
@@ -1404,14 +1423,14 @@ export class PostgresCatalogStore implements CatalogStore {
          GROUP BY repository_id,policy_artifact_id,gate_artifact_id
        )
        SELECT * FROM aggregates
-       WHERE $12::integer IS NULL
-          OR failed < $12
-          OR (failed=$12 AND passed < $13)
-          OR (failed=$12 AND passed=$13 AND gate_artifact_id > $14)
-          OR (failed=$12 AND passed=$13 AND gate_artifact_id=$14 AND policy_artifact_id > $15)
+       WHERE $13::integer IS NULL
+          OR failed < $13
+          OR (failed=$13 AND passed < $14)
+          OR (failed=$13 AND passed=$14 AND gate_artifact_id > $15)
+          OR (failed=$13 AND passed=$14 AND gate_artifact_id=$15 AND policy_artifact_id > $16)
        ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id
-       LIMIT COALESCE($16::integer,2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.from ?? null, query.until ?? null, query.snapshotAt ?? null, query.after?.failed ?? null, query.after?.passed ?? null, query.after?.gateArtifactId ?? null, query.after?.policyArtifactId ?? null, query.limit ?? null],
+       LIMIT COALESCE($17::integer,2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.from ?? null, query.until ?? null, query.snapshotAt ?? null, query.after?.failed ?? null, query.after?.passed ?? null, query.after?.gateArtifactId ?? null, query.after?.policyArtifactId ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({
       repositoryId: row.repository_id,

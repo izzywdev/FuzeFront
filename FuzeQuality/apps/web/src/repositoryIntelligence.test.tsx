@@ -1544,6 +1544,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('filters execution history, trends, and gate performance by minimum duration', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Minimum duration (seconds)'), {
+      target: { value: '90' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        minimumDurationMs: '90000',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        minimumDurationMs: '90000',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        minimumDurationMs: '90000',
+      })
+    })
+  })
+
   it('filters execution evidence and gate performance by exact workflow file', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

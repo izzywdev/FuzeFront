@@ -10,6 +10,7 @@ describe('execution evidence filter', () => {
       revision: 'abcdef123456',
       workflowPath: '.github/workflows/load.yml',
       attemptScope: 'retry',
+      minimumDurationMs: '60000',
       from: '2026-10-01T00:00:00.000Z',
       until: '2026-10-08T00:00:00.000Z',
     }).success).toBe(true)
@@ -25,6 +26,13 @@ describe('execution evidence filter', () => {
 
   it('accepts verified recovery evidence as an attempt scope', () => {
     expect(executionFilterSchema.safeParse({ attemptScope: 'recovered' }).success).toBe(true)
+  })
+
+  it('bounds the minimum execution duration to a non-negative integer', () => {
+    expect(executionFilterSchema.parse({ minimumDurationMs: '60000' }).minimumDurationMs).toBe(60_000)
+    expect(executionFilterSchema.safeParse({ minimumDurationMs: '-1' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ minimumDurationMs: '1.5' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ minimumDurationMs: '2147483648' }).success).toBe(false)
   })
 
   it('rejects an empty or oversized revision', () => {

@@ -191,6 +191,11 @@ describe('contract discovery', () => {
         in: 'query',
         schema: { type: 'string', enum: ['initial', 'retry', 'recovered'] },
       })
+      expect(document.components.parameters.ExecutionMinimumDurationMs).toMatchObject({
+        name: 'minimumDurationMs',
+        in: 'query',
+        schema: { type: 'integer', minimum: 0, maximum: 2147483647 },
+      })
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )

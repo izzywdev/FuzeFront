@@ -149,6 +149,7 @@ describe('test execution evidence', () => {
       revision: 'abc',
       workflowPath: '.github/workflows/post-prod.yml',
       attemptScope: 'recovered',
+      minimumDurationMs: 60_000,
       from: '2026-01-01T00:00:00.000Z',
       until: '2026-01-31T00:00:00.000Z',
       after: { createdAt: '2026-01-15T00:00:00.000Z', id: 'run-2' },
@@ -159,10 +160,11 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('WHERE executions.repository_id=$1 AND executions.tenant_id=$2')
     expect(String(sql)).toContain("COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz),executions.id")
     expect(String(sql)).toContain("$8='recovered'")
+    expect(String(sql)).toContain('EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9')
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', 'failed', 'github-actions', 'abc',
-      '.github/workflows/post-prod.yml', 'recovered', '2026-01-01T00:00:00.000Z',
+      '.github/workflows/post-prod.yml', 'recovered', 60_000, '2026-01-01T00:00:00.000Z',
       '2026-01-31T00:00:00.000Z', '2026-01-15T00:00:00.000Z', 'run-2', 51,
     ])
   })
@@ -173,7 +175,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
-      kind: 'integration', beforeDate: '2026-10-11', limit: 51,
+      kind: 'integration', minimumDurationMs: 60_000, beforeDate: '2026-10-11', limit: 51,
     })).resolves.toEqual([
       { date: '2026-10-10', passed: 2, failed: 1, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
     ])
@@ -181,7 +183,8 @@ describe('test execution evidence', () => {
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain('FROM fuzequality.test_execution_versions')
     expect(String(sql)).toContain('WHERE repository_id=$1 AND tenant_id=$2')
-    expect(String(sql)).toContain('versioned_at <= $12')
+    expect(String(sql)).toContain('versioned_at <= $13')
+    expect(String(sql)).toContain('EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9')
     expect(String(sql)).toContain('COALESCE(executions.completed_at,executions.started_at) IS NOT NULL')
     expect(String(sql)).not.toContain("COALESCE(completed_at,started_at,'epoch'::timestamptz)")
     expect(String(sql)).toContain("AT TIME ZONE 'UTC'")
@@ -194,7 +197,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('recovered_run_count')
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain("previous.status='failed'")
-    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, null, null, '2026-10-11', null, 51])
+    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, null, null, '2026-10-11', null, 51])
   })
 
   it('pushes filtered policy-gate aggregation and its stable cursor into Postgres', async () => {
@@ -208,7 +211,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.policyGatePerformance('repo-1', 'org-1', {
-      kind: 'post-production', provider: 'github-actions', attemptScope: 'recovered',
+      kind: 'post-production', provider: 'github-actions', attemptScope: 'recovered', minimumDurationMs: 90_000,
       after: { failed: 3, passed: 5, gateArtifactId: 'gate-0', policyArtifactId: 'policy-0' },
       limit: 51,
     })).resolves.toEqual([{
@@ -221,14 +224,15 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('WHERE repository_id=$1 AND tenant_id=$2')
     expect(String(sql)).toContain('jsonb_array_elements')
     expect(String(sql)).toContain('FROM fuzequality.test_execution_versions')
-    expect(String(sql)).toContain('versioned_at <= $11')
+    expect(String(sql)).toContain('versioned_at <= $12')
+    expect(String(sql)).toContain('EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9')
     expect(String(sql)).toContain('versioned_at DESC,version_id DESC')
     expect(String(sql)).toContain("$8='recovered'")
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
     expect(String(sql)).toContain('ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id')
     expect(parameters).toEqual([
-      'repo-1', 'org-1', 'post-production', null, 'github-actions', null, null, 'recovered', null, null, null,
+      'repo-1', 'org-1', 'post-production', null, 'github-actions', null, null, 'recovered', 90_000, null, null, null,
       3, 5, 'gate-0', 'policy-0', 51,
     ])
   })
