@@ -23,7 +23,7 @@
  *   key lookup 4.0.0 semantics: include_shared ignored.
  */
 import {
-  actor, addItem, assertSharedListsOff, assertSharedListsOn, call, createList, createPlatformList, expectError, FLAG_OFF_BASE_URL,
+  actor, addItem, assertSharedListsOff, assertSharedListsOn, call, createList, createPlatformList, expectError, FLAG_OFF_BASE_URL, PLATFORM_ORG_ID,
   forkList, L, newOrg, rnd, walkItems, walkLists, type Actor, type ListLike,
 } from '../helpers/shared-lists';
 import { assertResponse } from '../helpers/openapi';
@@ -218,5 +218,22 @@ describe('authorization never routes through the flag', () => {
     expect((await off(null, 'GET', L(mine.body.id))).status).toBe(401);
     const item = await addItem(owner, orgList.id, `Z${rnd()}`, 'z'); // ON write, to keep the ON/OFF split honest
     expect(item.origin_item_id).toBeNull();
+  });
+});
+
+describe('the purge guard for common lists does NOT depend on the flag (service 1.1.0)', () => {
+  it('an owner without publish_platform is refused the purge of a platform row through the flag-OFF instance too; the operator is not; archive stays the owner\'s', async () => {
+    const p = await createPlatformList({ itemCodes: ['A', 'B'] });
+    const lowOwner = actor('low', PLATFORM_ORG_ID, 'editor'); // platform-org editor: can own a list, never holds publish_platform
+    expect((await call(p.owner, 'PUT', `${L(p.list.id)}/access/${lowOwner.userId}`, { role: 'list-owner' })).status).toBe(200);
+
+    expectError(await off(lowOwner, 'DELETE', `${L(p.list.id)}/items/${p.items[0].id}?purge=true`), 403, 'FORBIDDEN');
+    expectError(await off(lowOwner, 'DELETE', `${L(p.list.id)}?purge=true`), 403, 'FORBIDDEN');
+    expect((await walkItems(p.owner, p.list.id, 'all')).map((i) => i.code).sort()).toEqual(['A', 'B']); // intact
+
+    // controls: the reversible act needs no publish_platform; the operator (holds it, acts in the platform org) purges
+    expect((await off(lowOwner, 'DELETE', `${L(p.list.id)}/items/${p.items[1].id}`)).status).toBe(200);
+    expect((await off(p.owner, 'DELETE', `${L(p.list.id)}/items/${p.items[0].id}?purge=true`)).status).toBe(204);
+    expect((await off(p.owner, 'DELETE', `${L(p.list.id)}?purge=true`)).status).toBe(204);
   });
 });

@@ -156,6 +156,8 @@ security/
   shared-read-authz.test.ts           shared read per tenant role (developer -> 404), cross-org 404, nobody mutates via shared read, id is not a capability
   shared-lists-privileged-ops.test.ts publish_platform (platform org only), promotion, owner-only visibility, purge of common lists
   shared-lists-fake-policy.test.ts    the stand-in Security API evaluates read_shared / publish_platform as the Permit schema defines them
+  shared-lists-platform-org-trust.test.ts  decoy platform-typed org gets nothing; unset / unconfirmed / deactivated platform org disables every platform feature
+  shared-lists-authorship-masking.test.ts  created_by of another org's rows renders as system:platform
 ```
 
 ### Turning the feature on (and off) in the harness
@@ -169,6 +171,13 @@ instances on the same database**, both started like the CI job does (`NODE_ENV=t
 | `SELECTION_LIST_PLATFORM_ORG_ID` | `org_01test00000000platform00000` | the same |
 | `PORT` | e.g. `3011` | e.g. `3012` |
 
+* The platform org id is **configuration only** (service 1.1.0): `SELECTION_LIST_PLATFORM_ORG_ID` is honoured once
+  `selection_list_ref_index` shows an active row with `is_active = true` and `org_type = 'platform'` for it.
+  `helpers/global-setup.ts` writes that row (plus a *decoy* org typed `platform` that is not the configured id) with plain SQL.
+  `security/shared-lists-platform-org-trust.test.ts` additionally needs three instances whose only difference is that
+  setting - unset / an org with no projection row / an org projected `is_active=false` - passed as
+  `SHARED_LISTS_PLATFORM_DISABLED_URLS="unset=<url>,unconfirmed=<url>,deactivated=<url>"`
+  (`.github/workflows/ci.yml` starts them on 3013-3015; the flag-OFF instance is 3012).
 * `TEST_PLATFORM_ORG_ID` (default `org_01test00000000platform00000`) must equal the service's
   `SELECTION_LIST_PLATFORM_ORG_ID`. The suites tell the stand-in Security API which org is the platform org
   through `POST /__fixture/platform-org`; `publish_platform` is effective only in that tenant.

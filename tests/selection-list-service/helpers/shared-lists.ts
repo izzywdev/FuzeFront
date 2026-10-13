@@ -280,3 +280,33 @@ export function expectError(res: Res, status: number, code: string, reason?: str
   if (reason === null) expect((res.body as any).reason).toBeUndefined();
   else if (reason !== undefined) expect((res.body as any).reason).toBe(reason);
 }
+
+// ---------------------------------------------------------------------------
+// SQL fixtures for rows the API refuses to create (untrusted data)
+// ---------------------------------------------------------------------------
+
+/**
+ * Insert a `platform`-visibility list (with one active item) owned by `ownerOrgId` straight into the service's own
+ * tables (4.0.0 columns + `visibility`). The API only lets the CONFIGURED platform org own such a row, so this is how
+ * a suite plants "a platform row anywhere else": untrusted data that must never be served.
+ */
+export async function insertPlatformRowViaSql(
+  ownerOrgId: string,
+  key: string = `sql-${rnd()}-${rnd()}`,
+): Promise<{ id: string; key: string; itemId: string }> {
+  const { dbQuery } = await import('./db');
+  const id = `front_sl_sl9sql${rnd()}${rnd()}`;
+  const itemId = `front_sli_sl9sql${rnd()}${rnd()}`;
+  await dbQuery(
+    `INSERT INTO selection_lists (id, organization_id, key, source_locale, status, created_by, visibility)
+     VALUES ($1, $2, $3, 'en', 'active', 'system:selection-list-service', 'platform')`,
+    [id, ownerOrgId, key],
+  );
+  await dbQuery(`INSERT INTO selection_list_translations (list_id, locale, name, is_machine) VALUES ($1, 'en', 'Planted common list', false)`, [id]);
+  await dbQuery(
+    `INSERT INTO selection_list_items (id, list_id, code, sort_order, status, created_by) VALUES ($1, $2, 'P1', 100, 'active', 'system:selection-list-service')`,
+    [itemId, id],
+  );
+  await dbQuery(`INSERT INTO selection_list_item_translations (item_id, locale, label, is_machine) VALUES ($1, 'en', 'Planted item', false)`, [itemId]);
+  return { id, key, itemId };
+}
