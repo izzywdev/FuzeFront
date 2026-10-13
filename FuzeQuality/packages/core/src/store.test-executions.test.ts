@@ -35,6 +35,29 @@ describe('test execution evidence', () => {
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/load.yml']])
   })
 
+  it('returns the latest post-production execution for every detected workflow', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', kind: 'post-production' as const, status: 'passed' as const, name: 'post-prod', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+    await store.saveTestExecution({ id: 'old', ...base, externalRunId: 'old', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-10T00:00:00.000Z' })
+    await store.saveTestExecution({ id: 'new', ...base, externalRunId: 'new', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-11T00:00:00.000Z' })
+    await store.saveTestExecution({ id: 'other', ...base, externalRunId: 'other', kind: 'ci', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-12T00:00:00.000Z' })
+
+    await expect(store.latestPostProductionExecutions('repo-1', 'org-1', ['.github/workflows/post-prod.yml']))
+      .resolves.toEqual([expect.objectContaining({ id: 'new' })])
+  })
+
+  it('pushes tenant and detected workflow paths into the latest post-production Postgres query', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+    await store.latestPostProductionExecutions('repo-1', 'org-1', ['.github/workflows/post-prod.yml'])
+    const [sql, parameters] = query.mock.calls[0]
+    expect(String(sql)).toContain("kind='post-production'")
+    expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
+    expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
+    expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/post-prod.yml']])
+  })
+
   it('updates a run lifecycle in place but preserves reruns without a source URL', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '456', revision: 'abc', kind: 'ci' as const, name: 'CI', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }

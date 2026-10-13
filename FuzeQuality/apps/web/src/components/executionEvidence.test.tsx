@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
-import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionSourceLink, ExecutionThresholdEvidence, latestPerformanceExecution } from './executionEvidence'
+import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionSourceLink, ExecutionThresholdEvidence, latestPerformanceExecution, latestPostProductionExecution } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -97,6 +97,16 @@ describe('ExecutionThresholdEvidence', () => {
         { ...heuristicStressRun, workflowPath: '.github/workflows/other.yml' },
       ])
     ).toBeUndefined()
+  })
+
+  it('matches post-production evidence only by detected workflow identity', () => {
+    const artifact: QualityArtifact = {
+      id: 'post-prod-workflow', repositoryId: execution.repositoryId, kind: 'post-production-test',
+      title: 'Post production', sourcePath: '.github/workflows/post-prod.yml', summary: 'Production validation', evidence: [],
+    }
+    const run = { ...execution, kind: 'post-production' as const, workflowPath: artifact.sourcePath }
+    expect(latestPostProductionExecution(artifact, [run])).toBe(run)
+    expect(latestPostProductionExecution(artifact, [{ ...run, kind: 'ci' }])).toBeUndefined()
   })
 
   it('renders the workflow file with the provider-owned run identity', () => {

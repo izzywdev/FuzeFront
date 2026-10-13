@@ -133,6 +133,7 @@ export const api = {
   reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed', reason?: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),
   testExecutions: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').TestExecutionPage | import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions?${new URLSearchParams(filter)}`),
   latestPerformanceExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/performance-test-executions/latest`),
+  latestPostProductionExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/post-production-test-executions/latest`),
   executionTrend: (id: string, filter: Record<string, string> = {}) => request<{
     items: import('@fuzequality/core').ExecutionOutcomeTrend[]
     page: { nextCursor: string | null; hasMore: boolean }

@@ -127,6 +127,12 @@ const loadArtifact: QualityArtifact = {
   },
 }
 
+const postProductionArtifact: QualityArtifact = {
+  id: 'artifact-post-production-1', repositoryId: repository.id, kind: 'post-production-test',
+  title: 'Post production', sourcePath: '.github/workflows/post-prod.yml',
+  summary: 'Post-production workflow', evidence: ['playwright test:post-prod'],
+}
+
 const governanceEvaluation: PolicyGateEvaluation = {
   id: 'evaluation-1',
   repositoryId: repository.id,
@@ -157,12 +163,21 @@ const loadExecution: TestExecution = {
   summary: 'Latency threshold exceeded.',
 }
 
+const postProductionExecution: TestExecution = {
+  ...loadExecution,
+  id: 'execution-post-production-1', externalRunId: '67890', kind: 'post-production', status: 'passed',
+  name: 'Post production', workflowPath: postProductionArtifact.sourcePath,
+  sourceUrl: 'https://github.com/fuze/front/actions/runs/67890', thresholds: [],
+  summary: 'Production journeys passed.',
+}
+
 function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifacts').mockResolvedValue([])
   vi.spyOn(api, 'qualityArtifactsByIds').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
   vi.spyOn(api, 'latestPerformanceExecutions').mockResolvedValue({ items: [] })
+  vi.spyOn(api, 'latestPostProductionExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'executionTrend').mockResolvedValue([])
   vi.spyOn(api, 'executionPerformance').mockResolvedValue([])
   vi.spyOn(api, 'repositoryFlowReviewHistory').mockResolvedValue([])
@@ -1218,6 +1233,21 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     expect(await screen.findByLabelText(`Latest execution for ${loadArtifact.title}`)).toHaveTextContent('failed · revision-1')
     expect(api.latestPerformanceExecutions).toHaveBeenCalledWith(repository.id)
+  })
+
+  it('shows detected post-production workflow inventory with its latest exact-path outcome', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([postProductionArtifact])
+    vi.mocked(api.latestPostProductionExecutions).mockResolvedValue({ items: [postProductionExecution] })
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByRole('heading', { name: 'Post-production tests' })).toBeVisible()
+    const outcome = await screen.findByLabelText(`Latest execution for ${postProductionArtifact.title}`)
+    expect(outcome).toHaveTextContent('passed · revision-1')
+    expect(outcome).toHaveTextContent('Production journeys passed.')
+    expect(api.latestPostProductionExecutions).toHaveBeenCalledWith(repository.id)
   })
 
   it('keeps repository and governance evidence visible when optional performance history fails', async () => {

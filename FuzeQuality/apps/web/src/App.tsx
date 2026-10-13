@@ -71,6 +71,7 @@ import {
   ExecutionThresholdEvidence,
   ExecutionSourceLink,
   latestPerformanceExecution,
+  latestPostProductionExecution,
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
@@ -2797,8 +2798,11 @@ function FlowReviewHistory({
   const [error, setError] = useState<string>()
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const detailsRef = useRef<HTMLDetailsElement>(null)
+  const historyRequestInFlight = useRef(false)
 
   const loadHistory = useCallback(async (cursor?: string) => {
+    if (historyRequestInFlight.current) return
+    historyRequestInFlight.current = true
     setLoading(true)
     setError(undefined)
     try {
@@ -2814,6 +2818,7 @@ function FlowReviewHistory({
         cause instanceof Error ? cause.message : 'Unable to load review history'
       )
     } finally {
+      historyRequestInFlight.current = false
       setLoading(false)
     }
   }, [flow.id, flow.repositoryId])
@@ -2985,8 +2990,11 @@ function PolicyGateReviewHistory({
   const [error, setError] = useState<string>()
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const detailsRef = useRef<HTMLDetailsElement>(null)
+  const historyRequestInFlight = useRef(false)
 
   const loadHistory = useCallback(async (cursor?: string) => {
+    if (historyRequestInFlight.current) return
+    historyRequestInFlight.current = true
     setLoading(true)
     setError(undefined)
     try {
@@ -3006,6 +3014,7 @@ function PolicyGateReviewHistory({
         cause instanceof Error ? cause.message : 'Unable to load review history'
       )
     } finally {
+      historyRequestInFlight.current = false
       setLoading(false)
     }
   }, [evaluation.id, evaluation.repositoryId])
@@ -3309,6 +3318,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionTrendFailures, setExecutionTrendFailures] = useState<string[]>([])
   const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
   const [performanceEvidenceFailures, setPerformanceEvidenceFailures] = useState<string[]>([])
+  const [postProductionExecutions, setPostProductionExecutions] = useState<TestExecution[]>([])
+  const [postProductionEvidenceFailures, setPostProductionEvidenceFailures] = useState<string[]>([])
   const [executionPerformance, setExecutionPerformance] = useState<
     PolicyGatePerformance[]
   >([])
@@ -3797,6 +3808,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setExecutions([])
       setPerformanceExecutions([])
       setPerformanceEvidenceFailures([])
+      setPostProductionExecutions([])
+      setPostProductionEvidenceFailures([])
       setExecutionPerformance([])
       setExecutionTrends([])
       return () => {
@@ -3812,17 +3825,20 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             performance: { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } },
             trend: { items: [] as ExecutionOutcomeTrend[], page: { nextCursor: null, hasMore: false } },
             performanceExecutions: [] as TestExecution[],
+            postProductionExecutions: [] as TestExecution[],
             executionFailed: false,
             performanceExecutionsFailed: false,
+            postProductionExecutionsFailed: false,
             performanceFailed: false,
             trendFailed: false,
           }
         }
-        const [executionResult, performanceResult, trendResult, performanceExecutionsResult] = await Promise.allSettled([
+        const [executionResult, performanceResult, trendResult, performanceExecutionsResult, postProductionExecutionsResult] = await Promise.allSettled([
           api.testExecutions(repository.id, executionFilter),
           api.executionPerformance(repository.id, executionFilter),
           api.executionTrend(repository.id, executionFilter),
           api.latestPerformanceExecutions(repository.id),
+          api.latestPostProductionExecutions(repository.id),
         ])
         return {
           repositoryId: repository.id,
@@ -3838,8 +3854,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           performanceExecutions: performanceExecutionsResult.status === 'fulfilled'
             ? performanceExecutionsResult.value.items
             : [],
+          postProductionExecutions: postProductionExecutionsResult.status === 'fulfilled'
+            ? postProductionExecutionsResult.value.items
+            : [],
           executionFailed: executionResult.status === 'rejected',
           performanceExecutionsFailed: performanceExecutionsResult.status === 'rejected',
+          postProductionExecutionsFailed: postProductionExecutionsResult.status === 'rejected',
           performanceFailed: performanceResult.status === 'rejected',
           trendFailed: trendResult.status === 'rejected',
         }
@@ -3852,6 +3872,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions))
           setPerformanceEvidenceFailures(groups
             .filter(group => group.performanceExecutionsFailed)
+            .map(group => group.repositoryId))
+          setPostProductionExecutions(groups.flatMap(group => group.postProductionExecutions))
+          setPostProductionEvidenceFailures(groups
+            .filter(group => group.postProductionExecutionsFailed)
             .map(group => group.repositoryId))
           setExecutionNextCursors(Object.fromEntries(
             groups.flatMap(group => group.executions.page.nextCursor
@@ -3880,6 +3904,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setExecutions([])
           setPerformanceExecutions([])
           setPerformanceEvidenceFailures(data.repositories.map(repository => repository.id))
+          setPostProductionExecutions([])
+          setPostProductionEvidenceFailures(data.repositories.map(repository => repository.id))
           setExecutionNextCursors({})
           setExecutionPerformance([])
           setExecutionTrends([])
@@ -4141,6 +4167,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       'test-plan',
       'Existing test plans',
       'Repository test cases available for flow and coverage analysis',
+    ],
+    [
+      'post-production-test',
+      'Post-production tests',
+      'Production validation workflows detected by repository analysis',
     ],
     [
       'policy',
@@ -4606,7 +4637,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                           </article>
                         ))}
                     {items.map(item => {
-                      const latestExecution = latestPerformanceExecution(item, performanceExecutions)
+                      const latestExecution = item.kind === 'post-production-test'
+                        ? latestPostProductionExecution(item, postProductionExecutions)
+                        : latestPerformanceExecution(item, performanceExecutions)
                       const repository = data.repositories.find(
                         candidate => candidate.id === item.repositoryId
                       )
@@ -4623,6 +4656,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             performanceEvidenceFailures.includes(item.repositoryId) && (
                               <small className="performance-evidence-warning" role="alert">
                                 Latest execution evidence is temporarily unavailable. The discovered test definition remains available.
+                              </small>
+                            )}
+                          {item.kind === 'post-production-test' &&
+                            postProductionEvidenceFailures.includes(item.repositoryId) && (
+                              <small className="performance-evidence-warning" role="alert">
+                                Latest post-production outcome is temporarily unavailable. The detected workflow remains available.
                               </small>
                             )}
                           {item.evidence.length > 0 && (
@@ -4700,6 +4739,27 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 </>
                               ) : (
                                 <small>No matching execution has been ingested for this workflow yet.</small>
+                              )}
+                            </section>
+                          )}
+                          {item.kind === 'post-production-test' && (
+                            <section
+                              className="performance-latest-execution"
+                              aria-label={`Latest execution for ${item.title}`}
+                            >
+                              <strong>Latest recorded post-production outcome</strong>
+                              {latestExecution ? (
+                                <>
+                                  <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
+                                  <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
+                                  <ExecutionEvidenceMetadata execution={latestExecution} />
+                                  <ExecutionEvidenceCoverage execution={latestExecution} />
+                                  <ExecutionLinkageEvidence execution={latestExecution} />
+                                  <ExecutionEvidenceLinks execution={latestExecution} />
+                                  <ExecutionSourceLink execution={latestExecution} />
+                                </>
+                              ) : (
+                                <small>No matching post-production execution has been ingested for this workflow yet.</small>
                               )}
                             </section>
                           )}

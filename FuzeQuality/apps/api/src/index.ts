@@ -53,6 +53,7 @@ import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } 
 import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
 import { repositoryAnalysisStatusSchema } from './repository-analysis-status'
 import { reviewedPerformanceWorkflowPaths } from './latest-performance-executions'
+import { reviewedPostProductionWorkflowPaths } from './latest-post-production-executions'
 import { repositoryProcessingStatus } from './repository-processing-status'
 import {
   buildImplementationManifest,
@@ -731,6 +732,15 @@ app.get('/api/v1/repositories/:id/performance-test-executions/latest', mayReadCa
   const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
   const workflowPaths = reviewedPerformanceWorkflowPaths(artifacts)
   response.json({ items: await store.latestPerformanceExecutions(repositoryId, tenantId, workflowPaths) })
+})
+app.get('/api/v1/repositories/:id/post-production-test-executions/latest', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
+  const workflowPaths = reviewedPostProductionWorkflowPaths(artifacts)
+  response.json({ items: await store.latestPostProductionExecutions(repositoryId, tenantId, workflowPaths) })
 })
 app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
