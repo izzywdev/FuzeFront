@@ -77,20 +77,48 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
   })
 }
 
-export type ExecutionOutcomeTrend = { date: string; passed: number; failed: number; cancelled: number; running: number }
+export type ExecutionOutcomeTrend = {
+  date: string
+  passed: number
+  failed: number
+  cancelled: number
+  running: number
+  /** Runs with a valid, non-negative start/end interval. */
+  durationSampleCount: number
+  /** Rounded arithmetic mean for the valid intervals in this UTC-day bucket. */
+  averageDurationMs: number
+}
 
 /** Produces an evidence-only daily outcome series; missing days are not invented. */
 export function executionOutcomeTrend(executions: TestExecution[]): ExecutionOutcomeTrend[] {
-  const results = new Map<string, ExecutionOutcomeTrend>()
+  const results = new Map<string, ExecutionOutcomeTrend & { totalDurationMs: number }>()
   for (const execution of executions) {
     const timestamp = execution.completedAt ?? execution.startedAt
     if (!timestamp || Number.isNaN(Date.parse(timestamp))) continue
     const date = timestamp.slice(0, 10)
-    const current = results.get(date) ?? { date, passed: 0, failed: 0, cancelled: 0, running: 0 }
+    const current = results.get(date) ?? {
+      date,
+      passed: 0,
+      failed: 0,
+      cancelled: 0,
+      running: 0,
+      durationSampleCount: 0,
+      averageDurationMs: 0,
+      totalDurationMs: 0,
+    }
     current[execution.status]++
+    const startedAt = Date.parse(execution.startedAt ?? '')
+    const completedAt = Date.parse(execution.completedAt ?? '')
+    if (Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt) {
+      current.durationSampleCount++
+      current.totalDurationMs += completedAt - startedAt
+      current.averageDurationMs = Math.round(current.totalDurationMs / current.durationSampleCount)
+    }
     results.set(date, current)
   }
-  return [...results.values()].sort((left, right) => left.date.localeCompare(right.date))
+  return [...results.values()]
+    .map(({ totalDurationMs: _totalDurationMs, ...trend }) => trend)
+    .sort((left, right) => left.date.localeCompare(right.date))
 }
 
 /** Aggregates immutable execution evidence; no missing link is inferred as a passing gate. */

@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.25.0
+  version: 0.26.0
   license:
     name: UNLICENSED
 servers:
@@ -959,7 +959,7 @@ paths:
     get:
       operationId: listExecutionOutcomeTrend
       summary: Aggregate filtered execution outcomes by UTC day
-      description: Returns immutable daily aggregates across the complete filtered execution history, independently of execution-row pagination.
+      description: Returns immutable daily outcome and valid-duration aggregates across the complete filtered execution history, independently of execution-row pagination.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:
@@ -1677,13 +1677,15 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, passed, failed, cancelled, running]
+      required: [date, passed, failed, cancelled, running, durationSampleCount, averageDurationMs]
       properties:
         date: { type: string, format: date }
         passed: { type: integer, minimum: 0 }
         failed: { type: integer, minimum: 0 }
         cancelled: { type: integer, minimum: 0 }
         running: { type: integer, minimum: 0 }
+        durationSampleCount: { type: integer, minimum: 0 }
+        averageDurationMs: { type: integer, minimum: 0 }
     PerformanceDispatch:
       type: object
       required: [status, artifactId, workflowPath, ref, sourceRevision]

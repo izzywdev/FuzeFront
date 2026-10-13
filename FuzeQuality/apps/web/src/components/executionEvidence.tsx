@@ -118,7 +118,12 @@ export function executionDurationLabel(
   )
     return undefined
 
-  const totalSeconds = Math.round((completed - started) / 1000)
+  return durationMsLabel(completed - started)
+}
+
+export function durationMsLabel(durationMs: number): string | undefined {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return undefined
+  const totalSeconds = Math.round(durationMs / 1000)
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60

@@ -74,8 +74,9 @@ describe('execution performance', () => {
 })
 it('filters and trends only timestamped execution evidence', () => {
   const executions = [
-    { id: 'one', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'one', attempt: 1, revision: 'a', kind: 'ci' as const, status: 'passed' as const, name: 'CI', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
+    { id: 'one', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'one', attempt: 1, revision: 'a', kind: 'ci' as const, status: 'passed' as const, name: 'CI', startedAt: '2026-10-07T11:59:30.000Z', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
     { id: 'two', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'two', attempt: 1, revision: 'b', kind: 'load' as const, status: 'failed' as const, name: 'Load', completedAt: '2026-10-08T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
+    { id: 'three', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'three', attempt: 1, revision: 'c', kind: 'ci' as const, status: 'passed' as const, name: 'CI', startedAt: '2026-10-07T11:59:00.000Z', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
   ]
   expect(filterTestExecutions(executions, { kind: 'load', from: '2026-10-08T00:00:00.000Z' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { provider: 'github-actions' })).toEqual([])
@@ -83,7 +84,7 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { revision: 'b' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { workflowPath: '.github/workflows/load.yml' })).toEqual([])
   expect(executionOutcomeTrend(executions)).toEqual([
-    { date: '2026-10-07', passed: 1, failed: 0, cancelled: 0, running: 0 },
-    { date: '2026-10-08', passed: 0, failed: 1, cancelled: 0, running: 0 },
+    { date: '2026-10-07', passed: 2, failed: 0, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 45_000 },
+    { date: '2026-10-08', passed: 0, failed: 1, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0 },
   ])
 })

@@ -1278,7 +1278,13 @@ export class PostgresCatalogStore implements CatalogStore {
               count(*) FILTER (WHERE status='passed')::integer AS passed,
               count(*) FILTER (WHERE status='failed')::integer AS failed,
               count(*) FILTER (WHERE status='cancelled')::integer AS cancelled,
-              count(*) FILTER (WHERE status='running')::integer AS running
+              count(*) FILTER (WHERE status='running')::integer AS running,
+              count(*) FILTER (
+                WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
+              )::integer AS duration_sample_count,
+              COALESCE(round(avg(EXTRACT(EPOCH FROM (completed_at-started_at))*1000) FILTER (
+                WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
+              )),0)::integer AS average_duration_ms
        FROM snapshot_executions
        WHERE COALESCE(completed_at,started_at) IS NOT NULL
          AND ($3::text IS NULL OR kind=$3)
@@ -1294,7 +1300,15 @@ export class PostgresCatalogStore implements CatalogStore {
        LIMIT COALESCE($12::integer, 2147483647)`,
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null],
     )
-    return result.rows.map(row => ({ date: row.date, passed: row.passed, failed: row.failed, cancelled: row.cancelled, running: row.running }))
+    return result.rows.map(row => ({
+      date: row.date,
+      passed: row.passed,
+      failed: row.failed,
+      cancelled: row.cancelled,
+      running: row.running,
+      durationSampleCount: row.duration_sample_count,
+      averageDurationMs: row.average_duration_ms,
+    }))
   }
 
   async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}): Promise<PolicyGatePerformance[]> {

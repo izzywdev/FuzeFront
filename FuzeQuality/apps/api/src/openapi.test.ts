@@ -172,8 +172,11 @@ describe('contract discovery', () => {
         ].schema
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.ExecutionOutcomeTrend.required).toEqual(
-        ['date', 'passed', 'failed', 'cancelled', 'running']
+        ['date', 'passed', 'failed', 'cancelled', 'running', 'durationSampleCount', 'averageDurationMs']
       )
+      expect(schemas.ExecutionOutcomeTrend.properties.averageDurationMs).toMatchObject({
+        type: 'integer', minimum: 0,
+      })
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )

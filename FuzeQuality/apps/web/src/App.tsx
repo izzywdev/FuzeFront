@@ -70,6 +70,7 @@ import {
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
   ExecutionSourceLink,
+  durationMsLabel,
   latestIntegrationExecution,
   latestPerformanceExecution,
   latestPostProductionExecution,
@@ -183,11 +184,28 @@ function usePortalContextKey() {
 function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): ExecutionOutcomeTrend[] {
   const merged = new Map<string, ExecutionOutcomeTrend>()
   for (const item of groups.flat()) {
-    const current = merged.get(item.date) ?? { date: item.date, passed: 0, failed: 0, cancelled: 0, running: 0 }
+    const current = merged.get(item.date) ?? {
+      date: item.date,
+      passed: 0,
+      failed: 0,
+      cancelled: 0,
+      running: 0,
+      durationSampleCount: 0,
+      averageDurationMs: 0,
+    }
+    const itemDurationSampleCount = item.durationSampleCount ?? 0
+    const itemAverageDurationMs = item.averageDurationMs ?? 0
+    const combinedDurationMs =
+      current.averageDurationMs * current.durationSampleCount +
+      itemAverageDurationMs * itemDurationSampleCount
     current.passed += item.passed
     current.failed += item.failed
     current.cancelled += item.cancelled
     current.running += item.running
+    current.durationSampleCount += itemDurationSampleCount
+    current.averageDurationMs = current.durationSampleCount
+      ? Math.round(combinedDurationMs / current.durationSampleCount)
+      : 0
     merged.set(item.date, current)
   }
   return [...merged.values()].sort((left, right) => left.date.localeCompare(right.date))
@@ -5010,6 +5028,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <span>{day.failed} failed</span>
                 <span>{day.cancelled} cancelled</span>
                 <span>{day.running} running</span>
+                <span>
+                  {day.durationSampleCount > 0
+                    ? `${durationMsLabel(day.averageDurationMs)} average · ${day.durationSampleCount} timed`
+                    : 'No completed timing samples'}
+                </span>
               </div>
             ))}
             {!outcomeTrend.length && (
