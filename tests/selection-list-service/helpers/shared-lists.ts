@@ -219,13 +219,13 @@ export const forkList = (who: Actor | string | null, listId: string, body?: unkn
 // ---------------------------------------------------------------------------
 
 /** Walk `GET /v1/selection-lists?<query>` to the end with the opaque cursor; returns every row, in order. */
-export async function walkLists(who: Actor, query: string, limit = 50): Promise<{ rows: ListLike[]; pages: number }> {
+export async function walkLists(who: Actor, query: string, limit = 50, baseUrl?: string): Promise<{ rows: ListLike[]; pages: number }> {
   const rows: ListLike[] = [];
   let cursor: string | null = null;
   let pages = 0;
   do {
     const qs: string = `${query}${query ? '&' : ''}limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
-    const res: Res = await call(who, 'GET', `/v1/selection-lists?${qs}`);
+    const res: Res = await call(who, 'GET', `/v1/selection-lists?${qs}`, undefined, baseUrl);
     if (res.status !== 200) throw new Error(`walkLists(${qs}) -> ${res.status} ${JSON.stringify(res.body)}`);
     rows.push(...(res.body.items as ListLike[]));
     cursor = res.body.page.nextCursor as string | null;
