@@ -152,6 +152,15 @@ export interface Page<T> {
   };
 }
 
+/** A client-supplied cursor that this provider did not issue (route -> 400 MALFORMED). */
+export class InvalidCursorError extends Error {
+  readonly code = 'INVALID_CURSOR'
+  constructor() {
+    super('invalid pagination cursor')
+    this.name = 'InvalidCursorError'
+  }
+}
+
 export interface PageParams {
   /** Clamped server-side to the max. */
   limit?: number;
@@ -208,8 +217,17 @@ export interface AuthorizationProvider {
 
   // ── Tenant / membership / role management (neutralized org primitives) ──
 
-  /** List tenants visible to the caller (cursor-paginated). */
-  listTenants(caller: string, params: PageParams): Promise<Page<Tenant>>;
+  /**
+   * List tenants visible to the caller (cursor-paginated, ordered by tenant id).
+   *
+   * `scope` decides what "visible" means and DEFAULTS to the narrow reading:
+   *   - `'member'` (default): only tenants in which `caller` holds a role. A
+   *     caller can never learn that a tenant they do not belong to exists.
+   *   - `'all'`: every tenant. Only the route may ask for it, and only after
+   *     it has authorized the caller as a platform administrator
+   *     (`authorizePlatformAdmin`); a provider never decides that itself.
+   */
+  listTenants(caller: string, params: PageParams, scope?: 'member' | 'all'): Promise<Page<Tenant>>;
 
   createTenant(input: TenantCreate): Promise<Tenant>;
 

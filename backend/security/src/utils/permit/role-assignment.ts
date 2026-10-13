@@ -94,6 +94,41 @@ export async function getUserRoleAssignments(
   }
 }
 
+/** Permit's role-assignment page size; one request per page, bounded by MAX_ASSIGNMENT_PAGES. */
+const ASSIGNMENT_PAGE_SIZE = 100
+const MAX_ASSIGNMENT_PAGES = 100
+
+/**
+ * The keys of every tenant in which `userId` holds ANY role assignment (a tenant
+ * role or an instance-scoped one: either way the user is "in" that tenant).
+ * Walks Permit's pages so a user with many assignments (e.g. an owner of
+ * hundreds of resource instances) is not silently truncated to the first page.
+ *
+ * Fails CLOSED: any error returns an EMPTY set (the caller then sees no
+ * tenants), never a partial or an unfiltered one.
+ */
+export async function listUserTenantKeys(userId: string): Promise<Set<string>> {
+  const keys = new Set<string>()
+  try {
+    for (let page = 1; page <= MAX_ASSIGNMENT_PAGES; page++) {
+      const rows = (await permit.api.roleAssignments.list({
+        user: userId,
+        page,
+        perPage: ASSIGNMENT_PAGE_SIZE,
+      } as any)) as any[]
+      for (const r of rows ?? []) {
+        const t = r?.tenant
+        if (typeof t === 'string' && t) keys.add(t)
+      }
+      if (!rows || rows.length < ASSIGNMENT_PAGE_SIZE) break
+    }
+    return keys
+  } catch (error) {
+    logger.error({ err: error, user: userId }, 'error listing tenants of user — returning none (fail closed)')
+    return new Set()
+  }
+}
+
 /**
  * Lists all role assignments in a tenant
  */
