@@ -515,6 +515,20 @@ router.post('/', requireCatalogCheck('create'), requirePublishWhenBodyIsPlatform
     return;
   }
 
+  // A COMMON list is owned by the platform organization under ITS configured id, whatever rendering of that
+  // org the operator's token presents: stored under the configured TypeID, so the (organization_id, key)
+  // uniqueness holds across renderings (plus an explicit all-renderings check below). requirePublish... has
+  // already established the caller is acting in the platform org.
+  let ownerOrg = req.orgId as string;
+  if (visibility === 'platform') {
+    const platformOrg = await resolvePlatformOrgId();
+    if (!platformOrg) {
+      res.status(403).json({ code: 'FORBIDDEN', message: 'Only a platform operator may publish a common list.' });
+      return;
+    }
+    ownerOrg = platformOrg;
+  }
+
   // Mint the id — never accept one from the client (governance/identifier-standard.md §1)
   const id = mintId('selectionList');
 
@@ -531,12 +545,19 @@ router.post('/', requireCatalogCheck('create'), requirePublishWhenBodyIsPlatform
       await lockQuotaScope(trx, `org_lists:${req.orgId}`);
       await checkListQuota(req.orgId as string, trx, req.userId);
 
+      if (visibility === 'platform') {
+        const taken = await trx.raw(`SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ?`, [orgRenderings(ownerOrg), key.trim()]);
+        if ((taken as { rows?: unknown[] }).rows?.length) {
+          throw Object.assign(new Error('common list key taken'), { code: '23505' });
+        }
+      }
+
       await trx.raw(
         `
         INSERT INTO selection_lists (id, organization_id, key, source_locale, status, created_by, visibility)
         VALUES (?, ?, ?, ?, 'active', ?, ?)
         `,
-        [id, req.orgId, key.trim(), locale, req.userId ?? '', visibility],
+        [id, ownerOrg, key.trim(), locale, req.userId ?? '', visibility],
       );
 
       await trx.raw(
@@ -797,7 +818,7 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
 
   try {
     let previousVisibility: string | null = null;
-    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok' | 'visibility-locked' | 'not-platform-owned'> => {
+    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok' | 'visibility-locked' | 'not-platform-owned' | 'key-taken'> => {
       // Lock order is ALWAYS org outbox lock -> list row (emitters/outbox.ts), so a
       // concurrent item create / purge / access write on this org cannot deadlock.
       await lockOrgOutbox(trx, req.orgId as string);
@@ -824,6 +845,20 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
           if (!platformOrg || !sameOrg(current.organization_id, platformOrg)) return 'not-platform-owned';
         }
         previousVisibility = currentVisibility;
+      }
+      // Common-list keys are unique across EVERY rendering of the platform org's id (a list may have been
+      // stored under either): checked on promotion and on a rename of a list that is already common.
+      const newKey = body.key !== undefined ? body.key.trim() : current.key;
+      const promoting = visibilityChanging && wantsVisibility === 'platform';
+      if (promoting || (currentVisibility === 'platform' && newKey !== current.key)) {
+        const platformOrg = await resolvePlatformOrgId(trx);
+        if (platformOrg) {
+          const dup = await trx.raw(
+            `SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ? AND id <> ?`,
+            [orgRenderings(platformOrg), newKey, listId],
+          );
+          if ((dup as { rows?: unknown[] }).rows?.length) return 'key-taken';
+        }
       }
 
       // Un-archiving raises the ACTIVE count without any create, so it is subject
@@ -916,6 +951,10 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
         reason: 'visibility_locked',
         message: 'A common (platform) list can never be given another visibility; archive it instead.',
       });
+      return;
+    }
+    if (outcome === 'key-taken') {
+      res.status(409).json({ code: 'CONFLICT', message: 'A common list with that key already exists.' });
       return;
     }
     if (outcome === 'not-platform-owned') {

@@ -60,7 +60,7 @@ import {
 } from '../events/emitters';
 import { enqueueEvent, lockOrgOutbox, mintEventId, wireOrgId } from '../events/outbox';
 import { logger } from '../lib/logger';
-import { configuredPlatformOrgId, resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
+import { configuredPlatformOrgId, orgRenderings, resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
 import { getQuota, lockQuotaScope } from '../services/quota.service';
 import { canonicalJson, computeSourceHash, hashCanonical, hashText } from './canonical';
 import {
@@ -555,7 +555,8 @@ async function planLists(
   const listContents = await readListContents(trx, seededRows.map((r) => r.id));
 
   const specKeys = lists.map((l) => l.key);
-  const keyRows: Array<{ id: string; key: string }> = await trx('selection_lists').where({ organization_id: org }).whereIn('key', specKeys).select('id', 'key');
+  // (all renderings of the org id: a list an operator created under the other rendering still holds its key)
+  const keyRows: Array<{ id: string; key: string }> = await trx('selection_lists').whereIn('organization_id', orgRenderings(org)).whereIn('key', specKeys).select('id', 'key');
   const keyTaken = new Set(keyRows.map((r) => r.key));
 
   const itemRows: SeedItemRow[] = seededRows.length

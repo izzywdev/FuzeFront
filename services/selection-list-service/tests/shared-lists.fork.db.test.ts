@@ -374,6 +374,32 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       expect((await fork(P.bMember, {}, common.body.id)).status).toBe(404);
     });
 
+    it('a common item the fork does not hold (added after the fork, or purged from it) resolves with the COMMON list\'s source locale', async () => {
+      // a German-source common list; the org forks it and switches its fork to an English source locale
+      const common = await w.api(P.op).post('/v1/selection-lists', { key: 'de-source', name: 'Quelle', source_locale: 'de', visibility: 'platform' });
+      const mk = async (code: string, label: string) => (await w.api(P.op).post(`/v1/selection-lists/${common.body.id}/items`, { code, label })).body.id as string;
+      const a = await mk('A', 'Eins');
+      const org = { userId: 'usr_01locale0000000000000000000a', orgId: 'org_01locale0000000000000000000a' };
+      w.authz.allowCatalog(org.orgId, org.userId, ['list', 'create', 'resolve', 'read_shared']);
+      const f = await fork(org, {}, common.body.id);
+      expect(f.status).toBe(201);
+      expect(f.body.source_locale).toBe('de');
+      expect((await w.api(org).patch(`/v1/selection-lists/${f.body.id}`, { source_locale: 'en' })).status).toBe(200);
+      // added to the common list AFTER the fork: no fork item
+      const b = await mk('B', 'Zwei');
+      const added = await w.api(org).post('/v1/resolve', { ids: [b] });
+      expect(added.body.missing).toEqual([]);
+      expect(added.body.results[b]).toMatchObject({ label: 'Zwei', locale: 'de', status: 'active' });
+      expect(added.body.results[b]).not.toHaveProperty('effective_item_id');
+      // purged from the fork: falls back to the common item, again in the COMMON list's locale
+      const forkItem = await w.db('selection_list_items').where({ list_id: f.body.id, code: 'A' }).first();
+      expect((await w.api(org).del(`/v1/selection-lists/${f.body.id}/items/${forkItem.id}?purge=true`)).status).toBe(204);
+      const purged = await w.api(org).post('/v1/resolve', { ids: [a] });
+      expect(purged.body.missing).toEqual([]);
+      expect(purged.body.results[a]).toMatchObject({ label: 'Eins', locale: 'de' });
+      expect(purged.body.results[a]).not.toHaveProperty('effective_item_id');
+    });
+
     it('resolve finds a fork created under the OTHER rendering of the org id (redirect + platform ids)', async () => {
       const uuid = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7ecc';
       const typeId = fromUuid('organization', uuid);

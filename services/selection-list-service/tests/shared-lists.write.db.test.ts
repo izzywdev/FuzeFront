@@ -11,7 +11,8 @@
 import type { Knex } from 'knex';
 import { TOPICS } from '@fuzefront/shared/kafka';
 import { dbDescribe } from './helpers/testDb';
-import { createWorld, ORG_A, P, PLATFORM, Principal, publishPriorityList, World } from './helpers/sharedWorld';
+import { toUuid } from '@izzywdev/fuzefront-identity';
+import { ADMIN_ACTIONS, createWorld, ORG_A, P, PLATFORM, Principal, publishPriorityList, World } from './helpers/sharedWorld';
 import { assertConforms } from './helpers/openapi';
 
 const state: { db: Knex | undefined } = { db: undefined };
@@ -167,6 +168,47 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
       const denied = await w.api(P.opEditor).patch(base(), { description: 'nope' });
       expect(denied.status).toBe(403);
       expect(denied.body.reason).toBeUndefined();
+    });
+  });
+
+  describe('the platform org under another rendering of its id', () => {
+    const uuid = toUuid(PLATFORM as never);
+    const opUuid = { userId: P.op.userId, orgId: uuid };
+    beforeAll(() => w.authz.allowCatalog(uuid, P.op.userId, ADMIN_ACTIONS));
+
+    it('a common list published through the UUID rendering is stored under the configured TypeID and collides with the TypeID rendering (409)', async () => {
+      const a = await w.api(opUuid).post('/v1/selection-lists', { key: 'ren-common', name: 'R', visibility: 'platform' });
+      expect(a.status).toBe(201);
+      expect(a.body.organization_id).toBe(PLATFORM);
+      expect((await w.db('selection_lists').where({ id: a.body.id }).first()).organization_id).toBe(PLATFORM);
+      const b = await w.api(P.op).post('/v1/selection-lists', { key: 'ren-common', name: 'R2', visibility: 'platform' });
+      expect(b.status).toBe(409);
+      const c = await w.api(opUuid).post('/v1/selection-lists', { key: 'ren-common', name: 'R3', visibility: 'platform' });
+      expect(c.status).toBe(409);
+      expect((await w.db('selection_lists').where({ key: 'ren-common', visibility: 'platform' })).length).toBe(1);
+    });
+
+    it('a common list already stored under the OTHER rendering (legacy row) still blocks the key', async () => {
+      await w.db('selection_lists').insert({ id: 'front_sl_legacyuuid0001', organization_id: uuid, key: 'legacy-uuid-common', created_by: 'usr_x', visibility: 'platform' });
+      const res = await w.api(P.op).post('/v1/selection-lists', { key: 'legacy-uuid-common', name: 'L', visibility: 'platform' });
+      expect(res.status).toBe(409);
+      await w.db('selection_lists').where({ id: 'front_sl_legacyuuid0001' }).delete();
+    });
+
+    it('promotion to platform checks the key across renderings (409), and renaming a common list onto a taken key too', async () => {
+      const taken = await w.api(P.op).post('/v1/selection-lists', { key: 'promo-k', name: 'T', visibility: 'platform' });
+      expect(taken.status).toBe(201);
+      const mine = await w.api(opUuid).post('/v1/selection-lists', { key: 'promo-k', name: 'Mine' }); // private, stored under the UUID rendering
+      expect(mine.status).toBe(201);
+      const promote = await w.api(opUuid).patch(`/v1/selection-lists/${mine.body.id}`, { visibility: 'platform' });
+      expect(promote.status).toBe(409);
+      expect((await w.db('selection_lists').where({ id: mine.body.id }).first()).visibility).toBe('private');
+      // an unrelated key promotes fine
+      const other = await w.api(opUuid).post('/v1/selection-lists', { key: 'promo-ok', name: 'Ok' });
+      expect((await w.api(opUuid).patch(`/v1/selection-lists/${other.body.id}`, { visibility: 'platform' })).status).toBe(200);
+      // rename of a common list onto a taken key
+      const rename = await w.api(P.op).patch(`/v1/selection-lists/${taken.body.id}`, { key: 'ren-common' });
+      expect(rename.status).toBe(409);
     });
   });
 

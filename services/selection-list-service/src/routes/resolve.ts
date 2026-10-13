@@ -172,7 +172,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
       COALESCE(t1.is_machine, t2.is_machine, t3.is_machine, false)     AS is_machine,
       CASE
         WHEN t1.label IS NOT NULL THEN CAST(? AS text)
-        WHEN t2.label IS NOT NULL THEN COALESCE(fl.source_locale, sl.source_locale)
+        WHEN t2.label IS NOT NULL THEN CASE WHEN fi.id IS NOT NULL THEN fl.source_locale ELSE sl.source_locale END
         ELSE 'en'
       END                                                               AS resolved_locale
     FROM selection_list_items sli
@@ -189,7 +189,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
     LEFT JOIN selection_list_item_translations t1
       ON t1.item_id = COALESCE(fi.id, sli.id) AND t1.locale = ?
     LEFT JOIN selection_list_item_translations t2
-      ON t2.item_id = COALESCE(fi.id, sli.id) AND t2.locale = COALESCE(fl.source_locale, sl.source_locale)
+      ON t2.item_id = COALESCE(fi.id, sli.id) AND t2.locale = CASE WHEN fi.id IS NOT NULL THEN fl.source_locale ELSE sl.source_locale END
     LEFT JOIN selection_list_item_translations t3
       ON t3.item_id = COALESCE(fi.id, sli.id) AND t3.locale = 'en'
     WHERE sli.id = ANY(?)
