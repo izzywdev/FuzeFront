@@ -9,6 +9,7 @@ describe('execution evidence filter', () => {
       provider: 'github-actions',
       revision: 'abcdef123456',
       workflowPath: '.github/workflows/load.yml',
+      attemptScope: 'retry',
       from: '2026-10-01T00:00:00.000Z',
       until: '2026-10-08T00:00:00.000Z',
     }).success).toBe(true)
@@ -16,6 +17,10 @@ describe('execution evidence filter', () => {
 
   it('rejects an unknown execution provider', () => {
     expect(executionFilterSchema.safeParse({ provider: 'jenkins' }).success).toBe(false)
+  })
+
+  it('rejects an unknown attempt scope', () => {
+    expect(executionFilterSchema.safeParse({ attemptScope: 'all' }).success).toBe(false)
   })
 
   it('rejects an empty or oversized revision', () => {

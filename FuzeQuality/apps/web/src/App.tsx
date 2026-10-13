@@ -3362,6 +3362,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionProvider, setExecutionProvider] = useState<
     TestExecution['provider'] | ''
   >('')
+  const [executionAttemptScope, setExecutionAttemptScope] = useState<
+    'initial' | 'retry' | ''
+  >('')
   const [executionRevision, setExecutionRevision] = useState('')
   const [executionWorkflowPath, setExecutionWorkflowPath] = useState('')
   const [executionFrom, setExecutionFrom] = useState('')
@@ -3546,13 +3549,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         kind: executionKind,
         status: executionStatus,
         provider: executionProvider,
+        attemptScope: executionAttemptScope,
         revision: executionRevision.trim(),
         workflowPath: executionWorkflowPath.trim(),
         from: iso(executionFrom),
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionRevision, executionWorkflowPath, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionAttemptScope, executionRevision, executionWorkflowPath, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -4965,6 +4969,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="">All providers</option>
                 <option value="github-actions">GitHub Actions</option>
                 <option value="external">External ingestion</option>
+              </select>
+            </label>
+            <label>
+              Attempt
+              <select
+                value={executionAttemptScope}
+                onChange={event => setExecutionAttemptScope(
+                  event.target.value as 'initial' | 'retry' | ''
+                )}
+              >
+                <option value="">All attempts</option>
+                <option value="initial">Initial attempts</option>
+                <option value="retry">Retries only</option>
               </select>
             </label>
             <label>

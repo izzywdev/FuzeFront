@@ -14,6 +14,7 @@ export const executionFilterSchema = z.object({
   provider: z.enum(['github-actions', 'external']).optional(),
   revision: z.string().trim().min(1).max(200).optional(),
   workflowPath: z.string().trim().min(1).max(1000).optional(),
+  attemptScope: z.enum(['initial', 'retry']).optional(),
   from: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
 }).strict().superRefine((value, context) => {
@@ -32,6 +33,7 @@ export const executionPageFilterSchema = z.object({
   provider: z.enum(['github-actions', 'external']).optional(),
   revision: z.string().trim().min(1).max(200).optional(),
   workflowPath: z.string().trim().min(1).max(1000).optional(),
+  attemptScope: z.enum(['initial', 'retry']).optional(),
   from: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
   ...historyPageQueryFields,

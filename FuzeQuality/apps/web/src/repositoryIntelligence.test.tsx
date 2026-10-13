@@ -1485,6 +1485,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('filters execution history, trends, and gate performance to retry attempts', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Attempt'), {
+      target: { value: 'retry' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        attemptScope: 'retry',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        attemptScope: 'retry',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        attemptScope: 'retry',
+      })
+    })
+  })
+
   it('filters execution evidence and gate performance by exact source revision', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

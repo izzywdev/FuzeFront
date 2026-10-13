@@ -58,7 +58,11 @@ export type PolicyGatePerformancePage = {
   page: { nextCursor: string | null; hasMore: boolean }
 }
 
-export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'revision' | 'workflowPath'>> & { from?: string; until?: string }
+export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'revision' | 'workflowPath'>> & {
+  attemptScope?: 'initial' | 'retry'
+  from?: string
+  until?: string
+}
 
 /** Filters only the caller's already tenant-scoped execution evidence. */
 export function filterTestExecutions(executions: TestExecution[], filter: ExecutionFilter = {}) {
@@ -70,6 +74,8 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.provider && execution.provider !== filter.provider) return false
     if (filter.revision && execution.revision !== filter.revision) return false
     if (filter.workflowPath && execution.workflowPath !== filter.workflowPath) return false
+    if (filter.attemptScope === 'initial' && execution.attempt !== 1) return false
+    if (filter.attemptScope === 'retry' && execution.attempt <= 1) return false
     const occurredAt = Date.parse(execution.completedAt ?? execution.startedAt ?? '')
     if (from !== undefined && (!Number.isFinite(occurredAt) || occurredAt < from)) return false
     if (until !== undefined && (!Number.isFinite(occurredAt) || occurredAt > until)) return false
