@@ -895,6 +895,21 @@ selectionListService:
   # at all). Declared true so the rendered manifest states the real posture; the
   # key only has an effect outside production (dev/test).
   authzEnabled: true
+  # The platform organization's wire id (`org_...` TypeID), env
+  # SELECTION_LIST_PLATFORM_ORG_ID (SL9 shared/common lists; docs/planning/
+  # selection-lists-shared-and-fork.md D2/D5). Common (`platform`) lists are
+  # owned by this organization and only an operator acting in it may publish
+  # one. OPTIONAL and EMPTY by default, declared here explicitly (never absorbed
+  # by a template default/cast): empty makes the service fall back to the
+  # selection_list_ref_index `platform` row and otherwise fail CLOSED on every
+  # platform feature (no common lists served or created), so shared lists stay
+  # dark. Shared lists are additionally gated by the release flag
+  # fuzefront.selection-lists.shared-lists (default OFF). To enable, set this to
+  # the TypeID of the pinned root platform organization ROOT_ORG_ID
+  # 00000000-0000-0000-0000-000000000010 (backend/src/migrations/
+  # 015_seed_root_platform_organization.ts), i.e. "org_0000000000000000000000000g"
+  # (identical in every environment), in the target overlay.
+  platformOrgId: ""
   # @fuzefront/feature-flags client wiring (UNLEASH_URL/APP_NAME/CLIENT_TOKEN).
   # Empty unleashUrl (base default) renders no UNLEASH_* env -> in-code fail-safe
   # OFF. The CLIENT token is a SECRET (sealed) -- referenced, never inline.
