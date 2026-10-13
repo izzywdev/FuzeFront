@@ -579,13 +579,15 @@ export type TestExecutionEvidenceLink = {
   url: string
 }
 
+const httpsEvidenceUrlSchema = z.string().url().max(2000).refine(
+  value => value.startsWith('https://'),
+  'Execution evidence URL must use HTTPS',
+)
+
 export const testExecutionEvidenceLinkSchema = z.object({
   kind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']),
   name: z.string().trim().min(1).max(200),
-  url: z.string().url().max(2000).refine(
-    value => value.startsWith('https://'),
-    'Evidence URL must use HTTPS',
-  ),
+  url: httpsEvidenceUrlSchema,
 }).strict()
 
 export type TestExecutionGateEvaluation = {
@@ -634,7 +636,7 @@ export const testExecutionInputSchema = z.object({
   kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
   status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
   workflowPath: z.string().trim().min(1).max(1000).optional(),
-  sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
+  sourceUrl: httpsEvidenceUrlSchema.optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
   policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]),
   gateEvaluations: z.array(testExecutionGateEvaluationSchema).max(100).default([]),
   thresholds: z.array(testExecutionThresholdInputSchema).max(100).default([]),

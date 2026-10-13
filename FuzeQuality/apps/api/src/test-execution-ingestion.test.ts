@@ -360,6 +360,29 @@ describe('internal execution ingestion compatibility', () => {
     }
   })
 
+  it('accepts only HTTPS provider run URLs before they reach the UI', () => {
+    const execution = {
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'integration',
+      status: 'passed',
+      name: 'Integration tests',
+    }
+
+    expect(testExecutionInputSchema.safeParse({
+      ...execution,
+      sourceUrl: 'https://github.com/izzywdev/FuzeFront/actions/runs/42',
+    }).success).toBe(true)
+    for (const sourceUrl of [
+      'javascript:alert(1)',
+      'http://github.com/izzywdev/FuzeFront/actions/runs/42',
+      'not-a-url',
+    ]) {
+      expect(testExecutionInputSchema.safeParse({ ...execution, sourceUrl }).success).toBe(false)
+    }
+  })
+
   it('rejects duplicate outcomes for the same policy and gate pair', () => {
     const parsed = testExecutionInputSchema.safeParse({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

@@ -69,6 +69,7 @@ import {
   ExecutionLinkageEvidence,
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
+  ExecutionSourceLink,
   latestPerformanceExecution,
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
@@ -4636,11 +4637,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <ExecutionLinkageEvidence execution={latestExecution} />
                                   <ExecutionThresholdEvidence execution={latestExecution} />
                                   <ExecutionEvidenceLinks execution={latestExecution} />
-                                  {latestExecution.sourceUrl && (
-                                    <a className="execution-source" href={latestExecution.sourceUrl} target="_blank" rel="noreferrer">
-                                      Open CI run <ExternalLink size={13} />
-                                    </a>
-                                  )}
+                                  <ExecutionSourceLink execution={latestExecution} />
                                 </>
                               ) : (
                                 <small>No matching execution has been ingested for this workflow yet.</small>
@@ -4888,16 +4885,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     artifacts={evidenceArtifacts}
                   />
                   <ExecutionThresholdEvidence execution={execution} />
-                  {execution.sourceUrl && (
-                    <a
-                      className="execution-source"
-                      href={execution.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open CI run <ExternalLink size={13} />
-                    </a>
-                  )}
+                  <ExecutionSourceLink execution={execution} />
                 </div>
               </article>
             ))}
