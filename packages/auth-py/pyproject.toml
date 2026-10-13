@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzefront-auth"
+version = "0.1.0"
+description = "Python verifier + Flask/FastAPI middleware for the FuzeFront platform auth contract (PyJWT-based; Identity-compatible with @fuzefront/auth)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+# PyJWT[crypto] pulls in `cryptography`, needed for the federated-jwks mode's
+# RS256/ES256 verification. Both modes ship in the core install -- splitting
+# federated-jwks behind its own extra would just move this same dependency
+# into an extra every federated consumer has to remember to ask for.
+dependencies = ["PyJWT[crypto]>=2.8,<3"]
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.100", "starlette>=0.27"]
+flask = ["flask>=2.3"]
+dev = [
+    "pytest>=8.0",
+    "fastapi>=0.100",
+    "httpx>=0.24",
+    "flask>=2.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["fuzefront_auth*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
