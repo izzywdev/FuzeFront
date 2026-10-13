@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.29.0
+  version: 0.30.0
   license:
     name: UNLICENSED
 servers:
@@ -1119,8 +1119,8 @@ components:
     ExecutionAttemptScope:
       name: attemptScope
       in: query
-      description: Restrict execution evidence to original attempts or provider reruns.
-      schema: { type: string, enum: [initial, retry] }
+      description: Restrict execution evidence to original attempts, provider reruns, or passed retries backed by a retained earlier failure for the same provider run.
+      schema: { type: string, enum: [initial, retry, recovered] }
     ExecutionFrom:
       name: from
       in: query

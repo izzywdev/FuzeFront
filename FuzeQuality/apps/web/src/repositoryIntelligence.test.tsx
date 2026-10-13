@@ -1403,7 +1403,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
 
     expect(await screen.findByText(governanceEvaluation.title)).toBeVisible()
-    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [historicalArtifact.id])
+    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [historicalArtifact.id]))
     expect(await screen.findByText('Historical authentication policy')).toBeVisible()
     expect(screen.getByText('policy · governance/auth-v1.md')).toBeVisible()
   })
@@ -1505,6 +1505,21 @@ describe('RepositoryIntelligence flow inventory', () => {
       })
       expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
         attemptScope: 'retry',
+      })
+    })
+
+    fireEvent.change(screen.getByLabelText('Attempt'), {
+      target: { value: 'recovered' },
+    })
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        attemptScope: 'recovered',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        attemptScope: 'recovered',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        attemptScope: 'recovered',
       })
     })
   })

@@ -3365,7 +3365,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     TestExecution['provider'] | ''
   >('')
   const [executionAttemptScope, setExecutionAttemptScope] = useState<
-    'initial' | 'retry' | ''
+    'initial' | 'retry' | 'recovered' | ''
   >('')
   const [executionRevision, setExecutionRevision] = useState('')
   const [executionWorkflowPath, setExecutionWorkflowPath] = useState('')
@@ -4978,12 +4978,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               <select
                 value={executionAttemptScope}
                 onChange={event => setExecutionAttemptScope(
-                  event.target.value as 'initial' | 'retry' | ''
+                  event.target.value as 'initial' | 'retry' | 'recovered' | ''
                 )}
               >
                 <option value="">All attempts</option>
                 <option value="initial">Initial attempts</option>
                 <option value="retry">Retries only</option>
+                <option value="recovered">Recovered after failure</option>
               </select>
             </label>
             <label>

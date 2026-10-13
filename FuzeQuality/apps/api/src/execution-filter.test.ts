@@ -23,6 +23,10 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.safeParse({ attemptScope: 'all' }).success).toBe(false)
   })
 
+  it('accepts verified recovery evidence as an attempt scope', () => {
+    expect(executionFilterSchema.safeParse({ attemptScope: 'recovered' }).success).toBe(true)
+  })
+
   it('rejects an empty or oversized revision', () => {
     expect(executionFilterSchema.safeParse({ revision: ' ' }).success).toBe(false)
     expect(executionFilterSchema.safeParse({ revision: 'a'.repeat(201) }).success).toBe(false)

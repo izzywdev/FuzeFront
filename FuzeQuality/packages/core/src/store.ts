@@ -69,7 +69,7 @@ export type TestExecutionQuery = {
   provider?: TestExecution['provider']
   revision?: string
   workflowPath?: string
-  attemptScope?: 'initial' | 'retry'
+  attemptScope?: 'initial' | 'retry' | 'recovered'
   from?: string
   until?: string
   after?: HistoryCursor
@@ -447,22 +447,10 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async testExecutions(repositoryId: string, tenantId: string, query: TestExecutionQuery = {}) {
-    const from = query.from ? Date.parse(query.from) : undefined
-    const until = query.until ? Date.parse(query.until) : undefined
     const after = query.after ? Date.parse(query.after.createdAt) : undefined
-    const items = this.executions
-      .filter(item =>
-        item.repositoryId === repositoryId && item.tenantId === tenantId &&
-        (!query.kind || item.kind === query.kind) &&
-        (!query.status || item.status === query.status) &&
-        (!query.provider || item.provider === query.provider) &&
-        (!query.revision || item.revision === query.revision) &&
-        (!query.workflowPath || item.workflowPath === query.workflowPath) &&
-        (query.attemptScope !== 'initial' || item.attempt === 1) &&
-        (query.attemptScope !== 'retry' || item.attempt > 1) &&
-        (from === undefined || testExecutionOccurredAtMillis(item) >= from) &&
-        (until === undefined || testExecutionOccurredAtMillis(item) <= until)
-      )
+    const snapshot = this.executions
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+    const items = filterTestExecutions(snapshot, query, snapshot)
       .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
       .filter(item => !query.after || testExecutionOccurredAtMillis(item) < after! || (testExecutionOccurredAtMillis(item) === after && item.id < query.after.id))
     return query.limit === undefined ? items : items.slice(0, query.limit)
@@ -516,19 +504,17 @@ export class MemoryCatalogStore implements CatalogStore {
   async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}) {
     const snapshot = this.executionSnapshot(query.snapshotAt)
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
-    const items = executionOutcomeTrend(filterTestExecutions(snapshot, query), snapshot)
+    const items = executionOutcomeTrend(filterTestExecutions(snapshot, query, snapshot), snapshot)
       .sort((left, right) => right.date.localeCompare(left.date))
       .filter(item => !query.beforeDate || item.date < query.beforeDate)
     return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
   async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}) {
-    const items = executionPerformance(filterTestExecutions(
-      this.executionSnapshot(query.snapshotAt)
-        .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
-        .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id)),
-      query,
-    ))
+    const snapshot = this.executionSnapshot(query.snapshotAt)
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
+    const items = executionPerformance(filterTestExecutions(snapshot, query, snapshot))
       .map(item => ({
         ...item,
         revisionCount: item.revisions?.length ?? 0,
@@ -1206,18 +1192,29 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async testExecutions(repositoryId: string, tenantId: string, query: TestExecutionQuery = {}): Promise<TestExecution[]> {
     const result = await this.pool.query(
-      `SELECT * FROM fuzequality.test_executions
-       WHERE repository_id=$1 AND tenant_id=$2
-         AND ($3::text IS NULL OR kind=$3)
-         AND ($4::text IS NULL OR status=$4)
-         AND ($5::text IS NULL OR provider=$5)
-         AND ($6::text IS NULL OR revision=$6)
-         AND ($7::text IS NULL OR workflow_path=$7)
-         AND ($8::text IS NULL OR ($8='initial' AND attempt=1) OR ($8='retry' AND attempt>1))
-         AND ($9::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) >= $9)
-         AND ($10::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) <= $10)
-         AND ($11::timestamptz IS NULL OR (COALESCE(completed_at,started_at,'epoch'::timestamptz),id) < ($11::timestamptz,$12::text))
-       ORDER BY COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC
+      `SELECT executions.* FROM fuzequality.test_executions executions
+       WHERE executions.repository_id=$1 AND executions.tenant_id=$2
+         AND ($3::text IS NULL OR executions.kind=$3)
+         AND ($4::text IS NULL OR executions.status=$4)
+         AND ($5::text IS NULL OR executions.provider=$5)
+         AND ($6::text IS NULL OR executions.revision=$6)
+         AND ($7::text IS NULL OR executions.workflow_path=$7)
+         AND ($8::text IS NULL
+           OR ($8='initial' AND executions.attempt=1)
+           OR ($8='retry' AND executions.attempt>1)
+           OR ($8='recovered' AND executions.attempt>1 AND executions.status='passed' AND EXISTS (
+             SELECT 1 FROM fuzequality.test_executions previous
+             WHERE previous.repository_id=executions.repository_id
+               AND previous.tenant_id=executions.tenant_id
+               AND previous.provider=executions.provider
+               AND previous.external_run_id=executions.external_run_id
+               AND previous.attempt<executions.attempt
+               AND previous.status='failed'
+           )))
+         AND ($9::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) >= $9)
+         AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $10)
+         AND ($11::timestamptz IS NULL OR (COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz),executions.id) < ($11::timestamptz,$12::text))
+       ORDER BY COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) DESC,executions.id DESC
        LIMIT COALESCE($13::integer, 2147483647)`,
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
     )
@@ -1305,7 +1302,16 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($5::text IS NULL OR executions.provider=$5)
          AND ($6::text IS NULL OR executions.revision=$6)
          AND ($7::text IS NULL OR executions.workflow_path=$7)
-         AND ($8::text IS NULL OR ($8='initial' AND executions.attempt=1) OR ($8='retry' AND executions.attempt>1))
+         AND ($8::text IS NULL
+           OR ($8='initial' AND executions.attempt=1)
+           OR ($8='retry' AND executions.attempt>1)
+           OR ($8='recovered' AND executions.attempt>1 AND executions.status='passed' AND EXISTS (
+             SELECT 1 FROM snapshot_executions previous
+             WHERE previous.provider=executions.provider
+               AND previous.external_run_id=executions.external_run_id
+               AND previous.attempt<executions.attempt
+               AND previous.status='failed'
+           )))
          AND ($9::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) >= $9)
          AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $10)
          AND ($11::date IS NULL OR (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date < $11)
@@ -1342,15 +1348,24 @@ export class PostgresCatalogStore implements CatalogStore {
          SELECT repository_id,revision,status,completed_at,
                 COALESCE(completed_at,started_at,'epoch'::timestamptz) AS occurred_at,
                 gate_evaluations,policy_artifact_ids,gate_artifact_ids
-         FROM snapshot_executions
-         WHERE ($3::text IS NULL OR kind=$3)
-           AND ($4::text IS NULL OR status=$4)
-           AND ($5::text IS NULL OR provider=$5)
-           AND ($6::text IS NULL OR revision=$6)
-           AND ($7::text IS NULL OR workflow_path=$7)
-           AND ($8::text IS NULL OR ($8='initial' AND attempt=1) OR ($8='retry' AND attempt>1))
-           AND ($9::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) >= $9)
-           AND ($10::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) <= $10)
+         FROM snapshot_executions executions
+         WHERE ($3::text IS NULL OR executions.kind=$3)
+           AND ($4::text IS NULL OR executions.status=$4)
+           AND ($5::text IS NULL OR executions.provider=$5)
+           AND ($6::text IS NULL OR executions.revision=$6)
+           AND ($7::text IS NULL OR executions.workflow_path=$7)
+           AND ($8::text IS NULL
+             OR ($8='initial' AND executions.attempt=1)
+             OR ($8='retry' AND executions.attempt>1)
+             OR ($8='recovered' AND executions.attempt>1 AND executions.status='passed' AND EXISTS (
+               SELECT 1 FROM snapshot_executions previous
+               WHERE previous.provider=executions.provider
+                 AND previous.external_run_id=executions.external_run_id
+                 AND previous.attempt<executions.attempt
+                 AND previous.status='failed'
+             )))
+           AND ($9::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) >= $9)
+           AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $10)
        ), explicit_pairs AS (
          SELECT execution.repository_id,execution.revision,execution.completed_at,execution.occurred_at,
                 pair.value->>'policyArtifactId' AS policy_artifact_id,

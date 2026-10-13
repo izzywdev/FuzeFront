@@ -85,6 +85,7 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { workflowPath: '.github/workflows/load.yml' })).toEqual([])
   expect(filterTestExecutions(executions, { attemptScope: 'initial' })).toEqual([executions[0]])
   expect(filterTestExecutions(executions, { attemptScope: 'retry' })).toEqual([executions[1], executions[2]])
+  expect(filterTestExecutions(executions, { attemptScope: 'recovered' })).toEqual([executions[2]])
   expect(executionOutcomeTrend(executions)).toEqual([
     { date: '2026-10-07', passed: 1, failed: 1, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 45_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1 },
     { date: '2026-10-08', passed: 0, failed: 1, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0 },

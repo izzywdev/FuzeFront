@@ -59,13 +59,26 @@ export type PolicyGatePerformancePage = {
 }
 
 export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'revision' | 'workflowPath'>> & {
-  attemptScope?: 'initial' | 'retry'
+  attemptScope?: 'initial' | 'retry' | 'recovered'
   from?: string
   until?: string
 }
 
+/** Requires retained failed-attempt evidence; a successful rerun alone is not recovery evidence. */
+export function isRecoveredExecution(execution: TestExecution, history: TestExecution[]): boolean {
+  if (execution.attempt <= 1 || execution.status !== 'passed') return false
+  return history.some(previous =>
+    previous.tenantId === execution.tenantId &&
+    previous.repositoryId === execution.repositoryId &&
+    previous.provider === execution.provider &&
+    previous.externalRunId === execution.externalRunId &&
+    previous.attempt < execution.attempt &&
+    previous.status === 'failed'
+  )
+}
+
 /** Filters only the caller's already tenant-scoped execution evidence. */
-export function filterTestExecutions(executions: TestExecution[], filter: ExecutionFilter = {}) {
+export function filterTestExecutions(executions: TestExecution[], filter: ExecutionFilter = {}, history: TestExecution[] = executions) {
   const from = filter.from ? Date.parse(filter.from) : undefined
   const until = filter.until ? Date.parse(filter.until) : undefined
   return executions.filter(execution => {
@@ -76,6 +89,7 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.workflowPath && execution.workflowPath !== filter.workflowPath) return false
     if (filter.attemptScope === 'initial' && execution.attempt !== 1) return false
     if (filter.attemptScope === 'retry' && execution.attempt <= 1) return false
+    if (filter.attemptScope === 'recovered' && !isRecoveredExecution(execution, history)) return false
     const occurredAt = Date.parse(execution.completedAt ?? execution.startedAt ?? '')
     if (from !== undefined && (!Number.isFinite(occurredAt) || occurredAt < from)) return false
     if (until !== undefined && (!Number.isFinite(occurredAt) || occurredAt > until)) return false

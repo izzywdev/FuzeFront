@@ -186,7 +186,7 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionAttemptScope).toMatchObject({
         name: 'attemptScope',
         in: 'query',
-        schema: { type: 'string', enum: ['initial', 'retry'] },
+        schema: { type: 'string', enum: ['initial', 'retry', 'recovered'] },
       })
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
