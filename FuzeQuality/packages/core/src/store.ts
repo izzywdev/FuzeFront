@@ -1284,7 +1284,9 @@ export class PostgresCatalogStore implements CatalogStore {
               )::integer AS duration_sample_count,
               COALESCE(round(avg(EXTRACT(EPOCH FROM (completed_at-started_at))*1000) FILTER (
                 WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
-              )),0)::integer AS average_duration_ms
+              )),0)::integer AS average_duration_ms,
+              count(*) FILTER (WHERE attempt>1)::integer AS retry_attempt_count,
+              count(*) FILTER (WHERE attempt>1 AND status='passed')::integer AS successful_retry_count
        FROM snapshot_executions
        WHERE COALESCE(completed_at,started_at) IS NOT NULL
          AND ($3::text IS NULL OR kind=$3)
@@ -1308,6 +1310,8 @@ export class PostgresCatalogStore implements CatalogStore {
       running: row.running,
       durationSampleCount: row.duration_sample_count,
       averageDurationMs: row.average_duration_ms,
+      retryAttemptCount: row.retry_attempt_count,
+      successfulRetryCount: row.successful_retry_count,
     }))
   }
 

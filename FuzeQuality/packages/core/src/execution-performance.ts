@@ -87,6 +87,10 @@ export type ExecutionOutcomeTrend = {
   durationSampleCount: number
   /** Rounded arithmetic mean for the valid intervals in this UTC-day bucket. */
   averageDurationMs: number
+  /** Provider attempts after the original attempt. */
+  retryAttemptCount: number
+  /** Retry attempts whose retained outcome is passed. */
+  successfulRetryCount: number
 }
 
 /** Produces an evidence-only daily outcome series; missing days are not invented. */
@@ -104,9 +108,15 @@ export function executionOutcomeTrend(executions: TestExecution[]): ExecutionOut
       running: 0,
       durationSampleCount: 0,
       averageDurationMs: 0,
+      retryAttemptCount: 0,
+      successfulRetryCount: 0,
       totalDurationMs: 0,
     }
     current[execution.status]++
+    if (execution.attempt > 1) {
+      current.retryAttemptCount++
+      if (execution.status === 'passed') current.successfulRetryCount++
+    }
     const startedAt = Date.parse(execution.startedAt ?? '')
     const completedAt = Date.parse(execution.completedAt ?? '')
     if (Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt) {

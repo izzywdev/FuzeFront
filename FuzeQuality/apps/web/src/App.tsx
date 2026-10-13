@@ -192,6 +192,8 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       running: 0,
       durationSampleCount: 0,
       averageDurationMs: 0,
+      retryAttemptCount: 0,
+      successfulRetryCount: 0,
     }
     const itemDurationSampleCount = item.durationSampleCount ?? 0
     const itemAverageDurationMs = item.averageDurationMs ?? 0
@@ -206,6 +208,8 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.averageDurationMs = current.durationSampleCount
       ? Math.round(combinedDurationMs / current.durationSampleCount)
       : 0
+    current.retryAttemptCount += item.retryAttemptCount ?? 0
+    current.successfulRetryCount += item.successfulRetryCount ?? 0
     merged.set(item.date, current)
   }
   return [...merged.values()].sort((left, right) => left.date.localeCompare(right.date))
@@ -5032,6 +5036,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   {day.durationSampleCount > 0
                     ? `${durationMsLabel(day.averageDurationMs)} average · ${day.durationSampleCount} timed`
                     : 'No completed timing samples'}
+                </span>
+                <span>
+                  {day.retryAttemptCount} retries · {day.successfulRetryCount} passed retries
                 </span>
               </div>
             ))}

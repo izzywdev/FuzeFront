@@ -159,14 +159,14 @@ describe('test execution evidence', () => {
   })
 
   it('aggregates complete tenant-scoped outcome history by UTC day in Postgres', async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', passed: 2, failed: 1, cancelled: 0, running: 0, duration_sample_count: 2, average_duration_ms: 45_000 }] })
+    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', passed: 2, failed: 1, cancelled: 0, running: 0, duration_sample_count: 2, average_duration_ms: 45_000, retry_attempt_count: 3, successful_retry_count: 2 }] })
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
       kind: 'integration', beforeDate: '2026-10-11', limit: 51,
     })).resolves.toEqual([
-      { date: '2026-10-10', passed: 2, failed: 1, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 45_000 },
+      { date: '2026-10-10', passed: 2, failed: 1, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 45_000, retryAttemptCount: 3, successfulRetryCount: 2 },
     ])
 
     const [sql, parameters] = query.mock.calls[0]
@@ -179,6 +179,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("count(*) FILTER (WHERE status='failed')")
     expect(String(sql)).toContain('duration_sample_count')
     expect(String(sql)).toContain('average_duration_ms')
+    expect(String(sql)).toContain('retry_attempt_count')
+    expect(String(sql)).toContain('successful_retry_count')
     expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, null, '2026-10-11', null, 51])
   })
 
@@ -276,10 +278,10 @@ describe('test execution evidence', () => {
       })
 
       await expect(store.executionOutcomeTrend('repo-1', 'org-1', { snapshotAt })).resolves.toEqual([
-        { date: '2026-10-10', passed: 0, failed: 0, cancelled: 0, running: 1, durationSampleCount: 0, averageDurationMs: 0 },
+        { date: '2026-10-10', passed: 0, failed: 0, cancelled: 0, running: 1, durationSampleCount: 0, averageDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0 },
       ])
       await expect(store.executionOutcomeTrend('repo-1', 'org-1')).resolves.toEqual([
-        { date: '2026-10-11', passed: 1, failed: 0, cancelled: 0, running: 0, durationSampleCount: 1, averageDurationMs: 420_000 },
+        { date: '2026-10-11', passed: 1, failed: 0, cancelled: 0, running: 0, durationSampleCount: 1, averageDurationMs: 420_000, retryAttemptCount: 0, successfulRetryCount: 0 },
       ])
     } finally {
       vi.useRealTimers()
