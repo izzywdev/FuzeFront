@@ -10,6 +10,7 @@
     "backend/applications",
     "shared",
     "packages/identity",
+    "packages/events",
     "packages/auth",
     "packages/telemetry",
     "packages/service-auth",

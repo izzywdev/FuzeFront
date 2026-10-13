@@ -207,3 +207,12 @@ describe('the compile-time guarantee', () => {
     expect(takesCustomer(parseId('customer', mintId('customer')))).toBeDefined()
   })
 })
+
+describe('event prefix (envelope v2 eventId)', () => {
+  it('registers evt for the event type and mints evt_ ids', async () => {
+    const { ENTITY_PREFIXES } = await import('../src/registry')
+    const { mintId } = await import('../src/id')
+    expect(ENTITY_PREFIXES.event).toBe('evt')
+    expect(mintId('event')).toMatch(/^evt_[0-7][0-9a-hjkmnp-tv-z]{25}$/)
+  })
+})
