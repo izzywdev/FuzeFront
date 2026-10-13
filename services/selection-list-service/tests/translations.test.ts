@@ -32,7 +32,8 @@ jest.mock('../src/db', () => {
   db.transaction = jest.fn((cb: (trx: unknown) => unknown) => cb(db));
   return { db };
 });
-jest.mock('../src/flags', () => ({ isSelectionListsEnabled: jest.fn() }));
+// The shared-lists release flag is pinned OFF here: this suite pins the 4.0.0 behaviour.
+jest.mock('../src/flags', () => ({ isSelectionListsEnabled: jest.fn(), isSharedListsEnabled: jest.fn(async () => false) }));
 // `list_locales` (review M-4): the lock + the locale count are covered against the real counting code in
 // quota.service.test.ts and quota.db.test.ts; here the route's REACTION to a refusal is what is pinned, and
 // the chain fixtures below (a fixed sequence of db() calls) stay exactly as they were.

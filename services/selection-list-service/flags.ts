@@ -53,6 +53,11 @@ export const FLAGS = {
    * Release flag, default OFF, server-only. See src/flags.ts for full metadata.
    */
   SELECTION_LISTS_SEED_DEFAULTS: 'fuzefront.selection-lists.seed-defaults',
+  /**
+   * Gates shared/common lists + copy-on-write fork (HTTP contract 4.1.0). Release flag, default OFF.
+   * See src/flags.ts for full metadata.
+   */
+  SELECTION_LISTS_SHARED_LISTS: 'fuzefront.selection-lists.shared-lists',
 } as const
 
 let injected: FlagClientLike | null = null
@@ -125,6 +130,26 @@ export async function isSeedDefaultsEnabled(
   try {
     return await client.getBooleanValue(
       FLAGS.SELECTION_LISTS_SEED_DEFAULTS,
+      false,
+      buildContext(ctx)
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Release flag (default OFF): shared/common lists + fork for the org in `ctx`.
+ * Mirrors src/flags.ts `isSharedListsEnabled` (keep in sync). Fails closed.
+ */
+export async function isSharedListsEnabled(
+  ctx?: Partial<FlagContext>
+): Promise<boolean> {
+  const client = resolveClient()
+  if (!client) return false // fail-safe: release default OFF
+  try {
+    return await client.getBooleanValue(
+      FLAGS.SELECTION_LISTS_SHARED_LISTS,
       false,
       buildContext(ctx)
     )

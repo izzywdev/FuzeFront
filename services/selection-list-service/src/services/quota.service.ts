@@ -282,6 +282,31 @@ export async function checkItemQuota(
 }
 
 /**
+ * Guard for a FORK (POST /v1/selection-lists/{listId}/fork): the copy is a new list of `orgId` holding
+ * `active` non-archived items, `stored` items in total (archived included) and `locales` list-level
+ * translations, so the per-list ceilings the item/locale creates enforce apply to it as a whole:
+ * `list_items` (active, then the hard storage ceiling) and `list_locales`. The list-count ceilings
+ * (`org_lists`, `user_lists`, storage) are `checkListQuota`'s. Throws `QuotaExceededError`.
+ */
+export async function checkForkQuota(
+  orgId: string,
+  counts: { active: number; stored: number; locales: number },
+  executor: Executor = db,
+): Promise<void> {
+  const quota = await getQuota(orgId, executor);
+  if (counts.active > quota.maxItemsPerList) {
+    throw new QuotaExceededError('list_items', counts.active, quota.maxItemsPerList, 'items');
+  }
+  const ceiling = quota.maxItemsPerList * storageCeilingFactor();
+  if (counts.stored > ceiling) {
+    throw new QuotaExceededError('list_items', counts.stored, ceiling, 'stored items (archived included; purge archived items to free space)');
+  }
+  if (counts.locales > quota.maxLocales) {
+    throw new QuotaExceededError('list_locales', counts.locales, quota.maxLocales, 'locales');
+  }
+}
+
+/**
  * Guard for ADDING a locale to a list: `list_locales` is the number of distinct
  * locales with a list-level translation row (the source locale included). A
  * locale the list already has is an update, never refused.

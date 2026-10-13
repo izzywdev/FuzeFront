@@ -35,7 +35,8 @@ import { ENTITY_PREFIXES } from '@izzywdev/fuzefront-identity';
 import { createHash } from 'crypto';
 import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
-import { requireAuthzCheck } from '../middleware/authz';
+import { requireListMutation, requireListRead } from '../middleware/listAccess';
+import { getReadScope, readableByOrg } from '../services/sharedReads';
 import type { Knex } from 'knex';
 import { lockOrgOutbox } from '../events/outbox';
 import { checkLocaleQuota, lockQuotaScope, QuotaExceededError } from '../services/quota.service';
@@ -85,6 +86,19 @@ async function getListByOrg(listId: string, orgId: string, ex: Executor = db) {
   return ex('selection_lists')
     .where({ id: listId, organization_id: orgId })
     .first();
+}
+
+/**
+ * A list the caller may READ: its own organization's, or (shared-lists flag ON) a common list. The route
+ * guard (`requireListRead`) has already decided Permit-side readability; WRITES keep `getListByOrg`.
+ */
+async function getReadableList(req: Request, listId: string, orgId: string, ex: Executor = db) {
+  const scope = await getReadScope(req);
+  // 4.0.0 path (flag OFF / platform org unresolved): exactly the org-scoped lookup.
+  if (!scope.shared || !scope.platformOrg) return getListByOrg(listId, orgId, ex);
+  const readable = readableByOrg('', orgId, scope);
+  const result = await ex.raw(`SELECT * FROM selection_lists WHERE id = ? AND ${readable.sql}`, [listId, ...readable.params]);
+  return (result as { rows?: any[] }).rows?.[0];
 }
 
 async function getItemByList(itemId: string, listId: string, ex: Executor = db) {
@@ -150,7 +164,7 @@ function requireAuth(req: Request, res: Response): boolean {
 // GET /:listId/translations
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get('/:listId/translations', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response) => {
+router.get('/:listId/translations', requireListRead(), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -159,7 +173,7 @@ router.get('/:listId/translations', requireAuthzCheck('SelectionList', 'read'), 
 
   // TODO(S7): permit.check('read', listId, req.userId)
 
-  const list = await getListByOrg(listId, orgId);
+  const list = await getReadableList(req, listId, orgId);
   if (!list) {
     return res.status(404).json({ code: 'NOT_FOUND', message: 'List not found.' });
   }
@@ -221,7 +235,7 @@ router.get('/:listId/translations', requireAuthzCheck('SelectionList', 'read'), 
 // PUT /:listId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.put('/:listId/translations/:locale', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -329,7 +343,7 @@ router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', '
 // DELETE /:listId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.delete('/:listId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.delete('/:listId/translations/:locale', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -380,7 +394,7 @@ router.delete('/:listId/translations/:locale', requireAuthzCheck('SelectionList'
 // GET /:listId/items/:itemId/translations
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get('/:listId/items/:itemId/translations', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response) => {
+router.get('/:listId/items/:itemId/translations', requireListRead(), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -389,7 +403,7 @@ router.get('/:listId/items/:itemId/translations', requireAuthzCheck('SelectionLi
 
   // TODO(S7): permit.check('read', listId, req.userId)
 
-  const list = await getListByOrg(listId, orgId);
+  const list = await getReadableList(req, listId, orgId);
   if (!list) {
     return res.status(404).json({ code: 'NOT_FOUND', message: 'List not found.' });
   }
@@ -429,7 +443,7 @@ router.get('/:listId/items/:itemId/translations', requireAuthzCheck('SelectionLi
 // PUT /:listId/items/:itemId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.put('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.put('/:listId/items/:itemId/translations/:locale', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -530,7 +544,7 @@ router.put('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('Sel
 // DELETE /:listId/items/:itemId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.delete('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.delete('/:listId/items/:itemId/translations/:locale', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -590,7 +604,7 @@ router.delete('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('
 //   Human translations (is_machine=false) are NEVER overwritten.
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.post('/:listId/translations/:locale/autofill', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
+router.post('/:listId/translations/:locale/autofill', requireListMutation('translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 

@@ -12,6 +12,7 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../src/app';
 import { setFlagClient } from '../src/flags';
+import { allFlagsExceptShared } from './helpers/flagClient';
 
 // ─── DB mock ─────────────────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ let app: ReturnType<typeof createApp>;
 beforeAll(() => {
   process.env.JWT_SECRET = JWT_SECRET;
   // Inject a flag client that returns ON by default for all non-flag-OFF tests.
-  setFlagClient({ getBooleanValue: async () => true });
+  setFlagClient({ getBooleanValue: allFlagsExceptShared });
   app = createApp();
 });
 
@@ -143,14 +144,14 @@ beforeEach(() => {
   mockCheckActiveListQuota.mockReset().mockResolvedValue(undefined);
   mockCheckLocaleQuota.mockReset().mockResolvedValue(undefined);
   mockGrantListOwner.mockReset().mockResolvedValue(undefined);
-  setFlagClient({ getBooleanValue: async () => true });
+  setFlagClient({ getBooleanValue: allFlagsExceptShared });
 });
 
 // ─── Feature flag OFF ─────────────────────────────────────────────────────────
 
 describe('Feature flag OFF — lists routes', () => {
   beforeEach(() => { setFlagClient({ getBooleanValue: async () => false }); });
-  afterEach(() => { setFlagClient({ getBooleanValue: async () => true }); });
+  afterEach(() => { setFlagClient({ getBooleanValue: allFlagsExceptShared }); });
 
   it('GET / returns 404', async () => {
     const res = await request(app)

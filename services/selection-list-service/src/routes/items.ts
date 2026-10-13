@@ -24,7 +24,10 @@ import { acceptOnlyBodyProps, isItemId, parseLimitParam, registerIdParams } from
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { ENTITY_PREFIXES, mintId } from '@izzywdev/fuzefront-identity';
-import { requireAuthzCheck, requireAuthzCheckWhen } from '../middleware/authz';
+import { requireAuthzCheckWhen } from '../middleware/authz';
+import { requireListMutation, requireListRead, requirePublishForPlatformList } from '../middleware/listAccess';
+import { sharedListsOn } from '../lib/sharedLists';
+import { getReadScope, readableByOrg } from '../services/sharedReads';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkItemQuota, checkActiveItemQuota, QuotaExceededError } from '../services/quota.service';
@@ -141,6 +144,7 @@ interface ItemRow {
   seed_key?: string | null;
   seed_version?: number | string | null;
   seed_user_modified?: boolean | null;
+  origin_item_id?: string | null;
   label: string | null;
   description: string | null;
   resolved_locale: string | null;
@@ -158,7 +162,8 @@ function formatSeed(row: ItemRow) {
   };
 }
 
-function formatItem(row: ItemRow) {
+/** `shared`: the shared-lists flag is ON, so `origin_item_id` is the stored provenance; OFF reports null (4.0.0). */
+function formatItem(row: ItemRow, shared = false) {
   return {
     id: row.id,
     list_id: row.list_id,
@@ -171,6 +176,7 @@ function formatItem(row: ItemRow) {
     is_machine: row.is_machine ?? false,
     created_by: row.created_by,
     seed: formatSeed(row),
+    origin_item_id: shared ? (row.origin_item_id ?? null) : null,
     created_at: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
@@ -193,9 +199,26 @@ async function getListSourceLocale(
   return result.rows[0]?.source_locale ?? null;
 }
 
+/**
+ * Source locale of a list the caller may READ: its own organization's, or (shared-lists flag ON) a common
+ * list. The route guard (`requireListRead`) has already decided Permit-side readability.
+ */
+async function getReadableListSourceLocale(
+  req: Request,
+  listId: string,
+  orgId: string,
+): Promise<string | null> {
+  const readable = readableByOrg('', orgId, await getReadScope(req));
+  const result = await db.raw<{ rows: [{ source_locale: string }] }>(
+    `SELECT source_locale FROM selection_lists WHERE id = ? AND ${readable.sql}`,
+    [listId, ...readable.params],
+  );
+  return result.rows[0]?.source_locale ?? null;
+}
+
 // ─── GET /:listId/items ───────────────────────────────────────────────────────
 
-router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:listId/items', requireListRead(), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -208,8 +231,8 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
 
   const { listId } = req.params;
 
-  // Verify the list exists and belongs to this org
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  // Verify the list exists and is readable by this org (its own, or a common list)
+  const sourceLocale = await getReadableListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -267,7 +290,7 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         ${labelCoalesce} AS label,
@@ -302,8 +325,9 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
     );
     const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
 
+    const shared = await sharedListsOn(req);
     res.status(200).json({
-      items: items.map(formatItem),
+      items: items.map((r) => formatItem(r, shared)),
       page: {
         nextCursor,
         hasMore,
@@ -321,7 +345,7 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
 
 // ─── POST /:listId/items — create an item ────────────────────────────────────
 
-router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), enforceItemQuota, async (req: Request, res: Response): Promise<void> => {
+router.post('/:listId/items', requireListMutation('add_value'), enforceItemQuota, async (req: Request, res: Response): Promise<void> => {
   // Flag is also checked by enforceItemQuota, but we re-check here so that tests
   // which mock the middleware as a pass-through still see the correct 404 behavior.
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
@@ -457,7 +481,7 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         t.label,
@@ -471,7 +495,7 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
       [sourceLocale, id],
     );
 
-    res.status(201).json(formatItem(result.rows[0]));
+    res.status(201).json(formatItem(result.rows[0], await sharedListsOn(req)));
   } catch (err: unknown) {
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
@@ -493,7 +517,7 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
 // ─── PUT /:listId/items/reorder — whole-collection reorder ───────────────────
 // MUST be declared before /:listId/items/:itemId to prevent "reorder" matching as itemId
 
-router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_value'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:listId/items/reorder', requireListMutation('update_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -583,7 +607,7 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         t.label,
@@ -598,7 +622,8 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
       [sourceLocale, listId],
     );
 
-    res.status(200).json({ items: result.rows.map(formatItem) });
+    const sharedReorder = await sharedListsOn(req);
+    res.status(200).json({ items: result.rows.map((r) => formatItem(r, sharedReorder)) });
   } catch (err) {
     getLog(req).error(
       { err, op: 'items PUT /:listId/items/reorder error', userId: req.userId, orgId: req.orgId, params: req.params },
@@ -610,7 +635,7 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
 
 // ─── PATCH /:listId/items/:itemId — partial update ───────────────────────────
 
-router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'update_value'), async (req: Request, res: Response): Promise<void> => {
+router.patch('/:listId/items/:itemId', requireListMutation('update_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -764,7 +789,7 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         t.label,
@@ -778,7 +803,7 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
       [sourceLocale, itemId],
     );
 
-    res.status(200).json(formatItem(result.rows[0]));
+    res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
   } catch (err) {
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
@@ -805,7 +830,11 @@ const requireDeleteOnPurge = requireAuthzCheckWhen(
   'delete',
 );
 
-router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remove_value'), requireDeleteOnPurge, async (req: Request, res: Response): Promise<void> => {
+// Purging an item of a COMMON list additionally needs `publish_platform` (platform tenant): it turns the
+// stored ids of every tenant into `missing`.
+const requirePublishOnCommonPurge = requirePublishForPlatformList((req) => req.query.purge === 'true');
+
+router.delete('/:listId/items/:itemId', requireListMutation('remove_value'), requireDeleteOnPurge, requirePublishOnCommonPurge, async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -870,7 +899,7 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
           i.sort_order,
           i.status,
           i.created_by,
-          i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+          i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
           i.created_at,
           i.updated_at,
           t.label,
@@ -883,7 +912,7 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
         `,
         [sourceLocale, itemId],
       );
-      res.status(200).json(formatItem(result.rows[0]));
+      res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
     }
   } catch (err) {
     getLog(req).error(
@@ -896,7 +925,7 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
 
 // ─── POST /:listId/items/:itemId/archive — explicit archive ──────────────────
 
-router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList', 'remove_value'), async (req: Request, res: Response): Promise<void> => {
+router.post('/:listId/items/:itemId/archive', requireListMutation('remove_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -945,7 +974,7 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         t.label,
@@ -959,7 +988,7 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
       [sourceLocale, itemId],
     );
 
-    res.status(200).json(formatItem(result.rows[0]));
+    res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
   } catch (err) {
     getLog(req).error(
       { err, op: 'items POST /:listId/items/:itemId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },

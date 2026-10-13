@@ -44,6 +44,7 @@ import jwt from 'jsonwebtoken';
 import type { AuthzClient } from '@fuzefront/auth';
 import { createApp } from '../src/app';
 import { setFlagClient } from '../src/flags';
+import { allFlagsExceptShared, allFlagsOn } from './helpers/flagClient';
 import { db } from '../src/db';
 import {
   _setAuthzClientForTesting,
@@ -85,6 +86,8 @@ interface Row {
   body?: unknown;
   /** ordered SelectionList* checks the route must ask for */
   checks: Expected[];
+  /** run with the shared-lists release flag ON (the route does not exist while it is OFF) */
+  shared?: true;
 }
 
 const onList = (action: string): Expected[] => [{ type: LIST_RES, key: LIST, action }];
@@ -109,6 +112,8 @@ const MATRIX: Row[] = [
   },
   { route: 'DELETE /v1/selection-lists/:listId', checks: onList('delete') },
   { route: 'POST /v1/selection-lists/:listId/archive', checks: onList('delete') },
+  // 4.1.0 fork (shared-lists flag ON only: while OFF it is a 404 and asks nothing, pinned below)
+  { route: 'POST /v1/selection-lists/:listId/fork', body: {}, shared: true, checks: [{ type: CATALOG, action: 'create' }] },
 
   { route: 'GET /v1/selection-lists/:listId/items', checks: onList('read') },
   { route: 'POST /v1/selection-lists/:listId/items', body: { code: 'c', label: 'L' }, checks: onList('add_value') },
@@ -181,7 +186,7 @@ afterAll(() => {
 beforeEach(() => {
   asked.length = 0;
   decide = () => true;
-  setFlagClient({ getBooleanValue: async () => true });
+  setFlagClient({ getBooleanValue: allFlagsExceptShared });
   _setAuthzClientForTesting(recordingClient());
   (db.raw as unknown as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
   (db.transaction as unknown as jest.Mock).mockClear();
@@ -200,6 +205,7 @@ const concrete = (route: string): { method: string; url: string } => {
 };
 
 async function fire(row: Row): Promise<request.Response> {
+  setFlagClient({ getBooleanValue: row.shared ? allFlagsOn : allFlagsExceptShared });
   const { method, url } = concrete(row.route);
   let req: request.Test = (request(app) as any)[method](url).set(bearerHeader());
   if (row.query) req = req.query(row.query);
@@ -266,11 +272,11 @@ describe('authz matrix — every mounted /v1 route is covered, and asks the righ
       for (const q of asked) {
         if (q.resource.type === CATALOG) {
           expect(q.resource).toEqual({ type: CATALOG }); // no key, ever
-          expect(['list', 'create', 'read_quota', 'resolve']).toContain(q.action);
+          expect(['list', 'create', 'read_quota', 'resolve', 'read_shared', 'publish_platform']).toContain(q.action);
         }
         if (q.resource.type === LIST_RES) {
           expect(q.resource.key).toBe(LIST);
-          expect(['list', 'create', 'read_quota', 'resolve']).not.toContain(q.action);
+          expect(['list', 'create', 'read_quota', 'resolve', 'read_shared', 'publish_platform']).not.toContain(q.action);
         }
       }
     }

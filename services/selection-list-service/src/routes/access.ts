@@ -53,7 +53,8 @@ import { createRouter } from '../lib/http';
 import { parseLimitParam, registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
-import { requireAuthzCheck, getAuthzClient, bearer } from '../middleware/authz';
+import { getAuthzClient, bearer } from '../middleware/authz';
+import { requireListMutation } from '../middleware/listAccess';
 import { authMiddleware } from '../middleware/auth';
 import { lockOrgOutbox } from '../events/outbox';
 import { eventContextFromRequest, emitAccessGranted, emitAccessRevoked } from '../events/emitters';
@@ -137,7 +138,7 @@ async function listExistsInOrg(listId: string, orgId: string): Promise<boolean> 
 router.get(
   '/:listId/access',
   authMiddleware,
-  requireAuthzCheck('SelectionList', 'manage_access'),
+  requireListMutation('manage_access', { forkable: false }),
   async (req: Request, res: Response): Promise<void> => {
     const { listId } = req.params;
     const orgId = req.orgId as string;
@@ -209,7 +210,7 @@ class HttpError extends Error {
 router.put(
   '/:listId/access/:userId',
   authMiddleware,
-  requireAuthzCheck('SelectionList', 'manage_access'),
+  requireListMutation('manage_access', { forkable: false }),
   async (req: Request, res: Response): Promise<void> => {
     const { listId, userId } = req.params;
     const orgId = req.orgId as string;
@@ -421,7 +422,7 @@ router.put(
 router.delete(
   '/:listId/access/:userId',
   authMiddleware,
-  requireAuthzCheck('SelectionList', 'manage_access'),
+  requireListMutation('manage_access', { forkable: false }),
   async (req: Request, res: Response): Promise<void> => {
     const { listId, userId } = req.params;
     const orgId = req.orgId as string;

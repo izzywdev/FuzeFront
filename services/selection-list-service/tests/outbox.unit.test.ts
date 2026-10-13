@@ -119,8 +119,11 @@ describe('enqueueEvent', () => {
       expect(trx.inserts).toHaveLength(1);
       expect(out.payload.organizationId).toBe(organizationId);
     }
-    // 13 change topics + seed.completed + seed.failed; seed.requested is consumed, never produced.
-    expect(PRODUCED_TOPICS.size).toBe(15);
+    // 13 change topics + list.forked + visibility.changed (shared 1.3.0) + seed.completed + seed.failed;
+    // seed.requested is consumed, never produced.
+    expect(PRODUCED_TOPICS.size).toBe(17);
+    expect(PRODUCED_TOPICS.has(TOPICS.SELECTION_LISTS_LIST_FORKED)).toBe(true);
+    expect(PRODUCED_TOPICS.has(TOPICS.SELECTION_LISTS_VISIBILITY_CHANGED)).toBe(true);
     expect(PRODUCED_TOPICS.has(TOPICS.SELECTION_LISTS_SEED_REQUESTED)).toBe(false);
   });
 

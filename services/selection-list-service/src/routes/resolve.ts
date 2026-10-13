@@ -19,6 +19,15 @@
 //     only purged or never-created ids go to `missing`.
 //   - Single DB query: JOIN items → lists → translations with three LEFT JOINs
 //     (preferred locale, source_locale, 'en'). No N+1 queries.
+//   - Common lists and forks (4.1.0, behind `fuzefront.selection-lists.shared-lists`): the resolvable set
+//     is the caller's org's items PLUS the items of every `platform` list (ids of a common list resolve in
+//     every org; any other org's ids stay `missing`). When an id belongs to a platform list P and the
+//     caller's org holds an ACTIVE, `org`-visible fork F of P with an item whose `origin_item_id` is that
+//     id, the result is the FORK item's label/locale/status plus `effective_item_id` = the fork item's id
+//     (a private fork never redirects; a purged fork item falls back to the common one). Still ONE query:
+//     the redirect is two LEFT JOINs (ux_sl_fork_per_org, ux_sli_origin). The response body — hence the
+//     express ETag derived from it — differs whenever a redirect applies, so a cached answer cannot hide
+//     a fork appearing or disappearing.
 //   - Feature flag gate: returns 404 if `fuzefront.selection-lists.service`
 //     is OFF (release flag, default OFF).
 
@@ -29,6 +38,8 @@ import { isSelectionListsEnabled } from '../flags';
 import { requireCatalogCheck } from '../middleware/authz';
 import { acceptOnlyBodyProps, isItemId } from '../middleware/validateInput';
 import { ENTITY_PREFIXES } from '@izzywdev/fuzefront-identity';
+import { orgForms } from '../lib/sharedLists';
+import { getReadScope } from '../services/sharedReads';
 
 const router = createRouter();
 
@@ -144,9 +155,49 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
     label: string | null;
     is_machine: boolean;
     resolved_locale: string | null;
+    effective_item_id?: string | null;
   }> = [];
 
-  const result = await db.raw<{ rows: typeof dbRows }>(
+  const scope = await getReadScope(req);
+  const result = scope.shared && scope.platformOrg
+    // Common lists + fork redirect (see the header).
+    ? await db.raw<{ rows: typeof dbRows }>(
+        `
+    SELECT
+      sli.id,
+      sli.list_id,
+      COALESCE(fi.status, sli.status)                                   AS status,
+      fi.id                                                             AS effective_item_id,
+      COALESCE(t1.label, t2.label, t3.label)                           AS label,
+      COALESCE(t1.is_machine, t2.is_machine, t3.is_machine, false)     AS is_machine,
+      CASE
+        WHEN t1.label IS NOT NULL THEN CAST(? AS text)
+        WHEN t2.label IS NOT NULL THEN COALESCE(fl.source_locale, sl.source_locale)
+        ELSE 'en'
+      END                                                               AS resolved_locale
+    FROM selection_list_items sli
+    JOIN selection_lists sl
+      ON sl.id = sli.list_id
+    LEFT JOIN selection_lists fl
+      ON sl.visibility = 'platform'
+     AND fl.forked_from_list_id = sl.id
+     AND fl.organization_id = ?
+     AND fl.visibility = 'org'
+     AND fl.status = 'active'
+    LEFT JOIN selection_list_items fi
+      ON fi.list_id = fl.id AND fi.origin_item_id = sli.id
+    LEFT JOIN selection_list_item_translations t1
+      ON t1.item_id = COALESCE(fi.id, sli.id) AND t1.locale = ?
+    LEFT JOIN selection_list_item_translations t2
+      ON t2.item_id = COALESCE(fi.id, sli.id) AND t2.locale = COALESCE(fl.source_locale, sl.source_locale)
+    LEFT JOIN selection_list_item_translations t3
+      ON t3.item_id = COALESCE(fi.id, sli.id) AND t3.locale = 'en'
+    WHERE sli.id = ANY(?)
+      AND (sl.organization_id = ? OR (sl.visibility = 'platform' AND sl.organization_id = ANY(?)))
+    `,
+        [effectiveLocale, orgId, effectiveLocale, validIds, orgId, orgForms(scope.platformOrg)],
+      )
+    : await db.raw<{ rows: typeof dbRows }>(
     `
     SELECT
       sli.id,
@@ -189,7 +240,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
   // Collect resolved results (items that have a label).
   const results: Record<
     string,
-    { label: string; locale: string; is_machine: boolean; status: string }
+    { label: string; locale: string; is_machine: boolean; status: string; effective_item_id?: string }
   > = {};
   for (const row of dbRows) {
     if (row.label !== null && row.resolved_locale !== null) {
@@ -198,6 +249,8 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
         locale: row.resolved_locale,
         is_machine: Boolean(row.is_machine),
         status: row.status,
+        // Only when a fork redirect happened; absent otherwise (never null).
+        ...(row.effective_item_id ? { effective_item_id: row.effective_item_id } : {}),
       };
     }
   }
