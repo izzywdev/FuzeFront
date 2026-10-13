@@ -134,22 +134,18 @@ const QUALITY_ARTIFACT_GLOBS: Array<{ kind: QualityArtifact['kind']; glob: strin
   { kind: 'stress-test', glob: '**/.github/workflows/{stress,stress-test,soak,soak-test}.{yaml,yml}' },
 ]
 
-function performanceWorkflowMetadata(
+function workflowDispatchMetadata(
   sourcePath: string,
   source: string,
-): { kind: 'load-test' | 'stress-test'; execution?: NonNullable<QualityArtifact['execution']> } | undefined {
+): NonNullable<QualityArtifact['execution']> | undefined {
   if (!sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(sourcePath)) return undefined
   try {
-    const document = parseYaml(source) as {
-      on?: unknown
-      env?: Record<string, unknown>
-    } | undefined
+    const document = parseYaml(source) as { on?: unknown } | undefined
     const triggers = document?.on
-    const reviewedKind = document?.env?.FUZEQUALITY_PERFORMANCE
-    if (reviewedKind !== 'load' && reviewedKind !== 'stress') return undefined
     const dispatchable = triggers === 'workflow_dispatch' ||
       (Array.isArray(triggers) && triggers.includes('workflow_dispatch')) ||
       (typeof triggers === 'object' && triggers !== null && 'workflow_dispatch' in triggers)
+    if (!dispatchable) return undefined
     const dispatchConfiguration = typeof triggers === 'object' && triggers !== null && !Array.isArray(triggers)
       ? (triggers as Record<string, unknown>).workflow_dispatch
       : undefined
@@ -167,16 +163,47 @@ function performanceWorkflowMetadata(
           .sort()
       : []
     return {
-      kind: reviewedKind === 'load' ? 'load-test' : 'stress-test',
-      ...(dispatchable ? {
-        execution: {
-          provider: 'github-actions',
-          workflowPath: sourcePath,
-          trigger: 'workflow_dispatch',
-          ...(requiredInputs.length ? { requiredInputs } : {}),
-        } as const,
-      } : {}),
+      provider: 'github-actions',
+      workflowPath: sourcePath,
+      trigger: 'workflow_dispatch',
+      ...(requiredInputs.length ? { requiredInputs } : {}),
     }
+  } catch {
+    return undefined
+  }
+}
+
+function performanceWorkflowMetadata(
+  sourcePath: string,
+  source: string,
+): { kind: 'load-test' | 'stress-test'; execution?: NonNullable<QualityArtifact['execution']> } | undefined {
+  if (!sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(sourcePath)) return undefined
+  try {
+    const document = parseYaml(source) as { env?: Record<string, unknown> } | undefined
+    const reviewedKind = document?.env?.FUZEQUALITY_PERFORMANCE
+    if (reviewedKind !== 'load' && reviewedKind !== 'stress') return undefined
+    const execution = workflowDispatchMetadata(sourcePath, source)
+    return {
+      kind: reviewedKind === 'load' ? 'load-test' : 'stress-test',
+      ...(execution ? { execution } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function reviewedStageWorkflowMetadata(
+  sourcePath: string,
+  source: string,
+  stage: 'integration' | 'post-production',
+) {
+  try {
+    const document = parseYaml(source) as { env?: Record<string, unknown> } | undefined
+    if (
+      document?.env?.FUZEQUALITY_STAGE !== stage ||
+      document.env.FUZEQUALITY_EXECUTION !== 'dispatch'
+    ) return undefined
+    return workflowDispatchMetadata(sourcePath, source)
   } catch {
     return undefined
   }
@@ -264,8 +291,8 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
       }
       if (candidate.kind === 'gate') {
         record('gate')
-        if (isPostProductionWorkflow(sourcePath, source)) record('post-production-test')
-        if (isIntegrationWorkflow(sourcePath, source)) record('integration-test')
+        if (isPostProductionWorkflow(sourcePath, source)) record('post-production-test', reviewedStageWorkflowMetadata(sourcePath, source, 'post-production'))
+        if (isIntegrationWorkflow(sourcePath, source)) record('integration-test', reviewedStageWorkflowMetadata(sourcePath, source, 'integration'))
         if (performance) record(performance.kind, performance.execution)
       } else if (performance) {
         record(performance.kind, performance.execution)

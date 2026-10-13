@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { executionOutcomeTrend, executionPerformance, filterTestExecutions, performanceDispatchRevision, performanceWorkflowTarget } from './execution-performance'
+import { executableWorkflowTarget, executionOutcomeTrend, executionPerformance, filterTestExecutions, performanceDispatchRevision, performanceWorkflowTarget } from './execution-performance'
 
 describe('execution performance', () => {
   it('dispatches only the immutable source commit that produced the current catalog', () => {
@@ -30,6 +30,9 @@ describe('execution performance', () => {
     expect(performanceWorkflowTarget({ ...artifact, execution: undefined })).toBeUndefined()
     expect(performanceWorkflowTarget({ ...artifact, execution: { ...artifact.execution, workflowPath: '.github/workflows/other.yml' } })).toBeUndefined()
     expect(performanceWorkflowTarget({ ...artifact, execution: { ...artifact.execution, requiredInputs: ['environment'] } })).toBeUndefined()
+    expect(executableWorkflowTarget({ ...artifact, kind: 'integration-test' })).toBe('.github/workflows/load.yml')
+    expect(executableWorkflowTarget({ ...artifact, kind: 'post-production-test' })).toBe('.github/workflows/load.yml')
+    expect(executableWorkflowTarget({ ...artifact, kind: 'test-plan' })).toBeUndefined()
   })
 
   it('aggregates only explicit policy-gate execution pairs', () => {

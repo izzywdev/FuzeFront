@@ -131,12 +131,14 @@ const postProductionArtifact: QualityArtifact = {
   id: 'artifact-post-production-1', repositoryId: repository.id, kind: 'post-production-test',
   title: 'Post production', sourcePath: '.github/workflows/post-prod.yml',
   summary: 'Post-production workflow', evidence: ['playwright test:post-prod'],
+  execution: { provider: 'github-actions', workflowPath: '.github/workflows/post-prod.yml', trigger: 'workflow_dispatch' },
 }
 
 const integrationArtifact: QualityArtifact = {
   id: 'artifact-integration-1', repositoryId: repository.id, kind: 'integration-test',
   title: 'Integration', sourcePath: '.github/workflows/integration.yml',
   summary: 'Integration workflow', evidence: ['npm run test:integration'],
+  execution: { provider: 'github-actions', workflowPath: '.github/workflows/integration.yml', trigger: 'workflow_dispatch' },
 }
 
 const policyArtifact: QualityArtifact = {
@@ -1170,9 +1172,10 @@ describe('RepositoryIntelligence flow inventory', () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
-    vi.spyOn(api, 'runPerformanceTest').mockResolvedValue({
+    vi.spyOn(api, 'runTestSuite').mockResolvedValue({
       status: 'dispatched',
       artifactId: loadArtifact.id,
+      artifactKind: 'load-test',
       workflowPath: loadArtifact.sourcePath,
       ref: 'main',
       sourceRevision: 'a'.repeat(40),
@@ -1185,7 +1188,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
 
     await waitFor(() =>
-      expect(api.runPerformanceTest).toHaveBeenCalledWith(
+      expect(api.runTestSuite).toHaveBeenCalledWith(
         repository.id,
         loadArtifact.id
       )
@@ -1199,7 +1202,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
-    vi.spyOn(api, 'runPerformanceTest').mockRejectedValue(
+    vi.spyOn(api, 'runTestSuite').mockRejectedValue(
       new Error('GitHub App installation is required')
     )
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -1329,6 +1332,27 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(outcome).toHaveTextContent('passed · revision-1')
     expect(outcome).toHaveTextContent('Integration suites passed.')
     expect(api.latestIntegrationExecutions).toHaveBeenCalledWith(repository.id)
+  })
+
+  it('dispatches an explicitly reviewed integration workflow at its analyzed revision', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([integrationArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'runTestSuite').mockResolvedValue({
+      status: 'dispatched',
+      artifactId: integrationArtifact.id,
+      artifactKind: 'integration-test',
+      workflowPath: integrationArtifact.sourcePath,
+      ref: 'main',
+      sourceRevision: 'a'.repeat(40),
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Run analyzed revision a{12}/ }))
+
+    await waitFor(() => expect(api.runTestSuite).toHaveBeenCalledWith(repository.id, integrationArtifact.id))
+    expect(await screen.findByRole('status')).toHaveTextContent(integrationArtifact.sourcePath)
   })
 
   it('keeps repository and governance evidence visible when optional performance history fails', async () => {

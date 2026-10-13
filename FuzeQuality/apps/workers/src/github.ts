@@ -178,8 +178,8 @@ export async function githubWorkflowArtifactEvidence(input: {
   }).slice(0, 99)
 }
 
-/** Dispatches only a repository-owned workflow at an immutable analyzed commit. */
-export async function dispatchPerformanceWorkflow(input: {
+/** Dispatches only a scanner-reviewed repository workflow at an immutable analyzed commit. */
+export async function dispatchTestWorkflow(input: {
   owner: string
   name: string
   sourceRevision: string
@@ -192,13 +192,13 @@ export async function dispatchPerformanceWorkflow(input: {
   assertIdentifier(input.owner, 'owner')
   assertIdentifier(input.name, 'repository name')
   if (!immutableCommit.test(input.sourceRevision)) {
-    throw new Error('An exact analyzed commit SHA is required for performance dispatch')
+    throw new Error('An exact analyzed commit SHA is required for test-suite dispatch')
   }
   if (!isGithubBranchName(input.sourceRef)) {
-    throw new Error('A valid analyzed branch is required for performance dispatch')
+    throw new Error('A valid analyzed branch is required for test-suite dispatch')
   }
   if (!/^\.github\/workflows\/[^/]+\.ya?ml$/i.test(input.workflowPath)) {
-    throw new Error('Only a scanned .github/workflows YAML performance workflow may be dispatched')
+    throw new Error('Only a scanned .github/workflows YAML test workflow may be dispatched')
   }
   const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
   const fetchGithub = input.fetcher ?? fetch
@@ -220,9 +220,12 @@ export async function dispatchPerformanceWorkflow(input: {
       body: JSON.stringify({ ref: input.sourceRef }),
     },
   )
-  if (!response.ok) throw new Error(`GitHub performance workflow dispatch failed: ${response.status}`)
+  if (!response.ok) throw new Error(`GitHub test workflow dispatch failed: ${response.status}`)
   return { ref: input.sourceRef, sourceRevision: input.sourceRevision }
 }
+
+/** @deprecated Use dispatchTestWorkflow for new executable test-suite paths. */
+export const dispatchPerformanceWorkflow = dispatchTestWorkflow
 
 /**
  * Fetches exactly one immutable commit into isolated storage. Authentication is

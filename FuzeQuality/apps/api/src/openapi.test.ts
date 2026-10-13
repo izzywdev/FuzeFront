@@ -280,6 +280,15 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.responses
       ).toHaveProperty('409')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/execute'].post.summary
+      ).toContain('integration, post-production, load, or stress')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/execute'].post.responses['202'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/TestSuiteDispatch')
+      expect(schemas.TestSuiteDispatch.required).toContain('artifactKind')
     })
   })
 

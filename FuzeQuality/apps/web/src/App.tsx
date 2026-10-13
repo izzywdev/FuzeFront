@@ -3478,7 +3478,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         : current.filter(item => item.id !== reviewed.id)
     )
   }
-  const runPerformanceTest = async (artifact: QualityArtifact) => {
+  const runTestSuite = async (artifact: QualityArtifact) => {
     const repository = data.repositories.find(
       candidate => candidate.id === artifact.repositoryId
     )
@@ -3495,7 +3495,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setDispatchingArtifact(artifact.id)
     setPerformanceDispatch(undefined)
     try {
-      const receipt = await api.runPerformanceTest(
+      const receipt = await api.runTestSuite(
         artifact.repositoryId,
         artifact.id
       )
@@ -3511,7 +3511,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         message:
           error instanceof Error
             ? error.message
-            : 'Unable to dispatch the performance workflow.',
+            : 'Unable to dispatch the test workflow.',
       })
     } finally {
       setDispatchingArtifact(undefined)
@@ -4708,7 +4708,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               <small>{item.evidence[0]}</small>
                             )
                           )}
-                          {['load-test', 'stress-test'].includes(item.kind) &&
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             item.execution?.trigger === 'workflow_dispatch' &&
                             !item.execution.requiredInputs?.length &&
                             analyzedRevision && (
@@ -4716,7 +4716,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 <button
                                   className="secondary-button"
                                   disabled={dispatchingArtifact === item.id}
-                                  onClick={() => void runPerformanceTest(item)}
+                                  onClick={() => void runTestSuite(item)}
                                 >
                                   <Activity size={14} />{' '}
                                   {dispatchingArtifact === item.id
@@ -4725,7 +4725,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 </button>
                               </div>
                             )}
-                          {['load-test', 'stress-test'].includes(item.kind) &&
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             item.execution?.requiredInputs?.length ? (
                               <small className="performance-inventory-only">
                                 Inventory only · required workflow inputs need
@@ -4743,7 +4743,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 run.
                               </small>
                             )}
-                          {['load-test', 'stress-test'].includes(item.kind) &&
+                          {['integration-test', 'post-production-test'].includes(item.kind) &&
+                            !item.execution && (
+                              <small className="performance-inventory-only">
+                                Inventory only · add a repository-owned workflow_dispatch trigger plus explicit FUZEQUALITY_STAGE and FUZEQUALITY_EXECUTION: dispatch markers to enable a controlled run.
+                              </small>
+                            )}
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             item.execution &&
                             !item.execution.requiredInputs?.length &&
                             !analyzedRevision && (

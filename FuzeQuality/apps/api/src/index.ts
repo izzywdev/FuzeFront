@@ -18,11 +18,13 @@ import {
   coverageSummary,
   createCatalogStore,
   createEventBus,
+  executableWorkflowTarget,
   performanceDispatchRevision,
   performanceWorkflowTarget,
   relayOutboxBatch,
   repositoryCatalogStatus,
   testExecutionOccurredAt,
+  testSuiteDispatchRevision,
 } from '@fuzequality/core'
 import { scanRepository } from '@fuzequality/scanner'
 import {
@@ -31,7 +33,7 @@ import {
   webhookScanCommands,
   webhookWorkflowExecutions,
 } from '@fuzequality/github-app'
-import { dispatchPerformanceWorkflow, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
+import { dispatchPerformanceWorkflow, dispatchTestWorkflow, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { qualityResources } from './platform-permissions'
@@ -800,6 +802,34 @@ app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async 
       ...(gate?.kind === 'gate' ? { gateTitle: gate.title, gateSourcePath: gate.sourcePath } : {}),
     }
   }), limit, undefined, snapshotAt))
+})
+app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecution, async (request, response) => {
+  const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifact = (await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)).find(item => item.id === parsed.data.artifactId)
+  const workflowPath = artifact ? executableWorkflowTarget(artifact) : undefined
+  if (!artifact || !['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(artifact.kind)) {
+    return response.status(404).json({ error: 'Executable test suite not found' })
+  }
+  if (artifact.execution?.requiredInputs?.length) return response.status(422).json({
+    error: `Workflow requires repository defaults for: ${artifact.execution.requiredInputs.join(', ')}`,
+    code: 'TEST_WORKFLOW_INPUTS_REQUIRED',
+    requiredInputs: artifact.execution.requiredInputs,
+  })
+  if (!workflowPath) return response.status(422).json({ error: 'Test definition is not a scanner-verified workflow_dispatch workflow', code: 'TEST_WORKFLOW_NOT_DISPATCHABLE' })
+  const sourceRevision = testSuiteDispatchRevision(repository)
+  if (!sourceRevision) return response.status(409).json({ error: 'An exact analyzed source revision is required before dispatch', code: 'ANALYSIS_SOURCE_REVISION_REQUIRED' })
+  if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
+  try {
+    const receipt = await dispatchTestWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath })
+    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, artifactKind: artifact.kind, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision })
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'TEST_DISPATCH_FAILED' })
+  }
 })
 app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRunExecution, async (request, response) => {
   const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })

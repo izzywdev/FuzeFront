@@ -1,8 +1,15 @@
 import type { QualityArtifact, Repository, TestExecution } from '@fuzequality/contracts'
 
-/** Returns only scanner-verified, manually dispatchable performance workflows. */
-export function performanceWorkflowTarget(artifact: QualityArtifact): string | undefined {
-  if (!['load-test', 'stress-test'].includes(artifact.kind)) return undefined
+const executableTestKinds: QualityArtifact['kind'][] = [
+  'integration-test',
+  'post-production-test',
+  'load-test',
+  'stress-test',
+]
+
+/** Returns only scanner-verified, manually dispatchable test workflows. */
+export function executableWorkflowTarget(artifact: QualityArtifact): string | undefined {
+  if (!executableTestKinds.includes(artifact.kind)) return undefined
   if (artifact.execution?.provider !== 'github-actions' || artifact.execution.trigger !== 'workflow_dispatch') return undefined
   if (artifact.execution.requiredInputs?.length) return undefined
   if (artifact.execution.workflowPath !== artifact.sourcePath) return undefined
@@ -10,13 +17,22 @@ export function performanceWorkflowTarget(artifact: QualityArtifact): string | u
   return artifact.sourcePath
 }
 
+/** Backward-compatible performance-only guard for the original API route. */
+export function performanceWorkflowTarget(artifact: QualityArtifact): string | undefined {
+  if (!['load-test', 'stress-test'].includes(artifact.kind)) return undefined
+  return executableWorkflowTarget(artifact)
+}
+
 /** Returns the immutable source commit that produced the current reviewed catalog. */
-export function performanceDispatchRevision(repository: Repository): string | undefined {
+export function testSuiteDispatchRevision(repository: Repository): string | undefined {
   const details = repository.lastScanDetails
   if (!repository.lastScanRevision || details?.catalogRevision !== repository.lastScanRevision) return undefined
   const revision = details.sourceRevision
   return revision && /^[0-9a-f]{40}$/i.test(revision) ? revision : undefined
 }
+
+/** @deprecated Use testSuiteDispatchRevision for new test-suite dispatch paths. */
+export const performanceDispatchRevision = testSuiteDispatchRevision
 
 export type PolicyGatePerformance = {
   repositoryId: string

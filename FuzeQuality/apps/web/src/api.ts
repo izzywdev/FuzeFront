@@ -147,6 +147,14 @@ export const api = {
     ref: string
     sourceRevision: string
   }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, { method: 'POST' }),
+  runTestSuite: (repositoryId: string, artifactId: string) => request<{
+    status: 'dispatched'
+    artifactId: string
+    artifactKind: 'integration-test' | 'post-production-test' | 'load-test' | 'stress-test'
+    workflowPath: string
+    ref: string
+    sourceRevision: string
+  }>(`/api/v1/repositories/${repositoryId}/test-suites/${artifactId}/execute`, { method: 'POST' }),
   scanRepository: (id: string, localPath?: string) =>
     request(`/api/v1/repositories/${id}/scans`, {
       method: 'POST',
