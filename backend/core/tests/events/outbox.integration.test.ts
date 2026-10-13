@@ -20,16 +20,16 @@ import { drainOutboxOnce, OutboxRecord } from '../../src/events/outboxRelay'
 
 const PG_URL = process.env.OUTBOX_TEST_PG_URL || process.env.DATABASE_URL
 const describePg = PG_URL ? describe : describe.skip
+const TEST_SCHEMA = `outbox_it_${process.pid}_${Date.now()}`
 
 describePg('transactional outbox against real Postgres (FFRNT-175)', () => {
   let db: Knex
 
   beforeAll(async () => {
-    db = knex({ client: 'pg', connection: PG_URL, pool: { min: 0, max: 5 } })
-    // Recreate the shared tables fresh so the suite is self-contained and
-    // idempotent regardless of what else ran against this CI database.
-    await db.raw('DROP TABLE IF EXISTS event_outbox')
-    await db.raw('DROP TABLE IF EXISTS it_business')
+    // Jest runs this suite alongside the relay suite. Keep their real Postgres
+    // fixtures separate so neither suite deletes the other's pending events.
+    db = knex({ client: 'pg', connection: PG_URL, searchPath: [TEST_SCHEMA], pool: { min: 0, max: 5 } })
+    await db.raw('CREATE SCHEMA ??', [TEST_SCHEMA])
     await db.raw(`
       CREATE TABLE event_outbox (
         id uuid PRIMARY KEY,
@@ -48,8 +48,7 @@ describePg('transactional outbox against real Postgres (FFRNT-175)', () => {
 
   afterAll(async () => {
     if (db) {
-      await db.raw('DROP TABLE IF EXISTS event_outbox')
-      await db.raw('DROP TABLE IF EXISTS it_business')
+      await db.raw('DROP SCHEMA IF EXISTS ?? CASCADE', [TEST_SCHEMA])
       await db.destroy()
     }
   })

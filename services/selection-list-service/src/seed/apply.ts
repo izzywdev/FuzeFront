@@ -220,6 +220,56 @@ function outcomeBase(req: SeedApplyRequest) {
   };
 }
 
+/** True when the request's non-source translations are machine output (platform packs only; see types.ts). */
+const isMachinePack = (req: SeedApplyRequest): boolean => req.translationProvenance === 'machine';
+
+/**
+ * The content `seed_hash` covers. Machine translations are NOT part of it: `content.ts` ignores
+ * `is_machine` rows when it re-reads a row (they are autofill's, not an edit), so hashing them here
+ * would make every freshly seeded row look human-edited. A machine pack's translations are written
+ * and refreshed by `syncTranslations` instead (see `machineTranslationsDiffer`).
+ */
+const listSeedContent = (req: SeedApplyRequest, spec: SelectionListSeedListSpecV1, status: 'active' | 'archived' = 'active'): ListContent =>
+  listContentFromSpec(isMachinePack(req) ? { ...spec, translations: [] } : spec, status);
+const itemSeedContent = (req: SeedApplyRequest, spec: SelectionListSeedItemSpecV1, status: 'active' | 'archived' = 'active'): ItemContent =>
+  itemContentFromSpec(isMachinePack(req) ? { ...spec, translations: [] } : spec, status);
+
+interface MachineRow {
+  text: string;
+  description: string | null;
+}
+
+/** Machine (is_machine = true) translation rows of the given lists / items, by owner id then locale. */
+async function readMachineTranslations(trx: Trx, kind: 'list' | 'item', ownerIds: string[]): Promise<Map<string, Map<string, MachineRow>>> {
+  const out = new Map<string, Map<string, MachineRow>>();
+  if (ownerIds.length === 0) return out;
+  const table = kind === 'list' ? 'selection_list_translations' : 'selection_list_item_translations';
+  const ownerCol = kind === 'list' ? 'list_id' : 'item_id';
+  const textCol = kind === 'list' ? 'name' : 'label';
+  const rows: Array<Record<string, unknown>> = await trx(table)
+    .whereIn(ownerCol, ownerIds)
+    .where({ is_machine: true })
+    .select(ownerCol, 'locale', `${textCol} as text`, 'description');
+  for (const r of rows) {
+    const id = r[ownerCol] as string;
+    const m = out.get(id) ?? new Map<string, MachineRow>();
+    m.set(r.locale as string, { text: r.text as string, description: (r.description as string | null) ?? null });
+    out.set(id, m);
+  }
+  return out;
+}
+
+/** True when a machine pack's translations differ from the machine rows stored for the row (missing / changed text). */
+function machineTranslationsDiffer(
+  have: Map<string, MachineRow> | undefined,
+  want: Array<{ locale: string; name?: string; label?: string; description?: string }> | undefined,
+): boolean {
+  return (want ?? []).some((t) => {
+    const cur = have?.get(t.locale);
+    return !cur || cur.text !== (t.name ?? t.label) || cur.description !== (t.description ?? null);
+  });
+}
+
 interface SeedListRow {
   id: string;
   key: string;
@@ -247,7 +297,7 @@ interface SeedItemRow {
 
 type ItemOp =
   | { kind: 'create'; spec: SelectionListSeedItemSpecV1; sortOrder: number }
-  | { kind: 'update'; spec: SelectionListSeedItemSpecV1; row: SeedItemRow; restore: boolean }
+  | { kind: 'update'; spec: SelectionListSeedItemSpecV1; row: SeedItemRow; restore: boolean; translationsOnly?: boolean }
   | { kind: 'archive'; row: SeedItemRow; current: ItemContent }
   /** The hash says a human edited this item: persist `seed_user_modified` (no content write, no event). */
   | { kind: 'flag'; row: SeedItemRow };
@@ -262,6 +312,8 @@ type ListPlan =
       row: SeedListRow;
       current: ListContent;
       listChanged: boolean;
+      /** A machine pack's translations for the list differ from the stored machine rows (the list's own content is unchanged). */
+      listMachineChanged: boolean;
       reactivate: boolean;
       itemOps: ItemOp[];
       itemsSkipped: number;
@@ -287,7 +339,9 @@ async function runSeed(trx: Trx, req: SeedApplyRequest): Promise<SeedResult> {
   await checkOrg(trx, req);
 
   // 3. Version check against the ledger (section 9 step 1).
-  const contentHash = hashCanonical(lists);
+  // A pack that says its translations are machine output is a different content from one that says they are
+  // reviewed (provenance is part of what the version means); 'human' keeps the historic hash of `lists` alone.
+  const contentHash = hashCanonical(isMachinePack(req) ? { translationProvenance: 'machine', lists } : lists);
   const ledger: Array<{ version: number; content_hash: string; manifest: Record<string, string[]>; result: SeedListResult[] }> = await trx(
     'selection_list_seed_ledger',
   )
@@ -450,6 +504,9 @@ async function planLists(
   const itemsByList = new Map<string, SeedItemRow[]>();
   for (const it of itemRows) itemsByList.set(it.list_id, [...(itemsByList.get(it.list_id) ?? []), it]);
   const itemContents = await readItemContents(trx, itemRows.filter((r) => r.seed_source !== null).map((r) => r.id));
+  const machine = isMachinePack(req);
+  const listMachine = machine ? await readMachineTranslations(trx, 'list', seededRows.map((r) => r.id)) : new Map<string, Map<string, MachineRow>>();
+  const itemMachine = machine ? await readMachineTranslations(trx, 'item', itemRows.map((r) => r.id)) : new Map<string, Map<string, MachineRow>>();
 
   // What earlier versions of this pack seeded: the union of every manifest ("ever seeded"),
   // and the previous version's manifest ("dropped from the pack").
@@ -499,8 +556,11 @@ async function planLists(
         if (!r.seed_user_modified) ops.push({ kind: 'flag', row: r });
       } else {
         const cur = itemContents.get(r.id) as ItemContent;
-        const want = itemContentFromSpec(item, 'active');
+        const want = itemSeedContent(req, item, 'active');
         if (hashItemContent(cur) !== hashItemContent(want)) ops.push({ kind: 'update', spec: item, row: r, restore: r.status === 'archived' });
+        else if (machine && machineTranslationsDiffer(itemMachine.get(r.id), item.translations)) {
+          ops.push({ kind: 'update', spec: item, row: r, restore: false, translationsOnly: true }); // only the machine text moved
+        }
       }
     }
     // Items the previous version carried that this one dropped: archive (still resolve) if untouched.
@@ -514,7 +574,7 @@ async function planLists(
         if (!r.seed_user_modified) ops.push({ kind: 'flag', row: r });
       } else ops.push({ kind: 'archive', row: r, current: itemContents.get(r.id) as ItemContent });
     }
-    const want = listContentFromSpec(spec, 'active');
+    const want = listSeedContent(req, spec, 'active');
     const activeItems = rows.filter((r) => r.status === 'active').length;
     plans.push({
       kind: 'update',
@@ -522,6 +582,7 @@ async function planLists(
       row,
       current: current as ListContent,
       listChanged: hashListContent(current as ListContent) !== hashListContent(want),
+      listMachineChanged: machine && machineTranslationsDiffer(listMachine.get(row.id), spec.translations),
       reactivate: row.status === 'archived',
       itemOps: ops,
       itemsSkipped: skipped,
@@ -644,9 +705,11 @@ interface TextRow {
   locale: string;
   text: string;
   description: string | null;
+  /** The row is machine output (non-source locales of a machine pack); the source-locale row never is. */
+  machine: boolean;
 }
 
-async function insertListTranslations(trx: Trx, listId: string, spec: SelectionListSeedListSpecV1): Promise<void> {
+async function insertListTranslations(trx: Trx, listId: string, spec: SelectionListSeedListSpecV1, machine: boolean): Promise<void> {
   const rows: Array<Record<string, unknown>> = [
     { list_id: listId, locale: spec.sourceLocale, name: spec.name, description: spec.description ?? null, source_hash: hashText(spec.name), is_machine: false },
     ...(spec.translations ?? []).map((t) => ({
@@ -655,7 +718,7 @@ async function insertListTranslations(trx: Trx, listId: string, spec: SelectionL
       name: t.name,
       description: t.description ?? null,
       source_hash: computeSourceHash(spec.name, spec.description ?? null),
-      is_machine: false,
+      is_machine: machine,
     })),
   ];
   await trx('selection_list_translations').insert(rows);
@@ -673,7 +736,7 @@ async function insertItem(trx: Trx, listId: string, list: SelectionListSeedListS
     seed_source: req.source.app,
     seed_key: req.pack.key,
     seed_version: req.pack.version,
-    seed_hash: hashItemContent(itemContentFromSpec(item, 'active')),
+    seed_hash: hashItemContent(itemSeedContent(req, item, 'active')),
     seed_user_modified: false,
   });
   await trx('selection_list_item_translations').insert([
@@ -684,7 +747,7 @@ async function insertItem(trx: Trx, listId: string, list: SelectionListSeedListS
       label: t.label,
       description: t.description ?? null,
       source_hash: computeSourceHash(item.label, item.description ?? null),
-      is_machine: false,
+      is_machine: isMachinePack(req),
     })),
   ]);
   return itemId;
@@ -704,10 +767,10 @@ async function createList(trx: Trx, req: SeedApplyRequest, ctx: EventContext, sp
     seed_key: req.pack.key,
     seed_list_key: spec.key,
     seed_version: req.pack.version,
-    seed_hash: hashListContent(listContentFromSpec(spec, 'active')),
+    seed_hash: hashListContent(listSeedContent(req, spec, 'active')),
     seed_user_modified: false,
   });
-  await insertListTranslations(trx, listId, spec);
+  await insertListTranslations(trx, listId, spec, isMachinePack(req));
   const itemIds: string[] = [];
   for (let i = 0; i < spec.items.length; i++) itemIds.push(await insertItem(trx, listId, spec, spec.items[i], (i + 1) * 100, req));
 
@@ -725,7 +788,7 @@ async function createList(trx: Trx, req: SeedApplyRequest, ctx: EventContext, sp
 /**
  * Make the translation rows of a list/item equal to `desired` (source locale included):
  * upsert what differs (a machine row for a locale the pack now provides is replaced by the
- * reviewed text), delete non-machine rows the pack no longer carries. Machine rows for
+ * reviewed text; a machine pack writes its own rows with `is_machine = true`), delete non-machine rows the pack no longer carries. Machine rows for
  * other locales are autofill's and are never touched. Returns the non-source locales
  * written / removed, for the translation events.
  */
@@ -749,7 +812,7 @@ async function syncTranslations(
   const deleted: string[] = [];
   for (const d of desired) {
     const cur = have.get(d.locale);
-    if (cur && !cur.is_machine && cur.text === d.text && (cur.description ?? null) === d.description) continue;
+    if (cur && cur.is_machine === d.machine && cur.text === d.text && (cur.description ?? null) === d.description) continue;
     await trx(table)
       .insert({
         [ownerCol]: ownerId,
@@ -757,7 +820,7 @@ async function syncTranslations(
         [textCol]: d.text,
         description: d.description,
         source_hash: d.locale === sourceLocale ? hashText(d.text) : computeSourceHash(sourceText, sourceDescription),
-        is_machine: false,
+        is_machine: d.machine,
         updated_at: trx.fn.now(),
       })
       .onConflict([ownerCol, 'locale'])
@@ -773,9 +836,12 @@ async function syncTranslations(
   return { upserted, deleted };
 }
 
-const textRows = (spec: { sourceLocale: string; name?: string; label?: string; description?: string; translations?: Array<{ locale: string; name?: string; label?: string; description?: string }> }): TextRow[] => [
-  { locale: spec.sourceLocale, text: (spec.name ?? spec.label) as string, description: spec.description ?? null },
-  ...(spec.translations ?? []).map((t) => ({ locale: t.locale, text: (t.name ?? t.label) as string, description: t.description ?? null })),
+const textRows = (
+  spec: { sourceLocale: string; name?: string; label?: string; description?: string; translations?: Array<{ locale: string; name?: string; label?: string; description?: string }> },
+  machine: boolean,
+): TextRow[] => [
+  { locale: spec.sourceLocale, text: (spec.name ?? spec.label) as string, description: spec.description ?? null, machine: false },
+  ...(spec.translations ?? []).map((t) => ({ locale: t.locale, text: (t.name ?? t.label) as string, description: t.description ?? null, machine })),
 ];
 
 async function updateList(trx: Trx, req: SeedApplyRequest, ctx: EventContext, plan: Extract<ListPlan, { kind: 'update' }>): Promise<SeedListResult> {
@@ -792,10 +858,16 @@ async function updateList(trx: Trx, req: SeedApplyRequest, ctx: EventContext, pl
       status: 'active',
       updated_at: trx.fn.now(),
       seed_version: req.pack.version,
-      seed_hash: hashListContent(listContentFromSpec(spec, 'active')),
+      seed_hash: hashListContent(listSeedContent(req, spec, 'active')),
     });
-    const t = await syncTranslations(trx, 'list', listId, spec.sourceLocale, textRows(spec), spec.name, spec.description ?? null);
+    const t = await syncTranslations(trx, 'list', listId, spec.sourceLocale, textRows(spec, isMachinePack(req)), spec.name, spec.description ?? null);
     await emitListChanged(trx, ctx, listId, before);
+    for (const locale of t.upserted) await emitListTranslationUpserted(trx, ctx, listId, locale);
+    for (const locale of t.deleted) await emitTranslationDeleted(trx, ctx, listId, locale);
+  } else if (plan.listMachineChanged) {
+    // The list's own content is unchanged; only the machine translations moved (no list.updated event).
+    changed = true;
+    const t = await syncTranslations(trx, 'list', listId, spec.sourceLocale, textRows(spec, true), spec.name, spec.description ?? null);
     for (const locale of t.upserted) await emitListTranslationUpserted(trx, ctx, listId, locale);
     for (const locale of t.deleted) await emitTranslationDeleted(trx, ctx, listId, locale);
   }
@@ -813,14 +885,24 @@ async function updateList(trx: Trx, req: SeedApplyRequest, ctx: EventContext, pl
       result.itemsCreated++;
     } else if (op.kind === 'update') {
       const before = await readItem(trx, op.row.id);
-      await trx('selection_list_items').where({ id: op.row.id }).update({
-        status: 'active',
-        updated_at: trx.fn.now(),
-        seed_version: req.pack.version,
-        seed_hash: hashItemContent(itemContentFromSpec(op.spec, 'active')),
-      });
-      const t = await syncTranslations(trx, 'item', op.row.id, spec.sourceLocale, textRows({ sourceLocale: spec.sourceLocale, label: op.spec.label, description: op.spec.description, translations: op.spec.translations }), op.spec.label, op.spec.description ?? null);
-      await emitItemChanged(trx, ctx, listId, op.row.id, before);
+      if (!op.translationsOnly) {
+        await trx('selection_list_items').where({ id: op.row.id }).update({
+          status: 'active',
+          updated_at: trx.fn.now(),
+          seed_version: req.pack.version,
+          seed_hash: hashItemContent(itemSeedContent(req, op.spec, 'active')),
+        });
+      }
+      const t = await syncTranslations(
+        trx,
+        'item',
+        op.row.id,
+        spec.sourceLocale,
+        textRows({ sourceLocale: spec.sourceLocale, label: op.spec.label, description: op.spec.description, translations: op.spec.translations }, isMachinePack(req)),
+        op.spec.label,
+        op.spec.description ?? null,
+      );
+      if (!op.translationsOnly) await emitItemChanged(trx, ctx, listId, op.row.id, before);
       for (const locale of t.upserted) await emitItemTranslationUpserted(trx, ctx, listId, op.row.id, locale);
       for (const locale of t.deleted) await emitTranslationDeleted(trx, ctx, listId, locale, { itemId: op.row.id, itemCode: op.row.code });
       result.itemsUpdated++;

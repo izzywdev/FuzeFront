@@ -200,3 +200,20 @@ def test_envelope_and_key() -> None:
     assert build_seed_request_envelope(payload, correlation_id="c")[
         "occurredAt"
     ].endswith("Z")
+
+
+def test_list_visibility_org_passes_through_and_absent_is_omitted() -> None:
+    kw = _kwargs()
+    kw["lists"] = copy.deepcopy(kw["lists"])
+    kw["lists"][0]["visibility"] = "org"
+    assert build_seed_request(**kw)["lists"][0]["visibility"] == "org"
+    assert "visibility" not in build_seed_request(**_kwargs())["lists"][0]
+
+
+def test_list_visibility_platform_is_refused_for_apps() -> None:
+    kw = _kwargs()
+    kw["lists"] = copy.deepcopy(kw["lists"])
+    kw["lists"][0]["visibility"] = "platform"
+    assert _issues(**kw) == [
+        'lists.0.visibility: an app seed request cannot create a platform (common) list; use "org" or "private"'
+    ]

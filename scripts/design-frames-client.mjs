@@ -25,6 +25,7 @@
  *   node design-frames-client.mjs get <slug>
  *   node design-frames-client.mjs stamp <slug>
  *   node design-frames-client.mjs sync <slug> <localFeatureDir> [sourceRepo]
+ *   node design-frames-client.mjs sync-all <design/frames directory> [sourceRepo]
  *   node design-frames-client.mjs approve <slug> <flowId> <approvedBy>
  *   node design-frames-client.mjs reject <slug> <flowId> <notes>
  *
@@ -137,7 +138,9 @@ export async function syncFeature(slug, localDir, { sourceRepo } = {}) {
   const path = await import('node:path');
 
   const manifest = JSON.parse(await fs.readFile(path.join(localDir, 'manifest.json'), 'utf8'));
-  const resolvedSourceRepo = sourceRepo || manifest.sourceRepo || null;
+  // FuzeX matches import provenance to a database-managed repository
+  // connection. GitHub Actions supplies the canonical owner/repository value.
+  const resolvedSourceRepo = sourceRepo || manifest.sourceRepo || process.env.GITHUB_REPOSITORY || null;
 
   try {
     await createFeature(slug, {
@@ -161,6 +164,30 @@ export async function syncFeature(slug, localDir, { sourceRepo } = {}) {
   await putManifest(slug, { ...manifest, sourceRepo: resolvedSourceRepo });
   const { stamp } = await commitStamp(slug);
   return { slug, stamp, framesSynced: files.size, siteUrl: siteUrl(slug) };
+}
+
+/**
+ * Publish every repository-owned frame set as an independent FuzeX revision.
+ * The service groups them into the source repository's app workspace, so the
+ * FuzeFront portal shows one app with its complete catalogue of UX flows.
+ * Underscore-prefixed directories are templates/metadata, never feature frames.
+ */
+export async function syncFrameDirectory(framesRoot, { sourceRepo, continueOnError = true } = {}) {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const results = [];
+  for (const entry of await fs.readdir(framesRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith('_')) continue;
+    const localDir = path.join(framesRoot, entry.name);
+    try {
+      await fs.access(path.join(localDir, 'manifest.json'));
+      results.push({ status: 'synced', ...(await syncFeature(entry.name, localDir, { sourceRepo })) });
+    } catch (err) {
+      if (!continueOnError) throw err;
+      results.push({ status: 'failed', slug: entry.name, error: err.message ?? String(err) });
+    }
+  }
+  return results;
 }
 
 // ---- CLI ---------------------------------------------------------------------
@@ -190,6 +217,14 @@ async function main() {
         console.log(JSON.stringify(await syncFeature(slug, localDir, { sourceRepo }), null, 2));
         break;
       }
+      case 'sync-all': {
+        const [framesRoot, sourceRepo] = args;
+        if (!framesRoot) throw new Error('usage: sync-all <design/frames directory> [sourceRepo]');
+        const results = await syncFrameDirectory(framesRoot, { sourceRepo });
+        console.log(JSON.stringify(results, null, 2));
+        if (results.some((result) => result.status === 'failed')) process.exitCode = 1;
+        break;
+      }
       case 'approve': {
         const [slug, flowId, approvedBy] = args;
         if (!slug || !flowId || !approvedBy) throw new Error('usage: approve <slug> <flowId> <approvedBy>');
@@ -203,7 +238,7 @@ async function main() {
         break;
       }
       default:
-        console.error('usage: design-frames-client.mjs (list | get <slug> | stamp <slug> | sync <slug> <localFeatureDir> [sourceRepo] | approve <slug> <flowId> <approvedBy> | reject <slug> <flowId> <notes>)');
+        console.error('usage: design-frames-client.mjs (list | get <slug> | stamp <slug> | sync <slug> <localFeatureDir> [sourceRepo] | sync-all <design/frames directory> [sourceRepo] | approve <slug> <flowId> <approvedBy> | reject <slug> <flowId> <notes>)');
         process.exit(2);
     }
   } catch (err) {
