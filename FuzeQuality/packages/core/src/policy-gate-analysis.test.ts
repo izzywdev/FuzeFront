@@ -140,6 +140,7 @@ describe('policy gate evaluation', () => {
     expect(linkExecutionArtifacts('Quality checks', artifacts, '.github/workflows/ci.yml@main')).toEqual({
       policyArtifactIds: ['policy-ci'],
       gateArtifactIds: ['gate-ci'],
+      policyGatePairs: [{ policyArtifactId: 'policy-ci', gateArtifactId: 'gate-ci' }],
     })
   })
 })

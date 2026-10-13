@@ -27,7 +27,14 @@ export function linkExecutionArtifacts(workflowName: string, artifacts: QualityA
     : artifacts.filter(item => item.kind === 'gate' && [...keyTerms(item)].some(term => workflow.has(term)))
   const gateTerms = new Set(gates.flatMap(item => [...keyTerms(item)]))
   const policies = artifacts.filter(item => item.kind === 'policy' && [...keyTerms(item)].some(term => gateTerms.has(term)))
-  return { policyArtifactIds: policies.map(item => item.id), gateArtifactIds: gates.map(item => item.id) }
+  const policyGatePairs = gates.length === 1 && (normalizedPath || policies.length === 1)
+    ? policies.map(policy => ({ policyArtifactId: policy.id, gateArtifactId: gates[0].id }))
+    : []
+  return {
+    policyArtifactIds: policies.map(item => item.id),
+    gateArtifactIds: gates.map(item => item.id),
+    policyGatePairs,
+  }
 }
 
 const id = (repositoryId: string, revision: string, kind: string, title: string) =>

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
 import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionSourceLink, ExecutionThresholdEvidence, latestIntegrationExecution, latestPerformanceExecution, latestPostProductionExecution } from './executionEvidence'
@@ -156,6 +156,7 @@ describe('ExecutionThresholdEvidence', () => {
     expect(
       screen.getByRole('region', { name: 'Policy gate evidence' })
     ).toBeInTheDocument()
+    expect(screen.getByText('1 evaluated pair')).toBeInTheDocument()
     expect(screen.getByText('Performance budget policy')).toBeInTheDocument()
     expect(screen.getByText('Load budget workflow')).toBeInTheDocument()
     expect(
@@ -165,6 +166,32 @@ describe('ExecutionThresholdEvidence', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Latency budget exceeded.')).toBeInTheDocument()
     expect(screen.getByText('failed')).toBeInTheDocument()
+  })
+
+  it('renders every explicit policy outcome for a shared exact gate', () => {
+    render(
+      <ExecutionGateEvidence
+        execution={{
+          ...execution,
+          policyArtifactIds: ['policy-performance', 'policy-reliability'],
+          gateEvaluations: [
+            { policyArtifactId: 'policy-performance', gateArtifactId: 'gate-load-budget', status: 'passed' },
+            { policyArtifactId: 'policy-reliability', gateArtifactId: 'gate-load-budget', status: 'passed' },
+          ],
+        }}
+        artifacts={[
+          ...artifacts,
+          { id: 'policy-reliability', repositoryId: execution.repositoryId, kind: 'policy', title: 'Reliability policy', sourcePath: 'governance/reliability.md', summary: 'Load reliability is required.', evidence: [] },
+        ]}
+      />
+    )
+
+    const region = screen.getAllByRole('region', { name: 'Policy gate evidence' }).at(-1)!
+    expect(within(region).getByText('2 evaluated pairs')).toBeInTheDocument()
+    expect(within(region).getByText('Performance budget policy')).toBeInTheDocument()
+    expect(within(region).getByText('Reliability policy')).toBeInTheDocument()
+    expect(within(region).getAllByText('Load budget workflow')).toHaveLength(2)
+    expect(within(region).getAllByText('passed')).toHaveLength(2)
   })
 
   it('renders watchable video and report links for the run', () => {

@@ -30,7 +30,7 @@ export async function linkExecutionToRevisionArtifacts(
     tenantId,
     execution.revision,
   )
-  if (!catalogRevision) return { policyArtifactIds: [], gateArtifactIds: [] }
+  if (!catalogRevision) return { policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] }
   const artifacts = await loadArtifacts(
     execution.repositoryId,
     tenantId,
@@ -84,13 +84,10 @@ export function webhookExecutionRecord(
   tenantId: string,
   links: RevisionArtifactLinks,
 ): TestExecution {
-  const gateEvaluations = links.policyArtifactIds.length === 1 && links.gateArtifactIds.length === 1
-    ? [{
-        policyArtifactId: links.policyArtifactIds[0],
-        gateArtifactId: links.gateArtifactIds[0],
-        status: execution.status,
-      }]
-    : []
+  const gateEvaluations = links.policyGatePairs.map(pair => ({
+    ...pair,
+    status: execution.status,
+  }))
   return {
     ...execution,
     id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`,
@@ -185,17 +182,18 @@ export async function prepareExecutionEvidence(
     artifacts,
     execution.workflowPath,
   )
-  const gateEvaluations =
-    links.policyArtifactIds.length === 1 && links.gateArtifactIds.length === 1
-      ? [{
-          policyArtifactId: links.policyArtifactIds[0],
-          gateArtifactId: links.gateArtifactIds[0],
-          status: execution.status,
-        }]
-      : []
+  const gateEvaluations = links.policyGatePairs.map(pair => ({
+    ...pair,
+    status: execution.status,
+  }))
   return {
     ok: true,
-    execution: { ...execution, ...links, gateEvaluations },
+    execution: {
+      ...execution,
+      policyArtifactIds: links.policyArtifactIds,
+      gateArtifactIds: links.gateArtifactIds,
+      gateEvaluations,
+    },
   }
 }
 

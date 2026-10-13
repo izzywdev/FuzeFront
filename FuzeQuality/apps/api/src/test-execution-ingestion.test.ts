@@ -33,6 +33,10 @@ describe('internal execution ingestion compatibility', () => {
     expect(webhookExecutionRecord(execution, 'org-1', {
       policyArtifactIds: ['policy-performance'],
       gateArtifactIds: ['gate-performance'],
+      policyGatePairs: [{
+        policyArtifactId: 'policy-performance',
+        gateArtifactId: 'gate-performance',
+      }],
       kind: 'stress',
     })).toEqual({
       ...execution,
@@ -67,7 +71,7 @@ describe('internal execution ingestion compatibility', () => {
         resolveCatalogRevision,
         loadArtifacts,
       )
-    ).resolves.toEqual({ policyArtifactIds: [], gateArtifactIds: [] })
+    ).resolves.toEqual({ policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
     expect(resolveCatalogRevision).toHaveBeenCalledWith(
       workflow.repositoryId,
       'org-1',
@@ -95,7 +99,7 @@ describe('internal execution ingestion compatibility', () => {
       'org-1',
       resolveCatalogRevision,
       loadArtifacts,
-    )).resolves.toEqual({ policyArtifactIds: [], gateArtifactIds: [] })
+    )).resolves.toEqual({ policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
     expect(loadArtifacts).not.toHaveBeenCalled()
   })
 
@@ -253,7 +257,7 @@ describe('internal execution ingestion compatibility', () => {
     })
   })
 
-  it('does not infer a policy-gate pair when exact-revision linkage is ambiguous', async () => {
+  it('records every policy evaluated by one exact-revision workflow gate', async () => {
     const input = testExecutionInputSchema.parse({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',
       tenantId: 'org-1',
@@ -264,7 +268,7 @@ describe('internal execution ingestion compatibility', () => {
     const shared = {
       repositoryId: input.repositoryId,
       sourcePath: '.github/workflows/ci.yml',
-      summary: 'CI', evidence: ['CI'],
+      summary: 'Authentication required check', evidence: ['Authentication required'],
     }
     const result = await prepareExecutionEvidence(
       input,
@@ -272,11 +276,19 @@ describe('internal execution ingestion compatibility', () => {
       vi.fn().mockResolvedValue([
         { ...shared, id: 'policy-1', kind: 'policy', title: 'Policy one' },
         { ...shared, id: 'policy-2', kind: 'policy', title: 'Policy two' },
-        { ...shared, id: 'gate-1', kind: 'gate', title: 'CI' },
+        { ...shared, id: 'gate-1', kind: 'gate', title: 'Authentication CI' },
       ]),
     )
 
-    expect(result).toMatchObject({ ok: true, execution: { gateEvaluations: [] } })
+    expect(result).toMatchObject({
+      ok: true,
+      execution: {
+        gateEvaluations: [
+          { policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'passed' },
+          { policyArtifactId: 'policy-2', gateArtifactId: 'gate-1', status: 'passed' },
+        ],
+      },
+    })
   })
 
   it('uses the generated id when a legacy producer omits provider run identity', () => {

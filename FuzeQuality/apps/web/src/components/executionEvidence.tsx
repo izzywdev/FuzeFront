@@ -233,6 +233,9 @@ export function ExecutionGateEvidence({
   return (
     <section className="execution-gates" aria-label="Policy gate evidence">
       <strong>Policy–gate evidence</strong>
+      <span className="execution-evidence-count">
+        {gateEvaluations.length} evaluated {gateEvaluations.length === 1 ? 'pair' : 'pairs'}
+      </span>
       <ul>
         {gateEvaluations.map(evaluation => {
           const policy = artifactById.get(evaluation.policyArtifactId)
