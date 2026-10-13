@@ -30,6 +30,7 @@ COPY sdk/package.json ./sdk/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
 COPY packages/config-ui/package.json ./packages/config-ui/
+COPY packages/fuzepicker-ui/package.json ./packages/fuzepicker-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -45,6 +46,7 @@ COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/security/package.json ./packages/security/
 COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
+COPY selection-list-client/package.json ./selection-list-client/
 COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
@@ -52,7 +54,10 @@ COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
 
-RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts
+RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts && \
+    mkdir -p packages/auth/node_modules
+# npm may hoist every auth runtime dependency into /app/node_modules. Keep the
+# optional workspace dependency directory copyable in either locked layout.
 
 # ---------- specs: gather this repo's own openapi.yaml files ----------
 # Only the spec FILES are needed here, not each service's full source — see
@@ -61,6 +66,7 @@ RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts
 FROM node:24-alpine AS specs
 WORKDIR /app
 COPY scripts/collect-devportal-specs.mjs ./scripts/collect-devportal-specs.mjs
+COPY services/fuzepicker/openapi.yaml ./services/fuzepicker/openapi.yaml
 COPY services/app-registry-service/openapi.yaml ./services/app-registry-service/openapi.yaml
 COPY services/billing-service/openapi.yaml ./services/billing-service/openapi.yaml
 COPY services/chat-service/openapi.yaml ./services/chat-service/openapi.yaml
@@ -92,6 +98,7 @@ COPY packages/service-auth/package.json ./packages/service-auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
 COPY packages/config-ui/package.json ./packages/config-ui/
+COPY packages/fuzepicker-ui/package.json ./packages/fuzepicker-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -107,6 +114,7 @@ COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/security/package.json ./packages/security/
 COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
+COPY selection-list-client/package.json ./selection-list-client/
 COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/

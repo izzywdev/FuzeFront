@@ -121,9 +121,10 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
                 description?: string | undefined;
             }[] | undefined;
         }>, "many">;
+        visibility: z.ZodOptional<z.ZodEnum<["private", "org", "platform"]>>;
     }, "strict", z.ZodTypeAny, {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -141,9 +142,10 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }, {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -161,6 +163,7 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }>, "many">;
 }, "strict", z.ZodTypeAny, {
     organizationId: string;
@@ -169,8 +172,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -188,6 +191,7 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }[];
     requestId: string;
     scope: "user" | "org";
@@ -208,8 +212,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -227,6 +231,7 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }[];
     requestId: string;
     scope: "user" | "org";
@@ -247,8 +252,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -266,6 +271,7 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }[];
     requestId: string;
     scope: "user" | "org";
@@ -286,8 +292,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -305,6 +311,7 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }[];
     requestId: string;
     scope: "user" | "org";
