@@ -42,12 +42,21 @@
         <div class="sl-banner__body">
           <p class="sl-banner__title">Shared with everyone in Acme Logistics</p>
           <p>You can view this list and pick its values in forms. Being a member lets you <b>read</b> a list, never change it.
-            To change it, ask for an editor role — <span data-owner-hint>this list was created by <b>Dana Okafor</b></span>.</p>
+            To change it, ask the list's owner for an editor role. <span data-owner-hint data-created-by-kind="user">It was created by a user, not set up automatically.</span></p>
           <p class="sl-muted">No Fork here: this list already belongs to your organization, so a fork is refused
-            (<code class="sl-code">409 fork_not_applicable</code>) and the UI never offers one. There is no in-app access request;
-            the list's roster is not visible to you, so the notice names the creator (<code class="sl-code">created_by</code>), not a guessed owner.</p>
+            (<code class="sl-code">409 fork_not_applicable</code>) and the UI never offers one. There is no in-app access request, and
+            the list's roster is not visible to you, so the notice names no person: it says only what <code class="sl-code">created_by</code> proves.</p>
         </div>
       </div>
+      <dl class="sl-facts" data-owner-hint-variants style="margin: 0 0 var(--space-5);">
+        <dt>created_by user</dt><dd data-created-by-kind="user">“It was created by a user, not set up automatically.”</dd>
+        <dt>created_by system</dt><dd data-created-by-kind="system">“It was set up automatically for your organization.”</dd>
+        <dt>created_by deleted user</dt><dd data-created-by-kind="deleted-user">“Its creator's account has been deleted.”</dd>
+      </dl>
+      <p class="sl-field__hint" style="margin-bottom: var(--space-5);"><code class="sl-code">created_by</code> is an <code class="sl-code">AuthorPrincipal</code> — a user id, a system principal or
+        the deleted-user sentinel, decided offline by its prefix — and never a display name. The hint branches on that form only; it never
+        renders the raw identifier, never claims the creator is still a member, and never looks a <code class="sl-code">usr_</code> value up (no directory read is part of this contract, and a
+        member without a role cannot read the list's roster).</p>
 
       <section class="sl-panel" data-panel="value-table" data-readonly="true" data-state="ready">
         <div class="sl-panel__seam"></div>
@@ -197,7 +206,7 @@
       </div>
 
       <p class="sl-notes">
-        <b>Test hooks:</b> <code>[data-frame='03-readonly-states']</code> · <code>[data-visibility='org']</code> · <code>[data-readonly-notice='org']</code> · <code>[data-owner-hint]</code> · <code>[data-editable='false']</code> · <code>[data-readonly-notice='shadowed']</code> · <code>[data-action='open-own-version']</code> · <code>[data-panel='locale-index'][data-readonly='true']</code> · <code>[data-panel='value-table'][data-state='loading']</code> · <code>[data-panel='value-table'][data-state='empty']</code> · <code>[data-panel='value-table'][data-state='error']</code> · <code>[data-panel='value-table'][data-state='not-found']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-state='editable-unknown']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
+        <b>Test hooks:</b> <code>[data-frame='03-readonly-states']</code> · <code>[data-visibility='org']</code> · <code>[data-readonly-notice='org']</code> · <code>[data-owner-hint][data-created-by-kind='user']</code> · <code>[data-created-by-kind='system']</code> · <code>[data-created-by-kind='deleted-user']</code> · <code>[data-editable='false']</code> · <code>[data-readonly-notice='shadowed']</code> · <code>[data-action='open-own-version']</code> · <code>[data-panel='locale-index'][data-readonly='true']</code> · <code>[data-panel='value-table'][data-state='loading']</code> · <code>[data-panel='value-table'][data-state='empty']</code> · <code>[data-panel='value-table'][data-state='error']</code> · <code>[data-panel='value-table'][data-state='not-found']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-state='editable-unknown']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
         Contract: <code>GET /v1/selection-lists/{listId}</code> · <code>GET /v1/selection-lists/{listId}/items</code> ·
         <code>GET /v1/selection-lists/{listId}/translations</code> · <code>GET /v1/selection-lists?key=&amp;include_shared=true&amp;limit=1</code>. Shared read is
         <code>SelectionListCatalog:read_shared</code> in the caller's tenant + the service's visibility predicate (design record D4).<br />

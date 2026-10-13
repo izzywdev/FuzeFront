@@ -46,7 +46,9 @@
             </div>
             <p class="sl-field__hint">Route: <code class="sl-code">/settings/selection-lists/{fork.id}</code> from <code class="sl-code">list.id</code> in the
               <code class="sl-code">201</code> body. The detail shows the editable 4.0.0 value editor plus the provenance card in its
-              “up to date” state (<a href="07-fork-detail.html#up-to-date">frame 7</a>). The list index is refreshed: the common
+              “comparison unavailable” state (<a href="07-fork-detail.html#unknown">frame 7</a>): under 4.1.0 the
+              <code class="sl-code">201</code> carries only <code class="sl-code">forked_from.revision</code> and the source exposes no current
+              revision, so a new fork is <b>never</b> shown as “up to date”. The list index is refreshed: the common
               <b>Priority</b> leaves the Common group and the fork appears under Your organization.</p>
           </div>
           <div>
@@ -148,12 +150,16 @@
                   <div class="sl-banner__body">
                     <p class="sl-banner__title">Your organization already has a list with the key <span class="sl-key">priority</span></p>
                     <p>It isn't a fork of this common list (for example, an older copy made before common lists existed), so a fork can't
-                      take its key. That list is what your forms already use for <span class="sl-code">priority</span>.</p>
+                      take its key. Nothing was created.</p>
                   </div>
                 </div>
               </div>
               <div class="sl-modal__foot"><a class="btn btn-ghost" href="01-shared-index.html" data-action="close">Back to lists</a></div>
             </div>
+            <p class="sl-field__hint">The plain <code class="sl-code">409</code> proves only the key collision. The colliding list may be archived,
+              private or otherwise unreadable to you, so the copy never says forms use it, never names or links it, and the UI looks nothing up.
+              “Not a fork of this common list” is derivable: a fork of this source would have answered <code class="sl-code">200</code> or
+              <code class="sl-code">fork_exists</code>.</p>
           </div>
 
           <div id="quota">

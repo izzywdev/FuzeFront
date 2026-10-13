@@ -91,7 +91,9 @@
               <p class="sl-banner__title" id="vp-t">Make Priority private?</p>
               <ul class="sl-list sl-caption" style="margin-bottom: var(--space-4);">
                 <li>Members without a role can no longer see it.</li>
-                <li>Their forms go back to the <b>common</b> Priority list, and saved values show the common labels again.</li>
+                <li data-consequence="forms">Their forms use the <b>common</b> Priority list instead, if one is active — otherwise those forms show “List unavailable”.</li>
+                <li data-consequence="stored-common">Values saved from the <b>common</b> list show the common labels again.</li>
+                <li data-consequence="stored-fork">Values picked from <b>your fork</b> keep showing your fork's labels — they belong to Acme Logistics and still resolve.</li>
                 <li>Nothing is deleted; switch back to Organization at any time.</li>
               </ul>
               <div class="sl-head__actions">
@@ -101,6 +103,11 @@
             </div>
             <p class="sl-field__hint">Private → Organization saves without a confirm (it only widens reading) and toasts
               “Everyone in Acme Logistics can now see Priority.” The fork-specific lines render only when <code class="sl-code">forked_from</code> is set.</p>
+            <p class="sl-field__hint">Why the two stored-value lines differ: <code class="sl-code">POST /v1/resolve</code> resolves every item id of the
+              caller's own organization (no per-list read check), so ids picked from the fork keep their fork labels whatever the fork's visibility.
+              Only <b>common</b>-list ids change: they stop being redirected to the fork's labels, because a <code class="sl-code">private</code> fork
+              never redirects. The forms line stays conditional because this page does not read the common list's status; the effective-list
+              lookup only falls through to an <b>active</b> common list.</p>
           </div>
           <div>
             <p class="sl-case">Saving · saved · failed</p>
@@ -203,7 +210,7 @@
       </div>
 
       <p class="sl-notes">
-        <b>Test hooks:</b> <code>[data-frame='08-visibility-control']</code> · <code>[data-panel='visibility-control']</code> · <code>[data-control='visibility']</code> · <code>[data-visibility-option='private']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='platform']</code> · <code>[data-confirm='visibility-to-private']</code> · <code>[data-action='confirm-visibility']</code> · <code>[data-state='saving']</code> · <code>[data-result='visibility-saved']</code> · <code>[data-case='visibility-not-owner']</code> · <code>[data-state='read-only']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-scope='platform-org']</code> · <code>[data-confirm='publish-platform']</code> · <code>[data-confirm-input='key']</code> · <code>[data-action='confirm-publish']</code> · <code>[data-state='locked']</code> · <code>[data-reason='visibility_locked']</code> · <code>[data-case='publish-forbidden']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
+        <b>Test hooks:</b> <code>[data-frame='08-visibility-control']</code> · <code>[data-panel='visibility-control']</code> · <code>[data-control='visibility']</code> · <code>[data-visibility-option='private']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='platform']</code> · <code>[data-confirm='visibility-to-private']</code> · <code>[data-consequence='forms']</code> · <code>[data-consequence='stored-common']</code> · <code>[data-consequence='stored-fork']</code> · <code>[data-action='confirm-visibility']</code> · <code>[data-state='saving']</code> · <code>[data-result='visibility-saved']</code> · <code>[data-case='visibility-not-owner']</code> · <code>[data-state='read-only']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-scope='platform-org']</code> · <code>[data-confirm='publish-platform']</code> · <code>[data-confirm-input='key']</code> · <code>[data-action='confirm-publish']</code> · <code>[data-state='locked']</code> · <code>[data-reason='visibility_locked']</code> · <code>[data-case='publish-forbidden']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
         Contract: <code>PATCH /v1/selection-lists/{listId} {visibility}</code> (needs <code>manage_access</code>; <code>platform</code> also <code>publish_platform</code> + platform-org ownership;
         <code>409 visibility_locked</code> on demotion) · <code>GET /v1/selection-lists/{listId}/access</code> (decides editable vs read-only control).<br />
         Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.

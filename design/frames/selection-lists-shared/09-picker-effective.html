@@ -122,14 +122,16 @@
         </div>
       </div>
       <div id="archived-fork">
-        <p class="sl-case">D · Fork archived → falls through to the common list</p>
+        <p class="sl-case">D · Fork archived → falls through to the active common list</p>
         <div class="sl-host" data-panel="picker" data-state="ready" data-case="archived-fork" data-effective-source="platform">
           <div class="sl-field" style="margin-bottom: 0;">
             <label class="sl-field__label">Priority</label>
             <div class="sl-combo__control"><span class="sl-combo__value sl-combo__value--ph">Select…</span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
             <div class="sl-source" data-effective-source-caption="platform"><span class="sl-vis sl-vis--platform">◎ Common list</span></div>
             <p class="sl-field__hint">Archiving the fork <b>is</b> the “revert to common” action; the picker shows no archived caption, because one lookup returns only the common list and says nothing about the ignored fork. Values saved from the fork keep rendering
-              (archived items still resolve) — see the next frame. Restoring the fork (frame 6, “existing, archived”) makes it win again.</p>
+              (archived items still resolve) — see the next frame. Restoring the fork (frame 6, “existing, archived”) makes it win again.
+              Falls through only to an <b>active</b> common list; with the common list archived or gone the picker renders
+              <a href="#no-effective-list">no effective list</a>.</p>
           </div>
         </div>
       </div>
@@ -153,14 +155,18 @@
         <div class="sl-combo__control sl-combo__control--invalid"><span class="sl-combo__value sl-combo__value--ph">Couldn't load options</span><button class="btn btn-ghost sl-btn-sm" data-action="retry">Retry</button></div>
         <p class="sl-field__err" data-error="load-failed"><span aria-hidden="true">⚠</span><span>Retry in place; keep any selected value.
           A failed lookup must <b>not</b> fall back to a second, different list — that would show values the service didn't choose.</span></p>
+        <p class="sl-field__hint">Also the state for a <code class="sl-code">403</code> on the lookup: a caller whose only
+          tenant role is <code class="sl-code">developer</code> holds no <code class="sl-code">SelectionListCatalog:list</code>, so
+          <code class="sl-code">GET /v1/selection-lists</code> refuses outright — it is a load failure, never “List unavailable”.</p>
       </div>
-      <div class="sl-host" data-panel="picker" data-state="not-found">
+      <div class="sl-host" data-panel="picker" data-state="not-found" id="no-effective-list">
         <p class="sl-case">No effective list — <code class="sl-code">getEffectiveList</code> → <code class="sl-code">null</code></p>
         <label class="sl-field__label">Priority</label>
         <div class="sl-combo__control" aria-disabled="true"><span class="sl-combo__value sl-combo__value--ph">List unavailable</span></div>
         <p class="sl-field__err" data-error="NOT_FOUND"><span aria-hidden="true">⚠</span><span>No readable active list with key
-          <code class="sl-code">priority</code> in this organization and no common one. An empty page is not an error from the service —
-          the picker renders this state; it does not throw. Callers without shared read (the <code class="sl-code">developer</code> role) land here too.</span></p>
+          <code class="sl-code">priority</code> in this organization and no <b>active</b> common one (e.g. the fork was archived while the common list
+          is archived or gone). Reached only from a <code class="sl-code">200</code> with an empty page — not an error from the service; the picker
+          renders this state and does not throw. A <code class="sl-code">403</code> is the error state, not this one.</span></p>
       </div>
       <div class="sl-host" data-panel="picker" data-state="flag-off" data-flag="shared-lists:off">
         <p class="sl-case">Flag OFF — 4.0.0 lookup</p>

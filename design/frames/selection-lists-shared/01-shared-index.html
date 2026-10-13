@@ -119,11 +119,16 @@
           </tbody>
         </table>
         <div class="sl-panel__foot">
-          <span class="sl-shadow-note" data-shadow-note="priority"><span aria-hidden="true">⑂</span> The common list <span class="sl-key">priority</span> is hidden — your organization's fork replaces it.
+          <span class="sl-shadow-note" data-shadow-note="priority"><span aria-hidden="true">⑂</span> <span class="sl-key">priority</span> is your organization's fork; a common list with the same key is not listed here.
             <a href="#filtered" data-action="show-shadowed">Show common lists only</a></span>
           <button class="btn btn-ghost sl-btn-sm" data-action="load-more">Load more</button>
         </div>
       </section>
+      <p class="sl-field__hint">The note is driven by a loaded row with <code class="sl-code">forked_from</code> set, and is deliberately
+        <b>source-neutral</b>: the <code class="sl-code">include_shared</code> response carries no source-existence metadata, so a fork whose common
+        source was purged (dangling <code class="sl-code">forked_from</code>, legal per design record §5) looks exactly like one that shadows a live
+        common list. The copy therefore never says a common list “is hidden” or “replaced” — only that this row is a fork and that no common list
+        with that key is listed. Whether one exists is answered on the fork's own page (frame 7 provenance).</p>
 
       <div class="sl-section" id="filtered">
         <h2>Visibility filter set → shadowing off (administrator view)</h2>

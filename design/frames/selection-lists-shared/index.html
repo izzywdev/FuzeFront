@@ -82,10 +82,11 @@
     </div>
     <div class="ix-flow__meta">ForkProvenancePanel → /settings/selection-lists/:listId · fork owners and editors</div>
     <p class="ix-flow__lead">Where the fork came from, which version it copied, and whether the common list has moved on — informational only,
-      no merge. Revert to common = archive the fork.</p>
+      no merge. Revert to common = archive the fork — offered only while an active common list exists; otherwise “Archive fork…”
+      states that forms will have no list.</p>
     <div class="ix-grid">
       <a href="07-fork-detail.html" class="ix-card" data-frame-link><div class="step">Frame 3a</div><h3>Provenance, behind source, revert</h3>
-        <p>Behind / up to date / checking / source archived / source gone / check failed / comparison unavailable; archive-to-revert with 403.</p></a>
+        <p>Behind / up to date / checking / source archived / source gone / check failed / comparison unavailable; archive-to-revert gated on an active source, archive with the no-list consequence, 403.</p></a>
     </div>
   </section>
 
