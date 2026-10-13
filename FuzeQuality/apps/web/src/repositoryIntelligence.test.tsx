@@ -162,6 +162,7 @@ function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifactsByIds').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
+  vi.spyOn(api, 'latestPerformanceExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'executionTrend').mockResolvedValue([])
   vi.spyOn(api, 'executionPerformance').mockResolvedValue([])
   vi.spyOn(api, 'repositoryFlowReviewHistory').mockResolvedValue([])
@@ -1187,7 +1188,7 @@ describe('RepositoryIntelligence flow inventory', () => {
   it('shows the latest matching load outcome and threshold beside its definition', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
-    vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
+    vi.mocked(api.latestPerformanceExecutions).mockResolvedValue({ items: [loadExecution] })
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)
@@ -1200,11 +1201,30 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(within(outcome).getByRole('link', { name: /Open CI run/ })).toHaveAttribute('href', loadExecution.sourceUrl)
   })
 
+  it('loads performance evidence independently of the first mixed execution page', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.mocked(api.testExecutions).mockResolvedValue(Array.from({ length: 50 }, (_, index) => ({
+      ...loadExecution,
+      id: `ci-${index}`,
+      externalRunId: `ci-${index}`,
+      kind: 'ci' as const,
+      workflowPath: '.github/workflows/ci.yml',
+    })))
+    vi.mocked(api.latestPerformanceExecutions).mockResolvedValue({ items: [loadExecution] })
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByLabelText(`Latest execution for ${loadArtifact.title}`)).toHaveTextContent('failed · revision-1')
+    expect(api.latestPerformanceExecutions).toHaveBeenCalledWith(repository.id)
+  })
+
   it('keeps repository and governance evidence visible when optional performance history fails', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([governanceEvaluation])
-    vi.mocked(api.testExecutions).mockRejectedValue(new Error('execution history unavailable'))
+    vi.mocked(api.latestPerformanceExecutions).mockRejectedValue(new Error('performance history unavailable'))
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)

@@ -52,6 +52,7 @@ import { decodeHistoryCursor, historyPage, historyPageQuerySchema } from './hist
 import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
 import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
 import { repositoryAnalysisStatusSchema } from './repository-analysis-status'
+import { reviewedPerformanceWorkflowPaths } from './latest-performance-executions'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -720,6 +721,15 @@ app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (reque
     items: page.items.map(({ createdAt: _createdAt, ...execution }) => execution),
     page: page.page,
   })
+})
+app.get('/api/v1/repositories/:id/performance-test-executions/latest', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
+  const workflowPaths = reviewedPerformanceWorkflowPaths(artifacts)
+  response.json({ items: await store.latestPerformanceExecutions(repositoryId, tenantId, workflowPaths) })
 })
 app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

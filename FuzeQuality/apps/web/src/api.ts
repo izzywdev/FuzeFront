@@ -132,6 +132,7 @@ export const api = {
   policyGateReviewHistory: (repositoryId: string, evaluationId: string, cursor?: string) => request<import('@fuzequality/contracts').PolicyGateReviewHistoryPage | import('@fuzequality/contracts').PolicyGateReviewHistoryEntry[]>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
   reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed', reason?: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),
   testExecutions: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').TestExecutionPage | import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions?${new URLSearchParams(filter)}`),
+  latestPerformanceExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/performance-test-executions/latest`),
   executionTrend: (id: string, filter: Record<string, string> = {}) => request<{
     items: import('@fuzequality/core').ExecutionOutcomeTrend[]
     page: { nextCursor: string | null; hasMore: boolean }
