@@ -4,7 +4,8 @@
   "designSystem": "fuse-seam (@fuzefront/design-system)",
   "implementation": {
     "paths": [
-      "packages/selection-lists-ui/src/**"
+      "packages/selection-lists-ui/src/*",
+      "packages/selection-lists-ui/src/test/**"
     ]
   },
   "plan": "docs/planning/epics/EPIC-17-selection-lists.md",
@@ -476,7 +477,7 @@
       "@fuzeone/selection-list-client",
       "@fuzeone/selection-lists-ui"
     ],
-    "packagesNote": "Scope is @fuzeone/* by owner decision recorded in docs/planning/epics/EPIC-17-selection-lists.md (GitHub Packages requires the npm scope to equal the owning org, and the org is `fuzeone`). This deliberately does NOT match the ^@fuzefront/ pattern in design/frames/_template/manifest.schema.json, which predates that decision and is documentation only — no CI gate validates manifests against it. Flagged on the frames PR so the schema can be widened rather than the packages silently renamed.",
+    "packagesNote": "Scope is @fuzeone/* by owner decision recorded in docs/planning/epics/EPIC-17-selection-lists.md (GitHub Packages requires the npm scope to equal the owning org, and the org is `fuzeone`). design/frames/_template/manifest.schema.json originally allowed only ^@fuzefront/; it was widened to ^@(fuzefront|fuzeone)/ (SL9 frames PR) rather than the packages being silently renamed.",
     "designSystemAdditions": [
       "Combobox / Listbox — single and multi select, typeahead filtering, full keyboard + ARIA. Used by SelectionListPicker.",
       "SortableList — pointer AND keyboard reorder (Space lift, arrows move, Esc cancel) with live-region announcements. Used by ValueEditor.",
@@ -487,5 +488,5 @@
     ],
     "designSystemAdditionsNote": "Composed locally in frame.css for the frames ONLY. frontend-engineer is the sole editor of design-system/ and adds these as a foundation PR before or alongside the feature UI — they must not be re-implemented as one-offs in feature code. product-designer specifies the primitives; it does not write them."
   },
-  "stamp": "f4b4fadd27d792851f8c9e4169e2acdafd7cc5cd43042212839a06d5d930e388"
+  "stamp": "33b99baadacd5fa728ed3842cc1f73d57f56ca4806b8c9038248fe5d8ab7fc41"
 }

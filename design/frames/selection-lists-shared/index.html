@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — Shared / common lists + copy-on-write fork (SL9) — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="ix-wrap" data-frame="index">
+  <div class="ix-eyebrow">Design-first gate · UX approval · SL9 · contract 4.1.0 · design-record task 13</div>
+  <h1>Selection Lists — shared &amp; common lists, copy-on-write fork</h1>
+  <p class="ix-lead">Twelve navigable frames for what a member sees when their organization reads lists it doesn't own: the common-list
+    badge and read-only detail, the “Fork to edit” path from a <code class="sl-code">409 fork_required</code>, the fork confirmation and every
+    answer it can get, the fork's provenance and “behind source” indicator, the owner's visibility control, and the picker resolving the
+    <b>effective</b> list by key. Every state is contract — loading, empty, error, the fail-closed refusals, and the flag-OFF absence.
+    Built in the fuse-seam design system (tokens only). Requirement: <code class="sl-code">docs/planning/selection-lists-shared-and-fork.md</code>.</p>
+
+  <div class="sl-banner sl-banner--info" style="margin-top: var(--space-8);">
+    <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
+    <div class="sl-banner__body">
+      <p class="sl-banner__title">Approval is per flow — five flows, approved independently</p>
+      <p>Approving one flow unblocks its implementation (its <code class="sl-code">implementation.paths</code> below) while the others iterate.
+        <b>Flow 3</b> renders an honest fallback today and carries a named contract dependency
+        (<code class="sl-code">SelectionList.revision</code>); it does not hold any sibling back.</p>
+    </div>
+  </div>
+
+  <!-- ==================== FLOW 1 ==================== -->
+  <section class="ix-flow" data-flow="shared-read">
+    <div class="ix-flow__seam"></div>
+    <div class="ix-flow__head">
+      <h2 class="ix-flow__title">Flow 1 · Shared read — browse, badge, read-only detail</h2>
+      <span class="ix-pending" data-approval-status="pending" data-flow-approval="shared-read">● Awaiting approval</span>
+    </div>
+    <div class="ix-flow__meta">SelectionListManagementFlow (extended) → /settings/selection-lists · any member</div>
+    <p class="ix-flow__lead">A member reads and picks from lists the organization is given without owning them. Common lists are grouped and
+      badged; a fork hides the common list with the same key unless a visibility filter is set; a list read only through visibility is
+      read-only — no mutation affordances at all.</p>
+    <div class="ix-grid">
+      <a href="01-shared-index.html" class="ix-card" data-frame-link><div class="step">Frame 1a</div><h3>List index with common lists</h3>
+        <p>“Include common lists” switch, source groups, shadowing note, visibility filter (shadowing off). Loading, two empties, error, flag OFF.</p></a>
+      <a href="02-common-detail.html" class="ix-card" data-frame-link><div class="step">Frame 1b</div><h3>Common list — read-only detail</h3>
+        <p>Common badge, read-only notice, no edit controls, no Access tab, the one action: Fork to edit.</p></a>
+      <a href="03-readonly-states.html" class="ix-card" data-frame-link><div class="step">Frame 1c</div><h3>Read-only detail — states</h3>
+        <p>Organization list (no fork), “your organization uses its own version”, read-only translations, loading / empty / error / 404, editable-unknown, flag OFF.</p></a>
+      <a href="11-rtl-mobile-detail.html" class="ix-card" data-frame-link><div class="step">Frame 1d</div><h3>RTL + 375 px — list detail</h3>
+        <p>English, Hebrew and Arabic at phone width. Logical layout, LTR islands for keys and codes.</p></a>
+    </div>
+  </section>
+
+  <!-- ==================== FLOW 2 ==================== -->
+  <section class="ix-flow" data-flow="fork">
+    <div class="ix-flow__seam"></div>
+    <div class="ix-flow__head">
+      <h2 class="ix-flow__title">Flow 2 · Fork to edit</h2>
+      <span class="ix-pending" data-approval-status="pending" data-flow-approval="fork">● Awaiting approval</span>
+    </div>
+    <div class="ix-flow__meta">ForkListFlow → /settings/selection-lists/:listId (dialog; no new route) · members who can create lists</div>
+    <p class="ix-flow__lead">A refused change to a common list becomes a way forward; the fork is always an explicit choice with a visibility
+      (organization or private draft), keeps the key, and replaces the common list for the organization. Every answer — 201, 200, the three
+      409s, quota, the 5,000-value cap, 403, 404, network — has its own state.</p>
+    <div class="ix-grid">
+      <a href="04-fork-required.html" class="ix-card" data-frame-link><div class="step">Frame 2a</div><h3>409 fork_required vs 403</h3>
+        <p>The typed change is kept; Fork CTA only with <code>reason: fork_required</code>; 403 explains, no CTA; access ops always 403.</p></a>
+      <a href="05-fork-dialog.html" class="ix-card" data-frame-link><div class="step">Frame 2b</div><h3>Fork confirmation</h3>
+        <p>What is copied, same key, replaces the common list, visibility org | private, no-sync note, optional quota preview, submitting.</p></a>
+      <a href="06-fork-results.html" class="ix-card" data-frame-link><div class="step">Frame 2c</div><h3>Fork results</h3>
+        <p>201 created · 200 existing (active / archived → restore) · fork_exists · fork_not_applicable · key taken · quota · 5,000 cap · 403 · 404 · network.</p></a>
+      <a href="12-rtl-mobile-fork.html" class="ix-card" data-frame-link><div class="step">Frame 2d</div><h3>RTL + 375 px — fork dialog</h3>
+        <p>The dialog as a bottom sheet in English, Hebrew and Arabic.</p></a>
+    </div>
+  </section>
+
+  <!-- ==================== FLOW 3 ==================== -->
+  <section class="ix-flow" data-flow="fork-provenance">
+    <div class="ix-flow__seam"></div>
+    <div class="ix-flow__head">
+      <h2 class="ix-flow__title">Flow 3 · Your fork — provenance &amp; behind source</h2>
+      <span class="ix-pending" data-approval-status="pending" data-flow-approval="fork-provenance">● Awaiting approval</span>
+    </div>
+    <div class="ix-flow__meta">ForkProvenancePanel → /settings/selection-lists/:listId · fork owners and editors</div>
+    <p class="ix-flow__lead">Where the fork came from, which version it copied, and whether the common list has moved on — informational only,
+      no merge. Revert to common = archive the fork.</p>
+    <div class="ix-grid">
+      <a href="07-fork-detail.html" class="ix-card" data-frame-link><div class="step">Frame 3a</div><h3>Provenance, behind source, revert</h3>
+        <p>Behind / up to date / checking / source archived / source gone / check failed / comparison unavailable; archive-to-revert with 403.</p></a>
+    </div>
+  </section>
+
+  <!-- ==================== FLOW 4 ==================== -->
+  <section class="ix-flow" data-flow="visibility">
+    <div class="ix-flow__seam"></div>
+    <div class="ix-flow__head">
+      <h2 class="ix-flow__title">Flow 4 · Visibility control</h2>
+      <span class="ix-pending" data-approval-status="pending" data-flow-approval="visibility">● Awaiting approval</span>
+    </div>
+    <div class="ix-flow__meta">VisibilityControl in SelectionListAccessFlow → /settings/selection-lists/:listId/access · list owners; platform operators</div>
+    <p class="ix-flow__lead">Owners switch private ↔ organization with the consequence spelled out. Publishing as a common list exists only for
+      platform operators in the platform organization, behind a typed confirmation; a common list is locked (<code>visibility_locked</code>).</p>
+    <div class="ix-grid">
+      <a href="08-visibility-control.html" class="ix-card" data-frame-link><div class="step">Frame 4a</div><h3>Visibility control</h3>
+        <p>Private ↔ organization, saving / saved / 403, read-only for non-owners, loading / error, platform publish, locked, flag OFF.</p></a>
+    </div>
+  </section>
+
+  <!-- ==================== FLOW 5 ==================== -->
+  <section class="ix-flow" data-flow="effective-picker">
+    <div class="ix-flow__seam"></div>
+    <div class="ix-flow__head">
+      <h2 class="ix-flow__title">Flow 5 · Picker — the effective list</h2>
+      <span class="ix-pending" data-approval-status="pending" data-flow-approval="effective-picker">● Awaiting approval</span>
+    </div>
+    <div class="ix-flow__meta">SelectionListPicker (extended) → /embed/selection-list-picker (harness) · embedded in consuming forms</div>
+    <p class="ix-flow__lead">Unchanged for the host form, except that a key now means the <b>effective</b> list: the organization's fork if it has
+      one, else the common list. Stored common ids render the fork's label through the resolve redirect, with no visible change.</p>
+    <div class="ix-grid">
+      <a href="09-picker-effective.html" class="ix-card" data-frame-link><div class="step">Frame 5a</div><h3>Effective list by key</h3>
+        <p>Org with a fork vs one without, private and archived forks, loading / error / no list / flag OFF.</p></a>
+      <a href="10-picker-stored-values.html" class="ix-card" data-frame-link><div class="step">Frame 5b</div><h3>Stored values across a fork</h3>
+        <p><code>effective_item_id</code> redirect, every resolve outcome, resolving and resolve-failed.</p></a>
+    </div>
+  </section>
+
+  <!-- The build inventory is APPROVED WITH THE FRAMES — mirrored in manifest.json → build. -->
+  <section class="ix-build" data-build-inventory>
+    <h2>Build inventory</h2>
+    <p class="note">Approving these frames approves this inventory. The implementation (design-record task 14, <code class="sl-code">frontend-engineer</code>)
+      builds exactly these, inside the existing package — no new package, no new host route.</p>
+    <dl>
+      <dt>Flows (5 — approved independently)</dt>
+      <dd>
+        <span class="ix-chip">shared-read → SelectionListManagementFlow (extended) · /settings/selection-lists</span>
+        <span class="ix-chip">fork → ForkListFlow · /settings/selection-lists/:listId</span>
+        <span class="ix-chip">fork-provenance → ForkProvenancePanel · /settings/selection-lists/:listId</span>
+        <span class="ix-chip">visibility → VisibilityControl · /settings/selection-lists/:listId/access</span>
+        <span class="ix-chip">effective-picker → SelectionListPicker (extended) · /embed/selection-list-picker</span>
+      </dd>
+      <dt>New components — packages/selection-lists-ui/src/shared-lists/**</dt>
+      <dd>
+        <span class="ix-chip">browse/VisibilityBadge</span><span class="ix-chip">browse/ForkBadge</span><span class="ix-chip">browse/EditableHint</span>
+        <span class="ix-chip">browse/SharedListsToggle</span><span class="ix-chip">browse/VisibilityFilter</span><span class="ix-chip">browse/ListSourceGroups</span>
+        <span class="ix-chip">browse/ReadOnlyListNotice</span>
+        <span class="ix-chip">fork/ForkListFlow</span><span class="ix-chip">fork/ForkToEditButton</span><span class="ix-chip">fork/ForkRequiredBanner</span>
+        <span class="ix-chip">fork/ForkListDialog</span><span class="ix-chip">fork/ForkResultNotice</span>
+        <span class="ix-chip">provenance/ForkProvenancePanel</span><span class="ix-chip">provenance/BehindSourceIndicator</span><span class="ix-chip">provenance/RevertToCommonConfirm</span>
+        <span class="ix-chip">visibility/VisibilityControl</span><span class="ix-chip">visibility/PublishPlatformConfirm</span>
+        <span class="ix-chip">picker/EffectiveListSource</span><span class="ix-chip">picker/useEffectiveList</span>
+        <span class="ix-chip">SharedListsFeatureProvider + useSharedLists (flag, isPlatformOrg)</span>
+        <span class="ix-chip">api: getEffectiveList · forkList · error.reason / sourceListId / forkUrl</span>
+      </dd>
+      <dt>Existing components extended (wiring only)</dt>
+      <dd>
+        <span class="ix-chip">SelectionListIndex</span><span class="ix-chip">SelectionListDetail</span><span class="ix-chip">ValueEditor</span>
+        <span class="ix-chip">TranslationWorkbench (read-only mode + ForkRequiredBanner)</span><span class="ix-chip">AccessPanel</span>
+        <span class="ix-chip">SelectionListPicker (getEffectiveList, onEffectiveValue, showSource)</span>
+      </dd>
+      <dt>Packages</dt>
+      <dd>
+        <span class="ix-chip">@fuzeone/selection-lists-ui — extended, 0.3.0 → 0.4.0 (MINOR)</span>
+        <span class="ix-chip">@fuzeone/selection-list-client 2.1.0 — semantics followed (getEffectiveList, forkList, isForkRequired)</span>
+      </dd>
+      <dt>Host mounting (frontend/src/App.tsx — no new routes)</dt>
+      <dd>
+        <span class="ix-chip">existing /settings/selection-lists/** routes pass sharedLists = flag fuzefront.selection-lists.shared-lists</span>
+        <span class="ix-chip">… and isPlatformOrg from the active organization's type</span>
+        <span class="ix-chip">/embed/selection-list-picker harness reads the same flag</span>
+      </dd>
+      <dt>Design-system additions (frontend-engineer, foundation PR)</dt>
+      <dd>
+        <span class="ix-chip">RadioCardGroup — fork visibility + visibility control</span>
+        <span class="ix-chip">SegmentedControl — visibility filter</span>
+        <span class="ix-chip">reuse: Badge · StatusPill · Alert · Modal · BottomSheet · Toggle · Toast · Skeleton · Spinner · ProgressMeter · Tabs · DataTable</span>
+      </dd>
+      <dt>Contract dependency (contract-designer)</dt>
+      <dd><span class="ix-chip">SelectionList.revision (read-only, additive MINOR) — needed by Flow 3's behind / up-to-date states</span></dd>
+    </dl>
+  </section>
+
+  <div class="ix-meta">
+    Manifest: <code>design/frames/selection-lists-shared/manifest.json</code> · Contract: <code>services/selection-list-service/openapi.yaml</code> 4.1.0 ·
+    Flag: <code>fuzefront.selection-lists.shared-lists</code> (default OFF) · Builds on the approved 4.0.0 frames in
+    <a href="../selection-lists/index.html" style="color: var(--cyan-400);">selection-lists</a>.<br />
+    Re-stamp after any edit: <code>node scripts/stamp-frames.mjs --write --feature selection-lists-shared</code>.
+  </div>
+</div>
+</body>
+</html>

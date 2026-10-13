@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -13,7 +13,7 @@
     <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
     <div class="spacer"></div>
     <div class="launch-btn" title="App launcher" aria-label="App launcher">▦</div>
-    <div class="avatar" title="Sam Ortiz · member of Acme Logistics">SO</div>
+    <div class="avatar" title="Sam Ortiz · member of Globex Freight">SO</div>
   </header>
   <div class="body">
     <nav class="side" aria-label="Primary">
@@ -22,13 +22,13 @@
       <a class="nav-item" href="#"><span class="ico">▦</span> Applications</a>
       <div class="section-label">Organization</div>
       <a class="nav-item" href="#"><span class="ico">☺</span> Members</a>
-      <a class="nav-item active" href="09-shared-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
+      <a class="nav-item active" href="01-shared-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
       <div class="section-label">Account</div>
       <a class="nav-item" href="#"><span class="ico">⚙</span> Settings</a>
     </nav>
-    <main class="content" data-frame="05-fork-required">
+    <main class="content" data-frame="04-fork-required">
 
-      <div class="sl-crumb"><a href="09-shared-index.html">Selection Lists</a> · <a href="01-common-detail.html">Priority</a> · Translations · fr</div>
+      <div class="sl-crumb"><a href="01-shared-index.html">Selection Lists</a> · <a href="02-common-detail.html">Priority</a> · Translations · fr</div>
       <h1 class="page-title">A change to a common list is refused — and turned into a way forward</h1>
       <p class="page-sub">The detail page never offers edit controls on a common list (<code class="sl-code">editable: false</code>), so this is
         reached through a deep link, a stale page, or a role revoked mid-session. Here: Sam opened the French translation editor of
@@ -49,11 +49,11 @@
             <div class="sl-banner__body">
               <p class="sl-banner__title">Not saved — this is a common list</p>
               <p>“Priority” is shared by every organization, so it can't be changed here. Fork it to get
-                <b>Acme Logistics' own version</b>, then make this change there. Nothing has been saved.</p>
+                <b>Globex Freight's own version</b>, then make this change there. Nothing has been saved.</p>
               <div class="sl-banner__actions">
                 <!-- source_list_id + fork_url come from the 409 body; fork_url is same-origin RELATIVE — never prefixed with a host -->
-                <a class="btn btn-primary sl-btn-sm" href="06-fork-dialog.html" data-action="fork-to-edit" data-fork-url="/v1/selection-lists/front_sl_01jf8k2m3n4p5q6r7s8t9v0w1x/fork">Fork to edit…</a>
-                <a class="btn btn-ghost sl-btn-sm" href="01-common-detail.html" data-action="back-to-list">Back to the list</a>
+                <a class="btn btn-primary sl-btn-sm" href="05-fork-dialog.html" data-action="fork-to-edit" data-fork-url="/v1/selection-lists/front_sl_01jf8k2m3n4p5q6r7s8t9v0w1x/fork">Fork to edit…</a>
+                <a class="btn btn-ghost sl-btn-sm" href="02-common-detail.html" data-action="back-to-list">Back to the list</a>
               </div>
             </div>
           </div>
@@ -80,8 +80,8 @@
             <div class="sl-banner sl-banner--error" data-error="FORBIDDEN" data-case="common-no-create" role="alert" style="margin-bottom: 0;">
               <span class="sl-banner__ico" aria-hidden="true">⚠</span>
               <div class="sl-banner__body"><p class="sl-banner__title">Not saved — you can't change this list</p>
-                <p>“Priority” is a common list, and your role in Acme Logistics can't create lists, so it can't be forked by you
-                  either. Ask an organization admin to fork it. <b>No Fork CTA</b> is rendered.</p></div>
+                <p>“Priority” is a common list, and your role in Globex Freight can't create lists, so it can't be forked by you
+                  either. Ask someone who can create lists here (an admin or editor) to fork it. <b>No Fork CTA</b> is rendered; the typed change is still preserved.</p></div>
             </div>
           </div>
           <div>
@@ -105,18 +105,20 @@
 
       <div class="sl-section">
         <h2>Fail-closed rules</h2>
-        <ul class="sl-caption" style="padding-left: var(--space-5);">
+        <ul class="sl-caption sl-list">
           <li>A <code class="sl-code">409</code> <b>without</b> <code class="sl-code">reason</code> (key taken, last owner, …) is the ordinary conflict message from
             the 4.0.0 frames — the fork banner renders only for <code class="sl-code">reason: fork_required</code>.</li>
           <li>The Fork CTA uses <code class="sl-code">source_list_id</code> from the error body, not the id in the page URL — the 409 names the list the service refused.</li>
           <li><code class="sl-code">fork_url</code> is relative (<code class="sl-code">/v1/…</code>) and is resolved against the same-origin API base. A body carrying an absolute URL is ignored and the client's own <code class="sl-code">forkList(sourceListId)</code> is used.</li>
+          <li>The same <b>ForkRequiredBanner</b> renders wherever a mutation can be refused: the value editor, the reorder save, the list
+            settings, the translation workbench and auto-fill. It sits next to the control that was refused, not in a global toast.</li>
           <li>The refusal never auto-forks. Forking creates a list in the organization and costs quota — it is always an explicit choice in the next dialog.</li>
           <li>Flag OFF: the service answers 4.0.0 behaviour and no common list is reachable, so this banner cannot appear; the UI does not render it even if a stray <code class="sl-code">reason</code> arrives.</li>
         </ul>
       </div>
 
       <p class="sl-notes">
-        <b>Test hooks:</b> <code>[data-frame='05-fork-required']</code> · <code>[data-panel='mutation-attempt']</code> · <code>[data-unsaved='true']</code> · <code>[data-error='CONFLICT'][data-reason='fork_required']</code> · <code>[data-action='fork-to-edit']</code> · <code>[data-fork-url]</code> · <code>[data-action='back-to-list']</code> · <code>[data-error='FORBIDDEN'][data-case='common-no-create']</code> · <code>[data-error='FORBIDDEN'][data-case='common-access']</code> · <code>[data-error='NOT_FOUND']</code><br />
+        <b>Test hooks:</b> <code>[data-frame='04-fork-required']</code> · <code>[data-panel='mutation-attempt']</code> · <code>[data-unsaved='true']</code> · <code>[data-error='CONFLICT'][data-reason='fork_required']</code> · <code>[data-action='fork-to-edit']</code> · <code>[data-fork-url]</code> · <code>[data-action='back-to-list']</code> · <code>[data-error='FORBIDDEN'][data-case='common-no-create']</code> · <code>[data-error='FORBIDDEN'][data-case='common-access']</code> · <code>[data-error='NOT_FOUND']</code><br />
         Contract: any per-list mutation (list update/delete/archive, item create/update/reorder/delete/archive, translation upsert/delete/autofill) →
         <code>409</code> <code>Error{code: CONFLICT, reason: fork_required, source_list_id, fork_url}</code> or <code>403 FORBIDDEN</code>.<br />
         Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
@@ -125,9 +127,9 @@
   </div>
 </div>
 <nav class="frame-nav" aria-label="Frame navigation">
-  <a class="btn btn-ghost" href="04-picker-stored-values.html" data-nav="prev">← Stored values</a>
-  <span class="caption"><b>(3a) 409 fork_required vs 403</b> · Flow 3 · Fork to edit · frame 5 of 10</span>
-  <a class="btn btn-primary" href="06-fork-dialog.html" data-nav="next">Fork dialog →</a>
+  <a class="btn btn-ghost" href="03-readonly-states.html" data-nav="prev">← Read-only states</a>
+  <span class="caption"><b>(2a) 409 fork_required vs 403</b> · Flow 2 · Fork to edit · frame 4 of 12</span>
+  <a class="btn btn-primary" href="05-fork-dialog.html" data-nav="next">Fork dialog →</a>
 </nav>
 </body>
 </html>

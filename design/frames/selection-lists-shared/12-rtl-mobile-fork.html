@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Fork dialog as a bottom sheet at 375 px, LTR and RTL (he / ar)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="content" data-frame="12-rtl-mobile-fork" style="padding-top: var(--space-12);">
+
+  <h1 class="page-title">Fork dialog — 375 px bottom sheet, English · עברית · العربية</h1>
+  <p class="page-sub">Below 40em the fork confirmation of frame 5 becomes the design system's <b>BottomSheet</b>: same content, same order, same
+    hooks. Actions stack with the primary action nearest the thumb.</p>
+
+  <div class="sl-devices">
+
+    <!-- ===== EN · LTR ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><span aria-hidden="true">☰</span><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">SO</div></div>
+        <div class="sl-device__screen sl-device__screen--sheet">
+          <div class="sl-device__behind" aria-hidden="true"><h2 class="page-title">Priority</h2></div>
+          <div class="sl-sheet" role="dialog" aria-modal="true" aria-labelledby="en-t" data-dialog="fork" data-presentation="bottom-sheet" data-state="idle">
+            <div class="sl-sheet__grab" aria-hidden="true"></div>
+            <div class="sl-modal__head"><h3 class="sl-modal__title" id="en-t">Fork “Priority” for Globex Freight</h3>
+              <p class="sl-modal__sub">Your organization gets its own copy that you can change. The common list doesn't change.</p></div>
+            <div class="sl-modal__body">
+              <dl class="sl-facts" data-fork-summary>
+                <dt>Key</dt><dd><span class="sl-key" data-fork-key="priority">priority</span> — kept</dd>
+                <dt>Copied</dt><dd>5 values and every translation</dd>
+              </dl>
+              <div class="sl-choice" role="radiogroup" aria-label="Who should use your version?" data-control="fork-visibility">
+                <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="org"><span class="sl-choice__radio" aria-hidden="true"></span>
+                  <div><div class="sl-choice__title">Everyone in Globex Freight</div><p class="sl-choice__desc">Replaces the common list in every form.</p></div></div>
+                <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private"><span class="sl-choice__radio" aria-hidden="true"></span>
+                  <div><div class="sl-choice__title">Only people I give a role — a draft</div><p class="sl-choice__desc">Everyone else keeps the common list.</p></div></div>
+              </div>
+              <p class="sl-field__hint" data-note="no-sync">Later changes to the common list won't be copied into your fork.</p>
+            </div>
+            <div class="sl-modal__foot">
+              <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+              <a class="btn btn-primary" href="06-fork-results.html" data-action="confirm-fork">Fork list</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== HE · RTL ===== -->
+    <div>
+      <p class="sl-device__label">he · rtl · 375</p>
+      <div class="sl-device" dir="rtl" lang="he" data-device="375" data-locale="he" data-dir="rtl">
+        <div class="sl-device__bar"><span aria-hidden="true">☰</span><div class="wordmark" dir="ltr"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">SO</div></div>
+        <div class="sl-device__screen sl-device__screen--sheet">
+          <div class="sl-device__behind" aria-hidden="true"><h2 class="page-title">עדיפות</h2></div>
+          <div class="sl-sheet" role="dialog" aria-modal="true" aria-labelledby="he-t" data-dialog="fork" data-presentation="bottom-sheet" data-state="idle">
+            <div class="sl-sheet__grab" aria-hidden="true"></div>
+            <div class="sl-modal__head"><h3 class="sl-modal__title" id="he-t">יצירת עותק של „עדיפות” עבור <bdi>Globex Freight</bdi></h3>
+              <p class="sl-modal__sub">הארגון שלך יקבל עותק משלו שאפשר לשנות. הרשימה המשותפת לא משתנה.</p></div>
+            <div class="sl-modal__body">
+              <dl class="sl-facts" data-fork-summary>
+                <dt>מפתח</dt><dd><span class="sl-key" dir="ltr" data-fork-key="priority">priority</span> — נשמר</dd>
+                <dt>מועתק</dt><dd>5 ערכים וכל התרגומים</dd>
+              </dl>
+              <div class="sl-choice" role="radiogroup" aria-label="מי ישתמש בגרסה שלכם?" data-control="fork-visibility">
+                <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="org"><span class="sl-choice__radio" aria-hidden="true"></span>
+                  <div><div class="sl-choice__title">כל חברי <bdi>Globex Freight</bdi></div><p class="sl-choice__desc">מחליפה את הרשימה המשותפת בכל טופס.</p></div></div>
+                <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private"><span class="sl-choice__radio" aria-hidden="true"></span>
+                  <div><div class="sl-choice__title">רק מי שאתן לו תפקיד — טיוטה</div><p class="sl-choice__desc">כל השאר ממשיכים עם הרשימה המשותפת.</p></div></div>
+              </div>
+              <p class="sl-field__hint" data-note="no-sync">שינויים עתידיים ברשימה המשותפת לא יועתקו לעותק שלכם.</p>
+            </div>
+            <div class="sl-modal__foot">
+              <button class="btn btn-ghost" data-action="cancel">ביטול</button>
+              <a class="btn btn-primary" href="06-fork-results.html" data-action="confirm-fork">יצירת העותק</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== AR · RTL ===== -->
+    <div>
+      <p class="sl-device__label">ar · rtl · 375</p>
+      <div class="sl-device" dir="rtl" lang="ar" data-device="375" data-locale="ar" data-dir="rtl">
+        <div class="sl-device__bar"><span aria-hidden="true">☰</span><div class="wordmark" dir="ltr"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">SO</div></div>
+        <div class="sl-device__screen sl-device__screen--sheet">
+          <div class="sl-device__behind" aria-hidden="true"><h2 class="page-title">الأولوية</h2></div>
+          <div class="sl-sheet" role="dialog" aria-modal="true" aria-labelledby="ar-t" data-dialog="fork" data-presentation="bottom-sheet" data-state="idle">
+            <div class="sl-sheet__grab" aria-hidden="true"></div>
+            <div class="sl-modal__head"><h3 class="sl-modal__title" id="ar-t">إنشاء نسخة من «الأولوية» لـ <bdi>Globex Freight</bdi></h3>
+              <p class="sl-modal__sub">ستحصل مؤسستك على نسخة خاصة بها يمكن تعديلها. القائمة المشتركة لا تتغير.</p></div>
+            <div class="sl-modal__body">
+              <dl class="sl-facts" data-fork-summary>
+                <dt>المفتاح</dt><dd><span class="sl-key" dir="ltr" data-fork-key="priority">priority</span> — يبقى كما هو</dd>
+                <dt>يُنسخ</dt><dd>5 قيم وجميع الترجمات</dd>
+              </dl>
+              <div class="sl-choice" role="radiogroup" aria-label="من سيستخدم نسختكم؟" data-control="fork-visibility">
+                <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="org"><span class="sl-choice__radio" aria-hidden="true"></span>
+                  <div><div class="sl-choice__title">جميع أعضاء <bdi>Globex Freight</bdi></div><p class="sl-choice__desc">تحل محل القائمة المشتركة في كل نموذج.</p></div></div>
+                <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private"><span class="sl-choice__radio" aria-hidden="true"></span>
+                  <div><div class="sl-choice__title">فقط من أمنحهم دورًا — مسودة</div><p class="sl-choice__desc">يستمر الآخرون في استخدام القائمة المشتركة.</p></div></div>
+              </div>
+              <p class="sl-field__hint" data-note="no-sync">لن تُنسخ التغييرات المستقبلية على القائمة المشتركة إلى نسختكم.</p>
+            </div>
+            <div class="sl-modal__foot">
+              <button class="btn btn-ghost" data-action="cancel">إلغاء</button>
+              <a class="btn btn-primary" href="06-fork-results.html" data-action="confirm-fork">إنشاء النسخة</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section">
+    <h2>Rules the implementation must keep</h2>
+    <ul class="sl-caption sl-list" data-rules="rtl-mobile-fork">
+      <li><b>One component, two presentations:</b> <code class="sl-code">ForkListDialog</code> renders the DS <b>Modal</b> at ≥ 40em and the DS
+        <b>BottomSheet</b> below it. Content, order, hooks and focus rules are identical; only the container changes.</li>
+      <li>The sheet's facts are condensed to <b>Key</b> and <b>Copied</b>; “You become owner” and the quota preview move below the options and may
+        scroll. The visibility choice, the no-sync note and both actions are always visible without scrolling at 375×667.</li>
+      <li>Actions stack (<code class="sl-code">column-reverse</code>): the primary action is the bottom-most, full width; Cancel above it. In RTL the
+        order is the same — stacking is vertical, so nothing is mirrored.</li>
+      <li>Organization names and keys inside Hebrew/Arabic sentences are wrapped in <code class="sl-code">&lt;bdi&gt;</code> / <code class="sl-code">dir="ltr"</code>;
+        quotation marks follow the locale („…” in Hebrew, «…» in Arabic).</li>
+      <li>Swipe-down and the scrim dismiss the sheet only while idle — never during <code class="sl-code">submitting</code> (frame 5).</li>
+    </ul>
+  </div>
+
+  <p class="sl-notes">
+    <b>Test hooks:</b> <code>[data-frame='12-rtl-mobile-fork']</code> · <code>[data-dialog='fork'][data-presentation='bottom-sheet']</code> · <code>[data-device='375']</code> · <code>[data-locale='he'][data-dir='rtl']</code> · <code>[data-locale='ar'][data-dir='rtl']</code> · <code>[data-control='fork-visibility']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-fork-key='priority']</code> · <code>[data-note='no-sync']</code> · <code>[data-action='confirm-fork']</code> · <code>[data-action='cancel']</code> · <code>[data-rules='rtl-mobile-fork']</code><br />
+    Playwright drives the real dialog at <code>{ viewport: 375×667, locale: he-IL | ar }</code>: the dialog has <code>data-presentation='bottom-sheet'</code>, <code>dir</code> is <code>rtl</code>,
+    and the confirm button is inside the viewport without scrolling.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+  </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="11-rtl-mobile-detail.html" data-nav="prev">← RTL + mobile: detail</a>
+  <span class="caption"><b>(2d) RTL + mobile — fork dialog</b> · Flow 2 · Fork to edit · frame 12 of 12</span>
+  <a class="btn btn-primary" href="index.html" data-nav="next">All frames →</a>
+</nav>
+</body>
+</html>

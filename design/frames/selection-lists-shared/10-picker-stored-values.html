@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="frame.css" />
 </head>
 <body>
-<div class="content" data-frame="04-picker-stored-values" style="padding-top: var(--space-12);">
+<div class="content" data-frame="10-picker-stored-values" style="padding-top: var(--space-12);">
 
   <h1 class="page-title" style="text-align:center;">Stored values keep rendering across a fork</h1>
   <p class="page-sub" style="text-align:center;">A record saved last month holds a <b>common</b> item id. Acme has since forked the list.</p>
@@ -32,17 +32,20 @@
       <div class="sl-combo__control" id="r1" role="combobox" aria-expanded="false" tabindex="0" data-combo-control>
         <span class="sl-combo__value" data-selected-label data-redirected="true">Medium</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
       </div>
-      <p class="sl-field__hint">Shows the fork's label (“Medium”, renamed by Acme from the common “Normal”). No badge for end users —
-        to them it is simply the current value.</p>
+      <p class="sl-field__hint">Shows the fork's label (“Medium”, renamed by Acme from the common “Normal”) and, when opened, the menu marks
+        the fork's “Medium” option as selected. <b>No visible change</b> beyond the label Acme chose: no badge, no notice, no flicker, no
+        dirty-form marker — to the user it is simply the current value.</p>
     </div>
     <div class="sl-persist" data-persisted>
       <div class="sl-persist__label">Stored vs submitted</div>
       <code>stored:    front_sli_01jf8k2m3n4p5q6r7s8t9v0wa2  (common “Normal”)</code><br />
-      <code>effective: front_sli_01jfq3w8z6y5x4c3b2a1n9m8b2  (fork “Medium”)</code>
-      <p data-migration="lazy">The picker's value becomes the <b>effective</b> id and it calls <code>onValueMigrated(stored, effective)</code>.
-        Nothing is written until the user saves the form — the stored value migrates lazily, on the host's normal save. A host that
-        must keep ids frozen passes <code>migrateStoredValues={false}</code>: the label still shows the fork's text and the form re-submits the
-        stored common id, which keeps resolving.</p>
+      <code>effective: front_sli_01jfq3w8z6y5x4c3b2a1n9m8b2  (fork “Medium”)</code><br />
+      <code>submits:   front_sli_01jf8k2m3n4p5q6r7s8t9v0wa2  (unchanged unless the user picks)</code>
+      <p data-migration="host-opt-in">The picker's <code>value</code> is <b>not</b> rewritten: the host gave it the stored id and gets the same id
+        back unless the user picks something else (the picker's contract with its host is unchanged). Both ids keep resolving, so that is always
+        correct. A host that wants to migrate stored values passes <code>onEffectiveValue(stored, effective)</code>; the picker calls it once
+        per redirected id after a successful resolve, and the host may write the effective id on its own next save — lazily, as the
+        contract intends. If the user picks a value, the picker emits that option's (fork) id, as for any pick.</p>
     </div>
   </div>
 
@@ -106,29 +109,29 @@
         <label class="sl-field__label">Priority</label>
         <div class="sl-combo__control" aria-busy="true"><span class="sl-skel" style="width: 38%;"></span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
         <p class="sl-field__hint">The stored id is never shown as a label placeholder, and the control is not editable until resolve settles
-          — choosing a value mid-resolve would race the migration.</p>
+          — choosing a value mid-resolve would race the label (and the host's <code class="sl-code">onEffectiveValue</code>) against the user's pick.</p>
       </div>
       <div class="sl-host" data-panel="picker" data-state="resolve-error">
         <p class="sl-case">Resolve failed</p>
         <label class="sl-field__label">Priority</label>
         <div class="sl-combo__control sl-combo__control--invalid"><span class="sl-combo__value sl-combo__value--ph">Couldn't load the saved value</span><button class="btn btn-ghost sl-btn-sm" data-action="retry">Retry</button></div>
         <p class="sl-field__err" data-error="resolve-failed"><span aria-hidden="true">⚠</span><span>The stored id stays in the form
-          untouched and <b>no migration happens</b> — <code class="sl-code">onValueMigrated</code> is only called from a successful resolve.
+          untouched — <code class="sl-code">onEffectiveValue</code> is only ever called from a successful resolve.
           Saving the form re-submits the original id.</span></p>
       </div>
     </div>
   </div>
 
   <p class="sl-notes" style="max-width: calc(var(--space-16) * 18); margin-left: auto; margin-right: auto;">
-    <b>Test hooks:</b> <code>[data-frame='04-picker-stored-values']</code> · <code>[data-panel='picker'][data-state='redirected']</code> · <code>[data-selected-label][data-redirected='true']</code> · <code>[data-migration='lazy']</code> · <code>[data-persisted]</code> · <code>[data-panel='resolve-matrix']</code> · <code>[data-resolve-case='redirect']</code> · <code>[data-resolve-case='private-fork']</code> · <code>[data-resolve-case='fork-item-purged']</code> · <code>[data-resolve-case='fork-archived']</code> · <code>[data-resolve-case='common-archived']</code> · <code>[data-resolve-case='missing']</code> · <code>[data-missing='true']</code> · <code>[data-state='resolving']</code> · <code>[data-state='resolve-error']</code> · <code>[data-error='resolve-failed']</code> · <code>[data-action='retry']</code><br />
+    <b>Test hooks:</b> <code>[data-frame='10-picker-stored-values']</code> · <code>[data-panel='picker'][data-state='redirected']</code> · <code>[data-selected-label][data-redirected='true']</code> · <code>[data-migration='host-opt-in']</code> · <code>[data-persisted]</code> · <code>[data-panel='resolve-matrix']</code> · <code>[data-resolve-case='redirect']</code> · <code>[data-resolve-case='private-fork']</code> · <code>[data-resolve-case='fork-item-purged']</code> · <code>[data-resolve-case='fork-archived']</code> · <code>[data-resolve-case='common-archived']</code> · <code>[data-resolve-case='missing']</code> · <code>[data-missing='true']</code> · <code>[data-state='resolving']</code> · <code>[data-state='resolve-error']</code> · <code>[data-error='resolve-failed']</code> · <code>[data-action='retry']</code><br />
     Contract: <code>POST /v1/resolve</code> (<code>ResolvedSelectionListItem.effective_item_id</code>, 4.1.0) · <code>SelectionListItem.origin_item_id</code>.<br />
     Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
   </p>
 </div>
 <nav class="frame-nav" aria-label="Frame navigation">
-  <a class="btn btn-ghost" href="03-picker-effective.html" data-nav="prev">← Picker — effective list</a>
-  <span class="caption"><b>(2b) Stored values across a fork</b> · Flow 2 · Effective picker · frame 4 of 10</span>
-  <a class="btn btn-primary" href="05-fork-required.html" data-nav="next">Fork required →</a>
+  <a class="btn btn-ghost" href="09-picker-effective.html" data-nav="prev">← Picker — effective list</a>
+  <span class="caption"><b>(5b) Stored values across a fork</b> · Flow 5 · Effective picker · frame 10 of 12</span>
+  <a class="btn btn-primary" href="11-rtl-mobile-detail.html" data-nav="next">RTL + mobile: list detail →</a>
 </nav>
 </body>
 </html>

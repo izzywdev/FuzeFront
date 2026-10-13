@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="frame.css" />
 </head>
 <body>
-<div class="content" data-frame="03-picker-effective" style="padding-top: var(--space-12);">
+<div class="content" data-frame="09-picker-effective" style="padding-top: var(--space-12);">
 
   <h1 class="page-title" style="text-align:center;">SelectionListPicker — the effective list for a key</h1>
   <p class="page-sub" style="text-align:center;">Bound to <code class="sl-code">key="priority"</code>, exactly as before. What changes is
@@ -53,11 +53,11 @@
           <div class="sl-source" data-effective-source-caption="own">
             <span class="sl-fork" data-badge="fork">⑂ Your organization's version</span>
             <span>of the common list <b>Priority</b></span>
-            <span class="sl-behind" data-behind="true"><span class="sl-behind__dot" aria-hidden="true"></span><a href="08-fork-detail.html" data-action="view-fork">Common list updated since your fork</a></span>
           </div>
-          <p class="sl-field__hint">The caption renders only with <code class="sl-code">showSource</code> (admin/config screens). The
-            “updated since your fork” link renders only when the fork's <code class="sl-code">editable</code> is true — a member who
-            can't act on it is not shown it, and the end-user form never pays for the extra source lookup.</p>
+          <p class="sl-field__hint">The caption renders only with the opt-in <code class="sl-code">showSource</code> prop (admin / form-builder
+            screens). End-user forms get no caption at all: to them it is simply “Priority”. The caption is derived from the one list the
+            service returned (<code class="sl-code">forked_from</code>, <code class="sl-code">visibility</code>) — no extra request, and no
+            “behind source” check in a picker.</p>
         </div>
         <div class="sl-persist" data-persisted data-effective-inspector>
           <div class="sl-persist__label">Harness inspector — which list the key resolved to</div>
@@ -72,7 +72,7 @@
       <p class="sl-case">B · No fork → the common list</p>
       <div class="sl-host" data-panel="picker" data-mode="single" data-state="ready" data-effective-source="platform">
         <h2 class="sl-host__title">New support ticket</h2>
-        <p class="sl-host__sub">Same form, in Globex (no fork) · viewer: a member</p>
+        <p class="sl-host__sub">Same form, in Initech (no fork) · viewer: a member</p>
         <div class="sl-field" data-picker="priority" style="margin-bottom: 0;">
           <label class="sl-field__label" for="pb">Priority</label>
           <div class="sl-combo">
@@ -121,7 +121,7 @@
           </div>
         </div>
       </div>
-      <div>
+      <div id="archived-fork">
         <p class="sl-case">D · Fork archived → falls through to the common list</p>
         <div class="sl-host" data-panel="picker" data-state="ready" data-case="archived-fork" data-effective-source="platform">
           <div class="sl-field" style="margin-bottom: 0;">
@@ -129,7 +129,7 @@
             <div class="sl-combo__control"><span class="sl-combo__value sl-combo__value--ph">Select…</span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
             <div class="sl-source" data-effective-source-caption="platform"><span class="sl-vis sl-vis--platform">◎ Common list</span><span>— your organization's version is archived</span></div>
             <p class="sl-field__hint">Archiving the fork <b>is</b> the “revert to common” action. Values saved from the fork keep rendering
-              (archived items still resolve) — see the next frame.</p>
+              (archived items still resolve) — see the next frame. Restoring the fork (frame 6, “existing, archived”) makes it win again.</p>
           </div>
         </div>
       </div>
@@ -174,16 +174,16 @@
   </div>
 
   <p class="sl-notes" style="max-width: calc(var(--space-16) * 18); margin-left: auto; margin-right: auto;">
-    <b>Test hooks:</b> <code>[data-frame='03-picker-effective']</code> · <code>[data-panel='picker']</code> · <code>[data-picker='priority']</code> · <code>[data-effective-source='own']</code> · <code>[data-effective-source='platform']</code> · <code>[data-effective-source-caption='own']</code> · <code>[data-effective-source-caption='platform']</code> · <code>[data-badge='fork']</code> · <code>[data-badge='common']</code> · <code>[data-behind='true']</code> · <code>[data-case='private-fork']</code> · <code>[data-case='archived-fork']</code> · <code>[data-effective-inspector]</code> · <code>[data-combo-control]</code> · <code>[data-selected-label]</code> · <code>[data-item='front_sli_01jfq3w8z6y5x4c3b2a1n9m8b6']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-state='not-found']</code> · <code>[data-state='flag-off']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-action='retry']</code><br />
+    <b>Test hooks:</b> <code>[data-frame='09-picker-effective']</code> · <code>[data-panel='picker']</code> · <code>[data-picker='priority']</code> · <code>[data-effective-source='own']</code> · <code>[data-effective-source='platform']</code> · <code>[data-effective-source-caption='own']</code> · <code>[data-effective-source-caption='platform']</code> · <code>[data-badge='fork']</code> · <code>[data-badge='common']</code> · <code>[data-case='private-fork']</code> · <code>[data-case='archived-fork']</code> · <code>[data-effective-inspector]</code> · <code>[data-combo-control]</code> · <code>[data-selected-label]</code> · <code>[data-item='front_sli_01jfq3w8z6y5x4c3b2a1n9m8b6']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-state='not-found']</code> · <code>[data-state='flag-off']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-action='retry']</code><br />
     Contract: <code>GET /v1/selection-lists?key=&amp;include_shared=true&amp;limit=1</code> (client <code>getEffectiveList</code>) ·
     <code>GET /v1/selection-lists/{listId}/items?status=active&amp;locale=</code>.<br />
     Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
   </p>
 </div>
 <nav class="frame-nav" aria-label="Frame navigation">
-  <a class="btn btn-ghost" href="02-readonly-states.html" data-nav="prev">← Read-only states</a>
-  <span class="caption"><b>(2a) Picker — effective list</b> · Flow 2 · Effective picker · frame 3 of 10</span>
-  <a class="btn btn-primary" href="04-picker-stored-values.html" data-nav="next">Stored values across a fork →</a>
+  <a class="btn btn-ghost" href="08-visibility-control.html" data-nav="prev">← Visibility control</a>
+  <span class="caption"><b>(5a) Picker — effective list</b> · Flow 5 · Effective picker · frame 9 of 12</span>
+  <a class="btn btn-primary" href="10-picker-stored-values.html" data-nav="next">Stored values across a fork →</a>
 </nav>
 </body>
 </html>
