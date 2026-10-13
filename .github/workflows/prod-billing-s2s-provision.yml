@@ -310,7 +310,13 @@ jobs:
           set -euo pipefail
           HELM_FILE="deploy/helm/fuzefront/templates/billing-service.yaml"
 
-          # Check if already patched (no optional: true on AUTHENTIK keys)
+          # Assert the key exists at all — if not, something is structurally wrong
+          if ! grep -q 'key: AUTHENTIK_CLIENT_ID' "$HELM_FILE"; then
+            echo "::error::key: AUTHENTIK_CLIENT_ID not found in $HELM_FILE — cannot determine patch state. File may have drifted."
+            exit 1
+          fi
+
+          # Check if already patched (optional: true no longer follows the AUTHENTIK key)
           if ! grep -A2 'key: AUTHENTIK_CLIENT_ID' "$HELM_FILE" | grep -q 'optional'; then
             echo "Helm template already patched — skipping"
             echo "patched=false" >> "$GITHUB_OUTPUT"
