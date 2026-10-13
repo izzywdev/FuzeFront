@@ -20,9 +20,11 @@
  *   D3  `limit=0` on the paginated GETs (spec `minimum: 1`) was silently treated as the default.
  *   D4  (OPEN, `it.failing` at the bottom) `GET .../items?status=all` answers 400 although the spec's items
  *       `status` enum is [active, archived, all].
+ *   D5  (OPEN, `it.failing` at the bottom) `POST /v1/resolve` sends an ETag but no `Cache-Control`, which the
+ *       spec documents.
  */
 import { mintTestToken } from '../helpers/auth';
-import { rawFetch } from '../helpers/client';
+import { rawFetch, SERVICE_BASE_URL } from '../helpers/client';
 import { assertSchema, requestBodyErrors } from '../helpers/openapi';
 import { closeDb } from '../helpers/db';
 
@@ -154,6 +156,22 @@ describe('what the service already enforces (regression pins)', () => {
 // but passed") and the `.failing` must be removed in the same PR. Never weaken the assertion.
 // The SL9 suites avoid the parameter (helpers/shared-lists.ts walkItems composes active + archived).
 // ---------------------------------------------------------------------------
+// D5 - KNOWN, TICKETED DEVIATION (same provenance as D4): `POST /v1/resolve` is documented as "cacheable ...
+// Responses carry `Cache-Control` and an `ETag`", but the service sends only Express's default weak ETag, no
+// `Cache-Control`. Same `.failing` rules as D4.
+describe('D5: resolve responses carry Cache-Control (documented)', () => {
+  it.failing('POST /v1/resolve answers with a Cache-Control header as well as an ETag', async () => {
+    const res = await fetch(`${SERVICE_BASE_URL}/v1/resolve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok()}` },
+      body: JSON.stringify({ ids: [itemId] }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('etag')).toBeTruthy();
+    expect(res.headers.get('cache-control')).toBeTruthy();
+  });
+});
+
 describe('D4: items status=all (a documented filter value)', () => {
   it.failing('GET .../items?status=all returns active AND archived items (spec enum [active, archived, all])', async () => {
     const second = await call('POST', `${L()}/items`, { code: 'V2', label: 'Two' });
