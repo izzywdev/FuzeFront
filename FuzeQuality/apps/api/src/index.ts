@@ -51,6 +51,7 @@ import { policyGateEvaluationForReview, policyGateReviewConflict } from './polic
 import { decodeHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
 import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
 import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
+import { repositoryAnalysisStatusSchema } from './repository-analysis-status'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -369,6 +370,15 @@ app.get('/api/v1/internal/repositories/:id', async (request, response) => {
   const repository = await store.repository(repositoryId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repository)
+})
+app.post('/api/v1/internal/repositories/:id/analysis-status', async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const parsed = repositoryAnalysisStatusSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const repository = await store.repository(repositoryId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  await store.setRepositoryAnalysis(repositoryId, parsed.data)
+  response.status(202).json({ accepted: true })
 })
 app.get('/api/v1/internal/repositories/:id/quality-artifacts', async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
