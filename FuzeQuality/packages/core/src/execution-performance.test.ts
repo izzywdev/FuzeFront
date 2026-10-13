@@ -87,15 +87,15 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { attemptScope: 'retry' })).toEqual([executions[1], executions[2]])
   expect(filterTestExecutions(executions, { attemptScope: 'recovered' })).toEqual([executions[2]])
   expect(executionOutcomeTrend(executions)).toEqual([
-    { date: '2026-10-07', passed: 1, failed: 1, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 45_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1 },
-    { date: '2026-10-08', passed: 0, failed: 1, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0 },
+    { date: '2026-10-07', passed: 1, failed: 1, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1 },
+    { date: '2026-10-08', passed: 0, failed: 1, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0 },
   ])
 })
 
 it('does not infer recovery from a passed retry without retained prior failure evidence', () => {
   const passedRetry = { id: 'retry', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'run', attempt: 2, revision: 'a', kind: 'ci' as const, status: 'passed' as const, name: 'CI', completedAt: '2026-10-09T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
   expect(executionOutcomeTrend([passedRetry])).toEqual([
-    { date: '2026-10-09', passed: 1, failed: 0, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 0 },
+    { date: '2026-10-09', passed: 1, failed: 0, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 0 },
   ])
   const failedInitial = { ...passedRetry, id: 'initial', attempt: 1, status: 'failed' as const, completedAt: '2026-10-09T11:00:00.000Z' }
   expect(executionOutcomeTrend([passedRetry], [failedInitial, passedRetry])[0].recoveredRunCount).toBe(1)

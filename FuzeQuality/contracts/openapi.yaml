@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.30.0
+  version: 0.31.0
   license:
     name: UNLICENSED
 servers:
@@ -1685,7 +1685,7 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, passed, failed, cancelled, running, durationSampleCount, averageDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount]
+      required: [date, passed, failed, cancelled, running, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount]
       properties:
         date: { type: string, format: date }
         passed: { type: integer, minimum: 0 }
@@ -1694,6 +1694,10 @@ components:
         running: { type: integer, minimum: 0 }
         durationSampleCount: { type: integer, minimum: 0 }
         averageDurationMs: { type: integer, minimum: 0 }
+        maximumDurationMs:
+          type: integer
+          minimum: 0
+          description: Longest valid execution interval retained in the UTC-day bucket.
         retryAttemptCount: { type: integer, minimum: 0 }
         successfulRetryCount: { type: integer, minimum: 0 }
         recoveredRunCount:

@@ -192,6 +192,7 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       running: 0,
       durationSampleCount: 0,
       averageDurationMs: 0,
+      maximumDurationMs: 0,
       retryAttemptCount: 0,
       successfulRetryCount: 0,
       recoveredRunCount: 0,
@@ -209,6 +210,7 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.averageDurationMs = current.durationSampleCount
       ? Math.round(combinedDurationMs / current.durationSampleCount)
       : 0
+    current.maximumDurationMs = Math.max(current.maximumDurationMs, item.maximumDurationMs ?? 0)
     current.retryAttemptCount += item.retryAttemptCount ?? 0
     current.successfulRetryCount += item.successfulRetryCount ?? 0
     current.recoveredRunCount += item.recoveredRunCount ?? 0
@@ -5054,7 +5056,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <span>{day.running} running</span>
                 <span>
                   {day.durationSampleCount > 0
-                    ? `${durationMsLabel(day.averageDurationMs)} average · ${day.durationSampleCount} timed`
+                    ? `${durationMsLabel(day.averageDurationMs)} average · ${durationMsLabel(day.maximumDurationMs)} slowest · ${day.durationSampleCount} timed`
                     : 'No completed timing samples'}
                 </span>
                 <span>

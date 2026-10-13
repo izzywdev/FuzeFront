@@ -107,6 +107,8 @@ export type ExecutionOutcomeTrend = {
   durationSampleCount: number
   /** Rounded arithmetic mean for the valid intervals in this UTC-day bucket. */
   averageDurationMs: number
+  /** Longest valid interval in this UTC-day bucket. */
+  maximumDurationMs: number
   /** Provider attempts after the original attempt. */
   retryAttemptCount: number
   /** Retry attempts whose retained outcome is passed. */
@@ -138,6 +140,7 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       running: 0,
       durationSampleCount: 0,
       averageDurationMs: 0,
+      maximumDurationMs: 0,
       retryAttemptCount: 0,
       successfulRetryCount: 0,
       recoveredRunCount: 0,
@@ -158,8 +161,10 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
     const completedAt = Date.parse(execution.completedAt ?? '')
     if (Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt) {
       current.durationSampleCount++
-      current.totalDurationMs += completedAt - startedAt
+      const durationMs = completedAt - startedAt
+      current.totalDurationMs += durationMs
       current.averageDurationMs = Math.round(current.totalDurationMs / current.durationSampleCount)
+      current.maximumDurationMs = Math.max(current.maximumDurationMs, durationMs)
     }
     results.set(date, current)
   }
