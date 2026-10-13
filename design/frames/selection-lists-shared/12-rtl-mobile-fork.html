@@ -38,6 +38,7 @@
                 <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private"><span class="sl-choice__radio" aria-hidden="true"></span>
                   <div><div class="sl-choice__title">Only people I give a role — a draft</div><p class="sl-choice__desc">Everyone else keeps the common list.</p></div></div>
               </div>
+              <p class="sl-field__hint" data-note="owner">You become the owner — you can edit it and give others roles on it.</p>
               <p class="sl-field__hint" data-note="no-sync">Later changes to the common list won't be copied into your fork.</p>
             </div>
             <div class="sl-modal__foot">
@@ -71,6 +72,7 @@
                 <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private"><span class="sl-choice__radio" aria-hidden="true"></span>
                   <div><div class="sl-choice__title">רק מי שאתן לו תפקיד — טיוטה</div><p class="sl-choice__desc">כל השאר ממשיכים עם הרשימה המשותפת.</p></div></div>
               </div>
+              <p class="sl-field__hint" data-note="owner">אתם הופכים לבעלים — אפשר לערוך אותו ולתת לאחרים תפקידים בו.</p>
               <p class="sl-field__hint" data-note="no-sync">שינויים עתידיים ברשימה המשותפת לא יועתקו לעותק שלכם.</p>
             </div>
             <div class="sl-modal__foot">
@@ -104,6 +106,7 @@
                 <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private"><span class="sl-choice__radio" aria-hidden="true"></span>
                   <div><div class="sl-choice__title">فقط من أمنحهم دورًا — مسودة</div><p class="sl-choice__desc">يستمر الآخرون في استخدام القائمة المشتركة.</p></div></div>
               </div>
+              <p class="sl-field__hint" data-note="owner">تصبحون المالك — يمكنكم تعديلها ومنح الآخرين أدوارًا عليها.</p>
               <p class="sl-field__hint" data-note="no-sync">لن تُنسخ التغييرات المستقبلية على القائمة المشتركة إلى نسختكم.</p>
             </div>
             <div class="sl-modal__foot">
@@ -122,7 +125,7 @@
       <li><b>One component, two presentations:</b> <code class="sl-code">ForkListDialog</code> renders the DS <b>Modal</b> at ≥ 40em and the DS
         <b>BottomSheet</b> below it. Content, order, hooks and focus rules are identical; only the container changes.</li>
       <li>The sheet's facts are condensed to <b>Key</b> and <b>Copied</b>; “You become owner” and the quota preview move below the options and may
-        scroll. The visibility choice, the no-sync note and both actions are always visible without scrolling at 375×667.</li>
+        scroll. The visibility choice, the owner and no-sync notes and both actions are always visible without scrolling at 375×667.</li>
       <li>Actions stack vertically, full width: Cancel first, the primary action bottom-most (nearest the thumb). In RTL the
         order is the same — stacking is vertical, so nothing is mirrored.</li>
       <li>Organization names and keys inside Hebrew/Arabic sentences are wrapped in <code class="sl-code">&lt;bdi&gt;</code> / <code class="sl-code">dir="ltr"</code>;
