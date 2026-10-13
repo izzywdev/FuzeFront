@@ -99,11 +99,19 @@ jobs:
         working-directory: services/billing-service
         env:
           STRIPE_SECRET_KEY: ${{ steps.secrets.outputs.stripe_key }}
-          DATABASE_URL: "postgresql://${{ steps.secrets.outputs.db_user }}:${{ steps.secrets.outputs.db_pass }}@${{ steps.secrets.outputs.db_host }}:${{ steps.secrets.outputs.db_port }}/${{ steps.secrets.outputs.db_name }}"
+          DB_USER: ${{ steps.secrets.outputs.db_user }}
+          DB_PASS: ${{ steps.secrets.outputs.db_pass }}
+          DB_HOST: ${{ steps.secrets.outputs.db_host }}
+          DB_PORT: ${{ steps.secrets.outputs.db_port }}
+          DB_NAME: ${{ steps.secrets.outputs.db_name }}
           KAFKA_BROKERS: ${{ inputs.mode == 'apply' && steps.secrets.outputs.kafka_brokers || '' }}
           MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
+
+          # Percent-encode password so URL-special chars (@, #, /, %) don't break parsing
+          ENCODED_PASS=$(python3 -c "import urllib.parse, os; print(urllib.parse.quote(os.environ['DB_PASS'], safe=''))")
+          export DATABASE_URL="postgresql://${DB_USER}:${ENCODED_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
           ARGS=""
           if [ "$MODE" = "apply" ]; then

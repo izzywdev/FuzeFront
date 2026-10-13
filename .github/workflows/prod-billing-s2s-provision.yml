@@ -292,7 +292,12 @@ jobs:
             f'    AUTHENTIK_CLIENT_ID: {sealed_id}\n'
             f'    AUTHENTIK_CLIENT_SECRET: {sealed_secret}\n'
           )
+          original = content
           content = content.replace('  template:\n', injection + '  template:\n', 1)
+          if content == original:
+            import sys
+            print('::error::Pattern "  template:" not found in billing-secrets.yaml — patch is a no-op. Check indentation/whitespace in the SealedSecret YAML.')
+            sys.exit(1)
           open(path, 'w').write(content)
           print(f'Patched {path}')
           PYEOF
