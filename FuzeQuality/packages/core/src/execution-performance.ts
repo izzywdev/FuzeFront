@@ -97,11 +97,21 @@ export type ExecutionOutcomeTrend = {
   retryAttemptCount: number
   /** Retry attempts whose retained outcome is passed. */
   successfulRetryCount: number
+  /** Passed retry attempts with an explicitly retained failed earlier attempt for the same provider run. */
+  recoveredRunCount: number
 }
 
 /** Produces an evidence-only daily outcome series; missing days are not invented. */
-export function executionOutcomeTrend(executions: TestExecution[]): ExecutionOutcomeTrend[] {
+export function executionOutcomeTrend(executions: TestExecution[], history: TestExecution[] = executions): ExecutionOutcomeTrend[] {
   const results = new Map<string, ExecutionOutcomeTrend & { totalDurationMs: number }>()
+  const failedAttemptsByRun = new Map<string, Set<number>>()
+  for (const execution of history) {
+    if (execution.status !== 'failed') continue
+    const runKey = [execution.tenantId, execution.repositoryId, execution.provider, execution.externalRunId].join('\u0000')
+    const attempts = failedAttemptsByRun.get(runKey) ?? new Set<number>()
+    attempts.add(execution.attempt)
+    failedAttemptsByRun.set(runKey, attempts)
+  }
   for (const execution of executions) {
     const timestamp = execution.completedAt ?? execution.startedAt
     if (!timestamp || Number.isNaN(Date.parse(timestamp))) continue
@@ -116,12 +126,19 @@ export function executionOutcomeTrend(executions: TestExecution[]): ExecutionOut
       averageDurationMs: 0,
       retryAttemptCount: 0,
       successfulRetryCount: 0,
+      recoveredRunCount: 0,
       totalDurationMs: 0,
     }
     current[execution.status]++
     if (execution.attempt > 1) {
       current.retryAttemptCount++
-      if (execution.status === 'passed') current.successfulRetryCount++
+      if (execution.status === 'passed') {
+        current.successfulRetryCount++
+        const runKey = [execution.tenantId, execution.repositoryId, execution.provider, execution.externalRunId].join('\u0000')
+        if ([...(failedAttemptsByRun.get(runKey) ?? [])].some(attempt => attempt < execution.attempt)) {
+          current.recoveredRunCount++
+        }
+      }
     }
     const startedAt = Date.parse(execution.startedAt ?? '')
     const completedAt = Date.parse(execution.completedAt ?? '')

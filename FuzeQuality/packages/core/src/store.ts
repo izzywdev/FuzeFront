@@ -514,11 +514,9 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}) {
-    const items = executionOutcomeTrend(filterTestExecutions(
-      this.executionSnapshot(query.snapshotAt)
-        .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId),
-      query,
-    ))
+    const snapshot = this.executionSnapshot(query.snapshotAt)
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+    const items = executionOutcomeTrend(filterTestExecutions(snapshot, query), snapshot)
       .sort((left, right) => right.date.localeCompare(left.date))
       .filter(item => !query.beforeDate || item.date < query.beforeDate)
     return query.limit === undefined ? items : items.slice(0, query.limit)
@@ -1290,20 +1288,29 @@ export class PostgresCatalogStore implements CatalogStore {
                 WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
               )),0)::integer AS average_duration_ms,
               count(*) FILTER (WHERE attempt>1)::integer AS retry_attempt_count,
-              count(*) FILTER (WHERE attempt>1 AND status='passed')::integer AS successful_retry_count
-       FROM snapshot_executions
-       WHERE COALESCE(completed_at,started_at) IS NOT NULL
-         AND ($3::text IS NULL OR kind=$3)
-         AND ($4::text IS NULL OR status=$4)
-         AND ($5::text IS NULL OR provider=$5)
-         AND ($6::text IS NULL OR revision=$6)
-         AND ($7::text IS NULL OR workflow_path=$7)
-         AND ($8::text IS NULL OR ($8='initial' AND attempt=1) OR ($8='retry' AND attempt>1))
-         AND ($9::timestamptz IS NULL OR COALESCE(completed_at,started_at) >= $9)
-         AND ($10::timestamptz IS NULL OR COALESCE(completed_at,started_at) <= $10)
-         AND ($11::date IS NULL OR (COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date < $11)
-       GROUP BY (COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date
-       ORDER BY (COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date DESC
+              count(*) FILTER (WHERE executions.attempt>1 AND executions.status='passed')::integer AS successful_retry_count,
+              count(*) FILTER (
+                WHERE executions.attempt>1 AND executions.status='passed' AND EXISTS (
+                  SELECT 1 FROM snapshot_executions previous
+                  WHERE previous.provider=executions.provider
+                    AND previous.external_run_id=executions.external_run_id
+                    AND previous.attempt<executions.attempt
+                    AND previous.status='failed'
+                )
+              )::integer AS recovered_run_count
+       FROM snapshot_executions executions
+       WHERE COALESCE(executions.completed_at,executions.started_at) IS NOT NULL
+         AND ($3::text IS NULL OR executions.kind=$3)
+         AND ($4::text IS NULL OR executions.status=$4)
+         AND ($5::text IS NULL OR executions.provider=$5)
+         AND ($6::text IS NULL OR executions.revision=$6)
+         AND ($7::text IS NULL OR executions.workflow_path=$7)
+         AND ($8::text IS NULL OR ($8='initial' AND executions.attempt=1) OR ($8='retry' AND executions.attempt>1))
+         AND ($9::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) >= $9)
+         AND ($10::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $10)
+         AND ($11::date IS NULL OR (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date < $11)
+       GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
+       ORDER BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date DESC
        LIMIT COALESCE($13::integer, 2147483647)`,
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null],
     )
@@ -1317,6 +1324,7 @@ export class PostgresCatalogStore implements CatalogStore {
       averageDurationMs: row.average_duration_ms,
       retryAttemptCount: row.retry_attempt_count,
       successfulRetryCount: row.successful_retry_count,
+      recoveredRunCount: row.recovered_run_count,
     }))
   }
 

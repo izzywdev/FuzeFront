@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.28.0
+  version: 0.29.0
   license:
     name: UNLICENSED
 servers:
@@ -1685,7 +1685,7 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, passed, failed, cancelled, running, durationSampleCount, averageDurationMs, retryAttemptCount, successfulRetryCount]
+      required: [date, passed, failed, cancelled, running, durationSampleCount, averageDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount]
       properties:
         date: { type: string, format: date }
         passed: { type: integer, minimum: 0 }
@@ -1696,6 +1696,10 @@ components:
         averageDurationMs: { type: integer, minimum: 0 }
         retryAttemptCount: { type: integer, minimum: 0 }
         successfulRetryCount: { type: integer, minimum: 0 }
+        recoveredRunCount:
+          type: integer
+          minimum: 0
+          description: Passed retry attempts backed by a retained failed earlier attempt for the same provider run.
     PerformanceDispatch:
       type: object
       required: [status, artifactId, workflowPath, ref, sourceRevision]

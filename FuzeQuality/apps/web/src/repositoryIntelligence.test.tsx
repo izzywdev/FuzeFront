@@ -557,7 +557,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       page: { nextCursor: 'older-executions', hasMore: true },
     })
     vi.mocked(api.executionTrend).mockResolvedValue([
-      { date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0, durationSampleCount: 9, averageDurationMs: 95_000, retryAttemptCount: 3, successfulRetryCount: 2 },
+      { date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0, durationSampleCount: 9, averageDurationMs: 95_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
     ])
 
     render(<RepositoryIntelligence data={portfolio} />)
@@ -569,6 +569,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(trend).toHaveTextContent('2 failed')
     expect(trend).toHaveTextContent('1m 35s average · 9 timed')
     expect(trend).toHaveTextContent('3 retries · 2 passed retries')
+    expect(trend).toHaveTextContent('1 recovered after failure')
     expect(api.executionTrend).toHaveBeenCalledWith(repository.id, {})
   })
 
@@ -577,11 +578,11 @@ describe('RepositoryIntelligence flow inventory', () => {
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
     vi.mocked(api.executionTrend)
       .mockResolvedValueOnce({
-        items: [{ date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0, durationSampleCount: 9, averageDurationMs: 95_000, retryAttemptCount: 3, successfulRetryCount: 2 }],
+        items: [{ date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0, durationSampleCount: 9, averageDurationMs: 95_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 }],
         page: { nextCursor: 'older-days', hasMore: true },
       })
       .mockResolvedValueOnce({
-        items: [{ date: '2026-09-01', passed: 4, failed: 1, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0 }],
+        items: [{ date: '2026-09-01', passed: 4, failed: 1, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 }],
         page: { nextCursor: null, hasMore: false },
       })
 
@@ -604,12 +605,12 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
     vi.mocked(api.executionTrend)
       .mockResolvedValueOnce({
-        items: [{ date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0, durationSampleCount: 9, averageDurationMs: 95_000, retryAttemptCount: 3, successfulRetryCount: 2 }],
+        items: [{ date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0, durationSampleCount: 9, averageDurationMs: 95_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 }],
         page: { nextCursor: 'older-days', hasMore: true },
       })
       .mockImplementationOnce(() => olderPage)
       .mockResolvedValueOnce({
-        items: [{ date: '2026-10-11', passed: 3, failed: 0, cancelled: 0, running: 0, durationSampleCount: 3, averageDurationMs: 50_000, retryAttemptCount: 1, successfulRetryCount: 1 }],
+        items: [{ date: '2026-10-11', passed: 3, failed: 0, cancelled: 0, running: 0, durationSampleCount: 3, averageDurationMs: 50_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1 }],
         page: { nextCursor: null, hasMore: false },
       })
 
@@ -622,7 +623,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     await waitFor(() => expect(api.executionTrend).toHaveBeenCalledWith(repository.id, { status: 'passed' }))
     await act(async () => {
       resolveOlder({
-        items: [{ date: '2026-09-01', passed: 4, failed: 1, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0 }],
+        items: [{ date: '2026-09-01', passed: 4, failed: 1, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 }],
         page: { nextCursor: null, hasMore: false },
       })
       await olderPage
@@ -661,7 +662,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
     vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
     vi.mocked(api.executionTrend).mockResolvedValue([
-      { date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0, durationSampleCount: 9, averageDurationMs: 95_000, retryAttemptCount: 3, successfulRetryCount: 2 },
+      { date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0, durationSampleCount: 9, averageDurationMs: 95_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
     ])
     vi.mocked(api.executionPerformance).mockRejectedValue(new Error('performance unavailable'))
 

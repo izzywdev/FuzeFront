@@ -194,6 +194,7 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       averageDurationMs: 0,
       retryAttemptCount: 0,
       successfulRetryCount: 0,
+      recoveredRunCount: 0,
     }
     const itemDurationSampleCount = item.durationSampleCount ?? 0
     const itemAverageDurationMs = item.averageDurationMs ?? 0
@@ -210,6 +211,7 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       : 0
     current.retryAttemptCount += item.retryAttemptCount ?? 0
     current.successfulRetryCount += item.successfulRetryCount ?? 0
+    current.recoveredRunCount += item.recoveredRunCount ?? 0
     merged.set(item.date, current)
   }
   return [...merged.values()].sort((left, right) => left.date.localeCompare(right.date))
@@ -5055,7 +5057,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     : 'No completed timing samples'}
                 </span>
                 <span>
-                  {day.retryAttemptCount} retries · {day.successfulRetryCount} passed retries
+                  {day.retryAttemptCount} retries · {day.successfulRetryCount} passed retries · {day.recoveredRunCount} recovered after failure
                 </span>
               </div>
             ))}
