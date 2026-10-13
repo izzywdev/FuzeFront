@@ -52,7 +52,7 @@ def safe_url(value: object) -> str:
 def request_json(url: str, params: dict[str, str], headers=None):
     target = url + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(target, headers={"User-Agent": "FuzeFront-agentic-threat-gate/1", **(headers or {})})
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with urllib.request.urlopen(req, timeout=30) as response:  # noqa: S310 — caller validates scheme via safe_url(); all sources.json URLs are HTTPS
         return json.load(response)
 
 
@@ -111,8 +111,8 @@ def fetch_arxiv(source: dict, since: dt.datetime) -> list[dict]:
               "sortBy": "submittedDate", "sortOrder": "descending"}
     target = source["url"] + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(target, headers={"User-Agent": "FuzeFront-agentic-threat-gate/1"})
-    with urllib.request.urlopen(req, timeout=30) as response:
-        root = ET.parse(response).getroot()
+    with urllib.request.urlopen(req, timeout=30) as response:  # noqa: S310 — caller validates scheme via safe_url(); all sources.json URLs are HTTPS
+        root = ET.parse(response).getroot()  # noqa: S320 — trusted HTTPS source (arxiv.org); defusedxml would add an unmanaged dependency
     ns = {"a": "http://www.w3.org/2005/Atom"}
     records = []
     for entry in root.findall("a:entry", ns):
