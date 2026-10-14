@@ -29,6 +29,9 @@ const androidTarget = assetlinks.find((entry) =>
 if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$/.test(twa.packageId || '')) {
   fail(`invalid Android packageId: ${JSON.stringify(twa.packageId)}`)
 }
+if (!Number.isInteger(twa.minSdkVersion) || twa.minSdkVersion < 24) {
+  fail('TWA minSdkVersion must be an integer of at least 24; androidbrowserhelper:2.7.4 requires Android API 24')
+}
 const allowedHost = /^[a-z0-9-]+\.fuzefront\.com$/.test(twa.host || '') || twa.host === 'live.mendysrobotics.com'
 if (!allowedHost) {
   fail(`host must be a direct public *.fuzefront.com hostname or live.mendysrobotics.com: ${JSON.stringify(twa.host)}`)
