@@ -546,10 +546,10 @@ class _FederatedVerifier:
             # The cached key(s) may be stale: an issuer can rotate key MATERIAL under the same
             # kid. Re-fetch once (cooldown-controlled, so bad tokens cannot drive refreshes) and
             # retry; if there is nothing newer to try, the signature really is bad.
-            try:
-                fresh = resolver.get_keys(token, after_signature_failure=True)
-            except AuthError:
-                fresh = []  # could not refresh: the original answer (bad signature) stands
+            # A refresh that FAILS is an outage (503): the token may well be valid, and an
+            # outage must not read as "your credentials are invalid". Only "no refresh was
+            # allowed" (cooldown) or "nothing newer" leaves the bad-signature answer standing.
+            fresh = resolver.get_keys(token, after_signature_failure=True)
             if not fresh:
                 raise
             return self._decode_with_any(token, fresh)

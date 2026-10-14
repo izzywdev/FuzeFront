@@ -530,17 +530,6 @@ def test_bad_signatures_cannot_drive_refreshes_faster_than_the_cooldown(jwks_ser
     assert jwks_server["jwks_hits"] <= hits + 1  # at most one refresh in the 20s window
 
 
-def test_a_failed_refresh_after_a_bad_signature_still_reports_the_bad_signature(
-    jwks_server, rsa_key, other_rsa_key, clock
-):
-    v = verifier(jwks_server)
-    v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD))
-    jwks_server["fail"] = True
-    clock(31)
-    forged = make_token(other_rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)
-    assert code_of(v, forged) == "INVALID_SIGNATURE"  # not turned into an outage by the refresh
-
-
 def test_the_issuer_is_compared_exactly_even_if_the_library_is_lenient(jwks_server, rsa_key, monkeypatch):
     # PyJWT 2.10.0 accepted an `iss` that was merely a substring of the configured issuer.
     import jwt as pyjwt
@@ -613,3 +602,18 @@ def test_a_loopback_issuer_does_not_widen_the_allowance_for_a_remote_discovered_
         vm._fetch_json = real
     assert seen[-1] == (jwks_uri, False)
     assert seen[0][1] is True  # discovery itself still gets the dev allowance
+
+
+def test_an_outage_during_a_same_kid_rotation_is_a_503_not_a_bad_signature(
+    jwks_server, rsa_key, other_rsa_key, clock
+):
+    # The cached key fails the (valid, rotated) token; the follow-up refresh hits an outage.
+    # That must read as retryable 503, never "your credentials are invalid".
+    v = verifier(jwks_server)
+    v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD))
+    clock(31)
+    jwks_server["fail"] = True
+    rotated = make_token(other_rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)
+    with pytest.raises(AuthError) as info:
+        v.verify(rotated)
+    assert (info.value.code, info.value.status) == ("JWKS_UNAVAILABLE", 503)

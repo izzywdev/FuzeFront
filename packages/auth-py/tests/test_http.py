@@ -705,3 +705,16 @@ def test_a_stall_after_or_during_the_tls_handshake_is_cut_off_and_released(monke
 def test_idna_normalisable_hosts_cannot_smuggle_a_private_address(url):
     with pytest.raises(ValueError, match="non-public|host"):
         fetch_json(url, 1)
+
+
+@pytest.mark.parametrize("host", ["::1", "::ffff:127.0.0.1", "fe80::1", "fd00::1"])
+def test_non_public_ipv6_literals_are_refused(host):
+    with pytest.raises(ValueError, match="non-public"):
+        fetch_json(f"https://[{host}]/jwks", 1)
+
+
+def test_public_ipv6_literals_pass_the_address_policy():
+    # IDNA-normalising the host must not break bracketed IPv6 literals.
+    from fuzefront_auth._http import _check_url
+
+    _check_url("https://[2607:f8b0:4005:80a::200e]/jwks", False)
