@@ -103,6 +103,12 @@ spec:
             # "off". It stays a dev/test switch outside production only.
             - name: FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED
               value: {{ .Values.selectionListService.authzEnabled | quote }}
+            # Platform organization (owner of common `platform` lists, the only
+            # tenant in which `publish_platform` is effective). Explicit value in
+            # values.yaml, empty by default (shared lists dark); the service fails
+            # closed on every platform feature if empty (no projection fallback).
+            - name: SELECTION_LIST_PLATFORM_ORG_ID
+              value: {{ .Values.selectionListService.platformOrgId | quote }}
             {{- if .Values.selectionListService.featureFlags.unleashUrl }}
             # @fuzefront/feature-flags (Unleash) client env for the release flag
             # fuzefront.selection-lists.service. The service calls the package's

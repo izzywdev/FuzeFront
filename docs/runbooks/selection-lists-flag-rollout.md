@@ -13,7 +13,7 @@ and is gated on the preconditions below.
 | Owner | platform team (flag admin: `feature-flags-engineer`) |
 | Removal criterion | GA at 100% of orgs and stable for one release cycle; then delete the flag, the `SidePanel`/`App.tsx` `useFlag` guards, and selection-list-service `src/flags.ts` + `middleware/flagGate.ts` + per-handler checks in ONE cleanup PR |
 | Registry | `packages/feature-flags/flag-registry.yaml` |
-| Unleash state | Created OFF (no strategy, environment disabled) by dispatching `prod-unleash-ops` with `flags=selection-lists-create` (create-only; idempotent; a 409 on an existing flag leaves it untouched). The sibling seeding flag `fuzefront.selection-lists.seed-defaults` is created by the same dispatch. **Not verified from this repo:** whether the flag already exists in the live Unleash, or its live state; read the dispatch's *Verify* step output. |
+| Unleash state | Created OFF (no strategy, environment disabled) by dispatching `prod-unleash-ops` with `flags=selection-lists-create` (create-only; idempotent; a 409 on an existing flag leaves it untouched). The sibling flags `fuzefront.selection-lists.seed-defaults` (seeding) and `fuzefront.selection-lists.shared-lists` (SL9 shared/common lists + forks, see below) are created by the same dispatch. **Not verified from this repo:** whether the flag already exists in the live Unleash, or its live state; read the dispatch's *Verify* step output. |
 | Browser catalog | `WEB_EXPOSED_FLAGS` in `packages/feature-flags/src/catalog.ts` (present — without it the browser reads permanently OFF) |
 
 ## What the flag gates (all of it, server and client)
@@ -64,8 +64,9 @@ and is gated on the preconditions below.
 ## Staged ramp
 
 Step 0 (once, before the first ramp): dispatch **`prod-unleash-ops`** with
-`flags=selection-lists-create` so both selection-list flags exist in Unleash,
-OFF. It never enables anything.
+`flags=selection-lists-create` so all three selection-list flags (`service`,
+`seed-defaults`, `shared-lists`) exist in Unleash, OFF. It never enables
+anything, never adds a strategy and leaves an existing flag untouched.
 
 Then, via the dispatchable workflow **`prod-unleash-ops`**
 (`.github/workflows/prod-unleash-ops.yml`, runs on the in-cluster runner, so no
@@ -96,6 +97,19 @@ Release-flag rollback is **forward-only for data**: lists/items/translations/
 access grants created while ON remain in the database; disabling only stops new
 requests reaching them. A data rollback is a separate migration, never a flag
 toggle.
+
+## Third flag: `fuzefront.selection-lists.shared-lists` (SL9, shared/common lists + forks)
+
+| Field | Value |
+|---|---|
+| Key / type / default | `fuzefront.selection-lists.shared-lists` / release / **OFF** |
+| Owner | izzywdev |
+| Removal criterion | ON for all orgs for 30 consecutive days with no fork / shared-read incident; then delete the flag, `FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS`, the `WEB_EXPOSED_FLAGS` entry, `isSharedListsEnabled()` and every off-path branch in selection-list-service in ONE cleanup PR |
+| Registry / catalog | `packages/feature-flags/flag-registry.yaml`; `FLAG_KEYS` + `WEB_EXPOSED_FLAGS` in `packages/feature-flags/src/catalog.ts` (server **and** web: the UI gates the common badge / fork flow on it) |
+| Unleash state | Created OFF (production environment disabled, no strategy) by the same `flags=selection-lists-create` dispatch. Create-only: that set never enables it, never adds a strategy and never alters an existing flag. **Not verified from this repo:** the live Unleash state; read the dispatch's *Verify* output. |
+| Gates | All SL9 behaviour in selection-list-service (list `visibility`, shared read, `include_shared`, fork, `409 fork_required`, resolve redirect, `list.forked` / `visibility.changed` events, seed-list `visibility`) and the shared-list UI. OFF = the service answers as 4.0.0. Real authorization stays in Permit; the flag is never a boundary. |
+| Prerequisites | Independent of, and additionally requires, the master flag `fuzefront.selection-lists.service`. Needs the Helm env `SELECTION_LIST_PLATFORM_ORG_ID` (`selectionListService.platformOrgId`, **empty by default**, set it to the root platform org TypeID in the target overlay before enabling; empty = platform features fail closed). |
+| Enablement | A deliberate owner step via the raw `unleash-flag-enable` procedure. **Per-org targeting is only correct for the service, not the browser:** this flag is web-exposed, and `GET /api/flags` (`backend/src/routes/flags.ts`) evaluates browser flags with a `userId` and **no `orgId`**, so an `orgId IN [org_...]` constraint turns shared lists ON in the service while the UI (common badge, fork flow) stays OFF. A user-based constraint does not fix it either: `GET /api/flags` sends the database UUID as `userId`, while `selection-list-service` canonicalizes every user to a `usr_…` TypeID, so a `developers` segment or direct-user constraint enables only one of the two paths (the opposite split). Until `/api/flags` supplies a trusted active-org context (and the web client re-evaluates when the org changes) **and** the two `userId` forms are aligned (or the segment lists both), **enable globally** — that is the only option that works on both paths. Do not use an org-only or user-only constraint. NOT part of `prod-unleash-ops` today and not part of this change. Rollback = turn the environment OFF; shared reads stop and the service reverts to 4.0.0 behaviour (data created while ON, including forks, remains). |
 
 ## Out of scope for this runbook
 
