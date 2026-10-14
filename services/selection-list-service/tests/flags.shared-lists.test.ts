@@ -6,13 +6,14 @@
 // through it (asserted in the shared-lists route suites: Permit decides, with the flag ON or OFF).
 
 import { FLAGS, isSharedListsEnabled, setFlagClient } from '../src/flags';
+import { initFeatureFlags } from '../src/lib/featureFlags';
 
 const KEY = 'fuzefront.selection-lists.shared-lists';
 
 describe('isSharedListsEnabled', () => {
   const ENV = { ...process.env };
   beforeEach(() => {
-    delete process.env.FLAGS_FORCE_ON;
+    delete process.env.FLAGS_FORCE_ON; // the retired hatch: must have no effect
     process.env.NODE_ENV = 'test';
     setFlagClient(null);
   });
@@ -55,12 +56,22 @@ describe('isSharedListsEnabled', () => {
     await expect(isSharedListsEnabled()).resolves.toBe(false);
   });
 
-  it('FLAGS_FORCE_ON turns it ON outside production for this key only; it never works in production', async () => {
-    process.env.FLAGS_FORCE_ON = 'fuzefront.selection-lists.service';
-    await expect(isSharedListsEnabled()).resolves.toBe(false); // another key forced: not this one
-    process.env.FLAGS_FORCE_ON = `fuzefront.selection-lists.service, ${KEY}`;
-    await expect(isSharedListsEnabled()).resolves.toBe(true);
-    process.env.NODE_ENV = 'production';
+  it('the retired FLAGS_FORCE_ON env has NO effect (no escape hatch outside the OpenFeature client)', async () => {
+    process.env.FLAGS_FORCE_ON = `fuzefront.selection-lists.service,${KEY}`;
     await expect(isSharedListsEnabled()).resolves.toBe(false);
+  });
+
+  it('the offline provider (FUZE_FLAGS_OFFLINE_ON) forces it ON only when the key is in the on-list, via the OpenFeature client', async () => {
+    const calls: Array<{ options: any; context: any }> = [];
+    const fakeModule = { init: async (options: any, context: any) => { calls.push({ options, context }); } };
+    const env = { FUZE_FLAGS_PROVIDER: 'offline', FUZE_FLAGS_OFFLINE_ON: `fuzefront.selection-lists.service, ${KEY}` };
+    await expect(initFeatureFlags({ env: env as any, load: () => fakeModule as any })).resolves.toBe('initialized');
+    expect(calls[0].options).toMatchObject({ provider: 'offline', offline: { on: ['fuzefront.selection-lists.service', KEY] } });
+    // the stand-in client below has the offline InMemoryProvider's semantics: listed keys true, others the default
+    const onList = calls[0].options.offline.on as string[];
+    setFlagClient({ getBooleanValue: async (key, dflt) => (onList.includes(key) ? true : dflt) });
+    await expect(isSharedListsEnabled()).resolves.toBe(true);
+    setFlagClient({ getBooleanValue: async (key, dflt) => (key === 'fuzefront.selection-lists.service' ? true : dflt) });
+    await expect(isSharedListsEnabled()).resolves.toBe(false); // master ON, shared-lists not listed => OFF
   });
 });

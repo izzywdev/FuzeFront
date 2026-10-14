@@ -15,7 +15,6 @@ describe('isSeedDefaultsEnabled (fuzefront.selection-lists.seed-defaults)', () =
 
   beforeEach(() => {
     jest.resetModules();
-    delete process.env.FLAGS_FORCE_ON;
     delete process.env.NODE_ENV;
   });
   afterAll(() => {
@@ -93,24 +92,5 @@ describe('isSeedDefaultsEnabled (fuzefront.selection-lists.seed-defaults)', () =
     const { isSeedDefaultsEnabled, setFlagClient } = await load();
     setFlagClient({ getBooleanValue: () => Promise.reject(new Error('timeout')) });
     await expect(isSeedDefaultsEnabled({ organizationId: 'org-1' })).resolves.toBe(false);
-  });
-
-  it('FLAGS_FORCE_ON hatch works for the new key outside production only', async () => {
-    process.env.NODE_ENV = 'test';
-    process.env.FLAGS_FORCE_ON = SEED_KEY;
-    let mod = await load();
-    await expect(mod.isSeedDefaultsEnabled({ organizationId: 'o' })).resolves.toBe(true);
-
-    jest.resetModules();
-    process.env.NODE_ENV = 'production';
-    mod = await load();
-    await expect(mod.isSeedDefaultsEnabled({ organizationId: 'o' })).resolves.toBe(false);
-  });
-
-  it('forcing only the master gate does not turn seeding on', async () => {
-    process.env.NODE_ENV = 'test';
-    process.env.FLAGS_FORCE_ON = MASTER_KEY;
-    const { isSeedDefaultsEnabled } = await load();
-    await expect(isSeedDefaultsEnabled({ organizationId: 'o' })).resolves.toBe(false);
   });
 });
