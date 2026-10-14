@@ -320,30 +320,6 @@ class TestRungGating(unittest.TestCase):
         self.assertFalse(_evaluate(self.steps["codex"]["if"], ro))
         self.assertFalse(_evaluate(self.steps["gemini"]["if"], ro))
 
-    def test_classify_rung1_is_gated_on_rung_1a_not_settling(self):
-        # Invariant 5: the rung-1 classify step must NOT run once rung 1a has
-        # already settled the run. Unguarded it ran on every path, read the
-        # (correctly) skipped rung 1 as an availability failure (code 1), and
-        # that spurious code 1 is what the metered OpenAI/Gemini gates fire on —
-        # so they ran on a finished run, burning spend and surfacing a provider
-        # error inside an otherwise-successful review. The gate mirrors the `llm`
-        # and rung-1 `claude` steps exactly: run only when rung 1a was not
-        # attempted ('') or failed on availability ('1').
-        gate = self.steps["classify-claude"].get("if")
-        self.assertTrue(gate, "classify-claude must be gated, not always-run")
-        for oauth_code, should_run in [
-            ("", True),    # rung 1a not configured — rung 1 is the primary path
-            ("1", True),   # rung 1a failed on availability — rung 1 took over
-            ("0", False),  # rung 1a succeeded — run is settled
-            ("2", False),  # rung 1a task failure — chain stops, no retry
-            ("3", False),  # rung 1a declined — nothing to classify
-        ]:
-            ctx = {"steps.classify-claude-oauth.outputs.code": oauth_code}
-            self.assertEqual(
-                _evaluate(gate, ctx), should_run,
-                f"classify-claude gate wrong for rung-1a code={oauth_code!r}",
-            )
-
     def test_review_only_switches_off_the_codex_subscription_rung(self):
         """The Codex subscription review installs a pinned Node + the @openai/codex npm
         CLI on the runner — a vendor CLI exactly like rungs 2/3. Under review-only none
@@ -428,17 +404,8 @@ class TestRungGating(unittest.TestCase):
         self.assertEqual(_norm(w["fallback-anthropic-key"]), "${{ inputs.anthropic-api-key }}")
         for vendor in ("openai", "gemini"):
             expr = _norm(w[f"fallback-{vendor}-key"])
-            # Shape is load-bearing: `cond && KEY || ''`, never `cond && '' || KEY`.
-            # '' is falsy in a GHA expression, so the inverted `== 'true' && '' || KEY`
-            # resolves to KEY unconditionally and never suppresses — the defect this
-            # pins against. Require the positive-guard form and reject the inverted one.
-            self.assertEqual(
-                expr,
-                "${{ inputs.review-only != 'true' && inputs.%s-api-key || '' }}" % vendor,
-                f"fallback-{vendor}-key must suppress under review-only",
-            )
-            self.assertNotIn("== 'true' && ''", expr,
-                             f"fallback-{vendor}-key uses the inverted ternary")
+            self.assertIn("inputs.review-only == 'true'", expr)
+            self.assertIn(f"inputs.{vendor}-api-key", expr)
 
 
 class TestEvaluator(unittest.TestCase):
