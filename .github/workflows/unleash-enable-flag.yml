@@ -1,0 +1,104 @@
+name: unleash-enable-flag
+
+# Enable / ramp / roll back a single Unleash flag from CI. workflow_dispatch only —
+# the credential lives here as a secret, so the flip does not need an operator with a
+# live Cloudflare-Access session. Owned by feature-flags-engineer; secrets by devops.
+on:
+  workflow_dispatch:
+    inputs:
+      flag:
+        description: 'Flag key, e.g. fuzefront.devportal.enabled'
+        required: true
+      rollout:
+        description: 'flexibleRollout percentage (0-100). 0 = present-but-off.'
+        required: true
+        default: '100'
+      environment:
+        description: 'Unleash environment'
+        required: true
+        default: 'production'
+      type:
+        description: 'Flag type if it must be created (release|ops-kill-switch|experiment|permission)'
+        required: true
+        default: 'release'
+      description:
+        description: 'Owner + decision + removal criterion (stored on the flag)'
+        required: false
+        default: ''
+      action:
+        description: 'enable (env on + strategy) or disable (env off — fast rollback)'
+        required: true
+        default: 'enable'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unleash-flag-${{ github.event.inputs.flag }}-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  toggle:
+    runs-on: fuzefront
+    steps:
+      - name: Preconditions
+        env:
+          UNLEASH_ADMIN_URL: ${{ secrets.UNLEASH_ADMIN_URL }}
+          UNLEASH_ADMIN_TOKEN: ${{ secrets.UNLEASH_ADMIN_TOKEN }}
+          ROLLOUT: ${{ github.event.inputs.rollout }}
+        run: |
+          set -euo pipefail
+          : "${UNLEASH_ADMIN_URL:?UNLEASH_ADMIN_URL secret is not set — devops must provision it}"
+          : "${UNLEASH_ADMIN_TOKEN:?UNLEASH_ADMIN_TOKEN secret is not set — devops must provision it}"
+          case "$ROLLOUT" in ''|*[!0-9]*) echo "rollout must be an integer 0-100"; exit 1;; esac
+          [ "$ROLLOUT" -le 100 ] || { echo "rollout must be <= 100"; exit 1; }
+
+      - name: Toggle flag
+        env:
+          UNLEASH_ADMIN_URL: ${{ secrets.UNLEASH_ADMIN_URL }}
+          UNLEASH_ADMIN_TOKEN: ${{ secrets.UNLEASH_ADMIN_TOKEN }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          FLAG: ${{ github.event.inputs.flag }}
+          ROLLOUT: ${{ github.event.inputs.rollout }}
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          FTYPE: ${{ github.event.inputs.type }}
+          DESCRIPTION: ${{ github.event.inputs.description }}
+          ACTION: ${{ github.event.inputs.action }}
+          PROJECT: default
+        run: |
+          set -euo pipefail
+          AUTH=(-H "Authorization: $UNLEASH_ADMIN_TOKEN")
+          # Attach a CF-Access service token only if provided.
+          if [ -n "${CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ]; then
+            AUTH+=(-H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET")
+          fi
+          base="$UNLEASH_ADMIN_URL/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT"
+
+          if [ "$ACTION" = "disable" ]; then
+            curl -sf "${AUTH[@]}" -X POST "$base/off"
+            echo "::notice::disabled $FLAG in $ENVIRONMENT (strategy left intact for clean re-enable)"
+            exit 0
+          fi
+
+          # create-if-absent (tolerate 409). Build every JSON body with python3 — the
+          # free-form $DESCRIPTION (and $FLAG) must never be spliced into JSON by hand,
+          # or a quote character produces malformed JSON and a half-enabled flag.
+          create_body=$(python3 -c 'import json,os;print(json.dumps({"name":os.environ["FLAG"],"type":os.environ["FTYPE"],"description":os.environ["DESCRIPTION"]}))')
+          code=$(curl -sS -o /tmp/c.json -w '%{http_code}' -X POST \
+            "$UNLEASH_ADMIN_URL/api/admin/projects/$PROJECT/features" \
+            "${AUTH[@]}" -H 'Content-Type: application/json' -d "$create_body")
+          case "$code" in 201|409) : ;; *) echo "create failed ($code)"; cat /tmp/c.json; exit 1;; esac
+
+          curl -sf "${AUTH[@]}" -X POST "$base/on"
+
+          existing=$(curl -sf "${AUTH[@]}" "$base/strategies")
+          sid=$(printf '%s' "$existing" | python3 -c "import sys,json;xs=[s for s in json.load(sys.stdin) if s.get('name')=='flexibleRollout'];print(xs[0]['id'] if xs else '')")
+          patch_body=$(python3 -c 'import json,os;print(json.dumps({"parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
+          post_body=$(python3 -c 'import json,os;print(json.dumps({"name":"flexibleRollout","parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
+          if [ -n "$sid" ]; then
+            curl -sf "${AUTH[@]}" -H 'Content-Type: application/json' -X PUT "$base/strategies/$sid" -d "$patch_body"
+          else
+            curl -sf "${AUTH[@]}" -H 'Content-Type: application/json' -X POST "$base/strategies" -d "$post_body"
+          fi
+          echo "::notice::$FLAG set to ${ROLLOUT}% in $ENVIRONMENT"
