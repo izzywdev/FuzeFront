@@ -371,6 +371,10 @@ The narrow, honest exceptions, and they must be *stated* rather than assumed:
 Everything else gets fixed. A finding without a fix or one of those three
 statements attached is unfinished work, not a deliverable.
 
+## Session archive — spawn the hand-offs, show the links, archive
+
+When the user asks whether a session can be archived, do not answer with a "still open, but not here" list. Spawn **one new session per out-of-scope open item** (other-repo mirrors, post-merge verification, deferred scope), show them as `https://claude.ai/code/<session_id>` links with one line each, then archive the current session. Preconditions: this session's PRs are merged or closed and nothing is unpushed; defects in this session's own scope are fixed here, not spawned. Full policy: `governance/session-archive-policy.md`.
+
 ## Done
 
 Finish work as a **merged PR**, not local commits — merging is how this repo deploys, see the hardening section above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.
