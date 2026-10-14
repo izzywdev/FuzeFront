@@ -126,14 +126,19 @@ class _Parser:
             self.take()
             # No short-circuit: the right side must parse too, so an unsupported
             # gate cannot hide behind a left operand that happens to be true.
-            v = _truthy(self.parse_and()) or _truthy(v)
+            # GitHub semantics: `a || b` yields OPERAND a when truthy, else b (not a
+            # boolean) -- so a `cond && value || ''` ternary can be evaluated for its value.
+            right = self.parse_and()
+            v = v if _truthy(v) else right
         return v
 
     def parse_and(self):
         v = self.parse_cmp()
         while self.peek() == "and":
             self.take()
-            v = _truthy(self.parse_cmp()) and _truthy(v)
+            # GitHub semantics: `a && b` yields a when falsy, else operand b.
+            right = self.parse_cmp()
+            v = right if _truthy(v) else v
         return v
 
     def parse_cmp(self):
@@ -179,6 +184,17 @@ def _evaluate(expr, ctx):
     if not e:
         return True
     return _truthy(_Parser(_tokenize(e), ctx).parse())
+
+
+def _value(expr, ctx):
+    """Evaluate an expression for its VALUE (GitHub operand semantics), not its truthiness.
+
+    `_evaluate` answers "does this gate pass"; the key-forwarding ternaries need "what
+    string does this input resolve to", which a boolean cannot distinguish from a key.
+    """
+    e = _norm(expr)
+    m = re.fullmatch(r"\$\{\{\s*(.*?)\s*\}\}", e)
+    return _Parser(_tokenize(m.group(1) if m else e), ctx).parse()
 
 
 class TestRungGating(unittest.TestCase):
@@ -399,13 +415,29 @@ class TestRungGating(unittest.TestCase):
     def test_review_only_does_not_forward_non_anthropic_keys_to_llm_endpoint(self):
         """With review-only the runner-local chain must be anthropic-only (single-vendor
         direct path, no container). The anthropic key is forwarded unconditionally; the
-        openai/gemini keys only when review-only is not 'true'."""
+        openai/gemini keys only when review-only is not 'true'.
+
+        EVALUATES the expression rather than matching its text: a `cond && '' || key`
+        ternary reads as if it suppresses the key but `''` is falsy, so `||` falls through
+        and the key is forwarded anyway. A substring assertion cannot see that.
+        """
         w = self.steps["llm"]["with"]
         self.assertEqual(_norm(w["fallback-anthropic-key"]), "${{ inputs.anthropic-api-key }}")
         for vendor in ("openai", "gemini"):
-            expr = _norm(w[f"fallback-{vendor}-key"])
-            self.assertIn("inputs.review-only == 'true'", expr)
-            self.assertIn(f"inputs.{vendor}-api-key", expr)
+            expr = w[f"fallback-{vendor}-key"]
+            key = f"inputs.{vendor}-api-key"
+            self.assertEqual(_value(expr, {"inputs.review-only": "true", key: "sk-secret"}), "",
+                             f"{vendor} key forwarded under review-only=true")
+            for ro in ("false", ""):
+                self.assertEqual(_value(expr, {"inputs.review-only": ro, key: "sk-secret"}), "sk-secret",
+                                 f"{vendor} key dropped with review-only={ro!r}")
+            self.assertEqual(_value(expr, {"inputs.review-only": "false", key: ""}), "")
+
+    def test_key_gating_evaluator_catches_the_empty_string_ternary(self):
+        """Mutation proof: the previous (buggy) expression must FAIL the check above."""
+        buggy = "${{ inputs.review-only == 'true' && '' || inputs.openai-api-key }}"
+        ctx = {"inputs.review-only": "true", "inputs.openai-api-key": "sk-secret"}
+        self.assertEqual(_value(buggy, ctx), "sk-secret")
 
 
 class TestEvaluator(unittest.TestCase):
