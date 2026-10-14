@@ -1133,7 +1133,7 @@ export class PostgresCatalogStore implements CatalogStore {
       )
       if (result.rows[0]) await client.query(
         'INSERT INTO fuzequality.repository_flow_review_history (id,candidate_id,tenant_id,status,reviewed_by,reason) VALUES ($1,$2,$3,$4,$5,$6)',
-        [`flow_review_${randomUUID()}`, id, tenantId, review.status, review.reviewedBy, review.reason ?? null],
+        [randomUUID(), id, tenantId, review.status, review.reviewedBy, review.reason ?? null],
       )
       await client.query('COMMIT')
     } catch (error) {
@@ -1151,7 +1151,7 @@ export class PostgresCatalogStore implements CatalogStore {
       `SELECT id,candidate_id,tenant_id,status,reviewed_by,reason,created_at
        FROM fuzequality.repository_flow_review_history
        WHERE candidate_id=$1 AND tenant_id=$2
-         AND ($3::timestamptz IS NULL OR (created_at,id) < ($3::timestamptz,$4::text))
+         AND ($3::timestamptz IS NULL OR (created_at,id) < ($3::timestamptz,$4::uuid))
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($5::integer, 2147483647)`,
       [candidateId, tenantId, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
@@ -1213,7 +1213,7 @@ export class PostgresCatalogStore implements CatalogStore {
          RETURNING evaluation.*`,
         [id, tenantId, review.status, review.reviewedBy, review.reason ?? null, expectedRevision ?? null],
       )
-      if (result.rows[0]) await client.query('INSERT INTO fuzequality.policy_gate_review_history (id,evaluation_id,tenant_id,status,reviewed_by,reason) VALUES ($1,$2,$3,$4,$5,$6)', [`policy_gate_review_${randomUUID()}`, id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
+      if (result.rows[0]) await client.query('INSERT INTO fuzequality.policy_gate_review_history (id,evaluation_id,tenant_id,status,reviewed_by,reason) VALUES ($1,$2,$3,$4,$5,$6)', [randomUUID(), id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
     const row = result.rows[0]
@@ -1225,7 +1225,7 @@ export class PostgresCatalogStore implements CatalogStore {
       `SELECT id,evaluation_id,tenant_id,status,reviewed_by,reason,created_at
        FROM fuzequality.policy_gate_review_history
        WHERE evaluation_id=$1 AND tenant_id=$2
-         AND ($3::timestamptz IS NULL OR (created_at,id) < ($3::timestamptz,$4::text))
+         AND ($3::timestamptz IS NULL OR (created_at,id) < ($3::timestamptz,$4::uuid))
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($5::integer, 2147483647)`,
       [evaluationId, tenantId, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],

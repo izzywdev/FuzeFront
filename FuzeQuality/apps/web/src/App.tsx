@@ -2841,9 +2841,11 @@ function FlowReviewHistory({
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const detailsRef = useRef<HTMLDetailsElement>(null)
   const historyRequestInFlight = useRef(false)
+  const historyRequest = useRef(0)
 
   const loadHistory = useCallback(async (cursor?: string) => {
     if (historyRequestInFlight.current) return
+    const request = ++historyRequest.current
     historyRequestInFlight.current = true
     setLoading(true)
     setError(undefined)
@@ -2851,21 +2853,28 @@ function FlowReviewHistory({
       const page = normalizeHistoryPage(
         await api.repositoryFlowReviewHistory(flow.repositoryId, flow.id, cursor)
       )
+      if (request !== historyRequest.current) return
       setHistory(current => cursor
         ? [...new Map([...current, ...page.items].map(entry => [entry.id, entry])).values()]
         : page.items)
       setNextCursor(page.page.nextCursor)
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Unable to load review history'
-      )
+      if (request === historyRequest.current) {
+        setError(
+          cause instanceof Error ? cause.message : 'Unable to load review history'
+        )
+      }
     } finally {
-      historyRequestInFlight.current = false
-      setLoading(false)
+      if (request === historyRequest.current) {
+        historyRequestInFlight.current = false
+        setLoading(false)
+      }
     }
   }, [flow.id, flow.repositoryId])
 
   useEffect(() => {
+    historyRequest.current++
+    historyRequestInFlight.current = false
     setHistory([])
     setNextCursor(null)
     setError(undefined)
@@ -3033,9 +3042,11 @@ function PolicyGateReviewHistory({
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const detailsRef = useRef<HTMLDetailsElement>(null)
   const historyRequestInFlight = useRef(false)
+  const historyRequest = useRef(0)
 
   const loadHistory = useCallback(async (cursor?: string) => {
     if (historyRequestInFlight.current) return
+    const request = ++historyRequest.current
     historyRequestInFlight.current = true
     setLoading(true)
     setError(undefined)
@@ -3047,21 +3058,28 @@ function PolicyGateReviewHistory({
           cursor
         )
       )
+      if (request !== historyRequest.current) return
       setHistory(current => cursor
         ? [...new Map([...current, ...page.items].map(entry => [entry.id, entry])).values()]
         : page.items)
       setNextCursor(page.page.nextCursor)
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Unable to load review history'
-      )
+      if (request === historyRequest.current) {
+        setError(
+          cause instanceof Error ? cause.message : 'Unable to load review history'
+        )
+      }
     } finally {
-      historyRequestInFlight.current = false
-      setLoading(false)
+      if (request === historyRequest.current) {
+        historyRequestInFlight.current = false
+        setLoading(false)
+      }
     }
   }, [evaluation.id, evaluation.repositoryId])
 
   useEffect(() => {
+    historyRequest.current++
+    historyRequestInFlight.current = false
     setHistory([])
     setNextCursor(null)
     setError(undefined)

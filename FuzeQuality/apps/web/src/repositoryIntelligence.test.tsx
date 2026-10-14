@@ -416,6 +416,54 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.policyGateReviewHistory).toHaveBeenCalledTimes(2)
   })
 
+  it('does not restore obsolete UX-flow review history after a newer decision reloads it', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])
+    let resolveObsolete!: (value: Awaited<ReturnType<typeof api.repositoryFlowReviewHistory>>) => void
+    const obsoleteRequest = new Promise<Awaited<ReturnType<typeof api.repositoryFlowReviewHistory>>>(resolve => {
+      resolveObsolete = resolve
+    })
+    vi.mocked(api.repositoryFlowReviewHistory)
+      .mockImplementationOnce(async () => obsoleteRequest)
+      .mockResolvedValueOnce({
+        items: [{
+          id: '00000000-0000-4000-8000-000000000002', candidateId: candidate.id,
+          tenantId: candidate.tenantId, status: 'confirmed', reviewedBy: 'current-reviewer',
+          createdAt: '2026-10-11T01:00:00.000Z',
+        }],
+        page: { nextCursor: null, hasMore: false },
+      })
+    vi.spyOn(api, 'reviewRepositoryFlowCandidate').mockResolvedValue({
+      ...candidate,
+      status: 'confirmed',
+      reviewedAt: '2026-10-11T01:00:00.000Z',
+      reviewedBy: 'current-reviewer',
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    const history = (await screen.findByText('UX flow review history')).closest('details')
+    expect(history).not.toBeNull()
+    fireEvent.click(within(history!).getByText('UX flow review history'))
+    await waitFor(() => expect(api.repositoryFlowReviewHistory).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    expect(await within(history!).findByText('current-reviewer')).toBeVisible()
+
+    await act(async () => {
+      resolveObsolete({
+        items: [{
+          id: '00000000-0000-4000-8000-000000000001', candidateId: candidate.id,
+          tenantId: candidate.tenantId, status: 'rejected', reviewedBy: 'obsolete-reviewer',
+          createdAt: '2026-10-09T01:00:00.000Z',
+        }],
+        page: { nextCursor: null, hasMore: false },
+      })
+      await obsoleteRequest
+    })
+
+    expect(within(history!).queryByText('obsolete-reviewer')).not.toBeInTheDocument()
+    expect(within(history!).getByText('current-reviewer')).toBeVisible()
+  })
+
   it('continues UX-flow and policy history from opaque repository cursors', async () => {
     mockEvidenceApis()
     const olderFlow = {

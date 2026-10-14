@@ -121,4 +121,44 @@ describe('policy-gate review lifecycle', () => {
     expect(query).toHaveBeenCalledTimes(3)
     expect(release).toHaveBeenCalledOnce()
   })
+
+  it('uses database-compatible UUIDs for governance review history and its cursor', async () => {
+    const createdAt = new Date('2026-10-08T00:00:00.000Z')
+    const reviewedAt = new Date('2026-10-09T01:00:00.000Z')
+    const query = vi.fn().mockImplementation(async (statement: string) => {
+      if (statement.includes('UPDATE fuzequality.policy_gate_evaluations')) {
+        return { rows: [{
+          id: 'evaluation-1', repository_id: 'repo-1', tenant_id: 'tenant-1', revision: 'abc',
+          kind: 'unguarded-policy', severity: 'high', title: 'Missing deployment guard', detail: 'No matching gate',
+          policy_artifact_ids: ['policy-1'], gate_artifact_ids: [], confidence: 0.75,
+          scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, evidence_passages: [],
+          recommendation: 'Add a deployment gate', review_status: 'accepted', reviewed_at: reviewedAt,
+          reviewed_by: 'reviewer-1', review_reason: null, created_at: createdAt,
+        }] }
+      }
+      return { rows: [] }
+    })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = {
+      connect: vi.fn().mockResolvedValue({ query, release }),
+      query,
+    }
+
+    await store.reviewPolicyGateEvaluation('evaluation-1', 'tenant-1', {
+      status: 'accepted', reviewedBy: 'reviewer-1',
+    })
+    const historyInsert = query.mock.calls.find(([statement]) =>
+      String(statement).includes('INSERT INTO fuzequality.policy_gate_review_history')
+    )
+    expect(historyInsert?.[1][0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+
+    const cursorId = '00000000-0000-4000-8000-000000000002'
+    await store.policyGateReviewHistory('evaluation-1', 'tenant-1', {
+      after: { createdAt: createdAt.toISOString(), id: cursorId }, limit: 25,
+    })
+    const historyQuery = query.mock.calls.at(-1)
+    expect(String(historyQuery?.[0])).toContain('($3::timestamptz,$4::uuid)')
+    expect(historyQuery?.[1]).toEqual(['evaluation-1', 'tenant-1', createdAt.toISOString(), cursorId, 25])
+  })
 })
