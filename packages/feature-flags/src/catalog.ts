@@ -94,8 +94,9 @@ export const FLAG_KEYS = {
    * Web-exposed (WEB_EXPOSED_FLAGS): the selection-lists UI gates the common
    * badge / fork flow on it. NOTE: GET /api/flags evaluates browser flags
    * with no `orgId`, so an org-only Unleash constraint would not match in the
-   * browser (service ON, UI OFF); target by userId or enable globally until
-   * that endpoint carries an active-org context. Real authorization stays in Permit — this flag is
+   * browser (service ON, UI OFF); a user constraint splits the other way (the
+   * browser sends the DB UUID, the service a usr_ TypeID). Enable globally
+   * until that endpoint carries an active-org context and the ids are aligned. Real authorization stays in Permit — this flag is
    * never a boundary. Independent of, and additionally requires,
    * SELECTION_LISTS_SERVICE.
    */
