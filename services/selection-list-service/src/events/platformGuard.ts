@@ -28,6 +28,7 @@ import type { Knex } from 'knex';
 import type { Logger } from 'pino';
 import { configuredPlatformOrgId, orgRenderings, ROOT_PLATFORM_ORG_WIRE, sameOrg } from '../lib/sharedLists';
 import { resumeOrgProjection, suspendOrgProjection, type SuspendOutcome } from './orgProjection';
+import { lockOrgOutbox } from './outbox';
 
 export async function isProtectedPlatformOrg(ex: Knex | Knex.Transaction, organizationId: string): Promise<boolean> {
   const configured = configuredPlatformOrgId();
@@ -86,7 +87,14 @@ export async function recordPlatformDeactivation(
   fields: Record<string, unknown> = {},
 ): Promise<SuspendOutcome> {
   const common = { ...fields, organizationId, eventId: ctx.correlationId, occurredAt: ctx.occurredAt, topic: ctx.topic };
-  const outcome = await suspendOrgProjection(ex, organizationId, ctx.occurredAt);
+  // Recorded UNDER THE ORG OUTBOX LOCK - the very lock every mutating transaction takes first and then re-checks the
+  // suspension under (`assertPlatformWritable`). So a mutation either committed before this recording (and is a
+  // legitimate pre-suspension write) or parks on the lock and sees `suspended_at` when it gets it; none can slip
+  // between its own check and its commit.
+  const outcome = await ex.transaction(async (trx) => {
+    await lockOrgOutbox(trx, organizationId);
+    return suspendOrgProjection(trx, organizationId, ctx.occurredAt);
+  });
   if (outcome === 'stale' || outcome === 'tie') {
     log.warn(
       { ...common, outcome },
@@ -111,7 +119,12 @@ export async function resumeIfReactivated(
   log: Logger,
 ): Promise<void> {
   if (!snapshot.isActive || snapshot.type !== 'platform') return;
-  if (await resumeOrgProjection(ex, snapshot.organizationId, ctx.occurredAt)) {
+  // Same lock as the deactivation recording and every mutation: resume and suspend never interleave with a write.
+  const resumed = await ex.transaction(async (trx) => {
+    await lockOrgOutbox(trx, snapshot.organizationId);
+    return resumeOrgProjection(trx, snapshot.organizationId, ctx.occurredAt);
+  });
+  if (resumed) {
     log.warn({ organizationId: snapshot.organizationId, eventId: ctx.correlationId, occurredAt: ctx.occurredAt, topic: ctx.topic }, 'the PLATFORM organization was reactivated - platform writes RESUMED');
   }
 }

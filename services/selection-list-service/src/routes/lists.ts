@@ -52,6 +52,8 @@ import { grantCleanupFailedTotal } from '../lib/metrics';
 import { requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled, bearer } from '../middleware/authz';
 import {
   assertMayPurgeLocked,
+  assertPlatformWritable,
+  replyPlatformSuspended,
   catalogAllowed,
   PLATFORM_PURGE_DENIED_BODY,
   PlatformPurgeDenied,
@@ -561,6 +563,9 @@ router.post('/', requireCatalogCheck('create'), requirePublishWhenBodyIsPlatform
       // the seed algorithm takes them in that order too, so taking the quota lock first here
       // could deadlock against a concurrent seed of the same org.
       await lockOrgOutbox(trx, req.orgId as string);
+      // Creating a COMMON list into a platform org whose writes are suspended: re-checked fresh under the lock a
+      // deactivation also takes (see assertPlatformWritable) - nothing written yet, so the throw rolls back clean.
+      if (visibility === 'platform') await assertPlatformWritable(trx, null, { ownerOrg });
       // Exact quota enforcement: serialise creates for this org, re-check the
       // ceiling under the lock, then insert (see quota.service.ts header).
       // Shared lists ON: the org is ONE org whatever rendering the token carries - lists are counted and quota
@@ -652,6 +657,7 @@ router.post('/', requireCatalogCheck('create'), requirePublishWhenBodyIsPlatform
     // The creator was just made list-owner, so the list is editable for them.
     res.status(201).json(formatList(row, await singleCtx(req, row, true)));
   } catch (err: unknown) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
       return;
@@ -867,6 +873,9 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
       );
       if (!existing.rows[0]) return 'not-found';
       const current = existing.rows[0];
+      // Re-check the suspension of the row's OWNER fresh, under the lock a deactivation also takes; promoting INTO a
+      // suspended platform org is refused too. Nothing is written yet: the throw rolls back with no event queued.
+      await assertPlatformWritable(trx, listId, wantsVisibility === 'platform' ? { ownerOrg: current.organization_id } : {});
       const before = await readList(trx, listId);
 
       // Visibility transitions (design record D10). `platform` is one-way: a common list is never demoted
@@ -1034,6 +1043,7 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
 
     res.status(200).json(formatList(updatedResult.rows[0], await singleCtx(req, updatedResult.rows[0], true)));
   } catch (err: unknown) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
       return;
@@ -1136,12 +1146,14 @@ router.delete('/:listId', requireListMutation('delete'), requirePublishForPlatfo
         [listId, ...rowScope.params],
       );
       if (!existing.rows[0]) return 'not-found';
+      // archive AND purge of a common list: its owner's suspension re-checked fresh under the org lock
+      await assertPlatformWritable(trx, listId);
 
       const ctx = eventContextFromRequest(req);
       if (purge) {
         // The pre-transaction guard decided from an earlier read: re-check the LOCKED row (it may have been
         // promoted to a common list since).
-        await assertMayPurgeLocked(req, existing.rows[0]?.visibility, trx);
+        await assertMayPurgeLocked(req, existing.rows[0]?.visibility);
         // list.deleted tombstone FIRST: it reads the key and bumps the revision,
         // which needs the row. No per-item/translation/access events: it implies them.
         await emitListDeleted(trx, ctx, listId);
@@ -1221,6 +1233,7 @@ router.delete('/:listId', requireListMutation('delete'), requirePublishForPlatfo
       res.status(200).json(formatList(result.rows[0], await singleCtx(req, result.rows[0], true)));
     }
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof PlatformPurgeDenied) {
       res.status(403).json(PLATFORM_PURGE_DENIED_BODY);
       return;
@@ -1257,6 +1270,7 @@ router.post('/:listId/archive', requireListMutation('delete'), async (req: Reque
         [listId, ...rowScope.params],
       );
       if (!existing.rows[0]) return 'not-found';
+      await assertPlatformWritable(trx, listId);
 
       const before = await readList(trx, listId);
       await trx.raw(`UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`, [listId]);
@@ -1290,6 +1304,7 @@ router.post('/:listId/archive', requireListMutation('delete'), async (req: Reque
 
     res.status(200).json(formatList(result.rows[0], await singleCtx(req, result.rows[0], true)));
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     getLog(req).error(
       { err, op: 'lists POST /:listId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },
       'lists POST /:listId/archive error failed',

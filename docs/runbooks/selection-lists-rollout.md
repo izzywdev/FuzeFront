@@ -384,6 +384,19 @@ platform org still refuses (403 `platform_suspended`) every mutation of a `platf
 PATCH/archive/restore, items, translations, access, and purge; and a pack upgrade is not seeded into it. Non-platform
 rows and an unsuspended org keep their 4.0.0 behaviour with the flag OFF.
 
+**Suspension follows the OWNER of the platform rows, not the configuration.** The gates (request-level, in-transaction,
+purge, seeding) ask "is the org that owns *this* `platform` row suspended?" against the projection - they never ask
+"is `SELECTION_LIST_PLATFORM_ORG_ID` suspended?". Removing or changing the variable after common rows exist therefore
+does **not** lift a suspension: the former owner's rows stay write-refused (403 `platform_suspended`; seeding
+retryable) until that org is reactivated. Any org that owns a `visibility = 'platform'` row is protected from the org
+lifecycle consumers and is suspended (not deleted) by its own deactivation event, configured or not.
+
+**No race with a deactivation.** The deactivation recording and the resume take the **same per-org outbox lock** every
+mutating transaction takes first, and every mutating transaction re-reads the suspension (fresh) under that lock before it
+writes anything (list PATCH/archive/restore/DELETE, items, list and item translations, access PUT/DELETE, publish/promote,
+seeding). A write is either committed before the deactivation was recorded (a legitimate pre-suspension write) or is refused
+with nothing written and no event queued; none can commit after `suspended_at` is set.
+
 **Operator recovery.** A *legitimate* deactivation: nothing to do (that is the intended outcome). A *forged or
 mistaken* one: confirm in the log (`grep 'platform WRITES are SUSPENDED'`, note the `eventId`), then either have
 identity re-emit `identity.org.updated` with `isActive:true` for the platform org, or, if that is not possible,

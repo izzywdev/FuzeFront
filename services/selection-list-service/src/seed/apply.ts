@@ -60,7 +60,7 @@ import {
 } from '../events/emitters';
 import { enqueueEvent, lockOrgOutbox, mintEventId, wireOrgId } from '../events/outbox';
 import { logger } from '../lib/logger';
-import { configuredPlatformOrgId, orgRenderings, platformWritesSuspended, resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
+import { configuredPlatformOrgId, orgRenderings, orgWritesSuspended, resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
 import { getQuota, lockQuotaScope } from '../services/quota.service';
 import { canonicalJson, computeSourceHash, hashCanonical, hashText } from './canonical';
 import {
@@ -372,7 +372,7 @@ async function applyVisibilityRules(
     }
   }
   const targetIsPlatform = platformOrg !== null && sameOrg(req.organizationId, platformOrg);
-  if (hasPlatformLists && targetIsPlatform && (await platformWritesSuspended(trx))) {
+  if (hasPlatformLists && targetIsPlatform && (await orgWritesSuspended(trx, req.organizationId))) {
     // The platform org is SUSPENDED (deactivation recorded): publishing its common lists is a platform write, so it
     // fails closed - retryably, nothing written - until the org is reactivated.
     throw new SeedFailure(
@@ -391,9 +391,10 @@ async function applyVisibilityRules(
 }
 
 async function refuseWhenPlatformSuspended(trx: Trx, organizationId: string): Promise<void> {
-  const configured = configuredPlatformOrgId();
-  if (!configured || !sameOrg(organizationId, configured)) return;
-  if (!(await platformWritesSuspended(trx))) return;
+  // Keyed by the org that OWNS the common rows, not by configuration: with SELECTION_LIST_PLATFORM_ORG_ID removed
+  // after common rows exist, their owner is still suspended and still refused. Fresh read, under the org lock
+  // taken by runSeed (the deactivation recording takes the same lock).
+  if (!(await orgWritesSuspended(trx, organizationId))) return;
   const owns = await trx('selection_lists').where({ visibility: 'platform' }).whereIn('organization_id', orgRenderings(organizationId)).first('id');
   if (!owns) return; // no common list to rewrite (a first publication is gated in applyVisibilityRules)
   throw new SeedFailure(

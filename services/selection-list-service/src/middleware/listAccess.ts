@@ -34,7 +34,7 @@
 import { NextFunction, Request, RequestHandler, Response } from 'express';
 import { db } from '../db';
 import { getLog, timed } from '../lib/logger';
-import { callerInPlatformOrg, memoPerRequest, platformWritesSuspended, platformWritesSuspendedFor, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
+import { callerInPlatformOrg, memoPerRequest, orgWritesSuspended, orgRenderings, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate, suspendedOrgs, suspendedOrgsFor } from '../lib/sharedLists';
 import {
   bearer,
   getAuthzClient,
@@ -98,7 +98,7 @@ export async function mayPublishPlatform(req: Request): Promise<boolean> {
   if (!(await callerInPlatformOrg(req))) return false;
   // A suspended platform org (deactivation / deletion recorded) publishes nothing, whatever Permit still says:
   // forwarded decisions and already minted 15-minute org-session tokens do not re-check the org's activity.
-  if (await platformWritesSuspendedFor(req)) {
+  if (req.orgId && (await suspendedOrgsFor(req)).some((x) => orgRenderings(req.orgId as string).includes(x))) {
     getLog(req).warn({ userId: req.userId, orgId: req.orgId }, 'publish_platform refused: the platform organization is SUSPENDED (deactivation recorded)');
     return false;
   }
@@ -179,15 +179,18 @@ export function requireListMutation(action: string, opts: MutationOptions = {}):
   return async function listMutationMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
     // The platform-org SUSPENSION gate is FLAG-INDEPENDENT (like the purge guard): a platform-visibility row can exist
     // while the release flag is OFF (rollback / fail-safe), and a holder of a still-valid platform-org token must not
-    // be able to change it while the org is suspended. Cheap first (one projection read, none when no platform org is
-    // configured); the row is only looked up when suspended. 4.0.0 behaviour is otherwise untouched.
+    // be able to change it while its owner is suspended. Keyed by the row's OWNER, not by configuration (the variable
+    // may have been removed after common rows exist). Cheap first (one tiny projection read, normally empty); the row
+    // is only looked up when some org is suspended. This request-level check is the fast path: every mutating
+    // transaction re-checks under the org lock (`assertPlatformWritable`), which is what closes the race.
+    // 4.0.0 behaviour is otherwise untouched.
     if (req.orgId) {
       try {
-        if (await platformWritesSuspendedFor(req)) {
+        if ((await suspendedOrgsFor(req)).length > 0) {
           const suspendedRow = await lookupList(req, req.params['listId']);
-          if (suspendedRow && suspendedRow.visibility === 'platform' && sameOrg(suspendedRow.organization_id, req.orgId)) {
-            getLog(req).warn({ listId: req.params['listId'], op: action, userId: req.userId, orgId: req.orgId }, 'mutation of a common list refused: the platform organization is SUSPENDED');
-            res.status(403).json({ code: 'FORBIDDEN', reason: 'platform_suspended', message: 'The platform organization is suspended; common lists are read-only until it is reactivated.' });
+          if (suspendedRow && suspendedRow.visibility === 'platform' && sameOrg(suspendedRow.organization_id, req.orgId) && (await orgWritesSuspended(db, suspendedRow.organization_id))) {
+            getLog(req).warn({ listId: req.params['listId'], op: action, userId: req.userId, orgId: req.orgId }, 'mutation of a common list refused: its owning organization is SUSPENDED');
+            res.status(403).json(PLATFORM_SUSPENDED_BODY);
             return;
           }
         }
@@ -298,6 +301,64 @@ export class PlatformPurgeDenied extends Error {
   }
 }
 
+export const PLATFORM_SUSPENDED_BODY = {
+  code: 'FORBIDDEN',
+  reason: 'platform_suspended',
+  message: 'The platform organization is suspended; common lists are read-only until it is reactivated.',
+} as const;
+
+/** Raised inside a mutating transaction when the locked platform row's owner is suspended; routes answer 403. */
+export class PlatformSuspendedError extends Error {
+  constructor() {
+    super('The platform organization is suspended.');
+    this.name = 'PlatformSuspendedError';
+  }
+}
+
+/** Answer the 403 for a `PlatformSuspendedError` caught by a route; false = not that error. */
+export function replyPlatformSuspended(err: unknown, res: Response): boolean {
+  if (!(err instanceof PlatformSuspendedError)) return false;
+  res.status(403).json(PLATFORM_SUSPENDED_BODY);
+  return true;
+}
+
+/**
+ * THE re-check every mutating transaction runs AFTER it holds the org outbox lock (the one lock a deactivation also
+ * takes, see events/platformGuard.ts): a FRESH read, so a deactivation processed between the request-level gate and
+ * this transaction cannot let the mutation commit after `suspended_at` was recorded. Throws `PlatformSuspendedError`
+ * when the list is a `platform` row whose owner is suspended (or, with `opts.ownerOrg`, when that org is: creating or
+ * promoting INTO a suspended platform org). Nothing has been written yet, so the throw rolls back with no event
+ * queued. Cheap: one tiny read, the list row only when some org is suspended. Flag-independent.
+ */
+export async function assertPlatformWritable(
+  trx: Parameters<typeof suspendedOrgs>[0],
+  listId: string | null,
+  opts: { ownerOrg?: string } = {},
+): Promise<void> {
+  const suspended = await suspendedOrgs(trx);
+  if (suspended.length === 0) return;
+  const hit = (org: string | null | undefined) => Boolean(org) && orgRenderings(org as string).some((f) => suspended.includes(f));
+  if (opts.ownerOrg && hit(opts.ownerOrg)) throw new PlatformSuspendedError();
+  if (!listId) return;
+  const row = await trx('selection_lists').where({ id: listId }).first('organization_id', 'visibility');
+  if (row && row.visibility === 'platform' && hit(row.organization_id)) throw new PlatformSuspendedError();
+}
+
+/** `assertPlatformWritable` as a ready HTTP answer (for handlers that answer from inside the transaction). */
+export async function platformSuspendedAnswer(
+  trx: Parameters<typeof suspendedOrgs>[0],
+  listId: string | null,
+  opts: { ownerOrg?: string } = {},
+): Promise<{ status: number; body: typeof PLATFORM_SUSPENDED_BODY } | null> {
+  try {
+    await assertPlatformWritable(trx, listId, opts);
+    return null;
+  } catch (err) {
+    if (err instanceof PlatformSuspendedError) return { status: 403, body: PLATFORM_SUSPENDED_BODY };
+    throw err;
+  }
+}
+
 export const PLATFORM_PURGE_DENIED_BODY = {
   code: 'FORBIDDEN',
   message: 'Purging a common list requires platform-operator permission.',
@@ -312,16 +373,13 @@ export const PLATFORM_PURGE_DENIED_BODY = {
  * had not needed it - it is memoised per request otherwise). Independent of the release flag, like the guard
  * it backs. A Security API failure fails closed (denied).
  */
-export async function assertMayPurgeLocked(
-  req: Request,
-  lockedVisibility: string | null | undefined,
-  executor?: Parameters<typeof platformWritesSuspended>[0],
-): Promise<void> {
+export async function assertMayPurgeLocked(req: Request, lockedVisibility: string | null | undefined): Promise<void> {
   if (lockedVisibility !== 'platform') return;
   let allowed = false;
   try {
-    // fresh inside the purge transaction: a suspension recorded after the request's first look still stops the purge
-    allowed = (await mayPublishPlatform(req)) && !(await platformWritesSuspended(executor));
+    // The owner's SUSPENSION is not decided here: every purge transaction runs `assertPlatformWritable` (fresh read,
+    // under the org lock) right before this, so a deactivation recorded after the request's first look still stops it.
+    allowed = await mayPublishPlatform(req);
   } catch (err) {
     getLog(req).error({ err, userId: req.userId, orgId: req.orgId }, 'purge re-check of a common list threw - failing closed');
   }

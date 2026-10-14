@@ -23,6 +23,16 @@ const mockTrx = {
 };
 const mockTransaction = jest.fn(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
 
+// The platform-org suspension reads (a tiny projection query, see lib/sharedLists.suspendedOrgs) are out of scope
+// for this mocked 4.0.0 suite: nothing is suspended. Their real behaviour is pinned against Postgres in
+// shared-lists.platform-org-guard / suspension-race / suspension-owner.
+jest.mock('../src/lib/sharedLists', () => ({
+  ...jest.requireActual('../src/lib/sharedLists'),
+  suspendedOrgs: async () => [],
+  suspendedOrgsFor: async () => [],
+  orgWritesSuspended: async () => false,
+}));
+
 // `db('selection_lists').where(..).first(..)` is the purge guard's visibility lookup (listAccess.lookupList), which
 // runs whatever the shared-lists flag says; in these 4.0.0 suites no list is a common list.
 jest.mock('../src/db', () => ({

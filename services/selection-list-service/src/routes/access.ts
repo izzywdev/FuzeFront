@@ -55,7 +55,7 @@ import { parseLimitParam, registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { getAuthzClient, bearer } from '../middleware/authz';
-import { requireListMutation } from '../middleware/listAccess';
+import { assertPlatformWritable, replyPlatformSuspended, requireListMutation } from '../middleware/listAccess';
 import { canonicalUserId, userScope, writeOrgs } from '../lib/sharedLists';
 import { PermitKeyError, permitSubjectKey, permitTenantKey } from '../lib/permitKeys';
 import { authMiddleware } from '../middleware/auth';
@@ -320,6 +320,9 @@ router.put(
         // Lock order is ALWAYS org outbox lock first (events/outbox.ts): a list
         // purge in the same org deletes these access rows while holding it.
         await lockOrgOutbox(trx, orgId);
+        // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes. Nothing has been
+        // written (mirror or Security API) yet, so the refusal needs no compensation.
+        await assertPlatformWritable(trx, listId);
         // Serialise every access mutation on this list (guard + writes).
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
@@ -431,6 +434,7 @@ router.put(
 
       res.status(200).json(formatGrant(row));
     } catch (err) {
+      if (replyPlatformSuspended(err, res)) return;
       if (err instanceof HttpError) {
         res.status(err.status).json(err.body);
         return;
@@ -503,6 +507,9 @@ router.delete(
         // Org outbox lock first (see PUT above), then serialise every access
         // mutation on this list (guard + writes).
         await lockOrgOutbox(trx, orgId);
+        // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes. Nothing has been
+        // written (mirror or Security API) yet, so the refusal needs no compensation.
+        await assertPlatformWritable(trx, listId);
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
         // Fetch current grant for last-owner guard and idempotency.
@@ -561,6 +568,7 @@ router.delete(
 
       res.status(204).send();
     } catch (err) {
+      if (replyPlatformSuspended(err, res)) return;
       if (err instanceof HttpError) {
         res.status(err.status).json(err.body);
         return;

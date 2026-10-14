@@ -27,6 +27,8 @@ import { ENTITY_PREFIXES, mintId } from '@izzywdev/fuzefront-identity';
 import { requireAuthzCheckWhen } from '../middleware/authz';
 import {
   assertMayPurgeLocked,
+  assertPlatformWritable,
+  replyPlatformSuspended,
   PLATFORM_PURGE_DENIED_BODY,
   PlatformPurgeDenied,
   requireListMutation,
@@ -445,6 +447,8 @@ router.post('/:listId/items', requireListMutation('add_value'), enforceItemQuota
     await db.transaction(async (trx) => {
       // Lock order is ALWAYS org outbox lock -> quota lock -> list row (events/outbox.ts).
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       // Exact quota enforcement: serialise creates for this list, re-check the
       // ceiling under the lock, then insert (see quota.service.ts header).
       await lockQuotaScope(trx, `list_items:${listId}`);
@@ -517,6 +521,7 @@ router.post('/:listId/items', requireListMutation('add_value'), enforceItemQuota
 
     res.status(201).json(formatItem(result.rows[0], await sharedListsOn(req)));
   } catch (err: unknown) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
       return;
@@ -607,6 +612,8 @@ router.put('/:listId/items/reorder', requireListMutation('update_value'), async 
     // Apply new sort_order in a transaction (100-gap convention)
     await db.transaction(async (trx) => {
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       for (let i = 0; i < item_ids.length; i++) {
         await trx.raw(
           `UPDATE selection_list_items SET sort_order = ?, updated_at = now() WHERE id = ?`,
@@ -645,6 +652,7 @@ router.put('/:listId/items/reorder', requireListMutation('update_value'), async 
     const sharedReorder = await sharedListsOn(req);
     res.status(200).json({ items: result.rows.map((r) => formatItem(r, sharedReorder)) });
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     getLog(req).error(
       { err, op: 'items PUT /:listId/items/reorder error', userId: req.userId, orgId: req.orgId, params: req.params },
       'items PUT /:listId/items/reorder error failed',
@@ -719,6 +727,8 @@ router.patch('/:listId/items/:itemId', requireListMutation('update_value'), asyn
   try {
     const found = await db.transaction(async (trx): Promise<boolean> => {
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       // Verify item exists and belongs to this list (inside the txn: it is also
       // the `before` state the event diff is taken against).
       const existing = await trx.raw<{ rows: [{ id: string; status?: string }] }>(
@@ -825,6 +835,7 @@ router.patch('/:listId/items/:itemId', requireListMutation('update_value'), asyn
 
     res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
       return;
@@ -878,6 +889,8 @@ router.delete('/:listId/items/:itemId', requireListMutation('remove_value'), req
   try {
     const found = await db.transaction(async (trx): Promise<boolean> => {
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       const existing = await trx.raw<{ rows: [{ id: string; code: string }] }>(
         `SELECT id, code FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
         [itemId, listId],
@@ -889,7 +902,7 @@ router.delete('/:listId/items/:itemId', requireListMutation('remove_value'), req
         // The pre-transaction guard decided from an earlier read of the list: re-check it under the org lock
         // (a promotion to a common list takes the same lock, so what we read now cannot change under us).
         const listRow = await trx.raw<{ rows: Array<{ visibility: string | null }> }>(`SELECT visibility FROM selection_lists WHERE id = ?`, [listId]);
-        await assertMayPurgeLocked(req, listRow?.rows?.[0]?.visibility, trx);
+        await assertMayPurgeLocked(req, listRow?.rows?.[0]?.visibility);
         await trx.raw(
           `DELETE FROM selection_list_item_translations WHERE item_id = ?`,
           [itemId],
@@ -939,6 +952,7 @@ router.delete('/:listId/items/:itemId', requireListMutation('remove_value'), req
       res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
     }
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof PlatformPurgeDenied) {
       res.status(403).json(PLATFORM_PURGE_DENIED_BODY);
       return;
@@ -976,6 +990,8 @@ router.post('/:listId/items/:itemId/archive', requireListMutation('remove_value'
   try {
     const found = await db.transaction(async (trx): Promise<boolean> => {
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       const existing = await trx.raw<{ rows: [{ id: string }] }>(
         `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
         [itemId, listId],
@@ -1018,6 +1034,7 @@ router.post('/:listId/items/:itemId/archive', requireListMutation('remove_value'
 
     res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     getLog(req).error(
       { err, op: 'items POST /:listId/items/:itemId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },
       'items POST /:listId/items/:itemId/archive error failed',

@@ -25,6 +25,16 @@ import { computeSourceHash } from '../src/routes/translations';
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
+// The platform-org suspension reads (a tiny projection query, see lib/sharedLists.suspendedOrgs) are out of scope
+// for this mocked 4.0.0 suite: nothing is suspended. Their real behaviour is pinned against Postgres in
+// shared-lists.platform-org-guard / suspension-race / suspension-owner.
+jest.mock('../src/lib/sharedLists', () => ({
+  ...jest.requireActual('../src/lib/sharedLists'),
+  suspendedOrgs: async () => [],
+  suspendedOrgsFor: async () => [],
+  orgWritesSuspended: async () => false,
+}));
+
 jest.mock('../src/db', () => {
   const db: any = jest.fn();
   // The mutating routes run inside db.transaction(trx => ...). The trx is the

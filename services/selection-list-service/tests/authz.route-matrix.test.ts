@@ -20,6 +20,16 @@
 // but never asks the Security API fails its row. A future route cannot silently
 // miss a check.
 
+// The platform-org suspension reads (a tiny projection query, see lib/sharedLists.suspendedOrgs) are out of scope
+// for this mocked 4.0.0 suite: nothing is suspended. Their real behaviour is pinned against Postgres in
+// shared-lists.platform-org-guard / suspension-race / suspension-owner.
+jest.mock('../src/lib/sharedLists', () => ({
+  ...jest.requireActual('../src/lib/sharedLists'),
+  suspendedOrgs: async () => [],
+  suspendedOrgsFor: async () => [],
+  orgWritesSuspended: async () => false,
+}));
+
 jest.mock('../src/db', () => {
   const chain: any = {};
   chain.where = () => chain;

@@ -35,7 +35,7 @@ import { ENTITY_PREFIXES } from '@izzywdev/fuzefront-identity';
 import { createHash } from 'crypto';
 import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
-import { requireListMutation, requireListRead } from '../middleware/listAccess';
+import { platformSuspendedAnswer, requireListMutation, requireListRead } from '../middleware/listAccess';
 import { getReadScope, readableByOrg } from '../services/sharedReads';
 import { writeOrgs } from '../lib/sharedLists';
 import type { Knex } from 'knex';
@@ -277,6 +277,9 @@ router.put('/:listId/translations/:locale', requireListMutation('translate'), as
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {
@@ -371,6 +374,9 @@ router.delete('/:listId/translations/:locale', requireListMutation('translate'),
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {
@@ -485,6 +491,9 @@ router.put('/:listId/items/:itemId/translations/:locale', requireListMutation('t
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {
@@ -574,6 +583,9 @@ router.delete('/:listId/items/:itemId/translations/:locale', requireListMutation
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {
@@ -661,6 +673,9 @@ router.post('/:listId/translations/:locale/autofill', requireListMutation('trans
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
+    // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes (nothing written yet).
+    const suspended = await platformSuspendedAnswer(trx, listId);
+    if (suspended) return suspended;
 
     if (locale === list.source_locale) {
       return {

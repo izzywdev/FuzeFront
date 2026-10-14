@@ -297,22 +297,40 @@ export async function resolvePlatformOrgId(ex: Executor = db, now: number = Date
 }
 
 /**
- * Is the platform organization's WRITE side suspended (a deactivation / deletion event was recorded for it, see
- * events/platformGuard.ts)? Read FRESH from the projection every time - never from the platform-org cache, which
- * keeps serving READS (common lists, resolve, ids) while the writes (publish_platform, platform list/item
- * mutations, platform purge, platform seeding) fail closed. Unconfigured: false (every platform feature is off then).
- * A database fault throws: callers fail closed.
+ * Orgs whose WRITE side is SUSPENDED (a deactivation / deletion event was recorded for them, see events/platformGuard.ts),
+ * as every stored rendering of their id. Read FRESH from the projection every time - never from the platform-org cache,
+ * which keeps serving READS (common lists, resolve, ids) while the writes (publish_platform, platform list/item/
+ * translation/access mutations, platform purge, platform seeding) fail closed. Normally empty (one tiny query).
+ *
+ * It is keyed by the org that OWNS the platform rows, not by `SELECTION_LIST_PLATFORM_ORG_ID`: when the variable is
+ * removed after common rows exist, their owner is still suspended and still refused. A database fault throws: callers
+ * fail closed. A suspension always has a projection row (the recording upserts one), so a missing row means none.
  */
-export async function platformWritesSuspended(ex: Executor = db, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
-  const configured = configuredPlatformOrgId(env);
-  if (!configured) return false;
-  const row = await ex('selection_list_ref_index').where({ entity_type: 'organization', wire_id: configured }).first('suspended_at');
-  return Boolean(row && row.suspended_at);
+export async function suspendedOrgs(ex: Executor = db): Promise<string[]> {
+  const rows: Array<{ entity_id: string | null; wire_id: string | null }> = await ex('selection_list_ref_index')
+    .where({ entity_type: 'organization' })
+    .whereNotNull('suspended_at')
+    .select('entity_id', 'wire_id');
+  const out = new Set<string>();
+  for (const r of rows) {
+    for (const id of [r.entity_id, r.wire_id]) {
+      if (!id) continue;
+      for (const f of orgRenderings(id)) out.add(f);
+    }
+  }
+  return [...out];
 }
 
-/** `platformWritesSuspended`, evaluated once per request (a fresh read per REQUEST, never across requests). */
-export function platformWritesSuspendedFor(req: Pick<Request, 'orgId' | 'userId'>): Promise<boolean> {
-  return memoPerRequest(req, 'platform-writes-suspended', () => platformWritesSuspended());
+/** Is THIS org (any rendering of its id) write-suspended? Fresh read. */
+export async function orgWritesSuspended(ex: Executor, orgId: string | null | undefined): Promise<boolean> {
+  if (!orgId) return false;
+  const forms = new Set(orgRenderings(orgId));
+  return (await suspendedOrgs(ex)).some((x) => forms.has(x));
+}
+
+/** `suspendedOrgs`, read once per request (a fresh read per REQUEST, never across requests). */
+export function suspendedOrgsFor(req: Pick<Request, 'orgId' | 'userId'>): Promise<string[]> {
+  return memoPerRequest(req, 'suspended-orgs', () => suspendedOrgs());
 }
 
 /** Is the caller acting in the platform organization? Memoised per request. */

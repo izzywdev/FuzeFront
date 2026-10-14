@@ -498,7 +498,12 @@ type `platform`) clears it. The suspend/resume state machine is ORDERED by the e
 `suspended_event_at` for the deactivation that suspended): a deactivation suspends only if strictly newer than the newest
 applied snapshot (stale and same-instant ones are ignored, ties go to active), an activation resumes only if not older than
 the suspending deactivation. The write gate is flag-independent (like the purge guard): with the shared-lists flag OFF a
-suspended platform org still refuses every mutation of a platform row it owns and the seeding of packs into it. A forged
+suspended platform org still refuses every mutation of a platform row it owns and the seeding of packs into it. The gate is
+keyed by the OWNER of the platform row (the projection's `suspended_at` of the org owning the `visibility = 'platform'` row
+being mutated or seeded), never by `SELECTION_LIST_PLATFORM_ORG_ID`, so removing the variable after common rows exist does not
+lift a suspension. It is race-free: the deactivation recording and the resume take the per-org outbox lock that every mutating
+transaction takes first, and each mutating transaction re-checks the suspension fresh under that lock before writing
+(`assertPlatformWritable`; the request-level check is only the fast path). A forged
 event can therefore at worst pause platform publishing; recovery steps are in
 `docs/runbooks/selection-lists-rollout.md` §10.3. Protected = the configured platform org, the root platform org, or any
 org owning a `visibility = 'platform'` row (the fallback when unconfigured); never the projection's user-controllable
