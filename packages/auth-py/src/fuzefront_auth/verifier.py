@@ -124,6 +124,18 @@ def _claim_string(payload: dict[str, Any], name: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _bound_claim(payload: dict[str, Any], name: str) -> str | None:
+    """A binding claim (`portalId`, `sessionId`): absent => None, a non-empty string =>
+    itself, and PRESENT-but-malformed (number, list, empty string, ...) => rejected.
+    Normalising a malformed binding to "no binding" would widen it."""
+    if name not in payload:
+        return None
+    value = payload[name]
+    if isinstance(value, str) and value:
+        return value
+    raise AuthError("MALFORMED", f"token has a malformed `{name}` claim")
+
+
 def _claim_roles(payload: dict[str, Any], name: str) -> tuple[str, ...]:
     value = payload.get(name)
     if isinstance(value, list):
@@ -212,12 +224,13 @@ class _LegacyVerifier:
         # Same rule as backend/src/middleware/auth.ts.
         if "kind" in payload:
             raise AuthError("INVALID_AUDIENCE", "token is not a platform session token")
+        portal_id = _bound_claim(payload, "portalId")
 
         user_id = _claim_string(payload, cfg.subject_claim) or _claim_string(payload, "sub")
         if not user_id:
             raise AuthError("MISSING_CLAIM", f"token has no `{cfg.subject_claim}` (or `sub`) claim")
 
-        session_id = _claim_string(payload, "sessionId")
+        session_id = _bound_claim(payload, "sessionId")
         if cfg.session_validator is not None:
             # Revocation: a signed token stays valid until `exp`, but the session it
             # names may have been ended. Only `True` keeps it alive; anything else is a
@@ -254,7 +267,7 @@ class _LegacyVerifier:
             issued_at=_claim_number(payload, "iat"),
             expires_at=_claim_number(payload, "exp"),
             issuer=_claim_string(payload, "iss"),
-            portal_id=_claim_string(payload, "portalId"),
+            portal_id=portal_id,
             session_id=session_id,
             claims=dict(payload),
         )
@@ -340,15 +353,17 @@ class _KeyResolver:
     def __init__(self, config: FederatedJwksConfig) -> None:
         self._config = config
         self._lock = threading.Lock()
-        self._jwks_uri: str | None = config.jwks_uri
         self._keys: dict[str, list[_Candidate]] = {}
         self._keyless: list[_Candidate] = []
         self._fetched_at: float | None = None
         self._last_attempt: float | None = None
 
     def _resolve_jwks_uri(self) -> str:
-        if self._jwks_uri:
-            return self._jwks_uri
+        # An explicitly configured URI is pinned. A DISCOVERED one is re-discovered on every
+        # key-set refresh (already rate-limited), so an issuer that moves its JWKS endpoint
+        # and removes the old one recovers without a restart.
+        if self._config.jwks_uri:
+            return self._config.jwks_uri
         discovery = f"{self._config.issuer.rstrip('/')}/.well-known/openid-configuration"
         try:
             doc = _fetch_json(discovery, _DISCOVERY_TIMEOUT_SEC)
@@ -362,7 +377,6 @@ class _KeyResolver:
         # tenant/authority would make us trust ITS signing keys for our issuer.
         if doc.get("issuer") != self._config.issuer:
             raise AuthError("JWKS_UNAVAILABLE", "discovery document is for a different issuer", 503)
-        self._jwks_uri = uri
         return uri
 
     def _refresh(self) -> None:
@@ -492,6 +506,7 @@ class _FederatedVerifier:
         user_id = _claim_string(payload, cfg.subject_claim)
         if not user_id:
             raise AuthError("MISSING_CLAIM", f"token has no `{cfg.subject_claim}` claim")
+        portal_id = _bound_claim(payload, "portalId")
 
         return Identity(
             user_id=user_id,
@@ -502,7 +517,7 @@ class _FederatedVerifier:
             issued_at=_claim_number(payload, "iat"),
             expires_at=_claim_number(payload, "exp"),
             issuer=_claim_string(payload, "iss"),
-            portal_id=_claim_string(payload, "portalId"),
+            portal_id=portal_id,
             claims=dict(payload),
         )
 

@@ -410,3 +410,60 @@ def test_malformed_restriction_metadata_skips_the_key(jwks_server, rsa_key, malf
     entry.pop("alg", None)
     _only(jwks_server, {**entry, **malformed})
     assert code_of(verifier(jwks_server), make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)) == "JWKS_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("bad", [5, ["p-1"], "", True])
+def test_a_malformed_portal_binding_is_rejected_in_federated_mode_too(jwks_server, rsa_key, bad):
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "portalId": bad})
+    assert code_of(verifier(jwks_server), token) == "MALFORMED"
+
+
+def test_a_moved_jwks_endpoint_is_rediscovered_without_a_restart(jwks_server, rsa_key, clock):
+    import fuzefront_auth.verifier as vm
+
+    v = create_verifier(FederatedJwksConfig(issuer=jwks_server["base"], audience=AUDIENCE))
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "iss": jwks_server["base"]})
+    assert v.verify(token).user_id == "u-9"
+
+    # The issuer moves its JWKS to a new path and the old one disappears.
+    real = vm._fetch_json
+    state = {"moved": False}
+
+    def fetch(url, timeout):
+        if url.endswith("/.well-known/openid-configuration"):
+            doc = real(url, timeout)
+            return {**doc, "jwks_uri": doc["jwks_uri"].replace("/jwks", "/jwks-v2")} if state["moved"] else doc
+        if url.endswith("/jwks") and state["moved"]:
+            raise OSError("gone")
+        if url.endswith("/jwks-v2"):
+            return real(url.replace("/jwks-v2", "/jwks"), timeout)
+        return real(url, timeout)
+
+    vm._fetch_json = fetch
+    try:
+        state["moved"] = True
+        clock(301)  # key set expires -> refresh -> rediscover
+        assert v.verify(token).user_id == "u-9"
+    finally:
+        vm._fetch_json = real
+
+
+def test_an_explicitly_configured_jwks_uri_stays_pinned(jwks_server, rsa_key, clock):
+    import fuzefront_auth.verifier as vm
+
+    seen = []
+    real = vm._fetch_json
+
+    def spy(url, timeout):
+        seen.append(url)
+        return real(url, timeout)
+
+    vm._fetch_json = spy
+    try:
+        v = verifier(jwks_server)  # configured jwks_uri
+        v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD))
+        clock(301)
+        v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD))
+    finally:
+        vm._fetch_json = real
+    assert all(not u.endswith("/.well-known/openid-configuration") for u in seen)

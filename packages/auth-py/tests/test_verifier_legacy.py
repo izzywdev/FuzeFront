@@ -196,3 +196,29 @@ def test_validator_runs_before_the_resolver_hydrates_anything():
     with pytest.raises(AuthError):
         v.verify(make_token(SECRET, claims={"userId": "u", "sessionId": "s-1"}))
     assert calls == []
+
+
+@pytest.mark.parametrize("bad", [5, ["p-1"], "", {"id": "p-1"}, True, None])
+def test_a_malformed_portal_binding_is_rejected_not_dropped(bad):
+    # Normalising a present-but-malformed portalId to "unbound" would widen the token:
+    # an unbound token is accepted on the root portal or with no resolver at all.
+    calls = []
+    v = verifier(resolver=lambda uid: calls.append(uid) or {"roles": ["admin"]})
+    with pytest.raises(AuthError) as info:
+        v.verify(make_token(SECRET, claims={"userId": "u", "portalId": bad}))
+    assert (info.value.code, info.value.status) == ("MALFORMED", 401)
+    assert calls == []  # rejected before anything is hydrated
+
+
+@pytest.mark.parametrize("bad", [5, ["s-1"], "", True])
+def test_a_malformed_session_id_is_rejected_not_passed_as_none(bad):
+    seen = []
+    v = verifier(session_validator=lambda *a: seen.append(a) or True)
+    with pytest.raises(AuthError) as info:
+        v.verify(make_token(SECRET, claims={"userId": "u", "sessionId": bad}))
+    assert info.value.code == "MALFORMED" and seen == []
+
+
+def test_absent_binding_claims_are_still_fine():
+    ident = verifier().verify(make_token(SECRET, claims={"userId": "u"}))
+    assert (ident.portal_id, ident.session_id) == (None, None)
