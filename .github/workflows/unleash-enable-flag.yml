@@ -109,10 +109,12 @@ jobs:
           sid=$(python3 -c 'import sys,json;xs=[s for s in json.load(open("/tmp/strats.json")) if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];sys.exit("ambiguous: multiple unsegmented unconstrained flexibleRollout strategies — resolve in Unleash UI first") if len(xs)>1 else None;print(xs[0]["id"] if xs else "")')
           post_body=$(python3 -c 'import json,os;print(json.dumps({"name":"flexibleRollout","parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
           if [ -n "$sid" ]; then
-            # Preserve the full strategy object (variants, title, disabled, stickiness,
-            # groupId…) — only update parameters.rollout. Unleash PUT replaces the whole
-            # strategy, so omitting any field (e.g. variants on an experiment) deletes it.
-            patch_body=$(python3 -c 'import json,os;d=json.load(open("/tmp/strats.json"));xs=[s for s in d if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];s=dict(xs[0]);s.pop("id",None);s["parameters"]=dict(s.get("parameters",{}));s["parameters"]["rollout"]=os.environ["ROLLOUT"];print(json.dumps(s))')
+            # Preserve the full strategy object (variants, title, stickiness, groupId…) —
+            # only update parameters.rollout and force disabled:false. Unleash PUT replaces
+            # the whole strategy, so omitting a field (e.g. variants on an experiment) deletes
+            # it. Strip response-only fields (id, featureName, createdAt, sortOrder) that the
+            # PUT schema rejects with 400.
+            patch_body=$(python3 -c 'import json,os;d=json.load(open("/tmp/strats.json"));xs=[s for s in d if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];s=dict(xs[0]);[s.pop(k,None) for k in ["id","featureName","createdAt","sortOrder"]];s["parameters"]=dict(s.get("parameters",{}));s["parameters"]["rollout"]=os.environ["ROLLOUT"];s["disabled"]=False;print(json.dumps(s))')
             strat_code=$(curl -sS -o /tmp/strat_w.json -w '%{http_code}' "${AUTH[@]}" -H 'Content-Type: application/json' -X PUT "$base/strategies/$sid" -d "$patch_body")
             case "$strat_code" in 200) : ;; *) echo "strategy PUT failed ($strat_code)"; cat /tmp/strat_w.json; exit 1;; esac
           else
