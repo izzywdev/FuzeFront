@@ -601,12 +601,27 @@ provisioningService:
 # schema are provisioned by the pre-install billing-db-bootstrap Job. NEVER
 # hand-deploy — flip via GitOps.
 billingService:
-  # First-light: DISABLED. While false, NEITHER the billing Deployment NOR the
-  # pre-install billing-db-bootstrap hook render — so billing has ZERO freeze
-  # surface on the umbrella sync (no InvalidImageName, no PreSync-hook gate).
-  # Billing is a backend microservice, not part of the MF platform shell, and the
-  # host backend's billing proxy degrades gracefully without it — so it must not
-  # gate go-live. GO-LIVE = flip this to true AND seal the real STRIPE_* keys.
+  # ENABLED — first-light is over. This paragraph read "First-light: DISABLED"
+  # and "GO-LIVE = flip this to true" for a go-live that had already happened,
+  # directly above `enabled: true`, so the comment asserted the opposite of the
+  # value it documents. Corrected in place rather than deleted, same as the
+  # release.yml-anchor correction below: a stale claim about a production flag is
+  # worse than no claim, because it reads as current.
+  #
+  # What is still true, and is why this flag exists: while `false`, NEITHER the
+  # billing Deployment NOR the pre-install billing-db-bootstrap hook render — so
+  # billing contributes ZERO freeze surface to the umbrella sync (no
+  # InvalidImageName, no PreSync-hook gate). Billing is a backend microservice,
+  # not part of the MF platform shell, and the host backend's billing proxy
+  # degrades gracefully without it. That makes this flag a usable kill switch,
+  # not just a first-light gate.
+  #
+  # Flipping it to `true` is necessary but NOT sufficient for billing to SERVE:
+  # per the header above, that also requires `billing-secrets` to hold real
+  # STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET / BILLING_INTERNAL_TOKEN /
+  # BILLING_DB_PASSWORD in the cluster. The repo only commits placeholders, so
+  # this file cannot tell you whether the live Secret is sealed with real values —
+  # do not infer it from `enabled: true` here.
   #
   # The claim that once stood here — "the image tag below is already auto-bumped
   # to the built SHA by release.yml" — was FALSE for the life of this file. The
