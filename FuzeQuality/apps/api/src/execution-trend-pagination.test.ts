@@ -4,9 +4,9 @@ import { decodeExecutionTrendCursor, executionTrendPage } from './execution-tren
 describe('execution outcome trend pagination', () => {
   it('continues before the last UTC day without duplicating it', () => {
     const items = [
-      { date: '2026-10-11', passed: 2, failed: 0, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 30_000, maximumDurationMs: 40_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1 },
-      { date: '2026-10-10', passed: 1, failed: 1, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 },
-      { date: '2026-10-09', passed: 0, failed: 2, cancelled: 0, running: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0 },
+      { date: '2026-10-11', total: 2, passed: 2, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 2, averageDurationMs: 30_000, maximumDurationMs: 40_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1 },
+      { date: '2026-10-10', total: 2, passed: 1, failed: 1, cancelled: 0, running: 0, passRate: 0.5, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 },
+      { date: '2026-10-09', total: 2, passed: 0, failed: 2, cancelled: 0, running: 0, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0 },
     ]
     const page = executionTrendPage(items, 2, '2026-10-11T12:00:00.000Z')
     expect(page.items.map(item => item.date)).toEqual(['2026-10-11', '2026-10-10'])

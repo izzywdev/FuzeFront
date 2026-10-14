@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.33.0
+  version: 0.34.0
   license:
     name: UNLICENSED
 servers:
@@ -1701,13 +1701,23 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, passed, failed, cancelled, running, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount]
+      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount]
       properties:
         date: { type: string, format: date }
+        total:
+          type: integer
+          minimum: 0
+          description: All retained executions in the UTC-day bucket.
         passed: { type: integer, minimum: 0 }
         failed: { type: integer, minimum: 0 }
         cancelled: { type: integer, minimum: 0 }
         running: { type: integer, minimum: 0 }
+        passRate:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Passed share of terminal outcomes; zero when no terminal outcome exists.
         durationSampleCount: { type: integer, minimum: 0 }
         averageDurationMs: { type: integer, minimum: 0 }
         maximumDurationMs:

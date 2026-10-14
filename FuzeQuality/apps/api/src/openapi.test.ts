@@ -172,8 +172,11 @@ describe('contract discovery', () => {
         ].schema
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.ExecutionOutcomeTrend.required).toEqual(
-        ['date', 'passed', 'failed', 'cancelled', 'running', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount']
+        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount']
       )
+      expect(schemas.ExecutionOutcomeTrend.properties.passRate).toMatchObject({
+        type: 'number', format: 'double', minimum: 0, maximum: 1,
+      })
       expect(schemas.ExecutionOutcomeTrend.properties.averageDurationMs).toMatchObject({
         type: 'integer', minimum: 0,
       })

@@ -109,10 +109,14 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
 
 export type ExecutionOutcomeTrend = {
   date: string
+  /** All retained executions in this UTC-day bucket. */
+  total: number
   passed: number
   failed: number
   cancelled: number
   running: number
+  /** Passed share of terminal outcomes (passed, failed, or cancelled); zero when no terminal outcome exists. */
+  passRate: number
   /** Runs with a valid, non-negative start/end interval. */
   durationSampleCount: number
   /** Rounded arithmetic mean for the valid intervals in this UTC-day bucket. */
@@ -144,10 +148,12 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
     const date = timestamp.slice(0, 10)
     const current = results.get(date) ?? {
       date,
+      total: 0,
       passed: 0,
       failed: 0,
       cancelled: 0,
       running: 0,
+      passRate: 0,
       durationSampleCount: 0,
       averageDurationMs: 0,
       maximumDurationMs: 0,
@@ -156,6 +162,7 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       recoveredRunCount: 0,
       totalDurationMs: 0,
     }
+    current.total++
     current[execution.status]++
     if (execution.attempt > 1) {
       current.retryAttemptCount++
@@ -179,7 +186,10 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
     results.set(date, current)
   }
   return [...results.values()]
-    .map(({ totalDurationMs: _totalDurationMs, ...trend }) => trend)
+    .map(({ totalDurationMs: _totalDurationMs, ...trend }) => {
+      const terminalOutcomes = trend.passed + trend.failed + trend.cancelled
+      return { ...trend, passRate: terminalOutcomes ? trend.passed / terminalOutcomes : 0 }
+    })
     .sort((left, right) => left.date.localeCompare(right.date))
 }
 

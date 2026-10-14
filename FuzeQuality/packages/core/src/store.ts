@@ -1288,10 +1288,16 @@ export class PostgresCatalogStore implements CatalogStore {
          ORDER BY repository_id,provider,external_run_id,attempt,versioned_at DESC,version_id DESC
        )
        SELECT to_char((COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS date,
+              count(*)::integer AS total,
               count(*) FILTER (WHERE status='passed')::integer AS passed,
               count(*) FILTER (WHERE status='failed')::integer AS failed,
               count(*) FILTER (WHERE status='cancelled')::integer AS cancelled,
               count(*) FILTER (WHERE status='running')::integer AS running,
+              CASE
+                WHEN count(*) FILTER (WHERE status<>'running')=0 THEN 0
+                ELSE (count(*) FILTER (WHERE status='passed'))::double precision /
+                     (count(*) FILTER (WHERE status<>'running'))
+              END AS pass_rate,
               count(*) FILTER (
                 WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
               )::integer AS duration_sample_count,
@@ -1351,10 +1357,12 @@ export class PostgresCatalogStore implements CatalogStore {
     )
     return result.rows.map(row => ({
       date: row.date,
+      total: row.total,
       passed: row.passed,
       failed: row.failed,
       cancelled: row.cancelled,
       running: row.running,
+      passRate: row.pass_rate,
       durationSampleCount: row.duration_sample_count,
       averageDurationMs: row.average_duration_ms,
       maximumDurationMs: row.maximum_duration_ms,

@@ -186,10 +186,12 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
   for (const item of groups.flat()) {
     const current = merged.get(item.date) ?? {
       date: item.date,
+      total: 0,
       passed: 0,
       failed: 0,
       cancelled: 0,
       running: 0,
+      passRate: 0,
       durationSampleCount: 0,
       averageDurationMs: 0,
       maximumDurationMs: 0,
@@ -206,6 +208,9 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.failed += item.failed
     current.cancelled += item.cancelled
     current.running += item.running
+    current.total += item.total ?? (item.passed + item.failed + item.cancelled + item.running)
+    const terminalOutcomes = current.passed + current.failed + current.cancelled
+    current.passRate = terminalOutcomes ? current.passed / terminalOutcomes : 0
     current.durationSampleCount += itemDurationSampleCount
     current.averageDurationMs = current.durationSampleCount
       ? Math.round(combinedDurationMs / current.durationSampleCount)
@@ -5097,6 +5102,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <span>{day.failed} failed</span>
                 <span>{day.cancelled} cancelled</span>
                 <span>{day.running} running</span>
+                <span>
+                  {day.total} total · {Math.round(day.passRate * 100)}% passed among terminal outcomes
+                </span>
                 <span>
                   {day.durationSampleCount > 0
                     ? `${durationMsLabel(day.averageDurationMs)} average · ${durationMsLabel(day.maximumDurationMs)} slowest · ${day.durationSampleCount} timed`

@@ -172,14 +172,14 @@ describe('test execution evidence', () => {
   })
 
   it('aggregates complete tenant-scoped outcome history by UTC day in Postgres', async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', passed: 2, failed: 1, cancelled: 0, running: 0, duration_sample_count: 2, average_duration_ms: 45_000, maximum_duration_ms: 60_000, retry_attempt_count: 3, successful_retry_count: 2, recovered_run_count: 1 }] })
+    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, pass_rate: 2 / 3, duration_sample_count: 2, average_duration_ms: 45_000, maximum_duration_ms: 60_000, retry_attempt_count: 3, successful_retry_count: 2, recovered_run_count: 1 }] })
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
       kind: 'integration', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
     })).resolves.toEqual([
-      { date: '2026-10-10', passed: 2, failed: 1, cancelled: 0, running: 0, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
+      { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
     ])
 
     const [sql, parameters] = query.mock.calls[0]
@@ -192,6 +192,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).not.toContain("COALESCE(completed_at,started_at,'epoch'::timestamptz)")
     expect(String(sql)).toContain("AT TIME ZONE 'UTC'")
     expect(String(sql)).toContain("count(*) FILTER (WHERE status='failed')")
+    expect(String(sql)).toContain('AS pass_rate')
     expect(String(sql)).toContain('duration_sample_count')
     expect(String(sql)).toContain('average_duration_ms')
     expect(String(sql)).toContain('maximum_duration_ms')
@@ -301,10 +302,10 @@ describe('test execution evidence', () => {
       })
 
       await expect(store.executionOutcomeTrend('repo-1', 'org-1', { snapshotAt })).resolves.toEqual([
-        { date: '2026-10-10', passed: 0, failed: 0, cancelled: 0, running: 1, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 },
+        { date: '2026-10-10', total: 1, passed: 0, failed: 0, cancelled: 0, running: 1, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 },
       ])
       await expect(store.executionOutcomeTrend('repo-1', 'org-1')).resolves.toEqual([
-        { date: '2026-10-11', passed: 1, failed: 0, cancelled: 0, running: 0, durationSampleCount: 1, averageDurationMs: 420_000, maximumDurationMs: 420_000, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 },
+        { date: '2026-10-11', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 1, averageDurationMs: 420_000, maximumDurationMs: 420_000, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 },
       ])
     } finally {
       vi.useRealTimers()
