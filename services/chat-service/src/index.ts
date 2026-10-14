@@ -1,3 +1,4 @@
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { createApp } from './app';
 import { loadConfig } from './config';
 import { db } from './db';
@@ -19,6 +20,14 @@ import { KnexRefIndexRepository } from './repositories/ref-index.repository';
 import { initFeatureFlags } from './utils/feature-flags';
 import { injectRecentGmailSummary } from './connectors/gmail-injection';
 import { createDelegationClient, createWorkloadAuthClient } from '@fuzefront/service-auth';
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'chat-service',
+  serviceVersion: process.env.npm_package_version,
+});
 
 async function main() {
   const config = loadConfig();
@@ -115,6 +124,9 @@ async function main() {
     console.log('[chat-service] Shutting down...');
     await stopRefIndexProjection().catch(() => {});
     await producer.disconnect().catch(() => {});
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => {});
     server.close(() => process.exit(0));
   };
 

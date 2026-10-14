@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import {
   createKafkaClient,
   TypedProducer,
@@ -31,6 +32,14 @@ import { startUserDeletedConsumer } from './kafka/user-deleted.consumer';
 import { HandlerContext } from './handlers/types';
 
 const FLUSH_INTERVAL_SEC = parseInt(process.env.BILLING_METER_FLUSH_INTERVAL_SEC || '60', 10);
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'billing-service',
+  serviceVersion: process.env.npm_package_version,
+});
 
 async function main() {
   const config = loadConfig();
@@ -189,6 +198,11 @@ async function main() {
     } catch (err) {
       console.error('[billing-service] shutdown teardown error:', err);
     }
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch((err) =>
+      console.error('[billing-service] telemetry shutdown error:', err),
+    );
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

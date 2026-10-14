@@ -55,7 +55,7 @@ COPY services/selection-list-service/package.json ./services/selection-list-serv
 COPY services/devportal-service/package.json ./services/devportal-service/
 
 RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts && \
-    mkdir -p packages/auth/node_modules
+    mkdir -p packages/auth/node_modules packages/telemetry/node_modules
 # npm may hoist every auth runtime dependency into /app/node_modules. Keep the
 # optional workspace dependency directory copyable in either locked layout.
 
@@ -125,13 +125,17 @@ COPY services/devportal-service/package.json ./services/devportal-service/
 RUN npm ci --workspace=services/devportal-service --ignore-scripts
 
 COPY packages/auth/ ./packages/auth/
+COPY packages/telemetry/ ./packages/telemetry/
 COPY services/devportal-service/ ./services/devportal-service/
 COPY --from=specs /app/services/devportal-service/specs ./services/devportal-service/specs
 
 # Build @fuzefront/auth first (src/middleware/authz.ts imports it at module
-# load), then devportal-service. Mirrors services/selection-list-service/
-# Dockerfile's identical treatment of the same package.
+# load), then @fuzefront/telemetry (app.ts calls tracingMiddleware(), index.ts
+# calls initTelemetry() at module load — same reasoning), then
+# devportal-service. Mirrors services/selection-list-service/Dockerfile's
+# identical treatment of the same package.
 RUN cd packages/auth && npm install --ignore-scripts && npm run build
+RUN cd packages/telemetry && npm install --ignore-scripts && npm run build
 RUN cd services/devportal-service && npm run build
 
 # ---------- production ----------
@@ -152,6 +156,12 @@ COPY --from=build /app/services/devportal-service/specs ./services/devportal-ser
 COPY --from=build /app/packages/auth/package.json ./packages/auth/package.json
 COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 COPY --from=base /app/packages/auth/node_modules ./packages/auth/node_modules
+# @fuzefront/telemetry, same symlink shape as @fuzefront/auth above — index.ts
+# calls initTelemetry() at module load, so without this the container dies at
+# boot with "Cannot find module '@fuzefront/telemetry'".
+COPY --from=build /app/packages/telemetry/package.json ./packages/telemetry/package.json
+COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
+COPY --from=base /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 # Copy openapi.yaml so the docs route can serve swagger-ui-express at runtime
 COPY --from=build /app/services/devportal-service/openapi.yaml ./services/devportal-service/openapi.yaml
 

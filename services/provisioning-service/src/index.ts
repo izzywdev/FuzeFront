@@ -21,6 +21,7 @@ import {
   IdentityMembershipRemovedPayloadV1,
   identityMembershipRemovedSchemaV1,
 } from '@fuzefront/shared/kafka';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { loadConfig } from './config';
 import {
   handleUserCreated,
@@ -34,6 +35,14 @@ import {
   HandlerDeps,
 } from './handler';
 import { createApp } from './app';
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'provisioning-service',
+  serviceVersion: process.env.npm_package_version,
+});
 
 async function main() {
   const config = loadConfig();
@@ -197,6 +206,9 @@ async function main() {
     await membershipAddedConsumer.disconnect();
     await membershipRemovedConsumer.disconnect();
     await dlqProducer.disconnect();
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => {});
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

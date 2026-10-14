@@ -5,10 +5,19 @@ import {
   TOPICS,
   notifyEmailRequestedSchemaV1,
 } from '@fuzefront/shared/kafka';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { loadConfig } from './config';
 import { createProvider } from './providers';
 import { handleEmailRequested } from './handlers/email-requested.handler';
 import { createApp } from './app';
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'email-service',
+  serviceVersion: process.env.npm_package_version,
+});
 
 async function main() {
   const config = loadConfig();
@@ -45,6 +54,9 @@ async function main() {
     console.log('[email-service] Shutting down...');
     await consumer.disconnect();
     await statusProducer.disconnect();
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => {});
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

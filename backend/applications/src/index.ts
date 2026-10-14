@@ -21,6 +21,7 @@ import {
   waitForTable,
   db,
 } from '@fuzefront/core'
+import { initTelemetry, tracingMiddleware, type TelemetryHandle } from '@fuzefront/telemetry'
 
 import appsRoutes from './routes/apps'
 import appInstallationsRoutes from './routes/app-installations'
@@ -36,8 +37,23 @@ import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 
 dotenv.config()
 
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below — see
+// backend/security/src/index.ts for the full rationale (HttpInstrumentation/
+// ExpressInstrumentation patch shared module/prototype state looked up at CALL
+// time, but request handling must not start first). Sends OTLP to FuzeInfra's
+// Collector; endpoint/protocol/sampling default from OTEL_* env vars.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'applications-service',
+  serviceVersion: process.env.npm_package_version,
+})
+
 const PORT = process.env.PORT || 3003
 const app = createExpressApp({ serviceName: 'applications-service' })
+// Starts/continues a per-request span, exposing req.traceId/req.spanId for
+// log correlation (see @fuzefront/telemetry's withTraceContext). Mounted
+// independently of @fuzefront/core's own request-id assignment inside
+// createExpressApp — the two correlation ids coexist rather than compete.
+app.use(tracingMiddleware())
 const httpServer = createServer(app)
 const startTime = Date.now()
 
@@ -165,6 +181,9 @@ function gracefulShutdown(signal: string) {
     io.close(async () => {
       await stopRefIndexProjection().catch(() => undefined)
       await closeDatabase().catch(() => undefined)
+      // Flush any spans still buffered before the process exits — otherwise the
+      // last few requests before shutdown silently never reach Tempo.
+      await telemetry.shutdown().catch(() => undefined)
       process.exit(0)
     })
   })

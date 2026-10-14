@@ -1,3 +1,4 @@
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { createApp } from './app';
 import { loadConfig } from './config';
 import { db } from './db';
@@ -7,6 +8,14 @@ import { StreamHub } from './stream/hub';
 
 /** How often expired notifications are swept. Cheap (partial index) and idempotent. */
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'notification-service',
+  serviceVersion: process.env.npm_package_version,
+});
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -71,6 +80,9 @@ async function main(): Promise<void> {
     hub.closeAll();
     server.close(async () => {
       await db.destroy().catch(() => {});
+      // Flush any spans still buffered before the process exits — otherwise
+      // the last few requests before shutdown silently never reach Tempo.
+      await telemetry.shutdown().catch(() => {});
       process.exit(0);
     });
   };

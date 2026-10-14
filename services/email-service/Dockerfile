@@ -9,6 +9,9 @@ RUN apk add --no-cache dumb-init
 # We use the email-service's own package-lock.json (not root workspace mode)
 # because services/email-service is not in the root workspaces array.
 COPY shared/package.json ./shared/
+# Same file: dependency shape for @fuzefront/telemetry — manifest must be
+# present in EVERY stage that installs, or npm creates a dangling symlink.
+COPY packages/telemetry/package.json ./packages/telemetry/
 COPY services/email-service/package.json services/email-service/package-lock.json ./services/email-service/
 
 # Install only production deps for email-service
@@ -18,6 +21,7 @@ RUN cd services/email-service && npm ci --omit=dev --ignore-scripts
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY shared/package.json ./shared/
+COPY packages/telemetry/package.json ./packages/telemetry/
 COPY services/email-service/package.json services/email-service/package-lock.json ./services/email-service/
 
 RUN cd services/email-service && npm ci --ignore-scripts
@@ -27,10 +31,19 @@ RUN cd shared && npm install --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
+COPY packages/telemetry/ ./packages/telemetry/
 COPY services/email-service/ ./services/email-service/
 
-# Build shared first, then email-service
+# Build shared first, then @fuzefront/telemetry (app.ts calls
+# tracingMiddleware(), index.ts calls initTelemetry() at module load), then
+# email-service.
 RUN cd shared && npm run build
+RUN cd packages/telemetry && npm install --ignore-scripts && npm run build
+# telemetry has RUNTIME dependencies (the @opentelemetry/* SDK packages) that
+# must reach the production image. The install above pulls in devDeps too
+# (tsup/jest/typescript) because the build needs them; prune them here so the
+# node_modules copied below is production-only.
+RUN cd packages/telemetry && npm prune --omit=dev
 RUN cd services/email-service && npm run build
 
 # ---------- production ----------
@@ -45,6 +58,14 @@ COPY --from=base /app/services/email-service/node_modules ./services/email-servi
 # (node_modules/@fuzefront/shared -> ../../shared) resolves "main: dist/index.js"
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
+# @fuzefront/telemetry is a `file:` dependency, so npm LINKS it —
+# node_modules/@fuzefront/telemetry is a symlink to /app/packages/telemetry.
+# package.json + dist populate the symlink target; node_modules carries its
+# RUNTIME deps (the @opentelemetry/* SDK packages), which — same as
+# shared/kafkajs below — are not hoisted anywhere else in this image.
+COPY --from=build /app/packages/telemetry/package.json ./packages/telemetry/package.json
+COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
+COPY --from=build /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 COPY --from=build /app/services/email-service/dist ./services/email-service/dist
 
 # Remove declaration files from production image

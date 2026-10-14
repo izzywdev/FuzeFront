@@ -1,4 +1,5 @@
 import { configureIdentity } from '@izzywdev/fuzefront-identity';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { loadConfig } from './config';
 import { createApp } from './app';
 import { createPool, runMigrations } from './db';
@@ -15,6 +16,14 @@ import { startLifecycleConsumers, LifecycleConsumers } from './events/consumer';
 // backfills portal/organization/user.
 configureIdentity({
   legacyUuidTypes: new Set(['portal', 'organization', 'user']),
+});
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'config-service',
+  serviceVersion: process.env.npm_package_version,
 });
 
 async function main(): Promise<void> {
@@ -85,7 +94,18 @@ async function main(): Promise<void> {
     console.log('[config-service] Shutting down...');
     // Disconnect the consumers before closing the server so in-flight handlers
     // finish against a live pool rather than being cut off mid-transaction.
-    const closeServer = () => server.close(() => process.exit(0));
+    const closeServer = () =>
+      server.close(() => {
+        // Flush any spans still buffered before the process exits — otherwise
+        // the last few requests before shutdown silently never reach Tempo.
+        telemetry
+          .shutdown()
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.error('[config-service] telemetry shutdown error:', err);
+          })
+          .finally(() => process.exit(0));
+      });
     if (lifecycle) {
       lifecycle
         .disconnect()

@@ -25,6 +25,7 @@
 // (knex skips already-applied migrations).
 
 import type { Server } from 'http';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { createApp } from './app';
 import { db } from './db';
 import { run as runMigrations } from './db/migrate';
@@ -39,6 +40,14 @@ import { isReconcilerEnabled, ReconcilerHandle, startReconciler } from './seed/r
 
 /** Hard ceiling on graceful shutdown; after this the process exits regardless. */
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'selection-list-service',
+  serviceVersion: process.env.npm_package_version,
+});
 
 let server: Server | undefined;
 let disconnectConsumers: (() => Promise<void>) | null = null;
@@ -81,6 +90,9 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
     server.close(() => resolve());
   });
   await db.destroy().catch((err) => logger.warn({ err }, 'DB pool close failed during shutdown'));
+  // Flush any spans still buffered before the process exits — otherwise the
+  // last few requests before shutdown silently never reach Tempo.
+  await telemetry.shutdown().catch((err) => logger.warn({ err }, 'telemetry shutdown failed during shutdown'));
   process.exit(exitCode);
 }
 

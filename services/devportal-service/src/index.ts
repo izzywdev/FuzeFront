@@ -8,10 +8,19 @@
 //   4. Start the HTTP server on $PORT (default 3013).
 //   5. Register SIGTERM/SIGINT handlers for graceful shutdown.
 
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { createApp } from './app';
 import { db } from './db';
 import { run as runMigrations } from './db/migrate';
 import { runBootstrapHarvest } from './services/bootstrapHarvest';
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'devportal-service',
+  serviceVersion: process.env.npm_package_version,
+});
 
 async function main(): Promise<void> {
   const jwtSecret = process.env.JWT_SECRET;
@@ -53,6 +62,9 @@ async function main(): Promise<void> {
     console.log('[devportal-service] Shutting down...');
     server.close(async () => {
       await db.destroy().catch(() => {});
+      // Flush any spans still buffered before the process exits — otherwise
+      // the last few requests before shutdown silently never reach Tempo.
+      await telemetry.shutdown().catch(() => {});
       process.exit(0);
     });
   };

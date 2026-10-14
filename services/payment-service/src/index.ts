@@ -1,7 +1,16 @@
+import { initTelemetry } from '@fuzefront/telemetry';
 import { loadConfig } from './config';
 import { createApp, AppDeps } from './app';
 import { StripePaymentProvider } from './providers/stripe/stripe-payment-provider';
 import { PaymentProvider } from './providers/payment-provider';
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+initTelemetry({
+  serviceName: 'payment-service',
+  serviceVersion: process.env.npm_package_version,
+});
 
 /**
  * payment-service entrypoint — the vendor-neutral payment gateway.

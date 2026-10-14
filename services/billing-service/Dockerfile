@@ -22,6 +22,10 @@ COPY packages/identity/package.json ./packages/identity/
 # the same package). Without this manifest the symlink dangles and the pod
 # crashloops on "Cannot find module '@fuzefront/auth'".
 COPY packages/auth/package.json ./packages/auth/
+# Same reasoning as packages/auth below — telemetry's `main` points at dist/
+# and declares its own RUNTIME dependencies (the OTel SDK packages), so its
+# production node_modules must be populated the same way.
+COPY packages/telemetry/package.json ./packages/telemetry/
 
 # Install only production deps for billing-service
 RUN cd services/billing-service && npm install --omit=dev --ignore-scripts
@@ -37,6 +41,11 @@ RUN cd services/billing-service && npm install --omit=dev --ignore-scripts
 # `COPY --from=base /app/packages/auth/node_modules` has no source directory and
 # the build fails outright.
 RUN cd packages/auth && npm install --workspaces=false --omit=dev --ignore-scripts
+# ...and packages/telemetry's OWN production deps (the @opentelemetry/* SDK
+# packages) — same reasoning as packages/auth above. `--workspaces=false`
+# forces a STANDALONE install so they land directly in
+# packages/telemetry/node_modules instead of hoisting elsewhere.
+RUN cd packages/telemetry && npm install --workspaces=false --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
@@ -45,6 +54,7 @@ COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY services/billing-service/package.json ./services/billing-service/
 COPY packages/auth/package.json ./packages/auth/
+COPY packages/telemetry/package.json ./packages/telemetry/
 
 # Install billing-service deps (including devDeps for tsc)
 RUN cd services/billing-service && npm install --ignore-scripts
@@ -55,17 +65,20 @@ RUN cd shared && npm install --ignore-scripts
 COPY shared/ ./shared/
 COPY packages/identity/ ./packages/identity/
 COPY packages/auth/ ./packages/auth/
+COPY packages/telemetry/ ./packages/telemetry/
 COPY services/billing-service/ ./services/billing-service/
 
 # Build the shared kafka + identity sub-trees first (avoids socket.io-client /
 # React dep), then @fuzefront/auth (src/services/authz.ts imports
 # createAuthzClient() at module load — mirrors services/selection-list-service/
-# Dockerfile's identical treatment of the same package), then billing-service.
-# identity supplies the graph-create middleware app.ts mounts; without it the
-# image starts and fails on import.
+# Dockerfile's identical treatment of the same package), then @fuzefront/
+# telemetry (app.ts calls tracingMiddleware() at module load — same reasoning),
+# then billing-service. identity supplies the graph-create middleware app.ts
+# mounts; without it the image starts and fails on import.
 RUN cd shared && npm run build:kafka
 RUN cd packages/identity && npm install --ignore-scripts && npm run build
 RUN cd packages/auth && npm install --ignore-scripts && npm run build
+RUN cd packages/telemetry && npm install --ignore-scripts && npm run build
 RUN cd services/billing-service && npm run build
 # tsc does NOT copy non-TS assets. runMigrations reads
 # dist/migrations/001_billing_schema.sql at startup; without this the pod logs
@@ -133,6 +146,20 @@ COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 # copied from `base` (installed --omit=dev, so only jose, not tsup/typescript)
 # rather than `build` (which installs devDeps for tsup).
 COPY --from=base /app/packages/auth/node_modules ./packages/auth/node_modules
+# @fuzefront/telemetry is a `file:` dependency, so npm LINKS it —
+# node_modules/@fuzefront/telemetry is a symlink to /app/packages/telemetry.
+# The base stage ships packages/telemetry/package.json so that link resolves
+# instead of dangling; here we populate its target with the built output.
+# app.ts imports tracingMiddleware() at module load, so without this the
+# container dies at boot with "Cannot find module '@fuzefront/telemetry'".
+COPY --from=build /app/packages/telemetry/package.json ./packages/telemetry/package.json
+COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
+# ...AND its runtime dependencies (the @opentelemetry/* SDK packages), which
+# are NOT hoisted to /app/node_modules for the same reason `jose` above is
+# not — this consumer's lockfile carries only a link entry for a `file:` dep,
+# never the target's own dependencies. Copied from `base` (--omit=dev), not
+# `build` (which installs devDeps for tsup).
+COPY --from=base /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 
 # Remove declaration files from production image
 RUN find ./services/billing-service/dist -name "*.d.ts" -type f -delete
