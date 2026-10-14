@@ -7,7 +7,7 @@
  * fail only as an opaque 403 cascade; these assertions make that failure legible and local.
  */
 import { fromUuid, parseId, toUuid } from '@izzywdev/fuzefront-identity';
-import { canonicalUuid, sameId, testOrg, testUser, uuidsOf } from '../helpers/ids';
+import { canonicalUuid, renderingsOf, sameId, testOrg, testUser, uuidsOf } from '../helpers/ids';
 import { FAKE_SECURITY_URL, newOrg, newUser } from '../helpers/shared-lists';
 import { PLATFORM_ORG_ID } from '../helpers/sl9-constants';
 
@@ -52,6 +52,54 @@ describe('harness fixture ids are codec-valid and deterministic', () => {
     if (process.env['TEST_PLATFORM_ORG_ID']) return; // overridden on both sides
     expect(PLATFORM_ORG_ID).toBe('org_01jpmf4z1yf88rpb9z9sd6pz00');
     expect(() => parseId('organization', PLATFORM_ORG_ID)).not.toThrow();
+  });
+});
+
+describe('renderingsOf names both forms of one id (the mirror-injection helpers write/remove both)', () => {
+  it('is [TypeID, bare UUID] whichever form it is given, and the single rendering of a non-user principal', () => {
+    const typeId = testUser('both');
+    const uuid = canonicalUuid(typeId);
+    expect(renderingsOf(typeId, 'user')).toEqual([typeId, uuid]);
+    expect(renderingsOf(uuid, 'user')).toEqual([typeId, uuid]);
+    expect(renderingsOf(uuid.toUpperCase(), 'user')).toEqual([typeId, uuid]);
+    const org = testOrg('both');
+    expect(renderingsOf(canonicalUuid(org), 'organization')).toEqual([org, canonicalUuid(org)]);
+    expect(renderingsOf('svc:selection-list-service-ci', 'user')).toEqual(['svc:selection-list-service-ci']);
+  });
+});
+
+describe('FAKE_SECURITY_URL: fixtures go to the Security API the service under test uses', () => {
+  // helpers/security-url.ts resolves once at import, so each case imports a fresh copy under its own env.
+  const resolve = (env: Record<string, string | undefined>): string => {
+    const saved = { f: process.env['FAKE_SECURITY_URL'], s: process.env['SECURITY_SERVICE_URL'] };
+    try {
+      for (const k of ['FAKE_SECURITY_URL', 'SECURITY_SERVICE_URL']) {
+        if (env[k] === undefined) delete process.env[k];
+        else process.env[k] = env[k];
+      }
+      let url = '';
+      jest.isolateModules(() => {
+        url = (require('../helpers/security-url') as typeof import('../helpers/security-url')).FAKE_SECURITY_URL;
+      });
+      return url;
+    } finally {
+      for (const [k, v] of [['FAKE_SECURITY_URL', saved.f], ['SECURITY_SERVICE_URL', saved.s]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  };
+
+  it('defaults to SECURITY_SERVICE_URL (what the service is pointed at), not a hard-coded port', () => {
+    expect(resolve({ SECURITY_SERVICE_URL: 'http://localhost:4999' })).toBe('http://localhost:4999');
+  });
+  it('FAKE_SECURITY_URL overrides it only when explicitly set', () => {
+    expect(resolve({ FAKE_SECURITY_URL: 'http://stand-in:3002', SECURITY_SERVICE_URL: 'http://localhost:4999' })).toBe('http://stand-in:3002');
+    expect(resolve({ FAKE_SECURITY_URL: '', SECURITY_SERVICE_URL: 'http://localhost:4999' })).toBe('http://localhost:4999');
+  });
+  it('falls back to the stand-in default port with neither set, and drops trailing slashes', () => {
+    expect(resolve({})).toBe('http://localhost:3002');
+    expect(resolve({ SECURITY_SERVICE_URL: 'http://localhost:4999//' })).toBe('http://localhost:4999');
   });
 });
 
