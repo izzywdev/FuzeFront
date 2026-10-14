@@ -7,6 +7,7 @@ describe('execution evidence filter', () => {
       kind: 'post-production',
       status: 'failed',
       provider: 'github-actions',
+      externalRunId: '123456789',
       revision: 'abcdef123456',
       workflowPath: '.github/workflows/load.yml',
       attemptScope: 'retry',
@@ -19,6 +20,12 @@ describe('execution evidence filter', () => {
 
   it('rejects an unknown execution provider', () => {
     expect(executionFilterSchema.safeParse({ provider: 'jenkins' }).success).toBe(false)
+  })
+
+  it('bounds an exact provider run identifier', () => {
+    expect(executionFilterSchema.parse({ externalRunId: ' 123456789 ' }).externalRunId).toBe('123456789')
+    expect(executionFilterSchema.safeParse({ externalRunId: ' ' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ externalRunId: 'a'.repeat(501) }).success).toBe(false)
   })
 
   it('rejects an unknown attempt scope', () => {

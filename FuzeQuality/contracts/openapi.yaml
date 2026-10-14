@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.37.0
+  version: 0.38.0
   license:
     name: UNLICENSED
 servers:
@@ -816,6 +816,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionExternalRunId'
         - $ref: '#/components/parameters/ExecutionRevision'
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionAttemptScope'
@@ -949,6 +950,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionExternalRunId'
         - $ref: '#/components/parameters/ExecutionRevision'
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionAttemptScope'
@@ -996,6 +998,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionExternalRunId'
         - $ref: '#/components/parameters/ExecutionRevision'
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionAttemptScope'
@@ -1136,6 +1139,11 @@ components:
       in: query
       description: Execution-ingestion origin.
       schema: { $ref: '#/components/schemas/ExecutionProvider' }
+    ExecutionExternalRunId:
+      name: externalRunId
+      in: query
+      description: Exact provider-owned run identifier shared by all attempts of one CI run.
+      schema: { type: string, minLength: 1, maxLength: 500 }
     ExecutionRevision:
       name: revision
       in: query

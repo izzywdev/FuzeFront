@@ -123,6 +123,17 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
           .map((parameter: { $ref?: string }) => parameter.$ref)
       ).toContain('#/components/parameters/ExecutionWorkflowPath')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
+          .map((parameter: { $ref?: string }) => parameter.$ref)
+      ).toContain('#/components/parameters/ExecutionExternalRunId')
+      expect(document.components.parameters.ExecutionExternalRunId.schema.maxLength).toBe(500)
+      for (const path of [
+        '/api/v1/repositories/{repositoryId}/execution-performance',
+        '/api/v1/repositories/{repositoryId}/execution-trend',
+      ]) expect(
+        document.paths[path].get.parameters.map((parameter: { $ref?: string }) => parameter.$ref)
+      ).toContain('#/components/parameters/ExecutionExternalRunId')
       expect(document.components.parameters.ExecutionWorkflowPath.schema.maxLength).toBe(1000)
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters

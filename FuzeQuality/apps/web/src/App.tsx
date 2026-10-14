@@ -3386,6 +3386,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionProvider, setExecutionProvider] = useState<
     TestExecution['provider'] | ''
   >('')
+  const [executionExternalRunId, setExecutionExternalRunId] = useState('')
   const [executionAttemptScope, setExecutionAttemptScope] = useState<
     'initial' | 'retry' | 'recovered' | ''
   >('')
@@ -3593,6 +3594,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         kind: executionKind,
         status: executionStatus,
         provider: executionProvider,
+        externalRunId: executionExternalRunId.trim(),
         attemptScope: executionAttemptScope,
         revision: executionRevision.trim(),
         workflowPath: executionWorkflowPath.trim(),
@@ -3606,7 +3608,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionExternalRunId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5096,6 +5098,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="retry">Retries only</option>
                 <option value="recovered">Recovered after failure</option>
               </select>
+            </label>
+            <label>
+              Provider run ID
+              <input
+                type="text"
+                value={executionExternalRunId}
+                maxLength={500}
+                placeholder="Exact provider run ID"
+                onChange={event => setExecutionExternalRunId(event.target.value)}
+              />
             </label>
             <label>
               Source revision

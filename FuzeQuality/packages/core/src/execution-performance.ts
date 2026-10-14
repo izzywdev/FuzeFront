@@ -62,7 +62,7 @@ export type PolicyGatePerformancePage = {
   page: { nextCursor: string | null; hasMore: boolean }
 }
 
-export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'revision' | 'workflowPath'>> & {
+export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'externalRunId' | 'revision' | 'workflowPath'>> & {
   attemptScope?: 'initial' | 'retry' | 'recovered'
   minimumDurationMs?: number
   maximumDurationMs?: number
@@ -91,6 +91,7 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.kind && execution.kind !== filter.kind) return false
     if (filter.status && execution.status !== filter.status) return false
     if (filter.provider && execution.provider !== filter.provider) return false
+    if (filter.externalRunId && execution.externalRunId !== filter.externalRunId) return false
     if (filter.revision && execution.revision !== filter.revision) return false
     if (filter.workflowPath && execution.workflowPath !== filter.workflowPath) return false
     if (filter.attemptScope === 'initial' && execution.attempt !== 1) return false

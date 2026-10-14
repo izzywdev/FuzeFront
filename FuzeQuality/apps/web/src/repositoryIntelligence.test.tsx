@@ -482,7 +482,9 @@ describe('RepositoryIntelligence flow inventory', () => {
         ? { items: [historicalEvaluation], page: { nextCursor: null, hasMore: false } }
         : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
     })
-    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [historicalArtifact] })
+    vi.mocked(api.qualityArtifactsByIds).mockImplementation(async (_repositoryId, ids) => ({
+      items: ids.includes(historicalArtifact.id) ? [historicalArtifact] : [],
+    }))
 
     render(<RepositoryIntelligence data={portfolio} />)
 
@@ -1568,6 +1570,40 @@ describe('RepositoryIntelligence flow inventory', () => {
         provider: 'github-actions',
       })
     })
+  })
+
+  it('drills execution history, trends, and gate performance into one provider run', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.testExecutions).mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [loadExecution], page: { nextCursor: 'execution-page-2', hasMore: true } }
+    )
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Provider run ID'), {
+      target: { value: ' 12345 ' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        externalRunId: '12345',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        externalRunId: '12345',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        externalRunId: '12345',
+      })
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more execution evidence' }))
+    await waitFor(() => expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+      externalRunId: '12345',
+      cursor: 'execution-page-2',
+    }))
   })
 
   it('filters execution history, trends, and gate performance to retry attempts', async () => {
