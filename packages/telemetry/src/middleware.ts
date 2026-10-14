@@ -101,15 +101,43 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
 
     const requestContext = trace.setSpan(parentContext, span);
 
-    res.on('finish', () => {
+    // Idempotent: `finish` AND `close` can both fire for the same response
+    // (and `close` fires EVEN AFTER `finish` on some Node versions), so a
+    // bare boolean guard — not two independent `span.end()` calls — is what
+    // keeps this from double-ending the span.
+    let ended = false;
+    const endSpan = () => {
+      if (ended) return;
+      ended = true;
+      // `req.route` is only populated by Express AFTER its router matches a
+      // path pattern — which hasn't happened yet when this middleware starts
+      // the span (mounted ahead of the router). By the time the response
+      // finishes, matching has happened, so re-derive the name here and
+      // rename the span: without this, every parameterized route (e.g.
+      // `/:listId/items/:itemId`) keeps the raw, UUID-bearing `req.path` as
+      // its permanent span name, fragmenting Tempo's operation list and
+      // trace-index cardinality per id instead of collapsing to one name.
+      const routePath = (req as { route?: { path?: string } }).route?.path;
+      if (routePath) {
+        // Express sets `req.route` in place on the same request object, so
+        // re-invoking `spanName` now (vs. at span-start time) picks it up.
+        span.updateName(spanName(req));
+      }
       span.setAttribute('http.status_code', res.statusCode);
       span.setAttribute('http.method', req.method);
-      span.setAttribute('http.route', (req as { route?: { path?: string } }).route?.path ?? req.path);
+      span.setAttribute('http.route', routePath ?? req.path);
       if (res.statusCode >= 500) {
         span.setAttribute('error', true);
       }
       span.end();
-    });
+    };
+    res.on('finish', endSpan);
+    // `finish` fires only when the response is fully sent. A long-lived
+    // connection that the CLIENT drops first (an SSE `/stream` route; any
+    // route whose handler never calls `res.end()`) never emits `finish` —
+    // only `close`. Without this, that span is never ended/exported, and
+    // the request silently disappears from the trace.
+    res.on('close', endSpan);
 
     // Run the rest of the request inside the span's context so any code that
     // starts a CHILD span downstream (e.g. `HttpInstrumentation`'s outbound

@@ -65,9 +65,26 @@ import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 import { startChatResponseConsumer, stopChatResponseConsumer } from './kafka/chat-response.consumer'
+import { initTelemetry, tracingMiddleware, type TelemetryHandle } from '@fuzefront/telemetry'
 
 // Load environment variables
 dotenv.config()
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below — see
+// backend/security/src/index.ts for the full rationale (HttpInstrumentation/
+// ExpressInstrumentation patch shared module/prototype state looked up at CALL
+// time, but request handling must not start first). Sends OTLP to FuzeInfra's
+// Collector; endpoint/protocol/sampling default from OTEL_* env vars.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'backend',
+  serviceVersion: SERVICE_VERSION,
+})
 
 // Prometheus metrics (Phase E). Scraped at /metrics; gracefully degrades to a
 // 503 if prom-client is not installed.
@@ -87,6 +104,10 @@ const app = express()
 // trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
 // the real client from X-Forwarded-For.
 app.set('trust proxy', 1)
+// Starts/continues a per-request span, exposing req.traceId/req.spanId for
+// log correlation (see @fuzefront/telemetry's withTraceContext). Mounted
+// before any other middleware so the span wraps the whole request lifecycle.
+app.use(tracingMiddleware())
 const httpServer = createServer(app)
 const PORT = process.env.PORT || 3001
 
@@ -556,6 +577,14 @@ function gracefulShutdown(signal: string) {
         await stopChatResponseConsumer()
       } catch (error) {
         console.error('❌ Error stopping chat response consumer:', error)
+      }
+
+      // Flush any spans still buffered before the process exits — otherwise
+      // the last few requests before shutdown silently never reach Tempo.
+      try {
+        await telemetry.shutdown()
+      } catch (error) {
+        console.error('❌ Error shutting down telemetry:', error)
       }
 
       console.log('🎯 Graceful shutdown complete')

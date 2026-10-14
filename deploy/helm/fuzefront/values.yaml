@@ -231,6 +231,14 @@ backend:
   # http://fuzefront-backend:3001, and the backend Service is named accordingly.
   port: 3001
   replicas: 1
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # backend/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from the env;
+  # unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster. Point it at
+  # FuzeInfra's collector explicitly — never Tempo/Loki directly
+  # (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -384,6 +392,14 @@ applicationsService:
   # Kafka, cross-namespace DNS).
   kafka:
     brokers: ""
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # backend/applications/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from
+  # the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Permit PDP for the app-registry authz checks (permit.ts). When permit.enabled
   # the in-cluster PDP runs at fuzefront-permit-pdp:7000; PERMIT_API_KEY comes
   # from the shared fuzefront-secrets SealedSecret.
@@ -749,6 +765,14 @@ emailService:
     provider: "smtp"  # "sendgrid" or "smtp"
     from: "noreply@fuzefront.com"
     smtp: ""
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/email-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from
+  # the env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster. Point it at
+  # FuzeInfra's collector explicitly — never Tempo/Loki directly
+  # (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
@@ -764,6 +788,14 @@ smsService:
   image:
     repository: fuzefront/sms-service
     tag: local
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/sms-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from
+  # the env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster. Point it at
+  # FuzeInfra's collector explicitly — never Tempo/Loki directly
+  # (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
@@ -803,6 +835,14 @@ chatService:
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
   dbName: "chat"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/chat-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from
+  # the env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster. Point it at
+  # FuzeInfra's collector explicitly — never Tempo/Loki directly
+  # (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Embedding model resolved at the LiteLLM gateway (used by the doc indexer).
   embeddingModel: "text-embedding-3-small"
   # Resource requests/limits. Local/dev single replica; prod overrides upward.
@@ -842,6 +882,14 @@ notificationService:
     max: 100
   migrate:
     enabled: false
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/notification-service/src/index.ts reads
+  # OTEL_EXPORTER_OTLP_ENDPOINT from the env; unset, it falls back to
+  # packages/telemetry's `otel-collector:4317` docker-compose default, which
+  # has no DNS entry in-cluster. Point it at FuzeInfra's collector explicitly
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests:
       cpu: 100m
@@ -873,6 +921,14 @@ selectionListService:
   # applicationsService, kafkaTopics.bootstrapServer, ...). This default
   # previously read `kafka.fuzeinfra...`, a name no other block uses.
   kafkaBrokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/selection-list-service/src/index.ts reads
+  # OTEL_EXPORTER_OTLP_ENDPOINT from the env; unset, it falls back to
+  # packages/telemetry's `otel-collector:4317` docker-compose default, which
+  # has no DNS entry in-cluster. Point it at FuzeInfra's collector explicitly
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Dedicated database on the shared FuzeInfra Postgres, owned by the service's
   # OWN role (db.role below) -- NOT the shared `database.user` role, which is
   # explicitly denied access. Created/reconciled by
@@ -1036,6 +1092,14 @@ devportalService:
   # devportal redirect_uris entry exactly.
   oidcRedirectUri: "https://developers.fuzefront.com/api/auth/oidc/callback"
   frontendUrl: "https://developers.fuzefront.com"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/devportal-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT
+  # from the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests:
       cpu: 100m
@@ -1106,6 +1170,14 @@ configService:
   # Set to "" to disable the consumers (the service then serves reads/writes
   # normally and logs that they were not started).
   kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/config-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT
+  # from the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Least-privilege runtime role created by config-service-db-bootstrap-job.yaml
   # in the SHARED database (`database.name`), owning the `config` schema. Mirrors
   # billing-service's billing_svc — no separate database is provisioned.
@@ -1165,6 +1237,14 @@ provisioningService:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
     clientId: "provisioning-service"
     groupId: "provisioning-service-group"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/provisioning-service/src/index.ts reads
+  # OTEL_EXPORTER_OTLP_ENDPOINT from the env; unset, it falls back to
+  # packages/telemetry's `otel-collector:4317` docker-compose default, which
+  # has no DNS entry in-cluster. Point it at FuzeInfra's collector explicitly
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
@@ -1206,6 +1286,14 @@ billingService:
   # fuzefront.billing.authz-enabled defaults OFF regardless).
   secretName: billing-secrets
   meterFlushIntervalSec: 60
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/billing-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT
+  # from the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Authorization-sync cutover (fuzefront.billing.authz-enabled).
   #
   # `enabled` gates billing's Permit ABAC attribute sync through FuzeFront's
@@ -1715,6 +1803,14 @@ paymentService:
     tag: local
   provider: ""
   secretName: ""
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/payment-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT
+  # from the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests:
       cpu: 100m

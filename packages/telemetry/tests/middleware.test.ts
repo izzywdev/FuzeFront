@@ -19,17 +19,20 @@ function fakeReq(headers: Record<string, string> = {}): Request {
   } as unknown as Request;
 }
 
-function fakeRes(): Response & { _finish: () => void; statusCode: number } {
+function fakeRes(): Response & { _finish: () => void; _close: () => void; statusCode: number } {
   let finishHandler: (() => void) | undefined;
+  let closeHandler: (() => void) | undefined;
   const res = {
     statusCode: 200,
     on: (event: string, handler: () => void) => {
       if (event === 'finish') finishHandler = handler;
+      if (event === 'close') closeHandler = handler;
       return res;
     },
     _finish: () => finishHandler?.(),
+    _close: () => closeHandler?.(),
   };
-  return res as unknown as Response & { _finish: () => void; statusCode: number };
+  return res as unknown as Response & { _finish: () => void; _close: () => void; statusCode: number };
 }
 
 describe('tracingMiddleware', () => {
@@ -152,5 +155,54 @@ describe('tracingMiddleware', () => {
     const [span] = exporter.getFinishedSpans();
     expect(span.attributes['http.status_code']).toBe(503);
     expect(span.attributes['error']).toBe(true);
+  });
+
+  it('ends the span on `close` when `finish` never fires (e.g. an SSE client disconnect)', () => {
+    const middleware = tracingMiddleware();
+    const req = fakeReq();
+    const res = fakeRes();
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    // The client drops the connection; Express/Node emit `close`, not
+    // `finish`, for a response that was never res.end()'d.
+    res._close();
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span).toBeDefined();
+    expect(span.spanContext().traceId).toBe(req.traceId);
+  });
+
+  it('renames the span to the matched route once Express sets req.route, collapsing per-id cardinality', () => {
+    const middleware = tracingMiddleware();
+    const req = fakeReq() as Request & { route?: { path?: string } };
+    const res = fakeRes();
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    // Express sets `req.route` on the SAME request object once its router
+    // matches a pattern — simulated here between middleware start and
+    // response finish, exactly as it happens for real for a global
+    // middleware mounted ahead of the router.
+    req.route = { path: '/widgets/:id' };
+    res._finish();
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('GET /widgets/:id');
+  });
+
+  it('does not double-end the span when BOTH `finish` and `close` fire', () => {
+    const middleware = tracingMiddleware();
+    const req = fakeReq();
+    const res = fakeRes();
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    res._finish();
+    res._close();
+
+    // A second span.end() call is a no-op by the OTel spec, but asserting
+    // exactly one finished span is the actual regression this guards: two
+    // calls here would otherwise mean two DIFFERENT finished-span exports —
+    // the double-export this guard exists to prevent — not just a harmless
+    // repeat end() on the same object.
+    expect(exporter.getFinishedSpans()).toHaveLength(1);
   });
 });
