@@ -20,10 +20,19 @@ on:
         type: boolean
         required: false
         default: false
+      connectors_only:
+        description: 'Collect only connector UX evidence (one attempt); full post-deploy suite remains the default'
+        type: boolean
+        required: false
+        default: false
 
   # Called as a reusable workflow by prod-post-deploy.yml after each release
   workflow_call:
     inputs:
+      connectors_only:
+        type: boolean
+        required: false
+        default: false
       base_url:
         description: 'Target base URL'
         type: string
@@ -78,6 +87,7 @@ jobs:
 
       - name: Run post-prod smoke
         env:
+          CONNECTORS_ONLY: ${{ inputs.connectors_only || false }}
           POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
           # Synthetic account for the authenticated journey (API login path).
           # Falls back to the seeded admin creds inside the spec when unset.
@@ -95,7 +105,13 @@ jobs:
           # assertion; when unset that one test self-skips as missing coverage.
           POST_PROD_ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
           POST_PROD_ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
-        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy" --reporter=list,html
+        run: |
+          cd frontend
+          if [[ "$CONNECTORS_ONLY" == 'true' ]]; then
+            npx playwright test --config playwright.post-prod.config.ts connectors-catalog-smoke.spec.ts --retries=0
+          else
+            npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy"
+          fi
 
       # AuthN provider-boundary smoke (contract PR #243). Runs only when
       # explicitly requested; until the AuthN deploy lands these tests self-skip
@@ -107,7 +123,33 @@ jobs:
         continue-on-error: true
         env:
           POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
-        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep "@authn-pending-deploy" --reporter=list,html
+        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep "@authn-pending-deploy"
+
+      # Preserve evidence before optional export tooling: a slow package mirror
+      # or cancelled transcode must not discard the actual browser result.
+      - name: Upload raw report before video conversion
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: post-prod-playwright-raw
+          path: |
+            frontend/playwright-report-post-prod/
+            frontend/test-results-post-prod/
+          retention-days: 14
+
+      - name: Export connector UX video at 3 fps
+        if: always()
+        timeout-minutes: 3
+        run: |
+          if find frontend/test-results-post-prod -path '*connectors-catalog-smoke*' -name '*.webm' -print -quit | grep -q .; then
+            if ! command -v ffmpeg >/dev/null; then
+              sudo apt-get update
+              sudo apt-get install -y ffmpeg
+            fi
+            while IFS= read -r -d '' video; do
+              ffmpeg -nostdin -y -i "$video" -vf fps=3 -an -c:v libx264 -pix_fmt yuv420p "${video%.webm}-3fps.mp4"
+            done < <(find frontend/test-results-post-prod -path '*connectors-catalog-smoke*' -name '*.webm' -print0)
+          fi
 
       - name: Upload report
         if: always()
@@ -118,3 +160,45 @@ jobs:
             frontend/playwright-report-post-prod/
             frontend/test-results-post-prod/
           retention-days: 14
+
+      # Give the FuzeQuality journey one deterministic filename. Playwright's
+      # generated directory includes project/retry suffixes and the broader
+      # suite records other videos, so uploading **/video.webm would make this
+      # artifact ambiguous to an operator.
+      - name: Stage FuzeQuality production video
+        # Connector-only dispatches intentionally do not run the FuzeQuality
+        # journey, so they must not require its evidence. Full runs still fail
+        # closed below when the journey did not produce a recording.
+        if: ${{ always() && !inputs.connectors_only }}
+        shell: bash
+        run: |
+          mkdir -p frontend/post-prod-evidence
+          mapfile -d '' videos < <(find frontend/test-results-post-prod -type f -path '*fuzequality-portal-smoke*' -name 'video.webm' -print0 | sort -z)
+          if (( ${#videos[@]} == 0 )); then
+            echo '::error::FuzeQuality production journey did not produce a Playwright video'
+            exit 1
+          fi
+          cp "${videos[-1]}" frontend/post-prod-evidence/fuzequality-portal-smoke.webm
+
+      # Keep the successful FuzeQuality browser recording easy to find instead
+      # of burying it in the HTML report. This is evidence for /app/fuzequality.
+      - name: Upload FuzeQuality post-production video
+        if: ${{ always() && !inputs.connectors_only }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzequality-post-prod-playwright-video
+          path: frontend/post-prod-evidence/fuzequality-portal-smoke.webm
+          if-no-files-found: error
+          retention-days: 30
+
+      # FuzeX is a tenant-scoped design workspace.  Publish its recording
+      # separately so the release evidence can be reviewed without searching
+      # through the combined post-prod report.
+      - name: Upload FuzeX post-production video
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzex-post-prod-playwright-video
+          path: frontend/test-results-post-prod/**/fuzex-workspace-smoke-*/video.webm
+          if-no-files-found: warn
+          retention-days: 30

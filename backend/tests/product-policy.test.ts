@@ -1,3 +1,4 @@
+import { namespaceProductPolicy as legacyNamespaceProductPolicy } from '../security/src/permit/product-policy'
 import {
   permitSchema,
   syncPermitSchema,
@@ -353,4 +354,89 @@ describe('FuzeFinance policy (#490)', () => {
   it('syncs alongside the other legacy products without a namespace collision', () => {
     expect(() => buildEnvSchema(...loadLegacyProductPolicies())).not.toThrow()
   })
+})
+
+
+describe('consumer instance roles', () => {
+  const policy = (): ProductPolicy => ({
+    product: 'fuzekeys',
+    roles: [],
+    resources: [
+      {
+        key: 'Vault',
+        name: 'Vault',
+        actions: { read: { name: 'Read' } },
+        roles: { owner: { name: 'Owner', permissions: ['read'] } },
+      },
+      {
+        key: 'Secret',
+        name: 'Secret',
+        actions: { read: { name: 'Read' } },
+        relations: { vault: 'Vault' },
+        roles: {
+          owner: {
+            name: 'Owner',
+            permissions: ['read'],
+            granted_to: {
+              users_with_role: [
+                {
+                  role: 'owner',
+                  on_resource: 'Vault',
+                  linked_by_relation: 'vault',
+                },
+              ],
+            },
+          },
+        },
+      },
+    ],
+  })
+  it('namespaces relation targets without creating tenant roles or mutating input', () => {
+    const input = policy()
+    const output = namespaceProductPolicy(input)
+    expect(output.roles).toEqual([])
+    expect(output.resources[1].relations).toEqual({ vault: 'fuzekeys_Vault' })
+    expect(
+      output.resources[1].roles?.owner.granted_to?.users_with_role[0]
+        .on_resource
+    ).toBe('fuzekeys_Vault')
+    expect(input.resources[1].relations).toEqual({ vault: 'Vault' })
+  })
+  it('rejects cross-product relation targets', () => {
+    const input = policy()
+    input.resources[1].relations = { vault: 'Organization' }
+    expect(() => namespaceProductPolicy(input)).toThrow(ProductPolicyError)
+  })
+  it('rejects instance permissions from another resource or inherited object properties', () => {
+    for (const permission of ['Vault:read', 'delete', 'toString']) {
+      const input = policy()
+      input.resources[0].roles!.owner.permissions = [permission]
+      expect(() => namespaceProductPolicy(input)).toThrow(ProductPolicyError)
+    }
+  })
+  it('rejects derivation with an unknown role or wrong relation', () => {
+    for (const patch of [
+      { role: 'admin' },
+      { linked_by_relation: 'other' },
+      { on_resource: 'Secret' },
+    ]) {
+      const input = policy()
+      Object.assign(
+        input.resources[1].roles!.owner.granted_to!.users_with_role[0],
+        patch
+      )
+      expect(() => namespaceProductPolicy(input)).toThrow(ProductPolicyError)
+    }
+  })
+})
+
+
+it('preserves the legacy security namespace without promoting owner to a tenant role', () => {
+  const output = legacyNamespaceProductPolicy({ product: 'fuzekeys', roles: [], resources: [{
+    key: 'Identity', name: 'Identity', actions: { read: { name: 'Read' } },
+    roles: { owner: { name: 'Owner', permissions: ['read'] } },
+  }] })
+  expect(output.resources[0].key).toBe('fuzekeys.Identity')
+  expect(output.resources[0].roles?.owner.permissions).toEqual(['read'])
+  expect(output.roles).toEqual([])
 })

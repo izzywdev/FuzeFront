@@ -19,6 +19,10 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { globToRegExp, matchesAny, buildCoverage, evaluate } from '../check-frames-first.mjs'
+// Keep the existing gate workflow's test entrypoint exercising hosted migration
+// and the same-origin credential boundary as well as legacy coverage matching.
+import './fuzex-review.test.mjs'
+import './fuzex-proxy.test.mjs'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const REAL_POLICY = JSON.parse(
