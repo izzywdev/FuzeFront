@@ -15,7 +15,7 @@
  * this hook masking the cause.
  */
 import { getDbClient, closeDb } from './db';
-import { FORK_BIG_ORG_ID, FORK_QUOTA_ITEMS_ORG_ID, FORK_QUOTA_LISTS_ORG_ID, PLATFORM_ORG_ID } from './sl9-constants';
+import { DECOY_PLATFORM_ORG_ID, FORK_BIG_ORG_ID, FORK_QUOTA_ITEMS_ORG_ID, FORK_QUOTA_LISTS_ORG_ID, PLATFORM_ORG_ID } from './sl9-constants';
 
 /** The org contract/quota.test.ts acts as (its ORG_ID constant). */
 export const QUOTA_TEST_ORG_ID = 'org_01test00000000quota0000000';
@@ -105,6 +105,22 @@ export default async function globalSetup(): Promise<void> {
          ON CONFLICT (organization_id) DO UPDATE SET max_items_per_list = EXCLUDED.max_items_per_list, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
         [FORK_BIG_ORG_ID],
       );
+      // SL9: the service treats SELECTION_LIST_PLATFORM_ORG_ID as the platform org only once the org projection
+      // (selection_list_ref_index - the table the service itself reads, fed in production by identity.org.created)
+      // shows an ACTIVE row, is_active = true, org_type = 'platform' for it. Plain SQL, not a service back door.
+      // The decoy is projected as a platform org too but is NOT the configured id: it must get nothing.
+      for (const [entityId, wire] of [
+        ['0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7c00', PLATFORM_ORG_ID],
+        ['0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7d02', DECOY_PLATFORM_ORG_ID],
+      ] as const) {
+        await client.query(
+          `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, org_type, is_active, updated_at)
+           VALUES ('organization', $1, 'active', $2, 'platform', true, NOW())
+           ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+             status = 'active', wire_id = EXCLUDED.wire_id, org_type = 'platform', is_active = true, updated_at = NOW()`,
+          [entityId, wire],
+        );
+      }
       for (const org of HIGH_CHURN_TEST_ORG_IDS) {
         await client.query(
           `INSERT INTO selection_list_org_quota

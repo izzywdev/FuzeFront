@@ -4,14 +4,16 @@
  *
  * HOW THE HARNESS TURNS THE FEATURE ON (CI / local)
  *   The feature is behind the release flag `fuzefront.selection-lists.shared-lists`
- *   (default OFF, design §7). Like the service flag, the harness forces it with the
- *   non-production escape hatch in the service's flags.ts:
+ *   (default OFF, design §7). Like the service flag, the harness turns it on with the one
+ *   sanctioned CI mechanism, the offline OpenFeature provider (refused under NODE_ENV=production):
  *
- *     main service      FLAGS_FORCE_ON=fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists
- *                       SELECTION_LIST_PLATFORM_ORG_ID=org_01test00000000platform00000
- *     flag-OFF service  a SECOND instance on the SAME database, FLAGS_FORCE_ON=fuzefront.selection-lists.service
- *                       (shared-lists flag absent), same SELECTION_LIST_PLATFORM_ORG_ID, on its own port;
- *                       tests reach it through SHARED_LISTS_FLAG_OFF_URL (suite: shared-lists-flag-off).
+ *     main service      FUZE_FLAGS_PROVIDER=offline
+ *                       FUZE_FLAGS_OFFLINE_ON=fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists
+ *                       SELECTION_LIST_PLATFORM_ORG_ID=org_01jpmf4z1yf88rpb9z9sd6pz00
+ *     flag-OFF service  a SECOND instance on the SAME database, FUZE_FLAGS_PROVIDER=offline,
+ *                       FUZE_FLAGS_OFFLINE_ON=fuzefront.selection-lists.service (shared-lists flag absent), same
+ *                       SELECTION_LIST_PLATFORM_ORG_ID, on its own port; tests reach it through
+ *                       SHARED_LISTS_FLAG_OFF_URL (suite: shared-lists-flag-off).
  *
  *   A flag is process-wide, so "both states" needs two processes; sharing the database is what lets
  *   the OFF suite prove that data written while ON is served as 4.0.0 while OFF.
@@ -24,6 +26,7 @@
  * running the feature. A red result caused by "feature not implemented / flag off" is therefore
  * recognisable as such.
  */
+import { randomUUID } from 'crypto';
 import { mintTestToken } from './auth';
 import { rawFetch, SERVICE_BASE_URL } from './client';
 import { PLATFORM_ORG_ID } from './sl9-constants';
@@ -40,6 +43,24 @@ export const rnd = (): string => Math.random().toString(36).slice(2, 8).padEnd(6
 /** A fresh, per-run org id (so reruns against one database never accumulate state in an org). */
 export const newOrg = (tag: string): string => `org_01sl9${tag}${rnd()}${rnd()}`.toLowerCase();
 export const newUser = (tag: string): string => `usr_01sl9${tag}${rnd()}${rnd()}`.toLowerCase();
+
+/**
+ * Both renderings of ONE organization: its `org_…` TypeID and the bare UUID production tokens carry (the service accepts
+ * either as the token's org claim). Needs codec-valid ids, so a fresh random org is minted through the identity package.
+ */
+export function newCodecOrg(): { wire: string; uuid: string } {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { fromUuid } = require('@izzywdev/fuzefront-identity') as { fromUuid: (type: string, uuid: string) => string };
+  const uuid = randomUUID();
+  return { wire: fromUuid('organization', uuid), uuid };
+}
+
+/** The bare-UUID rendering of an `org_…` TypeID. */
+export function orgUuidOf(wire: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { toUuid } = require('@izzywdev/fuzefront-identity') as { toUuid: (id: string) => string };
+  return toUuid(wire);
+}
 
 export type TenantRole = 'admin' | 'editor' | 'viewer' | 'developer';
 
@@ -118,7 +139,7 @@ export async function assertSharedListsOn(baseUrl?: string): Promise<void> {
     throw new Error(
       `PRECONDITION: the service at ${baseUrl ?? SERVICE_BASE_URL} does not run the shared-lists feature ` +
         `(POST visibility:"org" -> ${res.status} ${JSON.stringify(res.body)}). Either the feature is not implemented, or ` +
-        `FLAGS_FORCE_ON lacks fuzefront.selection-lists.shared-lists (see helpers/shared-lists.ts header).`,
+        `FUZE_FLAGS_OFFLINE_ON lacks fuzefront.selection-lists.shared-lists (see helpers/shared-lists.ts header).`,
     );
   }
   await declarePlatformOrg();
@@ -219,13 +240,13 @@ export const forkList = (who: Actor | string | null, listId: string, body?: unkn
 // ---------------------------------------------------------------------------
 
 /** Walk `GET /v1/selection-lists?<query>` to the end with the opaque cursor; returns every row, in order. */
-export async function walkLists(who: Actor, query: string, limit = 50): Promise<{ rows: ListLike[]; pages: number }> {
+export async function walkLists(who: Actor, query: string, limit = 50, baseUrl?: string): Promise<{ rows: ListLike[]; pages: number }> {
   const rows: ListLike[] = [];
   let cursor: string | null = null;
   let pages = 0;
   do {
     const qs: string = `${query}${query ? '&' : ''}limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
-    const res: Res = await call(who, 'GET', `/v1/selection-lists?${qs}`);
+    const res: Res = await call(who, 'GET', `/v1/selection-lists?${qs}`, undefined, baseUrl);
     if (res.status !== 200) throw new Error(`walkLists(${qs}) -> ${res.status} ${JSON.stringify(res.body)}`);
     rows.push(...(res.body.items as ListLike[]));
     cursor = res.body.page.nextCursor as string | null;
@@ -235,8 +256,18 @@ export async function walkLists(who: Actor, query: string, limit = 50): Promise<
   return { rows, pages };
 }
 
-/** Walk all items of a list (status=all by default), returning every row. */
+/**
+ * Walk all items of a list (`status` 'all' by default: active then archived), returning every row.
+ *
+ * NOTE: 'all' is composed from two `status=active` / `status=archived` walks on purpose. The frozen
+ * contract lists `all` as a valid items `status` filter, but master's `GET …/items?status=all` answers
+ * 400 (pre-existing defect, pinned as an `it.failing` in contract/request-validation.test.ts), and the SL9
+ * suites must not turn red for an unrelated reason.
+ */
 export async function walkItems(who: Actor, listId: string, status = 'all', baseUrl?: string): Promise<ItemLike[]> {
+  if (status === 'all') {
+    return [...(await walkItems(who, listId, 'active', baseUrl)), ...(await walkItems(who, listId, 'archived', baseUrl))];
+  }
   const rows: ItemLike[] = [];
   let cursor: string | null = null;
   let guard = 0;
@@ -269,4 +300,34 @@ export function expectError(res: Res, status: number, code: string, reason?: str
   expect(res.body).toMatchObject({ code });
   if (reason === null) expect((res.body as any).reason).toBeUndefined();
   else if (reason !== undefined) expect((res.body as any).reason).toBe(reason);
+}
+
+// ---------------------------------------------------------------------------
+// SQL fixtures for rows the API refuses to create (untrusted data)
+// ---------------------------------------------------------------------------
+
+/**
+ * Insert a `platform`-visibility list (with one active item) owned by `ownerOrgId` straight into the service's own
+ * tables (4.0.0 columns + `visibility`). The API only lets the CONFIGURED platform org own such a row, so this is how
+ * a suite plants "a platform row anywhere else": untrusted data that must never be served.
+ */
+export async function insertPlatformRowViaSql(
+  ownerOrgId: string,
+  key: string = `sql-${rnd()}-${rnd()}`,
+): Promise<{ id: string; key: string; itemId: string }> {
+  const { dbQuery } = await import('./db');
+  const id = `front_sl_sl9sql${rnd()}${rnd()}`;
+  const itemId = `front_sli_sl9sql${rnd()}${rnd()}`;
+  await dbQuery(
+    `INSERT INTO selection_lists (id, organization_id, key, source_locale, status, created_by, visibility)
+     VALUES ($1, $2, $3, 'en', 'active', 'system:selection-list-service', 'platform')`,
+    [id, ownerOrgId, key],
+  );
+  await dbQuery(`INSERT INTO selection_list_translations (list_id, locale, name, is_machine) VALUES ($1, 'en', 'Planted common list', false)`, [id]);
+  await dbQuery(
+    `INSERT INTO selection_list_items (id, list_id, code, sort_order, status, created_by) VALUES ($1, $2, 'P1', 100, 'active', 'system:selection-list-service')`,
+    [itemId, id],
+  );
+  await dbQuery(`INSERT INTO selection_list_item_translations (item_id, locale, label, is_machine) VALUES ($1, 'en', 'Planted item', false)`, [itemId]);
+  return { id, key, itemId };
 }
