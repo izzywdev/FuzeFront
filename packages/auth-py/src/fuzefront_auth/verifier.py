@@ -59,12 +59,18 @@ class Verifier(Protocol):
 # (user_id) -> {"tenant_id": ..., "roles": [...], "email": ...}; keys optional.
 Resolver = Callable[[str], dict[str, Any]]
 
+# (user_id, session_id, claims) -> True while the session is still active. The token
+# alone cannot say whether the user has since logged out or had the device revoked;
+# only the session store can. The host supplies this (e.g. a call to FuzeFront).
+SessionValidator = Callable[[str, "str | None", dict[str, Any]], bool]
+
 
 @dataclass(frozen=True)
 class LegacyHs256Config:
     secret: str
     subject_claim: str = "userId"
     resolver: Resolver | None = None
+    session_validator: SessionValidator | None = None
     clock_tolerance_sec: int = 0
     issuer: str | None = None
     audience: str | list[str] | None = None
@@ -209,6 +215,18 @@ class _LegacyVerifier:
         if not user_id:
             raise AuthError("MISSING_CLAIM", f"token has no `{cfg.subject_claim}` (or `sub`) claim")
 
+        session_id = _claim_string(payload, "sessionId")
+        if cfg.session_validator is not None:
+            # Revocation: a signed token stays valid until `exp`, but the session it
+            # names may have been ended. Only `True` keeps it alive; anything else is a
+            # denial. A validator that cannot answer is a retryable 503, not a 401.
+            try:
+                active = cfg.session_validator(user_id, session_id, dict(payload))
+            except Exception:  # noqa: BLE001
+                raise AuthError("VERIFIER_UNAVAILABLE", "session validation is unavailable", 503) from None
+            if active is not True:
+                raise AuthError("EXPIRED", "session is no longer active")
+
         # Today's token carries neither tenant nor roles. Without a resolver the
         # identity is deliberately UNPRIVILEGED rather than guessed.
         tenant_id: str | None = None
@@ -235,6 +253,7 @@ class _LegacyVerifier:
             expires_at=_claim_number(payload, "exp"),
             issuer=_claim_string(payload, "iss"),
             portal_id=_claim_string(payload, "portalId"),
+            session_id=session_id,
             claims=dict(payload),
         )
 

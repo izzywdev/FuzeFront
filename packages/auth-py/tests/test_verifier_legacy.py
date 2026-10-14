@@ -160,3 +160,39 @@ def test_malformed_resolver_output_is_a_500_not_a_crash(bad):
 def test_resolver_returning_nothing_is_unprivileged():
     ident = verifier(resolver=lambda uid: None).verify(make_token(SECRET, claims={"userId": "u"}))
     assert (ident.tenant_id, ident.roles) == (None, ())
+
+
+def test_session_validator_receives_user_session_and_claims():
+    seen = []
+
+    def validator(user_id, session_id, claims):
+        seen.append((user_id, session_id, claims.get("userId")))
+        return True
+
+    ident = verifier(session_validator=validator).verify(make_token(SECRET, claims={"userId": "u", "sessionId": "s-1"}))
+    assert seen == [("u", "s-1", "u")] and ident.session_id == "s-1"
+
+
+@pytest.mark.parametrize("answer", [False, None, 1, "yes", 0])
+def test_a_session_that_is_not_confirmed_active_is_denied(answer):
+    # Only `True` keeps a logged-out / revoked session alive; anything else denies.
+    with pytest.raises(AuthError) as info:
+        verifier(session_validator=lambda *a: answer).verify(make_token(SECRET, claims={"userId": "u", "sessionId": "s-1"}))
+    assert (info.value.code, info.value.status) == ("EXPIRED", 401)
+
+
+def test_validator_failure_is_a_retryable_503_and_does_not_leak():
+    def boom(*a):
+        raise RuntimeError("sessions db password=hunter2")
+
+    with pytest.raises(AuthError) as info:
+        verifier(session_validator=boom).verify(make_token(SECRET, claims={"userId": "u", "sessionId": "s-1"}))
+    assert info.value.status == 503 and "hunter2" not in str(info.value)
+
+
+def test_validator_runs_before_the_resolver_hydrates_anything():
+    calls = []
+    v = verifier(session_validator=lambda *a: False, resolver=lambda uid: calls.append(uid) or {"roles": ["admin"]})
+    with pytest.raises(AuthError):
+        v.verify(make_token(SECRET, claims={"userId": "u", "sessionId": "s-1"}))
+    assert calls == []

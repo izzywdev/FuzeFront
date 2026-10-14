@@ -80,6 +80,8 @@ class Identity:
     # token with no portal binding. A bound identity must be checked against the
     # request's portal (see `portal.py`); the adapters do this.
     portal_id: str | None = None
+    # The session this token names (`sessionId`, legacy-hs256), when present.
+    session_id: str | None = None
     # Verifier-specific extras for migration only; NOT part of the stable contract.
     claims: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 

@@ -99,6 +99,23 @@ or tell a client its credentials are invalid). Flask answers `{"error", "code"}`
 `detail`. A role guard denies when roles are empty, and a tenant guard denies when
 `tenant_id` is `None` -- an unresolved value is never a wildcard.
 
+## Session revocation (legacy-hs256)
+
+A signed token stays valid until `exp` (24h), but the session it names may have been ended
+by a logout or a device revoke; only the session store knows. Supply a validator and the
+verifier asks it before hydrating anything:
+
+```python
+LegacyHs256Config(secret=..., session_validator=lambda user_id, session_id, claims: session_is_active(session_id))
+```
+
+Only `True` keeps the session alive; anything else is a 401 `EXPIRED`, and a validator that
+raises is a retryable 503. It runs before the resolver. **Without a validator a revoked
+session keeps authenticating until the token expires**; this is the same property as
+`@fuzefront/auth`. The package does not make a validator mandatory because it cannot
+assume how a given service reaches the session store (FuzeFront's own backend checks its
+session table directly); a service that needs revocation must supply one.
+
 ## Portal-bound sessions
 
 With multi-tenant portals on, FuzeFront mints session tokens carrying a `portalId`, and
