@@ -39,6 +39,8 @@ import { enforceListQuota, sendQuotaExceeded } from '../middleware/quota';
 import {
   lockQuotaScope,
   checkListQuota,
+  checkListQuotaAcross,
+  checkActiveListQuotaAcross,
   checkActiveListQuota,
   checkLocaleQuota,
   isUserPrincipal,
@@ -56,7 +58,7 @@ import {
   requirePublishForPlatformList,
   requirePublishWhenBodyIsPlatform,
 } from '../middleware/listAccess';
-import { isVisibility, orgForms, orgRenderings, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
+import { canonicalOrgId, isVisibility, orgForms, orgIs, orgRenderings, writeOrgs, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
 import { editableIds, getReadScope, readableByOrg } from '../services/sharedReads';
 import { formatList, LIST_COLUMNS, singleCtx, type ListRow } from './listShape';
 import { lockOrgOutbox, wireUserId } from '../events/outbox';
@@ -542,8 +544,16 @@ router.post('/', requireCatalogCheck('create'), requirePublishWhenBodyIsPlatform
       await lockOrgOutbox(trx, req.orgId as string);
       // Exact quota enforcement: serialise creates for this org, re-check the
       // ceiling under the lock, then insert (see quota.service.ts header).
-      await lockQuotaScope(trx, `org_lists:${req.orgId}`);
-      await checkListQuota(req.orgId as string, trx, req.userId);
+      // Shared lists ON: the org is ONE org whatever rendering the token carries - lists are counted and quota
+      // overrides loaded across every rendering, under one lock (canonical id). OFF: the 4.0.0 exact scope.
+      const quotaOrgs = await writeOrgs(req);
+      if (quotaOrgs) {
+        await lockQuotaScope(trx, `org_lists:${canonicalOrgId(req.orgId as string) ?? req.orgId}`);
+        await checkListQuotaAcross(quotaOrgs, trx, req.userId);
+      } else {
+        await lockQuotaScope(trx, `org_lists:${req.orgId}`);
+        await checkListQuota(req.orgId as string, trx, req.userId);
+      }
 
       if (visibility === 'platform') {
         const taken = await trx.raw(`SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ?`, [orgRenderings(ownerOrg), key.trim()]);
@@ -822,12 +832,14 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
       // Lock order is ALWAYS org outbox lock -> list row (emitters/outbox.ts), so a
       // concurrent item create / purge / access write on this org cannot deadlock.
       await lockOrgOutbox(trx, req.orgId as string);
+      const writeScope = await writeOrgs(req);
+      const patchScope = orgIs('organization_id', req.orgId as string, writeScope);
 
       // Fetch the existing list row (scoped to org) inside the transaction; it is
       // also the `before` state the event diff is taken against.
       const existing = await trx.raw<{ rows: Array<{ id: string; source_locale: string; status: string; key: string; created_by?: string; organization_id?: string; visibility?: string | null }> }>(
-        `SELECT id, source_locale, status, key, created_by, organization_id, visibility FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
-        [listId, req.orgId],
+        `SELECT id, source_locale, status, key, created_by, organization_id, visibility FROM selection_lists WHERE id = ? AND ${patchScope.sql} FOR NO KEY UPDATE`,
+        [listId, ...patchScope.params],
       );
       if (!existing.rows[0]) return 'not-found';
       const current = existing.rows[0];
@@ -866,12 +878,15 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
       // user authored (system / deleted-user authors are not users). Exact: under
       // the same advisory lock the create handler takes.
       if (body.status === 'active' && current.status === 'archived') {
-        await lockQuotaScope(trx, `org_lists:${req.orgId}`);
-        await checkActiveListQuota(
-          req.orgId as string,
-          current.created_by && isUserPrincipal(current.created_by) ? current.created_by : undefined,
-          trx,
-        );
+        const creator = current.created_by && isUserPrincipal(current.created_by) ? current.created_by : undefined;
+        if (writeScope) {
+          // shared lists ON: one org, every rendering (a common list lives under the platform org's configured id)
+          await lockQuotaScope(trx, `org_lists:${canonicalOrgId(req.orgId as string) ?? req.orgId}`);
+          await checkActiveListQuotaAcross(writeScope, creator, trx);
+        } else {
+          await lockQuotaScope(trx, `org_lists:${req.orgId}`);
+          await checkActiveListQuota(req.orgId as string, creator, trx);
+        }
       }
 
       // Update the list row — always bump updated_at (plus any changed scalars)
@@ -1080,9 +1095,10 @@ router.delete('/:listId', requireListMutation('delete'), requirePublishForPlatfo
     // Lock order: org outbox lock -> list row (see events/outbox.ts).
     const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
       await lockOrgOutbox(trx, req.orgId as string);
+      const rowScope = orgIs('organization_id', req.orgId as string, await writeOrgs(req));
       const existing = await trx.raw<{ rows: [{ id: string }] }>(
-        `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
-        [listId, req.orgId],
+        `SELECT id FROM selection_lists WHERE id = ? AND ${rowScope.sql} FOR NO KEY UPDATE`,
+        [listId, ...rowScope.params],
       );
       if (!existing.rows[0]) return 'not-found';
 
@@ -1193,9 +1209,10 @@ router.post('/:listId/archive', requireListMutation('delete'), async (req: Reque
   try {
     const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
       await lockOrgOutbox(trx, req.orgId as string);
+      const rowScope = orgIs('organization_id', req.orgId as string, await writeOrgs(req));
       const existing = await trx.raw<{ rows: [{ id: string }] }>(
-        `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
-        [listId, req.orgId],
+        `SELECT id FROM selection_lists WHERE id = ? AND ${rowScope.sql} FOR NO KEY UPDATE`,
+        [listId, ...rowScope.params],
       );
       if (!existing.rows[0]) return 'not-found';
 

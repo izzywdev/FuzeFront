@@ -55,6 +55,7 @@ import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { getAuthzClient, bearer } from '../middleware/authz';
 import { requireListMutation } from '../middleware/listAccess';
+import { writeOrgs } from '../lib/sharedLists';
 import { authMiddleware } from '../middleware/auth';
 import { lockOrgOutbox } from '../events/outbox';
 import { eventContextFromRequest, emitAccessGranted, emitAccessRevoked } from '../events/emitters';
@@ -126,8 +127,10 @@ function formatGrant(r: AccessRow) {
 }
 
 /** True iff the list exists in the caller's organization (org-scoped, never cross-org). */
-async function listExistsInOrg(listId: string, orgId: string): Promise<boolean> {
-  const row = await db('selection_lists').where({ id: listId, organization_id: orgId }).first('id');
+async function listExistsInOrg(listId: string, orgId: string, orgs: string[] | null): Promise<boolean> {
+  const row = orgs
+    ? await db('selection_lists').where({ id: listId }).whereIn('organization_id', orgs).first('id')
+    : await db('selection_lists').where({ id: listId, organization_id: orgId }).first('id');
   return Boolean(row);
 }
 
@@ -150,7 +153,7 @@ router.get(
     const afterUserId = cursorParam ? decodeCursor(cursorParam) : undefined;
 
     try {
-      if (!(await listExistsInOrg(listId, orgId))) {
+      if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
         return;
       }
@@ -253,7 +256,7 @@ router.put(
     let prior: string | null = null;
 
     try {
-      if (!(await listExistsInOrg(listId, orgId))) {
+      if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
         return;
       }
@@ -440,7 +443,7 @@ router.delete(
     let prior: string | null = null;
 
     try {
-      if (!(await listExistsInOrg(listId, orgId))) {
+      if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
         return;
       }

@@ -61,6 +61,7 @@ import type { Knex } from 'knex';
 import { db } from '../db';
 import { isAuthzEnforced, FLAGS, FlagContext } from './authz.flags';
 import { createLoggedFetch, getLog, timed } from '../lib/logger';
+import { writeOrgs } from '../lib/sharedLists';
 import { getGrantToken } from '../lib/machineIdentity';
 
 // ---------------------------------------------------------------------------
@@ -251,7 +252,15 @@ export function requireAuthzCheck(resource: string, action: string) {
         const exists = await timed(
           getLog(req),
           'db.selection_lists.exists',
-          () => db('selection_lists').where({ id: listId, organization_id: orgId }).first('id'),
+          async () => {
+            // 4.0.0: exact match on the claim. With shared lists ON (and the platform org resolved) every
+            // rendering of the caller's org matches, so a list stored under the org's other rendering
+            // (a common list owned by the platform org) is the caller's list too.
+            const orgs = await writeOrgs(req);
+            return orgs
+              ? db('selection_lists').where({ id: listId }).whereIn('organization_id', orgs).first('id')
+              : db('selection_lists').where({ id: listId, organization_id: orgId }).first('id');
+          },
           { listId, orgId },
         );
         if (!exists) {

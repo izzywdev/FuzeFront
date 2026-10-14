@@ -26,7 +26,7 @@ import { db } from '../db';
 import { ENTITY_PREFIXES, mintId } from '@izzywdev/fuzefront-identity';
 import { requireAuthzCheckWhen } from '../middleware/authz';
 import { requireListMutation, requireListRead, requirePublishForPlatformList } from '../middleware/listAccess';
-import { sameOrg, sharedListsOn } from '../lib/sharedLists';
+import { orgIs, sameOrg, sharedListsOn, writeOrgs } from '../lib/sharedLists';
 import { getReadScope, readableByOrg } from '../services/sharedReads';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
@@ -197,12 +197,14 @@ function formatItem(row: ItemRow, shared = false, foreign = false) {
 // ─── DB helper: get list source_locale + org check ───────────────────────────
 
 async function getListSourceLocale(
+  req: Request,
   listId: string,
   orgId: string,
 ): Promise<string | null> {
+  const scope = orgIs('organization_id', orgId, await writeOrgs(req));
   const result = await db.raw<{ rows: [{ source_locale: string }] }>(
-    `SELECT source_locale FROM selection_lists WHERE id = ? AND organization_id = ?`,
-    [listId, orgId],
+    `SELECT source_locale FROM selection_lists WHERE id = ? AND ${scope.sql}`,
+    [listId, ...scope.params],
   );
   return result.rows[0]?.source_locale ?? null;
 }
@@ -410,7 +412,7 @@ router.post('/:listId/items', requireListMutation('add_value'), enforceItemQuota
   }
 
   // Verify the list exists and belongs to this org
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -563,7 +565,7 @@ router.put('/:listId/items/reorder', requireListMutation('update_value'), async 
   }
 
   // Verify list exists + org scope
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -701,7 +703,7 @@ router.patch('/:listId/items/:itemId', requireListMutation('update_value'), asyn
   }
 
   // Verify list exists + org scope
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -860,7 +862,7 @@ router.delete('/:listId/items/:itemId', requireListMutation('remove_value'), req
   const purge = req.query.purge === 'true';
 
   // Verify list exists + org scope
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -950,7 +952,7 @@ router.post('/:listId/items/:itemId/archive', requireListMutation('remove_value'
   const { listId, itemId } = req.params;
 
   // Verify list exists + org scope
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;

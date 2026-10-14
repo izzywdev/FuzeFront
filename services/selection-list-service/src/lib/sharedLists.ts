@@ -102,6 +102,27 @@ export function orgRenderings(stored: string): string[] {
   return [...new Set([stored, ...orgForms(canonicalOrgId(stored) ?? stored)])];
 }
 
+/**
+ * The org scope of a WRITE / write-guard lookup. `null` = the 4.0.0 behaviour, an EXACT match on the claim as
+ * presented (shared-lists flag OFF, or the platform organization unresolved: nothing new is reachable then).
+ * Otherwise every rendering of the caller's org (`orgRenderings`): a list stored under the org's TypeID is the
+ * same org's list for a token carrying the bare UUID, and vice versa (e.g. a common list is stored under the
+ * configured platform org id whatever rendering the publishing operator's token carried). Another org's
+ * renderings never match.
+ */
+export async function writeOrgs(req: Pick<Request, 'orgId' | 'userId'>): Promise<string[] | null> {
+  if (!req.orgId) return null;
+  return memoPerRequest(req, 'write-orgs', async () => {
+    if (!(await sharedListsOn(req))) return null;
+    return (await resolvePlatformOrgId()) ? orgRenderings(req.orgId as string) : null;
+  });
+}
+
+/** SQL predicate for "this column is the caller's org" under a `writeOrgs` scope (exact when `orgs` is null). */
+export function orgIs(column: string, orgId: string, orgs: string[] | null): { sql: string; params: Array<string | string[]> } {
+  return orgs ? { sql: `${column} = ANY(?)`, params: [orgs] } : { sql: `${column} = ?`, params: [orgId] };
+}
+
 // ---------------------------------------------------------------------------
 // The platform organization (D2)
 // ---------------------------------------------------------------------------

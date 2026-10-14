@@ -11,8 +11,8 @@
 import type { Knex } from 'knex';
 import { TOPICS } from '@fuzefront/shared/kafka';
 import { dbDescribe } from './helpers/testDb';
-import { toUuid } from '@izzywdev/fuzefront-identity';
-import { ADMIN_ACTIONS, createWorld, ORG_A, P, PLATFORM, Principal, publishPriorityList, World } from './helpers/sharedWorld';
+import { fromUuid, toUuid } from '@izzywdev/fuzefront-identity';
+import { ADMIN_ACTIONS, createWorld, EDITOR_ACTIONS as EDITOR, ORG_A, P, PLATFORM, Principal, publishPriorityList, World } from './helpers/sharedWorld';
 import { assertConforms } from './helpers/openapi';
 
 const state: { db: Knex | undefined } = { db: undefined };
@@ -209,6 +209,94 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
       // rename of a common list onto a taken key
       const rename = await w.api(P.op).patch(`/v1/selection-lists/${taken.body.id}`, { key: 'ren-common' });
       expect(rename.status).toBe(409);
+    });
+  });
+
+  describe('writes by an operator whose token carries the OTHER rendering of the platform org id', () => {
+    const uuid = toUuid(PLATFORM as never);
+    const opUuid = { userId: P.op.userId, orgId: uuid };
+
+    const operate = async (creator: Principal, operator: Principal, key: string) => {
+      const created = await w.api(creator).post('/v1/selection-lists', { key, name: key, visibility: 'platform' });
+      expect(created.status).toBe(201);
+      const id: string = created.body.id;
+      expect(created.body.organization_id).toBe(PLATFORM); // always stored under the configured id
+      // the Security API holds the operator's instance role in the tenant its token carries
+      w.authz.give(operator.orgId, operator.userId, id, 'list-owner');
+      const api = w.api(operator);
+      const url = `/v1/selection-lists/${id}`;
+      expect((await api.patch(url, { description: 'edited by the other rendering' })).status).toBe(200);
+      const item = await api.post(`${url}/items`, { code: 'X', label: 'X' });
+      expect(item.status).toBe(201);
+      expect((await api.patch(`${url}/items/${item.body.id}`, { label: 'X2' })).status).toBe(200);
+      expect((await api.put(`${url}/translations/fr`, { name: 'Clé' })).status).toBe(200);
+      expect((await api.get(`${url}/access`)).status).toBe(200); // manage_access
+      expect((await api.post(`${url}/archive`)).status).toBe(200);
+      expect((await api.patch(url, { status: 'active' })).status).toBe(200);
+      expect((await api.del(`${url}/items/${item.body.id}`)).status).toBe(200);
+      expect((await api.del(`${url}?purge=true`)).status).toBe(204);
+    };
+
+    it('UUID-token operator operates a platform list created through the TypeID rendering (and the reverse)', async () => {
+      w.authz.allowCatalog(uuid, P.op.userId, ADMIN_ACTIONS);
+      await operate(P.op, opUuid, 'wr-typeid-made');
+      await operate(opUuid, P.op, 'wr-uuid-made');
+    });
+
+    it('a DIFFERENT org\'s rendering still gets 404 for a platform org\'s private list (and fork_required for a common one)', async () => {
+      const priv = await w.api(P.op).post('/v1/selection-lists', { key: 'wr-private', name: 'P' });
+      expect(priv.status).toBe(201);
+      for (const p of [P.aAdmin, { userId: P.aAdmin.userId, orgId: toUuid(ORG_A as never) }, P.bMember]) {
+        w.authz.allowCatalog(p.orgId, p.userId, ADMIN_ACTIONS);
+        expect((await w.api(p).patch(`/v1/selection-lists/${priv.body.id}`, { name: 'hijack' })).status).toBe(404);
+        expect((await w.api(p).del(`/v1/selection-lists/${priv.body.id}`)).status).toBe(404);
+      }
+      expect((await w.db('selection_lists').where({ id: priv.body.id }).first()).status).toBe('active');
+    });
+  });
+
+  describe('quotas of the platform org / one org under two renderings', () => {
+    it('org_lists override stored under the TypeID applies to a create through the UUID rendering (flag ON)', async () => {
+      const typeId = fromUuid('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e91');
+      const uuid = toUuid(typeId as never);
+      const byType = { userId: 'usr_01quotaren0000000000000000a', orgId: typeId };
+      const byUuid = { userId: 'usr_01quotaren0000000000000000b', orgId: uuid };
+      for (const p of [byType, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, EDITOR);
+      await w.db('selection_list_org_quota').insert({ organization_id: typeId, updated_by: 'usr_x', max_lists: 1 });
+      expect((await w.api(byType).post('/v1/selection-lists', { key: 'q-one', name: 'One' })).status).toBe(201);
+      const res = await w.api(byUuid).post('/v1/selection-lists', { key: 'q-two', name: 'Two' });
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'org_lists', limit: 1 });
+    });
+
+    it('creating a platform list counts the platform org\'s lists under every rendering', async () => {
+      const uuid = toUuid(PLATFORM as never);
+      const opUuid = { userId: P.op.userId, orgId: uuid };
+      w.authz.allowCatalog(uuid, P.op.userId, ADMIN_ACTIONS);
+      await w.db('selection_list_org_quota').insert({ organization_id: PLATFORM, updated_by: 'usr_x', max_lists: 1 });
+      try {
+        const res = await w.api(opUuid).post('/v1/selection-lists', { key: 'q-common', name: 'Q', visibility: 'platform' });
+        expect(res.status).toBe(403);
+        expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'org_lists', limit: 1 });
+      } finally {
+        await w.db('selection_list_org_quota').where({ organization_id: PLATFORM }).delete();
+      }
+    });
+
+    it('un-archiving counts across renderings too', async () => {
+      const typeId = fromUuid('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e92');
+      const uuid = toUuid(typeId as never);
+      const byType = { userId: 'usr_01quotaren0000000000000000c', orgId: typeId };
+      const byUuid = { userId: 'usr_01quotaren0000000000000000d', orgId: uuid };
+      for (const p of [byType, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, EDITOR);
+      await w.db('selection_list_org_quota').insert({ organization_id: typeId, updated_by: 'usr_x', max_lists: 1 });
+      const first = await w.api(byType).post('/v1/selection-lists', { key: 'u-one', name: 'One' });
+      expect((await w.api(byType).post(`/v1/selection-lists/${first.body.id}/archive`)).status).toBe(200);
+      expect((await w.api(byType).post('/v1/selection-lists', { key: 'u-two', name: 'Two' })).status).toBe(201);
+      w.authz.give(uuid, byUuid.userId, first.body.id, 'list-owner');
+      const res = await w.api(byUuid).patch(`/v1/selection-lists/${first.body.id}`, { status: 'active' });
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'org_lists' });
     });
   });
 

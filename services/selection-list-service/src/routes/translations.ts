@@ -37,6 +37,7 @@ import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
 import { requireListMutation, requireListRead } from '../middleware/listAccess';
 import { getReadScope, readableByOrg } from '../services/sharedReads';
+import { writeOrgs } from '../lib/sharedLists';
 import type { Knex } from 'knex';
 import { lockOrgOutbox } from '../events/outbox';
 import { checkLocaleQuota, lockQuotaScope, QuotaExceededError } from '../services/quota.service';
@@ -82,10 +83,11 @@ export function computeSourceHash(name: string, description?: string | null): st
 
 type Executor = Knex | Knex.Transaction;
 
-async function getListByOrg(listId: string, orgId: string, ex: Executor = db) {
-  return ex('selection_lists')
-    .where({ id: listId, organization_id: orgId })
-    .first();
+async function getListByOrg(listId: string, orgId: string | string[], ex: Executor = db) {
+  // `string[]` = every rendering of the caller's org (shared lists ON); a string = the 4.0.0 exact match.
+  return Array.isArray(orgId)
+    ? ex('selection_lists').where({ id: listId }).whereIn('organization_id', orgId).first()
+    : ex('selection_lists').where({ id: listId, organization_id: orgId }).first();
 }
 
 /**
@@ -268,8 +270,9 @@ router.put('/:listId/translations/:locale', requireListMutation('translate'), as
   // (or roll back) together. Lock order: org outbox lock first (events/outbox.ts).
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
@@ -361,8 +364,9 @@ router.delete('/:listId/translations/:locale', requireListMutation('translate'),
 
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
@@ -474,8 +478,9 @@ router.put('/:listId/items/:itemId/translations/:locale', requireListMutation('t
 
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
@@ -562,8 +567,9 @@ router.delete('/:listId/items/:itemId/translations/:locale', requireListMutation
 
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }
@@ -647,9 +653,10 @@ router.post('/:listId/translations/:locale/autofill', requireListMutation('trans
   // outbox lock first (events/outbox.ts).
   const answer: Answer = await db.transaction(async (trx) => {
     await lockOrgOutbox(trx, orgId);
+    const orgScope = (await writeOrgs(req)) ?? orgId;
     const ctx = eventContextFromRequest(req);
 
-    const list = await getListByOrg(listId, orgId, trx);
+    const list = await getListByOrg(listId, orgScope, trx);
     if (!list) {
       return { status: 404, body: { code: 'NOT_FOUND', message: 'List not found.' } };
     }

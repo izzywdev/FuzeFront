@@ -300,11 +300,10 @@ export async function getQuotaAcross(orgRenderings: string[], executor: Executor
 }
 
 /**
- * `checkListQuota` for an organization known by several renderings of its id: lists are counted and overrides
- * loaded across ALL of them (org_lists, user_lists, and the hard storage ceiling). Used by the fork, whose
- * organization may present either rendering; the 4.0.0 `checkListQuota` is unchanged.
+ * `checkActiveListQuota` (org_lists then user_lists, active rows) across every rendering of the org id; returns
+ * the resolved limits. Used when a list is created or RE-ACTIVATED while shared lists are ON.
  */
-export async function checkListQuotaAcross(orgRenderings: string[], executor: Executor = db, userId?: string): Promise<void> {
+export async function checkActiveListQuotaAcross(orgRenderings: string[], userId: string | undefined, executor: Executor = db): Promise<QuotaLimits> {
   const quota = await getQuotaAcross(orgRenderings, executor);
   const count = async (where: Record<string, unknown>): Promise<number> => {
     const r = await (executor('selection_lists').whereIn('organization_id', orgRenderings).where(where).count('id as count').first() as Promise<any>);
@@ -316,6 +315,20 @@ export async function checkListQuotaAcross(orgRenderings: string[], executor: Ex
     const mine = await count({ created_by: userId, status: 'active' });
     if (mine >= quota.maxListsPerUser) throw new QuotaExceededError('user_lists', mine, quota.maxListsPerUser, 'lists per user');
   }
+  return quota;
+}
+
+/**
+ * `checkListQuota` for an organization known by several renderings of its id: lists are counted and overrides
+ * loaded across ALL of them (org_lists, user_lists, and the hard storage ceiling). Used by the fork, whose
+ * organization may present either rendering; the 4.0.0 `checkListQuota` is unchanged.
+ */
+export async function checkListQuotaAcross(orgRenderings: string[], executor: Executor = db, userId?: string): Promise<void> {
+  const quota = await checkActiveListQuotaAcross(orgRenderings, userId, executor);
+  const count = async (where: Record<string, unknown>): Promise<number> => {
+    const r = await (executor('selection_lists').whereIn('organization_id', orgRenderings).where(where).count('id as count').first() as Promise<any>);
+    return parseInt(String(r?.count ?? '0'), 10);
+  };
   const ceiling = quota.maxLists * storageCeilingFactor();
   const stored = await count({});
   if (stored >= ceiling) {
