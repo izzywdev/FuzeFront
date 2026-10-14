@@ -1,0 +1,24 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-13T12:00:00Z"
+  },
+  "title": "FuzeFront Fuse Seam",
+  "namespace": "FuzeFront",
+  "libraries": [],
+  "sections": {},
+  "groups": [],
+  "assetGroups": {},
+  "blobs": {},
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "lastChange": {
+    "by": "design-system/producer",
+    "via": "GitHub · izzywdev/FuzeFront",
+    "note": "Generated from the design-system/ package by build-artifact.mjs."
+  }
+}

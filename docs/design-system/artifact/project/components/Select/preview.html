@@ -1,0 +1,31 @@
+<!-- @dsCard group="Forms" height=512 static -->
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">Select · usage</span>
+<pre><code>&lt;Select
+  id="role"
+  label="Role"
+  placeholder="Choose a role"
+  options={[
+    { value: "owner", label: "Owner" },
+    { value: "admin", label: "Admin" },
+    { value: "member", label: "Member" },
+  ]}
+/&gt;
+&lt;Select id="theme" label="Theme" defaultValue="dark" options={[
+  { value: "dark", label: "Dark" },
+  { value: "light", label: "Light" },
+]} /&gt;
+&lt;Select id="env" label="Environment" error="Pick a target before deploying" options={[
+  { value: "staging", label: "Staging" },
+  { value: "prod", label: "Production", disabled: true },
+]} /&gt;
+&lt;Select id="scope" label="Scope"&gt;
+  &lt;option value="read"&gt;read&lt;/option&gt;
+  &lt;option value="write"&gt;write&lt;/option&gt;
+&lt;/Select&gt;</code></pre>

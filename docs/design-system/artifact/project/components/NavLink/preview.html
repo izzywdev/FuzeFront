@@ -1,0 +1,30 @@
+<!-- @dsCard group="Shell" height=492 static -->
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">NavLink · usage</span>
+<pre><code>&lt;nav style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}&gt;
+  &lt;NavLink label="Products" href="/products" active submenu={[
+    { label: "FuzeFront Platform", href: "/products/fuzefront", description: "Module Federation host shell" },
+    { label: "FuzeAgent", href: "/products/fuzeagent", description: "AI team orchestration" },
+  ]} /&gt;
+  &lt;NavLink label="Pricing" href="/pricing" /&gt;
+  &lt;NavLink label="About" href="/about" /&gt;
+&lt;/nav&gt;
+
+{/* With react-router-dom — both the trigger AND the submenu rows */}
+&lt;NavLink
+  as={Link}
+  to="/products"
+  label="Products"
+  active={location.pathname.startsWith("/products")}
+  submenuAs={Link}
+  submenu={[
+    { label: "FuzeFront Platform", to: "/products/fuzefront", description: "Module Federation host shell" },
+    { label: "FuzeAgent", to: "/products/fuzeagent", description: "AI team orchestration" },
+  ]}
+/&gt;</code></pre>

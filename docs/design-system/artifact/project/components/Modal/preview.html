@@ -1,0 +1,24 @@
+<!-- @dsCard group="Overlay" height=372 static -->
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">Modal · usage</span>
+<pre><code>&lt;Modal open={isOpen} onClose={() =&gt; setOpen(false)} title="Invite member"&gt;
+  &lt;Input id="email" label="Email" type="email" placeholder="team@acme.com" /&gt;
+  &lt;Button onClick={() =&gt; setOpen(false)}&gt;Send invite&lt;/Button&gt;
+&lt;/Modal&gt;
+
+&lt;Modal open={isOpen} onClose={() =&gt; setOpen(false)} title="Edit organization" size="lg"&gt;
+  {/* wider layout at 720px */}
+  &lt;OrgForm /&gt;
+&lt;/Modal&gt;
+
+&lt;Modal open={isOpen} onClose={() =&gt; setOpen(false)}&gt;
+  {/* no title — aria-labelledby omitted */}
+  &lt;p&gt;Are you sure you want to delete this app?&lt;/p&gt;
+  &lt;Button variant="danger" onClick={confirmDelete}&gt;Delete&lt;/Button&gt;
+&lt;/Modal&gt;</code></pre>

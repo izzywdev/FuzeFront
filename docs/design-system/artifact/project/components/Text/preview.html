@@ -1,0 +1,16 @@
+<!-- @dsCard group="Core" height=212 static -->
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">Text · usage</span>
+<pre><code>&lt;Text tone="muted"&gt;Select organization&lt;/Text&gt;
+&lt;Text as="span" tone="secondary"&gt;{user.email}&lt;/Text&gt;
+&lt;Text tone="primary"&gt;{profile.firstName || 'Not set'}&lt;/Text&gt;
+&lt;Text tone="danger"&gt;Failed to load profile data.&lt;/Text&gt;
+&lt;Text tone="secondary" size="sm" spacing="md"&gt;
+  You don't have the required permissions to access this page.
+&lt;/Text&gt;</code></pre>

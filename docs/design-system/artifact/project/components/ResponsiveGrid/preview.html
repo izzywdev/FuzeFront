@@ -1,0 +1,24 @@
+<!-- @dsCard group="Layout" height=372 static -->
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">ResponsiveGrid · usage</span>
+<pre><code>&lt;ResponsiveGrid columns={2}&gt;
+  &lt;Input label="First name" value={firstName} onChange={onFirstNameChange} /&gt;
+  &lt;Input label="Last name" value={lastName} onChange={onLastNameChange} /&gt;
+&lt;/ResponsiveGrid&gt;
+
+&lt;ResponsiveGrid columns={2} gap="md" minColumnWidth="200px"&gt;
+  &lt;div role="group" aria-label="Admin panel"&gt;…&lt;/div&gt;
+  &lt;div role="group" aria-label="Member panel"&gt;…&lt;/div&gt;
+&lt;/ResponsiveGrid&gt;
+
+&lt;ResponsiveGrid columns={3} gap="sm" align="start"&gt;
+  &lt;StatCard {...a} /&gt;
+  &lt;StatCard {...b} /&gt;
+  &lt;StatCard {...c} /&gt;
+&lt;/ResponsiveGrid&gt;</code></pre>

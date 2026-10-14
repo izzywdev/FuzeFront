@@ -1,0 +1,13 @@
+<!-- @dsCard group="Forms" height=152 static -->
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">Textarea · usage</span>
+<pre><code>&lt;Textarea id="bio" label="Bio" placeholder="Tell us about yourself…" rows={4} /&gt;
+&lt;Textarea id="notes" label="Notes" rows={6} onChange={(e) =&gt; setNotes(e.target.value)} /&gt;
+&lt;Textarea id="desc" label="Description" error="Description is required" rows={3} /&gt;
+&lt;Textarea id="log" label="Raw log" rows={10} disabled value={logOutput} /&gt;</code></pre>
