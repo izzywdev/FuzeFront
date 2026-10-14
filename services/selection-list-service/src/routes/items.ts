@@ -25,7 +25,14 @@ import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { ENTITY_PREFIXES, mintId } from '@izzywdev/fuzefront-identity';
 import { requireAuthzCheckWhen } from '../middleware/authz';
-import { requireListMutation, requireListRead, requirePublishForPlatformList } from '../middleware/listAccess';
+import {
+  assertMayPurgeLocked,
+  PLATFORM_PURGE_DENIED_BODY,
+  PlatformPurgeDenied,
+  requireListMutation,
+  requireListRead,
+  requirePublishForPlatformList,
+} from '../middleware/listAccess';
 import { orgIs, sameOrg, sharedListsOn, writeOrgs } from '../lib/sharedLists';
 import { getReadScope, readableByOrg } from '../services/sharedReads';
 import { isSelectionListsEnabled } from '../flags';
@@ -879,6 +886,10 @@ router.delete('/:listId/items/:itemId', requireListMutation('remove_value'), req
 
       const ctx = eventContextFromRequest(req);
       if (purge) {
+        // The pre-transaction guard decided from an earlier read of the list: re-check it under the org lock
+        // (a promotion to a common list takes the same lock, so what we read now cannot change under us).
+        const listRow = await trx.raw<{ rows: Array<{ visibility: string | null }> }>(`SELECT visibility FROM selection_lists WHERE id = ?`, [listId]);
+        await assertMayPurgeLocked(req, listRow?.rows?.[0]?.visibility);
         await trx.raw(
           `DELETE FROM selection_list_item_translations WHERE item_id = ?`,
           [itemId],
@@ -928,6 +939,10 @@ router.delete('/:listId/items/:itemId', requireListMutation('remove_value'), req
       res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
     }
   } catch (err) {
+    if (err instanceof PlatformPurgeDenied) {
+      res.status(403).json(PLATFORM_PURGE_DENIED_BODY);
+      return;
+    }
     getLog(req).error(
       { err, op: 'items DELETE /:listId/items/:itemId error', userId: req.userId, orgId: req.orgId, params: req.params },
       'items DELETE /:listId/items/:itemId error failed',

@@ -262,3 +262,42 @@ export function requirePublishForPlatformList(when: (req: Request) => boolean): 
     }
   };
 }
+
+/**
+ * Raised inside a purge transaction when the LOCKED list turned out to be a common list the caller may not
+ * purge (see `assertMayPurgeLocked`). Routes map it to the same 403 the pre-transaction guard answers.
+ */
+export class PlatformPurgeDenied extends Error {
+  constructor() {
+    super('Purging a common list requires platform-operator permission.');
+    this.name = 'PlatformPurgeDenied';
+  }
+}
+
+export const PLATFORM_PURGE_DENIED_BODY = {
+  code: 'FORBIDDEN',
+  message: 'Purging a common list requires platform-operator permission.',
+} as const;
+
+/**
+ * TIME-OF-CHECK / TIME-OF-USE guard for the irreversible purge (list or item). `requirePublishForPlatformList`
+ * decides from a read taken BEFORE the transaction; a concurrent promotion to `platform` (which holds the same
+ * org outbox lock) can land between that read and the purge taking the lock. Call this INSIDE the purge
+ * transaction, AFTER the org lock is held and the row is locked, with the `visibility` read under that lock:
+ * if the list is `platform` now, the caller must hold `publish_platform` (evaluated now if the earlier guard
+ * had not needed it - it is memoised per request otherwise). Independent of the release flag, like the guard
+ * it backs. A Security API failure fails closed (denied).
+ */
+export async function assertMayPurgeLocked(req: Request, lockedVisibility: string | null | undefined): Promise<void> {
+  if (lockedVisibility !== 'platform') return;
+  let allowed = false;
+  try {
+    allowed = await mayPublishPlatform(req);
+  } catch (err) {
+    getLog(req).error({ err, userId: req.userId, orgId: req.orgId }, 'purge re-check of a common list threw - failing closed');
+  }
+  if (!allowed) {
+    getLog(req).info({ userId: req.userId, orgId: req.orgId }, 'purge of a list promoted to common mid-request denied (needs publish_platform)');
+    throw new PlatformPurgeDenied();
+  }
+}

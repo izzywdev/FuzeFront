@@ -51,7 +51,10 @@ import { getGrantToken } from '../lib/machineIdentity';
 import { grantCleanupFailedTotal } from '../lib/metrics';
 import { requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled, bearer } from '../middleware/authz';
 import {
+  assertMayPurgeLocked,
   catalogAllowed,
+  PLATFORM_PURGE_DENIED_BODY,
+  PlatformPurgeDenied,
   requireListMutation,
   requireListRead,
   requireManageAccessWhenVisibilityGiven,
@@ -1114,14 +1117,17 @@ router.delete('/:listId', requireListMutation('delete'), requirePublishForPlatfo
     const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
       await lockOrgOutbox(trx, req.orgId as string);
       const rowScope = orgIs('organization_id', req.orgId as string, await writeOrgs(req));
-      const existing = await trx.raw<{ rows: [{ id: string }] }>(
-        `SELECT id FROM selection_lists WHERE id = ? AND ${rowScope.sql} FOR NO KEY UPDATE`,
+      const existing = await trx.raw<{ rows: [{ id: string; visibility: string | null }] }>(
+        `SELECT id, visibility FROM selection_lists WHERE id = ? AND ${rowScope.sql} FOR NO KEY UPDATE`,
         [listId, ...rowScope.params],
       );
       if (!existing.rows[0]) return 'not-found';
 
       const ctx = eventContextFromRequest(req);
       if (purge) {
+        // The pre-transaction guard decided from an earlier read: re-check the LOCKED row (it may have been
+        // promoted to a common list since).
+        await assertMayPurgeLocked(req, existing.rows[0]?.visibility);
         // list.deleted tombstone FIRST: it reads the key and bumps the revision,
         // which needs the row. No per-item/translation/access events: it implies them.
         await emitListDeleted(trx, ctx, listId);
@@ -1201,6 +1207,10 @@ router.delete('/:listId', requireListMutation('delete'), requirePublishForPlatfo
       res.status(200).json(formatList(result.rows[0], await singleCtx(req, result.rows[0], true)));
     }
   } catch (err) {
+    if (err instanceof PlatformPurgeDenied) {
+      res.status(403).json(PLATFORM_PURGE_DENIED_BODY);
+      return;
+    }
     getLog(req).error(
       { err, op: 'lists DELETE /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
       'lists DELETE /:listId error failed',
