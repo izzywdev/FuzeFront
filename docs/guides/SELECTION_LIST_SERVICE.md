@@ -6,10 +6,20 @@ How a consuming application stores, renders, and manages reference data
 `@fuzeone/selection-list-client`.
 
 The service contract lives at
-`services/selection-list-service/openapi.yaml` (**v4.0.0**). This guide is a
+`services/selection-list-service/openapi.yaml` (**v4.1.0**). This guide is a
 companion, not a replacement — the spec is the source of truth for any
-discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.0.0** and
-`fuzefront-selection-list-client` (Python) **2.0.0**. Kafka events and app
+discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.1.0** and
+`fuzefront-selection-list-client` (Python) **2.1.0**.
+
+> **4.1.0 is a frozen contract ahead of its implementation.** Shared lists
+> (`visibility`), common (`platform`) lists and copy-on-write forks are specified
+> in the spec, the clients and the event schemas, but **the service does not
+> implement them yet** (the implementation wave follows the contract PR; plan:
+> [`docs/planning/selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md)).
+> Until it lands the service still returns 4.0.0 shapes and the new route
+> answers `404`. Everything in
+> [Shared lists, common lists and forks](#shared-lists-common-lists-and-forks-410)
+> below describes the contract, not running code. Kafka events and app
 seeding are covered in [`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md);
 how seeding is enabled safely is in
 [`docs/runbooks/selection-lists-seeding-operations.md`](../runbooks/selection-lists-seeding-operations.md).
@@ -27,6 +37,7 @@ how seeding is enabled safely is in
 7. [Pagination](#pagination)
 8. [Translations](#translations)
 9. [Access control](#access-control)
+   - [Shared lists, common lists and forks (4.1.0)](#shared-lists-common-lists-and-forks-410)
 10. [Authorship and seed provenance](#authorship-and-seed-provenance)
 11. [Events and the outbox](#events-and-the-outbox)
 12. [Quota](#quota)
@@ -117,21 +128,48 @@ alias mechanism.
 }
 ```
 
-### TypeScript client — genuinely not published yet, and here is why
+### TypeScript client — published from the root workspace on merge
 
-`@fuzeone/selection-list-client` is **not** in the registry
-(`users/izzywdev/packages/npm/fuzeone-selection-list-client` → 404). The cause
-is not `publishConfig` — that is already correct in
-`selection-list-client/package.json`. It is that `selection-list-client` is
-**absent from the root `package.json` `workspaces` array**, and `workspaces` is
-the single source of truth `publish-packages.mjs` reads: a directory that is
-not a workspace produces no matrix leg, so `packages-publish` never tries to
-publish it and goes green anyway. `api-client/` and `sdk/` had exactly this
-defect until they were added as workspaces. Adding `selection-list-client` (and
-`packages/selection-list-client-py` for the Python side) to `workspaces` is the
-whole fix.
+`@fuzeone/selection-list-client` ships to GitHub Packages under the owner scope
+as **`@izzywdev/fuzeone-selection-list-client`** (same alias rule as the UI
+package above). It is published by `packages-publish.yml`, and the whole
+mechanism is that `selection-list-client` is a root `package.json`
+`workspaces` entry: `publish-packages.mjs --list-json` reads `workspaces` as its
+single source of truth and emits one matrix leg per publishable package. A
+directory that is not a workspace gets no leg, so the workflow never attempts it
+and still goes green (the defect this client had until it was added;
+`api-client/` and `sdk/` had it too).
 
-Until then, install from a local build:
+How and when it publishes:
+
+- **Trigger:** a merge to `master` runs `packages-publish.yml`. Its leg for this
+  package builds the client and its dependency closure
+  (`lerna run build --scope @fuzeone/selection-list-client --include-dependencies`,
+  i.e. `tsup`), dry-runs, then publishes `--only` this package.
+- **What gates a publish:** the `version` in `selection-list-client/package.json`.
+  Publishing is idempotent: a version already in the registry is skipped, never
+  overwritten, so an unchanged version is a no-op and a re-run is safe.
+  **Versions are bumped in the PR, not by the publish job** (`gate-version`
+  enforces the SemVer bump discipline; see
+  [`shared-packages-distribution.md`](./shared-packages-distribution.md#versioning)).
+  A contract change that alters the client's public surface bumps the client in
+  the same PR as the spec.
+- **Verify the registry, not the run conclusion:**
+
+  ```bash
+  gh api users/izzywdev/packages/npm/fuzeone-selection-list-client/versions --jq '[.[].name]'
+  ```
+
+- **Install:** map the `@izzywdev` scope to the registry (see the `.npmrc` above),
+  then depend on `@izzywdev/fuzeone-selection-list-client`, or alias it back to the
+  canonical name with `"@fuzeone/selection-list-client": "npm:@izzywdev/fuzeone-selection-list-client@^2.0.0"`.
+  Inside this repo no mapping is needed: it is an npm workspace and links from the tree.
+
+The Python client is not part of this: it publishes to PyPI through the
+tag-triggered `selection-list-client-py-publish.yml`.
+
+To consume a **local, unpublished** build instead (for example to test a change
+before it merges):
 
 ```bash
 # In the selection-list-client directory
@@ -139,10 +177,10 @@ cd selection-list-client
 npm install
 npm run build
 npm pack
-# → fuzeone-selection-list-client-2.0.0.tgz
+# → fuzeone-selection-list-client-2.1.0.tgz
 
 # In your consuming package
-npm install /path/to/fuzefront/selection-list-client/fuzeone-selection-list-client-2.0.0.tgz
+npm install /path/to/fuzefront/selection-list-client/fuzeone-selection-list-client-2.1.0.tgz
 ```
 
 **Python client** is in `packages/selection-list-client-py/` and follows the
@@ -171,23 +209,95 @@ const client = new SelectionListClient({
 | Option | Type | Required | Notes |
 |---|---|---|---|
 | `baseUrl` | `string` | Yes | Same-origin path in the browser; absolute URL in server-side callers |
-| `token` | `string \| () => string \| Promise<string>` | Yes (all calls) | Bearer token with an `orgId` claim. `resolveIds` also requires it |
+| `token` | `string \| () => string \| Promise<string>` | Yes (all calls) | An **org-scoped** Bearer token (see [Authentication and the org claim](#authentication-and-the-org-claim)). A plain FuzeFront session token carries no org and every call answers `401`. `resolveIds` also requires it |
 | `fetch` | `typeof fetch` | No | Inject for tests or non-global runtimes; defaults to `globalThis.fetch` |
 | `defaultLocale` | `Locale` | No | Applied to every request that doesn't supply its own |
 | `headers` | `Record<string, string>` | No | Merged into every request (tracing IDs, tenant hints) |
+
+### Authentication and the org claim
+
+The service scopes **every** row by organization and takes that organization from **one place only: a claim in the
+verified bearer token**. Never a header, query string or body (an `X-Organization-Id` header is ignored).
+
+The token the shell holds after login is a plain **session token** `{ userId, sessionId, tid }`. It authenticates the
+user but names **no organization**, and `tid` is *not* one: it is the identity-directory tenant (which Authentik
+instance authenticated the user, e.g. `fuzefront`). The service never reads `tid` as an org; treating it as one would put
+every user of a directory in one tenant.
+
+To act in an org, exchange the session token for a short-lived **org-scoped token** at the Security API:
+
+```http
+POST /api/organizations/{orgId}/session-token
+Authorization: Bearer <session token>
+
+200 { "token": "<jwt>", "tokenType": "Bearer", "expiresIn": 900, "organizationId": "<bare uuid>" }
+```
+
+The Security API mints it **only after proving the caller's active membership of `{orgId}`** with the same helper
+the rest of Security uses (`proveSessionTenant`, `backend/security/src/services/session-tenant.ts`: an `active`
+membership row **and** `organizations.is_active = true`; a NULL or false flag matches nothing). `organizationId` may be
+the bare UUID or the `org_…` TypeID; `403` for a non-member, a deactivated org and a nonexistent org alike, `503` if the
+membership proof itself cannot be completed (never a token), `401` for a revoked/expired session, a foreign-tenant
+token, or a token that is not a plain session token. The result is
+`{ userId, sessionId, tid, orgId, kind: "fuze-org-session" }`, lifetime at most 15 minutes and never beyond the session's
+own expiry. Re-exchange when it lapses: the exchange re-checks the session and the membership, which is how a removed
+member or a deactivated org stops being served (the service verifies statelessly and cannot see a later logout, so the
+short lifetime is the revocation bound). The shell does this for the UI (`frontend/src/lib/selectionListsAuth.ts`:
+cached per session+org, refreshed a minute before expiry, never persisted).
+
+**Why this endpoint exists alongside `POST /api/v1/security/tokens/exchange`.** The exchange added with the
+scoped-ownership bootstrap (Security 0.10.0) is a different mechanism for a different caller, so it does not replace
+this endpoint; the two share the membership proof and nothing else.
+
+| | `POST /api/organizations/{orgId}/session-token` (this) | `POST /api/v1/security/tokens/exchange` |
+|---|---|---|
+| Caller | the **end user's browser**, with its own session token | a **service**, authenticated by a Kubernetes workload token (`fuze-workload`, `TokenReview`) holding the requested scopes |
+| Input | session token + org in the path | `subjectToken` + `audience: service:<name>` + `scope` + canonical `tenant` selector |
+| Output | `{ userId, sessionId, tid, orgId, kind: 'fuze-org-session' }`, 15 min, a bearer the service verifies **statelessly** | `{ sub, aud, scope, tenantId, act, kind: 'fuze-delegation' }`, 5 min, audience-bound, verified by **introspection** behind `x-fuze-delegation` |
+| Shared | `proveSessionTenant` for the membership proof | `proveSessionTenant` for the membership proof |
+
+A browser cannot call the delegation exchange (it holds no workload token), and its token names `tenantId`, not an
+`orgId` claim this service's stateless bearer check reads. Serving the UI from it would mean routing every
+selection-list call through a host-backend proxy that holds a workload identity (the pattern `fuzex-proxy.ts` uses for
+FuzeX) and switching this service to introspection-based delegation verification, which is an architecture and
+workload-identity (FuzeWorkloadIdentity / Helm) change, not a token swap. Until that is chosen, the end-user path above
+is the supported one. The machine path is unaffected and unchanged: the service's own owner bootstrap uses a projected
+Kubernetes ServiceAccount token exchanged for a workload token with scope `selection-list:owner-grant`
+(`src/lib/machineIdentity.ts`), never a user token.
+
+Both Fuze-minted kinds stay out of each other's lane: this service accepts only a kind-less session or
+`fuze-org-session`; `fuze-workload` and `fuze-delegation` are `401` here. The Security API's account routes, and the
+delegation exchange's own subject-session check, refuse `fuze-org-session` (it is accepted only by the authz decision
+API, which org-scoped services call with it).
+
+What the service accepts (`src/middleware/auth.ts`):
+
+| Rule | Detail |
+|---|---|
+| Algorithm | `HS256` only, signed with the platform `JWT_SECRET`. HS384/HS512 and `alg: none` are `401` |
+| Subject | `userId`, else `sub` |
+| Org claim, precedence | `orgId` (what the Security API mints) → `organization_id` (the name this contract's `bearerAuth` publishes) → `organizationId`. Present under several names with different values, or malformed (empty, whitespace, non-string, over 128 chars) → `401`, never guessed. No org claim at all → authenticated but every org route answers `401` |
+| Org id form | Bare UUID (`organizations.id`, the authz tenant key) or `org_…` TypeID, used **verbatim**; `wireOrgId()` renders either to the wire TypeID for events and flags |
+| Token `kind` | Absent (session) or `fuze-org-session` are accepted. **Any other `kind` is `401`**: `fuze-workload` and `fuze-delegation` tokens are service/act-on-behalf credentials, not users, and verify under the shared secret whenever `DELEGATION_SIGNING_KEY` is unset |
+
+Service-to-service callers that are not acting for a user have no org-scoped token to present; they go through the
+Kafka seeding path or the Security API, not these routes.
 
 ### Server-side (Node / service-to-service)
 
 ```ts
 const client = new SelectionListClient({
   baseUrl: 'http://fuzefront-selection-list-service:3008',
-  token: process.env.SELECTION_LIST_SERVICE_TOKEN,
+  // An org-scoped token (15 min) from the exchange above: pass a function that
+  // re-exchanges on expiry, not a static env value.
+  token: () => getOrgScopedToken(),
   fetch,   // node-fetch or native fetch (Node 24+)
 })
 ```
 
-The in-cluster Service port is `selectionListService.port` in the Helm values (**3008**);
-`3011` is only the process default for local runs (`PORT` unset).
+The in-cluster Service port is `selectionListService.port` in the Helm values (**3008**).
+The process default (`PORT` unset) is **3008** too, so a local run, the image, the chart and (since
+contract 4.1.0) the OpenAPI `servers` example all agree.
 
 ---
 
@@ -434,17 +544,18 @@ answer different questions — they must not be confused (spec 3.0.0+, review H-
 "May this caller work with selection lists in this org at all?" Keyless (the tenant is the
 caller's organization), granted through **tenant roles**:
 
-| tenant role | `list` | `create` | `read_quota` | `resolve` |
-|---|:---:|:---:|:---:|:---:|
-| `admin` | ✓ | ✓ | ✓ | ✓ |
-| `editor` | ✓ | ✓ | | ✓ |
-| `viewer` | ✓ | | | ✓ |
-| `developer` | | | | |
+| tenant role | `list` | `create` | `read_quota` | `resolve` | `read_shared` (4.1.0) | `publish_platform` (4.1.0) |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| `admin` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (effective only in the platform org) |
+| `editor` | ✓ | ✓ | | ✓ | ✓ | |
+| `viewer` | ✓ | | | ✓ | ✓ | |
+| `developer` | | | | | | |
 
 | Operation | Checked against | Action |
 |---|---|---|
 | `GET /v1/selection-lists` | `SelectionListCatalog` | `list` |
-| `POST /v1/selection-lists` | `SelectionListCatalog` | `create` |
+| `POST /v1/selection-lists` | `SelectionListCatalog` | `create` (+ `publish_platform` for `visibility: platform`) |
+| `POST /v1/selection-lists/{listId}/fork` (4.1.0) | `SelectionListCatalog` | `create` (+ read on the source) |
 | `GET /v1/selection-lists/quota` | `SelectionListCatalog` | `read_quota` |
 | `POST /v1/resolve` | `SelectionListCatalog` | `resolve` |
 
@@ -471,15 +582,49 @@ How the two meet:
   list** by `SelectionList:read`: a caller sees only lists it holds an instance role on. A caller
   with none gets an empty page, not a `403`.
 - **Creating** needs `SelectionListCatalog:create`. The service then grants the creator
-  `list-owner` on the new list **with its own machine identity**.
+  `list-owner` on the new list **with its own workload identity** (a projected Kubernetes
+  ServiceAccount token exchanged for scope `selection-list:owner-grant`, which the Security API
+  accepts only to bootstrap the verified creator as owner).
 - Two actions are stricter than the table suggests: **purging an item**
   (`DELETE .../items/{itemId}?purge=true`) additionally needs `delete` on the list, so only a
   `list-owner` can purge (a `list-editor` can archive an item but gets `403` on purge); and
   **archiving a list via `PATCH` `status: "archived"`** needs `update` **and** the same `delete` as
   `POST .../archive` — a `list-editor` can no longer archive through PATCH (4.0.0).
 - **`POST /v1/resolve`** needs only the catalog `resolve` action; it does **not** check
-  `SelectionList:read` on each id's list (accepted trade-off: it returns a label, a locale and a
-  status only).
+  `SelectionList:read` on each id's list (accepted trade-off, review L-4: it is org-scoped, it
+  returns a label, a locale and a status only, and a per-list check would turn one round trip
+  into N decisions on the hot path). Decided and recorded: this is not a gap to fix.
+- **The last-owner guard asks the Security API, not the mirror.** Demoting or removing a
+  `list-owner` is refused `409 CONFLICT` unless **another** owner is *confirmed by the authority*
+  (`manage_access` on that list, asked for each other mirror owner). A mirror row the authority does
+  not confirm (a failed role change, a deleted user, an operator's direct revoke) is not an owner.
+  If the Security API cannot answer, the change is refused (`500`/`409`), never allowed.
+- **A failed role change is compensated.** The Security API write is not part of the database
+  transaction, so when `PUT`/`DELETE .../access/{userId}` fails after it revoked/granted something,
+  the service puts the authority back to the user's prior role before answering `500`
+  (`selection_list_authz_compensation_total{outcome="failed"}` means that compensation itself failed).
+  Compensation runs **with the acting human's own token**: the Security API re-checks their
+  `manage_access` on the instance exactly as for the original write; the workload identity never
+  repairs a role.
+- **Which credential does what.** Human access changes (role change, revoke, compensation, purge
+  cleanup) always carry the caller's token and are authorized per list instance. The service's own
+  workload token holds exactly two scopes, both enforced by the Security API
+  (`backend/security/src/routes/authz.ts`), neither of which is `authz:admin`:
+  `selection-list:owner-grant` (grant `list-owner` to an active member, nothing else) and
+  `selection-list:grant-cleanup` (**revoke only**, only `SelectionList` instance roles, and only for
+  a principal SQL proves is gone: the user row is missing or deactivated, or the user has no active
+  membership of that tenant; a live member's grant is refused `403`).
+- **Cascades keep the authority clean.** Purging a list revokes its instance's Security API grants
+  after the purge commits, with the purging owner's token, their own grant last (best-effort,
+  idempotent, never fails the purge; `selection_list_grant_cleanup_failed_total{cause="purge"}`).
+  A grant that token is refused (typically a grantee who has since left the tenant) is retried once
+  through the cleanup scope, which accepts exactly that case. `identity.user.deleted` has no human,
+  so it uses the cleanup scope: it revokes every
+  grant the deleted user holds on any list and removes their mirror rows (retried; dead-lettered
+  after 5 attempts). If the deleted user was a list's **last** owner the grant is still revoked, the
+  list is flagged (`selection_list_ownerless_lists_total{cause="user_deleted"}` and an ERROR log with
+  `ownerless: true`), and a tenant admin recovers it by granting `list-owner` through the Security API
+  (below).
 
 ### No implicit admin ownership — and the support path
 
@@ -530,9 +675,10 @@ await client.revokeAccess(list.id, userId)
 ### Seeded lists and who can see them
 
 Lists created by **seeding** (platform defaults such as `yes-no`, or an app's
-`seed.requested` pack) are written by the system principal and **no `list-owner` (or any other)
-grant is created for them**. Because every per-list action is instance-only, the consequence on
-today's code is:
+`seed.requested` pack) are written by the system principal. Since SL8 the org's **owner** is
+granted `list-owner` on the **platform**-seeded lists (`src/seed/ownerGrants.ts`); app-seeded lists
+get no grant at all, and **no other member gets one either**. Because every per-list action is
+instance-only, the consequence on today's code for everyone but that owner is:
 
 - members — including tenant admins — **do not see seeded lists** in `GET /v1/selection-lists`
   and get `404` on `GET /v1/selection-lists/{listId}` until a role is granted on that list;
@@ -544,9 +690,79 @@ today's code is:
 - `POST /v1/resolve` still resolves seeded item ids for any caller holding the catalog `resolve`
   action, because it does not check per-list read.
 
-This is a **known gap and an open design question** (grant an owner at seed time? derive admin
-ownership? — owner decision), recorded in the seeding runbook. It is why seeding should not be
-switched on for an org that expects its members to use the seeded lists immediately.
+This is a **known gap** on today's code, recorded in the seeding runbook. It is why seeding should
+not be switched on for an org that expects its members to use the seeded lists immediately. The
+**owner decision** is made and specified in contract 4.1.0 (not implemented yet): seeded lists get
+a `visibility` — `org` makes them readable by every member without any grant, and the platform
+defaults become one `platform` common list for every org — see the next section.
+
+### Shared lists, common lists and forks (4.1.0)
+
+*Contract only — see the status note at the top. Design record:
+[`selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md).*
+
+The requirement: a member who signs up must be able to **pick** from the app's common lists in
+every dropdown without owning them and without being able to change them; an organization that
+wants different values **forks** (copy-on-write).
+
+**`visibility`** (on every list; `SelectionList.visibility`) decides who may *read* a list
+without an instance grant. It never confers a change.
+
+| `visibility` | Readable without a grant by | Who sets it |
+|---|---|---|
+| `private` (default; every list that exists today) | nobody — instance roles only | default |
+| `org` | every member of the owning org (`read_shared`) | the list owner (`manage_access`) |
+| `platform` | every member of **every** org (`read_shared`) — a **common list**, owned by the platform organization | a platform operator (`publish_platform`, acting in the platform org); **one-way** |
+
+```ts
+// The picker's key lookup: own org's readable list (e.g. its fork) first, else the common list.
+const list = await client.getEffectiveList('priority')   // GET ?key=priority&include_shared=true
+if (list && list.editable === false) {
+  // read-only for this caller; for list.visibility === 'platform' offer "fork to edit"
+}
+// `editable === undefined` means "no hint" (see the note below) — not read-only.
+
+// Everything readable — granted lists plus org/common lists (default is the 4.0.0 set).
+const page = await client.getLists({ include_shared: true })
+```
+
+> **The four new response fields are optional at 4.1.0.** `SelectionList.visibility`,
+> `forked_from`, `editable` and `SelectionListItem.origin_item_id` are **not** in the spec's
+> `required` lists yet, because the running service (implementation behind the default-OFF flag
+> `fuzefront.selection-lists.shared-lists`) still omits them. Read absence as the 4.0.0 state:
+> `visibility` absent = `private`, `forked_from` / `origin_item_id` absent = `null`, `editable`
+> absent = **unknown** (no hint — behave as before and let the mutation's own authorization
+> answer; never treat it as `false`). The Python client maps them to `PRIVATE` / `None` / `None` /
+> `None`. Once the implementation always emits them, a later MINOR tightens them to required.
+
+**Forking.** Changing a common list you hold no role on answers `409 CONFLICT` with
+`reason: "fork_required"`, `source_list_id` and a same-origin-relative `fork_url` (or a plain
+`403` if you may not create lists). Fork, then edit the fork:
+
+```ts
+try {
+  await client.updateItem(common.id, itemId, { label: 'Urgent' })
+} catch (e) {
+  if (isSelectionListApiError(e) && e.isForkRequired) {
+    const { list: fork, created } = await client.forkList(e.sourceListId!) // 201 new / 200 existing
+    // fork.key === common.key, fork.forked_from.list_id === common.id, caller is list-owner;
+    // items are copies with NEW ids; item.origin_item_id names the common item each came from.
+  } else throw e
+}
+```
+
+- The fork keeps the **same `key`**, so it shadows the common list for the forking org
+  (`getEffectiveList` returns the fork); **archiving the fork reverts** to the common list.
+- `visibility` of a fork is `org` (default — the org's version for every member) or `private` (a
+  draft only grant-holders see; it shadows nothing for anyone else).
+- At most one fork per (org, source); forking again returns the existing one (`200`), or
+  `409 reason: fork_exists` if you cannot read it. Forking a list of your own org is
+  `409 reason: fork_not_applicable`.
+- **Stored values keep working.** Ids you stored against the common list keep resolving; inside
+  an org with an `org`-visible fork, `POST /v1/resolve` answers from the fork item (matched by
+  `origin_item_id`) and names it in `effective_item_id`, so you can rewrite stored values lazily.
+- Events: `selection-lists.list.forked` (with the full source→fork item id map) and
+  `selection-lists.visibility.changed` — see [`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md).
 
 ---
 
@@ -645,6 +861,33 @@ for (const q of quota.quotas) {
   }
 }
 ```
+
+What each scope is, and where it is enforced (all four are **enforced**, not just reported):
+
+| Scope | Default | Counts | Refused on |
+|---|---|---|---|
+| `org_lists` | 100 | active lists in the org | create a list; **un-archive** a list (`PATCH {status:"active"}`) |
+| `user_lists` | 20 | active lists the **caller** created in the org (seeded `system:*` lists and `[deleted-user]` lists are not a user's) | create a list; un-archive a list the user authored |
+| `list_items` | 500 | active items in the list | create an item; un-archive an item |
+| `list_locales` | 11 | distinct locales with a list-level translation, **source locale included** | `PUT .../translations/{locale}` or an autofill into a locale the list does not have yet; a `PATCH` that writes a new source-locale row. Updating a locale the list already has is never refused. |
+
+A per-org override row in `selection_list_org_quota` wins over the default. Creates are exact:
+the check runs inside the create transaction under an advisory lock, so N parallel creates at the
+ceiling admit exactly `ceiling - current`.
+
+**Archived rows count toward a hard storage ceiling.** Archiving is not deleting, so a loop of
+archive + create would otherwise grow the tables without bound while the active counts never move.
+Every stored row, archived or not, counts toward `active limit x SELECTION_LISTS_STORAGE_CEILING_FACTOR`
+(an env var on the service; a positive integer; **default 10**, so a default org may *store* 1000
+lists and a default list 5000 items; an invalid value falls back to 10 and never disables the
+ceiling). A refusal has the **same wire shape** as any other (`403 QUOTA_EXCEEDED`, `scope`
+`org_lists` or `list_items`, `limit` = the ceiling, `current` = rows stored) and its `message` says
+archived rows count; **purging** archived lists/items frees the space.
+
+There is also an **ingress rate limit** (per client IP) on `/api/v1/resolve` and on
+`/api/v1/selection-lists` (Helm `selectionListService.ingress.rateLimit.*`; defaults 100 rps and 30
+rps with a 4x burst; excess requests get `429` from the ingress, not from the service). It cannot
+tell reads from writes on the CRUD path, so it is an abuse bound, not a meter.
 
 When you do hit the ceiling:
 
@@ -765,12 +1008,12 @@ The selection-list-service serves Swagger UI at `/docs` when running locally.
 All endpoints are exercisable from the browser with a Bearer token:
 
 ```
-http://localhost:3011/docs
+http://localhost:3008/docs
 ```
 
 In the cluster (via port-forward):
 
 ```bash
-kubectl port-forward svc/fuzefront-selection-list-service 3011:3008 -n fuzefront
-# Then open http://localhost:3011/docs
+kubectl port-forward svc/fuzefront-selection-list-service 3008:3008 -n fuzefront
+# Then open http://localhost:3008/docs
 ```

@@ -56,6 +56,26 @@ export async function findOrgBySlug(
   return db('organizations').where({ slug }).first()
 }
 
+// ── User standing ─────────────────────────────────────────────────────────────
+
+/** The only user facts an authorization gate may rely on: does the account still exist and is it active. */
+export interface UserActiveState {
+  id: string
+  is_active: boolean
+}
+
+/**
+ * Re-read a user's account state from SQL. `undefined` = no such user (hard
+ * delete). `DELETE /api/me` is a soft delete (`is_active=false`) that leaves the
+ * user's memberships untouched, so membership alone does not show a deleted user.
+ */
+export async function findUserActiveState(
+  userId: EntityId<'user'>,
+  db: Knex = defaultDb
+): Promise<UserActiveState | undefined> {
+  return db('users').where({ id: toUuid(userId) }).first('id', 'is_active')
+}
+
 // ── Membership ────────────────────────────────────────────────────────────────
 
 export interface MembershipRow {

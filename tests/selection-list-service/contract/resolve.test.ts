@@ -5,7 +5,7 @@
  *   - Active item ids → results map with label/locale/is_machine/status
  *   - Archived item ids → in results with status: "archived" (NOT in missing)
  *   - Non-existent ids → in missing, not in results
- *   - Empty ids: [] → { results: {}, missing: [] } (not an error)
+ *   - Empty ids: [] → 400 VALIDATION_ERROR (ResolveRequest.ids minItems: 1)
  *   - Response does NOT contain list_key, organization_id, or any field beyond
  *     the 4 declared in the spec (label, locale, is_machine, status)
  *   - Cross-org: resolving an id from another org's list → appears in missing
@@ -101,7 +101,7 @@ describe('POST /v1/resolve — active items', () => {
 
   it('all requested ids are accounted for: results + missing = request ids', async () => {
     const client = makeClient(orgAToken);
-    const missingId = 'sli_01hnonexistentresolve00000' as SelectionListItemId;
+    const missingId = 'front_sli_01hnonexistentresolve00000' as SelectionListItemId;
     const result = await client.resolveIds([activeItemId, missingId]);
 
     const accounted = [
@@ -154,36 +154,23 @@ describe('POST /v1/resolve — archived items', () => {
 describe('POST /v1/resolve — non-existent ids', () => {
   it('non-existent ids appear in missing, not in results', async () => {
     const client = makeClient(orgAToken);
-    const ghostId = 'sli_01hghostid0000000000000000' as SelectionListItemId;
+    const ghostId = 'front_sli_01hghostid0000000000000000' as SelectionListItemId;
     const result = await client.resolveIds([ghostId]);
 
     expect(result.missing).toContain(ghostId);
     expect(result.results[ghostId]).toBeUndefined();
   });
 
-  it('empty ids array → { results: {}, missing: [] } (not an error)', async () => {
-    // The ResolveRequest schema requires minItems: 1, but the spec implies
-    // an empty result is safe. The contract requires this not to error.
-    // If the schema enforces minItems: 1 strictly, the test should expect 400.
-    // We test the boundary: empty array.
+  it('empty ids array → 400 VALIDATION_ERROR (ResolveRequest.ids: minItems 1)', async () => {
+    // The frozen schema says `minItems: 1`; the service used to answer 200 { results: {}, missing: [] }
+    // (non-spec behaviour this test used to accept). The spec text decides: an empty batch is malformed.
     const { status, body } = await rawFetch('/v1/resolve', {
       method: 'POST',
       token: orgAToken(),
       body: JSON.stringify({ ids: [] }),
     });
-    // Two valid interpretations per spec:
-    // 1. minItems: 1 enforced → 400 VALIDATION_ERROR
-    // 2. Empty set → { results: {}, missing: [] }
-    // The spec says minItems: 1 in ResolveRequest, so 400 is correct.
-    // If the implementation returns 200, that is also acceptable for empty.
-    if (status === 200) {
-      const b = body as { results: object; missing: unknown[] };
-      expect(Object.keys(b.results).length).toBe(0);
-      expect(b.missing.length).toBe(0);
-    } else {
-      expect(status).toBe(400);
-      expect((body as { code?: string }).code).toBe('VALIDATION_ERROR');
-    }
+    expect(status).toBe(400);
+    expect((body as { code?: string }).code).toBe('VALIDATION_ERROR');
   });
 });
 
@@ -320,7 +307,7 @@ describe('POST /v1/resolve — response envelope', () => {
     const { status, body } = await rawFetch('/v1/resolve', {
       method: 'POST',
       token: orgAToken(),
-      body: JSON.stringify({ ids: ['sli_01hanyid00000000000000000'] }),
+      body: JSON.stringify({ ids: ['front_sli_01hanyid00000000000000000'] }),
     });
     // Authenticated with an org-scoped token, so 200 is the only valid answer
     // (spec 2.0.0); a 401 here would mean a valid caller was refused.

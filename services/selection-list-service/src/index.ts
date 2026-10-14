@@ -7,10 +7,11 @@
 //      seed-sources file and sync the seed allowlist table (fatal when invalid).
 //   3. Initialize the family flag client (Unleash via @fuzefront/feature-flags;
 //      bounded, never fatal — fail-closed OFF when unreachable/unconfigured).
-//   4. Start the HTTP server on $PORT (default 3011).
+//   4. Start the HTTP server on $PORT (default 3008 = the chart's selectionListService.port).
 //   5. Start the Kafka consumers (non-fatal): identity.org.created (projection + platform seeding),
+//      identity.org.updated (projection refresh),
 //      selection-lists.seed.requested (attested app seeding), identity.org.deleted, identity.user.deleted.
-//      All four always start when Kafka is configured; the seed flag is evaluated per message.
+//      All five always start when Kafka is configured; the seed flag is evaluated per message.
 //   5b. Start the transactional-outbox relay, ONLY when KAFKA_BROKERS is set
 //       (non-fatal; events otherwise wait durably in event_outbox).
 //   5c. Start the seed RECONCILER (platform-defaults backfill), ONLY when SEED_RECONCILER_ENABLED=true
@@ -128,7 +129,7 @@ async function main(): Promise<void> {
   logMachineIdentityStatus();
 
   const app = createApp();
-  const port = parseInt(process.env.PORT || '3011', 10);
+  const port = parseInt(process.env.PORT || '3008', 10);
 
   server = app.listen(port, () => {
     logger.info({ port, logLevel: logger.level }, 'Listening');

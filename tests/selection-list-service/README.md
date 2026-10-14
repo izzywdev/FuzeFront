@@ -17,7 +17,7 @@ contract — fix the service (or amend the contract PR), never weaken the test.
 | Requirement | Notes |
 |---|---|
 | Node 24+ | `node --version` must be `>=24.0.0` |
-| Running `selection-list-service` | Defaults to `http://localhost:3011` |
+| Running `selection-list-service` | Defaults to `http://localhost:3008` |
 | Postgres (test DB) | Required for `security/mirror-not-authority.test.ts` and for the quota ceilings seeded by `helpers/global-setup.ts` |
 | Stand-in Security API | `node helpers/fake-security-api.mjs` (port 3002); point the service at it with `SECURITY_SERVICE_URL` |
 
@@ -70,7 +70,7 @@ npm run test:security
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SERVICE_BASE_URL` | `http://localhost:3011` | URL of the running service |
+| `SERVICE_BASE_URL` | `http://localhost:3008` | URL of the running service |
 | `JWT_SECRET` | `test-jwt-secret-for-selection-list-service` | Secret for signing test JWTs |
 | `TEST_DB_URL` | — | Full Postgres DSN (preferred) |
 | `DB_HOST` | `localhost` | Postgres host |

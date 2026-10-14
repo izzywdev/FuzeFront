@@ -5,7 +5,15 @@
     "outDir": "../dist-test",
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    "paths": {
+      "@fuzefront/shared/kafka": ["../../shared/src/kafka/index.ts"],
+      "@fuzefront/shared": ["../../shared/src/kafka/index.ts"],
+      "@izzywdev/fuzefront-identity": ["../../packages/identity/src/index.ts"],
+      "@fuzefront/auth": ["../../packages/auth/src/index.ts"],
+      "zod": ["./node_modules/zod/index"],
+      "kafkajs": ["./node_modules/kafkajs/types/index.d.ts"]
+    }
   },
   "include": ["./**/*.ts", "../src/**/*.ts"]
 }

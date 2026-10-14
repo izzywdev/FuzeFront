@@ -90,7 +90,7 @@ describe('webhook-router — invoice event wiring', () => {
 
   it('invoice.payment_succeeded persists AND runs the entitlement/notify path', async () => {
     const ctx = makeCtx({
-      subscriptions: { findByCustomer: jest.fn().mockResolvedValue({ planTier: 'pro', subscriptionId: 'sub_1' }) },
+      subscriptions: { findByCustomer: jest.fn().mockResolvedValue({ planTier: 'professional', subscriptionId: 'sub_1' }) },
       permit: { syncPlanToPermit: jest.fn().mockResolvedValue(true) },
       emitter: { subscriptionChanged: jest.fn().mockResolvedValue(undefined) },
     });
@@ -105,9 +105,9 @@ describe('webhook-router — invoice event wiring', () => {
 
   it('invoice.payment_failed persists AND runs the dunning path', async () => {
     const ctx = makeCtx({
-      subscriptions: { findByCustomer: jest.fn().mockResolvedValue({ planTier: 'pro' }) },
+      subscriptions: { findByCustomer: jest.fn().mockResolvedValue({ planTier: 'professional' }) },
       permit: { syncPlanToPermit: jest.fn().mockResolvedValue(true) },
-      emitter: { paymentFailed: jest.fn().mockResolvedValue(undefined) },
+      emitter: { paymentFailed: jest.fn().mockResolvedValue(undefined), subscriptionChanged: jest.fn().mockResolvedValue(undefined) },
     });
     await routeWebhookEvent(
       {

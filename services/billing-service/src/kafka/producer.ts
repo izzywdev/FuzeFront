@@ -5,6 +5,10 @@ import {
   BillingSubscriptionChangedPayloadV1,
   billingPaymentCompletedSchemaV1,
   BillingPaymentCompletedPayloadV1,
+  billingTrialEndingSchemaV1,
+  BillingTrialEndingPayloadV1,
+  billingPaymentFailedSchemaV1,
+  BillingPaymentFailedPayloadV1,
   billingTenantRegisteredSchemaV1,
   BillingTenantRegisteredPayloadV1,
   billingPaymentMethodUpdatedSchemaV1,
@@ -21,32 +25,22 @@ export interface BillingEventEmitter {
   subscriptionChanged(payload: BillingSubscriptionChangedPayloadV1, correlationId?: string): Promise<void>;
   /** One-time payment-mode Checkout outcome (paid / failed / expired). */
   paymentCompleted(payload: BillingPaymentCompletedPayloadV1, correlationId?: string): Promise<void>;
-  /** trial-ending + payment-failed carry the same lightweight notify shape. */
-  trialEnding(payload: TrialEndingPayload, correlationId?: string): Promise<void>;
-  paymentFailed(payload: PaymentFailedPayload, correlationId?: string): Promise<void>;
+  /** Fires 3–7 days before a trial expires. */
+  trialEnding(payload: BillingTrialEndingPayloadV1, correlationId?: string): Promise<void>;
+  /** Fires when Stripe cannot collect payment on an invoice. */
+  paymentFailed(payload: BillingPaymentFailedPayloadV1, correlationId?: string): Promise<void>;
   /** A new organization Stripe Customer was created — a new corporate tenant. */
   tenantRegistered(payload: BillingTenantRegisteredPayloadV1, correlationId?: string): Promise<void>;
   /** A payment method was attached/updated on an existing Stripe Customer. */
   paymentMethodUpdated(payload: BillingPaymentMethodUpdatedPayloadV1, correlationId?: string): Promise<void>;
 }
 
-export interface TrialEndingPayload {
-  entityId: string;
-  entityType: 'user' | 'organization';
-  trialEnd: string;
-  planTier: string;
-}
-
-export interface PaymentFailedPayload {
-  entityId: string;
-  entityType: 'user' | 'organization';
-  invoiceId: string;
-  amountDue: number;
-  currency: string;
-}
+// Re-export shared payload types so callers import from a single location.
+export type { BillingTrialEndingPayloadV1 as TrialEndingPayload };
+export type { BillingPaymentFailedPayloadV1 as PaymentFailedPayload };
 
 export class KafkaBillingEmitter implements BillingEventEmitter {
-  constructor(private readonly producer: Pick<TypedProducer, 'send' | 'raw'>) {}
+  constructor(private readonly producer: Pick<TypedProducer, 'send'>) {}
 
   async subscriptionChanged(
     payload: BillingSubscriptionChangedPayloadV1,
@@ -82,39 +76,32 @@ export class KafkaBillingEmitter implements BillingEventEmitter {
     );
   }
 
-  async trialEnding(payload: TrialEndingPayload, correlationId = randomUUID()): Promise<void> {
-    // No dedicated shared schema yet; emit a raw envelope on the trial topic.
-    await this.producer.raw.send({
-      topic: TOPICS.BILLING_TRIAL_ENDING,
-      messages: [
-        {
-          value: JSON.stringify({
-            version: '1.0',
-            topic: TOPICS.BILLING_TRIAL_ENDING,
-            correlationId,
-            occurredAt: new Date().toISOString(),
-            payload,
-          }),
-        },
-      ],
-    });
+  async trialEnding(payload: BillingTrialEndingPayloadV1, correlationId = randomUUID()): Promise<void> {
+    await this.producer.send(
+      TOPICS.BILLING_TRIAL_ENDING,
+      {
+        version: '1.0',
+        topic: TOPICS.BILLING_TRIAL_ENDING,
+        correlationId,
+        occurredAt: new Date().toISOString(),
+        payload,
+      },
+      billingTrialEndingSchemaV1,
+    );
   }
 
-  async paymentFailed(payload: PaymentFailedPayload, correlationId = randomUUID()): Promise<void> {
-    await this.producer.raw.send({
-      topic: TOPICS.BILLING_PAYMENT_FAILED,
-      messages: [
-        {
-          value: JSON.stringify({
-            version: '1.0',
-            topic: TOPICS.BILLING_PAYMENT_FAILED,
-            correlationId,
-            occurredAt: new Date().toISOString(),
-            payload,
-          }),
-        },
-      ],
-    });
+  async paymentFailed(payload: BillingPaymentFailedPayloadV1, correlationId = randomUUID()): Promise<void> {
+    await this.producer.send(
+      TOPICS.BILLING_PAYMENT_FAILED,
+      {
+        version: '1.0',
+        topic: TOPICS.BILLING_PAYMENT_FAILED,
+        correlationId,
+        occurredAt: new Date().toISOString(),
+        payload,
+      },
+      billingPaymentFailedSchemaV1,
+    );
   }
 
   async tenantRegistered(

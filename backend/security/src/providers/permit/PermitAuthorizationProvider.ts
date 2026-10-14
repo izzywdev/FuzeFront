@@ -14,6 +14,7 @@
  * read helpers return empty; writes surface a thrown error only for genuine
  * caller mistakes (never silently "allow").
  */
+import { InvalidCursorError } from '../AuthorizationProvider'
 import type {
   AuthorizationProvider,
   AuthzQuery,
@@ -43,6 +44,7 @@ import {
   unassignRoleInPermit,
   getUserRoleAssignments,
   getTenantRoleAssignments,
+  listUserTenantKeys,
 } from '../../utils/permit/role-assignment'
 import {
   getTenantFromPermit,
@@ -60,6 +62,56 @@ function resourceInstance(
 /** Single, unpaginated page (Permit's list APIs are not cursor-native here). */
 function singlePage<T>(items: T[]): Page<T> {
   return { items, page: { nextCursor: null, hasMore: false, total: items.length } }
+}
+
+/** Tenant page size: default and ceiling (family pagination standard). */
+const TENANT_PAGE_DEFAULT = 50
+const TENANT_PAGE_MAX = 200
+
+function encodeCursor(id: string): string {
+  return Buffer.from(id, 'utf8').toString('base64url')
+}
+
+/** The id a cursor encodes, or null if this provider could not have issued it (round-trip check). */
+function decodeCursor(cursor: string): string | null {
+  const id = Buffer.from(cursor, 'base64url').toString('utf8')
+  return id.length > 0 && encodeCursor(id) === cursor ? id : null
+}
+
+/**
+ * Keyset-paginate `items` by `id` ascending: stable under concurrent writes (a
+ * cursor is a position in the id order, not an offset). `limit` is clamped to
+ * [1, max]; a cursor this provider did not issue is rejected (InvalidCursorError),
+ * never guessed at.
+ */
+function pageById<T extends { id: string }>(items: T[], params: PageParams): Page<T> {
+  const limit = Math.min(Math.max(Math.floor(Number(params.limit) || TENANT_PAGE_DEFAULT), 1), TENANT_PAGE_MAX)
+  const sorted = [...items].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  let after: string | null = null
+  if (params.cursor) {
+    after = decodeCursor(params.cursor)
+    if (after === null) throw new InvalidCursorError()
+  }
+  const rest = after === null ? sorted : sorted.filter(t => t.id > after)
+  const slice = rest.slice(0, limit)
+  const hasMore = rest.length > limit
+  return {
+    items: slice,
+    page: {
+      nextCursor: hasMore && slice.length > 0 ? encodeCursor(slice[slice.length - 1].id) : null,
+      hasMore,
+      total: sorted.length,
+    },
+  }
+}
+
+/** Best-effort map of a Permit role-assignment row → its `Type:key` resource instance, if scoped. */
+function resourceInstanceOf(a: any): string | undefined {
+  const v = a?.resource_instance
+  if (typeof v === 'string' && v) return v
+  const type = a?.resource
+  const key = a?.resource_instance_key ?? a?.resource_instance?.key
+  return type && key ? `${type}:${key}` : undefined
 }
 
 /** Best-effort map of an unknown Permit role-assignment row → its role key. */
@@ -255,15 +307,26 @@ export class PermitAuthorizationProvider implements AuthorizationProvider {
 
   // ── Tenants / membership / roles ──
 
-  async listTenants(_caller: string, _params: PageParams): Promise<Page<Tenant>> {
+  async listTenants(
+    caller: string,
+    params: PageParams,
+    scope: 'member' | 'all' = 'member'
+  ): Promise<Page<Tenant>> {
     const raw = (await listTenantsFromPermit()) as any
     const rows: any[] = Array.isArray(raw) ? raw : (raw?.data ?? [])
-    const tenants: Tenant[] = rows.map(t => ({
+    let tenants: Tenant[] = rows.map(t => ({
       id: t.key ?? t.id,
       name: t.name ?? t.key,
       slug: t.attributes?.slug ?? t.slug,
     }))
-    return singlePage(tenants)
+    // Anything but an explicit 'all' is the member view: a caller sees only the
+    // tenants they hold a role in. (`caller` was previously ignored, so every
+    // authenticated user could enumerate every tenant.)
+    if (scope !== 'all') {
+      const mine = await listUserTenantKeys(caller)
+      tenants = tenants.filter(t => mine.has(t.id))
+    }
+    return pageById(tenants, params)
   }
 
   async createTenant(input: TenantCreate): Promise<Tenant> {
@@ -319,7 +382,19 @@ export class PermitAuthorizationProvider implements AuthorizationProvider {
     const rows = (await getUserRoleAssignments(userId, tenantId)) as any[]
     for (const r of rows ?? []) {
       const role = roleKeyOf(r)
-      if (role) await unassignRoleInPermit({ user: userId, role, tenant: tenantId })
+      if (!role) continue
+      // Permit identifies an assignment by (user, role, tenant, resource_instance).
+      // An instance-scoped grant (e.g. `App#creator` on `App:<slug>`) is a different
+      // record from the tenant-wide one, so leaving resource_instance off would
+      // leave it behind after the member is removed — a departed user keeping
+      // access to an object their org owns. Pass it through when the row has one.
+      const instance = resourceInstanceOf(r)
+      await unassignRoleInPermit({
+        user: userId,
+        role,
+        tenant: tenantId,
+        ...(instance ? { resource_instance: instance } : {}),
+      })
     }
   }
 

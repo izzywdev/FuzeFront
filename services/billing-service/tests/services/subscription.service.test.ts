@@ -122,7 +122,7 @@ describe('SubscriptionService.update', () => {
     const repo = new FakeSubRepo();
     await repo.upsert({
       customerId: 'localcust_1', subscriptionId: 'sub_1', priceId: 'price_pro',
-      planTier: 'pro', status: 'active', seatQuantity: 1, trialStart: null, trialEnd: null,
+      planTier: 'professional', status: 'active', seatQuantity: 1, trialStart: null, trialEnd: null,
       currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, canceledAt: null,
     });
     const retrieve = jest.fn().mockResolvedValue(baseStripeSub());
@@ -143,7 +143,7 @@ describe('SubscriptionService.cancel', () => {
     const repo = new FakeSubRepo();
     await repo.upsert({
       customerId: 'localcust_1', subscriptionId: 'sub_1', priceId: 'price_pro',
-      planTier: 'pro', status: 'active', seatQuantity: 1, trialStart: null, trialEnd: null,
+      planTier: 'professional', status: 'active', seatQuantity: 1, trialStart: null, trialEnd: null,
       currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, canceledAt: null,
     });
     const update = jest.fn().mockResolvedValue(baseStripeSub({ cancel_at_period_end: true }));

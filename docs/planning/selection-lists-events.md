@@ -3,8 +3,9 @@
 **Status:** contract FROZEN. **Implementation status (updated 2026-10-04, `origin/master` @ `0e70bcee`):**
 the transactional outbox + per-org ordered relay (SL6, #1265), the seed core library, platform
 pack and allowlist (#1270), and the `identity.org.created` / `selection-lists.seed.requested`
-consumers (#1271) are **merged**. **Not built:** the reconciler/backfill (§7.1 step 6, §9) and an
-`identity.org.updated` consumer. Seeding is gated by two default-OFF flags
+consumers (#1271) are **merged**; the reconciler/backfill (§7.1 step 6) landed in SL7 (§13.0.4), and
+SL8 added the `identity.org.updated` consumer, the org-owner `list-owner` grant on seeded lists and
+the canonical flag context (§13.0.5). Seeding is gated by two default-OFF flags
 (`fuzefront.selection-lists.service` and `fuzefront.selection-lists.seed-defaults`) and by the
 allowlist, which ships with only the internal `platform` source — so **nothing is live**. What
 integrators and operators should read instead of this design document:
@@ -203,6 +204,7 @@ stale).
 | `identity.org.deleted` | `${KAFKA_GROUP_ID}-org-deleted` | soft → archive org lists; hard → purge (existing `org-deleted.handler.ts`) | **exists** |
 | `identity.user.deleted` | `${KAFKA_GROUP_ID}-user-deleted` | anonymise `created_by` / `granted_by` (existing) | **exists** |
 | `identity.org.created` | `${KAFKA_GROUP_ID}-org-created` | seed the platform default pack(s) | **new** |
+| `identity.org.updated` | `${KAFKA_GROUP_ID}-org-updated` | refresh the org projection (`type` / `is_active` / `name`); flag-independent; no seeding | **SL8** (§13.0.5) |
 | `selection-lists.seed.requested` | `${KAFKA_GROUP_ID}-seed-requested` | validate, authorise, apply a pack | **new** |
 | `identity.user.created` | — | **not applicable** — no user-scoped lists (decision §2) | declared N/A |
 
@@ -360,11 +362,14 @@ touches a translation row it did not write).
   **`system:selection-list-service`**. Audit rows: `actor_id` = the same,
   `action = 'seed.applied' | 'seed.upgraded' | 'seed.archived'`, `after` includes
   `{ seedSource, packKey, packVersion, requestId }`.
-- **No per-instance `list-owner` grant** is written for seeded lists (there is no human
-  creator). They are administered by org admins through the tenant-level role, exactly
-  like "a list nobody but an org admin can administer" in `routes/lists.ts`. The
-  last-owner guard (`countActiveOwners`) must treat seeded lists with zero owners as
-  valid, so the first human grant on one is not blocked. Open question Q3.
+- **Access (superseded by SL8, see §13.0.5 and Q3):** the original design wrote **no** per-instance
+  `list-owner` grant for seeded lists and left them to org admins' tenant-level role. That left the
+  lists invisible (the list endpoint filters per list by `SelectionList:read`, and a tenant admin has
+  no implicit ownership), so the architect overrode the default: **platform**-seeded lists now get a
+  `list-owner` for the org owner (`identity.org.created.ownerId`), written after the seed transaction
+  commits. **App**-seeded lists (`seed.requested`) still get **no** grant from the service — the
+  requesting app grants through the Security API. The last-owner guard (`countActiveOwners`) still
+  treats a seeded list with zero owners as valid, so the first human grant is never blocked.
 - **HTTP contract ripple (prerequisite, see §13.1).**
 
 ## 10. Platform default seed packs
@@ -397,9 +402,13 @@ start if two files claim the same (packKey, version) or a file fails validation.
 | `priority` | `LOW` Low, `MEDIUM` Medium, `HIGH` High, `URGENT` Urgent | Tickets, tasks, CRM, alerts — the canonical shared vocabulary across Fuze products. |
 | `work-status` | `NOT_STARTED` Not started, `IN_PROGRESS` In progress, `BLOCKED` Blocked, `DONE` Done | Generic workflow state; demonstrates seeded lists that orgs are expected to customise (and upgrades then respecting that). |
 
-All 11 locales ship in the pack file (human-reviewed; produced through the
-`packages/i18n-translate` pipeline in the implementation PR, `is_machine = false` once
-reviewed).
+All 11 locales ship in the pack file. They are **machine-translated and LLM-reviewed (2026-10-05,
+two-pass with back-translation, owner-approved in place of native review); no human has reviewed
+them**, and the pack says so (`"translationProvenance": "machine"`, a service-local key of the
+pack format, see `src/seed/packs.ts`): seeding writes the non-source rows with `is_machine = true`
+and flips to `is_machine = false` only when a human-reviewed `platform-defaults.v2.json` (no
+provenance key) replaces them. See the seeding operations runbook §2.5 for the LLM review record
+(per-language decisions) and the reviewer checklist.
 
 **Deliberately excluded:** countries, currencies, languages, time zones. They are
 *reference data* — large (≈250 × 11 locales), externally governed (ISO 3166 / 4217,
@@ -631,7 +640,7 @@ Decisions the code makes that §7-§8 left open:
 - **Org projection.** `identity.org.created` upserts `selection_list_ref_index` *always* (flag OFF included); a `deleted` row is a tombstone and is
   never resurrected (the upsert refreshes type/`is_active`, not `status`). `identity.org.deleted` tombstones it *before* cascading (soft and hard) and
   inserts the tombstone for an org it never saw, so delete-before-create ends in `seed.failed` / `ORG_INACTIVE`, not lists. The projection is only
-  written by these two events: an `identity.org.updated` consumer does not exist yet, so `is_active` can go stale.
+  written by these two events (as of SL6; `identity.org.updated` joined in SL8, §13.0.5).
 - **`org.created` flow:** project -> `isActive:false` skips (flag not consulted) -> `isSeedingEnabled(org)` OFF skips + logs -> `applyPlatformDefaults`
   (`appliesTo` / personal / platform rules stay in the pack). Redelivery is `already-applied`.
 - **`seed.requested` order:** schema -> `scope:'user'` (`SCOPE_UNSUPPORTED`) -> flag (`SEEDING_DISABLED`; the token is not even introspected) ->
@@ -675,8 +684,39 @@ Decisions the code makes that §7-§8 left open:
 - **Trigger.** `applyPlatformDefaults(db, org, { trigger: 'backfill' })`, so the ledger row and `seed.completed` carry `trigger: 'backfill'`.
 - **Metrics** (`/metrics`): `selection_list_seed_reconciler_orgs_seeded_total`, `..._skipped_flag_off_total`, `..._skipped_total{reason=backoff|locked|up_to_date}`,
   `..._failed_total{retryable}`, `..._sweeps_total{result=ok|error}`, `..._last_sweep_timestamp_seconds`. Logs are pino with `organizationId`, never seed content.
-- **Open:** `identity.org.updated` is still not consumed, so `is_active` in the projection can go stale (org deactivated after create keeps being backfilled
-  until the projection learns); the reconciler inherits that limit. Ops can run one bounded pass with `runReconcilerOnce` (it takes a `cursor` and returns `nextCursor`).
+- ~~**Open:** `identity.org.updated` is still not consumed~~ — closed in SL8 (§13.0.5): the projection now follows `is_active`, so a deactivated org stops being a
+  candidate. Ops can run one bounded pass with `runReconcilerOnce` (it takes a `cursor` and returns `nextCursor`). SL8 also makes an already-seeded org whose owner lacks the
+  `list-owner` grant a candidate (see §13.0.5), so the reconciler heals a grant that failed.
+
+### 13.0.5 As implemented (SL8: owner grants, `identity.org.updated`, canonical flag context)
+
+Tests: `tests/seed.owner-grants.db.test.ts`, `tests/events.org-updated.db.test.ts`, `tests/flags.canonical-context.test.ts` (real Postgres; fake Security API / fake KafkaJS).
+
+- **Migration 10** adds three nullable columns to `selection_list_ref_index`: `owner_id` (the org owner's **`usr_…` wire id**, rendered from `identity.org.created.ownerId`), `org_name`, and
+  `snapshot_at` (envelope `occurredAt` of the newest org snapshot applied). `upsertOrgProjection` stores them; an existing owner is never erased by a snapshot without one.
+- **Q3 decided (default overridden): the org owner is a `list-owner` of every platform-seeded list.** `ensureSeededListOwners` (`src/seed/ownerGrants.ts`) runs at the END of
+  `applyPlatformDefaults`, i.e. for both the `identity.org.created` handler and the reconciler, **after** every seed transaction has committed (the grant is an external call):
+  - it selects the org's *active* `seed_source = 'platform'` lists that have **no `selection_list_access` row at all** for the owner, and for each one, in its own transaction, calls
+    `grantListOwner(owner, org, list, 'system:selection-list-service', trx)` — the same fail-closed path as list creation (machine identity token → Security API grant → mirror upsert) —
+    plus a `selection_list_audit` row `action = 'seed.owner-granted'` (actor = the seed principal), so the mirror row and its audit row commit together;
+  - **idempotent**: it also runs when every pack is `already-applied`, so a grant that failed on an earlier delivery is healed by the retry; a replay makes **no** Security API call and writes no
+    second row. A mirror row in *any* state (revoked, demoted) counts as "a human already decided" and is never re-granted;
+  - **failure throws** (machine identity unavailable, Security API 5xx): the org-created message is retried by kafkajs, the reconciler backs the org off. Lists already granted stay granted; the
+    seed itself is untouched (idempotent). The reconciler's candidate predicate also selects an org that has an owner and a seeded list still missing the grant;
+  - **no owner** (`ownerId` null/absent, e.g. the root org): logged and counted (`selection_list_seed_owner_grant_skipped_total{reason="no-owner"}`), never fails seeding;
+  - inactive / deleted / unknown orgs are skipped (`reason="org-inactive"`); metrics `selection_list_seed_owner_grants_total{result=granted|failed}`.
+  - **`seed.requested` (app seeding) does NOT grant**: the frozen `selection-lists.seed.requested` schema carries no owner, and this change does not touch frozen event schemas. The requesting app
+    must grant through the Security API.
+- **`identity.org.updated` consumer** (`src/events/org-updated.handler.ts`, group `${KAFKA_GROUP_ID}-org-updated`, topic and `identityOrgUpdatedSchemaV1` already exist in `@fuzefront/shared`):
+  refreshes `org_type`, `is_active`, `org_name`; **flag-independent** and never seeds; never resurrects a `deleted` tombstone; ordered by `occurredAt` (a snapshot older than `snapshot_at` is
+  ignored, in both directions — a late `org.created` cannot roll back an `org.updated`); does **not** move the owner (grants must not silently follow an ownership change); an org never seen is
+  inserted as projected; a schema-invalid payload is dead-lettered to `identity.org.updated.dlq` by `TypedConsumer`; an infrastructure fault throws (retried). `governance/microservice-events-policy.json`
+  needed no change: the gate only requires the four created/deleted handlers.
+- **Canonical flag context.** `buildFlagContext` (`src/flags.ts`) normalises `orgId` and `userId` to the **wire TypeID** (`org_…` / `usr_…`; a bare-UUID JWT claim is converted with the identity
+  package's `fromUuid`; anything else passes through) for every evaluation — HTTP gate, quota, routes, seeding consumers, reconciler — so an Unleash `orgId` constraint written as `org_…` matches
+  the same org on every path.
+- **Also in SL8:** request-body / `ids` / `limit` validation per the frozen schemas (`acceptOnlyBodyProps`, `parseLimitParam`; `POST /v1/resolve` with `ids: []` is now `400`), and the service's
+  default port aligned to the chart's `3008`.
 
 ### 13.1 HTTP contract ripple — prerequisite for the implementation wave
 
@@ -779,24 +819,29 @@ Gate: `python3 scripts/gate_microservice_events.py` green with the §12 policy.
 > and `values*.yaml`), which is why the request below is scoped as it is:
 >
 > - **Topic creation is FuzeFront's own, not FuzeInfra's.** `kafkaTopics.topics` in
->   `values.yaml` is applied by an in-repo Helm `post-install,post-upgrade` hook Job
->   (`fuzefront-kafka-topics`, `kafka-topics.sh --create --if-not-exists`, unauthenticated
->   PLAINTEXT to `fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092`). The 16
+>   `values.yaml` is applied by an in-repo Job (`fuzefront-kafka-topics-<hash>`; creates
+>   only the missing topics with `kafka-topics.sh --create`, unauthenticated PLAINTEXT to
+>   `fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092`). The 16
 >   `selection-lists.*` topics + `selection-lists.seed.requested.dlq` are declared there
 >   (3 partitions, 7d retention, `cleanup.policy=delete`; `seed.requested` and its DLQ
 >   1d). No new DLQs were needed for the consumed identity topics: `identity.org.created`,
 >   `identity.org.deleted` and `identity.user.deleted` already have `.dlq` companions.
-> - **The Job is disabled everywhere today** (`kafkaTopics.enabled: false` in the base
->   values and in `values-prod.yaml`, the latter because a slow Kafka made the hook wedge
->   every Argo sync). Until it is re-enabled (a FuzeFront chart change: make it
->   non-blocking, then flip the flag) the topics fall back to **broker auto-create with
->   broker defaults** — not the partitions/retention declared here, notably not the 1d
->   retention on `seed.requested`. That is a FuzeFront-side item, not a FuzeInfra request.
->   If the broker has `auto.create.topics.enable=false` the topics will not exist at all;
->   that setting is unverified from this repo.
+> - **RESOLVED (in-repo):** the Job used to be a Helm `post-install,post-upgrade` hook that
+>   wedged every Argo sync and was therefore disabled in prod, leaving topics on **broker
+>   auto-create with broker defaults** (notably not the 1d retention on `seed.requested`).
+>   It is now an ordinary, non-hook Job (content-hash name, last sync wave,
+>   `activeDeadlineSeconds`, batched parallel create) and `kafkaTopics.enabled: true` in
+>   `values-prod.yaml`; it also alters retention/`cleanup.policy` in place on existing
+>   topics that drifted, so the two `seed.requested` topics converge to 1d even if the
+>   broker auto-created them first. See `docs/deployment/CONTABO_DEPLOYMENT.md` §6. It
+>   remains `enabled: false` in the base values and local overlay (no broker there). If the
+>   broker has `auto.create.topics.enable=false` the topics would simply be created by this
+>   Job; that setting is unverified from this repo.
 > - **The only FuzeInfra-owned parts are broker authentication and ACLs**, below.
->   Corollary for the request: once SASL/ACLs are on, the hook Job also needs a principal
->   (it creates topics), so that principal needs `CREATE`/`DESCRIBE`/`ALTER` on the
+>   Corollary for the request: once SASL/ACLs are on, the topics Job also needs a principal
+>   (it creates topics and alters topic configs, so beyond the `CREATE`/`DESCRIBE`/`ALTER` named
+>   in the request below it also needs `DESCRIBE_CONFIGS`/`ALTER_CONFIGS`; the request as sent
+>   is unchanged and the delta is tracked separately) -- that principal needs `CREATE`/`DESCRIBE`/`ALTER` on the
 >   `selection-lists.`, `identity.`, `notify.` and `billing.` prefixes.
 
 ```text
@@ -828,7 +873,7 @@ Requested:
    - Consumer groups for selection-list-service: prefix
      `selection-list-service-group` (default `KAFKA_GROUP_ID`; groups are
      `<KAFKA_GROUP_ID>-org-deleted`, `-user-deleted`, `-org-created`, `-seed-requested`).
-   - The FuzeFront `fuzefront-kafka-topics` hook Job principal: CREATE/DESCRIBE/ALTER on
+   - The FuzeFront `fuzefront-kafka-topics` Job principal: CREATE/DESCRIBE/ALTER on
      the `selection-lists.`, `identity.`, `notify.`, `billing.` topic prefixes.
 4. allow.everyone.if.no.acl.found=false once all FuzeFront services have migrated.
 
@@ -842,7 +887,7 @@ SASL via @fuzefront/shared createKafkaClient once credentials exist.
 |---|---|---|
 | Q1 | Do we want user-scoped lists (a user's private lists, or per-user defaults)? It needs a data model (`owner_type`/`owner_id`), quotas, authz and an HTTP contract change. | `scope: 'user'` → `SCOPE_UNSUPPORTED`; `identity.user.created` N/A |
 | Q2 | Platform-global, read-only reference lists (countries, currencies, languages) instead of per-org copies? | Excluded from the platform pack |
-| Q3 | Should seeded lists get a human `list-owner` (e.g. the org owner from `identity.org.created.ownerId`) instead of relying on org-admin tenant roles? | No instance grant; org admins administer |
+| Q3 | Should seeded lists get a human `list-owner` (e.g. the org owner from `identity.org.created.ownerId`) instead of relying on org-admin tenant roles? | **DECIDED (SL8, default overridden):** platform-seeded lists get a `list-owner` for the org owner (§13.0.5); app-seeded lists get none |
 | Q4 | Should users be prevented from creating lists in an allowlisted source's namespace (e.g. reject `fuzecrm-*` over HTTP) to make `KEY_CONFLICT` impossible? | Allowed; conflicts surface as retryable `KEY_CONFLICT` |
 | Q5 | Is the attestation token acceptable operationally, or should app seeding move to the HTTP runner-up (§3)? Decide with FuzeInfra's answer on §15. | Attestation required in v1 |
 | Q6 | Should the core outbox relay also adopt per-org ordered retry (§6 step 4)? It affects every service using it. | Selection-list relay only |

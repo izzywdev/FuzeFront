@@ -40,7 +40,7 @@ function subscription(overrides: Partial<BillingSubscription> = {}): BillingSubs
     customerId: 'localcust_1',
     subscriptionId: 'sub_1',
     priceId: 'price_pro',
-    planTier: 'pro',
+    planTier: 'professional',
     status: 'active',
     seatQuantity: 1,
     trialStart: null,

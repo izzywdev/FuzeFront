@@ -58,7 +58,7 @@ A canonical scope with no entry in `SCOPE_ALIASES` is not publishable at all —
 
 **The root `package.json` `workspaces` array. That is the only list.** `publishable()` = every non-`private` workspace with a `name`. There is no second register to add yourself to.
 
-This matters more than it sounds: a package with perfect `publishConfig` that is **not** a root workspace produces **no matrix leg at all**, so `packages-publish` never attempts it and goes green anyway. `api-client/` and `sdk/` sat in that state — invisible, not failing — until they were added as workspaces (`selection-list-client/` is still in it today). Absence is silent; check the registry, not the run conclusion.
+This matters more than it sounds: a package with perfect `publishConfig` that is **not** a root workspace produces **no matrix leg at all**, so `packages-publish` never attempts it and goes green anyway. `api-client/` and `sdk/` sat in that state — invisible, not failing — until they were added as workspaces (`selection-list-client/` was in it until it was added to `workspaces`; it now publishes as `@izzywdev/fuzeone-selection-list-client`). Absence is silent; check the registry, not the run conclusion.
 
 `auto-merge.yml` used to keep its own hand-maintained regex of publishable directories and had already drifted three packages. It now derives the list from `node scripts/publish-packages.mjs --list-dirs`, so there is one source of truth rather than a mirror.
 

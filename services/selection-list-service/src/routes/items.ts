@@ -20,14 +20,14 @@
 
 import { Request, Response } from 'express';
 import { createRouter } from '../lib/http';
-import { registerIdParams } from '../middleware/validateInput';
+import { acceptOnlyBodyProps, isItemId, parseLimitParam, registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
-import { mintId } from '@izzywdev/fuzefront-identity';
+import { ENTITY_PREFIXES, mintId } from '@izzywdev/fuzefront-identity';
 import { requireAuthzCheck, requireAuthzCheckWhen } from '../middleware/authz';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
-import { lockQuotaScope, checkItemQuota, QuotaExceededError } from '../services/quota.service';
+import { lockQuotaScope, checkItemQuota, checkActiveItemQuota, QuotaExceededError } from '../services/quota.service';
 import { lockOrgOutbox } from '../events/outbox';
 import { refreshItemUserModified } from '../seed/content';
 import {
@@ -46,6 +46,8 @@ registerIdParams(router);
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
+/** SelectionListItemReorder.item_ids maxItems. */
+const REORDER_MAX_IDS = 5000;
 
 // Must equal the openapi `Locale` enum / i18n.languages.json (and the Zod
 // `SELECTION_LIST_LOCALES` the published events validate against).
@@ -214,8 +216,8 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
   }
 
   // Parse + clamp pagination
-  const rawLimit = parseInt(String(req.query.limit ?? DEFAULT_PAGE_SIZE), 10);
-  const limit = isNaN(rawLimit) || rawLimit < 1 ? DEFAULT_PAGE_SIZE : Math.min(rawLimit, MAX_PAGE_SIZE);
+  const limit = parseLimitParam(req, res, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  if (limit === undefined) return;
 
   const rawCursor = req.query.cursor as string | undefined;
   const statusFilter = (req.query.status as string) ?? 'active';
@@ -384,8 +386,9 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
   // the same MAX().
   let explicitSortOrder: number | undefined;
   if (sort_order !== undefined) {
-    explicitSortOrder = parseInt(String(sort_order), 10);
-    if (isNaN(explicitSortOrder) || explicitSortOrder < 0) {
+    // Contract: `type: integer, minimum: 0` — a numeric string or a fraction is a 400, not coerced.
+    explicitSortOrder = typeof sort_order === 'number' ? sort_order : NaN;
+    if (!Number.isSafeInteger(explicitSortOrder) || explicitSortOrder < 0) {
       res.status(400).json({ code: 'VALIDATION_ERROR', message: 'sort_order must be a non-negative integer.' });
       return;
     }
@@ -502,10 +505,25 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
   }
 
   const { listId } = req.params;
+  // SelectionListItemReorder: additionalProperties false (no `id`, no `organization_id`).
+  if (!acceptOnlyBodyProps(req, res, ['item_ids'])) return;
   const { item_ids } = req.body ?? {};
 
+  // item_ids: 1..5000 unique `front_sli_` ids (contract: minItems 1, maxItems 5000, uniqueItems).
   if (!Array.isArray(item_ids) || item_ids.length === 0) {
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'item_ids must be a non-empty array.' });
+    return;
+  }
+  if (item_ids.length > REORDER_MAX_IDS) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `item_ids must contain at most ${REORDER_MAX_IDS} ids.` });
+    return;
+  }
+  if (!item_ids.every(isItemId)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `item_ids must all be '${ENTITY_PREFIXES.selectionListItem}_' ids.` });
+    return;
+  }
+  if (new Set(item_ids).size !== item_ids.length) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'item_ids must not contain duplicates.' });
     return;
   }
 
@@ -639,8 +657,8 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
     return;
   }
   if (body.sort_order !== undefined) {
-    const so = parseInt(String(body.sort_order), 10);
-    if (isNaN(so) || so < 0) {
+    const so = typeof body.sort_order === 'number' ? body.sort_order : NaN;
+    if (!Number.isSafeInteger(so) || so < 0) {
       res.status(400).json({ code: 'VALIDATION_ERROR', message: 'sort_order must be a non-negative integer.' });
       return;
     }
@@ -658,12 +676,19 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
       await lockOrgOutbox(trx, req.orgId as string);
       // Verify item exists and belongs to this list (inside the txn: it is also
       // the `before` state the event diff is taken against).
-      const existing = await trx.raw<{ rows: [{ id: string }] }>(
-        `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
+      const existing = await trx.raw<{ rows: [{ id: string; status?: string }] }>(
+        `SELECT id, status FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
         [itemId, listId],
       );
       if (!existing.rows[0]) return false;
       const before = await readItem(trx, itemId);
+
+      // Un-archiving raises the ACTIVE item count without any create, so it is
+      // subject to `list_items` too (review M-4), under the create path's lock.
+      if (body.status === 'active' && existing.rows[0].status === 'archived') {
+        await lockQuotaScope(trx, `list_items:${listId}`);
+        await checkActiveItemQuota(listId, req.orgId as string, trx);
+      }
 
       // Update item row — always bump updated_at (plus any changed scalars)
       const itemUpdates: Record<string, string | number | boolean | Date | null> = { updated_at: new Date() };
@@ -755,6 +780,10 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
 
     res.status(200).json(formatItem(result.rows[0]));
   } catch (err) {
+    if (err instanceof QuotaExceededError) {
+      sendQuotaExceeded(res, err);
+      return;
+    }
     getLog(req).error(
       { err, op: 'items PATCH /:listId/items/:itemId error', userId: req.userId, orgId: req.orgId, params: req.params },
       'items PATCH /:listId/items/:itemId error failed',

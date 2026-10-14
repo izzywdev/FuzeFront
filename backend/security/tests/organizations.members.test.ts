@@ -12,6 +12,13 @@ jest.mock('../src/config/database', () => ({
   }),
 }))
 
+// Membership add/remove events go through the transactional outbox
+// (`enqueueEvent`) — stub it so tests assert topic + payload without a DB.
+jest.mock('@fuzefront/core', () => ({
+  ...jest.requireActual('@fuzefront/core'),
+  enqueueEvent: jest.fn().mockResolvedValue(undefined),
+}))
+
 jest.mock('../src/services/eventPublisher', () => ({
   defaultEventPublisher: {
     publishNotifyEmailRequested: jest.fn().mockResolvedValue(undefined),
@@ -66,6 +73,8 @@ jest.mock('../src/utils/employeeFlag', () => ({
 }))
 
 import { db } from '../src/config/database'
+import { enqueueEvent } from '@fuzefront/core'
+import { TOPICS } from '@fuzefront/shared/kafka'
 import { defaultEventPublisher } from '../src/services/eventPublisher'
 import { isEmployeeConsoleEnabled } from '../src/utils/employeeFlag'
 import { userHasRole } from '../src/utils/permit/role-assignment'
@@ -80,6 +89,7 @@ const userHasRoleMock = userHasRole as jest.Mock
 import organizationsRouter from '../src/routes/organizations'
 
 const dbMock = db as jest.MockedFunction<any>
+const enqueueEventMock = enqueueEvent as jest.Mock
 const publishMock = defaultEventPublisher.publishNotifyEmailRequested as jest.Mock
 
 function buildApp() {
@@ -765,6 +775,12 @@ describe('Organization Members', () => {
   // ─── DELETE /:id/members/:memberId ────────────────────────────────────────
 
   describe('DELETE /api/organizations/:id/members/:memberId', () => {
+    beforeEach(() => {
+      // The fetch + delete + outbox enqueue run in ONE transaction; hand the
+      // callback the same table-dispatching mock so the per-test chains apply.
+      dbMock.transaction.mockImplementation(async (cb: any) => cb(dbMock))
+    })
+
     // Invariant: an org can never lose its last owner via member removal —
     // a non-last owner may be removed (200), the last owner may not (409).
     it('returns 200 with success message when member is removed', async () => {
@@ -793,6 +809,42 @@ describe('Organization Members', () => {
 
       expect(res.status).toBe(200)
       expect(res.body.message).toMatch(/Member removed/i)
+      // The removal enqueues identity.membership.removed in the same txn.
+      expect(dbMock.transaction).toHaveBeenCalledTimes(1)
+      expect(enqueueEventMock).toHaveBeenCalledTimes(1)
+      const [trxArg, topic, payload, correlationId] = enqueueEventMock.mock.calls[0]
+      expect(trxArg).toBe(dbMock)
+      expect(topic).toBe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED)
+      expect(payload).toEqual({
+        organizationId: ORG_ID,
+        userId: 'other-user',
+        role: 'member',
+      })
+      expect(correlationId).toMatch(/^identity-membership-removed-[0-9a-f-]{36}$/)
+    })
+
+    it('does NOT enqueue a removed event when the owner membership is protected (403)', async () => {
+      const adminMembershipChain = makeDbQuery({
+        id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
+      })
+      const targetChain = makeDbQuery({
+        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'the-owner', organization_id: ORG_ID,
+      })
+      let membershipCallCount = 0
+      dbMock.mockImplementation((table: string) => {
+        if (table === 'organization_memberships') {
+          membershipCallCount++
+          return membershipCallCount === 1 ? adminMembershipChain : targetChain
+        }
+        return makeDbQuery(null)
+      })
+
+      const res = await request(app)
+        .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
+
+      expect(res.status).toBe(403)
+      expect(targetChain.delete).not.toHaveBeenCalled()
+      expect(enqueueEventMock).not.toHaveBeenCalled()
     })
 
     it('returns 409 when trying to remove the LAST owner', async () => {
@@ -883,6 +935,7 @@ describe('Organization Members', () => {
         .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
 
       expect(res.status).toBe(404)
+      expect(enqueueEventMock).not.toHaveBeenCalled()
     })
   })
 })
