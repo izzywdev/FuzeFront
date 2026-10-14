@@ -10,9 +10,15 @@ import { PaymentProvider } from './providers/payment-provider';
 // Handle retained (unlike the discarded call this used to be): without it
 // there is nothing for the shutdown hook below to flush, and the SDK's batch
 // exporter can lose the tail of in-flight spans on every pod eviction/rollout.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
 const telemetry: TelemetryHandle = initTelemetry({
   serviceName: 'payment-service',
-  serviceVersion: process.env.npm_package_version,
+  serviceVersion: SERVICE_VERSION,
 });
 
 /**

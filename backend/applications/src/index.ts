@@ -42,18 +42,27 @@ dotenv.config()
 // ExpressInstrumentation patch shared module/prototype state looked up at CALL
 // time, but request handling must not start first). Sends OTLP to FuzeInfra's
 // Collector; endpoint/protocol/sampling default from OTEL_* env vars.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version
 const telemetry: TelemetryHandle = initTelemetry({
   serviceName: 'applications-service',
-  serviceVersion: process.env.npm_package_version,
+  serviceVersion: SERVICE_VERSION,
 })
 
 const PORT = process.env.PORT || 3003
-const app = createExpressApp({ serviceName: 'applications-service' })
-// Starts/continues a per-request span, exposing req.traceId/req.spanId for
-// log correlation (see @fuzefront/telemetry's withTraceContext). Mounted
-// independently of @fuzefront/core's own request-id assignment inside
-// createExpressApp — the two correlation ids coexist rather than compete.
-app.use(tracingMiddleware())
+// tracingMiddleware() passed as preMiddleware, not app.use()'d after the
+// fact: createExpressApp() has already mounted helmet/cors/body-parsers/
+// request-logging by the time it returns, so appending afterward would run
+// it LAST — missing spans for anything those reject (e.g. oversized/
+// malformed JSON) and leaving the request logger's line un-correlated
+// (req.traceId doesn't exist yet when that logger runs). Independent of
+// @fuzefront/core's own request-id assignment inside createExpressApp — the
+// two correlation ids coexist rather than compete.
+const app = createExpressApp({ serviceName: 'applications-service', preMiddleware: [tracingMiddleware()] })
 const httpServer = createServer(app)
 const startTime = Date.now()
 
