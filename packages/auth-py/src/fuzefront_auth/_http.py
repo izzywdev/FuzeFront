@@ -116,7 +116,14 @@ class CappedBody:
 
 
 class _Sockets:
-    """Sockets opened by one fetch, so the caller can cut them off at the deadline."""
+    """Connections opened by one fetch, so the caller can cut them off at the deadline.
+
+    What is stored is a ``dup()`` of each raw socket: a second handle on the SAME underlying
+    connection. CPython's TLS wrapper detaches the original socket object when it builds the
+    ``SSLSocket``, so the object ``_create_connection`` returned is useless after the
+    handshake; the duplicate stays valid through the proxy CONNECT, the TLS handshake and the
+    whole response, and ``shutdown()`` on it wakes a worker blocked in ``recv()`` on any of
+    them."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -124,11 +131,25 @@ class _Sockets:
         self._aborted = False
 
     def add(self, sock: socket.socket) -> None:
+        try:
+            handle = sock.dup()
+        except OSError:
+            return
         with self._lock:
-            self._socks.append(sock)
+            self._socks.append(handle)
             aborted = self._aborted
         if aborted:  # the deadline passed while we were still connecting
-            self._kill(sock)
+            self._kill(handle)
+
+    def release(self) -> None:
+        """The fetch is over: close our duplicate handles (no shutdown; the worker owns the real ones)."""
+        with self._lock:
+            socks, self._socks = self._socks, []
+        for sock in socks:
+            try:
+                sock.close()
+            except OSError:
+                pass
 
     def abort(self) -> None:
         with self._lock:
@@ -253,6 +274,7 @@ def fetch_json(url: str, timeout: float, allow_loopback_http: bool = False) -> A
         except BaseException as err:  # noqa: BLE001 - handed back to the caller's thread
             outcome["error"] = err
         finally:
+            socks.release()
             _WORKER_SLOTS.release()
 
     worker = threading.Thread(target=run, name="fuzefront-auth-fetch", daemon=True)

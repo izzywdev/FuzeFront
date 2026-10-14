@@ -572,3 +572,123 @@ def test_stalled_workers_are_bounded_and_slots_recover(monkeypatch):
     assert _wait_until_gone(), "slots/threads did not recover once the stall cleared"
     monkeypatch.setattr(http_mod, "_fetch", lambda *a: {"ok": True})
     assert fetch_json("https://issuer.example.com/jwks", 1) == {"ok": True}
+
+
+def _tls_server(behaviour: str, gap: float = 0.2):
+    """A TLS server (throwaway self-signed cert) that, per connection, either completes the
+    handshake and then dribbles the response head ('dribble'), or accepts TCP and then goes
+    silent so the handshake itself stalls ('silent')."""
+    import datetime
+    import os
+    import socket
+    import ssl
+    import tempfile
+    import time
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=1))
+        .not_valid_after(now + datetime.timedelta(hours=1))
+        .sign(key, hashes.SHA256())
+    )
+    tmp = tempfile.mkdtemp()
+    certfile, keyfile = os.path.join(tmp, "c.pem"), os.path.join(tmp, "k.pem")
+    with open(certfile, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+    with open(keyfile, "wb") as f:
+        f.write(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.TraditionalOpenSSL,
+                serialization.NoEncryption(),
+            )
+        )
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(certfile, keyfile)
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(5)
+    stop = threading.Event()
+
+    def handle(raw):
+        try:
+            if behaviour == "silent":
+                while not stop.is_set():
+                    time.sleep(0.05)
+                return
+            conn = ctx.wrap_socket(raw, server_side=True)
+            conn.recv(4096)
+            for byte in b"HTTP/1.0 200 OK\r\nX-Pad: " + b"a" * 20_000:
+                if stop.is_set():
+                    return
+                conn.sendall(bytes([byte]))
+                time.sleep(gap)
+        except OSError:
+            pass
+        finally:
+            raw.close()
+
+    def serve():
+        srv.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                raw, _ = srv.accept()
+            except OSError:
+                continue
+            threading.Thread(target=handle, args=(raw,), daemon=True).start()
+
+    threading.Thread(target=serve, daemon=True).start()
+    return srv, stop
+
+
+@pytest.mark.parametrize("behaviour", ["dribble", "silent"])
+def test_a_stall_after_or_during_the_tls_handshake_is_cut_off_and_released(monkeypatch, behaviour):
+    import ssl
+    import time
+
+    import fuzefront_auth._http as http_mod
+
+    # The server's cert is throwaway; trust-checking is not what is under test here.
+    insecure = ssl.create_default_context()
+    insecure.check_hostname = False
+    insecure.verify_mode = ssl.CERT_NONE
+    monkeypatch.setattr(ssl, "_create_default_https_context", lambda: insecure)
+
+    srv, stop = _tls_server(behaviour)
+    try:
+        port = srv.getsockname()[1]
+        socks = http_mod._Sockets()
+        done = threading.Event()
+        outcome = []
+
+        def run():
+            try:
+                # Call _fetch directly: the address policy (correctly) refuses 127.0.0.1 over https.
+                http_mod._fetch(f"https://127.0.0.1:{port}/", 30, time.monotonic() + 30, False, socks)
+            except BaseException as err:  # noqa: BLE001 - recorded; the point is that it returns
+                outcome.append(err)
+            finally:
+                done.set()
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        time.sleep(1.0)  # let it get into the stall (post-handshake dribble / mid-handshake)
+        assert not done.is_set(), "the stall did not happen, so this test proves nothing"
+        socks.abort()
+        assert done.wait(3.0), "abort() could not reach the worker (TLS socket was detached)"
+    finally:
+        stop.set()
+        srv.close()
