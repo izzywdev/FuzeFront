@@ -166,3 +166,39 @@ def test_optional_degrades_client_failures_but_surfaces_server_failures():
 
     broken = create_verifier(LegacyHs256Config(secret=SECRET, session_validator=validator_down))
     assert build_optional(None, broken).get("/open", headers={"Authorization": f"Bearer {make_token(SECRET, claims={'userId': 'u-1'})}"}).status_code == 503
+
+
+def test_async_views_keep_working_under_the_decorators():
+    pytest.importorskip("asgiref")  # Flask's async mode needs the flask[async] extra
+    verifier = create_verifier(LegacyHs256Config(secret=SECRET, resolver=lambda uid: {"roles": ["admin"], "tenant_id": "t-1"}))
+    app = flask.Flask(__name__)
+
+    @app.get("/a")
+    @require_auth(verifier)
+    async def a():
+        return {"user": flask.g.identity.user_id}
+
+    @app.get("/open")
+    @require_auth(verifier, optional=True)
+    async def open_route():
+        return {"user": flask.g.identity.user_id if flask.g.identity else None}
+
+    @app.get("/admin")
+    @require_auth(verifier)
+    @require_roles(["admin"])
+    async def admin():
+        return {"ok": True}
+
+    @app.get("/t1")
+    @require_auth(verifier)
+    @require_tenant("t-1")
+    async def t1():
+        return {"ok": True}
+
+    c = app.test_client()
+    h = bearer()
+    assert c.get("/a", headers=h).json == {"user": "u-1"}
+    assert c.get("/open").json == {"user": None}  # optional pass-through branch
+    assert c.get("/admin", headers=h).json == {"ok": True}
+    assert c.get("/t1", headers=h).json == {"ok": True}
+    assert c.get("/a").status_code == 401  # still denies

@@ -447,3 +447,128 @@ def test_a_redirect_with_a_large_body_is_still_followed(server):
     finally:
         stop.set()
         srv.close()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://%31%32%37%2e0%2e0%2e1/jwks",  # percent-encoded 127.0.0.1
+        "https://%6c%6f%63%61%6c%68%6f%73%74/jwks",  # percent-encoded localhost
+        "https://127.0.0.1%2f@example.com/jwks",
+        "https://example.com%2f.evil/jwks",
+    ],
+)
+def test_percent_encoded_hosts_cannot_smuggle_a_private_address(url):
+    with pytest.raises(ValueError):
+        fetch_json(url, 1)
+
+
+def test_the_host_the_policy_judges_is_the_host_the_connector_uses():
+    from urllib.parse import urlsplit
+    from urllib.request import Request
+
+    from fuzefront_auth._http import _check_url
+
+    for url in ("https://example.com/x", "https://example.com:8443/x", "https://user@example.com/x"):
+        _check_url(url, False)  # accepted, and the connector's view is the same host
+        assert urlsplit("//" + Request(url).host).hostname == "example.com"
+
+
+def test_a_malformed_http_response_is_a_fetch_failure_not_a_crash():
+    import socket
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(5)
+    stop = threading.Event()
+
+    def serve():
+        srv.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                continue
+            conn.recv(4096)
+            conn.sendall(b"NOT-HTTP garbage\r\n\r\n")
+            conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        with pytest.raises(OSError):
+            fetch_json(f"http://127.0.0.1:{srv.getsockname()[1]}/", 2, allow_loopback_http=True)
+    finally:
+        stop.set()
+        srv.close()
+
+
+def test_a_malformed_response_from_the_issuer_is_a_503_not_a_401():
+    import socket
+
+    from fuzefront_auth import AuthError, FederatedJwksConfig, create_verifier
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(5)
+    stop = threading.Event()
+
+    def serve():
+        srv.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                continue
+            conn.recv(4096)
+            conn.sendall(b"HTTP/1.1 200\x00 OK garbage\r\n\r\n")
+            conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{srv.getsockname()[1]}"
+        v = create_verifier(FederatedJwksConfig(issuer=base, audience="a", jwks_uri=f"{base}/jwks"))
+        from conftest import make_token
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        token = make_token(key, alg="RS256", kid="k", claims={"sub": "u", "iss": base, "aud": "a"})
+        with pytest.raises(AuthError) as info:
+            v.verify(token)
+        assert (info.value.code, info.value.status) == ("JWKS_UNAVAILABLE", 503)
+    finally:
+        stop.set()
+        srv.close()
+
+
+def test_stalled_workers_are_bounded_and_slots_recover(monkeypatch):
+    import time
+
+    import fuzefront_auth._http as http_mod
+
+    release = threading.Event()
+    started = []
+
+    def stuck(url, timeout, deadline, allow, socks):
+        started.append(1)
+        release.wait(10)  # a worker stuck where nothing can cancel it (e.g. getaddrinfo)
+        return {"ok": True}
+
+    monkeypatch.setattr(http_mod, "_fetch", stuck)
+    cap = http_mod._MAX_INFLIGHT_FETCHES
+    try:
+        for _ in range(cap):
+            with pytest.raises(TimeoutError):
+                fetch_json("https://issuer.example.com/jwks", 0.05)
+        before = len(_fetch_threads())
+        assert before == cap
+        # The cap is reached: a new fetch is refused immediately and spawns NO thread.
+        t0 = time.monotonic()
+        with pytest.raises(OSError, match="too many in-flight"):
+            fetch_json("https://issuer.example.com/jwks", 0.05)
+        assert time.monotonic() - t0 < 0.5
+        assert len(_fetch_threads()) == before
+    finally:
+        release.set()
+    assert _wait_until_gone(), "slots/threads did not recover once the stall cleared"
+    monkeypatch.setattr(http_mod, "_fetch", lambda *a: {"ok": True})
+    assert fetch_json("https://issuer.example.com/jwks", 1) == {"ok": True}

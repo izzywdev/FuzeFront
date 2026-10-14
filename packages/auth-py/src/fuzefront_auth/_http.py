@@ -35,11 +35,13 @@ import time
 import urllib.error
 import urllib.request
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 MAX_RESPONSE_BYTES = 1_048_576  # 1 MiB: far above any real JWKS / discovery document
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _MAX_REDIRECTS = 3
+_MAX_INFLIGHT_FETCHES = 8
+_WORKER_SLOTS = threading.BoundedSemaphore(_MAX_INFLIGHT_FETCHES)
 _CHUNK = 8192
 
 
@@ -77,6 +79,17 @@ def _check_url(url: Any, allow_loopback_http: bool) -> None:
     host = parsed.hostname
     if not host:
         raise ValueError("url has no host")
+    if "%" in host:
+        raise ValueError("percent-encoded hosts are not permitted")
+    # Judge the host exactly as the connector will see it. urllib's Request decodes escapes
+    # and applies its own host parsing, so a URL whose host reads one way here and another
+    # there (``https://%31%32%37.0.0.1/``) must not slip past the address policy.
+    try:
+        connect_host = urlsplit("//" + urllib.request.Request(url).host).hostname
+    except ValueError:
+        raise ValueError("unparseable url") from None
+    if connect_host is None or connect_host.lower() != host.lower():
+        raise ValueError("ambiguous host")
     if parsed.scheme == "https":
         if _non_public_literal(host):
             raise ValueError("url points at a non-public address")
@@ -220,6 +233,12 @@ def fetch_json(url: str, timeout: float, allow_loopback_http: bool = False) -> A
     ``timeout`` (a TOTAL deadline for the whole fetch, not per socket operation).
     """
     _check_url(url, allow_loopback_http)
+    # A worker blocked in DNS resolution (getaddrinfo) has no socket yet, so nothing can be
+    # cut off and it cannot be cancelled. Keep every attempt registered until its thread has
+    # really exited, and refuse new ones past a small bound: repeated stalls then cost a
+    # bounded number of threads instead of accumulating without limit.
+    if not _WORKER_SLOTS.acquire(blocking=False):
+        raise OSError("too many in-flight fetches; the resolver or network is stalling")
     deadline = time.monotonic() + timeout
     socks = _Sockets()
     outcome: dict[str, Any] = {}
@@ -227,11 +246,21 @@ def fetch_json(url: str, timeout: float, allow_loopback_http: bool = False) -> A
     def run() -> None:
         try:
             outcome["value"] = _fetch(url, timeout, deadline, allow_loopback_http, socks)
+        except http.client.HTTPException:
+            # BadStatusLine, LineTooLong, IncompleteRead, ...: a malformed response is a fetch
+            # failure (an outage as far as callers are concerned), not an invalid credential.
+            outcome["error"] = OSError("malformed HTTP response")
         except BaseException as err:  # noqa: BLE001 - handed back to the caller's thread
             outcome["error"] = err
+        finally:
+            _WORKER_SLOTS.release()
 
     worker = threading.Thread(target=run, name="fuzefront-auth-fetch", daemon=True)
-    worker.start()
+    try:
+        worker.start()
+    except BaseException:
+        _WORKER_SLOTS.release()
+        raise
     worker.join(timeout)
     if worker.is_alive():
         # The server is stalling (e.g. trickling bytes). Cut its sockets so the worker's

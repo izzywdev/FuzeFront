@@ -14,7 +14,7 @@ from collections.abc import Callable
 from typing import Literal
 
 try:
-    from flask import g, jsonify, request
+    from flask import current_app, g, jsonify, request
 except ImportError as error:  # pragma: no cover - only when the extra is missing
     raise ImportError(
         "fuzefront_auth.middleware.flask requires the 'flask' extra: pip install \"fuzefront-auth[flask]\""
@@ -23,6 +23,13 @@ except ImportError as error:  # pragma: no cover - only when the extra is missin
 from ..portal import PortalResolver, enforce_portal
 from ..types import AuthError, Identity
 from ..verifier import Verifier
+
+
+def _call(view, *args, **kwargs):
+    """Invoke the wrapped view the way Flask itself would, so ``async def`` views (Flask's
+    supported async mode, needs the ``flask[async]`` extra) keep working under the sync
+    wrapper instead of returning an un-awaited coroutine."""
+    return current_app.ensure_sync(view)(*args, **kwargs)
 
 
 def _deny(err: AuthError):
@@ -65,7 +72,7 @@ def require_auth(
             if token is None:
                 if optional:
                     g.identity = None
-                    return view(*args, **kwargs)
+                    return _call(view, *args, **kwargs)
                 return _deny(AuthError("NO_TOKEN", "no bearer token presented"))
             try:
                 identity = verifier.verify(token)
@@ -76,12 +83,12 @@ def require_auth(
                 # surface, or an authenticated caller silently gets the anonymous flow.
                 if optional and err.status < 500:
                     g.identity = None
-                    return view(*args, **kwargs)
+                    return _call(view, *args, **kwargs)
                 return _deny(err)
             except Exception:  # noqa: BLE001 - an unknown failure is still a denial
                 return _deny(AuthError("UNKNOWN", "authentication failed"))
             g.identity = identity
-            return view(*args, **kwargs)
+            return _call(view, *args, **kwargs)
 
         return wrapper
 
@@ -111,7 +118,7 @@ def require_roles(roles: list[str], mode: Literal["all", "any"] = "all") -> Call
                     ),
                     403,
                 )
-            return view(*args, **kwargs)
+            return _call(view, *args, **kwargs)
 
         return wrapper
 
@@ -140,7 +147,7 @@ def require_tenant(tenant_id: str) -> Callable:
                 )
             if identity.tenant_id != tenant_id:
                 return jsonify({"error": "identity is not scoped to this tenant", "code": "FORBIDDEN"}), 403
-            return view(*args, **kwargs)
+            return _call(view, *args, **kwargs)
 
         return wrapper
 

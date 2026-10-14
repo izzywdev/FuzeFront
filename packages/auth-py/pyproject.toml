@@ -21,6 +21,7 @@ dev = [
     "fastapi>=0.100",
     "httpx>=0.24",
     "flask>=2.3",
+    "asgiref>=3.2",  # Flask async views (flask[async])
 ]
 
 [tool.setuptools.packages.find]
