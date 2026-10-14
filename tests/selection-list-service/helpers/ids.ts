@@ -56,3 +56,14 @@ export const sameId = (a: string, b: string): boolean => canonicalUuid(a) === ca
 
 /** `ids` as canonical UUIDs, for `expect(uuidsOf(rows.map((r) => r.user_id))).toEqual(uuidsOf([U1]))`. */
 export const uuidsOf = (ids: string[]): string[] => ids.map(canonicalUuid);
+
+/**
+ * Both renderings of one org / user id, `[TypeID, bare UUID]` (always in that order). An id that is neither
+ * (a namespaced non-user principal such as `svc:…`, a placeholder) has only the one rendering, returned as is.
+ * `kind` picks the TypeID prefix for an id given as a bare UUID.
+ */
+export function renderingsOf(id: string, kind: 'organization' | 'user'): string[] {
+  const uuid = canonicalUuid(id);
+  if (!isUuid(uuid)) return [id];
+  return [fromUuid(kind, uuid), uuid];
+}
