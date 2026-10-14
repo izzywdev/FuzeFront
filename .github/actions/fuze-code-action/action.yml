@@ -578,8 +578,14 @@ runs:
         # review-only: do not forward the non-Anthropic keys, so the runner-local chain is
         # anthropic-only and ./llm-endpoint goes DIRECT to api.anthropic.com instead of
         # starting a multi-vendor LiteLLM container (see the `review-only` input).
-        fallback-openai-key: ${{ inputs.review-only == 'true' && '' || inputs.openai-api-key }}
-        fallback-gemini-key: ${{ inputs.review-only == 'true' && '' || inputs.gemini-api-key }}
+        # NOTE the ternary shape: `cond && VALUE || ''`, never `cond && '' || VALUE`.
+        # In a GitHub Actions expression '' is falsy, so `review-only == 'true' && ''`
+        # evaluates to '' and the trailing `|| inputs.*-api-key` then always wins —
+        # i.e. the inverted form forwards the key even under review-only, defeating the
+        # suppression entirely. Phrase the guard positively so the key is the value only
+        # when it must be forwarded, and '' is the hard default.
+        fallback-openai-key: ${{ inputs.review-only != 'true' && inputs.openai-api-key || '' }}
+        fallback-gemini-key: ${{ inputs.review-only != 'true' && inputs.gemini-api-key || '' }}
 
     # RUNG 1 — claude-code-action, credentialed via LiteLLM-or-direct-Anthropic
     # (see llm step above). Gated on the llm step's own outcome, not on raw input
@@ -634,6 +640,21 @@ runs:
 
     - name: 'Classify rung 1'
       id: classify-claude
+      # Same gate as the `llm` and rung-1 `claude` steps above: only classify
+      # rung 1 when rung 1a did NOT already settle the run. Unguarded, a rung-1a
+      # SUCCESS (code 0), TASK failure (2) or DECLINE (3) left rung 1 skipped,
+      # and this always-run step then read that skip as an empty conclusion +
+      # skipped outcome = "action-could-not-start" = code 1 (availability). That
+      # spurious code 1 is exactly the verdict the metered OpenAI/Gemini rungs
+      # below gate on (`classify-claude.outputs.code == '1'`), so they fired on a
+      # run that was already finished — burning per-token spend and surfacing a
+      # provider error (e.g. Gemini 402) inside an otherwise-successful review,
+      # while the Finish step still settled on the rung-1a result. '' = rung 1a
+      # not attempted; '1' = it failed on availability — the only two states in
+      # which rung 1 legitimately runs and therefore needs classifying.
+      if: |
+        steps.classify-claude-oauth.outputs.code == '' ||
+        steps.classify-claude-oauth.outputs.code == '1'
       shell: bash
       # Every value that ultimately comes from outside this file (another action's
       # output) reaches the shell through env:, never interpolated via `${{ }}`
