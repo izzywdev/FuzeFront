@@ -2,8 +2,8 @@ import { FuzeEvent, IdentityOrgDeletedPayloadV1 } from '@fuzefront/shared/kafka'
 import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { db } from '../db';
 import { logger, timed } from '../lib/logger';
-import { markOrgProjectionDeleted, suspendOrgProjection } from './orgProjection';
-import { isProtectedPlatformOrg } from './platformGuard';
+import { markOrgProjectionDeleted } from './orgProjection';
+import { isProtectedPlatformOrg, recordPlatformDeactivation } from './platformGuard';
 
 /**
  * The stored `organization_id` is TEXT and is whatever the caller's token
@@ -67,11 +67,7 @@ export async function handleOrgDeleted(
   // (identity.org.updated {isActive:true}) resumes. The message is acknowledged (a normal return) so the consumer does
   // not loop on it. Flag-independent.
   if (await isProtectedPlatformOrg(db, organizationId)) {
-    const newly = await suspendOrgProjection(db, organizationId);
-    log.error(
-      { organizationId, cascade, eventId: event.correlationId, occurredAt: event.occurredAt, topic: event.topic, newlySuspended: newly },
-      'SECURITY: identity.org.deleted for the PLATFORM organization - platform WRITES are SUSPENDED (publish_platform, platform list/item changes, platform purge, platform seeding); reads/resolve stay available; nothing was deleted, archived or tombstoned. Reactivate with identity.org.updated {isActive:true}',
-    );
+    await recordPlatformDeactivation(db, organizationId, { topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt }, log, { cascade });
     return;
   }
 

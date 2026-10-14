@@ -27,7 +27,7 @@
 import type { Knex } from 'knex';
 import type { Logger } from 'pino';
 import { configuredPlatformOrgId, orgRenderings, ROOT_PLATFORM_ORG_WIRE, sameOrg } from '../lib/sharedLists';
-import { resumeOrgProjection, suspendOrgProjection } from './orgProjection';
+import { resumeOrgProjection, suspendOrgProjection, type SuspendOutcome } from './orgProjection';
 
 export async function isProtectedPlatformOrg(ex: Knex | Knex.Transaction, organizationId: string): Promise<boolean> {
   const configured = configuredPlatformOrgId();
@@ -66,15 +66,41 @@ export async function handlePlatformSnapshot(
   if (!(await isProtectedPlatformOrg(ex, snapshot.organizationId))) return false;
   const fields = { organizationId: snapshot.organizationId, type: snapshot.type, isActive: snapshot.isActive, eventId: ctx.correlationId, occurredAt: ctx.occurredAt, topic: ctx.topic };
   if (!snapshot.isActive) {
-    const newly = await suspendOrgProjection(ex, snapshot.organizationId);
-    log.error(
-      { ...fields, newlySuspended: newly },
-      'SECURITY: the PLATFORM organization was reported inactive - platform WRITES are SUSPENDED (publish_platform, platform list/item changes, platform purge, platform seeding); reads/resolve stay available and nothing was deleted. Reactivate with identity.org.updated {isActive:true}',
-    );
+    await recordPlatformDeactivation(ex, snapshot.organizationId, ctx, log, fields);
   } else {
     log.error(fields, 'SECURITY: a snapshot that retypes the PLATFORM organization away from platform was REFUSED; nothing was changed');
   }
   return true;
+}
+
+/**
+ * A deactivation of the protected platform org (any source: org.deleted soft/hard, org.updated/created inactive):
+ * suspends writes unless it is STALE (older than the newest snapshot applied) or ties with it - then it is ignored and
+ * logged at warn with the correlationId. Shared by every suspension path so the ordering rule is identical.
+ */
+export async function recordPlatformDeactivation(
+  ex: Knex | Knex.Transaction,
+  organizationId: string,
+  ctx: PlatformEventContext,
+  log: Logger,
+  fields: Record<string, unknown> = {},
+): Promise<SuspendOutcome> {
+  const common = { ...fields, organizationId, eventId: ctx.correlationId, occurredAt: ctx.occurredAt, topic: ctx.topic };
+  const outcome = await suspendOrgProjection(ex, organizationId, ctx.occurredAt);
+  if (outcome === 'stale' || outcome === 'tie') {
+    log.warn(
+      { ...common, outcome },
+      outcome === 'stale'
+        ? 'a STALE deactivation of the PLATFORM organization was ignored (an equal-or-newer snapshot was already applied); platform writes are unchanged'
+        : 'a deactivation of the PLATFORM organization at the SAME instant as the newest applied snapshot was ignored (ties go to active); platform writes are unchanged',
+    );
+  } else {
+    log.error(
+      { ...common, outcome, newlySuspended: outcome === 'suspended' },
+      'SECURITY: the PLATFORM organization was reported inactive - platform WRITES are SUSPENDED (publish_platform, platform list/item changes, platform purge, platform seeding); reads/resolve stay available and nothing was deleted. Reactivate with identity.org.updated {isActive:true}',
+    );
+  }
+  return outcome;
 }
 
 /** After a normal snapshot was applied: a re-activation of the platform org (active, type platform) clears the suspension. */

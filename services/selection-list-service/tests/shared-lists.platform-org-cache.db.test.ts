@@ -22,7 +22,7 @@ jest.mock('../src/db', () => ({
 }));
 
 const PLATFORM_UUID = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e00';
-let clock = Date.parse('2026-10-14T00:00:00.000Z');
+let clock = Date.now() - 24 * 3_600_000;
 // The org lifecycle HANDLERS refuse to deactivate / retype / delete the platform org (platformGuard.ts, tested in
 // shared-lists.platform-org-guard.db.test.ts), so the cache invalidation is driven through the projection WRITERS
 // the handlers use (`upsertOrgProjection` / `markOrgProjectionDeleted`): a state change that did reach the

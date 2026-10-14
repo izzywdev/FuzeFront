@@ -37,13 +37,25 @@ export interface OrgProjectionSnapshot {
  * org's type - unless a NEWER snapshot was already applied (`snapshot_at`), in which case this older one
  * (e.g. a late `org.created` after an `org.updated`) is ignored. Returns the org's wire id.
  */
+/**
+ * The ordering instant of an envelope: its `occurredAt`, CLAMPED to now (an event cannot have happened in the future;
+ * a forged far-future timestamp must not pin `snapshot_at` / `suspended_event_at` ahead of every legitimate event).
+ * Unparseable / absent: null (callers fall back to now()).
+ */
+export function orderingInstant(occurredAt: string | undefined | null, now: number = Date.now()): string | null {
+  if (!occurredAt) return null;
+  const t = Date.parse(occurredAt);
+  if (Number.isNaN(t)) return null;
+  return new Date(Math.min(t, now)).toISOString();
+}
+
 export async function upsertOrgProjection(ex: Knex | Knex.Transaction, snapshot: OrgProjectionSnapshot): Promise<string> {
   const entityId = snapshot.organizationId.toLowerCase();
   const wire = fromUuid('organization', entityId);
   const ownerWire = snapshot.ownerId ? fromUuid('user', snapshot.ownerId.toLowerCase()) : null;
   const ownerUuid = snapshot.ownerId ? snapshot.ownerId.toLowerCase() : null;
   // An unparseable envelope timestamp must never wedge the consumer: fall back to now().
-  const occurredAt = snapshot.occurredAt && !Number.isNaN(Date.parse(snapshot.occurredAt)) ? new Date(snapshot.occurredAt).toISOString() : null;
+  const occurredAt = orderingInstant(snapshot.occurredAt);
   const stale = `(selection_list_ref_index.snapshot_at IS NOT NULL AND EXCLUDED.snapshot_at < selection_list_ref_index.snapshot_at)`;
   await ex.raw(
     `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, org_type, is_active, owner_id, owner_uuid, org_name, snapshot_at, updated_at)
@@ -65,41 +77,65 @@ export async function upsertOrgProjection(ex: Knex | Knex.Transaction, snapshot:
   return wire;
 }
 
+export type SuspendOutcome = 'suspended' | 'already-suspended' | 'stale' | 'tie';
+
 /**
- * Record the platform organization's WRITE suspension (see platformGuard.ts): `suspended_at` is set (first time wins),
- * nothing else about the row changes - never a tombstone, never `is_active`, never its type - so reads stay available.
- * Inserts a typeless active row when the org is not projected yet (its reads are unconfirmed anyway). Returns true
- * when this call newly suspended it.
+ * Record the platform organization's WRITE suspension (see platformGuard.ts) - ORDERED by the envelope time.
+ *   - a deactivation OLDER than the newest snapshot already applied (`snapshot_at`) is STALE and ignored (a late
+ *     `org.created{inactive}` after a newer active `org.updated` must not suspend);
+ *   - a deactivation at EXACTLY the same instant as the newest snapshot is a TIE and ignored: ties go to ACTIVE
+ *     (an activation and a deactivation can never both win; the one that fails open is recoverable, a suspension
+ *     that nothing will ever clear is not, and a forged event cannot manufacture a tie without knowing the instant);
+ *   - otherwise `suspended_at` is set (first time wins) and `suspended_event_at` records the deactivation's instant
+ *     (the later wins), the clock a later activation is compared with. `snapshot_at` is NOT touched (an early
+ *     deactivation must not make the org's own, older `org.created` look stale and keep it untyped).
+ * Nothing else about the row changes - never a tombstone, never `is_active`, never its type - so reads stay available.
+ * Inserts a typeless active row when the org is not projected yet (its reads are unconfirmed anyway).
  */
-export async function suspendOrgProjection(ex: Knex | Knex.Transaction, organizationId: string): Promise<boolean> {
+export async function suspendOrgProjection(
+  ex: Knex | Knex.Transaction,
+  organizationId: string,
+  occurredAt?: string,
+): Promise<SuspendOutcome> {
   // identity events carry the bare UUID (schema-enforced); an `org_...` TypeID is tolerated so the guard works for either
   const entityId = organizationId.startsWith('org_') ? toUuid(organizationId as never) : organizationId.toLowerCase();
   const wire = fromUuid('organization', entityId);
-  const before = await ex('selection_list_ref_index').where({ entity_type: 'organization', entity_id: entityId }).first('suspended_at');
+  const at = orderingInstant(occurredAt) ?? new Date().toISOString();
+  const before = await ex('selection_list_ref_index').where({ entity_type: 'organization', entity_id: entityId }).first('suspended_at', 'snapshot_at');
+  if (before?.snapshot_at) {
+    const newest = new Date(before.snapshot_at).getTime();
+    const t = new Date(at).getTime();
+    if (t < newest) return 'stale';
+    if (t === newest) return 'tie';
+  }
   await ex.raw(
-    `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, suspended_at, updated_at)
-     VALUES ('organization', ?, 'active', ?, now(), now())
+    `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, suspended_at, suspended_event_at, updated_at)
+     VALUES ('organization', ?, 'active', ?, now(), ?::timestamptz, now())
      ON CONFLICT (entity_type, entity_id) DO UPDATE SET
-       wire_id      = COALESCE(selection_list_ref_index.wire_id, EXCLUDED.wire_id),
-       suspended_at = COALESCE(selection_list_ref_index.suspended_at, EXCLUDED.suspended_at),
-       updated_at   = now()`,
-    [entityId, wire],
+       wire_id            = COALESCE(selection_list_ref_index.wire_id, EXCLUDED.wire_id),
+       suspended_at       = COALESCE(selection_list_ref_index.suspended_at, EXCLUDED.suspended_at),
+       suspended_event_at = GREATEST(selection_list_ref_index.suspended_event_at, EXCLUDED.suspended_event_at),
+       updated_at         = now()
+     WHERE selection_list_ref_index.snapshot_at IS NULL OR selection_list_ref_index.snapshot_at < EXCLUDED.suspended_event_at`,
+    [entityId, wire, at],
   );
-  return !before?.suspended_at; // newly suspended by this call (for the operator log)
+  return before?.suspended_at ? 'already-suspended' : 'suspended';
 }
 
 /**
- * Clear the suspension on a legitimate re-activation snapshot (`is_active=true`, type `platform`) that is not older
- * than the newest snapshot applied. Returns true when something was resumed.
+ * Clear the suspension on a legitimate re-activation snapshot (`is_active=true`, type `platform`). Ordered: it
+ * resumes only if the activation is NOT OLDER than the deactivation that suspended (`suspended_event_at`); at the
+ * same instant the activation wins (see `suspendOrgProjection`). A stale activation therefore cannot resume a newer
+ * deactivation. Returns true when something was resumed.
  */
 export async function resumeOrgProjection(ex: Knex | Knex.Transaction, organizationId: string, occurredAt: string | undefined): Promise<boolean> {
   const entityId = organizationId.startsWith('org_') ? toUuid(organizationId as never) : organizationId.toLowerCase();
-  const when = occurredAt && !Number.isNaN(Date.parse(occurredAt)) ? new Date(occurredAt).toISOString() : null;
+  const when = orderingInstant(occurredAt);
   const res = await ex.raw(
     `UPDATE selection_list_ref_index
-        SET suspended_at = NULL, updated_at = now()
+        SET suspended_at = NULL, suspended_event_at = NULL, updated_at = now()
       WHERE entity_type = 'organization' AND entity_id = ? AND suspended_at IS NOT NULL
-        AND (snapshot_at IS NULL OR snapshot_at <= COALESCE(?::timestamptz, now()))
+        AND (suspended_event_at IS NULL OR suspended_event_at <= COALESCE(?::timestamptz, now()))
       RETURNING 1`,
     [entityId, when],
   );

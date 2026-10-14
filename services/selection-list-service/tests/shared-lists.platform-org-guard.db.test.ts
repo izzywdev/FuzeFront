@@ -23,16 +23,18 @@ jest.mock('../src/db', () => ({
 }));
 
 const PLATFORM_UUID = toUuid(PLATFORM as never);
-let clock = Date.parse('2026-10-14T00:00:00.000Z');
+let clock = Date.now() - 24 * 3_600_000;
+const BASE = Date.now() - 3_600_000;
+const T = (n: number) => new Date(BASE + n * 1000).toISOString(); // explicit, ordered instants (all in the past)
 const at = () => new Date((clock += 60_000)).toISOString();
-const deleted = (organizationId: string, cascade: 'soft' | 'hard') =>
-  ({ version: '1.0', topic: 'identity.org.deleted', correlationId: `corr-del-${clock}`, occurredAt: at(), payload: { organizationId, slug: 'x', ownerId: null, cascade } }) as never;
-const orgEvent = (topic: 'identity.org.updated' | 'identity.org.created', organizationId: string, over: Record<string, unknown> = {}) =>
+const deleted = (organizationId: string, cascade: 'soft' | 'hard', iso?: string) =>
+  ({ version: '1.0', topic: 'identity.org.deleted', correlationId: `corr-del-${iso ?? clock}`, occurredAt: iso ?? at(), payload: { organizationId, slug: 'x', ownerId: null, cascade } }) as never;
+const orgEvent = (topic: 'identity.org.updated' | 'identity.org.created', organizationId: string, over: Record<string, unknown> = {}, iso?: string) =>
   ({
     version: '1.0',
     topic,
-    correlationId: `corr-${topic}-${clock}`,
-    occurredAt: at(),
+    correlationId: `corr-${topic}-${iso ?? clock}`,
+    occurredAt: iso ?? at(),
     payload: { organizationId, slug: 'x', name: 'Platform', type: 'platform', isActive: true, parentId: null, ownerId: null, ...over },
   }) as never;
 
@@ -64,7 +66,7 @@ dbDescribe('the platform organization is immutable and suspendable for the org l
   });
   // every test leaves the world un-suspended
   afterEach(async () => {
-    await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).update({ suspended_at: null });
+    await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).update({ suspended_at: null, suspended_event_at: null, snapshot_at: null });
   });
 
   const counts = async () => ({
@@ -204,15 +206,84 @@ dbDescribe('the platform organization is immutable and suspendable for the org l
       await readsWork();
     });
 
-    it('with the shared-lists flag OFF: 4.0.0 behaviour for ordinary edits is unchanged; the purge guard (flag-independent) still refuses', async () => {
+    it('with the shared-lists flag OFF the suspension gate STILL holds on EVERY mutation path of a platform row (list, archive, restore, items, translations, access, purge); other rows and an unsuspended org keep 4.0.0 behaviour', async () => {
+      const common = await w.api(P.op).post('/v1/selection-lists', { key: 'off-edit', name: 'E', visibility: 'platform' });
+      expect(common.status).toBe(201);
+      const L = `/v1/selection-lists/${common.body.id}`;
+      const item = await w.api(P.op).post(`${L}/items`, { code: 'X', label: 'X' });
+      expect(item.status).toBe(201);
+      const second = await w.api(P.op).post(`${L}/items`, { code: 'Y', label: 'Y' });
+      const mine = await w.api(P.op).post('/v1/selection-lists', { key: 'off-private', name: 'M' }); // the platform org's own PRIVATE list
+      const attempts: Array<[string, () => Promise<{ status: number; body: any }>]> = [
+        ['PATCH list', () => w.api(P.op).patch(L, { description: 'x' })],
+        ['PATCH list status=archived (archive)', () => w.api(P.op).patch(L, { status: 'archived' })],
+        ['PATCH list status=active (restore)', () => w.api(P.op).patch(L, { status: 'active' })],
+        ['DELETE list (archive)', () => w.api(P.op).del(L)],
+        ['POST list/archive', () => w.api(P.op).post(`${L}/archive`)],
+        ['DELETE list ?purge=true', () => w.api(P.op).del(`${L}?purge=true`)],
+        ['POST item', () => w.api(P.op).post(`${L}/items`, { code: 'Z', label: 'Z' })],
+        ['PATCH item', () => w.api(P.op).patch(`${L}/items/${item.body.id}`, { label: 'Z' })],
+        ['PUT items/reorder', () => w.api(P.op).put(`${L}/items/reorder`, { order: [second.body.id, item.body.id] })],
+        ['DELETE item (archive)', () => w.api(P.op).del(`${L}/items/${item.body.id}`)],
+        ['POST item/archive', () => w.api(P.op).post(`${L}/items/${item.body.id}/archive`)],
+        ['DELETE item ?purge=true', () => w.api(P.op).del(`${L}/items/${item.body.id}?purge=true`)],
+        ['PUT list translation', () => w.api(P.op).put(`${L}/translations/fr`, { name: 'Nope' })],
+        ['DELETE list translation', () => w.api(P.op).del(`${L}/translations/fr`)],
+        ['POST list translation autofill', () => w.api(P.op).post(`${L}/translations/de/autofill`, {})],
+        ['PUT item translation', () => w.api(P.op).put(`${L}/items/${item.body.id}/translations/fr`, { label: 'Nope' })],
+        ['DELETE item translation', () => w.api(P.op).del(`${L}/items/${item.body.id}/translations/fr`)],
+        ['PUT access', () => w.api(P.op).put(`${L}/access/${P.opEditor.userId}`, { role: 'list-viewer' })],
+        ['DELETE access', () => w.api(P.op).del(`${L}/access/${P.opEditor.userId}`)],
+      ];
       const { handleOrgDeleted } = await import('../src/events/org-deleted.handler');
       await flagOff(async () => {
+        // sanity: not suspended yet -> the 4.0.0 path answers (never the suspension)
+        expect((await w.api(P.op).patch(L, { description: 'before' })).status).toBe(200);
         await handleOrgDeleted(deleted(PLATFORM, 'soft'));
         expect(await suspended()).toBe(true);
-        expect((await w.api(P.op).patch(`/v1/selection-lists/${platform.listId}`, { description: 'legacy edit' })).status).toBe(200);
-        expect((await w.api(P.op).del(`/v1/selection-lists/${platform.listId}?purge=true`)).status).toBe(403);
+        for (const [name, run] of attempts) {
+          const r = await run();
+          expect({ name, status: r.status }).toEqual({ name, status: 403 });
+          if (!name.includes('purge')) expect({ name, reason: r.body.reason }).toEqual({ name, reason: 'platform_suspended' });
+        }
+        // the platform org's NON-platform row: 4.0.0 behaviour unchanged
+        expect((await w.api(P.op).patch(`/v1/selection-lists/${mine.body.id}`, { description: 'fine' })).status).toBe(200);
+        // a read is a read
+        expect((await w.api(P.op).get(L)).status).toBe(200);
       });
-      expect(await w.db('selection_lists').where({ id: platform.listId }).first()).toBeDefined();
+      // nothing changed on the platform row, nothing deleted
+      const row = await w.db('selection_lists').where({ id: common.body.id }).first();
+      expect(row.status).toBe('active');
+      expect((await w.db('selection_list_items').where({ list_id: common.body.id })).length).toBe(2);
+      // reactivation: the flag-OFF 4.0.0 edit works again
+      const { handleOrgUpdated } = await import('../src/events/org-updated.handler');
+      await handleOrgUpdated(orgEvent('identity.org.updated', PLATFORM_UUID));
+      expect(await suspended()).toBe(false);
+      await flagOff(async () => {
+        expect((await w.api(P.op).patch(L, { description: 'after' })).status).toBe(200);
+      });
+    });
+
+    it('with the flag OFF a pack upgrade is not written into a SUSPENDED platform org that owns common lists (retryable); ordinary orgs are unaffected', async () => {
+      const { handleOrgDeleted } = await import('../src/events/org-deleted.handler');
+      const { applySeedRequest } = await import('../src/seed');
+      const req = (org: string, key: string) =>
+        ({
+          organizationId: org,
+          scope: 'org',
+          source: { app: 'platform', service: 'selection-list-service' },
+          pack: { key, version: 1 },
+          trigger: 'org-created',
+          requestId: null,
+          lists: [spec(`s-${key}`, ['A'])],
+        }) as never;
+      await flagOff(async () => {
+        await handleOrgDeleted(deleted(PLATFORM, 'soft'));
+        const res: any = await applySeedRequest(w.db, req(PLATFORM, 'off-susp'));
+        expect(res.status).toBe('failed');
+        expect(res.retryable).toBe(true);
+        expect(await w.db('selection_lists').where({ key: 's-off-susp' })).toHaveLength(0);
+      });
     });
 
     it('REACTIVATION (org.updated or org.created, active, type platform) clears the suspension and writes resume; logged at warn', async () => {
@@ -330,6 +401,143 @@ dbDescribe('the platform organization is immutable and suspendable for the org l
       await handleOrgUpdated(orgEvent('identity.org.updated', toUuid(ORG_A as never), { type: 'organization', isActive: false, name: 'A' }));
       const row = await w.db('selection_list_ref_index').where({ wire_id: ORG_A }).first();
       expect({ t: row.org_type, a: row.is_active, s: row.suspended_at }).toEqual({ t: 'organization', a: false, s: null });
+    });
+  });
+
+  describe('ordering of the suspend / resume state machine (separate consumer groups deliver out of order)', () => {
+    const upd = async (over: Record<string, unknown>, iso: string) => {
+      const { handleOrgUpdated } = await import('../src/events/org-updated.handler');
+      await handleOrgUpdated(orgEvent('identity.org.updated', PLATFORM_UUID, over, iso));
+    };
+    const created = async (over: Record<string, unknown>, iso: string) => {
+      const { handleOrgCreated } = await import('../src/events/org-created.handler');
+      return handleOrgCreated(orgEvent('identity.org.created', PLATFORM_UUID, over, iso));
+    };
+    const del = async (iso: string, cascade: 'soft' | 'hard' = 'soft') => {
+      const { handleOrgDeleted } = await import('../src/events/org-deleted.handler');
+      await handleOrgDeleted(deleted(PLATFORM_UUID, cascade, iso));
+    };
+    const warnedWith = (outcome: string, needle: string) =>
+      expect(warnSpy).toHaveBeenCalledWith(expect.objectContaining({ outcome, eventId: expect.stringContaining(needle) }), expect.stringContaining('PLATFORM'));
+
+    it('a STALE inactive org.created arriving after a NEWER active org.updated does not suspend (warn, correlationId)', async () => {
+      await upd({}, T(10));
+      await created({ isActive: false }, T(5));
+      expect(await suspended()).toBe(false);
+      warnedWith('stale', T(5));
+      expect((await publish()).status).toBe(201);
+    });
+
+    it.each(['updated', 'created', 'deleted-soft', 'deleted-hard'] as const)('stale deactivation via %s does not suspend either', async (via) => {
+      await upd({}, T(10));
+      if (via === 'updated') await upd({ isActive: false }, T(9));
+      else if (via === 'created') await created({ isActive: false }, T(9));
+      else await del(T(9), via === 'deleted-soft' ? 'soft' : 'hard');
+      expect(await suspended()).toBe(false);
+      warnedWith('stale', T(9));
+    });
+
+    it('TIE (deactivation at the exact instant of the newest applied snapshot): ties go to ACTIVE - not suspended, logged', async () => {
+      await upd({}, T(10));
+      await created({ isActive: false }, T(10));
+      expect(await suspended()).toBe(false);
+      warnedWith('tie', T(10));
+      await del(T(10));
+      expect(await suspended()).toBe(false);
+    });
+
+    it('a NEWER deactivation suspends and records its instant; a stale or older activation cannot resume it, a newer one or a tie does', async () => {
+      await upd({}, T(10));
+      await del(T(20));
+      expect(await suspended()).toBe(true);
+      const row = await projection();
+      expect(new Date(row.suspended_event_at).toISOString()).toBe(T(20));
+      expect(new Date(row.snapshot_at).toISOString()).toBe(T(10)); // the deactivation does not move the snapshot clock
+      await upd({}, T(15)); // newer than the last snapshot, OLDER than the deactivation
+      expect(await suspended()).toBe(true);
+      await created({}, T(12));
+      expect(await suspended()).toBe(true);
+      await upd({}, T(20)); // tie with the deactivation: activation wins
+      expect(await suspended()).toBe(false);
+      await del(T(30));
+      expect(await suspended()).toBe(true);
+      await upd({}, T(31)); // newer activation
+      expect(await suspended()).toBe(false);
+    });
+
+    it('delete THEN (older) created: suspended, the older created still types the org, and only a newer activation resumes', async () => {
+      await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).update({ org_type: null, is_active: null }); // not typed yet
+      await del(T(30));
+      expect(await suspended()).toBe(true);
+      await created({}, T(25)); // older: applies (the projection learns the type) but cannot resume
+      const row = await projection();
+      expect({ t: row.org_type, a: row.is_active }).toEqual({ t: 'platform', a: true });
+      expect(await suspended()).toBe(true);
+      await created({}, T(35));
+      expect(await suspended()).toBe(false);
+    });
+
+    it('created THEN deleted in order, with the row absent: the deletion creates a typeless suspended row; the created resumes it', async () => {
+      await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).delete();
+      await del(T(40), 'hard');
+      let row = await projection();
+      expect({ s: Boolean(row.suspended_at), t: row.org_type, st: row.status }).toEqual({ s: true, t: null, st: 'active' });
+      await created({}, T(41));
+      row = await projection();
+      expect({ s: Boolean(row.suspended_at), t: row.org_type }).toEqual({ s: false, t: 'platform' });
+    });
+
+    it('duplicate delivery is idempotent: a repeated deactivation keeps the first suspended_at; a repeated activation resumes once', async () => {
+      await upd({}, T(10));
+      await del(T(40));
+      const first = (await projection()).suspended_at;
+      errorSpy.mockClear();
+      await del(T(40));
+      expect(new Date((await projection()).suspended_at).getTime()).toBe(new Date(first).getTime());
+      expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'already-suspended', newlySuspended: false }), expect.anything());
+      await upd({}, T(50));
+      expect(await suspended()).toBe(false);
+      warnSpy.mockClear();
+      await upd({}, T(50)); // duplicate activation
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('RESUMED'));
+      expect(await suspended()).toBe(false);
+    });
+
+    it('REPLAY of an old deactivation after the resume is stale and ignored', async () => {
+      await upd({}, T(10));
+      await del(T(40));
+      await upd({}, T(50)); // resumed, snapshot clock = T(50)
+      expect(await suspended()).toBe(false);
+      await del(T(40)); // replay
+      await created({ isActive: false }, T(45));
+      expect(await suspended()).toBe(false);
+      warnedWith('stale', T(40));
+    });
+
+    it('out-of-order org.updated renames: the newer name wins either way, and suspension is unaffected', async () => {
+      await upd({ name: 'New' }, T(60));
+      await upd({ name: 'Old' }, T(55));
+      expect((await projection()).org_name).toBe('New');
+      await del(T(70));
+      await upd({ name: 'Newest' }, T(65)); // older than the deactivation: applies as a rename, does not resume
+      expect((await projection()).org_name).toBe('Newest');
+      expect(await suspended()).toBe(true);
+      await upd({ name: 'Back' }, T(80));
+      expect((await projection()).org_name).toBe('Back');
+      expect(await suspended()).toBe(false);
+    });
+
+    it('a FAR-FUTURE forged timestamp is clamped to now: it cannot pin the clocks ahead of every legitimate event', async () => {
+      await del('2099-01-01T00:00:00.000Z');
+      expect(await suspended()).toBe(true);
+      expect(new Date((await projection()).suspended_event_at).getTime()).toBeLessThanOrEqual(Date.now());
+      await new Promise((r) => setTimeout(r, 5));
+      await upd({ name: 'Legit' }, new Date().toISOString()); // a legitimate activation right now resumes
+      expect(await suspended()).toBe(false);
+      await upd({ name: 'Forged' }, '2099-01-01T00:00:00.000Z');
+      await new Promise((r) => setTimeout(r, 5));
+      await upd({ name: 'Later legit' }, new Date().toISOString());
+      expect((await projection()).org_name).toBe('Later legit'); // not rejected as stale behind a future-dated snapshot
     });
   });
 });

@@ -177,6 +177,24 @@ export function requireListMutation(action: string, opts: MutationOptions = {}):
   const legacy = requireAuthzCheck(SELECTION_LIST_RESOURCE, action);
   const forkable = opts.forkable !== false;
   return async function listMutationMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // The platform-org SUSPENSION gate is FLAG-INDEPENDENT (like the purge guard): a platform-visibility row can exist
+    // while the release flag is OFF (rollback / fail-safe), and a holder of a still-valid platform-org token must not
+    // be able to change it while the org is suspended. Cheap first (one projection read, none when no platform org is
+    // configured); the row is only looked up when suspended. 4.0.0 behaviour is otherwise untouched.
+    if (req.orgId) {
+      try {
+        if (await platformWritesSuspendedFor(req)) {
+          const suspendedRow = await lookupList(req, req.params['listId']);
+          if (suspendedRow && suspendedRow.visibility === 'platform' && sameOrg(suspendedRow.organization_id, req.orgId)) {
+            getLog(req).warn({ listId: req.params['listId'], op: action, userId: req.userId, orgId: req.orgId }, 'mutation of a common list refused: the platform organization is SUSPENDED');
+            res.status(403).json({ code: 'FORBIDDEN', reason: 'platform_suspended', message: 'The platform organization is suspended; common lists are read-only until it is reactivated.' });
+            return;
+          }
+        }
+      } catch (err) {
+        return next(err); // a database fault is a contract 500 (nothing proceeds), like the purge guard
+      }
+    }
     if (!(await sharedListsOn(req))) return legacy(req, res, next);
     const { userId, orgId } = req;
     if (!userId || !orgId || !bearer(req) || !(await isAuthzEnabled(req))) return legacy(req, res, next);
@@ -184,14 +202,6 @@ export function requireListMutation(action: string, opts: MutationOptions = {}):
     const listId = req.params['listId'];
     try {
       const row = await lookupList(req, listId);
-      // The platform organization is SUSPENDED (a deactivation / deletion was recorded): its common lists stay
-      // readable by every tenant, but nobody changes them. Only a caller acting in the owning (platform) org gets
-      // here as a writer; other tenants keep their usual fork_required / 403 / 404.
-      if (row && row.visibility === 'platform' && sameOrg(row.organization_id, orgId) && (await platformWritesSuspendedFor(req))) {
-        getLog(req).warn({ listId, op: action, userId, orgId }, 'mutation of a common list refused: the platform organization is SUSPENDED');
-        res.status(403).json({ code: 'FORBIDDEN', reason: 'platform_suspended', message: 'The platform organization is suspended; common lists are read-only until it is reactivated.' });
-        return;
-      }
       // Unknown id, or one of the caller's own org: the 4.0.0 guard answers (its own org-scoped pre-check
       // gives the 404 / the instance decision).
       if (!row || sameOrg(row.organization_id, orgId)) return legacy(req, res, next);

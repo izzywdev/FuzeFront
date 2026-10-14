@@ -362,6 +362,28 @@ its items/translations/grants by the platform org, purge of a platform list or i
 (`seed.failed`/`INTERNAL_ERROR`, retryable — it succeeds after reactivation). The state is read fresh on every request;
 the platform-org cache never masks it.
 
+**Ordering (the lifecycle topics have separate consumer groups, so events arrive out of order).** Every suspension
+path (`org.deleted` soft/hard, `org.updated`/`org.created` with `isActive:false`) compares the event's `occurredAt`
+(clamped to now: a forged far-future timestamp cannot pin the clocks ahead) with the newest snapshot already applied
+(`snapshot_at`):
+
+| Deactivation vs newest applied snapshot | Result |
+|---|---|
+| strictly **newer** | suspends; records the instant in `suspended_event_at` (the snapshot clock is *not* moved) |
+| **older** (stale) | ignored; **warn** `a STALE deactivation … was ignored` with the `correlationId` |
+| **same instant** (tie) | ignored, **ties go to active**; warn `… SAME instant …`. Rationale: an activation and a deactivation cannot both win; the side that fails open is recoverable (re-send the deactivation), a suspension nothing will ever clear is not |
+
+An activation (`isActive:true`, type `platform`) resumes only if it is **not older** than `suspended_event_at` (a tie
+resumes). So a stale activation cannot resume a newer deactivation, and a replay of an old deactivation after the
+resume is stale and ignored. A repeated deactivation keeps the first `suspended_at`; a repeated activation resumes once.
+An early `org.deleted` for a not-yet-projected platform org creates a typeless suspended row; the org's own (older)
+`org.created` still types it but resumes only if newer than the deactivation.
+
+**The gate is flag-independent.** With `fuzefront.selection-lists.shared-lists` OFF (rollback / fail-safe) a suspended
+platform org still refuses (403 `platform_suspended`) every mutation of a `platform`-visibility row it owns: list
+PATCH/archive/restore, items, translations, access, and purge; and a pack upgrade is not seeded into it. Non-platform
+rows and an unsuspended org keep their 4.0.0 behaviour with the flag OFF.
+
 **Operator recovery.** A *legitimate* deactivation: nothing to do (that is the intended outcome). A *forged or
 mistaken* one: confirm in the log (`grep 'platform WRITES are SUSPENDED'`, note the `eventId`), then either have
 identity re-emit `identity.org.updated` with `isActive:true` for the platform org, or, if that is not possible,

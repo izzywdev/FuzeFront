@@ -390,6 +390,20 @@ async function applyVisibilityRules(
   return { applied: all.filter((l) => !platformSkipped.has(l.key)), visibilityByKey, platformSkipped };
 }
 
+async function refuseWhenPlatformSuspended(trx: Trx, organizationId: string): Promise<void> {
+  const configured = configuredPlatformOrgId();
+  if (!configured || !sameOrg(organizationId, configured)) return;
+  if (!(await platformWritesSuspended(trx))) return;
+  const owns = await trx('selection_lists').where({ visibility: 'platform' }).whereIn('organization_id', orgRenderings(organizationId)).first('id');
+  if (!owns) return; // no common list to rewrite (a first publication is gated in applyVisibilityRules)
+  throw new SeedFailure(
+    'INTERNAL_ERROR',
+    'The platform organization is suspended (a deactivation was recorded), so nothing can be seeded into its common lists; nothing was written. Retry once it is reactivated.',
+    [],
+    true,
+  );
+}
+
 async function runSeed(trx: Trx, req: SeedApplyRequest): Promise<SeedResult> {
   const requested = validateRequest(req);
   const org = req.organizationId;
@@ -405,6 +419,10 @@ async function runSeed(trx: Trx, req: SeedApplyRequest): Promise<SeedResult> {
   const sourceDef = await authorizeSource(trx, req);
   enforceSourceRules(sourceDef, requested);
   await checkOrg(trx, req);
+  // A SUSPENDED platform org (deactivation recorded) takes no seed writes into its common lists - whatever the
+  // shared-lists flag says: a pack upgrade also rewrites an existing seeded list, and that list may already be a
+  // `platform` row. Retryable, nothing written; resumes with the org's reactivation.
+  await refuseWhenPlatformSuspended(trx, req.organizationId);
   // Visibility (4.1.0): which of the requested lists apply to THIS org, and with what visibility. The ledger
   // below is keyed and hashed on the REQUESTED content, so its semantics do not depend on the target org.
   const { applied: lists, visibilityByKey, platformSkipped } = await applyVisibilityRules(trx, req, requested);
