@@ -6,8 +6,9 @@
 // readability is enforced by the route guards (middleware/listAccess.ts) BEFORE a handler runs; the SQL scope
 // here only decides which rows the handler may even look at, so a cross-org row is never reachable by id.
 //
-// With the release flag OFF (or the platform organization unresolved) the scope is the 4.0.0 one,
-// byte for byte: `organization_id = ?`.
+// With the release flag OFF the scope is the 4.0.0 one, byte for byte: `organization_id = ?`. With it ON the
+// caller's own org always matches under every rendering of its id; the platform organization only decides
+// whether the common lists are added (unresolved => none).
 
 import type { Request } from 'express';
 import { getLog } from '../lib/logger';
@@ -40,8 +41,10 @@ export async function getReadScope(req: Pick<Request, 'orgId' | 'userId'>): Prom
 /** SQL predicate (+ positional params) for "rows the caller's organization may READ", on `alias` (or no alias). */
 export function readableByOrg(alias: string, orgId: string, scope: ReadScope): { sql: string; params: Array<string | string[]> } {
   const p = alias ? `${alias}.` : '';
-  if (!scope.shared || !scope.platformOrg) return { sql: `${p}organization_id = ?`, params: [orgId] };
-  if (scope.includePlatform === false) return { sql: `${p}organization_id = ANY(?)`, params: [orgRenderings(orgId)] };
+  if (!scope.shared) return { sql: `${p}organization_id = ?`, params: [orgId] }; // flag OFF: the 4.0.0 exact match
+  // Flag ON: the caller's OWN org matches under every rendering of its id, whether or not the platform org
+  // resolves. Only the foreign common lists need the platform org (unresolved => fail closed: none served).
+  if (!scope.platformOrg || scope.includePlatform === false) return { sql: `${p}organization_id = ANY(?)`, params: [orgRenderings(orgId)] };
   return {
     sql: `(${p}organization_id = ANY(?) OR (${p}visibility = 'platform' AND ${p}organization_id = ANY(?)))`,
     params: [orgRenderings(orgId), orgForms(scope.platformOrg)],

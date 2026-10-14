@@ -96,8 +96,9 @@ async function getListByOrg(listId: string, orgId: string | string[], ex: Execut
  */
 async function getReadableList(req: Request, listId: string, orgId: string, ex: Executor = db) {
   const scope = await getReadScope(req);
-  // 4.0.0 path (flag OFF / platform org unresolved): exactly the org-scoped lookup.
-  if (!scope.shared || !scope.platformOrg) return getListByOrg(listId, orgId, ex);
+  // 4.0.0 path (flag OFF): exactly the org-scoped lookup. (Flag ON: the own org matches under every rendering
+  // of its id even when the platform org does not resolve; `readableByOrg` adds the common lists only if it does.)
+  if (!scope.shared) return getListByOrg(listId, orgId, ex);
   const readable = readableByOrg('', orgId, scope);
   const result = await ex.raw(`SELECT * FROM selection_lists WHERE id = ? AND ${readable.sql}`, [listId, ...readable.params]);
   return (result as { rows?: any[] }).rows?.[0];

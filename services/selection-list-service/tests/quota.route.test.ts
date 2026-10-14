@@ -59,10 +59,13 @@ function makeToken(payload: Record<string, unknown> = {}): string {
   );
 }
 
-/** An in-memory flag client that returns a fixed boolean value. */
+/**
+ * An in-memory flag client that returns a fixed boolean value for the master gate. The shared-lists release
+ * flag stays OFF: this suite pins the 4.0.0 behaviour (its own suites pin shared-lists ON).
+ */
 function flagClient(enabled: boolean) {
   return {
-    getBooleanValue: jest.fn().mockResolvedValue(enabled),
+    getBooleanValue: jest.fn().mockImplementation(async (key: string) => (key === 'fuzefront.selection-lists.shared-lists' ? false : enabled)),
   };
 }
 

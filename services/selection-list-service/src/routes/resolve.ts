@@ -159,7 +159,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
   }> = [];
 
   const scope = await getReadScope(req);
-  const result = scope.shared && scope.platformOrg
+  const result = scope.shared
     // Common lists + fork redirect (see the header).
     ? await db.raw<{ rows: typeof dbRows }>(
         `
@@ -195,7 +195,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
     WHERE sli.id = ANY(?)
       AND (sl.organization_id = ANY(?) OR (sl.visibility = 'platform' AND sl.organization_id = ANY(?)))
     `,
-        [effectiveLocale, orgRenderings(orgId), effectiveLocale, validIds, orgRenderings(orgId), orgForms(scope.platformOrg)],
+        [effectiveLocale, orgRenderings(orgId), effectiveLocale, validIds, orgRenderings(orgId), scope.platformOrg ? orgForms(scope.platformOrg) : []],
       )
     : await db.raw<{ rows: typeof dbRows }>(
     `

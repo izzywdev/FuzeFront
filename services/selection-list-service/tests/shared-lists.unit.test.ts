@@ -101,9 +101,16 @@ describe('readableByOrg - the default listing (includePlatform: false)', () => {
     expect(q.sql).toBe('sl.organization_id = ANY(?)');
     expect((q.params[0] as string[]).sort()).toEqual([PLATFORM, UUID].sort());
   });
-  it('feature off, or the platform org unresolved: the 4.0.0 exact match, whatever includePlatform says', () => {
+  it('feature off: the 4.0.0 exact match, whatever includePlatform says', () => {
     expect(readableByOrg('sl', UUID, { shared: false, platformOrg: null, includePlatform: false })).toEqual({ sql: 'sl.organization_id = ?', params: [UUID] });
-    expect(readableByOrg('sl', UUID, { shared: true, platformOrg: null, includePlatform: false })).toEqual({ sql: 'sl.organization_id = ?', params: [UUID] });
+    expect(readableByOrg('sl', UUID, { shared: false, platformOrg: PLATFORM })).toEqual({ sql: 'sl.organization_id = ?', params: [UUID] });
+  });
+  it('feature ON but the platform org UNRESOLVED: the own org still matches under every rendering; no platform branch', () => {
+    for (const includePlatform of [true, false, undefined]) {
+      const q = readableByOrg('sl', UUID, { shared: true, platformOrg: null, includePlatform });
+      expect(q.sql).toBe('sl.organization_id = ANY(?)');
+      expect((q.params[0] as string[]).sort()).toEqual([PLATFORM, UUID].sort());
+    }
   });
 });
 
