@@ -81,12 +81,16 @@ jobs:
             AUTH+=(-H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET")
           fi
           base="$UNLEASH_ADMIN_URL/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT"
+          # Derive temp-file paths from FLAG+ENVIRONMENT so concurrent dispatches for
+          # different flags on the same self-hosted runner cannot clobber each other.
+          # FLAG and ENVIRONMENT were validated as ^[a-zA-Z0-9._-]+$ in Preconditions.
+          T="/tmp/uf-${FLAG}-${ENVIRONMENT}"
 
           if [ "$ACTION" = "disable" ]; then
             # Capture HTTP status explicitly — curl -sf alone does not fail on 3xx
             # (e.g. a CF-Access login redirect), which would falsely report success.
-            off_code=$(curl -sS -o /tmp/off.json -w '%{http_code}' "${AUTH[@]}" -X POST "$base/off")
-            case "$off_code" in 200|204) : ;; *) echo "disable failed ($off_code)"; cat /tmp/off.json; exit 1;; esac
+            off_code=$(curl -sS -o "${T}-off.json" -w '%{http_code}' "${AUTH[@]}" -X POST "$base/off")
+            case "$off_code" in 200|204) : ;; *) echo "disable failed ($off_code)"; cat "${T}-off.json"; exit 1;; esac
             echo "::notice::disabled $FLAG in $ENVIRONMENT (strategy left intact for clean re-enable)"
             exit 0
           fi
@@ -96,26 +100,26 @@ jobs:
           # or a quote character produces malformed JSON and a half-enabled flag.
           # Map the repo taxonomy type to Unleash wire types: ops-kill-switch → kill-switch.
           create_body=$(python3 -c 'import json,os;m={"ops-kill-switch":"kill-switch"};t=m.get(os.environ["FTYPE"],os.environ["FTYPE"]);print(json.dumps({"name":os.environ["FLAG"],"type":t,"description":os.environ["DESCRIPTION"]}))')
-          code=$(curl -sS -o /tmp/c.json -w '%{http_code}' -X POST \
+          code=$(curl -sS -o "${T}-c.json" -w '%{http_code}' -X POST \
             "$UNLEASH_ADMIN_URL/api/admin/projects/$PROJECT/features" \
             "${AUTH[@]}" -H 'Content-Type: application/json' -d "$create_body")
-          case "$code" in 201|409) : ;; *) echo "create failed ($code)"; cat /tmp/c.json; exit 1;; esac
+          case "$code" in 201|409) : ;; *) echo "create failed ($code)"; cat "${T}-c.json"; exit 1;; esac
 
           # Upsert the unsegmented flexibleRollout strategy BEFORE enabling the environment
           # so the correct rollout % is live the instant the environment turns on. An env-on
           # followed by a failed strategy upsert would leave the flag live at a stale %.
           # Select only unsegmented strategies to avoid ambiguity when a flag has both a
           # segment-targeted and an unsegmented ramp strategy; fail if multiple match.
-          strategies_code=$(curl -sS -o /tmp/strats.json -w '%{http_code}' "${AUTH[@]}" "$base/strategies")
-          case "$strategies_code" in 200) : ;; *) echo "strategies GET failed ($strategies_code)"; cat /tmp/strats.json; exit 1;; esac
+          strategies_code=$(curl -sS -o "${T}-strats.json" -w '%{http_code}' "${AUTH[@]}" "$base/strategies")
+          case "$strategies_code" in 200) : ;; *) echo "strategies GET failed ($strategies_code)"; cat "${T}-strats.json"; exit 1;; esac
           # Reject competing global (unsegmented, unconstrained) strategies of other types.
           # Unleash evaluates strategies with OR semantics: a "default" always-on strategy overrides
           # any flexibleRollout %, enabling all users regardless of the configured rollout.
-          competing=$(python3 -c 'import json;xs=[s["name"] for s in json.load(open("/tmp/strats.json")) if not s.get("segments") and not s.get("constraints") and s.get("name")!="flexibleRollout" and not s.get("disabled")];print(",".join(xs))')
+          competing=$(T="$T" python3 -c 'import json,os;xs=[s["name"] for s in json.load(open(os.environ["T"]+"-strats.json")) if not s.get("segments") and not s.get("constraints") and s.get("name")!="flexibleRollout" and not s.get("disabled")];print(",".join(xs))')
           if [ -n "$competing" ]; then echo "competing global strategies detected: $competing — remove them in the Unleash UI first, then re-run"; exit 1; fi
           # Select only unsegmented, unconstrained flexibleRollout strategies to avoid
           # ambiguity and prevent accidentally widening a targeted pilot strategy.
-          sid=$(python3 -c 'import sys,json;a=[s for s in json.load(open("/tmp/strats.json")) if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];xs=([s for s in a if not s.get("disabled")] or a);sys.exit("ambiguous: multiple unsegmented unconstrained flexibleRollout strategies — resolve in Unleash UI first") if len(xs)>1 else None;print(xs[0]["id"] if xs else "")')
+          sid=$(T="$T" python3 -c 'import sys,json,os;a=[s for s in json.load(open(os.environ["T"]+"-strats.json")) if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];xs=([s for s in a if not s.get("disabled")] or a);sys.exit("ambiguous: multiple unsegmented unconstrained flexibleRollout strategies — resolve in Unleash UI first") if len(xs)>1 else None;print(xs[0]["id"] if xs else "")')
           post_body=$(python3 -c 'import json,os;print(json.dumps({"name":"flexibleRollout","parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
           if [ -n "$sid" ]; then
             # Preserve the full strategy object (variants, title, stickiness, groupId…) —
@@ -123,15 +127,15 @@ jobs:
             # the whole strategy, so omitting a field (e.g. variants on an experiment) deletes
             # it. Strip response-only fields (id, featureName, createdAt, sortOrder) that the
             # PUT schema rejects with 400.
-            patch_body=$(python3 -c 'import json,os;d=json.load(open("/tmp/strats.json"));a=[s for s in d if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];xs=([s for s in a if not s.get("disabled")] or a);s=dict(xs[0]);[s.pop(k,None) for k in ["id","featureName","createdAt","sortOrder"]];s["parameters"]=dict(s.get("parameters",{}));s["parameters"]["rollout"]=os.environ["ROLLOUT"];s["disabled"]=False;print(json.dumps(s))')
-            strat_code=$(curl -sS -o /tmp/strat_w.json -w '%{http_code}' "${AUTH[@]}" -H 'Content-Type: application/json' -X PUT "$base/strategies/$sid" -d "$patch_body")
-            case "$strat_code" in 200) : ;; *) echo "strategy PUT failed ($strat_code)"; cat /tmp/strat_w.json; exit 1;; esac
+            patch_body=$(T="$T" python3 -c 'import json,os;d=json.load(open(os.environ["T"]+"-strats.json"));a=[s for s in d if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];xs=([s for s in a if not s.get("disabled")] or a);s=dict(xs[0]);[s.pop(k,None) for k in ["id","featureName","createdAt","sortOrder"]];s["parameters"]=dict(s.get("parameters",{}));s["parameters"]["rollout"]=os.environ["ROLLOUT"];s["disabled"]=False;print(json.dumps(s))')
+            strat_code=$(curl -sS -o "${T}-strat_w.json" -w '%{http_code}' "${AUTH[@]}" -H 'Content-Type: application/json' -X PUT "$base/strategies/$sid" -d "$patch_body")
+            case "$strat_code" in 200) : ;; *) echo "strategy PUT failed ($strat_code)"; cat "${T}-strat_w.json"; exit 1;; esac
           else
-            strat_code=$(curl -sS -o /tmp/strat_w.json -w '%{http_code}' "${AUTH[@]}" -H 'Content-Type: application/json' -X POST "$base/strategies" -d "$post_body")
-            case "$strat_code" in 200|201) : ;; *) echo "strategy POST failed ($strat_code)"; cat /tmp/strat_w.json; exit 1;; esac
+            strat_code=$(curl -sS -o "${T}-strat_w.json" -w '%{http_code}' "${AUTH[@]}" -H 'Content-Type: application/json' -X POST "$base/strategies" -d "$post_body")
+            case "$strat_code" in 200|201) : ;; *) echo "strategy POST failed ($strat_code)"; cat "${T}-strat_w.json"; exit 1;; esac
           fi
 
           # Enable the environment only after the strategy is in the desired state.
-          on_code=$(curl -sS -o /tmp/on.json -w '%{http_code}' "${AUTH[@]}" -X POST "$base/on")
-          case "$on_code" in 200|204) : ;; *) echo "environment enable failed ($on_code)"; cat /tmp/on.json; exit 1;; esac
+          on_code=$(curl -sS -o "${T}-on.json" -w '%{http_code}' "${AUTH[@]}" -X POST "$base/on")
+          case "$on_code" in 200|204) : ;; *) echo "environment enable failed ($on_code)"; cat "${T}-on.json"; exit 1;; esac
           echo "::notice::$FLAG set to ${ROLLOUT}% in $ENVIRONMENT"
