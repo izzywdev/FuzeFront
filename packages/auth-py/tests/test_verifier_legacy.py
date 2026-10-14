@@ -136,3 +136,10 @@ def test_fractional_numeric_dates_are_preserved():
     now = time.time()
     ident = verifier().verify(make_token(SECRET, claims={"userId": "u", "iat": now - 0.5, "exp": now + 100.25}))
     assert ident.expires_at == pytest.approx(now + 100.25)
+
+
+def test_future_iat_is_not_rejected_with_zero_tolerance():
+    # Legacy tolerance defaults to 0; an issuer clock a few minutes ahead must not
+    # lock users out. `nbf` is the not-before boundary, not `iat`.
+    ident = verifier().verify(make_token(SECRET, claims={"userId": "u", "iat": int(time.time()) + 300}))
+    assert ident.user_id == "u"

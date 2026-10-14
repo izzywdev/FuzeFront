@@ -60,6 +60,23 @@ jobs:
           # (e.g. `master`), which would publish a non-versioned release.
           echo "tag=auth-py-v$PY_VER" >> "$GITHUB_OUTPUT"
 
+      - name: Refuse an existing tag that points at different source
+        # The wheel is built from the checked-out commit. If this tag already exists
+        # it must resolve to that same commit, otherwise the Release would attach
+        # this build to a tag that names different source.
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # `^{}` peels an annotated tag to its commit; a lightweight tag matches the bare ref.
+          existing=$(git ls-remote origin "refs/tags/$TAG^{}" "refs/tags/$TAG" | awk 'NR==1{print $1}')
+          if [ -n "$existing" ] && [ "$existing" != "$SHA" ]; then
+            echo "::error::tag $TAG already exists at $existing but this run built $SHA"
+            exit 1
+          fi
+
       - name: Test before publishing
         run: |
           cd packages/auth-py
@@ -86,6 +103,8 @@ jobs:
         with:
           files: packages/auth-py/dist/*
           tag_name: ${{ steps.version.outputs.tag }}
+          # Create a missing tag at the BUILT commit, not the default branch.
+          target_commitish: ${{ github.sha }}
           name: fuzefront-auth ${{ steps.version.outputs.tag }}
           body: |
             Python authN for FuzeFront-family services: fail-closed token verifier

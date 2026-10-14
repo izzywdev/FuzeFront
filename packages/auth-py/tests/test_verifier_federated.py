@@ -195,3 +195,37 @@ def test_fractional_numeric_dates_are_preserved(jwks_server, rsa_key):
     ident = verifier(jwks_server).verify(token)
     assert ident.expires_at == pytest.approx(now + 3600.5)
     assert ident.issued_at == pytest.approx(now - 1.5)
+
+
+def test_future_iat_is_not_rejected(jwks_server, rsa_key):
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "iat": int(time.time()) + 600})
+    assert verifier(jwks_server).verify(token).user_id == "u-9"
+
+
+def test_kidless_token_needs_an_unambiguous_key(jwks_server, rsa_key):
+    # The server publishes two keys (rsa-1, ec-1): a token with no kid must not be
+    # resolved by position in the set.
+    assert code_of(verifier(jwks_server), make_token(rsa_key, alg="RS256", claims=GOOD)) == "JWKS_UNAVAILABLE"
+
+
+def test_several_keyless_keys_are_not_collapsed(jwks_server, rsa_key, ec_key):
+    from conftest import _jwk
+
+    keyless = []
+    for key, alg in ((rsa_key, "RS256"), (ec_key, "ES256")):
+        entry = _jwk(key.public_key(), "x", alg)
+        del entry["kid"]
+        keyless.append(entry)
+    jwks_server["keys"][:] = keyless
+    v = verifier(jwks_server)
+    assert code_of(v, make_token(rsa_key, alg="RS256", claims=GOOD)) == "JWKS_UNAVAILABLE"
+    assert code_of(v, make_token(ec_key, alg="ES256", claims=GOOD)) == "JWKS_UNAVAILABLE"
+
+
+def test_single_keyless_key_is_usable(jwks_server, rsa_key):
+    from conftest import _jwk
+
+    entry = _jwk(rsa_key.public_key(), "x", "RS256")
+    del entry["kid"]
+    jwks_server["keys"][:] = [entry]
+    assert verifier(jwks_server).verify(make_token(rsa_key, alg="RS256", claims=GOOD)).user_id == "u-9"

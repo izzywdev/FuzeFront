@@ -141,6 +141,9 @@ def _decode_options(has_audience: bool, has_issuer: bool) -> dict[str, Any]:
         "verify_signature": True,
         "verify_exp": True,
         "verify_nbf": True,
+        # `iat` is informational (the contract's not-before boundary is `nbf`);
+        # PyJWT's default would reject tokens from an issuer whose clock runs ahead.
+        "verify_iat": False,
         "verify_iss": has_issuer,
         "verify_aud": has_audience,
     }
@@ -249,7 +252,8 @@ class _KeyResolver:
         self._config = config
         self._lock = threading.Lock()
         self._jwks_uri: str | None = config.jwks_uri
-        self._keys: dict[str | None, PyJWK] = {}
+        self._keys: dict[str, PyJWK] = {}
+        self._keyless: list[PyJWK] = []
         self._fetched_at: float | None = None
         self._last_attempt: float | None = None
 
@@ -275,13 +279,15 @@ class _KeyResolver:
             raw_keys = doc.get("keys") if isinstance(doc, dict) else None
             if not isinstance(raw_keys, list):
                 raise TypeError("no keys")
-            loaded = (_load_jwk(raw) for raw in raw_keys)
-            keys = {jwk.key_id: jwk for jwk in loaded if jwk is not None}
+            loaded = [jwk for jwk in (_load_jwk(raw) for raw in raw_keys) if jwk is not None]
+            keys = {jwk.key_id: jwk for jwk in loaded if jwk.key_id}
+            keyless = [jwk for jwk in loaded if not jwk.key_id]
         except AuthError:
             raise
         except (urllib.error.URLError, OSError, ValueError, TypeError):
             raise AuthError("JWKS_UNAVAILABLE", "could not fetch signing keys") from None
         self._keys = keys
+        self._keyless = keyless
         self._fetched_at = _now()
 
     def _expired(self) -> bool:
@@ -293,8 +299,10 @@ class _KeyResolver:
     def _lookup(self, kid: str | None) -> PyJWK | None:
         if kid is not None:
             return self._keys.get(kid)
-        # No `kid`: only unambiguous when the issuer publishes a single key.
-        return next(iter(self._keys.values())) if len(self._keys) == 1 else None
+        # No `kid`: only unambiguous when the issuer publishes exactly one key in
+        # total. Several keys without ids (or a mix) must not be resolved by order.
+        everything = [*self._keys.values(), *self._keyless]
+        return everything[0] if len(everything) == 1 else None
 
     def get_key(self, token: str) -> Any:
         header = jwt.get_unverified_header(token)
@@ -303,7 +311,7 @@ class _KeyResolver:
             raise AuthError("MALFORMED", "token is not a parseable JWT")
         with self._lock:
             if self._expired():
-                self._keys = {}  # an expired set is never served, even if the refetch fails
+                self._keys, self._keyless = {}, []  # an expired set is never served, even if the refetch fails
                 if not self._may_attempt():
                     raise AuthError("JWKS_UNAVAILABLE", "signing keys are unavailable")
                 self._refresh()
