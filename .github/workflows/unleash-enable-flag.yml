@@ -46,7 +46,9 @@ jobs:
         env:
           UNLEASH_ADMIN_URL: ${{ secrets.UNLEASH_ADMIN_URL }}
           UNLEASH_ADMIN_TOKEN: ${{ secrets.UNLEASH_ADMIN_TOKEN }}
+          FLAG: ${{ github.event.inputs.flag }}
           ROLLOUT: ${{ github.event.inputs.rollout }}
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
           ACTION: ${{ github.event.inputs.action }}
         run: |
           set -euo pipefail
@@ -55,6 +57,8 @@ jobs:
           case "$ROLLOUT" in ''|*[!0-9]*) echo "rollout must be an integer 0-100"; exit 1;; esac
           [ "$ROLLOUT" -le 100 ] || { echo "rollout must be <= 100"; exit 1; }
           case "$ACTION" in enable|disable) : ;; *) echo "action must be exactly 'enable' or 'disable', got: $ACTION"; exit 1;; esac
+          [[ "$FLAG" =~ ^[a-zA-Z0-9._-]+$ ]] || { echo "flag must match ^[a-zA-Z0-9._-]+$ (got: $FLAG)"; exit 1; }
+          [[ "$ENVIRONMENT" =~ ^[a-zA-Z0-9._-]+$ ]] || { echo "environment must match ^[a-zA-Z0-9._-]+$ (got: $ENVIRONMENT)"; exit 1; }
 
       - name: Toggle flag
         env:
