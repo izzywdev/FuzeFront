@@ -1,0 +1,5 @@
+[lint.per-file-ignores]
+# This test is synchronized verbatim from FuzeSDLC. Keep local lint enforcement
+# from fighting the governance reconciler over its percent-formatted GitHub
+# expression while the upstream managed source remains authoritative.
+".github/actions/fuze-code-action/__tests__/test_rung_gating.py" = ["UP031"]
