@@ -111,7 +111,7 @@ jobs:
           if [ -n "$competing" ]; then echo "competing global strategies detected: $competing — remove them in the Unleash UI first, then re-run"; exit 1; fi
           # Select only unsegmented, unconstrained flexibleRollout strategies to avoid
           # ambiguity and prevent accidentally widening a targeted pilot strategy.
-          sid=$(python3 -c 'import sys,json;xs=[s for s in json.load(open("/tmp/strats.json")) if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];sys.exit("ambiguous: multiple unsegmented unconstrained flexibleRollout strategies — resolve in Unleash UI first") if len(xs)>1 else None;print(xs[0]["id"] if xs else "")')
+          sid=$(python3 -c 'import sys,json;a=[s for s in json.load(open("/tmp/strats.json")) if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];xs=([s for s in a if not s.get("disabled")] or a);sys.exit("ambiguous: multiple unsegmented unconstrained flexibleRollout strategies — resolve in Unleash UI first") if len(xs)>1 else None;print(xs[0]["id"] if xs else "")')
           post_body=$(python3 -c 'import json,os;print(json.dumps({"name":"flexibleRollout","parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
           if [ -n "$sid" ]; then
             # Preserve the full strategy object (variants, title, stickiness, groupId…) —
@@ -119,7 +119,7 @@ jobs:
             # the whole strategy, so omitting a field (e.g. variants on an experiment) deletes
             # it. Strip response-only fields (id, featureName, createdAt, sortOrder) that the
             # PUT schema rejects with 400.
-            patch_body=$(python3 -c 'import json,os;d=json.load(open("/tmp/strats.json"));xs=[s for s in d if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];s=dict(xs[0]);[s.pop(k,None) for k in ["id","featureName","createdAt","sortOrder"]];s["parameters"]=dict(s.get("parameters",{}));s["parameters"]["rollout"]=os.environ["ROLLOUT"];s["disabled"]=False;print(json.dumps(s))')
+            patch_body=$(python3 -c 'import json,os;d=json.load(open("/tmp/strats.json"));a=[s for s in d if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];xs=([s for s in a if not s.get("disabled")] or a);s=dict(xs[0]);[s.pop(k,None) for k in ["id","featureName","createdAt","sortOrder"]];s["parameters"]=dict(s.get("parameters",{}));s["parameters"]["rollout"]=os.environ["ROLLOUT"];s["disabled"]=False;print(json.dumps(s))')
             strat_code=$(curl -sS -o /tmp/strat_w.json -w '%{http_code}' "${AUTH[@]}" -H 'Content-Type: application/json' -X PUT "$base/strategies/$sid" -d "$patch_body")
             case "$strat_code" in 200) : ;; *) echo "strategy PUT failed ($strat_code)"; cat /tmp/strat_w.json; exit 1;; esac
           else
