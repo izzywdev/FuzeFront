@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -30,7 +31,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import jwt
-from jwt import PyJWKClient
+from jwt import PyJWK
 
 from .types import AuthError, AuthMode, Identity
 
@@ -39,7 +40,13 @@ from .types import AuthError, AuthMode, Identity
 _FEDERATED_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384"]
 _DISCOVERY_TIMEOUT_SEC = 5
 _JWKS_TIMEOUT_SEC = 5
+# A fetched key set is trusted for this long, then re-fetched. A key the issuer
+# retires therefore stops verifying within this window (no per-key LRU cache).
 _JWKS_LIFESPAN_SEC = 300
+# Minimum gap between network attempts (forced refresh for an unknown `kid`, or a
+# retry after a failed fetch). Without it an unauthenticated caller choosing
+# random `kid`s makes one blocking outbound request per request.
+_JWKS_MIN_REFETCH_SEC = 30
 
 
 class Verifier(Protocol):
@@ -98,10 +105,6 @@ def _to_auth_error(err: Exception) -> AuthError:
         return AuthError("INVALID_AUDIENCE", "unexpected token audience")
     if isinstance(err, jwt.MissingRequiredClaimError):
         return AuthError("MISSING_CLAIM", "token is missing a required claim")
-    if isinstance(err, jwt.PyJWKClientConnectionError):
-        return AuthError("JWKS_UNAVAILABLE", "could not fetch signing keys")
-    if isinstance(err, jwt.PyJWKClientError):
-        return AuthError("JWKS_UNAVAILABLE", "could not resolve signing key")
     if isinstance(err, (jwt.DecodeError, jwt.InvalidTokenError)):
         return AuthError("MALFORMED", "token is not a parseable JWT")
     return AuthError("UNKNOWN", "verification failed")
@@ -121,9 +124,10 @@ def _claim_roles(payload: dict[str, Any], name: str) -> tuple[str, ...]:
     return ()
 
 
-def _claim_int(payload: dict[str, Any], name: str) -> int | None:
+def _claim_number(payload: dict[str, Any], name: str) -> int | float | None:
+    """NumericDate claims may be fractional; keep them (the Node peer does)."""
     value = payload.get(name)
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
 def _decode_options(has_audience: bool, has_issuer: bool) -> dict[str, Any]:
@@ -170,6 +174,14 @@ class _LegacyVerifier:
         except Exception as err:  # noqa: BLE001 - every failure is a denial
             raise _to_auth_error(err) from None
 
+        # Only a PLAIN platform session authenticates here. A token carrying a
+        # `kind` (`fuze-org-session`, `fuze-workload`, `fuze-delegation`) is a
+        # narrowed/machine credential for a different audience that merely shares
+        # the secret; hydrating it with the user's full roles would widen it.
+        # Same rule as backend/src/middleware/auth.ts.
+        if "kind" in payload:
+            raise AuthError("INVALID_AUDIENCE", "token is not a platform session token")
+
         user_id = _claim_string(payload, cfg.subject_claim) or _claim_string(payload, "sub")
         if not user_id:
             raise AuthError("MISSING_CLAIM", f"token has no `{cfg.subject_claim}` (or `sub`) claim")
@@ -197,32 +209,117 @@ class _LegacyVerifier:
             roles=roles,
             email=email,
             auth_mode="legacy-hs256",
-            issued_at=_claim_int(payload, "iat"),
-            expires_at=_claim_int(payload, "exp"),
+            issued_at=_claim_number(payload, "iat"),
+            expires_at=_claim_number(payload, "exp"),
             issuer=_claim_string(payload, "iss"),
             claims=dict(payload),
         )
 
 
-# One JWKS client per (issuer, jwks_uri): PyJWKClient owns the fetch + key cache,
-# so re-creating it per request would hammer the issuer and defeat caching.
-_jwks_clients: dict[tuple[str, str | None], PyJWKClient] = {}
-_jwks_lock = threading.Lock()
+def _now() -> float:
+    return time.monotonic()
 
 
-def _resolve_jwks_uri(config: FederatedJwksConfig) -> str:
-    if config.jwks_uri:
-        return config.jwks_uri
-    discovery = f"{config.issuer.rstrip('/')}/.well-known/openid-configuration"
+def _fetch_json(url: str, timeout: float) -> Any:
+    with urllib.request.urlopen(url, timeout=timeout) as res:
+        return json.load(res)
+
+
+def _load_jwk(raw: Any) -> PyJWK | None:
+    """An unusable key (unsupported type, malformed) is skipped; the rest still load."""
     try:
-        with urllib.request.urlopen(discovery, timeout=_DISCOVERY_TIMEOUT_SEC) as res:
-            doc = json.load(res)
-    except (urllib.error.URLError, OSError, ValueError):
-        raise AuthError("JWKS_UNAVAILABLE", "OIDC discovery failed") from None
-    uri = doc.get("jwks_uri") if isinstance(doc, dict) else None
-    if not isinstance(uri, str) or not uri:
-        raise AuthError("JWKS_UNAVAILABLE", "discovery document has no `jwks_uri`")
-    return uri
+        return PyJWK(raw)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+class _KeyResolver:
+    """Resolves a token's signing key from the issuer's JWKS with a BOUNDED cache.
+
+    - The key set is cached for ``_JWKS_LIFESPAN_SEC`` and then re-fetched, so a
+      key the issuer retires stops verifying within that window.
+    - Network attempts (a forced refresh for an unknown ``kid``, or a retry after
+      a failure) are spaced at least ``_JWKS_MIN_REFETCH_SEC`` apart, so tokens
+      with attacker-chosen ``kid`` values cannot drive per-request outbound calls.
+    - If the set cannot be fetched or has expired the result is a denial; stale
+      keys are never served past their lifespan.
+    """
+
+    def __init__(self, config: FederatedJwksConfig) -> None:
+        self._config = config
+        self._lock = threading.Lock()
+        self._jwks_uri: str | None = config.jwks_uri
+        self._keys: dict[str | None, PyJWK] = {}
+        self._fetched_at: float | None = None
+        self._last_attempt: float | None = None
+
+    def _resolve_jwks_uri(self) -> str:
+        if self._jwks_uri:
+            return self._jwks_uri
+        discovery = f"{self._config.issuer.rstrip('/')}/.well-known/openid-configuration"
+        try:
+            doc = _fetch_json(discovery, _DISCOVERY_TIMEOUT_SEC)
+        except (urllib.error.URLError, OSError, ValueError):
+            raise AuthError("JWKS_UNAVAILABLE", "OIDC discovery failed") from None
+        uri = doc.get("jwks_uri") if isinstance(doc, dict) else None
+        if not isinstance(uri, str) or not uri:
+            raise AuthError("JWKS_UNAVAILABLE", "discovery document has no `jwks_uri`")
+        self._jwks_uri = uri
+        return uri
+
+    def _refresh(self) -> None:
+        """Fetch the key set. Caller holds the lock and has checked the cooldown."""
+        self._last_attempt = _now()
+        try:
+            doc = _fetch_json(self._resolve_jwks_uri(), _JWKS_TIMEOUT_SEC)
+            raw_keys = doc.get("keys") if isinstance(doc, dict) else None
+            if not isinstance(raw_keys, list):
+                raise TypeError("no keys")
+            loaded = (_load_jwk(raw) for raw in raw_keys)
+            keys = {jwk.key_id: jwk for jwk in loaded if jwk is not None}
+        except AuthError:
+            raise
+        except (urllib.error.URLError, OSError, ValueError, TypeError):
+            raise AuthError("JWKS_UNAVAILABLE", "could not fetch signing keys") from None
+        self._keys = keys
+        self._fetched_at = _now()
+
+    def _expired(self) -> bool:
+        return self._fetched_at is None or _now() - self._fetched_at >= _JWKS_LIFESPAN_SEC
+
+    def _may_attempt(self) -> bool:
+        return self._last_attempt is None or _now() - self._last_attempt >= _JWKS_MIN_REFETCH_SEC
+
+    def _lookup(self, kid: str | None) -> PyJWK | None:
+        if kid is not None:
+            return self._keys.get(kid)
+        # No `kid`: only unambiguous when the issuer publishes a single key.
+        return next(iter(self._keys.values())) if len(self._keys) == 1 else None
+
+    def get_key(self, token: str) -> Any:
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid")
+        if kid is not None and not isinstance(kid, str):
+            raise AuthError("MALFORMED", "token is not a parseable JWT")
+        with self._lock:
+            if self._expired():
+                self._keys = {}  # an expired set is never served, even if the refetch fails
+                if not self._may_attempt():
+                    raise AuthError("JWKS_UNAVAILABLE", "signing keys are unavailable")
+                self._refresh()
+            jwk = self._lookup(kid)
+            if jwk is None and self._may_attempt():
+                self._refresh()  # the issuer may have rotated in a new key
+                jwk = self._lookup(kid)
+        if jwk is None:
+            raise AuthError("JWKS_UNAVAILABLE", "could not resolve signing key")
+        return jwk.key
+
+
+# One resolver per (issuer, jwks_uri): it owns the fetch + cache, so re-creating it
+# per request would hammer the issuer and defeat the cooldown.
+_resolvers: dict[tuple[str, str | None], _KeyResolver] = {}
+_resolvers_lock = threading.Lock()
 
 
 class _FederatedVerifier:
@@ -238,30 +335,23 @@ class _FederatedVerifier:
             raise AuthError("VERIFIER_UNAVAILABLE", "federated-jwks requires `audience`", 500)
         self._config = config
 
-    def _client(self) -> PyJWKClient:
+    def _resolver(self) -> _KeyResolver:
         key = (self._config.issuer, self._config.jwks_uri)
-        with _jwks_lock:
-            client = _jwks_clients.get(key)
-            if client is None:
-                client = PyJWKClient(
-                    _resolve_jwks_uri(self._config),
-                    cache_keys=True,
-                    cache_jwk_set=True,
-                    lifespan=_JWKS_LIFESPAN_SEC,
-                    timeout=_JWKS_TIMEOUT_SEC,
-                )
-                _jwks_clients[key] = client
-            return client
+        with _resolvers_lock:
+            resolver = _resolvers.get(key)
+            if resolver is None:
+                resolver = _resolvers[key] = _KeyResolver(self._config)
+            return resolver
 
     def verify(self, token: str) -> Identity:
         if not token:
             raise AuthError("NO_TOKEN", "no bearer token presented")
         cfg = self._config
         try:
-            signing_key = self._client().get_signing_key_from_jwt(token)
+            signing_key = self._resolver().get_key(token)
             payload = jwt.decode(
                 token,
-                signing_key.key,
+                signing_key,
                 algorithms=_FEDERATED_ALGORITHMS,
                 issuer=cfg.issuer,
                 audience=cfg.audience,
@@ -281,8 +371,8 @@ class _FederatedVerifier:
             roles=_claim_roles(payload, cfg.roles_claim),
             email=_claim_string(payload, "email"),
             auth_mode="federated-jwks",
-            issued_at=_claim_int(payload, "iat"),
-            expires_at=_claim_int(payload, "exp"),
+            issued_at=_claim_number(payload, "iat"),
+            expires_at=_claim_number(payload, "exp"),
             issuer=_claim_string(payload, "iss"),
             claims=dict(payload),
         )

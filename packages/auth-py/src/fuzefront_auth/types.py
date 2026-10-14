@@ -73,8 +73,8 @@ class Identity:
     roles: tuple[str, ...]
     auth_mode: AuthMode
     email: str | None = None
-    issued_at: int | None = None
-    expires_at: int | None = None
+    issued_at: int | float | None = None
+    expires_at: int | float | None = None
     issuer: str | None = None
     # Verifier-specific extras for migration only; NOT part of the stable contract.
     claims: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)

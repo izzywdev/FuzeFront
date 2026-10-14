@@ -55,6 +55,10 @@ jobs:
           echo "pyproject=$PY_VER  tag=$TAG_VER"
           [ "$PY_VER" = "$TAG_VER" ] || { echo "::error::pyproject version $PY_VER != tag $TAG_VER"; exit 1; }
           echo "version=$PY_VER" >> "$GITHUB_OUTPUT"
+          # The Release tag is derived from the VALIDATED version, never from
+          # github.ref_name: on a workflow_dispatch that is the branch name
+          # (e.g. `master`), which would publish a non-versioned release.
+          echo "tag=auth-py-v$PY_VER" >> "$GITHUB_OUTPUT"
 
       - name: Test before publishing
         run: |
@@ -81,8 +85,8 @@ jobs:
         uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7  # v2
         with:
           files: packages/auth-py/dist/*
-          tag_name: ${{ github.ref_name }}
-          name: fuzefront-auth ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: fuzefront-auth ${{ steps.version.outputs.tag }}
           body: |
             Python authN for FuzeFront-family services: fail-closed token verifier
             (legacy-hs256 / federated-jwks), Flask decorator, FastAPI dependency.
@@ -91,6 +95,6 @@ jobs:
             Node peer: `@fuzefront/auth`
 
             ```bash
-            pip install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fuzefront_auth-${{ steps.version.outputs.version }}-py3-none-any.whl
+            pip install https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/fuzefront_auth-${{ steps.version.outputs.version }}-py3-none-any.whl
             ```
           fail_on_unmatched_files: true

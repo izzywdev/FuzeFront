@@ -120,3 +120,19 @@ def test_errors_never_contain_token_material():
         verifier().verify(token)
     for part in token.split("."):
         assert part not in str(info.value)
+
+
+@pytest.mark.parametrize("kind", ["fuze-org-session", "fuze-workload", "fuze-delegation"])
+def test_non_session_token_kinds_are_rejected(kind):
+    # Narrowed/machine credentials share the secret but are never a user session;
+    # the resolver must not hydrate them with the user's full roles.
+    calls = []
+    v = verifier(resolver=lambda uid: calls.append(uid) or {"roles": ["admin"]})
+    assert code_of(v, make_token(SECRET, claims={"userId": "u", "kind": kind})) == "INVALID_AUDIENCE"
+    assert calls == []
+
+
+def test_fractional_numeric_dates_are_preserved():
+    now = time.time()
+    ident = verifier().verify(make_token(SECRET, claims={"userId": "u", "iat": now - 0.5, "exp": now + 100.25}))
+    assert ident.expires_at == pytest.approx(now + 100.25)

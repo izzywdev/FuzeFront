@@ -22,10 +22,10 @@ AUDIENCE = "fuzefront-python-service"
 
 
 @pytest.fixture(autouse=True)
-def _fresh_jwks_clients():
-    verifier_module._jwks_clients.clear()
+def _fresh_jwks_resolvers():
+    verifier_module._resolvers.clear()
     yield
-    verifier_module._jwks_clients.clear()
+    verifier_module._resolvers.clear()
 
 
 @pytest.fixture(scope="session")
@@ -48,6 +48,18 @@ def _jwk(public_key, kid: str, alg: str) -> dict:
     data = json.loads(algo.to_jwk(public_key))
     data.update({"kid": kid, "use": "sig", "alg": alg})
     return data
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """A controllable monotonic clock for the verifier's cache/cooldown logic."""
+    now = {"t": 1000.0}
+    monkeypatch.setattr(verifier_module, "_now", lambda: now["t"])
+
+    def advance(seconds: float) -> None:
+        now["t"] += seconds
+
+    return advance
 
 
 @pytest.fixture
@@ -85,6 +97,7 @@ def jwks_server(rsa_key, ec_key):
     server = HTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    state["keys"] = keys
     state["base"] = f"http://127.0.0.1:{server.server_port}"
     yield state
     server.shutdown()

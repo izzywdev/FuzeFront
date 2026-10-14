@@ -125,3 +125,73 @@ def test_audience_and_issuer_required_at_construction():
         create_verifier(FederatedJwksConfig(issuer="", audience=AUDIENCE))
     with pytest.raises(AuthError):
         create_verifier(FederatedJwksConfig(issuer=ISSUER, audience=""))
+
+
+def test_unknown_kids_cannot_force_per_request_refreshes(jwks_server, rsa_key, clock):
+    v = verifier(jwks_server)
+    v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD))
+    assert jwks_server["jwks_hits"] == 1
+    for i in range(25):
+        clock(1)  # still inside the refetch cooldown
+        assert code_of(v, make_token(rsa_key, alg="RS256", kid=f"random-{i}", claims=GOOD)) == "JWKS_UNAVAILABLE"
+    assert jwks_server["jwks_hits"] == 1  # no extra outbound calls
+
+
+def test_rotated_in_key_is_picked_up_after_the_cooldown(jwks_server, rsa_key, other_rsa_key, clock):
+    from conftest import _jwk
+
+    v = verifier(jwks_server)
+    v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD))
+    jwks_server["keys"].append(_jwk(other_rsa_key.public_key(), "rsa-2", "RS256"))
+    token = make_token(other_rsa_key, alg="RS256", kid="rsa-2", claims=GOOD)
+    assert code_of(v, token) == "JWKS_UNAVAILABLE"  # inside the cooldown
+    clock(31)
+    assert v.verify(token).user_id == "u-9"
+
+
+def test_retired_key_stops_verifying_after_the_jwks_lifespan(jwks_server, rsa_key, clock):
+    v = verifier(jwks_server)
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)
+    assert v.verify(token).user_id == "u-9"
+    # The issuer retires the key.
+    jwks_server["keys"][:] = [k for k in jwks_server["keys"] if k["kid"] != "rsa-1"]
+    clock(301)
+    assert code_of(v, token) == "JWKS_UNAVAILABLE"
+
+
+def test_expired_keys_are_not_served_when_the_issuer_is_down(jwks_server, rsa_key, clock):
+    v = verifier(jwks_server)
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)
+    v.verify(token)
+    jwks_server["fail"] = True
+    clock(301)
+    assert code_of(v, token) == "JWKS_UNAVAILABLE"  # fail closed, no stale key
+
+
+def test_outage_does_not_hammer_the_issuer(jwks_server, rsa_key, clock):
+    jwks_server["fail"] = True
+    hits = {"n": 0}
+    import fuzefront_auth.verifier as vm
+
+    real = vm._fetch_json
+
+    def counting(url, timeout):
+        hits["n"] += 1
+        return real(url, timeout)
+
+    vm._fetch_json = counting
+    try:
+        v = verifier(jwks_server)
+        for _ in range(10):
+            assert code_of(v, make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)) == "JWKS_UNAVAILABLE"
+        assert hits["n"] == 1
+    finally:
+        vm._fetch_json = real
+
+
+def test_fractional_numeric_dates_are_preserved(jwks_server, rsa_key):
+    now = time.time()
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "iat": now - 1.5, "exp": now + 3600.5})
+    ident = verifier(jwks_server).verify(token)
+    assert ident.expires_at == pytest.approx(now + 3600.5)
+    assert ident.issued_at == pytest.approx(now - 1.5)
