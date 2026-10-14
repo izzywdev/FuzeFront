@@ -18,7 +18,7 @@ on:
         required: true
         default: 'production'
       type:
-        description: 'Flag type if it must be created (release|ops-kill-switch|experiment|permission)'
+        description: 'Flag type if it must be created (release|ops-kill-switch|experiment|permission). ops-kill-switch maps to Unleash kill-switch.'
         required: true
         default: 'release'
       description:
@@ -26,7 +26,7 @@ on:
         required: false
         default: ''
       action:
-        description: 'enable (env on + strategy) or disable (env off — fast rollback)'
+        description: 'enable (strategy upsert then env on) or disable (env off — fast rollback). Must be exactly "enable" or "disable".'
         required: true
         default: 'enable'
 
@@ -40,18 +40,21 @@ concurrency:
 jobs:
   toggle:
     runs-on: fuzefront
+    timeout-minutes: 5
     steps:
       - name: Preconditions
         env:
           UNLEASH_ADMIN_URL: ${{ secrets.UNLEASH_ADMIN_URL }}
           UNLEASH_ADMIN_TOKEN: ${{ secrets.UNLEASH_ADMIN_TOKEN }}
           ROLLOUT: ${{ github.event.inputs.rollout }}
+          ACTION: ${{ github.event.inputs.action }}
         run: |
           set -euo pipefail
           : "${UNLEASH_ADMIN_URL:?UNLEASH_ADMIN_URL secret is not set — devops must provision it}"
           : "${UNLEASH_ADMIN_TOKEN:?UNLEASH_ADMIN_TOKEN secret is not set — devops must provision it}"
           case "$ROLLOUT" in ''|*[!0-9]*) echo "rollout must be an integer 0-100"; exit 1;; esac
           [ "$ROLLOUT" -le 100 ] || { echo "rollout must be <= 100"; exit 1; }
+          case "$ACTION" in enable|disable) : ;; *) echo "action must be exactly 'enable' or 'disable', got: $ACTION"; exit 1;; esac
 
       - name: Toggle flag
         env:
@@ -84,16 +87,33 @@ jobs:
           # create-if-absent (tolerate 409). Build every JSON body with python3 — the
           # free-form $DESCRIPTION (and $FLAG) must never be spliced into JSON by hand,
           # or a quote character produces malformed JSON and a half-enabled flag.
-          create_body=$(python3 -c 'import json,os;print(json.dumps({"name":os.environ["FLAG"],"type":os.environ["FTYPE"],"description":os.environ["DESCRIPTION"]}))')
+          # Map the repo taxonomy type to Unleash wire types: ops-kill-switch → kill-switch.
+          create_body=$(python3 -c '
+import json, os
+type_map = {"ops-kill-switch": "kill-switch"}
+unleash_type = type_map.get(os.environ["FTYPE"], os.environ["FTYPE"])
+print(json.dumps({"name": os.environ["FLAG"], "type": unleash_type, "description": os.environ["DESCRIPTION"]}))
+')
           code=$(curl -sS -o /tmp/c.json -w '%{http_code}' -X POST \
             "$UNLEASH_ADMIN_URL/api/admin/projects/$PROJECT/features" \
             "${AUTH[@]}" -H 'Content-Type: application/json' -d "$create_body")
           case "$code" in 201|409) : ;; *) echo "create failed ($code)"; cat /tmp/c.json; exit 1;; esac
 
-          curl -sf "${AUTH[@]}" -X POST "$base/on"
-
+          # Upsert the unsegmented flexibleRollout strategy BEFORE enabling the environment
+          # so the correct rollout % is live the instant the environment turns on. An env-on
+          # followed by a failed strategy upsert would leave the flag live at a stale %.
+          # Select only unsegmented strategies to avoid ambiguity when a flag has both a
+          # segment-targeted and an unsegmented ramp strategy; fail if multiple match.
           existing=$(curl -sf "${AUTH[@]}" "$base/strategies")
-          sid=$(printf '%s' "$existing" | python3 -c "import sys,json;xs=[s for s in json.load(sys.stdin) if s.get('name')=='flexibleRollout'];print(xs[0]['id'] if xs else '')")
+          sid=$(printf '%s' "$existing" | python3 -c "
+import sys, json
+xs = [s for s in json.load(sys.stdin)
+      if s.get('name') == 'flexibleRollout' and not s.get('segments')]
+if len(xs) > 1:
+    print('ERROR: multiple unsegmented flexibleRollout strategies — resolve in Unleash UI first', file=sys.stderr)
+    sys.exit(1)
+print(xs[0]['id'] if xs else '')
+")
           patch_body=$(python3 -c 'import json,os;print(json.dumps({"parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
           post_body=$(python3 -c 'import json,os;print(json.dumps({"name":"flexibleRollout","parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
           if [ -n "$sid" ]; then
@@ -101,4 +121,7 @@ jobs:
           else
             curl -sf "${AUTH[@]}" -H 'Content-Type: application/json' -X POST "$base/strategies" -d "$post_body"
           fi
+
+          # Enable the environment only after the strategy is in the desired state.
+          curl -sf "${AUTH[@]}" -X POST "$base/on"
           echo "::notice::$FLAG set to ${ROLLOUT}% in $ENVIRONMENT"
