@@ -127,5 +127,7 @@ describe('FuzeQuality Helm registration assets', () => {
     })
     expect(nginx).toContain('location = /api/health')
     expect(nginx).toContain('proxy_pass http://fuzequality-backend:4180/health')
+    expect(nginx).toContain('limit_req_zone $binary_remote_addr zone=fq_health:10m rate=10r/s')
+    expect(nginx.match(/limit_req zone=fq_health burst=20 nodelay/g)).toHaveLength(2)
   })
 })

@@ -263,9 +263,9 @@ app.use((request, response, next) => {
 // probe never depends on the catalog store being reachable.
 //
 // /health/live and /health/ready below predate it and are what the chart's
-// kubelet probes use; they are left exactly as they were. /health is the
-// platform-wide convention every Fuze service answers, and additionally reports
-// whether this build shipped with its own contract.
+// kubelet probes use. /health is the platform-wide convention every Fuze service
+// answers, and additionally reports whether this build shipped with its own
+// contract.
 const openapi = createOpenApiSurface()
 if (!openapi.available) {
   // Not fatal — /health reports it and the spec routes answer 503 — but it must
@@ -278,9 +278,11 @@ app.get('/health/live', (_request, response) => response.json({ status: 'ok' }))
 app.get('/health/ready', async (_request, response) => {
   // A listening process is not ready if its catalog store is unavailable.
   // The bootstrap init container owns schema/topic creation; this probe proves
-  // the API can subsequently query its provisioned PostgreSQL database.
+  // the API can subsequently query its provisioned PostgreSQL database. Keep
+  // this constant-time: readiness is also exposed through the standalone origin
+  // and must never materialize the full catalog in response to a public probe.
   try {
-    await store.portfolio()
+    await store.checkReadiness()
     response.json({ status: 'ready' })
   } catch (error) {
     console.error('FuzeQuality readiness database check failed', error)

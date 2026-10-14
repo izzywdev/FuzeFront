@@ -174,6 +174,7 @@ export function mergeTestExecutionEvidence(
 }
 
 export interface CatalogStore {
+  checkReadiness(): Promise<void>
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
   repositoryScanHistory(id: string, tenantId: string, query?: RepositoryScanHistoryQuery): Promise<RepositoryScanHistoryEntry[]>
@@ -296,6 +297,8 @@ export class MemoryCatalogStore implements CatalogStore {
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
   }
+
+  async checkReadiness() {}
 
   async portfolio(tenantId?: string) {
     const result = structuredClone(this.data)
@@ -933,6 +936,10 @@ export class PostgresCatalogStore implements CatalogStore {
 
   constructor(connectionString: string) {
     this.pool = new pg.Pool({ connectionString })
+  }
+
+  async checkReadiness() {
+    await this.pool.query('SELECT 1')
   }
 
   async portfolio(tenantId?: string): Promise<Portfolio> {
