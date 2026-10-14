@@ -39,6 +39,7 @@
 
 import type { Knex } from 'knex';
 import { db } from '../db';
+import { userRenderings } from '../lib/sharedLists';
 
 /** Either the shared pool or an open transaction. */
 type Executor = Knex | Knex.Transaction;
@@ -321,7 +322,14 @@ export async function checkActiveListQuotaAcross(orgRenderings: string[], userId
   const current = await count({ status: 'active' });
   if (current >= quota.maxLists) throw new QuotaExceededError('org_lists', current, quota.maxLists, 'lists');
   if (userId) {
-    const mine = await count({ created_by: userId, status: 'active' });
+    // The user may have created lists under either rendering of their id (`created_by` is stored verbatim).
+    const r = await (executor('selection_lists')
+      .whereIn('organization_id', orgRenderings)
+      .whereIn('created_by', userRenderings(userId))
+      .where({ status: 'active' })
+      .count('id as count')
+      .first() as Promise<any>);
+    const mine = parseInt(String(r?.count ?? '0'), 10);
     if (mine >= quota.maxListsPerUser) throw new QuotaExceededError('user_lists', mine, quota.maxListsPerUser, 'lists per user');
   }
   return quota;
@@ -430,16 +438,21 @@ export async function getQuotaUsage(orgId: string, userId?: string, renderings?:
   // under any of them, exactly as the write paths enforce. OFF (null): the 4.0.0 exact-id scope. The reported
   // `organization_id` is always the caller's own claim (wire contract unchanged).
   const quota = await quotaForScope(renderings ?? orgId);
-  const countActive = async (extra: Record<string, unknown>): Promise<number> => {
+  const countActive = async (extra: Record<string, unknown>, creators?: string[]): Promise<number> => {
     if (!renderings) return countRows('selection_lists', { organization_id: orgId, ...extra, status: 'active' });
-    const r = await (db('selection_lists').whereIn('organization_id', renderings).where({ ...extra, status: 'active' }).count('id as count').first() as Promise<any>);
+    const q = db('selection_lists').whereIn('organization_id', renderings).where({ ...extra, status: 'active' });
+    if (creators) q.whereIn('created_by', creators);
+    const r = await (q.count('id as count').first() as Promise<any>);
     return parseInt(String(r?.count ?? '0'), 10);
   };
 
   const orgListsCurrent = await countActive({});
 
-  // Count active lists created by the requesting user (0 when userId is absent).
-  const userListsCurrent = userId ? await countActive({ created_by: userId }) : 0;
+  // Count active lists created by the requesting user (0 when userId is absent), under any rendering of the
+  // user id while shared lists are ON (`renderings` given).
+  const userListsCurrent = userId
+    ? await countActive(renderings ? {} : { created_by: userId }, renderings ? userRenderings(userId) : undefined)
+    : 0;
 
   return {
     organization_id: orgId,

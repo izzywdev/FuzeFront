@@ -102,6 +102,53 @@ export function orgRenderings(stored: string): string[] {
   return [...new Set([stored, ...orgForms(canonicalOrgId(stored) ?? stored)])];
 }
 
+// ---------------------------------------------------------------------------
+// User id renderings (same class as the org id: the auth middleware passes `userId`/`sub` verbatim, so a token
+// may carry the `usr_...` TypeID or the bare UUID of one user, and stored `created_by` / mirror `user_id` keep
+// whichever it was)
+// ---------------------------------------------------------------------------
+
+const USER_WIRE_RE = /^usr_[0-9a-z]+$/;
+
+/** `usr_...` TypeID form of a stored user id (TypeID or bare UUID); null when it is neither. */
+export function canonicalUserId(stored: string | null | undefined): string | null {
+  if (!stored) return null;
+  if (USER_WIRE_RE.test(stored)) return stored;
+  if (UUID_RE.test(stored)) return fromUuid('user', stored.toLowerCase());
+  return null;
+}
+
+/** True iff two stored user ids name the same user (renderings compared canonically). */
+export function sameUser(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const ca = canonicalUserId(a);
+  return ca !== null && ca === canonicalUserId(b);
+}
+
+/** Every rendering of a user id (as presented, its `usr_` TypeID and its bare UUID), for `= ANY(?)` / `IN`. */
+export function userRenderings(stored: string): string[] {
+  const forms = new Set<string>([stored]);
+  const wire = canonicalUserId(stored);
+  if (wire) {
+    forms.add(wire);
+    try {
+      forms.add(toUuid(wire as never));
+    } catch {
+      // not codec-valid: the literal forms only
+    }
+  }
+  return [...forms];
+}
+
+/**
+ * The renderings under which to look a user up in STORED data for this request: every rendering while the
+ * shared-lists flag is ON, exactly the id as given while it is OFF (the 4.0.0 exact match).
+ */
+export async function userScope(req: Pick<Request, 'orgId' | 'userId'>, userId: string): Promise<string[]> {
+  return (await sharedListsOn(req)) ? userRenderings(userId) : [userId];
+}
+
 /**
  * The org scope of a WRITE / write-guard lookup. `null` = the 4.0.0 behaviour, an EXACT match on the claim as
  * presented, which applies ONLY while the shared-lists flag is OFF. With the flag ON it is every rendering of the

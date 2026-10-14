@@ -48,6 +48,7 @@
 //   - Cursor: opaque base64url encoding of the last user_id in the page.
 //   - Deterministic order: user_id ASC (stable under concurrent writes).
 
+import type { Knex } from 'knex';
 import { Request, Response } from 'express';
 import { createRouter } from '../lib/http';
 import { parseLimitParam, registerIdParams } from '../middleware/validateInput';
@@ -55,7 +56,7 @@ import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { getAuthzClient, bearer } from '../middleware/authz';
 import { requireListMutation } from '../middleware/listAccess';
-import { writeOrgs } from '../lib/sharedLists';
+import { canonicalUserId, sharedListsOn, userScope, writeOrgs } from '../lib/sharedLists';
 import { authMiddleware } from '../middleware/auth';
 import { lockOrgOutbox } from '../events/outbox';
 import { eventContextFromRequest, emitAccessGranted, emitAccessRevoked } from '../events/emitters';
@@ -115,10 +116,16 @@ function iso(v: Date | string): string {
   return v instanceof Date ? v.toISOString() : new Date(v).toISOString();
 }
 
-function formatGrant(r: AccessRow) {
+/** `wire`: render the user as its `usr_...` TypeID even if the mirror holds the bare-UUID rendering (flag ON). */
+function formatGrant(r: AccessRow, wire = false) {
+  let userId = r.user_id;
+  if (wire) {
+    const c = canonicalUserId(r.user_id);
+    if (c) userId = c;
+  }
   return {
     list_id: r.list_id,
-    user_id: r.user_id,
+    user_id: userId,
     role: r.role,
     granted_by: r.granted_by,
     granted_at: iso(r.granted_at),
@@ -180,8 +187,9 @@ router.get(
           ? encodeCursor(items[items.length - 1]['user_id'])
           : null;
 
+      const wireUsers = await sharedListsOn(req);
       res.status(200).json({
-        items: items.map((r) => formatGrant(r as AccessRow)),
+        items: items.map((r) => formatGrant(r as AccessRow, wireUsers)),
         page: {
           nextCursor,
           hasMore,
@@ -200,6 +208,22 @@ router.get(
 // ---------------------------------------------------------------------------
 // PUT /:listId/access/:userId  — grant or change a role
 // ---------------------------------------------------------------------------
+
+/**
+ * The live grant of a user on a list, found under any of `userForms` (one entry = the exact 4.0.0 lookup).
+ * Returns the role, the tenant it was made in and the subject it is recorded under.
+ */
+async function existingGrant(
+  trx: Knex.Transaction,
+  listId: string,
+  userForms: string[],
+): Promise<{ role: string; org_id: string | null; user_id: string } | undefined> {
+  const q =
+    userForms.length === 1
+      ? trx('selection_list_access').where({ list_id: listId, user_id: userForms[0] })
+      : trx('selection_list_access').where({ list_id: listId }).whereIn('user_id', userForms);
+  return (await q.whereNull('revoked_at').first('role', 'org_id', 'user_id')) as never;
+}
 
 class HttpError extends Error {
   constructor(
@@ -258,6 +282,12 @@ router.put(
     // else the caller's. Role changes revoke/re-grant/compensate THERE, so a grant is never split across two
     // renderings of the org id.
     let grantTenant = orgId;
+    // The target user as the mirror / Security API know them. The path carries the `usr_` TypeID, but a grant made
+    // through a bare-UUID token is stored (and was sent to the Security API) under the UUID: with shared lists ON an
+    // existing grant is found under any rendering and every later write for it uses ITS subject, so a user is
+    // never split into two grants, and the last-owner guard never counts the target as "another owner".
+    let subject = userId;
+    const userForms = await userScope(req, userId);
 
     try {
       if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
@@ -291,13 +321,11 @@ router.put(
         // Serialise every access mutation on this list (guard + writes).
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
-        const existing = await trx('selection_list_access')
-          .where({ list_id: listId, user_id: userId })
-          .whereNull('revoked_at')
-          .first('role', 'org_id');
+        const existing = await existingGrant(trx, listId, userForms);
 
         prior = existing ? (existing['role'] as string) : null;
         if (existing?.['org_id']) grantTenant = existing['org_id'] as string;
+        if (existing?.['user_id']) subject = existing['user_id'] as string;
 
         // Last-owner guard: demoting the only list-owner is refused. Decided by
         // the AUTHORITY (review M-2): another mirror owner must be confirmed by
@@ -307,7 +335,7 @@ router.put(
             executor: trx,
             listId,
             orgId,
-            excludeUserIds: [userId],
+            excludeUserIds: userForms,
             token,
             log: getLog(req),
           });
@@ -320,7 +348,7 @@ router.put(
         }
 
         const assignment = {
-          subject: userId,
+          subject,
           tenant: grantTenant,
           role,
           resource: { type: 'SelectionList', key: listId },
@@ -328,7 +356,7 @@ router.put(
         // An owner demoting themselves must retain manage_access until the
         // final revoke. The replacement is strictly weaker than list-owner;
         // a failed revoke retains existing authority rather than adding any.
-        const selfDemotion = userId === actorId && existing?.['role'] === 'list-owner' && role !== 'list-owner';
+        const selfDemotion = userForms.includes(actorId) && existing?.['role'] === 'list-owner' && role !== 'list-owner';
         if (selfDemotion) {
           writes.grantAttempted = true;
           await getAuthzClient().grant(assignment, callerToken);
@@ -339,7 +367,7 @@ router.put(
           writes.revokeAttempted = true;
           await getAuthzClient().revoke(
             {
-              subject: userId,
+              subject,
               tenant: grantTenant,
               role: existing['role'],
               resource: { type: 'SelectionList', key: listId },
@@ -374,7 +402,7 @@ router.put(
             updated_at = now(),
             revoked_at = NULL
           `,
-          [listId, userId, role, actorId, grantTenant],
+          [listId, subject, role, actorId, grantTenant],
         );
 
         // Outbox, same transaction: access.granted (previousRole null for a new
@@ -389,11 +417,11 @@ router.put(
         }
 
         return (await trx('selection_list_access')
-          .where({ list_id: listId, user_id: userId })
+          .where({ list_id: listId, user_id: subject })
           .first('list_id', 'user_id', 'role', 'granted_by', 'granted_at', 'updated_at')) as AccessRow;
       });
 
-      res.status(200).json(formatGrant(row));
+      res.status(200).json(formatGrant(row, await sharedListsOn(req)));
     } catch (err) {
       if (err instanceof HttpError) {
         res.status(err.status).json(err.body);
@@ -404,7 +432,7 @@ router.put(
       if (writes.revokeAttempted || writes.grantAttempted) {
         await restoreAuthority({
           op: 'put',
-          subject: userId,
+          subject,
           tenant: grantTenant,
           listId,
           prior,
@@ -447,6 +475,8 @@ router.delete(
     const writes: AuthorityWrites = { revokeAttempted: false, grantAttempted: false };
     let prior: string | null = null;
     let grantTenant = orgId; // where the grant being removed was made (see PUT)
+    let subject = userId; // the grant's subject as recorded (see PUT)
+    const userForms = await userScope(req, userId);
 
     try {
       if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
@@ -464,15 +494,13 @@ router.delete(
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
         // Fetch current grant for last-owner guard and idempotency.
-        const existing = await trx('selection_list_access')
-          .where({ list_id: listId, user_id: userId })
-          .whereNull('revoked_at')
-          .first('role', 'org_id');
+        const existing = await existingGrant(trx, listId, userForms);
 
         // Idempotent: no active grant → nothing to do (204).
         if (!existing) return;
         prior = existing['role'] as string;
         if (existing['org_id']) grantTenant = existing['org_id'] as string;
+        if (existing['user_id']) subject = existing['user_id'] as string;
 
         // Last-owner guard, decided by the AUTHORITY (review M-2): another
         // mirror owner must be confirmed by the Security API.
@@ -481,7 +509,7 @@ router.delete(
             executor: trx,
             listId,
             orgId,
-            excludeUserIds: [userId],
+            excludeUserIds: userForms,
             token,
             log: getLog(req),
           });
@@ -500,7 +528,7 @@ router.delete(
         writes.revokeAttempted = true;
         await getAuthzClient().revoke(
           {
-            subject: userId,
+            subject,
             tenant: grantTenant,
             role: existing['role'],
             resource: { type: 'SelectionList', key: listId },
@@ -509,7 +537,7 @@ router.delete(
         );
 
         await trx('selection_list_access')
-          .where({ list_id: listId, user_id: userId })
+          .where({ list_id: listId, user_id: subject })
           .update({ revoked_at: trx.fn.now(), updated_at: trx.fn.now() });
 
         // Outbox, same transaction: access.revoked (an idempotent no-op returned above).
@@ -531,7 +559,7 @@ router.delete(
       if (writes.revokeAttempted) {
         await restoreAuthority({
           op: 'delete',
-          subject: userId,
+          subject,
           tenant: grantTenant,
           listId,
           prior,

@@ -61,7 +61,7 @@ import {
   requirePublishForPlatformList,
   requirePublishWhenBodyIsPlatform,
 } from '../middleware/listAccess';
-import { canonicalOrgId, isVisibility, orgForms, orgIs, orgRenderings, writeOrgs, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
+import { sameUser, canonicalOrgId, isVisibility, orgForms, orgIs, orgRenderings, writeOrgs, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
 import { editableIds, getReadScope, readableByOrg } from '../services/sharedReads';
 import { formatList, LIST_COLUMNS, singleCtx, type ListRow } from './listShape';
 import { lockOrgOutbox, wireUserId } from '../events/outbox';
@@ -1072,7 +1072,7 @@ async function cleanupPurgedGrants(req: Request, listId: string, grants: Instanc
   }
   try {
     const actor = req.userId;
-    const ordered = [...grants].sort((x, y) => Number(x.user_id === actor) - Number(y.user_id === actor));
+    const ordered = [...grants].sort((x, y) => Number(sameUser(x.user_id, actor)) - Number(sameUser(y.user_id, actor)));
     const { revoked, failed } = await revokeInstanceGrants({
       orgId: req.orgId as string,
       listId,
