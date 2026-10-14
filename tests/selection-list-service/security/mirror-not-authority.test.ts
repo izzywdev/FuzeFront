@@ -11,6 +11,11 @@
  *   1. Create a list as USER_A (owner). USER_B has NO Permit grant.
  *   2. Directly INSERT a `list-owner` row into `selection_list_access` for
  *      USER_B, bypassing the Permit API (stale/injected mirror row scenario).
+ *      The row is injected in BOTH renderings of USER_B (TypeID and bare UUID;
+ *      helpers/db.ts) because service builds differ in which form they store
+ *      and look up by. A row in only one form would be invisible to a service
+ *      keyed by the other, and the test would pass without ever having
+ *      exercised "the mirror is consulted".
  *   3. Make mutating requests as USER_B and assert they are DENIED (403/404).
  *      If the service authorizes from the mirror table, USER_B would succeed —
  *      that is the regression this test catches.
@@ -23,6 +28,14 @@
  *   a local run with no test database) each test FAILS LOUDLY; it is never
  *   silently skipped, so an unverified run can never report a false green.
  *
+ * NON-VACUITY (manual mutation check, since it needs a modified service): patch
+ * the service's authz middleware so that, before asking the Security API, it
+ * allows the request when `selection_list_access` holds a non-revoked row for
+ * (listId, user) - once keyed by the TypeID, once by the bare UUID. With the
+ * mirror consulted in EITHER form, the six USER_B denial tests below must
+ * fail. The patch and the recorded result are in the README ("FFRNT-242 -
+ * proving the test is not vacuous").
+ *
  * This test does NOT verify implementation internals. It verifies OBSERVABLE
  * BEHAVIOUR: USER_B's API calls are denied even though a mirror row grants them
  * access.
@@ -33,6 +46,7 @@ import { mintTestToken } from '../helpers/auth';
 import {
   insertDirectAccessGrant,
   removeDirectAccessGrant,
+  directAccessRowCount,
   getDbClient,
   closeDb,
 } from '../helpers/db';
@@ -137,6 +151,9 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
       role: 'list-owner',
       granted_by: USER_A,
     });
+    // Guard against a vacuous pass: the injection must have landed in BOTH renderings, so a service keyed
+    // by either form would find it if it consulted the mirror.
+    expect(await directAccessRowCount(testListId, USER_B)).toBe(2);
   });
 
   afterEach(async () => {

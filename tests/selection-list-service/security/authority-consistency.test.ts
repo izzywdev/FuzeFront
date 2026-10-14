@@ -22,8 +22,9 @@
 import { rawFetch } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
 import { testOrg, testUser } from '../helpers/ids';
+import { FAKE_SECURITY_URL } from '../helpers/security-url';
 
-const FAKE_URL = process.env['SECURITY_SERVICE_URL'] ?? 'http://localhost:3002';
+const FAKE_URL = FAKE_SECURITY_URL;
 
 const ORG_ID = testOrg('authorit');
 const OWNER = testUser('authora');
