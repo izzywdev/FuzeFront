@@ -219,6 +219,11 @@ COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
 # not `build`, so a production image never carries tsup/jest/typescript.
 COPY --from=base /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 COPY --from=build /app/services/chat-service/dist ./services/chat-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/chat-service/package.json ./services/chat-service/package.json
 # Product docs corpus for the chat-doc-indexer Job.
 COPY --from=build /app/services/chat-service/docs ./services/chat-service/docs
 

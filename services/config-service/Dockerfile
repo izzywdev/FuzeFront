@@ -106,6 +106,11 @@ RUN apk add --no-cache dumb-init && \
 
 COPY --from=base /app/services/config-service/node_modules ./services/config-service/node_modules
 COPY --from=build /app/services/config-service/dist ./services/config-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/config-service/package.json ./services/config-service/package.json
 # src/routes/docs.routes.ts (FFRNT-258) resolves openapi.yaml relative to its
 # OWN compiled location — dist/routes/../../openapi.yaml — i.e. the service
 # ROOT, not under dist/. tsc only emits dist/, so the committed contract has

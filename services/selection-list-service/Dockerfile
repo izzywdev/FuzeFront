@@ -179,6 +179,11 @@ RUN apk add --no-cache dumb-init && \
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/services/selection-list-service/node_modules ./services/selection-list-service/node_modules
 COPY --from=build /app/services/selection-list-service/dist ./services/selection-list-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/selection-list-service/package.json ./services/selection-list-service/package.json
 # @fuzefront/auth is a workspace dependency, so npm LINKS it --
 # node_modules/@fuzefront/auth is a symlink to /app/packages/auth. The base
 # stage above ships packages/auth/package.json (workspace manifest list) so

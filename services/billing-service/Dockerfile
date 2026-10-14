@@ -117,6 +117,11 @@ COPY --from=build /app/shared/package.json ./shared/package.json
 # service (WORKDIR walks up) resolve them.
 COPY --from=base /app/services/billing-service/node_modules ./node_modules
 COPY --from=build /app/services/billing-service/dist ./services/billing-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/billing-service/package.json ./services/billing-service/package.json
 # @izzywdev/fuzefront-identity is a `file:` dependency, so npm LINKS it —
 # node_modules/@izzywdev/fuzefront-identity is a symlink to /app/packages/identity.
 # The base stage now ships packages/identity/package.json so that link resolves

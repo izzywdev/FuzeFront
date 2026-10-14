@@ -130,6 +130,11 @@ COPY --from=build /app/packages/telemetry/package.json ./packages/telemetry/pack
 COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
 COPY --from=base /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 COPY --from=build /app/services/notification-service/dist ./services/notification-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/notification-service/package.json ./services/notification-service/package.json
 
 # Declaration files are build output, not runtime input.
 RUN find ./services/notification-service/dist -name "*.d.ts" -type f -delete
