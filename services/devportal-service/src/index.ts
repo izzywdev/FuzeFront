@@ -17,9 +17,15 @@ import { runBootstrapHarvest } from './services/bootstrapHarvest';
 // Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
 // backend/security/src/index.ts for the full rationale). Sends OTLP to
 // FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
 const telemetry: TelemetryHandle = initTelemetry({
   serviceName: 'devportal-service',
-  serviceVersion: process.env.npm_package_version,
+  serviceVersion: SERVICE_VERSION,
 });
 
 async function main(): Promise<void> {

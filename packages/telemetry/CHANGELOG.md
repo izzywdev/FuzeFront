@@ -3,6 +3,25 @@
 All notable changes to this package are documented here. Versioned
 independently — bump on every interface change (SemVer).
 
+## 0.1.1 — tracingMiddleware() ends streaming spans on `close`, not just `finish`
+
+> This branch forked before `fix/telemetry-express-5-peer-range` (PR #1487,
+> also bumping to 0.1.1 — the Express 5 peer-range widen) merged. If that
+> lands first, resolving the conflict on this file means **both** changes
+> ship, at 0.1.2 — not picking one over the other.
+
+### Fixed
+
+- `tracingMiddleware()` only ended its span on the response's `finish`
+  event. A long-lived streaming response (SSE, chunked keep-alive) never
+  calls `res.end()` itself, so `finish` never fires — the span, and
+  everything nested under it, never ended and was never exported. Surfaced
+  wiring the middleware into `notification-service`'s `/stream` SSE route
+  during the fleet-wide OTel rollout (PR #1489). Fixed by also ending on
+  `close` (which fires on both a normal completed response, after
+  `finish`, and an abrupt client disconnect), guarded so a normal request —
+  where both events now fire — ends its span exactly once.
+
 ## 0.1.0 — Initial implementation
 
 Phases 1–3 of the OpenTelemetry distributed-tracing initiative: a Node SDK

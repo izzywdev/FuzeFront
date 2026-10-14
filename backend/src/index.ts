@@ -75,9 +75,15 @@ dotenv.config()
 // ExpressInstrumentation patch shared module/prototype state looked up at CALL
 // time, but request handling must not start first). Sends OTLP to FuzeInfra's
 // Collector; endpoint/protocol/sampling default from OTEL_* env vars.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version
 const telemetry: TelemetryHandle = initTelemetry({
   serviceName: 'backend',
-  serviceVersion: process.env.npm_package_version,
+  serviceVersion: SERVICE_VERSION,
 })
 
 // Prometheus metrics (Phase E). Scraped at /metrics; gracefully degrades to a
