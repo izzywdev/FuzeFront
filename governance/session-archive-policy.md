@@ -15,7 +15,19 @@ does **not** answer with a "still open, but not here" list. It executes the hand
    motivated it, and what done looks like. Never include secrets.
 3. **Show the spawned sessions** to the user as links (`https://claude.ai/code/<session_id>`),
    one line per item: what it covers and which repo it targets.
-4. **Archive the current session** (`archive_session`) once the links are posted.
+4. **Confirm each child started** (`get_session` on each: status has left pending and the
+   child is working). A child validates its hand-off against a *running* parent
+   (`governance/cross-session-orchestration.md`), so the parent stays active until every child
+   has started; if one has not started, say so instead of archiving.
+5. **Archive the current session** (`archive_session`) once the links are posted and every
+   child has started, and no user question is unanswered (see below).
+
+## Scope
+
+Sessions that have the Claude Code Remote session tools (`create_session`, `get_session`,
+`archive_session`). Where those tools are unavailable (other provider runtimes, or a delegation
+transport such as `spawn_agent`), do not improvise: list the items, name the transport that
+would be needed, and leave archiving to the user.
 
 ## Preconditions (do these first, never skip)
 
@@ -28,7 +40,9 @@ does **not** answer with a "still open, but not here" list. It executes the hand
 ## Not covered
 
 - Items that need a decision only the user can make: put those in the reply as questions; do
-  not spawn a session that would just stall on them.
+  not spawn a session that would just stall on them, and do **not archive** while any such
+  question is unanswered (an archived session is read-only until unarchived, so the user could
+  not answer where the context lives). Spawn the rest, ask the question, archive after the answer.
 - Never edit another repo from the current session to save a spawn; delegate it.
 - An answer of "nothing outstanding" is valid when the enumeration in step 1 is empty: archive
   and say so.
