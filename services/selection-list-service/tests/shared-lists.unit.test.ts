@@ -95,6 +95,18 @@ describe('readableByOrg - SQL shape', () => {
   });
 });
 
+describe('readableByOrg - the default listing (includePlatform: false)', () => {
+  it('feature on: the org\'s own rows across EVERY rendering, no platform branch', () => {
+    const q = readableByOrg('sl', UUID, { shared: true, platformOrg: PLATFORM, includePlatform: false });
+    expect(q.sql).toBe('sl.organization_id = ANY(?)');
+    expect((q.params[0] as string[]).sort()).toEqual([PLATFORM, UUID].sort());
+  });
+  it('feature off, or the platform org unresolved: the 4.0.0 exact match, whatever includePlatform says', () => {
+    expect(readableByOrg('sl', UUID, { shared: false, platformOrg: null, includePlatform: false })).toEqual({ sql: 'sl.organization_id = ?', params: [UUID] });
+    expect(readableByOrg('sl', UUID, { shared: true, platformOrg: null, includePlatform: false })).toEqual({ sql: 'sl.organization_id = ?', params: [UUID] });
+  });
+});
+
 describe('orgRenderings - the one canonical helper', () => {
   it('lists the claim as presented plus its TypeID and bare UUID, once each', () => {
     expect(orgRenderings(PLATFORM).sort()).toEqual([PLATFORM, UUID].sort());

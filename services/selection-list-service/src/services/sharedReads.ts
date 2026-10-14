@@ -24,6 +24,12 @@ export interface ReadScope {
   shared: boolean;
   /** Wire id of the platform organization when it resolves, else null (platform features fail closed). */
   platformOrg: string | null;
+  /**
+   * Also include the platform organization's common lists (default true). The default listing (no
+   * `include_shared`) sets it false: it is the caller's OWN organization only - but still across every
+   * rendering of the org id (bare UUID / TypeID) while the feature is on.
+   */
+  includePlatform?: boolean;
 }
 
 export async function getReadScope(req: Pick<Request, 'orgId' | 'userId'>): Promise<ReadScope> {
@@ -35,6 +41,7 @@ export async function getReadScope(req: Pick<Request, 'orgId' | 'userId'>): Prom
 export function readableByOrg(alias: string, orgId: string, scope: ReadScope): { sql: string; params: Array<string | string[]> } {
   const p = alias ? `${alias}.` : '';
   if (!scope.shared || !scope.platformOrg) return { sql: `${p}organization_id = ?`, params: [orgId] };
+  if (scope.includePlatform === false) return { sql: `${p}organization_id = ANY(?)`, params: [orgRenderings(orgId)] };
   return {
     sql: `(${p}organization_id = ANY(?) OR (${p}visibility = 'platform' AND ${p}organization_id = ANY(?)))`,
     params: [orgRenderings(orgId), orgForms(scope.platformOrg)],

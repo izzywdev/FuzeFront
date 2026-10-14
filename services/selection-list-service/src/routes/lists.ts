@@ -303,10 +303,12 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
   try {
     // The platform organization (common lists) only matters for include_shared; unresolved => fail closed
     // (the scope falls back to the caller's own organization).
-    const platformOrg = shared && includeShared ? (await getReadScope(req)).platformOrg : null;
+    // The org's own rows match every rendering of its id whenever the feature is on (and the platform org
+    // resolves), including the default listing; the common lists are added only for include_shared.
+    const platformOrg = shared ? (await getReadScope(req)).platformOrg : null;
 
     // Build parameterized WHERE clauses (the scope first, then the filters; the cursor is page-only)
-    const scope = readableByOrg('sl', req.orgId as string, { shared: shared && includeShared, platformOrg });
+    const scope = readableByOrg('sl', req.orgId as string, { shared, platformOrg, includePlatform: includeShared });
     const whereClause: string[] = [scope.sql];
     const params: (string | number | boolean | null | Date | string[])[] = [...scope.params] as never[];
 
@@ -555,10 +557,14 @@ router.post('/', requireCatalogCheck('create'), requirePublishWhenBodyIsPlatform
         await checkListQuota(req.orgId as string, trx, req.userId);
       }
 
-      if (visibility === 'platform') {
+      // Shared lists ON: (organization_id, key) is unique per ORG, not per rendering of its id. The DB
+      // constraint is exact on the stored text, so a bare-UUID claim and an `org_...` claim of the same org
+      // could each create the same key; check every rendering of the owning org (any visibility, any status),
+      // under the canonical org lock taken above. OFF: nothing extra (the 4.0.0 exact constraint only).
+      if (shared) {
         const taken = await trx.raw(`SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ?`, [orgRenderings(ownerOrg), key.trim()]);
         if ((taken as { rows?: unknown[] }).rows?.length) {
-          throw Object.assign(new Error('common list key taken'), { code: '23505' });
+          throw Object.assign(new Error('list key taken'), { code: '23505' });
         }
       }
 
@@ -828,6 +834,7 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
 
   try {
     let previousVisibility: string | null = null;
+    let commonKeyTaken = false;
     const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok' | 'visibility-locked' | 'not-platform-owned' | 'key-taken'> => {
       // Lock order is ALWAYS org outbox lock -> list row (emitters/outbox.ts), so a
       // concurrent item create / purge / access write on this org cannot deadlock.
@@ -858,18 +865,26 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
         }
         previousVisibility = currentVisibility;
       }
-      // Common-list keys are unique across EVERY rendering of the platform org's id (a list may have been
-      // stored under either): checked on promotion and on a rename of a list that is already common.
+      // Keys are unique per ORG across EVERY rendering of its id (a list may have been stored under either),
+      // not just per stored text: checked on every rename and on a promotion while shared lists are ON. A
+      // common list is also checked against the platform org's configured id. OFF: the exact 4.0.0 constraint.
       const newKey = body.key !== undefined ? body.key.trim() : current.key;
       const promoting = visibilityChanging && wantsVisibility === 'platform';
-      if (promoting || (currentVisibility === 'platform' && newKey !== current.key)) {
-        const platformOrg = await resolvePlatformOrgId(trx);
-        if (platformOrg) {
-          const dup = await trx.raw(
-            `SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ? AND id <> ?`,
-            [orgRenderings(platformOrg), newKey, listId],
-          );
-          if ((dup as { rows?: unknown[] }).rows?.length) return 'key-taken';
+      let keyTakenByCommon = false;
+      if (shared && (promoting || newKey !== current.key)) {
+        const owners = new Set<string>(orgRenderings(current.organization_id as string));
+        if (promoting || currentVisibility === 'platform') {
+          const platformOrg = await resolvePlatformOrgId(trx);
+          if (platformOrg) for (const o of orgRenderings(platformOrg)) owners.add(o);
+          keyTakenByCommon = true;
+        }
+        const dup = await trx.raw(
+          `SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ? AND id <> ?`,
+          [[...owners], newKey, listId],
+        );
+        if ((dup as { rows?: unknown[] }).rows?.length) {
+          commonKeyTaken = keyTakenByCommon;
+          return 'key-taken';
         }
       }
 
@@ -969,7 +984,10 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
       return;
     }
     if (outcome === 'key-taken') {
-      res.status(409).json({ code: 'CONFLICT', message: 'A common list with that key already exists.' });
+      res.status(409).json({
+        code: 'CONFLICT',
+        message: commonKeyTaken ? 'A common list with that key already exists.' : 'A list with that key already exists.',
+      });
       return;
     }
     if (outcome === 'not-platform-owned') {

@@ -198,8 +198,11 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
     it('promotion to platform checks the key across renderings (409), and renaming a common list onto a taken key too', async () => {
       const taken = await w.api(P.op).post('/v1/selection-lists', { key: 'promo-k', name: 'T', visibility: 'platform' });
       expect(taken.status).toBe(201);
-      const mine = await w.api(opUuid).post('/v1/selection-lists', { key: 'promo-k', name: 'Mine' }); // private, stored under the UUID rendering
-      expect(mine.status).toBe(201);
+      // a private list stored under the UUID rendering (a legacy row: a create through either rendering of the
+      // platform org would now collide with the common list's key)
+      const mine = { body: { id: 'front_sl_promok00000001' }, status: 201 };
+      await w.db('selection_lists').insert({ id: mine.body.id, organization_id: uuid, key: 'promo-k', created_by: 'usr_x' });
+      w.authz.give(uuid, opUuid.userId, mine.body.id, 'list-owner');
       const promote = await w.api(opUuid).patch(`/v1/selection-lists/${mine.body.id}`, { visibility: 'platform' });
       expect(promote.status).toBe(409);
       expect((await w.db('selection_lists').where({ id: mine.body.id }).first()).visibility).toBe('private');
