@@ -580,3 +580,36 @@ def test_a_loopback_issuer_does_not_widen_the_allowance_for_a_remote_configured_
     finally:
         vm._fetch_json = real
     assert seen == [(jwks_uri, False)]
+
+
+def test_a_string_exp_is_rejected_in_federated_mode(jwks_server, rsa_key):
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "exp": "9999999999"})
+    assert code_of(verifier(jwks_server), token) == "MALFORMED"
+
+
+def test_a_loopback_issuer_does_not_widen_the_allowance_for_a_remote_discovered_jwks_uri(rsa_key):
+    # The issuer is local-dev (loopback http) but its discovery document delegates keys to a
+    # remote https host: that fetch must not carry the loopback exception either.
+    import fuzefront_auth.verifier as vm
+
+    issuer = "http://localhost:8080"
+    jwks_uri = "https://keys.example.invalid/jwks"
+    seen = []
+
+    def fake(url, timeout, allow_loopback_http=False):
+        seen.append((url, allow_loopback_http))
+        if url.endswith("/.well-known/openid-configuration"):
+            return {"issuer": issuer, "jwks_uri": jwks_uri}
+        raise OSError("down")
+
+    real = vm._fetch_json
+    vm._fetch_json = fake
+    try:
+        v = create_verifier(FederatedJwksConfig(issuer=issuer, audience=AUDIENCE))
+        token = make_token(rsa_key, alg="RS256", kid="k", claims={"sub": "u", "iss": issuer, "aud": AUDIENCE})
+        with pytest.raises(AuthError):
+            v.verify(token)
+    finally:
+        vm._fetch_json = real
+    assert seen[-1] == (jwks_uri, False)
+    assert seen[0][1] is True  # discovery itself still gets the dev allowance

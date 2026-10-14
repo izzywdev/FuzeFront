@@ -237,3 +237,14 @@ def test_legacy_issuer_is_compared_exactly_even_if_the_library_is_lenient(monkey
     v = verifier(issuer="urn:expected")
     assert code_of(v, make_token(SECRET, claims={"userId": "u", "iss": "urn:"})) == "INVALID_ISSUER"
     assert v.verify(make_token(SECRET, claims={"userId": "u", "iss": "urn:expected"})).user_id == "u"
+
+
+@pytest.mark.parametrize("exp", ["9999999999", float("inf"), True, [1], None])
+def test_a_non_numeric_exp_is_rejected_not_authenticated_without_expiry(exp):
+    # PyJWT coerces a string `exp` for validation; the identity contract says numeric.
+    token = make_token(SECRET, claims={"userId": "u", "exp": exp})
+    assert code_of(verifier(), token) in {"MALFORMED", "EXPIRED", "MISSING_CLAIM"}
+
+
+def test_a_string_exp_specifically_is_malformed():
+    assert code_of(verifier(), make_token(SECRET, claims={"userId": "u", "exp": "9999999999"})) == "MALFORMED"

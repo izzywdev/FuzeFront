@@ -692,3 +692,16 @@ def test_a_stall_after_or_during_the_tls_handshake_is_cut_off_and_released(monke
     finally:
         stop.set()
         srv.close()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://\u00b2\u00b9\u00b30706433/jwks",  # NFKC-normalises to 2130706433 == 127.0.0.1
+        "https://127\u30020\u30020\u30021/jwks",  # ideographic full stops
+        "https://\uff11\uff12\uff17.0.0.1/jwks",  # fullwidth digits
+    ],
+)
+def test_idna_normalisable_hosts_cannot_smuggle_a_private_address(url):
+    with pytest.raises(ValueError, match="non-public|host"):
+        fetch_json(url, 1)

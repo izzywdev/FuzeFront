@@ -21,6 +21,7 @@ This module does not log.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 import urllib.error
@@ -142,6 +143,15 @@ def _require_exact_issuer(payload: dict[str, Any], expected: str) -> None:
         raise AuthError("INVALID_ISSUER", "unexpected token issuer")
 
 
+def _require_numeric_exp(payload: dict[str, Any]) -> None:
+    """PyJWT coerces a string `exp` ("9999999999") to an int for validation. The identity
+    contract defines `expires_at` as numeric, so a token whose required `exp` is not an actual
+    finite number is rejected rather than authenticated with no known expiry."""
+    exp = payload.get("exp")
+    if isinstance(exp, bool) or not isinstance(exp, (int, float)) or not math.isfinite(exp):
+        raise AuthError("MALFORMED", "token `exp` claim is not a number")
+
+
 def _claim_roles(payload: dict[str, Any], name: str) -> tuple[str, ...]:
     value = payload.get(name)
     if isinstance(value, list):
@@ -224,6 +234,7 @@ class _LegacyVerifier:
             raise _to_auth_error(err) from None
         if cfg.issuer is not None:
             _require_exact_issuer(payload, cfg.issuer)
+        _require_numeric_exp(payload)
 
         # Only a PLAIN platform session authenticates here. A token carrying a
         # `kind` (`fuze-org-session`, `fuze-workload`, `fuze-delegation`) is a
@@ -399,7 +410,10 @@ class _KeyResolver:
         """Fetch the key set. Caller holds the lock and has checked the cooldown."""
         self._last_attempt = _now()
         try:
-            doc = _fetch_json(self._resolve_jwks_uri(), _JWKS_TIMEOUT_SEC, self._dev_jwks)
+            jwks_uri = self._resolve_jwks_uri()
+            # A discovered URI may point anywhere the issuer says; the loopback exception
+            # only applies when that endpoint is itself loopback http.
+            doc = _fetch_json(jwks_uri, _JWKS_TIMEOUT_SEC, self._dev_jwks and is_loopback_http(jwks_uri))
             raw_keys = doc.get("keys") if isinstance(doc, dict) else None
             if not isinstance(raw_keys, list):
                 raise TypeError("no keys")
@@ -520,6 +534,7 @@ class _FederatedVerifier:
                 last = err
                 continue
             _require_exact_issuer(payload, cfg.issuer)
+            _require_numeric_exp(payload)
             return payload
         raise last if last is not None else AuthError("JWKS_UNAVAILABLE", "could not resolve signing key")
 

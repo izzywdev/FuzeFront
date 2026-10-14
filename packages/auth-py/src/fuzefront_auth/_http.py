@@ -54,6 +54,13 @@ def is_loopback_http(url: Any) -> bool:
 
 
 def _non_public_literal(host: str) -> bool:
+    # The platform resolver IDNA-encodes a str host before resolving it, which NFKC-normalises
+    # compatibility characters ("\u00b2\u00b9\u00b30706433" -> "2130706433") and maps fullwidth dots.
+    # Judge the host as it will actually be resolved.
+    try:
+        host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        raise ValueError("url host is not a valid hostname") from None
     host = host.lower().rstrip(".")
     if host == "localhost" or host.endswith(".localhost"):
         return True
