@@ -396,15 +396,63 @@ class TestRungGating(unittest.TestCase):
                         f"{step} announced a missing key under review-only (code={code})",
                     )
 
+    @staticmethod
+    def _gh_value_eval(expr, ctx):
+        """Evaluate a `${{ value &&/||/==/!= value }}` GitHub Actions expression,
+        preserving operand VALUES rather than coercing to bool.
+
+        This is deliberately separate from `_evaluate`/`_Parser` above: those force
+        every `&&`/`||` operand through `_truthy()` because they evaluate boolean
+        `if:` gates, where only the final bool matters. A `with:` value expression
+        is different — what is forwarded is the actual short-circuited operand
+        (e.g. an API key, or `''`), and that distinction is exactly what the bug
+        this test guards against got wrong. Python's `and`/`or` already implement
+        the same short-circuit-on-truthiness rule GitHub's `&&`/`||` do, so after
+        substituting each `inputs.x` identifier with its literal value, the
+        expression can be evaluated near-verbatim instead of re-deriving the logic
+        by hand (which would test this test's own assumption, not the file).
+        """
+        e = _norm(expr)
+        assert e.startswith("${{") and e.endswith("}}"), e
+        body = e[3:-2].strip()
+        for name, value in ctx.items():
+            if name not in body:
+                raise GateSyntaxError(f"expression does not reference {name!r}: {body!r}")
+            body = body.replace(name, repr(value))
+        body = body.replace("&&", " and ").replace("||", " or ")
+        return eval(body, {"__builtins__": {}}, {})  # noqa: S307 — fixed test-local grammar only
+
     def test_review_only_does_not_forward_non_anthropic_keys_to_llm_endpoint(self):
         """With review-only the runner-local chain must be anthropic-only (single-vendor
         direct path, no container). The anthropic key is forwarded unconditionally; the
-        openai/gemini keys only when review-only is not 'true'."""
+        openai/gemini keys only when review-only is not 'true'.
+
+        Checked by SEMANTICS, not substring. `inputs.review-only == 'true' && '' || key`
+        shipped once already and always evaluates to `key`: `true && ''` is falsy, so
+        GitHub's `&&` short-circuits to that falsy left-hand VALUE, and `'' || key` then
+        falls through to `key` regardless of review-only. A substring check for
+        `== 'true'` would have passed on that exact regression, which is why this computes
+        the actual forwarded value — from the real expression in the file, via
+        `_gh_value_eval` — for every (review-only, key) combination instead.
+        """
         w = self.steps["llm"]["with"]
         self.assertEqual(_norm(w["fallback-anthropic-key"]), "${{ inputs.anthropic-api-key }}")
         for vendor in ("openai", "gemini"):
             expr = _norm(w[f"fallback-{vendor}-key"])
-            self.assertIn("inputs.review-only == 'true'", expr)
+            self.assertIn("review-only", expr)
+            for review_only in ("true", "false"):
+                for key in ("", "sk-vendor"):
+                    ctx = {
+                        "inputs.review-only": review_only,
+                        f"inputs.{vendor}-api-key": key,
+                    }
+                    forwarded = self._gh_value_eval(expr, ctx)
+                    expected = key if review_only != "true" else ""
+                    self.assertEqual(
+                        forwarded,
+                        expected,
+                        f"vendor={vendor} review-only={review_only} key={key!r}",
+                    )
             self.assertIn(f"inputs.{vendor}-api-key", expr)
 
 
