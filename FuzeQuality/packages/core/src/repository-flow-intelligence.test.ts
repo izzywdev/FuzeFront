@@ -5,6 +5,7 @@ import {
   REPOSITORY_FLOW_PROMPT_VERSION,
   REPOSITORY_FLOW_SCHEMA_VERSION,
   REPOSITORY_FLOW_SOURCE_BUDGET_BYTES,
+  RepositoryFlowAnalysisTimeoutError,
 } from './repository-flow-intelligence'
 
 const repository = { id: 'repo-1', tenantId: 'tenant-1', owner: 'fuze', name: 'front', canonicalUrl: 'https://example.test/front', defaultBranch: 'main', kind: 'application' as const, includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true, lastScanStatus: 'complete' as const }
@@ -138,5 +139,18 @@ describe('repository flow wireframes', () => {
 
     expect(sourceBytes).toBeLessThanOrEqual(REPOSITORY_FLOW_SOURCE_BUDGET_BYTES)
     expect(promptVersion).toBe('fuzequality-repository-flow-v3')
+  })
+
+  it('aborts a stalled FuzeInfra LiteLLM analysis at its configured deadline', async () => {
+    const fetchImpl = ((_url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      })) as typeof fetch
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer(
+      'http://litellm/v1', 'quality-analysis', undefined, fetchImpl, 5,
+    )
+
+    await expect(analyzer.analyze(repository, 'abc', artifacts))
+      .rejects.toBeInstanceOf(RepositoryFlowAnalysisTimeoutError)
   })
 })

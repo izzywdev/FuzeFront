@@ -60,7 +60,7 @@ export type RepositoryAnalysisStatus = {
   finishedAt?: string
   counts?: { deterministic: number; evaluations: number; proposed: number }
   /** Stable, non-sensitive failure classification; raw provider errors are never exposed. */
-  errorCode?: 'INTELLIGENCE_UNAVAILABLE'
+  errorCode?: 'INTELLIGENCE_UNAVAILABLE' | 'INTELLIGENCE_TIMEOUT'
 }
 
 export type RepositoryProcessingStatus = Pick<Repository,

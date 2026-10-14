@@ -1,5 +1,5 @@
 import type { PolicyGateEvaluation, QualityArtifact, Repository, RepositoryAnalysisStatus, RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { deterministicRepositoryFlows, evaluatePolicyGates, type LiteLlmRepositoryFlowAnalyzer } from '@fuzequality/core'
+import { deterministicRepositoryFlows, evaluatePolicyGates, RepositoryFlowAnalysisTimeoutError, type LiteLlmRepositoryFlowAnalyzer } from '@fuzequality/core'
 
 export const POLICY_GATE_EVALUATION_BATCH_SIZE = 200
 
@@ -58,7 +58,10 @@ export async function runTrackedRepositoryInventoryAnalysis(
     await dependencies.persistStatus({ revision, status: 'complete', startedAt, finishedAt: now(), counts })
     return counts
   } catch (error) {
-    await dependencies.persistStatus({ revision, status: 'failed', startedAt, finishedAt: now(), errorCode: 'INTELLIGENCE_UNAVAILABLE' }).catch(() => undefined)
+    const errorCode = error instanceof RepositoryFlowAnalysisTimeoutError
+      ? 'INTELLIGENCE_TIMEOUT' as const
+      : 'INTELLIGENCE_UNAVAILABLE' as const
+    await dependencies.persistStatus({ revision, status: 'failed', startedAt, finishedAt: now(), errorCode }).catch(() => undefined)
     throw error
   }
 }

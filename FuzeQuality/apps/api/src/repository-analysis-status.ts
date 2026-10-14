@@ -12,7 +12,7 @@ export const repositoryAnalysisStatusSchema = z.object({
   startedAt: z.string().datetime().optional(),
   finishedAt: z.string().datetime().optional(),
   counts: counts.optional(),
-  errorCode: z.literal('INTELLIGENCE_UNAVAILABLE').optional(),
+  errorCode: z.enum(['INTELLIGENCE_UNAVAILABLE', 'INTELLIGENCE_TIMEOUT']).optional(),
 }).strict().superRefine((value, context) => {
   if (value.status === 'complete' && !value.counts) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['counts'], message: 'Completed analysis requires counts' })

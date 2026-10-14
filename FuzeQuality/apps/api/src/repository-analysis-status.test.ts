@@ -13,4 +13,10 @@ describe('repository analysis status ingestion', () => {
     expect(repositoryAnalysisStatusSchema.safeParse({ revision: 'abc', status: 'failed', error: 'secret response' }).success).toBe(false)
     expect(repositoryAnalysisStatusSchema.safeParse({ revision: 'abc', status: 'complete' }).success).toBe(false)
   })
+
+  it('accepts a safe LiteLLM timeout classification', () => {
+    expect(repositoryAnalysisStatusSchema.parse({
+      revision: 'abc', status: 'failed', errorCode: 'INTELLIGENCE_TIMEOUT',
+    }).errorCode).toBe('INTELLIGENCE_TIMEOUT')
+  })
 })

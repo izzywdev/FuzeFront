@@ -25,4 +25,10 @@ describe('RepositoryAnalysisStatus', () => {
     render(<RepositoryAnalysisStatus analysis={{ revision: 'abc', status: 'failed' }} onRetry={vi.fn()} retrying />)
     expect(screen.getByRole('button', { name: 'Requeueing…' })).toBeDisabled()
   })
+
+  it('identifies a bounded FuzeInfra LiteLLM timeout and keeps retry available', () => {
+    render(<RepositoryAnalysisStatus analysis={{ revision: 'abc', status: 'failed', errorCode: 'INTELLIGENCE_TIMEOUT' }} onRetry={vi.fn()} />)
+    expect(screen.getByLabelText('Repository analysis status')).toHaveTextContent('FuzeInfra LiteLLM timed out')
+    expect(screen.getByRole('button', { name: 'Retry reviewed analysis' })).toBeEnabled()
+  })
 })

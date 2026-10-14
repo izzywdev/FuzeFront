@@ -141,4 +141,13 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(workflow).toContain("sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g'")
     expect(workflow).toContain("grep -Eq 'minSdk(Version)?([[:space:]]+|[[:space:]]*=[[:space:]]*)24\\b'")
   })
+
+  it('bounds reviewed repository analysis calls to FuzeInfra LiteLLM', () => {
+    const values = parse(read('values.yaml')) as { config: { repositoryAnalysisTimeoutMs: number } }
+    const helpers = read('templates/_helpers.tpl')
+
+    expect(values.config.repositoryAnalysisTimeoutMs).toBe(120_000)
+    expect(helpers).toContain('FUZEQUALITY_REPOSITORY_ANALYSIS_TIMEOUT_MS')
+    expect(helpers).toContain('.Values.config.repositoryAnalysisTimeoutMs')
+  })
 })

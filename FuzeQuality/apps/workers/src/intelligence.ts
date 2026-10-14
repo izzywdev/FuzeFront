@@ -25,7 +25,13 @@ await runConsumer(
       const inventory = payload as { repositoryId: string; revision: string }
       const repository = await apiRequest<Repository>(`/api/v1/internal/repositories/${inventory.repositoryId}`)
       const artifacts = await apiRequest<QualityArtifact[]>(repositoryQualityArtifactsPath(inventory.repositoryId, inventory.revision))
-      const analyzer = new LiteLlmRepositoryFlowAnalyzer(process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1', process.env.FUZEQUALITY_LLM_MODEL ?? 'quality-analysis', process.env.LITELLM_MASTER_KEY)
+      const analyzer = new LiteLlmRepositoryFlowAnalyzer(
+        process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1',
+        process.env.FUZEQUALITY_LLM_MODEL ?? 'quality-analysis',
+        process.env.LITELLM_MASTER_KEY,
+        fetch,
+        Number(process.env.FUZEQUALITY_REPOSITORY_ANALYSIS_TIMEOUT_MS),
+      )
       const analysisPath = `/api/v1/internal/repositories/${encodeURIComponent(inventory.repositoryId)}/analysis-status`
       await runTrackedRepositoryInventoryAnalysis(repository, inventory.revision, artifacts, {
         analyzer,
