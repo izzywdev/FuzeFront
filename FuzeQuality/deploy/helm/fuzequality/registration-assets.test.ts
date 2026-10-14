@@ -130,4 +130,15 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(nginx).toContain('limit_req_zone $binary_remote_addr zone=fq_health:10m rate=10r/s')
     expect(nginx.match(/limit_req zone=fq_health burst=20 nodelay/g)).toHaveLength(2)
   })
+
+  it('patches Bubblewrap generated Gradle to the reviewed Android minimum before assembly', () => {
+    const workflow = read('../../../../.github/workflows/fuzequality-android-apk.yml')
+    const patchStep = workflow.indexOf('Force FuzeQuality minSdkVersion 24')
+    const buildStep = workflow.indexOf('Build FuzeQuality APK')
+
+    expect(patchStep).toBeGreaterThan(-1)
+    expect(buildStep).toBeGreaterThan(patchStep)
+    expect(workflow).toContain("sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g'")
+    expect(workflow).toContain("grep -Eq 'minSdk(Version)?([[:space:]]+|[[:space:]]*=[[:space:]]*)24\\b'")
+  })
 })

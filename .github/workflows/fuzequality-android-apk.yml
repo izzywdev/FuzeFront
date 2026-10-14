@@ -138,6 +138,35 @@ jobs:
           bubblewrap update --skipPwaValidation --skipVersionUpgrade
           node ../../scripts/prepare-bubblewrap-project.mjs .
 
+      - name: Force FuzeQuality minSdkVersion 24 in generated Gradle project
+        working-directory: FuzeQuality/android
+        run: |
+          set -euo pipefail
+          # Bubblewrap 1.27 scaffolds minSdk 21 even though the TWA manifest
+          # declares 24. Android Browser Helper 2.7.4 requires 24, so patch the
+          # generated Gradle file before either debug or release assembly.
+          GRADLE_FILE="app/build.gradle"
+          test -f "$GRADLE_FILE" || {
+            echo "::error::$GRADLE_FILE not found after Bubblewrap scaffold — template layout may have changed" >&2
+            exit 1
+          }
+          if grep -Eq 'minSdkVersion[[:space:]]+[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' "$GRADLE_FILE"
+          elif grep -Eq 'minSdk[[:space:]]*=[[:space:]]*[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' "$GRADLE_FILE"
+          elif grep -Eq 'minSdk[[:space:]]+[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdk[[:space:]]+[0-9]+/minSdk 24/g' "$GRADLE_FILE"
+          else
+            echo "::error::No minSdk/minSdkVersion declaration found in $GRADLE_FILE — update the Bubblewrap patch" >&2
+            cat "$GRADLE_FILE" >&2
+            exit 1
+          fi
+          grep -En 'minSdk(Version)?' "$GRADLE_FILE"
+          grep -Eq 'minSdk(Version)?([[:space:]]+|[[:space:]]*=[[:space:]]*)24\b' "$GRADLE_FILE" || {
+            echo "::error::minSdk patch did not yield 24 in $GRADLE_FILE" >&2
+            exit 1
+          }
+
       - name: Build FuzeQuality APK
         working-directory: FuzeQuality/android
         env:
