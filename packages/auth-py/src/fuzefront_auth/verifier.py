@@ -31,7 +31,7 @@ from typing import Any, Protocol
 import jwt
 from jwt import PyJWK
 
-from ._http import fetch_json
+from ._http import fetch_json, is_loopback_http
 from .types import AuthError, AuthMode, Identity
 
 # Asymmetric algorithms ONLY for federated mode: permitting HS* would let anyone
@@ -276,8 +276,8 @@ def _now() -> float:
     return time.monotonic()
 
 
-def _fetch_json(url: str, timeout: float) -> Any:
-    return fetch_json(url, timeout)
+def _fetch_json(url: str, timeout: float, allow_loopback_http: bool = False) -> Any:
+    return fetch_json(url, timeout, allow_loopback_http)
 
 
 @dataclass(frozen=True)
@@ -350,6 +350,10 @@ class _KeyResolver:
 
     def __init__(self, config: FederatedJwksConfig) -> None:
         self._config = config
+        # Plain http to loopback is a local-development exception that must come from the
+        # CONFIGURED issuer / JWKS URI, never from anything a remote server returns
+        # (a discovered jwks_uri or a redirect Location).
+        self._dev_http = is_loopback_http(config.issuer) or is_loopback_http(config.jwks_uri)
         self._lock = threading.Lock()
         self._keys: dict[str, list[_Candidate]] = {}
         self._keyless: list[_Candidate] = []
@@ -364,7 +368,7 @@ class _KeyResolver:
             return self._config.jwks_uri
         discovery = f"{self._config.issuer.rstrip('/')}/.well-known/openid-configuration"
         try:
-            doc = _fetch_json(discovery, _DISCOVERY_TIMEOUT_SEC)
+            doc = _fetch_json(discovery, _DISCOVERY_TIMEOUT_SEC, self._dev_http)
         except (urllib.error.URLError, OSError, ValueError):
             raise AuthError("JWKS_UNAVAILABLE", "OIDC discovery failed", 503) from None
         uri = doc.get("jwks_uri") if isinstance(doc, dict) else None
@@ -381,7 +385,7 @@ class _KeyResolver:
         """Fetch the key set. Caller holds the lock and has checked the cooldown."""
         self._last_attempt = _now()
         try:
-            doc = _fetch_json(self._resolve_jwks_uri(), _JWKS_TIMEOUT_SEC)
+            doc = _fetch_json(self._resolve_jwks_uri(), _JWKS_TIMEOUT_SEC, self._dev_http)
             raw_keys = doc.get("keys") if isinstance(doc, dict) else None
             if not isinstance(raw_keys, list):
                 raise TypeError("no keys")

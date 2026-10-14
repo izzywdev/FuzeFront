@@ -175,9 +175,9 @@ def test_outage_does_not_hammer_the_issuer(jwks_server, rsa_key, clock):
 
     real = vm._fetch_json
 
-    def counting(url, timeout):
+    def counting(url, timeout, allow_loopback_http=False):
         hits["n"] += 1
-        return real(url, timeout)
+        return real(url, timeout, allow_loopback_http)
 
     vm._fetch_json = counting
     try:
@@ -429,15 +429,15 @@ def test_a_moved_jwks_endpoint_is_rediscovered_without_a_restart(jwks_server, rs
     real = vm._fetch_json
     state = {"moved": False}
 
-    def fetch(url, timeout):
+    def fetch(url, timeout, allow_loopback_http=False):
         if url.endswith("/.well-known/openid-configuration"):
-            doc = real(url, timeout)
+            doc = real(url, timeout, allow_loopback_http)
             return {**doc, "jwks_uri": doc["jwks_uri"].replace("/jwks", "/jwks-v2")} if state["moved"] else doc
         if url.endswith("/jwks") and state["moved"]:
             raise OSError("gone")
         if url.endswith("/jwks-v2"):
-            return real(url.replace("/jwks-v2", "/jwks"), timeout)
-        return real(url, timeout)
+            return real(url.replace("/jwks-v2", "/jwks"), timeout, allow_loopback_http)
+        return real(url, timeout, allow_loopback_http)
 
     vm._fetch_json = fetch
     try:
@@ -454,9 +454,9 @@ def test_an_explicitly_configured_jwks_uri_stays_pinned(jwks_server, rsa_key, cl
     seen = []
     real = vm._fetch_json
 
-    def spy(url, timeout):
+    def spy(url, timeout, allow_loopback_http=False):
         seen.append(url)
-        return real(url, timeout)
+        return real(url, timeout, allow_loopback_http)
 
     vm._fetch_json = spy
     try:
@@ -467,3 +467,38 @@ def test_an_explicitly_configured_jwks_uri_stays_pinned(jwks_server, rsa_key, cl
     finally:
         vm._fetch_json = real
     assert all(not u.endswith("/.well-known/openid-configuration") for u in seen)
+
+
+def test_a_discovered_loopback_jwks_uri_is_refused_when_the_configured_issuer_is_remote(rsa_key):
+    # The loopback http exception comes from CONFIGURATION only. A remote issuer's discovery
+    # document (remote data) must not be able to turn it on for the jwks_uri it advertises.
+    import fuzefront_auth.verifier as vm
+    from fuzefront_auth._http import fetch_json
+
+    issuer = "https://issuer.example.invalid"
+    attempted = []
+    raised = []
+
+    def fake(url, timeout, allow_loopback_http=False):
+        if url.endswith("/.well-known/openid-configuration"):
+            return {"issuer": issuer, "jwks_uri": "http://127.0.0.1:9/jwks"}
+        attempted.append((url, allow_loopback_http))
+        try:
+            return fetch_json(url, timeout, allow_loopback_http)  # the real URL policy
+        except Exception as err:
+            raised.append(type(err))
+            raise
+
+    real = vm._fetch_json
+    vm._fetch_json = fake
+    try:
+        v = create_verifier(FederatedJwksConfig(issuer=issuer, audience=AUDIENCE))
+        token = make_token(rsa_key, alg="RS256", kid="k", claims={"sub": "u", "iss": issuer, "aud": AUDIENCE})
+        with pytest.raises(AuthError) as info:
+            v.verify(token)
+    finally:
+        vm._fetch_json = real
+    assert (info.value.code, info.value.status) == ("JWKS_UNAVAILABLE", 503)
+    assert attempted == [("http://127.0.0.1:9/jwks", False)]
+    # Refused by the URL policy itself (ValueError), not by a failed connection attempt.
+    assert raised == [ValueError]
