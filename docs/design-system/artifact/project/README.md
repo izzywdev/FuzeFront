@@ -1,6 +1,6 @@
 # FuzeFront Fuse Seam
 
-The brand and UI design system for **FuzeFront** — a Module-Federation *host shell*: a dark-default dashboard that discovers, mounts and fuses remote micro-frontends ("apps") into one runtime experience. This system is the single source of truth for the colors, type, tokens and primitives used to build on-brand interfaces for that shell. It is generated from the `design-system/` package in `izzywdev/FuzeFront` by `design-system/producer/build-artifact.mjs` — do not hand-edit the generated mirror; change the source and re-run the producer.
+The brand and UI design system for **FuzeFront** — a Module-Federation *host shell*: a dark-default dashboard that discovers, mounts and fuses remote micro-frontends ("apps") into one runtime experience. This system is the single source of truth for the colors, type, tokens and primitives used to build on-brand interfaces for that shell. It is generated from the `design-system/` package in `izzywdev/FuzeFront` by `scripts/ds-artifact/build-artifact.mjs` — do not hand-edit the generated mirror; change the source and re-run the producer.
 
 ## Brand concept — "runtime fabric / the fuse seam"
 

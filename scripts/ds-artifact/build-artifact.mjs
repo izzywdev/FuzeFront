@@ -17,9 +17,9 @@
      - components/Cover/preview.html   (authored cover)
 
    Usage:
-     node design-system/producer/build-artifact.mjs            # write
-     node design-system/producer/build-artifact.mjs --check    # CI drift gate (exit 1 on drift)
-     node design-system/producer/build-artifact.mjs --out <dir>
+     node scripts/ds-artifact/build-artifact.mjs            # write
+     node scripts/ds-artifact/build-artifact.mjs --check    # CI drift gate (exit 1 on drift)
+     node scripts/ds-artifact/build-artifact.mjs --out <dir>
 
    The committed mirror is the reviewable, diffable source the
    gate-ds-artifact workflow enforces on every PR that touches the
@@ -33,9 +33,9 @@ import {
 import { fileURLToPath } from 'node:url'
 import { dirname, join, basename, relative, resolve } from 'node:path'
 
-const PRODUCER_DIR = dirname(fileURLToPath(import.meta.url))
-const DS_ROOT = dirname(PRODUCER_DIR)                 // design-system/
-const REPO_ROOT = dirname(DS_ROOT)                    // repo root
+const PRODUCER_DIR = dirname(fileURLToPath(import.meta.url))  // scripts/ds-artifact/
+const REPO_ROOT = dirname(dirname(PRODUCER_DIR))      // repo root
+const DS_ROOT = join(REPO_ROOT, 'design-system')      // the design-system package (read-only input)
 
 const args = process.argv.slice(2)
 const CHECK = args.includes('--check')
@@ -319,7 +319,7 @@ function buildTokens() {
       source: 'github',
       repo: 'izzywdev/FuzeFront',
       package: 'design-system',
-      generatedBy: 'design-system/producer/build-artifact.mjs',
+      generatedBy: 'scripts/ds-artifact/build-artifact.mjs',
       paths: {
         tokens: ['design-system/tokens/colors.css', 'design-system/tokens/typography.css', 'design-system/tokens/spacing.css', 'design-system/tokens/fonts.css', 'design-system/tokens/base.css'],
         components: 'design-system/components',
@@ -446,7 +446,7 @@ function buildReadme(componentsByGroup, tokenCount) {
   const total = Object.values(componentsByGroup).reduce((a, n) => a + n.length, 0)
   return `# ${TITLE}
 
-The brand and UI design system for **FuzeFront** — a Module-Federation *host shell*: a dark-default dashboard that discovers, mounts and fuses remote micro-frontends ("apps") into one runtime experience. This system is the single source of truth for the colors, type, tokens and primitives used to build on-brand interfaces for that shell. It is generated from the \`design-system/\` package in \`izzywdev/FuzeFront\` by \`design-system/producer/build-artifact.mjs\` — do not hand-edit the generated mirror; change the source and re-run the producer.
+The brand and UI design system for **FuzeFront** — a Module-Federation *host shell*: a dark-default dashboard that discovers, mounts and fuses remote micro-frontends ("apps") into one runtime experience. This system is the single source of truth for the colors, type, tokens and primitives used to build on-brand interfaces for that shell. It is generated from the \`design-system/\` package in \`izzywdev/FuzeFront\` by \`scripts/ds-artifact/build-artifact.mjs\` — do not hand-edit the generated mirror; change the source and re-run the producer.
 
 ## Brand concept — "runtime fabric / the fuse seam"
 
@@ -521,7 +521,7 @@ function buildIndex() {
     blobs: {},
     docs: { readme: 'project/README.md', sections: [] },
     lastChange: {
-      by: 'design-system/producer',
+      by: 'scripts/ds-artifact',
       via: 'GitHub · izzywdev/FuzeFront',
       note: 'Generated from the design-system/ package by build-artifact.mjs.',
     },

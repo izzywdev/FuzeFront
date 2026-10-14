@@ -1,7 +1,8 @@
 # Design System artifact producer
 
-`build-artifact.mjs` regenerates the **"FuzeFront Fuse Seam"** Design System artifact
-from this `design-system/` package into a committed, reviewable mirror at
+`build-artifact.mjs` (in `scripts/ds-artifact/`) regenerates the **"FuzeFront Fuse Seam"**
+Design System artifact from the `design-system/` package — which it reads as a read-only
+input, it is not part of that published npm package — into a committed, reviewable mirror at
 `docs/design-system/artifact/project/**`. That mirror is the exact file set that backs
 the published artifact at
 <https://claude.ai/artifact/THhAZqv58N16ehQrq1xSXk> (Anthropic "Design System" artifact
@@ -27,16 +28,16 @@ base" and "FIX is the rule".
 | `tokens.json` type families | `tokens/typography.css` (`--font-*`) | **parsed** |
 | token **order + usage notes**, the type **groups/scale**, which tokens are public | this script | **curated** (the one place these editorial choices live) |
 | `components/<Comp>/README.md` | `<Comp>.prompt.md`, else the `<Comp>.d.ts` leading JSDoc | **derived** |
-| `components/<Comp>/preview.html` | `producer/previews/<Comp>.html` if present, else a generated usage specimen | **override or derived** |
+| `components/<Comp>/preview.html` | `previews/<Comp>.html` (beside this script) if present, else a generated usage specimen | **override or derived** |
 | `components/index.d.ts` | every component `<Comp>.d.ts` | **concatenated** |
-| `components/Cover/preview.html` | `producer/templates/cover.html` | **authored** |
+| `components/Cover/preview.html` | `templates/cover.html` (beside this script) | **authored** |
 
 Values track the code; prose, ordering and the type grouping are curated here so that a
 reviewer sees them in the diff. Add a token to the CSS **and** its entry to the curated
 list in this script; the producer throws if a listed token is missing from the CSS, so
 the two cannot silently diverge.
 
-Rich, hand-authored previews live in `producer/previews/<Comp>.html` (currently
+Rich, hand-authored previews live in `scripts/ds-artifact/previews/<Comp>.html` (currently
 BrandMark, SeamDivider, Button, Badge, StatusPill, Input, AppCard, HealthDot). Any
 component without an override gets a static usage specimen built from its `.prompt.md`.
 To upgrade a component's card, drop a `<Comp>.html` here (line 1 must be the

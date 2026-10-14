@@ -19,7 +19,7 @@ has drifted from what the producer renders:
 
 ```
 design-system/tokens/*.css  ─┐
-design-system/components/**  ─┤ node design-system/producer/build-artifact.mjs
+design-system/components/**  ─┤ node scripts/ds-artifact/build-artifact.mjs
                               └─▶ docs/design-system/artifact/project/**  ──▶ published artifact
                                         ▲
                      gate-ds-artifact (CI): regenerate + diff, fail on drift
@@ -27,7 +27,7 @@ design-system/components/**  ─┤ node design-system/producer/build-artifact.m
 
 | Piece | Where |
 |---|---|
-| Producer | [`design-system/producer/build-artifact.mjs`](../../design-system/producer/) (+ its `README.md`) |
+| Producer | [`scripts/ds-artifact/build-artifact.mjs`](../../scripts/ds-artifact/) (+ its `README.md`) |
 | Commands | `npm run ds:artifact` (write) · `npm run check:ds-artifact` (drift check) |
 | CI gate | [`.github/workflows/gate-ds-artifact.yml`](../../.github/workflows/gate-ds-artifact.yml) — every PR + push to master |
 | Post-merge | [`ds-propagate.yml`](../../.github/workflows/ds-propagate.yml) — on master changes to `design-system/**` |

@@ -17,7 +17,7 @@
     "sections": []
   },
   "lastChange": {
-    "by": "design-system/producer",
+    "by": "scripts/ds-artifact",
     "via": "GitHub · izzywdev/FuzeFront",
     "note": "Generated from the design-system/ package by build-artifact.mjs."
   }

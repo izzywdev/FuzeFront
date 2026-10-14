@@ -1,7 +1,7 @@
 name: gate-ds-artifact
 
 # The committed Design System artifact mirror (docs/design-system/artifact/**) must
-# equal what design-system/producer/build-artifact.mjs renders from the design-system/
+# equal what scripts/ds-artifact/build-artifact.mjs renders from the design-system/
 # source of truth (tokens/*.css + components/**).
 #
 # WHAT THIS CLOSES.
