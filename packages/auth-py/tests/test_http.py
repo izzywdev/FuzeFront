@@ -97,3 +97,135 @@ def test_a_discovery_document_pointing_jwks_at_a_file_is_a_503_not_a_file_read(s
     with pytest.raises(AuthError) as info:
         v.verify(token)
     assert (info.value.code, info.value.status) == ("JWKS_UNAVAILABLE", 503)
+
+
+def _listener(host, port=0):
+    """A recording HTTP server on a given loopback address."""
+    seen = []
+
+    class Recorder(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            seen.append(self.path)
+            raw = b"{}"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+    httpd = HTTPServer((host, port), Recorder)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, seen
+
+
+def test_a_redirect_to_a_disallowed_host_is_never_requested(server):
+    # 127.0.0.2 is loopback but NOT in the allowed set. A recording server there proves the
+    # redirected request is not even sent (the old code sent it, then checked the answer).
+    try:
+        target, seen = _listener("127.0.0.2")
+    except OSError:
+        pytest.skip("127.0.0.2 is not bindable here")
+    try:
+        server["/r"] = ("redirect", f"http://127.0.0.2:{target.server_port}/secret")
+        with pytest.raises(ValueError):
+            fetch_json(f"{server['base']}/r", 2)
+        assert seen == []
+    finally:
+        target.shutdown()
+        target.server_close()
+
+
+def test_a_redirect_chain_cannot_bounce_through_a_disallowed_host_back_to_an_allowed_one(server):
+    try:
+        hop, seen = _listener("127.0.0.2")
+    except OSError:
+        pytest.skip("127.0.0.2 is not bindable here")
+    try:
+        server["/ok"] = ("json", {"ok": True})
+        server["/r"] = ("redirect", f"http://127.0.0.2:{hop.server_port}/hop")
+        with pytest.raises(ValueError):
+            fetch_json(f"{server['base']}/r", 2)
+        assert seen == []
+    finally:
+        hop.shutdown()
+        hop.server_close()
+
+
+def test_allowed_redirects_are_followed(server):
+    server["/ok"] = ("json", {"ok": True})
+    server["/r"] = ("redirect", f"{server['base']}/ok")
+    assert fetch_json(f"{server['base']}/r", 2) == {"ok": True}
+
+
+def test_redirect_loops_are_bounded(server):
+    server["/loop"] = ("redirect", f"{server['base']}/loop")
+    with pytest.raises(OSError):  # urllib: too many redirects
+        fetch_json(f"{server['base']}/loop", 2)
+
+
+def _dribble_server(prefix: bytes, body_gap: float):
+    """Raw TCP server that sends `prefix` one byte at a time, `body_gap` seconds apart."""
+    import socket
+    import time
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(5)
+    stop = threading.Event()
+
+    def serve():
+        srv.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                continue
+            threading.Thread(target=_drip, args=(conn,), daemon=True).start()
+
+    def _drip(conn):
+        try:
+            conn.recv(4096)
+            for byte in prefix:
+                if stop.is_set():
+                    return
+                conn.sendall(bytes([byte]))
+                time.sleep(body_gap)
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    return srv, stop
+
+
+def test_a_server_dribbling_the_body_cannot_exceed_the_total_deadline():
+    import time
+
+    # Each byte arrives well inside the per-socket-op timeout; only a TOTAL deadline stops it.
+    head = b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n"
+    srv, stop = _dribble_server(head + b"[" + b"0," * 2000 + b"0]", 0.05)
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(OSError):  # TimeoutError
+            fetch_json(f"http://127.0.0.1:{srv.getsockname()[1]}/", 0.5)
+        assert time.monotonic() - t0 < 2.0
+    finally:
+        stop.set()
+        srv.close()
+
+
+def test_a_server_dribbling_the_status_line_cannot_exceed_the_total_deadline():
+    import time
+
+    srv, stop = _dribble_server(b"HTTP/1.0 200 OK\r\n" + b"X-Pad: " + b"a" * 4000, 0.05)
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(OSError):
+            fetch_json(f"http://127.0.0.1:{srv.getsockname()[1]}/", 0.5)
+        assert time.monotonic() - t0 < 2.0
+    finally:
+        stop.set()
+        srv.close()
