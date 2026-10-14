@@ -1550,6 +1550,32 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText('Observed across 3 source revisions')).toHaveAttribute('title', 'historical-source-revision')
     expect(screen.getByText(/3 passed · 1 failed/)).toBeVisible()
     expect(screen.getByText('4 observations · 75% passed among terminal outcomes')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect execution evidence' }))
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        policyArtifactId: 'policy-auth',
+        gateArtifactId: 'gate-auth',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        policyArtifactId: 'policy-auth',
+        gateArtifactId: 'gate-auth',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        policyArtifactId: 'policy-auth',
+        gateArtifactId: 'gate-auth',
+      })
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('policy-auth')
+    expect(screen.getByRole('status')).toHaveTextContent('gate-auth')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear policy-gate focus' }))
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {})
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {})
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {})
+    })
   })
 
   it('filters execution evidence and gate performance by provider', async () => {

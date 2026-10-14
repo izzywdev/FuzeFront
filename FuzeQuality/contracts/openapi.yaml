@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.39.0
+  version: 0.40.0
   license:
     name: UNLICENSED
 servers:
@@ -825,6 +825,8 @@ paths:
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
+        - $ref: '#/components/parameters/ExecutionPolicyArtifactId'
+        - $ref: '#/components/parameters/ExecutionGateArtifactId'
         - $ref: '#/components/parameters/ExecutionRevision'
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionAttemptScope'
@@ -959,6 +961,8 @@ paths:
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
+        - $ref: '#/components/parameters/ExecutionPolicyArtifactId'
+        - $ref: '#/components/parameters/ExecutionGateArtifactId'
         - $ref: '#/components/parameters/ExecutionRevision'
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionAttemptScope'
@@ -1007,6 +1011,8 @@ paths:
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
+        - $ref: '#/components/parameters/ExecutionPolicyArtifactId'
+        - $ref: '#/components/parameters/ExecutionGateArtifactId'
         - $ref: '#/components/parameters/ExecutionRevision'
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionAttemptScope'
@@ -1151,6 +1157,16 @@ components:
       name: externalRunId
       in: query
       description: Exact provider-owned run identifier shared by all attempts of one CI run.
+      schema: { type: string, minLength: 1, maxLength: 500 }
+    ExecutionPolicyArtifactId:
+      name: policyArtifactId
+      in: query
+      description: Exact repository policy artifact retained in the execution's explicit policy-gate evidence.
+      schema: { type: string, minLength: 1, maxLength: 500 }
+    ExecutionGateArtifactId:
+      name: gateArtifactId
+      in: query
+      description: Exact repository gate artifact retained in the execution's explicit policy-gate evidence.
       schema: { type: string, minLength: 1, maxLength: 500 }
     ExecutionRevision:
       name: revision

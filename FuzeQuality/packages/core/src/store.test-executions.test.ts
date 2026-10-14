@@ -154,6 +154,8 @@ describe('test execution evidence', () => {
       maximumDurationMs: 180_000,
       from: '2026-01-01T00:00:00.000Z',
       until: '2026-01-31T00:00:00.000Z',
+      policyArtifactId: 'policy-1',
+      gateArtifactId: 'gate-1',
       after: { createdAt: '2026-01-15T00:00:00.000Z', id: 'run-2' },
       limit: 51,
     })
@@ -166,10 +168,12 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 <= $10')
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain('executions.external_run_id=$16')
+    expect(String(sql)).toContain("pair.value->>'policyArtifactId'=$17")
+    expect(String(sql)).toContain("pair.value->>'gateArtifactId'=$18")
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', 'failed', 'github-actions', 'abc',
       '.github/workflows/post-prod.yml', 'recovered', 60_000, 180_000, '2026-01-01T00:00:00.000Z',
-      '2026-01-31T00:00:00.000Z', '2026-01-15T00:00:00.000Z', 'run-2', 51, 'provider-run-42',
+      '2026-01-31T00:00:00.000Z', '2026-01-15T00:00:00.000Z', 'run-2', 51, 'provider-run-42', 'policy-1', 'gate-1',
     ])
   })
 
@@ -179,7 +183,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
-      kind: 'integration', externalRunId: 'provider-run-42', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
+      kind: 'integration', externalRunId: 'provider-run-42', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
     })).resolves.toEqual([
       { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
     ])
@@ -204,7 +208,9 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain("previous.status='failed'")
     expect(String(sql)).toContain('executions.external_run_id=$16')
-    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42'])
+    expect(String(sql)).toContain("pair.value->>'policyArtifactId'=$17")
+    expect(String(sql)).toContain("pair.value->>'gateArtifactId'=$18")
+    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42', 'policy-1', 'gate-1'])
   })
 
   it('pushes filtered policy-gate aggregation and its stable cursor into Postgres', async () => {
@@ -218,7 +224,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.policyGatePerformance('repo-1', 'org-1', {
-      kind: 'post-production', provider: 'github-actions', externalRunId: 'provider-run-42', attemptScope: 'recovered', minimumDurationMs: 90_000, maximumDurationMs: 300_000,
+      kind: 'post-production', provider: 'github-actions', externalRunId: 'provider-run-42', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', attemptScope: 'recovered', minimumDurationMs: 90_000, maximumDurationMs: 300_000,
       after: { failed: 3, passed: 5, gateArtifactId: 'gate-0', policyArtifactId: 'policy-0' },
       limit: 51,
     })).resolves.toEqual([{
@@ -238,12 +244,14 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("$8='recovered'")
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain('executions.external_run_id=$19')
+    expect(String(sql)).toContain("pair.value->>'policyArtifactId'=$20")
+    expect(String(sql)).toContain("pair.value->>'gateArtifactId'=$21")
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
     expect(String(sql)).toContain('AS pass_rate')
     expect(String(sql)).toContain('ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id')
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', null, 'github-actions', null, null, 'recovered', 90_000, 300_000, null, null, null,
-      3, 5, 'gate-0', 'policy-0', 51, 'provider-run-42',
+      3, 5, 'gate-0', 'policy-0', 51, 'provider-run-42', 'policy-1', 'gate-1',
     ])
   })
 

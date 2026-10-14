@@ -8,6 +8,8 @@ describe('execution evidence filter', () => {
       status: 'failed',
       provider: 'github-actions',
       externalRunId: '123456789',
+      policyArtifactId: 'policy-auth',
+      gateArtifactId: 'gate-auth',
       revision: 'abcdef123456',
       workflowPath: '.github/workflows/load.yml',
       attemptScope: 'retry',
@@ -16,6 +18,13 @@ describe('execution evidence filter', () => {
       from: '2026-10-01T00:00:00.000Z',
       until: '2026-10-08T00:00:00.000Z',
     }).success).toBe(true)
+  })
+
+  it('bounds exact policy and gate artifact identifiers', () => {
+    expect(executionFilterSchema.parse({ policyArtifactId: ' policy-auth ', gateArtifactId: ' gate-auth ' }))
+      .toMatchObject({ policyArtifactId: 'policy-auth', gateArtifactId: 'gate-auth' })
+    expect(executionFilterSchema.safeParse({ policyArtifactId: '' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ gateArtifactId: 'x'.repeat(501) }).success).toBe(false)
   })
 
   it('rejects an unknown execution provider', () => {

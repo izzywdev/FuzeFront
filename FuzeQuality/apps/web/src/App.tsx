@@ -3396,6 +3396,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     TestExecution['provider'] | ''
   >('')
   const [executionExternalRunId, setExecutionExternalRunId] = useState('')
+  const [executionPolicyArtifactId, setExecutionPolicyArtifactId] = useState('')
+  const [executionGateArtifactId, setExecutionGateArtifactId] = useState('')
   const [executionAttemptScope, setExecutionAttemptScope] = useState<
     'initial' | 'retry' | 'recovered' | ''
   >('')
@@ -3606,6 +3608,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         status: executionStatus,
         provider: executionProvider,
         externalRunId: executionExternalRunId.trim(),
+        policyArtifactId: executionPolicyArtifactId,
+        gateArtifactId: executionGateArtifactId,
         attemptScope: executionAttemptScope,
         revision: executionRevision.trim(),
         workflowPath: executionWorkflowPath.trim(),
@@ -3619,7 +3623,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionExternalRunId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionExternalRunId, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5203,6 +5207,21 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </button>
             )}
           </div>
+          {executionPolicyArtifactId && executionGateArtifactId && (
+            <div className="performance-inventory-only" role="status">
+              Showing execution evidence for policy <code>{executionPolicyArtifactId}</code> and gate{' '}
+              <code>{executionGateArtifactId}</code>.{' '}
+              <QualityAction
+                intent="quiet"
+                onClick={() => {
+                  setExecutionPolicyArtifactId('')
+                  setExecutionGateArtifactId('')
+                }}
+              >
+                Clear policy-gate focus
+              </QualityAction>
+            </div>
+          )}
           {invalidExecutionDurationRange && (
             <p className="form-error" role="alert">
               Maximum duration must be greater than or equal to minimum duration.
@@ -5377,6 +5396,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       {pair.gateSourcePath ?? pair.gateArtifactId}
                     </small>
                   )}
+                  <QualityAction
+                    intent="quiet"
+                    onClick={() => {
+                      setExecutionRepositoryId(pair.repositoryId)
+                      setExecutionPolicyArtifactId(pair.policyArtifactId)
+                      setExecutionGateArtifactId(pair.gateArtifactId)
+                    }}
+                  >
+                    Inspect execution evidence
+                  </QualityAction>
                 </div>
               </article>
             ))}

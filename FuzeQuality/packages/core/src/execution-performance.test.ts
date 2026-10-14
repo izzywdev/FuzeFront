@@ -46,6 +46,12 @@ describe('execution performance', () => {
       { id: 'gate', repositoryId: 'repo', kind: 'gate', title: 'Authentication gate', sourcePath: '.github/workflows/auth.yml', summary: 'Enforce authentication', evidence: [] },
     ])
     expect(rows).toEqual([{ repositoryId: 'repo', policyArtifactId: 'policy', policyTitle: 'Authentication policy', policySourcePath: 'governance/auth.md', gateArtifactId: 'gate', gateTitle: 'Authentication gate', gateSourcePath: '.github/workflows/auth.yml', revisions: ['a', 'b', 'd'], total: 3, passed: 1, failed: 1, cancelled: 0, running: 1, passRate: 0.5, latestCompletedAt: '2026-01-02T00:00:00.000Z' }])
+    expect(filterTestExecutions([
+      { id: 'explicit', repositoryId: 'repo', tenantId: 'org', provider: 'external', externalRunId: 'explicit', attempt: 1, revision: 'a', kind: 'ci', status: 'failed', name: 'auth', policyArtifactIds: ['policy', 'policy-other'], gateArtifactIds: ['gate', 'gate-other'], gateEvaluations: [{ policyArtifactId: 'policy', gateArtifactId: 'gate', status: 'failed' }], thresholds: [], evidenceLinks: [] },
+    ], { policyArtifactId: 'policy', gateArtifactId: 'gate-other' })).toEqual([])
+    expect(filterTestExecutions([
+      { id: 'legacy', repositoryId: 'repo', tenantId: 'org', provider: 'external', externalRunId: 'legacy', attempt: 1, revision: 'a', kind: 'ci', status: 'passed', name: 'auth', policyArtifactIds: ['policy'], gateArtifactIds: ['gate'], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
+    ], { policyArtifactId: 'policy', gateArtifactId: 'gate' })).toHaveLength(1)
   })
 
   it('keeps identical artifact identifiers isolated by repository', () => {

@@ -131,9 +131,15 @@ describe('contract discovery', () => {
       for (const path of [
         '/api/v1/repositories/{repositoryId}/execution-performance',
         '/api/v1/repositories/{repositoryId}/execution-trend',
-      ]) expect(
-        document.paths[path].get.parameters.map((parameter: { $ref?: string }) => parameter.$ref)
-      ).toContain('#/components/parameters/ExecutionExternalRunId')
+        '/api/v1/repositories/{repositoryId}/test-executions',
+      ]) {
+        const parameterRefs = document.paths[path].get.parameters.map((parameter: { $ref?: string }) => parameter.$ref)
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionExternalRunId')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionPolicyArtifactId')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionGateArtifactId')
+      }
+      expect(document.components.parameters.ExecutionPolicyArtifactId.schema.maxLength).toBe(500)
+      expect(document.components.parameters.ExecutionGateArtifactId.schema.maxLength).toBe(500)
       expect(document.components.parameters.ExecutionWorkflowPath.schema.maxLength).toBe(1000)
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters

@@ -63,11 +63,39 @@ export type PolicyGatePerformancePage = {
 }
 
 export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'externalRunId' | 'revision' | 'workflowPath'>> & {
+  policyArtifactId?: string
+  gateArtifactId?: string
   attemptScope?: 'initial' | 'retry' | 'recovered'
   minimumDurationMs?: number
   maximumDurationMs?: number
   from?: string
   until?: string
+}
+
+/** Matches an explicitly retained pair; legacy evidence is paired only when exactly one policy and gate exist. */
+export function executionMatchesPolicyGate(
+  execution: TestExecution,
+  policyArtifactId?: string,
+  gateArtifactId?: string,
+) {
+  if (!policyArtifactId && !gateArtifactId) return true
+  const pairs = execution.gateEvaluations.length
+    ? execution.gateEvaluations
+    : execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1
+      ? [{ policyArtifactId: execution.policyArtifactIds[0], gateArtifactId: execution.gateArtifactIds[0] }]
+      : []
+  if (policyArtifactId && gateArtifactId) {
+    return pairs.some(pair =>
+      pair.policyArtifactId === policyArtifactId && pair.gateArtifactId === gateArtifactId
+    )
+  }
+  if (policyArtifactId) {
+    return execution.policyArtifactIds.includes(policyArtifactId) ||
+      pairs.some(pair => pair.policyArtifactId === policyArtifactId)
+  }
+  const selectedGateArtifactId = gateArtifactId ?? ''
+  return execution.gateArtifactIds.includes(selectedGateArtifactId) ||
+    pairs.some(pair => pair.gateArtifactId === selectedGateArtifactId)
 }
 
 /** Requires retained failed-attempt evidence; a successful rerun alone is not recovery evidence. */
@@ -92,6 +120,7 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.status && execution.status !== filter.status) return false
     if (filter.provider && execution.provider !== filter.provider) return false
     if (filter.externalRunId && execution.externalRunId !== filter.externalRunId) return false
+    if (!executionMatchesPolicyGate(execution, filter.policyArtifactId, filter.gateArtifactId)) return false
     if (filter.revision && execution.revision !== filter.revision) return false
     if (filter.workflowPath && execution.workflowPath !== filter.workflowPath) return false
     if (filter.attemptScope === 'initial' && execution.attempt !== 1) return false
