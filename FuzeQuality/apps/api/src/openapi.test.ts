@@ -287,7 +287,7 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
-      ).toEqual(['kind', 'severity', 'reviewStatus', 'revision', 'limit', 'cursor'])
+      ).toEqual(['kind', 'severity', 'reviewStatus', 'revision', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
           'application/json'
@@ -303,7 +303,7 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters
           .map((parameter: { name: string }) => parameter.name)
-      ).toEqual(['kind', 'severity', 'reviewStatus', 'revision', 'limit', 'cursor'])
+      ).toEqual(['kind', 'severity', 'reviewStatus', 'revision', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
       expect(
         document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
           'application/json'

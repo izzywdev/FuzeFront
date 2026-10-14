@@ -416,6 +416,8 @@ app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (requ
     severity: filter.data.severity,
     reviewStatus: filter.data.reviewStatus,
     revision: filter.data.revision,
+    minConfidence: filter.data.minConfidence,
+    maxConfidence: filter.data.maxConfidence,
     after: cursor.data,
     limit: limit + 1,
   })

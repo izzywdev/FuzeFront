@@ -1768,9 +1768,78 @@ describe('RepositoryIntelligence flow inventory', () => {
           severity: '',
           reviewStatus: 'proposed',
           revisionScope: 'current',
+          minimumConfidencePercent: '',
+          maximumConfidencePercent: '',
         }
       )
     ).toBe(false)
+    expect(
+      policyGateEvaluationMatchesInventory(governanceEvaluation, [repository], {
+        kind: '',
+        severity: '',
+        reviewStatus: '',
+        revisionScope: 'current',
+        minimumConfidencePercent: '91',
+        maximumConfidencePercent: '100',
+      })
+    ).toBe(false)
+  })
+
+  it('filters governance by confidence and retains the window during continuation', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+
+    fireEvent.change(screen.getByLabelText('Minimum governance confidence (%)'), {
+      target: { value: '70' },
+    })
+    fireEvent.change(screen.getByLabelText('Maximum governance confidence (%)'), {
+      target: { value: '90' },
+    })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      minConfidence: '0.7',
+      maxConfidence: '0.9',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      minConfidence: '0.7',
+      maxConfidence: '0.9',
+      cursor: 'policy-page-2',
+    }))
+  })
+
+  it('blocks an inverted governance confidence window before querying the API', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByLabelText('Minimum governance confidence (%)'), {
+      target: { value: '90' },
+    })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      minConfidence: '0.9',
+    }))
+    fireEvent.change(screen.getByLabelText('Maximum governance confidence (%)'), {
+      target: { value: '70' },
+    })
+
+    expect(await screen.findByText('Maximum governance confidence must be greater than or equal to minimum governance confidence.')).toBeVisible()
+    expect(screen.getByLabelText('Maximum governance confidence (%)')).toHaveAttribute('aria-invalid', 'true')
+    expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      minConfidence: '0.9',
+    })
   })
 
   it('requests current governance findings by default and can include history', async () => {

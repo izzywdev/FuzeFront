@@ -41,6 +41,46 @@ describe('policy-gate review lifecycle', () => {
     await expect(store.reviewPolicyGateEvaluation(evaluation.id, 'tenant-2', { status: 'dismissed', reviewedBy: 'user-2' })).resolves.toBeUndefined()
   })
 
+  it('filters policy findings by inclusive confidence bounds and tenant', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-09T00:00:00.000Z' }
+    await store.savePolicyGateEvaluations([
+      { ...base, id: 'low', title: 'Low confidence', confidence: 0.69 },
+      { ...base, id: 'minimum', title: 'Minimum confidence', confidence: 0.7 },
+      { ...base, id: 'maximum', title: 'Maximum confidence', confidence: 0.9 },
+      { ...base, id: 'high', title: 'High confidence', confidence: 0.91 },
+      { ...base, id: 'other-tenant', tenantId: 'tenant-2', title: 'Other tenant', confidence: 0.8 },
+    ])
+
+    const matches = await store.policyGateEvaluations('repo-1', 'tenant-1', {
+      minConfidence: 0.7,
+      maxConfidence: 0.9,
+    })
+    expect(matches.map(item => item.id).sort()).toEqual(['maximum', 'minimum'])
+  })
+
+  it('binds policy confidence before the stable Postgres continuation cursor', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+
+    await store.policyGateEvaluations('repo-1', 'tenant-1', {
+      minConfidence: 0.7,
+      maxConfidence: 0.9,
+      after: { createdAt: '2026-10-09T00:00:00.000Z', id: 'evaluation-1' },
+      limit: 25,
+    })
+
+    const [statement, parameters] = query.mock.calls[0]
+    expect(String(statement)).toContain('confidence >= $8')
+    expect(String(statement)).toContain('confidence <= $9')
+    expect(String(statement)).toContain('(created_at,id) < ($10::timestamptz,$11::text)')
+    expect(parameters).toEqual([
+      'repo-1', 'tenant-1', null, null, null, null, null,
+      0.7, 0.9, '2026-10-09T00:00:00.000Z', 'evaluation-1', 25,
+    ])
+  })
+
   it('persists exact evidence passages with the deterministic evaluation', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')

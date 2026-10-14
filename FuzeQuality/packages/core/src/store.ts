@@ -62,6 +62,8 @@ export type PolicyGateEvaluationQuery = {
   severity?: PolicyGateEvaluation['severity']
   reviewStatus?: PolicyGateEvaluation['reviewStatus']
   revision?: string
+  minConfidence?: number
+  maxConfidence?: number
   after?: HistoryCursor
   limit?: number
 }
@@ -416,7 +418,9 @@ export class MemoryCatalogStore implements CatalogStore {
         (!query.kind || item.kind === query.kind) &&
         (!query.severity || item.severity === query.severity) &&
         (!query.reviewStatus || item.reviewStatus === query.reviewStatus) &&
-        (!query.revision || item.revision === query.revision)
+        (!query.revision || item.revision === query.revision) &&
+        (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
+        (query.maxConfidence === undefined || item.confidence <= query.maxConfidence)
       )
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
       .filter(item => !query.after || item.createdAt < query.after.createdAt || (item.createdAt === query.after.createdAt && item.id < query.after.id))
@@ -1139,10 +1143,12 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($5::text IS NULL OR severity=$5)
          AND ($6::text IS NULL OR review_status=$6)
          AND ($7::text IS NULL OR revision=$7)
-         AND ($8::timestamptz IS NULL OR (created_at,id) < ($8::timestamptz,$9::text))
+         AND ($8::double precision IS NULL OR confidence >= $8)
+         AND ($9::double precision IS NULL OR confidence <= $9)
+         AND ($10::timestamptz IS NULL OR (created_at,id) < ($10::timestamptz,$11::text))
        ORDER BY created_at DESC,id DESC
-       LIMIT COALESCE($10::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+       LIMIT COALESCE($12::integer, 2147483647)`,
+      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }

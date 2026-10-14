@@ -35,6 +35,7 @@ describe('policy-gate inventory filter', () => {
       evaluation(),
       evaluation({
         id: 'evaluation-2',
+        confidence: 0.8,
         kind: 'ambiguous-policy',
         severity: 'medium',
         reviewStatus: 'accepted',
@@ -42,6 +43,7 @@ describe('policy-gate inventory filter', () => {
       }),
       evaluation({
         id: 'evaluation-3',
+        confidence: 0.7,
         kind: 'ambiguous-policy',
         severity: 'medium',
         reviewStatus: 'dismissed',
@@ -53,6 +55,8 @@ describe('policy-gate inventory filter', () => {
       severity: 'medium',
       reviewStatus: 'accepted',
       revision: 'def',
+      minConfidence: '0.8',
+      maxConfidence: '0.8',
     })
 
     expect(filterPolicyGateEvaluations(evaluations, filter)).toEqual([
@@ -77,6 +81,14 @@ describe('policy-gate inventory filter', () => {
     expect(
       policyGateFilterSchema.safeParse({ unexpected: 'value' }).success
     ).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ minConfidence: -0.01 }).success).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ maxConfidence: 1.01 }).success).toBe(false)
+    const inverted = policyGateFilterSchema.safeParse({ minConfidence: 0.9, maxConfidence: 0.7 })
+    expect(inverted.success).toBe(false)
+    if (!inverted.success) expect(inverted.error.issues[0]).toMatchObject({
+      path: ['maxConfidence'],
+      message: 'maxConfidence must be greater than or equal to minConfidence',
+    })
     expect(policyGateFilterSchema.parse({ limit: 101 }).limit).toBe(100)
   })
 

@@ -3221,6 +3221,8 @@ type PolicyGateInventorySelection = {
   severity: PolicyGateEvaluation['severity'] | ''
   reviewStatus: PolicyGateEvaluation['reviewStatus'] | ''
   revisionScope: FlowRevisionScope
+  minimumConfidencePercent: string
+  maximumConfidencePercent: string
 }
 
 type HistoryPage<T> = { items: T[]; page: { nextCursor: string | null; hasMore: boolean } }
@@ -3244,6 +3246,8 @@ export function policyGateEvaluationMatchesInventory(
     evaluation.reviewStatus !== selection.reviewStatus
   )
     return false
+  if (selection.minimumConfidencePercent !== '' && evaluation.confidence < Number(selection.minimumConfidencePercent) / 100) return false
+  if (selection.maximumConfidencePercent !== '' && evaluation.confidence > Number(selection.maximumConfidencePercent) / 100) return false
   if (selection.revisionScope === 'current') {
     const repository = repositories.find(
       item => item.id === evaluation.repositoryId
@@ -3412,11 +3416,20 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   >('')
   const [policyGateRevisionScope, setPolicyGateRevisionScope] =
     useState<FlowRevisionScope>('current')
+  const [policyGateMinimumConfidencePercent, setPolicyGateMinimumConfidencePercent] = useState('')
+  const [policyGateMaximumConfidencePercent, setPolicyGateMaximumConfidencePercent] = useState('')
+  const invalidPolicyGateConfidenceRange = Boolean(
+    policyGateMinimumConfidencePercent !== '' &&
+    policyGateMaximumConfidencePercent !== '' &&
+    Number(policyGateMinimumConfidencePercent) > Number(policyGateMaximumConfidencePercent)
+  )
   const policyGateSelection: PolicyGateInventorySelection = {
     kind: policyGateKind,
     severity: policyGateSeverity,
     reviewStatus: policyGateReviewStatus,
     revisionScope: policyGateRevisionScope,
+    minimumConfidencePercent: policyGateMinimumConfidencePercent,
+    maximumConfidencePercent: policyGateMaximumConfidencePercent,
   }
   const policyGateSelectionRef = useRef(policyGateSelection)
   policyGateSelectionRef.current = policyGateSelection
@@ -3622,8 +3635,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       data.repositories.map(async repository => {
         const [repositoryArtifactsResult, evaluationResult] = await Promise.allSettled([
           api.qualityArtifacts(repository.id),
-          policyGateRevisionScope === 'current' &&
-          !repository.lastScanRevision
+          invalidPolicyGateConfidenceRange ||
+          (policyGateRevisionScope === 'current' && !repository.lastScanRevision)
             ? []
             : api.policyGateEvaluations(
                 repository.id,
@@ -3636,6 +3649,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       policyGateRevisionScope === 'current'
                         ? repository.lastScanRevision ?? ''
                         : '',
+                    minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
+                    maxConfidence: policyGateMaximumConfidencePercent === '' ? '' : String(Number(policyGateMaximumConfidencePercent) / 100),
                   }).filter(([, value]) => Boolean(value))
                 )
               ),
@@ -3695,6 +3710,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     policyGateRevisionScope,
     policyGateReviewStatus,
     policyGateSeverity,
+    policyGateMinimumConfidencePercent,
+    policyGateMaximumConfidencePercent,
+    invalidPolicyGateConfidenceRange,
   ])
   useEffect(() => {
     let active = true
@@ -4181,6 +4199,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             severity: policyGateSeverity,
             reviewStatus: policyGateReviewStatus,
             revision: policyGateRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
+            minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
+            maxConfidence: policyGateMaximumConfidencePercent === '' ? '' : String(Number(policyGateMaximumConfidencePercent) / 100),
             cursor,
           }).filter(([, value]) => Boolean(value)))
         ))
@@ -4472,7 +4492,37 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="all">All revisions</option>
               </select>
             </label>
+            <label>
+              Minimum governance confidence (%)
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={policyGateMinimumConfidencePercent}
+                placeholder="Any"
+                onChange={event => setPolicyGateMinimumConfidencePercent(event.target.value)}
+              />
+            </label>
+            <label>
+              Maximum governance confidence (%)
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={policyGateMaximumConfidencePercent}
+                placeholder="Any"
+                aria-invalid={invalidPolicyGateConfidenceRange}
+                onChange={event => setPolicyGateMaximumConfidencePercent(event.target.value)}
+              />
+            </label>
           </div>
+          {invalidPolicyGateConfidenceRange && (
+            <p className="form-error" role="alert">
+              Maximum governance confidence must be greater than or equal to minimum governance confidence.
+            </p>
+          )}
           {(Object.keys(flowNextCursors).length > 0 ||
             Object.keys(policyGateNextCursors).length > 0) && (
             <div className="row-actions" aria-label="Analysis history pagination">
