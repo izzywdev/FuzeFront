@@ -6,8 +6,9 @@
   .card.off { opacity: 0.6; filter: grayscale(0.5); }
   .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%); }
   .head { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-4); }
-  .icon { position: relative; width: 40px; height: 40px; flex: none; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; background: linear-gradient(135deg, #15414f, var(--accent-2)); }
-  .icon.mf { background: linear-gradient(135deg, #2f1f4f, var(--accent-color)); }
+  .icon { position: relative; width: 40px; height: 40px; flex: none; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; background: linear-gradient(135deg, #2f1f4f, var(--accent-color)); }
+  .icon.mf { background: linear-gradient(135deg, #15414f, var(--accent-2)); }
+  .icon.iframe { background: linear-gradient(135deg, #4a3a12, var(--warning-color)); }
   .hdot { position: absolute; bottom: -2px; right: -2px; width: 12px; height: 12px; border-radius: 999px; border: 2px solid var(--bg-tertiary); }
   .hdot.ok { background: var(--success-color); }
   .hdot.no { background: var(--error-color); }
@@ -27,7 +28,7 @@
 </div>
 <div class="card off">
   <div class="head">
-    <div class="icon">🖼️<span class="hdot no"></span></div>
+    <div class="icon iframe">🖼️<span class="hdot no"></span></div>
     <div><h3 class="dim">Legacy Portal<span class="offlbl">(Offline)</span></h3><span class="ibadge">iframe</span></div>
   </div>
   <p>Remote unreachable — card is inert and grayscaled.</p>

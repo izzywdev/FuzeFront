@@ -250,13 +250,27 @@ function buildTokens() {
     ['radius-pill', 'Fully rounded — pills, dots, toggles.'],
   ].map(([n, u]) => lenToken(n, u))
 
-  // ----- shadow: geometry from CSS, ink inlined (artifact grammar bans var()) ----
-  const inlineShadow = (name) => {
+  // ----- shadow: geometry from CSS, ink inlined PER THEME (grammar bans var()) ----
+  // colors.css overrides --shadow (and the accent) per theme, so emit {dark,light}
+  // so the light theme's lighter ink propagates instead of being frozen to dark.
+  const resolveColor = (map, varName) => {
+    const v = map.get(varName)
+    if (v == null) return null
+    const a = /^var\(\s*(--[\w-]+)\s*\)$/.exec(v.trim())
+    return a ? (map.get(a[1]) ?? colors.base.get(a[1])) : v.trim()
+  }
+  const pick = (varName) => ({
+    dark: resolveColor(colors.base, varName),
+    light: resolveColor(colors.light, varName) ?? resolveColor(colors.base, varName),
+  })
+  const shadowInk = pick('--shadow')
+  const shadowAccent = pick('--accent-color')
+  const inlineShadow = (name, theme) => {
     const v = spacing.get(`--${name}`)
     if (v == null) throw new Error(`tokens: --${name} missing from spacing.css`)
     return v
-      .replace(/var\(--shadow\)/g, 'rgba(0, 0, 0, 0.45)')
-      .replace(/var\(--accent-color\)/g, '#6e5cff')
+      .replace(/var\(--shadow\)/g, shadowInk[theme])
+      .replace(/var\(--accent-color\)/g, shadowAccent[theme])
   }
   const shadowTokens = [
     ['shadow-xs', 'Hairline lift — dots, inline chips.'],
@@ -265,7 +279,25 @@ function buildTokens() {
     ['shadow-lg', 'Modals, popovers.'],
     ['shadow-pop', 'Dropdowns, popovers, tooltips.'],
     ['shadow-accent', 'The fuse glow under a primary button.'],
-  ].map(([n, u]) => ({ name: n, value: inlineShadow(n), usage: u }))
+  ].map(([n, u]) => {
+    const dark = inlineShadow(n, 'dark')
+    const light = inlineShadow(n, 'light')
+    return { name: n, value: dark === light ? dark : { dark, light }, usage: u }
+  })
+
+  // ----- layout: component-facing sizes referenced by Container/Drawer/BottomSheet ---
+  // (env()-based safe-area insets and the motion scale are intentionally omitted —
+  // the artifact token grammar cannot represent functions or a motion family.)
+  const layoutTokens = [
+    ['container-2xl', 'Container max-width — 42rem.'], ['container-3xl', 'Container max-width — 48rem.'],
+    ['container-4xl', 'Container max-width — 56rem.'], ['container-5xl', 'Container max-width — 64rem.'],
+    ['container-6xl', 'Container max-width — 72rem.'], ['container-7xl', 'Container max-width — 80rem (default).'],
+    ['container-max', 'Shell content max-width.'], ['top-bar-height', 'Top bar height (desktop).'],
+    ['top-bar-height-mobile', 'Top bar height (mobile).'], ['side-panel-width', 'Left nav / side panel width.'],
+    ['modal-max-w', 'Modal max-width.'], ['modal-max-w-lg', 'Large modal max-width.'],
+    ['bottom-nav-height', 'Mobile bottom-nav height.'], ['drawer-width', 'Mobile slide-in drawer width.'],
+    ['sheet-max-h', 'Bottom-sheet max height.'], ['touch-target', 'Minimum tap target (WCAG 2.5.5).'],
+  ].map(([n, u]) => lenToken(n, u))
 
   // ----- z-index: parsed live -----
   const zTokens = [
@@ -297,6 +329,7 @@ function buildTokens() {
     spacing: { tokens: spacingTokens },
     radius: { tokens: radiusTokens },
     shadow: { note: 'Deep and soft, tuned for the dark shell. Light theme uses the same geometry with a lighter ink.', tokens: shadowTokens },
+    layout: { note: 'Component-facing sizes (shell chrome, containers, mobile). Safe-area insets and the motion scale are omitted — the token grammar cannot represent env()/functions or a motion family.', tokens: layoutTokens },
     zIndex: { note: 'One elevation ladder so layered surfaces never collide.', tokens: zTokens },
   }
 }
@@ -330,7 +363,8 @@ function componentJsdoc(name, dtsText) {
 // carrying each prop's own inline `/** … */` note.
 function fallbackFromDts(name, group, dtsText) {
   const lead = componentJsdoc(name, dtsText)
-  const body = new RegExp(`export interface ${name}Props\\s*\\{([\\s\\S]*?)\\n\\}`).exec(dtsText)
+  // `[^{}]*` tolerates an `extends React.HTMLAttributes<…>` clause before the body.
+  const body = new RegExp(`export interface ${name}Props[^{}]*\\{([\\s\\S]*?)\\n\\}`).exec(dtsText)
   const props = []
   if (body) {
     // Drop the `[key: string]: unknown` index signature before parsing props.
@@ -447,7 +481,12 @@ function buildIndex() {
   if (existsSync(existingPath)) {
     try {
       const prev = JSON.parse(read(existingPath))
-      if (prev.createdOnFiles) createdOnFiles = prev.createdOnFiles
+      // Preserve only a schema-valid stamp; otherwise reseed the canonical one,
+      // so a corrupted/hand-edited index.json cannot pass --check by self-comparison.
+      const c = prev.createdOnFiles
+      if (c && Number.isInteger(c.v) && typeof c.at === 'string' && !Number.isNaN(Date.parse(c.at))) {
+        createdOnFiles = c
+      }
     } catch { /* regenerate from scratch */ }
   }
   return {
@@ -478,7 +517,7 @@ function generate() {
   // components
   const compFiles = walkJsx(join(DS_ROOT, 'components'))
   const byGroup = {}
-  const dtsParts = ['/* AUTO-GENERATED by producer — the public type surface. */', '']
+  const dtsParts = ['/* AUTO-GENERATED by producer — the public type surface (documentation, not type-checked). */', 'import * as React from "react";', '']
   for (const f of compFiles) {
     const name = basename(f, '.jsx')
     const dir = dirname(f)
@@ -493,7 +532,10 @@ function generate() {
 
     const dts = join(dir, `${name}.d.ts`)
     if (existsSync(dts)) {
-      dtsParts.push(`// ----- ${name} (${group}) -----`, read(dts).trim(), '')
+      // Strip per-file imports: concatenated verbatim they duplicate `import … react`
+      // and leave local sibling imports (e.g. ./Text) dangling in the merged module.
+      const stripped = read(dts).replace(/^\s*import\s[\s\S]*?;\s*$/gm, '').trim()
+      dtsParts.push(`// ----- ${name} (${group}) -----`, stripped, '')
     }
   }
   emit('components/index.d.ts', dtsParts.join('\n'))
