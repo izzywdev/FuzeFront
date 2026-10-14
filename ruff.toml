@@ -1,0 +1,10 @@
+[lint.per-file-ignores]
+# UP031: Use format specifiers instead of percent format.
+# The __tests__ Python files are governed/reconciled from FuzeSDLC canonical, which
+# uses %-formatting in assertEqual strings to embed GitHub Actions expression syntax
+# (e.g. "${{ ... %s ... }}" % vendor). Converting to f-strings requires quadruple-
+# escaping the GHA braces, making the test assertion harder to read; the canonical
+# carries the %-form and governance_sync.py replaces the file verbatim, so any
+# local f-string conversion is immediately reverted. Suppressed here until the
+# canonical is updated and a new FuzeSDLC release is cut.
+"**/__tests__/*.py" = ["UP031"]
