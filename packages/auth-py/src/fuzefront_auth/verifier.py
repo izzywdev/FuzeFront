@@ -38,6 +38,7 @@ from .types import AuthError, AuthMode, Identity
 # Asymmetric algorithms ONLY for federated mode: permitting HS* would let anyone
 # who knows the (public) key use it as an HMAC secret and forge tokens.
 _FEDERATED_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384"]
+_KEY_TYPE_FOR_ALG_PREFIX = {"RS": "RSA", "ES": "EC"}
 _DISCOVERY_TIMEOUT_SEC = 5
 _JWKS_TIMEOUT_SEC = 5
 # A fetched key set is trusted for this long, then re-fetched. A key the issuer
@@ -149,6 +150,25 @@ def _decode_options(has_audience: bool, has_issuer: bool) -> dict[str, Any]:
     }
 
 
+def _normalize_resolved(extra: Any) -> tuple[str | None, tuple[str, ...], str | None]:
+    """Validate what a host resolver returned. Anything malformed raises, and the
+    caller turns that into a 500 `VERIFIER_UNAVAILABLE` rather than guessing."""
+    if extra is None:
+        return None, (), None
+    if not isinstance(extra, dict):
+        raise TypeError("resolver must return a dict")
+    tenant_id, roles, email = extra.get("tenant_id"), extra.get("roles"), extra.get("email")
+    if tenant_id is not None and not isinstance(tenant_id, str):
+        raise TypeError("tenant_id must be a string")
+    if email is not None and not isinstance(email, str):
+        raise TypeError("email must be a string")
+    if roles is None:
+        roles = ()
+    if isinstance(roles, str) or not isinstance(roles, (list, tuple)) or not all(isinstance(r, str) for r in roles):
+        raise TypeError("roles must be a list of strings")
+    return tenant_id or None, tuple(roles), email or None
+
+
 class _LegacyVerifier:
     mode: AuthMode = "legacy-hs256"
 
@@ -196,15 +216,14 @@ class _LegacyVerifier:
         email = _claim_string(payload, "email")
         if cfg.resolver is not None:
             try:
-                extra = cfg.resolver(user_id) or {}
+                tenant_id, roles, resolved_email = _normalize_resolved(cfg.resolver(user_id))
             except Exception:  # noqa: BLE001
-                # A valid token whose hydration failed must not read as
-                # "authorized for nothing": that would mask an outage as an authz
-                # decision. Deny loudly, and never surface the resolver's message.
+                # A valid token whose hydration failed (or returned malformed data)
+                # must not read as "authorized for nothing": that would mask an
+                # outage as an authz decision. Deny loudly, and never surface the
+                # resolver's message.
                 raise AuthError("VERIFIER_UNAVAILABLE", "identity resolver failed", 500) from None
-            tenant_id = extra.get("tenant_id") or None
-            roles = tuple(extra.get("roles") or ())
-            email = extra.get("email") or email
+            email = resolved_email or email
 
         return Identity(
             user_id=user_id,
@@ -252,7 +271,7 @@ class _KeyResolver:
         self._config = config
         self._lock = threading.Lock()
         self._jwks_uri: str | None = config.jwks_uri
-        self._keys: dict[str, PyJWK] = {}
+        self._keys: dict[str, list[PyJWK]] = {}
         self._keyless: list[PyJWK] = []
         self._fetched_at: float | None = None
         self._last_attempt: float | None = None
@@ -280,7 +299,11 @@ class _KeyResolver:
             if not isinstance(raw_keys, list):
                 raise TypeError("no keys")
             loaded = [jwk for jwk in (_load_jwk(raw) for raw in raw_keys) if jwk is not None]
-            keys = {jwk.key_id: jwk for jwk in loaded if jwk.key_id}
+            keys: dict[str, list[PyJWK]] = {}
+            for jwk in loaded:
+                if jwk.key_id:
+                    # RFC 7517 allows several keys to share a kid (e.g. different kty).
+                    keys.setdefault(jwk.key_id, []).append(jwk)
             keyless = [jwk for jwk in loaded if not jwk.key_id]
         except AuthError:
             raise
@@ -296,18 +319,26 @@ class _KeyResolver:
     def _may_attempt(self) -> bool:
         return self._last_attempt is None or _now() - self._last_attempt >= _JWKS_MIN_REFETCH_SEC
 
-    def _lookup(self, kid: str | None) -> PyJWK | None:
+    def _lookup(self, kid: str | None, alg: str | None) -> list[PyJWK]:
         if kid is not None:
-            return self._keys.get(kid)
-        # No `kid`: only unambiguous when the issuer publishes exactly one key in
-        # total. Several keys without ids (or a mix) must not be resolved by order.
-        everything = [*self._keys.values(), *self._keyless]
-        return everything[0] if len(everything) == 1 else None
+            candidates = list(self._keys.get(kid, []))
+        else:
+            # No `kid`: only unambiguous when the issuer publishes exactly one key in
+            # total. Several keys without ids (or a mix) must not be resolved by order.
+            everything = [*(k for ks in self._keys.values() for k in ks), *self._keyless]
+            candidates = everything if len(everything) == 1 else []
+        # Narrow by key type so a shared kid selects the compatible key.
+        expected = _KEY_TYPE_FOR_ALG_PREFIX.get((alg or "")[:2])
+        if expected is not None:
+            candidates = [k for k in candidates if getattr(k, "key_type", None) == expected]
+        return candidates
 
-    def get_key(self, token: str) -> Any:
+    def get_keys(self, token: str) -> list[Any]:
+        """Candidate verification keys for ``token`` (never empty; raises otherwise)."""
         header = jwt.get_unverified_header(token)
         kid = header.get("kid")
-        if kid is not None and not isinstance(kid, str):
+        alg = header.get("alg")
+        if (kid is not None and not isinstance(kid, str)) or not isinstance(alg, str):
             raise AuthError("MALFORMED", "token is not a parseable JWT")
         with self._lock:
             if self._expired():
@@ -315,13 +346,13 @@ class _KeyResolver:
                 if not self._may_attempt():
                     raise AuthError("JWKS_UNAVAILABLE", "signing keys are unavailable")
                 self._refresh()
-            jwk = self._lookup(kid)
-            if jwk is None and self._may_attempt():
+            found = self._lookup(kid, alg)
+            if not found and self._may_attempt():
                 self._refresh()  # the issuer may have rotated in a new key
-                jwk = self._lookup(kid)
-        if jwk is None:
+                found = self._lookup(kid, alg)
+        if not found:
             raise AuthError("JWKS_UNAVAILABLE", "could not resolve signing key")
-        return jwk.key
+        return [jwk.key for jwk in found]
 
 
 # One resolver per (issuer, jwks_uri): it owns the fetch + cache, so re-creating it
@@ -351,21 +382,33 @@ class _FederatedVerifier:
                 resolver = _resolvers[key] = _KeyResolver(self._config)
             return resolver
 
+    def _decode_with_any(self, token: str, keys: list[Any]) -> dict[str, Any]:
+        """Try each candidate key. Only a signature mismatch moves on to the next
+        key; every other failure (expired, wrong issuer, ...) is final. A token is
+        accepted only if some candidate key genuinely verifies it."""
+        cfg = self._config
+        last: Exception | None = None
+        for key in keys:
+            try:
+                return jwt.decode(
+                    token,
+                    key,
+                    algorithms=_FEDERATED_ALGORITHMS,
+                    issuer=cfg.issuer,
+                    audience=cfg.audience,
+                    leeway=cfg.clock_tolerance_sec,
+                    options=_decode_options(True, True),
+                )
+            except jwt.InvalidSignatureError as err:
+                last = err
+        raise last if last is not None else AuthError("JWKS_UNAVAILABLE", "could not resolve signing key")
+
     def verify(self, token: str) -> Identity:
         if not token:
             raise AuthError("NO_TOKEN", "no bearer token presented")
         cfg = self._config
         try:
-            signing_key = self._resolver().get_key(token)
-            payload = jwt.decode(
-                token,
-                signing_key,
-                algorithms=_FEDERATED_ALGORITHMS,
-                issuer=cfg.issuer,
-                audience=cfg.audience,
-                leeway=cfg.clock_tolerance_sec,
-                options=_decode_options(True, True),
-            )
+            payload = self._decode_with_any(token, self._resolver().get_keys(token))
         except Exception as err:  # noqa: BLE001 - every failure is a denial
             raise _to_auth_error(err) from None
 

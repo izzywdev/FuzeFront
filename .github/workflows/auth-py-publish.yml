@@ -70,8 +70,14 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # `^{}` peels an annotated tag to its commit; a lightweight tag matches the bare ref.
-          existing=$(git ls-remote origin "refs/tags/$TAG^{}" "refs/tags/$TAG" | awk 'NR==1{print $1}')
+          # An annotated tag lists TWO rows: the tag object, then (as `<ref>^{}`) the
+          # commit it points at. github.sha is the commit, so prefer the peeled row and
+          # fall back to the bare row only for a lightweight tag.
+          rows=$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
+          existing=$(printf '%s\n' "$rows" | awk '$2 ~ /\^\{\}$/ {print $1; exit}')
+          if [ -z "$existing" ]; then
+            existing=$(printf '%s\n' "$rows" | awk 'NF {print $1; exit}')
+          fi
           if [ -n "$existing" ] && [ "$existing" != "$SHA" ]; then
             echo "::error::tag $TAG already exists at $existing but this run built $SHA"
             exit 1

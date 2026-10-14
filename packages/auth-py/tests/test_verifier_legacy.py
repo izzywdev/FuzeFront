@@ -143,3 +143,20 @@ def test_future_iat_is_not_rejected_with_zero_tolerance():
     # lock users out. `nbf` is the not-before boundary, not `iat`.
     ident = verifier().verify(make_token(SECRET, claims={"userId": "u", "iat": int(time.time()) + 300}))
     assert ident.user_id == "u"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"roles": 1}, {"roles": "admin"}, {"roles": [1, 2]}, {"tenant_id": 5}, {"email": ["x"]}, "not-a-dict", ["roles"]],
+)
+def test_malformed_resolver_output_is_a_500_not_a_crash(bad):
+    # Malformed host data must stay inside the failure contract: an AuthError 500
+    # (an outage), never a raw TypeError and never an opaque 401.
+    with pytest.raises(AuthError) as info:
+        verifier(resolver=lambda uid: bad).verify(make_token(SECRET, claims={"userId": "u"}))
+    assert info.value.code == "VERIFIER_UNAVAILABLE" and info.value.status == 500
+
+
+def test_resolver_returning_nothing_is_unprivileged():
+    ident = verifier(resolver=lambda uid: None).verify(make_token(SECRET, claims={"userId": "u"}))
+    assert (ident.tenant_id, ident.roles) == (None, ())

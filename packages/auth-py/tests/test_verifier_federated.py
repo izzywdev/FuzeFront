@@ -229,3 +229,44 @@ def test_single_keyless_key_is_usable(jwks_server, rsa_key):
     del entry["kid"]
     jwks_server["keys"][:] = [entry]
     assert verifier(jwks_server).verify(make_token(rsa_key, alg="RS256", claims=GOOD)).user_id == "u-9"
+
+
+def test_keys_sharing_a_kid_are_all_kept_and_selected_by_key_type(jwks_server, rsa_key, ec_key):
+    # RFC 7517 allows different key types to share a kid. Neither order of the set
+    # may decide which caller authenticates.
+    from conftest import _jwk
+
+    for order in ("rsa-first", "ec-first"):
+        rsa_entry = _jwk(rsa_key.public_key(), "shared", "RS256")
+        ec_entry = _jwk(ec_key.public_key(), "shared", "ES256")
+        jwks_server["keys"][:] = [rsa_entry, ec_entry] if order == "rsa-first" else [ec_entry, rsa_entry]
+        import fuzefront_auth.verifier as vm
+
+        vm._resolvers.clear()
+        v = verifier(jwks_server)
+        assert v.verify(make_token(rsa_key, alg="RS256", kid="shared", claims=GOOD)).user_id == "u-9"
+        assert v.verify(make_token(ec_key, alg="ES256", kid="shared", claims=GOOD)).user_id == "u-9"
+
+
+def test_shared_kid_does_not_accept_a_key_that_did_not_sign(jwks_server, rsa_key, other_rsa_key):
+    # Two RSA keys under one kid: a token from a third key is still rejected, and
+    # a token from either listed key is accepted regardless of order.
+    from conftest import _jwk
+
+    jwks_server["keys"][:] = [_jwk(rsa_key.public_key(), "dup", "RS256"), _jwk(other_rsa_key.public_key(), "dup", "RS256")]
+    v = verifier(jwks_server)
+    assert v.verify(make_token(rsa_key, alg="RS256", kid="dup", claims=GOOD)).user_id == "u-9"
+    assert v.verify(make_token(other_rsa_key, alg="RS256", kid="dup", claims=GOOD)).user_id == "u-9"
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    stranger = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    assert code_of(v, make_token(stranger, alg="RS256", kid="dup", claims=GOOD)) == "INVALID_SIGNATURE"
+
+
+def test_expired_token_under_a_shared_kid_reports_expiry_not_signature(jwks_server, rsa_key, other_rsa_key):
+    from conftest import _jwk
+
+    jwks_server["keys"][:] = [_jwk(other_rsa_key.public_key(), "dup", "RS256"), _jwk(rsa_key.public_key(), "dup", "RS256")]
+    now = int(time.time())
+    token = make_token(rsa_key, alg="RS256", kid="dup", claims={**GOOD, "iat": now - 9000, "exp": now - 8000})
+    assert code_of(verifier(jwks_server), token) == "EXPIRED"
