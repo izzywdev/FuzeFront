@@ -331,6 +331,9 @@ jobs:
           echo "=== Verification ==="
           check_flag() {
             local FLAG="$1"
+            # curl -f leaves a previous run's output file intact on an HTTP error, so a
+            # flag that was never created would print the PRECEDING flag's state.
+            rm -f /tmp/flag_state.json
             curl -sf \
               "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT" \
               -H "Authorization: $TOKEN" -o /tmp/flag_state.json 2>/dev/null || true
@@ -369,6 +372,7 @@ jobs:
               check_flag "fuzefront.selection-lists.seed-defaults"
               check_flag "fuzefront.selection-lists.shared-lists"
               for F in fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.selection-lists.shared-lists; do
+                rm -f /tmp/flag_meta.json
                 curl -sf "$UNLEASH/api/admin/projects/$PROJECT/features/$F" \
                   -H "Authorization: $TOKEN" -o /tmp/flag_meta.json 2>/dev/null || true
                 F="$F" python3 -c "
