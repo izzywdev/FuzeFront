@@ -13,9 +13,10 @@
 
 import { rawFetch, SERVICE_BASE_URL } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
+import { testOrg, testUser } from '../helpers/ids';
 
-const ORG = 'org_01test00000000hardening000';
-const USER = 'usr_01test00000000hardening000';
+const ORG = testOrg('hardening');
+const USER = testUser('hardening');
 const token = () => mintTestToken({ userId: USER, organizationId: ORG });
 
 async function expectAlive(): Promise<void> {
