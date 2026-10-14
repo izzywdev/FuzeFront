@@ -31,7 +31,7 @@
     "type-check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "express": "^4.22.2"
+    "express": "^4.22.2 || ^5.0.0"
   },
   "peerDependenciesMeta": {
     "express": {

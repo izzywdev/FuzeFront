@@ -208,6 +208,23 @@ describe('tracingMiddleware', () => {
     expect(span.name).toBe('GET /v1/selection-lists/items/:itemId');
   });
 
+  it('collapses an unmatched request (404, or rejected before routing) to a fixed name, never the raw path', () => {
+    const middleware = tracingMiddleware();
+    // No req.route is ever set on this request — simulates a request that
+    // never reaches a matching route: a body-parser rejection before the
+    // router runs, or a genuine 404 on an arbitrary/adversarial path.
+    const req = fakeReq();
+    const res = fakeRes();
+    res.statusCode = 404;
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    res._finish();
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('GET (unmatched)');
+    expect(span.attributes['http.route']).toBeUndefined();
+  });
+
   it('does not double-end the span when BOTH `finish` and `close` fire', () => {
     const middleware = tracingMiddleware();
     const req = fakeReq();

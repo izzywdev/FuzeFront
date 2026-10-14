@@ -3,10 +3,25 @@
 All notable changes to this package are documented here. Versioned
 independently — bump on every interface change (SemVer).
 
-## 0.1.2 — span names include the router mount prefix, not just the local route pattern
+## 0.1.2 — span names include the router mount prefix; unmatched requests no longer leak the raw path; Express 5 peer range restored
 
 ### Fixed
 
+- An unmatched request (rejected before the router ran, e.g. a malformed-JSON
+  body-parser failure; or a genuine 404) never got `req.route` set, so
+  `tracingMiddleware()` kept the span's initial name — the raw, attacker-
+  controlled `req.path` — for its entire lifetime, and the `http.route`
+  attribute echoed it too. An adversary probing arbitrary/random paths could
+  create unbounded Tempo operation names, the exact cardinality problem the
+  matched-route rename (0.1.1) exists to prevent for parameterized routes.
+  Caught by a Codex review on PR #1489. Fixed: when no route ever matches,
+  the span is renamed to a fixed `METHOD (unmatched)` and `http.route` is
+  omitted rather than set to the raw path.
+- `peerDependencies.express` regressed back to `^4.22.2`-only on this
+  branch (it forked before `fix/telemetry-express-5-peer-range` / PR #1487
+  merged, and that PR's Express 5 widening never landed here). Caught by a
+  Codex review once this version was newly wired into `payment-service`,
+  which runs Express 5. Restored to `^4.22.2 || ^5.0.0`.
 - `tracingMiddleware()` renamed a matched request's span using only
   `req.route.path`, which is the pattern LOCAL to whichever `Router` matched
   it — dropping the mount prefix (`req.baseUrl`) entirely. Two different

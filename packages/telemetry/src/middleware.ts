@@ -137,10 +137,20 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
         // object, so re-invoking `spanName` now (vs. at span-start time)
         // picks them up.
         span.updateName(spanName(req));
+        span.setAttribute('http.route', routePath);
+      } else {
+        // No route ever matched — rejected before the router ran (e.g. a
+        // body-parser failure on malformed JSON) or a genuine 404. req.path
+        // is attacker-controlled and unbounded (adversarial/scanning
+        // requests), so falling back to it here would reintroduce, for every
+        // UNMATCHED request, the exact per-path cardinality problem
+        // matchedRoutePath() exists to collapse for MATCHED ones. Use a
+        // fixed name instead, and omit http.route entirely rather than
+        // echoing the raw path into it.
+        span.updateName(`${req.method} (unmatched)`);
       }
       span.setAttribute('http.status_code', res.statusCode);
       span.setAttribute('http.method', req.method);
-      span.setAttribute('http.route', routePath ?? req.path);
       if (res.statusCode >= 500) {
         span.setAttribute('error', true);
       }
