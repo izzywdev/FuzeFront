@@ -477,7 +477,10 @@ describe('test execution evidence', () => {
     expect(sql).toContain("DISTINCT ON (link->>'kind',link->>'url')")
     expect(sql).toContain("length(COALESCE(EXCLUDED.summary,''))")
     expect(sql).toContain('branch=COALESCE(EXCLUDED.branch')
+    expect(sql).toContain('kind,status,name,workflow_path')
+    expect(sql).toContain('kind,status,name,workflow_path,')
     expect(query.mock.calls[0][1][7]).toBe('feature/checkout')
+    expect(query.mock.calls[0][1][10]).toBe('CI')
     expect(query.mock.calls[0][1][11]).toBe('.github/workflows/ci.yml')
   })
 
