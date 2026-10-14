@@ -1,0 +1,18 @@
+<!-- @dsCard group="Launcher" height=120 -->
+<style>@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");</style>
+<style>
+  body { margin: 0; padding: 28px; background: var(--bg-primary); display: flex; gap: 28px; align-items: center; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .lbl { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-tertiary); }
+  .dot { border-radius: 999px; border: 2px solid var(--bg-tertiary); }
+  .ok  { background: var(--success-color); box-shadow: var(--shadow-xs); }
+  .no  { background: var(--error-color); }
+  .sm { width: 8px; height: 8px; border-width: 1.5px; }
+  .md { width: 12px; height: 12px; }
+  .lg { width: 16px; height: 16px; border-width: 2.5px; }
+</style>
+<div class="cell"><span class="dot md ok"></span><span class="lbl">healthy</span></div>
+<div class="cell"><span class="dot md no"></span><span class="lbl">offline</span></div>
+<div class="cell"><span class="dot sm ok"></span><span class="lbl">sm</span></div>
+<div class="cell"><span class="dot md ok"></span><span class="lbl">md</span></div>
+<div class="cell"><span class="dot lg ok"></span><span class="lbl">lg</span></div>

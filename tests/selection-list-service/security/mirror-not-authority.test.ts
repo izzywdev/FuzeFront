@@ -38,14 +38,15 @@ import {
 } from '../helpers/db';
 import { createTestList, purgeList } from '../helpers/factories';
 import type { SelectionListId } from '../helpers/factories';
+import { testOrg, testUser } from '../helpers/ids';
 
 // ---------------------------------------------------------------------------
 // Test actors
 // ---------------------------------------------------------------------------
 
-const ORG_ID = 'org_01test00000000mirror000000';
-const USER_A = 'usr_01test00000000mirrora00000'; // Legitimate owner
-const USER_B = 'usr_01test00000000mirrorb00000'; // Has mirror row but no Permit grant
+const ORG_ID = testOrg('mirror');
+const USER_A = testUser('mirrora'); // Legitimate owner
+const USER_B = testUser('mirrorb'); // Has mirror row but no Permit grant
 
 function userAToken(): string {
   return mintTestToken({ userId: USER_A, organizationId: ORG_ID });

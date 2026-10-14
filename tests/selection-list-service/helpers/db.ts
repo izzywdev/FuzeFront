@@ -10,6 +10,7 @@
  *   DB_PASSWORD   — defaults to postgres
  */
 import { Pool, type PoolClient } from 'pg';
+import { canonicalUuid } from './ids';
 
 let _pool: Pool | null = null;
 
@@ -80,6 +81,28 @@ export async function insertDirectAccessGrant(grant: DirectAccessGrant): Promise
   } finally {
     client.release();
   }
+}
+
+/**
+ * The `selection_list_access` rows of one list, with `user_id` / `org_id` / `granted_by` reduced to their
+ * canonical (bare UUID) form. A grant the SERVICE writes (owner at create, fork, seeded owner, access PUT)
+ * stores the TypeID on one service build and the bare UUID on another; comparing these rows against
+ * `canonicalUuid(expected)` is valid on both. (Rows the harness INSERTs itself, `insertDirectAccessGrant`,
+ * are legal legacy data and are read back verbatim with `dbQuery`.)
+ */
+export async function canonicalAccessRows(
+  listId: string,
+): Promise<Array<{ user_id: string; org_id: string; role: string; granted_by: string }>> {
+  const rows = await dbQuery<{ user_id: string; org_id: string; role: string; granted_by: string }>(
+    'SELECT user_id, org_id, role, granted_by FROM selection_list_access WHERE list_id = $1 ORDER BY user_id',
+    [listId],
+  );
+  return rows.map((r) => ({
+    user_id: canonicalUuid(r.user_id),
+    org_id: canonicalUuid(r.org_id),
+    role: r.role,
+    granted_by: canonicalUuid(r.granted_by),
+  }));
 }
 
 export async function removeDirectAccessGrant(listId: string, userId: string): Promise<void> {
