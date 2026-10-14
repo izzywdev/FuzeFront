@@ -104,3 +104,29 @@ def test_decorator_without_verifier_fails_at_wiring_time():
 
     with pytest.raises(AuthError):
         require_auth(None)
+
+
+def test_portal_bound_token_is_enforced_by_the_decorator():
+    verifier = create_verifier(LegacyHs256Config(secret=SECRET))
+    token = make_token(SECRET, claims={"userId": "u-1", "portalId": "p-1"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def build_portal(resolver):
+        app = flask.Flask(__name__)
+
+        @app.get("/private")
+        @require_auth(verifier, portal=resolver)
+        def private():
+            return {"user": flask.g.identity.user_id}
+
+        return app.test_client()
+
+    assert build_portal(lambda req: "p-1").get("/private", headers=headers).status_code == 200
+    r = build_portal(lambda req: "p-2").get("/private", headers=headers)
+    assert r.status_code == 401 and r.json["code"] == "INVALID_AUDIENCE"
+    assert build_portal(None).get("/private", headers=headers).status_code == 401  # fail closed
+
+    def down(req):
+        raise RuntimeError("db down")
+
+    assert build_portal(down).get("/private", headers=headers).status_code == 503

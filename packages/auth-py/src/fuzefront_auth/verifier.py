@@ -234,6 +234,7 @@ class _LegacyVerifier:
             issued_at=_claim_number(payload, "iat"),
             expires_at=_claim_number(payload, "exp"),
             issuer=_claim_string(payload, "iss"),
+            portal_id=_claim_string(payload, "portalId"),
             claims=dict(payload),
         )
 
@@ -247,12 +248,50 @@ def _fetch_json(url: str, timeout: float) -> Any:
         return json.load(res)
 
 
-def _load_jwk(raw: Any) -> PyJWK | None:
+@dataclass(frozen=True)
+class _Candidate:
+    """A published key together with the restrictions the issuer declared on it."""
+
+    jwk: PyJWK
+    alg: str | None  # declared `alg`, if any (PyJWK would otherwise infer one from `kty`)
+    use: str | None
+    key_ops: tuple[str, ...] | None
+
+    @property
+    def kid(self) -> str | None:
+        return self.jwk.key_id or None
+
+    def can_verify(self, token_alg: str) -> bool:
+        """True only if this key may verify a token signed with ``token_alg``:
+        right key type, a signing key (not `use: enc`), allowed for `verify`, and
+        any algorithm the issuer pinned on it equals the token's."""
+        expected = _KEY_TYPE_FOR_ALG_PREFIX.get(token_alg[:2])
+        if expected is not None and getattr(self.jwk, "key_type", None) != expected:
+            return False
+        if self.use not in (None, "sig"):
+            return False
+        if self.key_ops is not None and "verify" not in self.key_ops:
+            return False
+        return self.alg is None or self.alg == token_alg
+
+
+def _load_jwk(raw: Any) -> _Candidate | None:
     """An unusable key (unsupported type, malformed) is skipped; the rest still load."""
+    if not isinstance(raw, dict):
+        return None
     try:
-        return PyJWK(raw)
+        jwk = PyJWK(raw)
     except Exception:  # noqa: BLE001
         return None
+    key_ops = raw.get("key_ops")
+    ops = tuple(o for o in key_ops if isinstance(o, str)) if isinstance(key_ops, list) else None
+    alg, use = raw.get("alg"), raw.get("use")
+    return _Candidate(
+        jwk=jwk,
+        alg=alg if isinstance(alg, str) else None,
+        use=use if isinstance(use, str) else None,
+        key_ops=ops,
+    )
 
 
 class _KeyResolver:
@@ -271,8 +310,8 @@ class _KeyResolver:
         self._config = config
         self._lock = threading.Lock()
         self._jwks_uri: str | None = config.jwks_uri
-        self._keys: dict[str, list[PyJWK]] = {}
-        self._keyless: list[PyJWK] = []
+        self._keys: dict[str, list[_Candidate]] = {}
+        self._keyless: list[_Candidate] = []
         self._fetched_at: float | None = None
         self._last_attempt: float | None = None
 
@@ -283,10 +322,10 @@ class _KeyResolver:
         try:
             doc = _fetch_json(discovery, _DISCOVERY_TIMEOUT_SEC)
         except (urllib.error.URLError, OSError, ValueError):
-            raise AuthError("JWKS_UNAVAILABLE", "OIDC discovery failed") from None
+            raise AuthError("JWKS_UNAVAILABLE", "OIDC discovery failed", 503) from None
         uri = doc.get("jwks_uri") if isinstance(doc, dict) else None
         if not isinstance(uri, str) or not uri:
-            raise AuthError("JWKS_UNAVAILABLE", "discovery document has no `jwks_uri`")
+            raise AuthError("JWKS_UNAVAILABLE", "discovery document has no `jwks_uri`", 503)
         self._jwks_uri = uri
         return uri
 
@@ -299,16 +338,16 @@ class _KeyResolver:
             if not isinstance(raw_keys, list):
                 raise TypeError("no keys")
             loaded = [jwk for jwk in (_load_jwk(raw) for raw in raw_keys) if jwk is not None]
-            keys: dict[str, list[PyJWK]] = {}
-            for jwk in loaded:
-                if jwk.key_id:
+            keys: dict[str, list[_Candidate]] = {}
+            for cand in loaded:
+                if cand.kid:
                     # RFC 7517 allows several keys to share a kid (e.g. different kty).
-                    keys.setdefault(jwk.key_id, []).append(jwk)
-            keyless = [jwk for jwk in loaded if not jwk.key_id]
+                    keys.setdefault(cand.kid, []).append(cand)
+            keyless = [cand for cand in loaded if not cand.kid]
         except AuthError:
             raise
         except (urllib.error.URLError, OSError, ValueError, TypeError):
-            raise AuthError("JWKS_UNAVAILABLE", "could not fetch signing keys") from None
+            raise AuthError("JWKS_UNAVAILABLE", "could not fetch signing keys", 503) from None
         self._keys = keys
         self._keyless = keyless
         self._fetched_at = _now()
@@ -319,7 +358,7 @@ class _KeyResolver:
     def _may_attempt(self) -> bool:
         return self._last_attempt is None or _now() - self._last_attempt >= _JWKS_MIN_REFETCH_SEC
 
-    def _lookup(self, kid: str | None, alg: str | None) -> list[PyJWK]:
+    def _lookup(self, kid: str | None, alg: str) -> list[_Candidate]:
         if kid is not None:
             candidates = list(self._keys.get(kid, []))
         else:
@@ -327,11 +366,9 @@ class _KeyResolver:
             # total. Several keys without ids (or a mix) must not be resolved by order.
             everything = [*(k for ks in self._keys.values() for k in ks), *self._keyless]
             candidates = everything if len(everything) == 1 else []
-        # Narrow by key type so a shared kid selects the compatible key.
-        expected = _KEY_TYPE_FOR_ALG_PREFIX.get((alg or "")[:2])
-        if expected is not None:
-            candidates = [k for k in candidates if getattr(k, "key_type", None) == expected]
-        return candidates
+        # Only keys the issuer actually allows for this token's algorithm and for
+        # signature verification may be used.
+        return [c for c in candidates if c.can_verify(alg)]
 
     def get_keys(self, token: str) -> list[Any]:
         """Candidate verification keys for ``token`` (never empty; raises otherwise)."""
@@ -340,11 +377,15 @@ class _KeyResolver:
         alg = header.get("alg")
         if (kid is not None and not isinstance(kid, str)) or not isinstance(alg, str):
             raise AuthError("MALFORMED", "token is not a parseable JWT")
+        if alg not in _FEDERATED_ALGORITHMS:
+            # Refuse before any key lookup: HS*/none can never be valid here, and an
+            # unusable token must not be able to trigger a JWKS refresh.
+            raise AuthError("INVALID_SIGNATURE", "token algorithm is not permitted")
         with self._lock:
             if self._expired():
                 self._keys, self._keyless = {}, []  # an expired set is never served, even if the refetch fails
                 if not self._may_attempt():
-                    raise AuthError("JWKS_UNAVAILABLE", "signing keys are unavailable")
+                    raise AuthError("JWKS_UNAVAILABLE", "signing keys are unavailable", 503)
                 self._refresh()
             found = self._lookup(kid, alg)
             if not found and self._may_attempt():
@@ -352,7 +393,7 @@ class _KeyResolver:
                 found = self._lookup(kid, alg)
         if not found:
             raise AuthError("JWKS_UNAVAILABLE", "could not resolve signing key")
-        return [jwk.key for jwk in found]
+        return [cand.jwk.key for cand in found]
 
 
 # One resolver per (issuer, jwks_uri): it owns the fetch + cache, so re-creating it
@@ -425,6 +466,7 @@ class _FederatedVerifier:
             issued_at=_claim_number(payload, "iat"),
             expires_at=_claim_number(payload, "exp"),
             issuer=_claim_string(payload, "iss"),
+            portal_id=_claim_string(payload, "portalId"),
             claims=dict(payload),
         )
 

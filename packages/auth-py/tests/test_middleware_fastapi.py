@@ -73,3 +73,29 @@ def test_roles_and_tenant_guards():
     assert r.status_code == 403 and r.json()["detail"]["code"] == "MISSING_CLAIM"
     assert build(resolver=lambda uid: {"tenant_id": "t-2"}).get("/t1", headers=bearer()).status_code == 403
     assert build(resolver=lambda uid: {"tenant_id": "t-1"}).get("/t1", headers=bearer()).status_code == 200
+
+
+def test_portal_bound_token_is_enforced_by_the_dependency():
+    verifier = create_verifier(LegacyHs256Config(secret=SECRET))
+    token = make_token(SECRET, claims={"userId": "u-1", "portalId": "p-1"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def build_portal(resolver):
+        auth = auth_dependency(verifier, portal=resolver)
+        app = FastAPI()
+
+        @app.get("/private")
+        def private(identity: Annotated[Identity, Depends(auth)]):
+            return {"user": identity.user_id}
+
+        return TestClient(app)
+
+    assert build_portal(lambda req: "p-1").get("/private", headers=headers).status_code == 200
+    r = build_portal(lambda req: "p-2").get("/private", headers=headers)
+    assert r.status_code == 401 and r.json()["detail"]["code"] == "INVALID_AUDIENCE"
+    assert build_portal(None).get("/private", headers=headers).status_code == 401
+
+    def down(req):
+        raise RuntimeError("db down")
+
+    assert build_portal(down).get("/private", headers=headers).status_code == 503

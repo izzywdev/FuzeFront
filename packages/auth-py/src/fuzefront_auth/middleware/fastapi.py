@@ -20,6 +20,7 @@ except ImportError as error:  # pragma: no cover - only when the extra is missin
         "fuzefront_auth.middleware.fastapi requires the 'fastapi' extra: pip install \"fuzefront-auth[fastapi]\""
     ) from error
 
+from ..portal import PortalResolver, enforce_portal
 from ..types import AuthError, Identity
 from ..verifier import Verifier
 
@@ -30,11 +31,16 @@ def _deny(err: AuthError) -> HTTPException:
     return HTTPException(status_code=err.status, detail=err.to_body())
 
 
-def auth_dependency(verifier: Verifier, *, optional: bool = False) -> Callable[..., Identity | None]:
+def auth_dependency(
+    verifier: Verifier, *, optional: bool = False, portal: PortalResolver | None = None
+) -> Callable[..., Identity | None]:
     """Build a dependency that authenticates the caller and returns the ``Identity``
     (also stored on ``request.state.identity``).
 
     ``optional=True`` returns ``None`` for a missing/invalid token instead of 401.
+
+    ``portal`` resolves the request's portal id (it receives the FastAPI ``Request``).
+    A portal-bound token is rejected unless it matches; see ``fuzefront_auth.portal``.
     """
     if verifier is None:
         raise AuthError("VERIFIER_UNAVAILABLE", "auth_dependency requires a `verifier`", 500)
@@ -50,6 +56,7 @@ def auth_dependency(verifier: Verifier, *, optional: bool = False) -> Callable[.
             raise _deny(AuthError("NO_TOKEN", "no bearer token presented"))
         try:
             identity = verifier.verify(credentials.credentials)
+            enforce_portal(identity, request, portal)
         except AuthError as err:
             if optional:
                 request.state.identity = None

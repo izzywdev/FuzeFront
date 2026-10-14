@@ -93,10 +93,36 @@ FastAPI runs those in its threadpool.
 ### Status codes and bodies
 
 401 = "who are you?" (re-authenticate); 403 = "I know who you are, and no";
-500 = the verifier or resolver is broken (an outage must not read as a permission
-denial). Flask answers `{"error", "code"}`; FastAPI nests the same object under
+500 = the verifier or resolver is broken, and 503 = the issuer's JWKS/discovery or the
+portal lookup is unreachable (retryable; an outage must not read as a permission denial
+or tell a client its credentials are invalid). Flask answers `{"error", "code"}`; FastAPI nests the same object under
 `detail`. A role guard denies when roles are empty, and a tenant guard denies when
 `tenant_id` is `None` -- an unresolved value is never a wildcard.
+
+## Portal-bound sessions
+
+With multi-tenant portals on, FuzeFront mints session tokens carrying a `portalId`, and
+the host rejects a token presented on a different portal. A Python service reachable
+through several portal hosts must do the same: pass a resolver that returns the portal id
+for the request.
+
+```python
+@require_auth(verifier, portal=lambda req: lookup_portal(req.host))   # Flask
+auth = auth_dependency(verifier, portal=lambda req: lookup_portal(req.url.hostname))   # FastAPI
+```
+
+A token with a `portalId` is accepted only if the resolver returns the same id (mismatch =
+401); with no resolver configured it is rejected (a claimed binding with nothing to check it
+against never falls through); a resolver that raises is a retryable 503. Tokens with no
+`portalId` are accepted; the host's policy for such legacy tokens on non-root portals is
+enforced at the host/gateway, not here. `Identity.portal_id` carries the claim.
+
+## Signing-key rules (federated-jwks)
+
+A published key verifies a token only if it is a signing key (`use` is absent or `sig`,
+`key_ops` absent or includes `verify`), its key type fits the token's algorithm, and any
+`alg` the issuer pinned on it equals the token's. Tokens whose algorithm is not RS*/ES*
+are refused before any key lookup.
 
 ## Never logs
 

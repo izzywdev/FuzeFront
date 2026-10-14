@@ -5,6 +5,7 @@ Python peer of ``@fuzefront/auth``. See README.md and
 """
 
 from .config import verifier_from_env
+from .portal import PortalResolver, enforce_portal
 from .types import (
     AUTH_CONTRACT_VERSION,
     AUTH_ERROR_CODES,
@@ -30,10 +31,12 @@ __all__ = [
     "FederatedJwksConfig",
     "Identity",
     "LegacyHs256Config",
+    "PortalResolver",
     "Resolver",
     "Verifier",
     "VerifierConfig",
     "create_verifier",
+    "enforce_portal",
     "verifier_from_env",
     "verify_token",
 ]

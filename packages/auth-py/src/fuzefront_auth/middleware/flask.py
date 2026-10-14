@@ -20,6 +20,7 @@ except ImportError as error:  # pragma: no cover - only when the extra is missin
         "fuzefront_auth.middleware.flask requires the 'flask' extra: pip install \"fuzefront-auth[flask]\""
     ) from error
 
+from ..portal import PortalResolver, enforce_portal
 from ..types import AuthError, Identity
 from ..verifier import Verifier
 
@@ -37,11 +38,20 @@ def _bearer(header_name: str) -> str | None:
     return token
 
 
-def require_auth(verifier: Verifier, *, optional: bool = False, header: str = "Authorization") -> Callable:
+def require_auth(
+    verifier: Verifier,
+    *,
+    optional: bool = False,
+    header: str = "Authorization",
+    portal: PortalResolver | None = None,
+) -> Callable:
     """Verify the bearer token and expose the ``Identity`` as ``flask.g.identity``.
 
     ``optional=True`` lets a missing/invalid token continue with
     ``g.identity = None`` -- never with a half-built identity.
+
+    ``portal`` resolves the request's portal id (it receives ``flask.request``). A
+    portal-bound token is rejected unless it matches; see ``fuzefront_auth.portal``.
     """
     if verifier is None:
         # Fail at wiring time: a decorator built without a verifier that only
@@ -59,6 +69,7 @@ def require_auth(verifier: Verifier, *, optional: bool = False, header: str = "A
                 return _deny(AuthError("NO_TOKEN", "no bearer token presented"))
             try:
                 identity = verifier.verify(token)
+                enforce_portal(identity, request, portal)
             except AuthError as err:
                 if optional:
                     g.identity = None

@@ -270,3 +270,66 @@ def test_expired_token_under_a_shared_kid_reports_expiry_not_signature(jwks_serv
     now = int(time.time())
     token = make_token(rsa_key, alg="RS256", kid="dup", claims={**GOOD, "iat": now - 9000, "exp": now - 8000})
     assert code_of(verifier(jwks_server), token) == "EXPIRED"
+
+
+def _only(jwks_server, entry):
+    jwks_server["keys"][:] = [entry]
+
+
+def test_key_restricted_to_another_algorithm_cannot_verify(jwks_server, rsa_key):
+    # The issuer pinned this RSA key to RS512; an RS256 token signed by it must not
+    # be accepted just because RS256 is in the package-wide allow-list.
+    from conftest import _jwk
+
+    _only(jwks_server, _jwk(rsa_key.public_key(), "rsa-1", "RS512"))
+    v = verifier(jwks_server)
+    assert code_of(v, make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)) == "JWKS_UNAVAILABLE"
+    assert v.verify(make_token(rsa_key, alg="RS512", kid="rsa-1", claims=GOOD)).user_id == "u-9"
+
+
+@pytest.mark.parametrize("restriction", [{"use": "enc"}, {"key_ops": ["encrypt"]}, {"key_ops": ["sign"]}])
+def test_non_signature_keys_cannot_verify(jwks_server, rsa_key, restriction):
+    from conftest import _jwk
+
+    entry = _jwk(rsa_key.public_key(), "rsa-1", "RS256")
+    entry.pop("use", None)
+    _only(jwks_server, {**entry, **restriction})
+    assert code_of(verifier(jwks_server), make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)) == "JWKS_UNAVAILABLE"
+
+
+def test_signing_key_ops_are_accepted(jwks_server, rsa_key):
+    from conftest import _jwk
+
+    entry = _jwk(rsa_key.public_key(), "rsa-1", "RS256")
+    _only(jwks_server, {**entry, "key_ops": ["verify"]})
+    assert verifier(jwks_server).verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)).user_id == "u-9"
+
+
+def test_issuer_outage_is_a_503_not_a_401(jwks_server, rsa_key):
+    # An outage must not tell clients their credentials are invalid.
+    jwks_server["fail"] = True
+    v = verifier(jwks_server)
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)
+    for _ in range(2):  # first = fetch failure, second = cooldown
+        with pytest.raises(AuthError) as info:
+            v.verify(token)
+        assert (info.value.code, info.value.status) == ("JWKS_UNAVAILABLE", 503)
+
+
+def test_discovery_outage_is_a_503(jwks_server, rsa_key):
+    jwks_server["fail"] = True
+    v = create_verifier(FederatedJwksConfig(issuer=jwks_server["base"], audience=AUDIENCE))
+    with pytest.raises(AuthError) as info:
+        v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "iss": jwks_server["base"]}))
+    assert info.value.status == 503
+
+
+def test_unknown_key_stays_a_401(jwks_server, rsa_key):
+    with pytest.raises(AuthError) as info:
+        verifier(jwks_server).verify(make_token(rsa_key, alg="RS256", kid="nope", claims=GOOD))
+    assert (info.value.code, info.value.status) == ("JWKS_UNAVAILABLE", 401)
+
+
+def test_portal_claim_is_carried_into_identity(jwks_server, rsa_key):
+    ident = verifier(jwks_server).verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "portalId": "p-1"}))
+    assert ident.portal_id == "p-1"
