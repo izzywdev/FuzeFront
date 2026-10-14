@@ -25,8 +25,8 @@
 // workspace shipped 0.8.0 — and under 0.x semantics a caret does NOT span minors, so
 // every one of those ranges was unsatisfiable by the very package it names.
 //
-// In-repo this is invisible: npm links the workspace regardless of the range. It bites
-// OUT of repo, where these packages are published — a consumer following
+// Unsatisfied ranges can also make npm fetch an unavailable registry version during
+// an in-repo install rather than use the workspace. Published consumers following
 // docs/guides/BUILDING_ON_FUZEFRONT.md installs @fuzefront/account-security-ui and gets
 // ERESOLVE against the published @fuzefront/security-client@0.8.0. The drift arrived
 // because a client release bumps its own version and the consumers' exact devDep pins
@@ -175,8 +175,8 @@ function main() {
           )
           continue
         }
-        // Registered workspace: npm resolves it locally, so the range never blocks an
-        // in-repo install — but it IS published verbatim, so it must still be true.
+        // A registered workspace only satisfies a registry range when its version
+        // matches. Otherwise npm may fetch another version instead of linking it.
         if (!local.version) continue
         const ok = satisfies(specStr, local.version)
         if (ok === null) {
@@ -203,8 +203,8 @@ function main() {
     if (rangeViolations.length) {
       console.error('\n✗ Workspace dependency check FAILED — ranges the local version does not satisfy:\n')
       for (const v of rangeViolations) console.error('  ' + v + '\n')
-      console.error('These resolve fine in-repo (npm links the workspace regardless) and break only for')
-      console.error('consumers installing the PUBLISHED package, which is why they drift unnoticed.')
+      console.error('Unsatisfied ranges can trigger registry fetches in-repo and also break published')
+      console.error('consumers. Every local workspace reference must admit its actual version.')
       console.error('Fix: widen the range to admit the version this repo actually ships. Note that under')
       console.error('0.x a caret does NOT span minors — ^0.7.0 excludes 0.8.0.\n')
     }

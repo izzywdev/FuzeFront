@@ -13,6 +13,7 @@ and is gated on the preconditions below.
 | Owner | platform team (flag admin: `feature-flags-engineer`) |
 | Removal criterion | GA at 100% of orgs and stable for one release cycle; then delete the flag, the `SidePanel`/`App.tsx` `useFlag` guards, and selection-list-service `src/flags.ts` + `middleware/flagGate.ts` + per-handler checks in ONE cleanup PR |
 | Registry | `packages/feature-flags/flag-registry.yaml` |
+| Unleash state | Created OFF (no strategy, environment disabled) by dispatching `prod-unleash-ops` with `flags=selection-lists-create` (create-only; idempotent; a 409 on an existing flag leaves it untouched). The sibling seeding flag `fuzefront.selection-lists.seed-defaults` is created by the same dispatch. **Not verified from this repo:** whether the flag already exists in the live Unleash, or its live state; read the dispatch's *Verify* step output. |
 | Browser catalog | `WEB_EXPOSED_FLAGS` in `packages/feature-flags/src/catalog.ts` (present — without it the browser reads permanently OFF) |
 
 ## What the flag gates (all of it, server and client)
@@ -46,8 +47,10 @@ and is gated on the preconditions below.
 ## Preconditions — ALL must hold before the first ramp step
 
 1. `selection-list-service` **integration job green AND its gate required**
-   (not `continue-on-error`/advisory). The integration run uses
-   `FLAGS_FORCE_ON` (non-prod only) because CI has no Unleash.
+   (not `continue-on-error`/advisory). The integration run forces the flag ON
+   with the offline OpenFeature provider (`FUZE_FLAGS_PROVIDER=offline`,
+   non-prod only) because CI has no Unleash; a second matrix leg (`off`) runs
+   with no provider and asserts the dark 404.
 2. **e2e green** — `frontend/tests/selection-lists-*.spec.ts` pass against a
    deployed stack with the flag ON.
 3. **UI unit tests green** (`packages/selection-lists-ui` + the shell tests above).
@@ -60,7 +63,11 @@ and is gated on the preconditions below.
 
 ## Staged ramp
 
-Via the dispatchable workflow **`prod-unleash-ops`**
+Step 0 (once, before the first ramp): dispatch **`prod-unleash-ops`** with
+`flags=selection-lists-create` so both selection-list flags exist in Unleash,
+OFF. It never enables anything.
+
+Then, via the dispatchable workflow **`prod-unleash-ops`**
 (`.github/workflows/prod-unleash-ops.yml`, runs on the in-cluster runner, so no
 CF-Access session or token handling is needed). Each step is idempotent: the
 existing `flexibleRollout` strategy is PATCHed, never duplicated; stickiness is

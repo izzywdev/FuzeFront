@@ -50,7 +50,8 @@ beforeEach(() => {
 afterEach(async () => {
   await closeFeatureFlags();
   setFlagClient(null);
-  delete process.env.FLAGS_FORCE_ON;
+  delete process.env.FUZE_FLAGS_PROVIDER;
+  delete process.env.FUZE_FLAGS_OFFLINE_ON;
 });
 
 describe('initFeatureFlags', () => {
@@ -146,11 +147,74 @@ describe('release flag fuzefront.selection-lists.service — BOTH states through
       expect(res.body.code).toBe('NOT_FOUND');
     });
 
-    it('FLAGS_FORCE_ON (existing CI pattern) turns it ON outside production with no provider at all', async () => {
-      mockGetBooleanValue.mockResolvedValue(false);
-      process.env.FLAGS_FORCE_ON = FLAG;
-      const res = await request(createApp()).get('/v1/selection-lists/not-an-id').set(auth());
-      expect(res.status).toBe(400); // past the gate
+    // The offline provider forces the release flag ON exactly like the old
+    // FLAGS_FORCE_ON hatch did, but through the REAL OpenFeature client path:
+    // a listed key resolves true, so POST /v1/selection-lists gets past the gate
+    // (then edge validation rejects the empty body with 400). The OFF counterpart
+    // (no provider -> 404 NOT_FOUND) is the contract dark.spec.ts asserts against
+    // the live service for the CI matrix's `off` leg.
+    it('offline provider ON (flag in the on-list): POST /v1/selection-lists gets past the gate', async () => {
+      setFlagClient(offlineClient([FLAG]));
+      const res = await request(createApp()).post('/v1/selection-lists').set(auth()).send({});
+      expect(res.status).not.toBe(404);
     });
+
+    it('no provider (flag OFF): POST /v1/selection-lists is 404 NOT_FOUND (feature dark)', async () => {
+      setFlagClient(null); // fail-safe default OFF, same path as an Unleash outage
+      const res = await request(createApp()).post('/v1/selection-lists').set(auth()).send({});
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('NOT_FOUND');
+    });
+  });
+});
+
+// A stand-in for the offline InMemoryProvider: keys in the on-list resolve true,
+// every other key falls through to the caller's in-code default — the exact
+// semantics of @fuzefront/feature-flags' offline provider, exercised here through
+// flags.ts's real client seam (the package dist is not built for this unit suite).
+function offlineClient(onKeys: string[]) {
+  return {
+    getBooleanValue: async (key: string, defaultValue: boolean) =>
+      onKeys.includes(key) ? true : defaultValue,
+  };
+}
+
+describe('initFeatureFlags offline branch (replaces the FLAGS_FORCE_ON hatch)', () => {
+  const OFFLINE_ENV = {
+    FUZE_FLAGS_PROVIDER: 'offline',
+    FUZE_FLAGS_OFFLINE_ON: `  ${FLAG} , , other.flag `,
+    NODE_ENV: 'test',
+  } as NodeJS.ProcessEnv;
+
+  it('installs the offline provider with the trimmed on-list and standard context', async () => {
+    await expect(initFeatureFlags({ env: OFFLINE_ENV, load: () => fakeModule })).resolves.toBe('initialized');
+    expect(mockInit).toHaveBeenCalledTimes(1);
+    expect(mockInit).toHaveBeenCalledWith(
+      { provider: 'offline', offline: { on: [FLAG, 'other.flag'] }, appName: 'selection-list-service' },
+      { environment: 'local', app: 'selection-list-service' },
+    );
+  });
+
+  it('is NOT taken when Unleash is configured — Unleash wins (no offline options passed)', async () => {
+    const env = { ...OFFLINE_ENV, UNLEASH_URL: 'http://unleash.test:4242/api', UNLEASH_CLIENT_TOKEN: 'tok' };
+    await expect(initFeatureFlags({ env, load: () => fakeModule })).resolves.toBe('initialized');
+    expect(mockInit.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ url: 'http://unleash.test:4242/api', clientToken: 'tok' }),
+    );
+    expect(mockInit.mock.calls[0][0].provider).toBeUndefined();
+  });
+
+  it('fails closed (never throws) when the provider refuses — e.g. production refusal', async () => {
+    // The real provider throws FlagsConfigError in production; here the injected
+    // init rejects to stand in for that. initFeatureFlags must report "failed",
+    // leaving the flag OFF rather than propagating.
+    mockInit.mockRejectedValue(new Error('offline provider refused in production'));
+    await expect(initFeatureFlags({ env: OFFLINE_ENV, load: () => fakeModule })).resolves.toBe('failed');
+  });
+
+  it('skips (unconfigured) when neither Unleash nor the offline provider is requested', async () => {
+    const env = { NODE_ENV: 'test' } as NodeJS.ProcessEnv;
+    await expect(initFeatureFlags({ env, load: () => fakeModule })).resolves.toBe('skipped-unconfigured');
+    expect(mockInit).not.toHaveBeenCalled();
   });
 });
