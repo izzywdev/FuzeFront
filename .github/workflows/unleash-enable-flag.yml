@@ -104,6 +104,11 @@ jobs:
           # segment-targeted and an unsegmented ramp strategy; fail if multiple match.
           strategies_code=$(curl -sS -o /tmp/strats.json -w '%{http_code}' "${AUTH[@]}" "$base/strategies")
           case "$strategies_code" in 200) : ;; *) echo "strategies GET failed ($strategies_code)"; cat /tmp/strats.json; exit 1;; esac
+          # Reject competing global (unsegmented, unconstrained) strategies of other types.
+          # Unleash evaluates strategies with OR semantics: a "default" always-on strategy overrides
+          # any flexibleRollout %, enabling all users regardless of the configured rollout.
+          competing=$(python3 -c 'import json;xs=[s["name"] for s in json.load(open("/tmp/strats.json")) if not s.get("segments") and not s.get("constraints") and s.get("name")!="flexibleRollout"];print(",".join(xs))')
+          if [ -n "$competing" ]; then echo "competing global strategies detected: $competing — remove them in the Unleash UI first, then re-run"; exit 1; fi
           # Select only unsegmented, unconstrained flexibleRollout strategies to avoid
           # ambiguity and prevent accidentally widening a targeted pilot strategy.
           sid=$(python3 -c 'import sys,json;xs=[s for s in json.load(open("/tmp/strats.json")) if s.get("name")=="flexibleRollout" and not s.get("segments") and not s.get("constraints")];sys.exit("ambiguous: multiple unsegmented unconstrained flexibleRollout strategies — resolve in Unleash UI first") if len(xs)>1 else None;print(xs[0]["id"] if xs else "")')
