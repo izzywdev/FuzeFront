@@ -196,13 +196,18 @@ async function main() {
 
   // --- HTTP health probe ---
   const app = createApp();
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     console.log(`[provisioning-service] Listening on port ${config.port}`);
   });
 
   // --- Graceful shutdown ---
   const shutdown = async () => {
     console.log('[provisioning-service] Shutting down...');
+    // Close the listener (letting in-flight requests finish) BEFORE flushing
+    // telemetry — otherwise a request still in flight when SIGTERM arrives
+    // either finishes after the SDK has shut down (its span lost) or is cut
+    // off by process.exit(0) below.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     await userConsumer.disconnect();
     await orgConsumer.disconnect();
     await orgUpdatedConsumer.disconnect();

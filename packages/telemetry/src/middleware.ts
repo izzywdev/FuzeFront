@@ -109,9 +109,23 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
     const endSpan = () => {
       if (ended) return;
       ended = true;
+      // `req.route` is only populated by Express AFTER its router matches a
+      // path pattern — which hasn't happened yet when this middleware starts
+      // the span (mounted ahead of the router). By the time the response
+      // finishes, matching has happened, so re-derive the name here and
+      // rename the span: without this, every parameterized route (e.g.
+      // `/:listId/items/:itemId`) keeps the raw, UUID-bearing `req.path` as
+      // its permanent span name, fragmenting Tempo's operation list and
+      // trace-index cardinality per id instead of collapsing to one name.
+      const routePath = (req as { route?: { path?: string } }).route?.path;
+      if (routePath) {
+        // Express sets `req.route` in place on the same request object, so
+        // re-invoking `spanName` now (vs. at span-start time) picks it up.
+        span.updateName(spanName(req));
+      }
       span.setAttribute('http.status_code', res.statusCode);
       span.setAttribute('http.method', req.method);
-      span.setAttribute('http.route', (req as { route?: { path?: string } }).route?.path ?? req.path);
+      span.setAttribute('http.route', routePath ?? req.path);
       if (res.statusCode >= 500) {
         span.setAttribute('error', true);
       }

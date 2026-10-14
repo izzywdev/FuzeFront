@@ -172,6 +172,23 @@ describe('tracingMiddleware', () => {
     expect(span.spanContext().traceId).toBe(req.traceId);
   });
 
+  it('renames the span to the matched route once Express sets req.route, collapsing per-id cardinality', () => {
+    const middleware = tracingMiddleware();
+    const req = fakeReq() as Request & { route?: { path?: string } };
+    const res = fakeRes();
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    // Express sets `req.route` on the SAME request object once its router
+    // matches a pattern — simulated here between middleware start and
+    // response finish, exactly as it happens for real for a global
+    // middleware mounted ahead of the router.
+    req.route = { path: '/widgets/:id' };
+    res._finish();
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('GET /widgets/:id');
+  });
+
   it('does not double-end the span when BOTH `finish` and `close` fire', () => {
     const middleware = tracingMiddleware();
     const req = fakeReq();
