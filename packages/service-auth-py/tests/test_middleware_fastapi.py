@@ -9,18 +9,18 @@ import json
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
-from fastapi import (
+from fastapi import (  # noqa: E402
     Depends,
     FastAPI,
 )
-from fastapi.testclient import (
+from fastapi.testclient import (  # noqa: E402
     TestClient,
 )
-from fuzefront_service_auth import (
+from fuzefront_service_auth import (  # noqa: E402
     AuthorizationError,
     MachineTokenVerifier,
 )
-from fuzefront_service_auth.middleware.fastapi import (
+from fuzefront_service_auth.middleware.fastapi import (  # noqa: E402
     delegated_identity_dependency,
     machine_identity_dependency,
 )
