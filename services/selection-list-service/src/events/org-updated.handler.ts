@@ -25,6 +25,7 @@ import { FuzeEvent, IdentityOrgUpdatedPayloadV1 } from '@fuzefront/shared/kafka'
 import { db as defaultDb } from '../db';
 import { logger, timed } from '../lib/logger';
 import { upsertOrgProjection } from './orgProjection';
+import { isProtectedPlatformOrg, snapshotBreaksPlatformOrg } from './platformGuard';
 
 export interface OrgUpdatedDeps {
   db: Knex;
@@ -38,6 +39,16 @@ export async function handleOrgUpdated(
   const { organizationId, type, isActive, name } = event.payload;
   const log = logger.child({ reqId: event.correlationId, component: 'org-updated' });
   log.info({ organizationId, type, isActive }, 'identity.org.updated received');
+
+  // The platform organization is immutable here: a snapshot that retypes it away from `platform` or deactivates it
+  // would disable every common list for every tenant (platformGuard.ts). Refused, acknowledged, nothing recorded.
+  if (snapshotBreaksPlatformOrg({ type, isActive }) && (await isProtectedPlatformOrg(deps.db, organizationId))) {
+    log.error(
+      { organizationId, type, isActive, eventId: event.correlationId, occurredAt: event.occurredAt, topic: event.topic },
+      'SECURITY: identity.org.updated that retypes or deactivates the PLATFORM organization REFUSED; nothing was changed',
+    );
+    return { organizationId };
+  }
 
   const wire = await timed(
     log,

@@ -3,6 +3,7 @@ import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { db } from '../db';
 import { logger, timed } from '../lib/logger';
 import { markOrgProjectionDeleted } from './orgProjection';
+import { isProtectedPlatformOrg } from './platformGuard';
 
 /**
  * The stored `organization_id` is TEXT and is whatever the caller's token
@@ -59,6 +60,17 @@ export async function handleOrgDeleted(
   // The event's correlationId is this thread's reqId so one event is one grep.
   const log = logger.child({ reqId: event.correlationId, component: 'org-deleted' });
   log.info({ organizationId, cascade }, 'identity.org.deleted received');
+
+  // The platform organization owns every common list: it is IMMUTABLE here, whatever the envelope says (see
+  // platformGuard.ts). Nothing destructive is recorded - no cascade, no tombstone - and the message is
+  // acknowledged (a normal return) so the consumer does not loop on it. Flag-independent.
+  if (await isProtectedPlatformOrg(db, organizationId)) {
+    log.error(
+      { organizationId, cascade, eventId: event.correlationId, occurredAt: event.occurredAt, topic: event.topic },
+      'SECURITY: identity.org.deleted for the PLATFORM organization REFUSED - it owns the common lists and is never deleted, archived or tombstoned by an event; nothing was changed',
+    );
+    return;
+  }
 
   // Tombstone the projection FIRST (infra faults throw -> the message is retried).
   await timed(log, 'db.tombstone-org-projection', () => markOrgProjectionDeleted(db, organizationId), { organizationId });

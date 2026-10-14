@@ -23,24 +23,17 @@ jest.mock('../src/db', () => ({
 
 const PLATFORM_UUID = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e00';
 let clock = Date.parse('2026-10-14T00:00:00.000Z');
-const updated = (isActive: boolean, type: 'platform' | 'organization' = 'platform') =>
-  ({
-    version: '1.0',
-    topic: 'identity.org.updated',
-    correlationId: 'corr-cache',
-    occurredAt: new Date((clock += 60_000)).toISOString(),
-    payload: { organizationId: PLATFORM_UUID, slug: 'platform', type, isActive, name: 'Platform' },
-  }) as never;
-const deleted = (cascade: 'soft' | 'hard') =>
-  ({
-    version: '1.0',
-    topic: 'identity.org.deleted',
-    correlationId: 'corr-cache-del',
-    occurredAt: new Date((clock += 60_000)).toISOString(),
-    payload: { organizationId: PLATFORM_UUID, slug: 'platform', ownerId: null, cascade },
-  }) as never;
+// The org lifecycle HANDLERS refuse to deactivate / retype / delete the platform org (platformGuard.ts, tested in
+// shared-lists.platform-org-guard.db.test.ts), so the cache invalidation is driven through the projection WRITERS
+// the handlers use (`upsertOrgProjection` / `markOrgProjectionDeleted`): a state change that did reach the
+// projection (a lagging replica, an operator repair, a future guarded path) must still deny the very next request.
+const change = async (db: Knex, isActive: boolean, type: 'platform' | 'organization' = 'platform') => {
+  const { upsertOrgProjection } = await import('../src/events/orgProjection');
+  clock += 60_000;
+  await upsertOrgProjection(db, { organizationId: PLATFORM_UUID, type, isActive, name: 'Platform', occurredAt: new Date(clock).toISOString() });
+};
 
-dbDescribe('platform-org resolution cache is invalidated by the projection handlers (real Postgres)', () => {
+dbDescribe('platform-org resolution cache is invalidated by the projection writers (real Postgres)', () => {
   let w: World;
   let platform: { listId: string; low: string; mid: string; old: string };
 
@@ -64,35 +57,33 @@ dbDescribe('platform-org resolution cache is invalidated by the projection handl
     expect(p.publish).toBe(201);
   });
 
-  it('confirm -> identity.org.updated(isActive=false) through the REAL handler -> the very next read / resolve / publish is denied', async () => {
-    const { handleOrgUpdated } = await import('../src/events/org-updated.handler');
+  it('confirm -> a projection write with isActive=false -> the very next read / resolve / publish is denied', async () => {
     // the cache is warm from the previous test: no reset helper is called here
     expect((await probes()).read).toBe(200);
-    await handleOrgUpdated(updated(false), { db: w.db });
+    await change(w.db, false);
     const denied = await probes();
     expect(denied.read).toBe(404);
     expect(denied.resolved).toEqual([platform.low]);
     expect(denied.publish).toBe(403);
     // and back: re-activation is visible at once as well
-    await handleOrgUpdated(updated(true), { db: w.db });
+    await change(w.db, true);
     const back = await probes();
     expect(back.read).toBe(200);
     expect(back.publish).toBe(201);
   });
 
-  it('a retype away from platform (identity.org.updated) is denied at once, and a retype back is allowed at once', async () => {
-    const { handleOrgUpdated } = await import('../src/events/org-updated.handler');
+  it('a retype away from platform (projection write) is denied at once, and a retype back is allowed at once', async () => {
     expect((await probes()).read).toBe(200);
-    await handleOrgUpdated(updated(true, 'organization'), { db: w.db });
+    await change(w.db, true, 'organization');
     expect((await probes()).read).toBe(404);
-    await handleOrgUpdated(updated(true, 'platform'), { db: w.db });
+    await change(w.db, true, 'platform');
     expect((await probes()).read).toBe(200);
   });
 
-  it('identity.org.deleted (soft) tombstones the projection and the very next read / resolve / publish is denied', async () => {
-    const { handleOrgDeleted } = await import('../src/events/org-deleted.handler');
+  it('a tombstone of the projection row is denied at once on the very next read / resolve / publish', async () => {
+    const { markOrgProjectionDeleted } = await import('../src/events/orgProjection');
     expect((await probes()).read).toBe(200);
-    await handleOrgDeleted(deleted('soft'));
+    await markOrgProjectionDeleted(w.db, PLATFORM_UUID);
     const denied = await probes();
     expect(denied.read).toBe(404);
     expect(denied.resolved).toEqual([platform.low]);
