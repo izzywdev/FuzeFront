@@ -14,6 +14,7 @@ describe('execution evidence filter', () => {
       externalRunId: '123456789',
       policyArtifactId: 'policy-auth',
       gateArtifactId: 'gate-auth',
+      branch: 'feature/checkout',
       revision: 'abcdef123456',
       workflowPath: '.github/workflows/load.yml',
       attemptScope: 'retry',
@@ -63,6 +64,12 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.parse({ externalRunId: ' 123456789 ' }).externalRunId).toBe('123456789')
     expect(executionFilterSchema.safeParse({ externalRunId: ' ' }).success).toBe(false)
     expect(executionFilterSchema.safeParse({ externalRunId: 'a'.repeat(501) }).success).toBe(false)
+  })
+
+  it('bounds and normalizes an exact source branch', () => {
+    expect(executionFilterSchema.parse({ branch: ' feature/checkout ' }).branch).toBe('feature/checkout')
+    expect(executionPageFilterSchema.safeParse({ branch: ' ' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ branch: 'a'.repeat(501) }).success).toBe(false)
   })
 
   it('rejects an unknown attempt scope', () => {

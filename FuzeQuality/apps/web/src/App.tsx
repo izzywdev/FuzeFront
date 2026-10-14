@@ -3421,6 +3421,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionAttemptScope, setExecutionAttemptScope] = useState<
     'initial' | 'retry' | 'recovered' | ''
   >('')
+  const [executionBranch, setExecutionBranch] = useState('')
   const [executionRevision, setExecutionRevision] = useState('')
   const [executionWorkflowPath, setExecutionWorkflowPath] = useState('')
   const [executionMinimumDurationSeconds, setExecutionMinimumDurationSeconds] = useState('')
@@ -3635,6 +3636,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         policyArtifactId: executionPolicyArtifactId,
         gateArtifactId: executionGateArtifactId,
         attemptScope: executionAttemptScope,
+        branch: executionBranch.trim(),
         revision: executionRevision.trim(),
         workflowPath: executionWorkflowPath.trim(),
         minimumDurationMs: executionMinimumDurationSeconds
@@ -3647,7 +3649,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5215,6 +5217,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 maxLength={500}
                 placeholder="Exact suite name"
                 onChange={event => setExecutionName(event.target.value)}
+              />
+            </label>
+            <label>
+              Source branch
+              <input
+                type="text"
+                value={executionBranch}
+                maxLength={500}
+                placeholder="main or feature/checkout"
+                onChange={event => setExecutionBranch(event.target.value)}
               />
             </label>
             <label>

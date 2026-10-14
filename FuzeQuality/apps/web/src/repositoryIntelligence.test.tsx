@@ -1782,6 +1782,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('filters execution history, trends, and gate performance by exact source branch', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Source branch'), {
+      target: { value: ' feature/checkout ' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        branch: 'feature/checkout',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        branch: 'feature/checkout',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        branch: 'feature/checkout',
+      })
+    })
+  })
+
   it('filters execution history, trends, and gate performance by duration window', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

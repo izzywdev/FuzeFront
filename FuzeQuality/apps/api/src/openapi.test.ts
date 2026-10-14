@@ -148,9 +148,15 @@ describe('contract discovery', () => {
         expect(parameterRefs).toContain('#/components/parameters/ExecutionGateOutcome')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionPolicyArtifactId')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionGateArtifactId')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionBranch')
       }
       expect(document.components.parameters.ExecutionPolicyArtifactId.schema.maxLength).toBe(500)
       expect(document.components.parameters.ExecutionGateArtifactId.schema.maxLength).toBe(500)
+      expect(document.components.parameters.ExecutionBranch).toMatchObject({
+        name: 'branch',
+        in: 'query',
+        schema: { type: 'string', minLength: 1, maxLength: 500 },
+      })
       expect(document.components.parameters.ExecutionEvidenceKind.schema.enum).toEqual([
         'video', 'report', 'trace', 'screenshot', 'log', 'other',
       ])
