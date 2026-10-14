@@ -21,11 +21,9 @@ This module does not log.
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 import urllib.error
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -33,6 +31,7 @@ from typing import Any, Protocol
 import jwt
 from jwt import PyJWK
 
+from ._http import fetch_json
 from .types import AuthError, AuthMode, Identity
 
 # Asymmetric algorithms ONLY for federated mode: permitting HS* would let anyone
@@ -278,8 +277,7 @@ def _now() -> float:
 
 
 def _fetch_json(url: str, timeout: float) -> Any:
-    with urllib.request.urlopen(url, timeout=timeout) as res:
-        return json.load(res)
+    return fetch_json(url, timeout)
 
 
 @dataclass(frozen=True)
