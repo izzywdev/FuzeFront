@@ -59,7 +59,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.9.0'
+export const SCANNER_VERSION = '1.10.0'
 const MAX_SCAN_RESULT_BYTES = 4_500_000
 const TRANSPORT_DIAGNOSTIC_RESERVE_BYTES = 2_048
 
@@ -370,6 +370,11 @@ function extractTests(repository: Repository, file: string, source: string): Tes
         index: match.index ?? 0,
         title: match[2].trim(),
       }))
+  const titleCounts = new Map<string, number>()
+  for (const match of titleMatches) {
+    titleCounts.set(match.title, (titleCounts.get(match.title) ?? 0) + 1)
+  }
+  const titleOccurrences = new Map<string, number>()
   const metadata = (segment: string) => {
     const routeMatches = [
       ...segment.matchAll(/\b(get|post|put|patch|delete)\s*\(\s*(['"`])([^'"`]+)\2/gi),
@@ -394,8 +399,13 @@ function extractTests(repository: Repository, file: string, source: string): Tes
     const start = match.index
     const end = titleMatches[index + 1]?.index ?? source.length
     const evidence = metadata(source.slice(start, end))
+    const occurrence = titleOccurrences.get(title) ?? 0
+    titleOccurrences.set(title, occurrence + 1)
+    const identity = titleCounts.get(title) === 1
+      ? digest(file, title)
+      : digest(file, title, String(occurrence))
     cases.push({
-      id: `test:${repository.name}:${digest(file, title, String(start))}`,
+      id: `test:${repository.name}:${identity}`,
       repositoryId: repository.id,
       framework: frameworkFor(file, source),
       level: levelFor(file, source),

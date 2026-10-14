@@ -220,6 +220,65 @@ describe('repository scanner', () => {
     expect(new Set(repeatedPlans.flatMap(item => item.evidence)).size).toBeGreaterThanOrEqual(2)
   })
 
+  it('keeps unique test identities stable when unrelated source is inserted above them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-stable-test-ids-'))
+    await mkdir(join(root, 'tests'), { recursive: true })
+    const testPath = join(root, 'tests', 'checkout.spec.ts')
+    const testSource = `import { test, expect } from '@playwright/test'
+      test('submits checkout', async () => {
+        // @fuzequality target /checkout
+        expect(true).toBe(true)
+      })`
+    await writeFile(testPath, testSource)
+
+    const first = await scanRepository(repository, root)
+    const firstTest = first.tests.find(item => item.title === 'submits checkout')
+
+    await writeFile(testPath, `// routine setup comment\n${testSource}`)
+    const second = await scanRepository(repository, root)
+    const secondTest = second.tests.find(item => item.title === 'submits checkout')
+
+    expect(firstTest).toBeDefined()
+    expect(secondTest).toBeDefined()
+    expect(secondTest?.id).toBe(firstTest?.id)
+    expect(secondTest?.targets).toEqual(['/checkout'])
+  })
+
+  it('keeps duplicate-title discriminators stable when a different test is inserted first', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-stable-duplicate-test-ids-'))
+    await mkdir(join(root, 'tests'), { recursive: true })
+    const testPath = join(root, 'tests', 'authorization.spec.ts')
+    const repeatedTests = `
+      test('rejects unauthorized access', async () => {
+        // @fuzequality target /organizations/first
+        expect(true).toBe(true)
+      })
+      test('rejects unauthorized access', async () => {
+        // @fuzequality target /organizations/second
+        expect(true).toBe(true)
+      })`
+    const imports = `import { test, expect } from '@playwright/test'\n`
+    await writeFile(testPath, imports + repeatedTests)
+
+    const first = await scanRepository(repository, root)
+    const firstIds = first.tests
+      .filter(item => item.title === 'rejects unauthorized access')
+      .map(item => item.id)
+
+    await writeFile(testPath, `${imports}
+      test('loads the authorization screen', async () => {
+        expect(true).toBe(true)
+      })
+      ${repeatedTests}`)
+    const second = await scanRepository(repository, root)
+    const secondIds = second.tests
+      .filter(item => item.title === 'rejects unauthorized access')
+      .map(item => item.id)
+
+    expect(secondIds).toEqual(firstIds)
+    expect(new Set(secondIds).size).toBe(2)
+  })
+
   it('builds API and frontend expectations from repository files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-'))
     await mkdir(join(root, 'src'), { recursive: true })
@@ -263,7 +322,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.9.0',
+      scannerVersion: '1.10.0',
       partial: false,
       counts: {
         operations: 1,
