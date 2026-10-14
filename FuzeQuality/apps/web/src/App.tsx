@@ -3402,6 +3402,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     'passed' | 'failed' | ''
   >('')
   const [executionExternalRunId, setExecutionExternalRunId] = useState('')
+  const [executionName, setExecutionName] = useState('')
   const [executionPolicyArtifactId, setExecutionPolicyArtifactId] = useState('')
   const [executionGateArtifactId, setExecutionGateArtifactId] = useState('')
   const [executionAttemptScope, setExecutionAttemptScope] = useState<
@@ -3616,6 +3617,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         evidenceKind: executionEvidenceKind,
         thresholdOutcome: executionThresholdOutcome,
         externalRunId: executionExternalRunId.trim(),
+        name: executionName.trim(),
         policyArtifactId: executionPolicyArtifactId,
         gateArtifactId: executionGateArtifactId,
         attemptScope: executionAttemptScope,
@@ -3631,7 +3633,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionThresholdOutcome, executionExternalRunId, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionThresholdOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5174,6 +5176,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 maxLength={500}
                 placeholder="Exact provider run ID"
                 onChange={event => setExecutionExternalRunId(event.target.value)}
+              />
+            </label>
+            <label>
+              Suite name
+              <input
+                type="text"
+                value={executionName}
+                maxLength={500}
+                placeholder="Exact suite name"
+                onChange={event => setExecutionName(event.target.value)}
               />
             </label>
             <label>

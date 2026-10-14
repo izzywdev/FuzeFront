@@ -7,6 +7,7 @@ describe('execution evidence filter', () => {
       kind: 'post-production',
       status: 'failed',
       provider: 'github-actions',
+      name: 'Post-production browser suite',
       evidenceKind: 'video',
       thresholdOutcome: 'failed',
       externalRunId: '123456789',
@@ -31,6 +32,12 @@ describe('execution evidence filter', () => {
 
   it('rejects an unknown execution provider', () => {
     expect(executionFilterSchema.safeParse({ provider: 'jenkins' }).success).toBe(false)
+  })
+
+  it('bounds and normalizes an exact suite name', () => {
+    expect(executionFilterSchema.parse({ name: ' Integration suite ' }).name).toBe('Integration suite')
+    expect(executionPageFilterSchema.safeParse({ name: ' ' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ name: 'a'.repeat(501) }).success).toBe(false)
   })
 
   it('accepts only retained execution evidence kinds', () => {

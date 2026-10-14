@@ -128,6 +128,11 @@ describe('contract discovery', () => {
           .map((parameter: { $ref?: string }) => parameter.$ref)
       ).toContain('#/components/parameters/ExecutionExternalRunId')
       expect(document.components.parameters.ExecutionExternalRunId.schema.maxLength).toBe(500)
+      expect(document.components.parameters.ExecutionName).toMatchObject({
+        name: 'name',
+        in: 'query',
+        schema: { type: 'string', minLength: 1, maxLength: 500 },
+      })
       for (const path of [
         '/api/v1/repositories/{repositoryId}/execution-performance',
         '/api/v1/repositories/{repositoryId}/execution-trend',
@@ -135,6 +140,7 @@ describe('contract discovery', () => {
       ]) {
         const parameterRefs = document.paths[path].get.parameters.map((parameter: { $ref?: string }) => parameter.$ref)
         expect(parameterRefs).toContain('#/components/parameters/ExecutionExternalRunId')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionName')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceKind')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionThresholdOutcome')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionPolicyArtifactId')

@@ -1678,6 +1678,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     }))
   })
 
+  it('filters execution history, trends, and gate performance by exact suite name', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Suite name'), {
+      target: { value: ' Post-production browser suite ' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        name: 'Post-production browser suite',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        name: 'Post-production browser suite',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        name: 'Post-production browser suite',
+      })
+    })
+  })
+
   it('filters execution history, trends, and gate performance to retry attempts', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

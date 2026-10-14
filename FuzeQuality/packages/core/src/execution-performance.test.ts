@@ -89,6 +89,7 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { provider: 'github-actions' })).toEqual([])
   expect(filterTestExecutions(executions, { provider: 'external' })).toEqual(executions)
   expect(filterTestExecutions(executions, { externalRunId: 'three' })).toEqual([executions[0], executions[2]])
+  expect(filterTestExecutions(executions, { name: 'Load' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceKind: 'video' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { evidenceKind: 'report' })).toEqual([])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'failed' })).toEqual([executions[2]])

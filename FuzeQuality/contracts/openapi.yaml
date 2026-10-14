@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.42.0
+  version: 0.43.0
   license:
     name: UNLICENSED
 servers:
@@ -824,6 +824,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
@@ -962,6 +963,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
@@ -1014,6 +1016,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
@@ -1159,6 +1162,11 @@ components:
       in: query
       description: Execution-ingestion origin.
       schema: { $ref: '#/components/schemas/ExecutionProvider' }
+    ExecutionName:
+      name: name
+      in: query
+      description: Exact normalized suite or workflow name retained with the execution evidence.
+      schema: { type: string, minLength: 1, maxLength: 500 }
     ExecutionEvidenceKind:
       name: evidenceKind
       in: query

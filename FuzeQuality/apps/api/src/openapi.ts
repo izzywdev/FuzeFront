@@ -37,7 +37,7 @@ import express, { type Response, type Router } from 'express'
 import { parse as parseYaml } from 'yaml'
 
 /** The contract version this build implements — mirrors contracts/openapi.yaml `info.version`. */
-export const CONTRACT_VERSION = '0.42.0'
+export const CONTRACT_VERSION = '0.43.0'
 export const SERVICE_NAME = 'fuzequality'
 
 /**
