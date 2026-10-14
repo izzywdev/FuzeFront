@@ -107,7 +107,7 @@ jobs:
           # Reject competing global (unsegmented, unconstrained) strategies of other types.
           # Unleash evaluates strategies with OR semantics: a "default" always-on strategy overrides
           # any flexibleRollout %, enabling all users regardless of the configured rollout.
-          competing=$(python3 -c 'import json;xs=[s["name"] for s in json.load(open("/tmp/strats.json")) if not s.get("segments") and not s.get("constraints") and s.get("name")!="flexibleRollout"];print(",".join(xs))')
+          competing=$(python3 -c 'import json;xs=[s["name"] for s in json.load(open("/tmp/strats.json")) if not s.get("segments") and not s.get("constraints") and s.get("name")!="flexibleRollout" and not s.get("disabled")];print(",".join(xs))')
           if [ -n "$competing" ]; then echo "competing global strategies detected: $competing — remove them in the Unleash UI first, then re-run"; exit 1; fi
           # Select only unsegmented, unconstrained flexibleRollout strategies to avoid
           # ambiguity and prevent accidentally widening a targeted pilot strategy.
