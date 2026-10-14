@@ -135,7 +135,23 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
     // `matchedRoutePath()`'s comment for why those can disagree by then.
     // `configurable: true` so nothing downstream that re-defines this
     // property throws.
-    let matchedRoute: { path?: string } | undefined;
+    //
+    // Seed from whatever `req.route` ALREADY holds: this middleware is
+    // documented as mountable per-router, after matching (see
+    // TracingMiddlewareOptions.spanName above) — in that case Express set
+    // req.route before this function ever ran, and installing the
+    // accessor with a bare `undefined` initial value would discard that
+    // already-matched route out from under every downstream handler.
+    const existingRoute = (req as { route?: { path?: string } }).route;
+    let matchedRoute: { path?: string } | undefined = existingRoute;
+    const snapshotRoute = (value: { path?: string } | undefined) => {
+      if (value?.path) {
+        const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
+        const full = `${baseUrl}${value.path}`.replace(/\/{2,}/g, '/');
+        (req as { __fuzefrontMatchedRoute?: string }).__fuzefrontMatchedRoute = full === '' ? '/' : full;
+      }
+    };
+    snapshotRoute(existingRoute);
     Object.defineProperty(req, 'route', {
       configurable: true,
       enumerable: true,
@@ -144,11 +160,7 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
       },
       set(value: { path?: string } | undefined) {
         matchedRoute = value;
-        if (value?.path) {
-          const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
-          const full = `${baseUrl}${value.path}`.replace(/\/{2,}/g, '/');
-          (req as { __fuzefrontMatchedRoute?: string }).__fuzefrontMatchedRoute = full === '' ? '/' : full;
-        }
+        snapshotRoute(value);
       },
     });
 
@@ -177,7 +189,7 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
         // picks them up.
         span.updateName(spanName(req));
         span.setAttribute('http.route', routePath);
-      } else {
+      } else if (spanName === defaultSpanName) {
         // No route ever matched — rejected before the router ran (e.g. a
         // body-parser failure on malformed JSON) or a genuine 404. req.path
         // is attacker-controlled and unbounded (adversarial/scanning
@@ -185,8 +197,14 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
         // UNMATCHED request, the exact per-path cardinality problem
         // matchedRoutePath() exists to collapse for MATCHED ones. Use a
         // fixed name instead, and omit http.route entirely rather than
-        // echoing the raw path into it.
+        // echoing the raw path into it. Only for the DEFAULT naming
+        // function, though — a caller-supplied `options.spanName` owns
+        // this decision for every request per the documented contract, so
+        // its own low-cardinality scheme (if any) for the unmatched case
+        // must not be overridden here.
         span.updateName(`${req.method} (unmatched)`);
+      } else {
+        span.updateName(spanName(req));
       }
       span.setAttribute('http.status_code', res.statusCode);
       span.setAttribute('http.method', req.method);

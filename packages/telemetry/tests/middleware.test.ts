@@ -249,6 +249,46 @@ describe('tracingMiddleware', () => {
     expect(span.attributes['http.route']).toBeUndefined();
   });
 
+  it('preserves an already-matched req.route when mounted per-router, after matching', () => {
+    const middleware = tracingMiddleware();
+    // Documented supported usage (TracingMiddlewareOptions.spanName):
+    // mounted per-router, AFTER Express has already matched a route and
+    // set req.route — not ahead of the router, the usual case every other
+    // test here exercises.
+    const req = fakeReq() as Request & { route?: { path?: string }; baseUrl?: string };
+    req.baseUrl = '/v1/widgets';
+    req.route = { path: '/:id' };
+    const res = fakeRes();
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+
+    // The already-matched route must survive the middleware installing its
+    // accessor — both for downstream handlers reading req.route, and for
+    // the span itself.
+    expect(req.route).toEqual({ path: '/:id' });
+    res._finish();
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('GET /v1/widgets/:id');
+    expect(span.attributes['http.route']).toBe('/v1/widgets/:id');
+  });
+
+  it('respects a caller-supplied spanName for an unmatched request instead of forcing the fixed name', () => {
+    const middleware = tracingMiddleware({ spanName: () => 'custom-unmatched-name' });
+    const req = fakeReq();
+    const res = fakeRes();
+    res.statusCode = 404;
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    res._finish();
+
+    // TracingMiddlewareOptions.spanName is documented as the caller's own
+    // naming contract for every request; the unmatched-request fallback
+    // must only apply when nothing was supplied, not override a custom one.
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('custom-unmatched-name');
+  });
+
   it('does not double-end the span when BOTH `finish` and `close` fire', () => {
     const middleware = tracingMiddleware();
     const req = fakeReq();

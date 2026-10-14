@@ -3,6 +3,27 @@
 All notable changes to this package are documented here. Versioned
 independently — bump on every interface change (SemVer).
 
+## 0.1.4 — two regressions from 0.1.3's req.route accessor, both caught by Codex
+
+### Fixed
+
+- The 0.1.3 `req.route` accessor initialized its backing value to
+  `undefined` unconditionally, discarding an ALREADY-matched route when
+  `tracingMiddleware()` is mounted per-router, after matching — the
+  documented supported usage (see `TracingMiddlewareOptions.spanName`).
+  Every downstream handler then saw `req.route` as undefined, and the
+  completion callback renamed an otherwise-correct span to
+  `METHOD (unmatched)`. Fixed by seeding the accessor from whatever
+  `req.route` already holds before installing it. Verified against a
+  real Express app with `tracingMiddleware()` as a route-level handler
+  after an `app.get('/:id', ...)` param match.
+- The unmatched-request fallback (`METHOD (unmatched)`, 0.1.2) applied
+  unconditionally, overriding a caller-supplied `options.spanName` for
+  exactly the requests its own naming contract is documented to cover.
+  Fixed: the fixed fallback name now only applies when using the
+  default naming function; a custom `spanName` is honored for the
+  unmatched case too, same as the matched case already was.
+
 ## 0.1.3 — matched-route snapshot survives error-forwarding out of a nested router
 
 ### Fixed
