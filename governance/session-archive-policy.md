@@ -4,19 +4,22 @@ Owner ruling 2026-10-14. Applies to every agent session working in this repo.
 
 ## Rule
 
-When the user asks whether a session can be archived (or is done / can be closed), the agent
-does **not** answer with a "still open, but not here" list. It executes the hand-off:
+When the user asks whether a session can be **archived or closed** (the request must mention
+archiving or closing; a plain "is this done?" status check is answered normally and archives
+nothing), the agent does **not** answer with a "still open, but not here" list. It executes the hand-off:
 
 1. **Enumerate** every open item that does not belong in the current session: mirror/follow-up
    work in another repo, post-merge verification, deferred scope, anything the agent would
    otherwise have listed as "someone should…".
 2. **Spawn one new session per item** (`create_session`, `source_url` = the repo that owns the
-   item). Each prompt must stand alone: goal, files by repo-relative path, the PR/commit that
+   item). First reuse: if a session for the item was already spawned earlier in this conversation
+   (archiving was deferred and is being retried), link that session instead of creating a
+   duplicate. Each prompt must stand alone: goal, files by repo-relative path, the PR/commit that
    motivated it, and what done looks like. Never include secrets.
 3. **Show the spawned sessions** to the user as links (`https://claude.ai/code/<session_id>`),
    one line per item: what it covers and which repo it targets.
-4. **Confirm each child started** (`get_session` on each: status has left pending and the
-   child is working). A child validates its hand-off against a *running* parent
+4. **Confirm each child started** (`get_session` on each: status has left pending, so
+   working, review-ready or already completed all count as started). A child validates its hand-off against a *running* parent
    (`governance/cross-session-orchestration.md`), so the parent stays active until every child
    has started; if one has not started, say so instead of archiving.
 5. **Archive the current session** (`archive_session`) once the links are posted and every
@@ -34,6 +37,9 @@ would be needed, and leave archiving to the user.
 - Any PR this session opened is merged or closed. If it is still open, drive it to a terminal
   state first; do not archive over a live PR, and do not spawn sessions to babysit it.
 - Nothing is uncommitted or unpushed. Work that exists only on local disk is not archivable.
+- Every branch this session created is merged or deleted, or has a PR that is merged or closed.
+  A pushed branch with no PR is a stranded branch: open its PR and drive it to a terminal state
+  first (CLAUDE.md "Branch lifecycle policy").
 - Defects found in this session's own scope are **fixed here** (see CLAUDE.md "FIX is the
   rule"); only out-of-scope, other-repo, or later-observation items are spawned.
 
