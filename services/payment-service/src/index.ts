@@ -1,4 +1,4 @@
-import { initTelemetry } from '@fuzefront/telemetry';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { loadConfig } from './config';
 import { createApp, AppDeps } from './app';
 import { StripePaymentProvider } from './providers/stripe/stripe-payment-provider';
@@ -7,7 +7,10 @@ import { PaymentProvider } from './providers/payment-provider';
 // Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
 // backend/security/src/index.ts for the full rationale). Sends OTLP to
 // FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
-initTelemetry({
+// Handle retained (unlike the discarded call this used to be): without it
+// there is nothing for the shutdown hook below to flush, and the SDK's batch
+// exporter can lose the tail of in-flight spans on every pod eviction/rollout.
+const telemetry: TelemetryHandle = initTelemetry({
   serviceName: 'payment-service',
   serviceVersion: process.env.npm_package_version,
 });
@@ -35,19 +38,31 @@ function main() {
   const config = loadConfig();
 
   // Degraded mode: no vendor key → health only, exactly like billing-service.
+  let app: ReturnType<typeof createApp>;
   if (!config.stripeSecretKey) {
     console.warn(
       '[payment-service] STRIPE_SECRET_KEY missing — serving /health only (gateway scaffold, degraded mode)',
     );
-    const app = createApp();
-    startHttp(app, config.port);
-    return;
+    app = createApp();
+  } else {
+    const provider = selectProvider(config);
+    const deps: AppDeps = { provider, securityServiceUrl: config.securityServiceUrl };
+    app = createApp(deps);
   }
 
-  const provider = selectProvider(config);
-  const deps: AppDeps = { provider, securityServiceUrl: config.securityServiceUrl };
-  const app = createApp(deps);
-  startHttp(app, config.port);
+  const server = startHttp(app, config.port);
+
+  // Stop accepting new connections before shutting down telemetry, so the
+  // batch exporter isn't torn down while requests are still in flight — same
+  // ordering as billing-service/chat-service's shutdown hooks.
+  const shutdown = () => {
+    console.log('[payment-service] Shutting down...');
+    server.close(() => {
+      telemetry.shutdown().catch(() => {}).finally(() => process.exit(0));
+    });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 function startHttp(app: ReturnType<typeof createApp>, port: number) {

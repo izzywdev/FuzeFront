@@ -122,12 +122,17 @@ async function main() {
   const shutdown = async () => {
     // eslint-disable-next-line no-console
     console.log('[chat-service] Shutting down...');
+    // Stop accepting new connections FIRST. Flushing telemetry (or
+    // disconnecting the Kafka producer) before the server stops listening
+    // lets in-flight requests keep being served after the exporter/producer
+    // are already torn down — their spans/events then silently never ship.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     await stopRefIndexProjection().catch(() => {});
     await producer.disconnect().catch(() => {});
     // Flush any spans still buffered before the process exits — otherwise the
     // last few requests before shutdown silently never reach Tempo.
     await telemetry.shutdown().catch(() => {});
-    server.close(() => process.exit(0));
+    process.exit(0);
   };
 
   process.on('SIGTERM', shutdown);
