@@ -98,16 +98,17 @@ export function getDatabaseConfig(
     }
   }
 
-  // SQLite fallback
-  return {
-    client: 'sqlite3',
-    connection: {
-      filename: ':memory:',
-    },
-    useNullAsDefault: true,
-    migrations: migrationsConfig,
-    seeds: seedsConfig,
-  }
+  // Postgres is the only supported datastore. The former in-memory sqlite
+  // fallback was removed (FFRNT-175 follow-up): it is a different SQL dialect
+  // from production, so anything it "verified" could diverge from prod, and it
+  // was unmaintained (the driver was never even in the lockfile). This branch
+  // is only reachable in production without USE_POSTGRES, which is a
+  // misconfiguration — fail loudly rather than silently booting an ephemeral DB.
+  throw new Error(
+    'Database misconfigured: Postgres is required. Set USE_POSTGRES=true and the ' +
+      'DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD connection variables ' +
+      '(NODE_ENV=production disables the non-Postgres path).'
+  )
 }
 
 // Singleton runtime database instance, shared by the service's route handlers.
