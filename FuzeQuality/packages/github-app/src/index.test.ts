@@ -55,11 +55,29 @@ describe('FuzeQuality GitHub App contract', () => {
       .toBe('clone https://github.com/org/repo.git token=[REDACTED]')
   })
 
-  it('maps completed default-branch workflow runs to execution evidence', () => {
+  it('maps completed workflow runs to execution evidence with branch provenance', () => {
     expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { id: 101, run_attempt: 2, head_branch: 'main', head_sha: 'a'.repeat(40), name: 'Post-production integration', path: '.github/workflows/post-prod.yml', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({
       repositoryId: 'repo-1', provider: 'github-actions', externalRunId: '101', attempt: 2, kind: 'post-production', status: 'passed',
+      branch: 'main',
       workflowPath: '.github/workflows/post-prod.yml',
       evidenceLinks: [{ kind: 'report', name: 'GitHub Actions artifacts', url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101#artifacts' }],
+    })])
+  })
+
+  it('retains pull-request branch evidence without treating it as analyzed policy linkage', () => {
+    const executions = webhookWorkflowExecutions('workflow_run', {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 104, run_attempt: 1, head_branch: 'feature/checkout', head_sha: 'f'.repeat(40),
+        name: 'Pull request CI', path: '.github/workflows/ci.yml', status: 'completed',
+        conclusion: 'failure', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/104',
+        run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }, repositories)
+
+    expect(executions).toEqual([expect.objectContaining({
+      externalRunId: '104', branch: 'feature/checkout', revision: 'f'.repeat(40), status: 'failed',
     })])
   })
 

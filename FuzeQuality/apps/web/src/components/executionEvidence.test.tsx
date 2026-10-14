@@ -14,6 +14,7 @@ const execution: TestExecution = {
   externalRunId: 'load-42',
   attempt: 1,
   revision: 'abc123',
+  branch: 'feature/checkout',
   kind: 'load',
   status: 'failed',
   name: 'Checkout load test',
@@ -124,6 +125,8 @@ describe('ExecutionThresholdEvidence', () => {
 
     expect(screen.getByText('.github/workflows/load-test.yml')).toBeInTheDocument()
     expect(screen.getByText('external · load-42')).toBeInTheDocument()
+    expect(screen.getByText('Source branch')).toBeInTheDocument()
+    expect(screen.getByText('feature/checkout')).toBeInTheDocument()
     expect(screen.getByText('Suite classification')).toBeInTheDocument()
     expect(screen.getByText('load')).toBeInTheDocument()
   })

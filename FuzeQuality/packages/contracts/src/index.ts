@@ -565,6 +565,8 @@ export type TestExecution = {
   /** Provider retry/rerun attempt; a new attempt is retained as new evidence. */
   attempt: number
   revision: string
+  /** Provider-owned source branch/ref when the execution supplies one. */
+  branch?: string
   kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
   status: 'passed' | 'failed' | 'cancelled' | 'running'
   name: string
@@ -649,6 +651,7 @@ export const testExecutionInputSchema = z.object({
   provider: z.enum(['github-actions', 'external']).default('external'),
   externalRunId: z.string().trim().min(1).max(500).optional(),
   attempt: z.number().int().positive().default(1),
+  branch: z.string().trim().min(1).max(500).optional(),
   kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
   status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
   workflowPath: z.string().trim().min(1).max(1000).optional(),

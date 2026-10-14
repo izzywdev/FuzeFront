@@ -145,6 +145,7 @@ export function ExecutionEvidenceMetadata({
   if (
     execution.externalRunId === undefined &&
     execution.attempt === undefined &&
+    execution.branch === undefined &&
     execution.workflowPath === undefined &&
     !duration
   )
@@ -168,6 +169,12 @@ export function ExecutionEvidenceMetadata({
         <div data-field="attempt">
           <dt>Attempt</dt>
           <dd>{execution.attempt}</dd>
+        </div>
+      )}
+      {execution.branch !== undefined && (
+        <div data-field="source-branch">
+          <dt>Source branch</dt>
+          <dd><code>{execution.branch}</code></dd>
         </div>
       )}
       {execution.workflowPath !== undefined && (

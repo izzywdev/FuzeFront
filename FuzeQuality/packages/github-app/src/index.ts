@@ -43,6 +43,8 @@ export type WorkflowExecutionCommand = {
   externalRunId: string
   attempt: number
   revision: string
+  /** GitHub head branch for this exact workflow run. */
+  branch?: string
   kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
   status: 'passed' | 'failed' | 'cancelled' | 'running'
   name: string
@@ -141,11 +143,11 @@ export function webhookScanCommands(
   return []
 }
 
-/** Maps only default-branch GitHub Actions evidence to immutable execution rows. */
+/** Maps GitHub Actions evidence to immutable execution rows at its exact source revision. */
 export function webhookWorkflowExecutions(event: string, payload: unknown, repositories: OnboardedRepository[]): WorkflowExecutionCommand[] {
   if (event !== 'workflow_run') return []
   const parsed = workflowRunSchema.safeParse(payload)
-  if (!parsed.success || parsed.data.workflow_run.head_branch !== parsed.data.repository.default_branch) return []
+  if (!parsed.success) return []
   const run = parsed.data.workflow_run
   const workflowPath = normalizeWorkflowPath(run.path)
   const kind = workflowExecutionKind(run.name, workflowPath)
@@ -156,6 +158,7 @@ export function webhookWorkflowExecutions(event: string, payload: unknown, repos
     externalRunId: String(run.id),
     attempt: run.run_attempt,
     revision: run.head_sha,
+    branch: run.head_branch ?? undefined,
     kind,
     status,
     name: run.name,

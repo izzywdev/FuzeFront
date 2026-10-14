@@ -109,6 +109,8 @@ describe('contract discovery', () => {
         '^[0-9a-fA-F]{40}$'
       )
       expect(schemas.TestExecutionInput.properties.workflowPath.maxLength).toBe(1000)
+      expect(schemas.TestExecutionInput.properties.branch.maxLength).toBe(500)
+      expect(schemas.TestExecution.properties.branch.maxLength).toBe(500)
       expect(schemas.TestExecution.properties.workflowPath.type).toBe('string')
       expect(
         document.paths['/api/v1/internal/test-executions'].post.responses['422'].content[

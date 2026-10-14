@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.44.0
+  version: 0.45.0
   license:
     name: UNLICENSED
 servers:
@@ -1630,6 +1630,7 @@ components:
         externalRunId: { type: string, minLength: 1, maxLength: 500 }
         attempt: { type: integer, minimum: 1, default: 1 }
         revision: { type: string, minLength: 1, maxLength: 200 }
+        branch: { type: string, minLength: 1, maxLength: 500 }
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string, minLength: 1, maxLength: 500 }
@@ -1690,6 +1691,7 @@ components:
         externalRunId: { type: string }
         attempt: { type: integer, minimum: 1 }
         revision: { type: string }
+        branch: { type: string, minLength: 1, maxLength: 500 }
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string }
