@@ -39,6 +39,8 @@ from .types import AuthError, AuthMode, Identity
 # who knows the (public) key use it as an HMAC secret and forge tokens.
 _FEDERATED_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384"]
 _KEY_TYPE_FOR_ALG_PREFIX = {"RS": "RSA", "ES": "EC"}
+# JOSE binds each ES algorithm to exactly one curve (RFC 7518 §3.4).
+_CURVE_FOR_ALG = {"ES256": "P-256", "ES384": "P-384"}
 _DISCOVERY_TIMEOUT_SEC = 5
 _JWKS_TIMEOUT_SEC = 5
 # A fetched key set is trusted for this long, then re-fetched. A key the issuer
@@ -275,6 +277,7 @@ class _Candidate:
     alg: str | None  # declared `alg`, if any (PyJWK would otherwise infer one from `kty`)
     use: str | None
     key_ops: tuple[str, ...] | None
+    crv: str | None = None  # EC curve
 
     @property
     def kid(self) -> str | None:
@@ -282,10 +285,13 @@ class _Candidate:
 
     def can_verify(self, token_alg: str) -> bool:
         """True only if this key may verify a token signed with ``token_alg``:
-        right key type, a signing key (not `use: enc`), allowed for `verify`, and
+        right key type (and, for ES*, the curve JOSE binds to that algorithm), a signing key (not `use: enc`), allowed for `verify`, and
         any algorithm the issuer pinned on it equals the token's."""
         expected = _KEY_TYPE_FOR_ALG_PREFIX.get(token_alg[:2])
         if expected is not None and getattr(self.jwk, "key_type", None) != expected:
+            return False
+        required_curve = _CURVE_FOR_ALG.get(token_alg)
+        if required_curve is not None and self.crv != required_curve:
             return False
         if self.use not in (None, "sig"):
             return False
@@ -304,12 +310,13 @@ def _load_jwk(raw: Any) -> _Candidate | None:
         return None
     key_ops = raw.get("key_ops")
     ops = tuple(o for o in key_ops if isinstance(o, str)) if isinstance(key_ops, list) else None
-    alg, use = raw.get("alg"), raw.get("use")
+    alg, use, crv = raw.get("alg"), raw.get("use"), raw.get("crv")
     return _Candidate(
         jwk=jwk,
         alg=alg if isinstance(alg, str) else None,
         use=use if isinstance(use, str) else None,
         key_ops=ops,
+        crv=crv if isinstance(crv, str) else None,
     )
 
 

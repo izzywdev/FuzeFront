@@ -333,3 +333,54 @@ def test_unknown_key_stays_a_401(jwks_server, rsa_key):
 def test_portal_claim_is_carried_into_identity(jwks_server, rsa_key):
     ident = verifier(jwks_server).verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "portalId": "p-1"}))
     assert ident.portal_id == "p-1"
+
+
+def _forge_ec_token(key, label_alg, kid, claims):
+    """Sign with ``key`` but label the header ``label_alg`` -- including a curve that
+    does not match. PyJWT >= 2.10 refuses to do this itself, but older allowed versions
+    (and an attacker) will, so the token is built by hand."""
+    import base64
+    import json
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+
+    def b64(raw):
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+    now = int(time.time())
+    header = b64(json.dumps({"alg": label_alg, "typ": "JWT", "kid": kid}).encode())
+    body = b64(json.dumps({"iat": now, "exp": now + 3600, **claims}).encode())
+    signing_input = f"{header}.{body}".encode()
+    digest = {"ES256": hashes.SHA256(), "ES384": hashes.SHA384()}[label_alg]
+    r, sig_s = decode_dss_signature(key.sign(signing_input, ec.ECDSA(digest)))
+    size = (key.curve.key_size + 7) // 8
+    raw = r.to_bytes(size, "big") + sig_s.to_bytes(size, "big")
+    return f"{signing_input.decode()}.{b64(raw)}"
+
+
+@pytest.mark.parametrize(
+    ("curve", "token_alg", "ok"),
+    [
+        ("secp256r1", "ES256", True),
+        ("secp384r1", "ES384", True),
+        ("secp384r1", "ES256", False),  # cross-curve: a P-384 key labelled ES256
+        ("secp256r1", "ES384", False),
+        ("secp521r1", "ES256", False),  # P-521 is not an allowed curve at all
+    ],
+)
+def test_es_algorithms_are_bound_to_their_curve(jwks_server, curve, token_alg, ok):
+    from conftest import _jwk
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    key = ec.generate_private_key(getattr(ec, curve.upper())())
+    entry = _jwk(key.public_key(), "ec-x", token_alg)
+    entry.pop("alg")  # the issuer did not pin an algorithm on the key
+    _only(jwks_server, entry)
+    v = verifier(jwks_server)
+    token = _forge_ec_token(key, token_alg, "ec-x", GOOD)
+    if ok:
+        assert v.verify(token).user_id == "u-9"
+    else:
+        assert code_of(v, token) == "JWKS_UNAVAILABLE"
