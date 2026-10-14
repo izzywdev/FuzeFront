@@ -362,7 +362,10 @@ const cleanJsdoc = (raw) => raw
 // A component-level JSDoc is one that immediately precedes the component's
 // function/interface declaration — including `export interface <Name>Props`,
 // where many components put their summary — not a stray per-prop comment.
-const DECL_RE = /\/\*\*([\s\S]*?)\*\/\s*export (?:declare function|function|interface) ([A-Za-z_$][\w$]*)/g
+// The body is tempered (`(?!\*\/)`) so a match cannot start at an earlier
+// comment and backtrack across its `*/` to a later `export` — that leaked a
+// prior interface's member doc into the summary (e.g. BottomNav).
+const DECL_RE = /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*export (?:declare function|function|interface) ([A-Za-z_$][\w$]*)/g
 function componentJsdoc(name, dtsText) {
   DECL_RE.lastIndex = 0
   let m
