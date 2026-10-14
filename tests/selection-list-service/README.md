@@ -34,7 +34,7 @@ the service in test mode. The service must:
    not the allow-all `NODE_ENV=test` no-op: set `SECURITY_SERVICE_URL` and
    `FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED=true`. It grants only via the service's
    own grant calls, so the mirror-not-authority tests' direct DB injection is the
-   only way `usr_01test00000000mirrorb00000` could appear to have access
+   only way `testUser('mirrorb')` (helpers/ids.ts; fixture ids are codec-valid TypeIDs, never hand-typed literals) could appear to have access
 
 Quick start (adjust to the service's actual startup command):
 

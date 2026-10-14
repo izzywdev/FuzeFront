@@ -21,12 +21,13 @@
 
 import { rawFetch } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
+import { testOrg, testUser } from '../helpers/ids';
 
 const FAKE_URL = process.env['SECURITY_SERVICE_URL'] ?? 'http://localhost:3002';
 
-const ORG_ID = 'org_01test00000000authorit0000';
-const OWNER = 'usr_01test00000000authora00000';
-const PEER = 'usr_01test00000000authorb00000';
+const ORG_ID = testOrg('authorit');
+const OWNER = testUser('authora');
+const PEER = testUser('authorb');
 const tokenFor = (userId: string) => () => mintTestToken({ userId, organizationId: ORG_ID });
 
 type Resp = { status: number; body: any };
@@ -136,7 +137,7 @@ describe('L-5: purging a list revokes its grants in the Security API', () => {
 
   it('a grantee who has left the tenant (the human gate refuses them) is still cleaned up, via the narrow cleanup scope', async () => {
     const id = await newList('purge-departed');
-    const LEAVER = 'usr_01test00000000authorc00000';
+    const LEAVER = testUser('authorc');
     expect((await api(OWNER, 'PUT', `/v1/selection-lists/${id}/access/${LEAVER}`, { role: 'list-editor' })).status).toBe(200);
     expect((await grantsOf(LEAVER)).some((g) => g.resource?.key === id)).toBe(true);
 
