@@ -1,10 +1,9 @@
-[lint.per-file-ignores]
-# UP031: Use format specifiers instead of percent format.
-# The __tests__ Python files are governed/reconciled from FuzeSDLC canonical, which
-# uses %-formatting in assertEqual strings to embed GitHub Actions expression syntax
-# (e.g. "${{ ... %s ... }}" % vendor). Converting to f-strings requires quadruple-
-# escaping the GHA braces, making the test assertion harder to read; the canonical
-# carries the %-form and governance_sync.py replaces the file verbatim, so any
-# local f-string conversion is immediately reverted. Suppressed here until the
-# canonical is updated and a new FuzeSDLC release is cut.
-"**/__tests__/*.py" = ["UP031"]
+# Repo-owned ruff config. Deliberately adds nothing but the one exemption below, so
+# ruff's default rule set (which harden-gate pins by version) is unchanged.
+
+[lint.extend-per-file-ignores]
+# .github/actions/fuze-code-action/ is synced verbatim from the FuzeSDLC canonical by
+# governance-sync, which overwrites any local edit. The canonical's test uses
+# percent-format (UP031) at test_rung_gating.py:437, so the finding cannot be fixed
+# here. Remove this entry once FuzeSDLC `v1` ships the f-string form.
+".github/actions/fuze-code-action/__tests__/*" = ["UP031"]
