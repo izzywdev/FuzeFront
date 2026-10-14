@@ -65,6 +65,7 @@ export type PolicyGatePerformancePage = {
 export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'externalRunId' | 'revision' | 'workflowPath' | 'name'>> & {
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
   thresholdOutcome?: 'passed' | 'failed'
+  gateOutcome?: TestExecution['status']
   policyArtifactId?: string
   gateArtifactId?: string
   attemptScope?: 'initial' | 'retry' | 'recovered'
@@ -72,6 +73,14 @@ export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'p
   maximumDurationMs?: number
   from?: string
   until?: string
+}
+
+function retainedGateEvaluations(execution: TestExecution) {
+  return execution.gateEvaluations.length
+    ? execution.gateEvaluations
+    : execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1
+      ? [{ policyArtifactId: execution.policyArtifactIds[0], gateArtifactId: execution.gateArtifactIds[0], status: execution.status }]
+      : []
 }
 
 /** Matches an explicitly retained pair; legacy evidence is paired only when exactly one policy and gate exist. */
@@ -125,6 +134,7 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.thresholdOutcome && !execution.thresholds.some(threshold =>
       threshold.passed === (filter.thresholdOutcome === 'passed')
     )) return false
+    if (filter.gateOutcome && !retainedGateEvaluations(execution).some(evaluation => evaluation.status === filter.gateOutcome)) return false
     if (filter.externalRunId && execution.externalRunId !== filter.externalRunId) return false
     if (filter.name && execution.name !== filter.name) return false
     if (!executionMatchesPolicyGate(execution, filter.policyArtifactId, filter.gateArtifactId)) return false
@@ -235,18 +245,19 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
 }
 
 /** Aggregates immutable execution evidence; no missing link is inferred as a passing gate. */
-export function executionPerformance(executions: TestExecution[], artifacts: QualityArtifact[] = []): PolicyGatePerformance[] {
+export function executionPerformance(
+  executions: TestExecution[],
+  artifacts: QualityArtifact[] = [],
+  gateOutcome?: TestExecution['status'],
+): PolicyGatePerformance[] {
   const results = new Map<string, PolicyGatePerformance>()
   const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
   for (const execution of executions) {
     // Rows created before explicit pair evidence existed are only safe to use
     // when there is exactly one possible pair. Never create a Cartesian product.
-    const gateEvaluations = execution.gateEvaluations.length
-      ? execution.gateEvaluations
-      : execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1
-        ? [{ policyArtifactId: execution.policyArtifactIds[0], gateArtifactId: execution.gateArtifactIds[0], status: execution.status }]
-        : []
+    const gateEvaluations = retainedGateEvaluations(execution)
     for (const evaluation of gateEvaluations) {
+      if (gateOutcome && evaluation.status !== gateOutcome) continue
       const key = `${execution.repositoryId}:${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`
       const policy = artifactsById.get(evaluation.policyArtifactId)
       const gate = artifactsById.get(evaluation.gateArtifactId)

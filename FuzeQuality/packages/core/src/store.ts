@@ -75,6 +75,7 @@ export type TestExecutionQuery = {
   name?: string
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
   thresholdOutcome?: 'passed' | 'failed'
+  gateOutcome?: TestExecution['status']
   externalRunId?: string
   policyArtifactId?: string
   gateArtifactId?: string
@@ -533,7 +534,7 @@ export class MemoryCatalogStore implements CatalogStore {
     const snapshot = this.executionSnapshot(query.snapshotAt)
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
       .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
-    const items = executionPerformance(filterTestExecutions(snapshot, query, snapshot))
+    const items = executionPerformance(filterTestExecutions(snapshot, query, snapshot), [], query.gateOutcome)
       .map(item => ({
         ...item,
         revisionCount: item.revisions?.length ?? 0,
@@ -1281,9 +1282,22 @@ export class PostgresCatalogStore implements CatalogStore {
            WHERE threshold.value->>'passed'=CASE $20 WHEN 'passed' THEN 'true' ELSE 'false' END
          ))
          AND ($21::text IS NULL OR executions.name=$21)
+         AND ($22::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(
+             CASE
+               WHEN jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))>0
+                 THEN executions.gate_evaluations
+               WHEN jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+                 AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
+                 THEN jsonb_build_array(jsonb_build_object('status',executions.status))
+               ELSE '[]'::jsonb
+             END
+           ) AS gate_evaluation(value)
+           WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
+         ))
        ORDER BY COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) DESC,executions.id DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null],
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
@@ -1432,10 +1446,23 @@ export class PostgresCatalogStore implements CatalogStore {
            WHERE threshold.value->>'passed'=CASE $20 WHEN 'passed' THEN 'true' ELSE 'false' END
          ))
          AND ($21::text IS NULL OR executions.name=$21)
+         AND ($22::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(
+             CASE
+               WHEN jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))>0
+                 THEN executions.gate_evaluations
+               WHEN jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+                 AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
+                 THEN jsonb_build_array(jsonb_build_object('status',executions.status))
+               ELSE '[]'::jsonb
+             END
+           ) AS gate_evaluation(value)
+           WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
+         ))
        GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
        ORDER BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null],
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null],
     )
     return result.rows.map(row => ({
       date: row.date,
@@ -1530,6 +1557,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND pair.value->>'gateArtifactId' IS NOT NULL
            AND ($20::text IS NULL OR pair.value->>'policyArtifactId'=$20)
            AND ($21::text IS NULL OR pair.value->>'gateArtifactId'=$21)
+           AND ($25::text IS NULL OR COALESCE(pair.value->>'status',execution.status)=$25)
        ), aggregates AS (
          SELECT repository_id,policy_artifact_id,gate_artifact_id,
                 count(*)::integer AS total,
@@ -1557,7 +1585,7 @@ export class PostgresCatalogStore implements CatalogStore {
           OR (failed=$14 AND passed=$15 AND gate_artifact_id=$16 AND policy_artifact_id > $17)
        ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id
        LIMIT COALESCE($18::integer,2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.snapshotAt ?? null, query.after?.failed ?? null, query.after?.passed ?? null, query.after?.gateArtifactId ?? null, query.after?.policyArtifactId ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null],
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.snapshotAt ?? null, query.after?.failed ?? null, query.after?.passed ?? null, query.after?.gateArtifactId ?? null, query.after?.policyArtifactId ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null],
     )
     return result.rows.map(row => ({
       repositoryId: row.repository_id,

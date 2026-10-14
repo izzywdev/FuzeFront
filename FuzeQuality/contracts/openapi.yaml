@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.43.0
+  version: 0.44.0
   license:
     name: UNLICENSED
 servers:
@@ -827,6 +827,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
+        - $ref: '#/components/parameters/ExecutionGateOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
         - $ref: '#/components/parameters/ExecutionPolicyArtifactId'
         - $ref: '#/components/parameters/ExecutionGateArtifactId'
@@ -966,6 +967,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
+        - $ref: '#/components/parameters/ExecutionGateOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
         - $ref: '#/components/parameters/ExecutionPolicyArtifactId'
         - $ref: '#/components/parameters/ExecutionGateArtifactId'
@@ -1019,6 +1021,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
+        - $ref: '#/components/parameters/ExecutionGateOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
         - $ref: '#/components/parameters/ExecutionPolicyArtifactId'
         - $ref: '#/components/parameters/ExecutionGateArtifactId'
@@ -1177,6 +1180,11 @@ components:
       in: query
       description: Require at least one retained threshold measurement with this evaluated outcome.
       schema: { type: string, enum: [passed, failed] }
+    ExecutionGateOutcome:
+      name: gateOutcome
+      in: query
+      description: Require retained policy-gate evaluation evidence with this outcome. Legacy one-policy/one-gate executions use the execution outcome.
+      schema: { $ref: '#/components/schemas/ExecutionStatus' }
     ExecutionExternalRunId:
       name: externalRunId
       in: query

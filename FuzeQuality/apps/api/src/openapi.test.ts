@@ -143,6 +143,7 @@ describe('contract discovery', () => {
         expect(parameterRefs).toContain('#/components/parameters/ExecutionName')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceKind')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionThresholdOutcome')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionGateOutcome')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionPolicyArtifactId')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionGateArtifactId')
       }
@@ -154,6 +155,11 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionThresholdOutcome.schema.enum).toEqual([
         'passed', 'failed',
       ])
+      expect(document.components.parameters.ExecutionGateOutcome).toMatchObject({
+        name: 'gateOutcome',
+        in: 'query',
+        schema: { $ref: '#/components/schemas/ExecutionStatus' },
+      })
       expect(document.components.parameters.ExecutionWorkflowPath.schema.maxLength).toBe(1000)
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters

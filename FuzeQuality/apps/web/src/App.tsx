@@ -3401,6 +3401,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
   >('')
+  const [executionGateOutcome, setExecutionGateOutcome] = useState<
+    TestExecution['status'] | ''
+  >('')
   const [executionExternalRunId, setExecutionExternalRunId] = useState('')
   const [executionName, setExecutionName] = useState('')
   const [executionPolicyArtifactId, setExecutionPolicyArtifactId] = useState('')
@@ -3616,6 +3619,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         provider: executionProvider,
         evidenceKind: executionEvidenceKind,
         thresholdOutcome: executionThresholdOutcome,
+        gateOutcome: executionGateOutcome,
         externalRunId: executionExternalRunId.trim(),
         name: executionName.trim(),
         policyArtifactId: executionPolicyArtifactId,
@@ -3633,7 +3637,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionThresholdOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5152,6 +5156,21 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="">All threshold states</option>
                 <option value="failed">Breached thresholds</option>
                 <option value="passed">Satisfied thresholds</option>
+              </select>
+            </label>
+            <label>
+              Gate outcome
+              <select
+                value={executionGateOutcome}
+                onChange={event =>
+                  setExecutionGateOutcome(event.target.value as TestExecution['status'] | '')
+                }
+              >
+                <option value="">All gate outcomes</option>
+                <option value="passed">Passed gates</option>
+                <option value="failed">Failed gates</option>
+                <option value="cancelled">Cancelled gates</option>
+                <option value="running">Running gates</option>
               </select>
             </label>
             <label>

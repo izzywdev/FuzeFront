@@ -1644,6 +1644,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('isolates execution history, trends, and individual policy-gate outcomes by gate result', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Gate outcome'), {
+      target: { value: 'failed' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        gateOutcome: 'failed',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        gateOutcome: 'failed',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        gateOutcome: 'failed',
+      })
+    })
+  })
+
   it('drills execution history, trends, and gate performance into one provider run', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

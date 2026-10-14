@@ -10,6 +10,7 @@ describe('execution evidence filter', () => {
       name: 'Post-production browser suite',
       evidenceKind: 'video',
       thresholdOutcome: 'failed',
+      gateOutcome: 'failed',
       externalRunId: '123456789',
       policyArtifactId: 'policy-auth',
       gateArtifactId: 'gate-auth',
@@ -50,6 +51,12 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.parse({ thresholdOutcome: 'failed' }).thresholdOutcome).toBe('failed')
     expect(executionPageFilterSchema.parse({ thresholdOutcome: 'passed' }).thresholdOutcome).toBe('passed')
     expect(executionFilterSchema.safeParse({ thresholdOutcome: 'running' }).success).toBe(false)
+  })
+
+  it('accepts only retained policy-gate outcomes', () => {
+    expect(executionFilterSchema.parse({ gateOutcome: 'cancelled' }).gateOutcome).toBe('cancelled')
+    expect(executionPageFilterSchema.parse({ gateOutcome: 'running' }).gateOutcome).toBe('running')
+    expect(executionFilterSchema.safeParse({ gateOutcome: 'skipped' }).success).toBe(false)
   })
 
   it('bounds an exact provider run identifier', () => {

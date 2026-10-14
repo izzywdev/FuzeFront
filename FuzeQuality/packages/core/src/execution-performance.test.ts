@@ -52,6 +52,11 @@ describe('execution performance', () => {
     expect(filterTestExecutions([
       { id: 'legacy', repositoryId: 'repo', tenantId: 'org', provider: 'external', externalRunId: 'legacy', attempt: 1, revision: 'a', kind: 'ci', status: 'passed', name: 'auth', policyArtifactIds: ['policy'], gateArtifactIds: ['gate'], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
     ], { policyArtifactId: 'policy', gateArtifactId: 'gate' })).toHaveLength(1)
+    const mixed = { id: 'mixed', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'mixed', attempt: 1, revision: 'e', kind: 'ci' as const, status: 'passed' as const, name: 'mixed gates', policyArtifactIds: ['policy', 'policy-other'], gateArtifactIds: ['gate', 'gate-other'], gateEvaluations: [{ policyArtifactId: 'policy', gateArtifactId: 'gate', status: 'passed' as const }, { policyArtifactId: 'policy-other', gateArtifactId: 'gate-other', status: 'failed' as const }], thresholds: [], evidenceLinks: [] }
+    expect(filterTestExecutions([mixed], { gateOutcome: 'failed' })).toEqual([mixed])
+    expect(executionPerformance([mixed], [], 'failed')).toEqual([
+      { repositoryId: 'repo', policyArtifactId: 'policy-other', gateArtifactId: 'gate-other', revisions: ['e'], total: 1, passed: 0, failed: 1, cancelled: 0, running: 0, passRate: 0 },
+    ])
   })
 
   it('keeps identical artifact identifiers isolated by repository', () => {
