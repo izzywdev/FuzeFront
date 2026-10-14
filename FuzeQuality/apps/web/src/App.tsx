@@ -3395,6 +3395,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionProvider, setExecutionProvider] = useState<
     TestExecution['provider'] | ''
   >('')
+  const [executionEvidenceKind, setExecutionEvidenceKind] = useState<
+    TestExecution['evidenceLinks'][number]['kind'] | ''
+  >('')
   const [executionExternalRunId, setExecutionExternalRunId] = useState('')
   const [executionPolicyArtifactId, setExecutionPolicyArtifactId] = useState('')
   const [executionGateArtifactId, setExecutionGateArtifactId] = useState('')
@@ -3607,6 +3610,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         kind: executionKind,
         status: executionStatus,
         provider: executionProvider,
+        evidenceKind: executionEvidenceKind,
         externalRunId: executionExternalRunId.trim(),
         policyArtifactId: executionPolicyArtifactId,
         gateArtifactId: executionGateArtifactId,
@@ -3623,7 +3627,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionExternalRunId, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionExternalRunId, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5110,6 +5114,25 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="">All providers</option>
                 <option value="github-actions">GitHub Actions</option>
                 <option value="external">External ingestion</option>
+              </select>
+            </label>
+            <label>
+              Evidence attachment
+              <select
+                value={executionEvidenceKind}
+                onChange={event =>
+                  setExecutionEvidenceKind(
+                    event.target.value as TestExecution['evidenceLinks'][number]['kind'] | ''
+                  )
+                }
+              >
+                <option value="">All attachments</option>
+                <option value="video">Video</option>
+                <option value="report">Report</option>
+                <option value="trace">Trace</option>
+                <option value="screenshot">Screenshot</option>
+                <option value="log">Log</option>
+                <option value="other">Other</option>
               </select>
             </label>
             <label>

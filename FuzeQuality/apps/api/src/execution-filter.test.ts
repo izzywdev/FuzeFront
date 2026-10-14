@@ -7,6 +7,7 @@ describe('execution evidence filter', () => {
       kind: 'post-production',
       status: 'failed',
       provider: 'github-actions',
+      evidenceKind: 'video',
       externalRunId: '123456789',
       policyArtifactId: 'policy-auth',
       gateArtifactId: 'gate-auth',
@@ -29,6 +30,12 @@ describe('execution evidence filter', () => {
 
   it('rejects an unknown execution provider', () => {
     expect(executionFilterSchema.safeParse({ provider: 'jenkins' }).success).toBe(false)
+  })
+
+  it('accepts only retained execution evidence kinds', () => {
+    expect(executionFilterSchema.parse({ evidenceKind: 'video' }).evidenceKind).toBe('video')
+    expect(executionPageFilterSchema.parse({ evidenceKind: 'trace' }).evidenceKind).toBe('trace')
+    expect(executionFilterSchema.safeParse({ evidenceKind: 'artifact' }).success).toBe(false)
   })
 
   it('bounds an exact provider run identifier', () => {
