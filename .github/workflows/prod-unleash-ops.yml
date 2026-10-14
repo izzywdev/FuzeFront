@@ -28,6 +28,7 @@ on:
             org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
             selection-lists     — fuzefront.selection-lists.service (staged ramp via `rollout`; rollback via `action: disable`)
             app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
+            selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + fuzefront.selection-lists.seed-defaults, left OFF
         required: true
         default: billing-portal
         type: choice
@@ -38,6 +39,7 @@ on:
           - org-context-gating
           - selection-lists
           - app-builder
+          - selection-lists-create
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
         required: false
@@ -269,6 +271,22 @@ jobs:
               "Release flag, default OFF. Gates the marketplace publication-request endpoints (submit/approve/reject/get) and the Publish to marketplace UI. Owner: backend-engineer. Removal: once the marketplace flow is rolled out and stable."
           }
 
+          # ── Selection Lists (CREATE ONLY) ───────────────────────────────────
+          # Release flags, default OFF (packages/feature-flags/flag-registry.yaml).
+          # Reuses create_only: creates the flags if absent (409 = already exists,
+          # left exactly as-is), and never turns the environment on, never adds a
+          # strategy, never calls `off` -- so re-running it can't undo or alter a
+          # later deliberate enablement or an existing ramp of the master flag.
+          # seed-defaults is evaluated with { orgId, app } and no userId, so when it
+          # is enabled later use a per-org `orgId IN [org_...]` constraint (TypeID
+          # form), not a percentage -- see the seeding-operations runbook.
+          apply_selection_lists_create() {
+            create_only "fuzefront.selection-lists.service" \
+              "Release flag, default OFF. Gates ALL selection-list UI (shell nav + /settings/selection-lists routes) and the selection-list-service API (404 when OFF). Owner: platform team (feature-flags-engineer admin). Removal: when GA at 100% of orgs and stable for one release cycle; delete the flag, the SidePanel/App.tsx guards and services/selection-list-service/src/flags.ts gate."
+            create_only "fuzefront.selection-lists.seed-defaults" \
+              "Release flag, default OFF. Gates BOTH selection-list-service seeding consumers (identity.org.created seeding and the selection-lists.seed.requested handler) plus the reconciler/backfill; additionally requires fuzefront.selection-lists.service. Server-side only; fails closed. Evaluated with orgId (org_ TypeID) and no userId - target per org, not by percentage. Owner: izzywdev. Removal: seeding ON for all orgs for 30 consecutive days with zero selection-lists.seed.failed, reconciler backfill complete; delete the flag, FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS and isSeedDefaultsEnabled() in one cleanup PR."
+          }
+
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
             billing-portal)      apply_billing ;;
@@ -277,6 +295,7 @@ jobs:
             org-context-gating)  apply_org_context_gating ;;
             selection-lists)     apply_selection_lists ;;
             app-builder)         apply_app_builder ;;
+            selection-lists-create) apply_selection_lists_create ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
@@ -342,4 +361,19 @@ jobs:
               check_flag "fuzefront.apps.build-with-agent"
               check_flag "fuzefront.apps.creator-ownership"
               check_flag "fuzefront.apps.marketplace-publishing" ;;
+            selection-lists-create)
+              check_flag "fuzefront.selection-lists.service"
+              check_flag "fuzefront.selection-lists.seed-defaults"
+              for F in fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults; do
+                curl -sf "$UNLEASH/api/admin/projects/$PROJECT/features/$F" \
+                  -H "Authorization: $TOKEN" -o /tmp/flag_meta.json 2>/dev/null || true
+                F="$F" python3 -c "
+          import json, os
+          try:
+            d=json.load(open('/tmp/flag_meta.json'))
+            print('  %s: type=%s' % (os.environ['F'], d.get('type')))
+          except Exception:
+            print('  %s: type=ERROR' % os.environ['F'])
+          "
+              done ;;
           esac

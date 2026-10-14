@@ -1,0 +1,852 @@
+{
+  "product": "fuzefront",
+  "generatedFrom": "services/selection-list-service/openapi.yaml",
+  "protocolVersion": "2025-06-18",
+  "note": "Static tool manifest for the selection-list-mcp gateway. The gateway (packages/mcp-gateway) derives these at runtime from the OpenAPI spec (services/selection-list-service/openapi.yaml) + deploy/helm/fuzefront/files/mcp-tools-selection-lists.overrides.yaml; this file is the checked-in record that CI and the mcp-maintainer agent use to detect drift. Regenerate by running the gateway locally and capturing GET /tools.json, or update manually when the spec changes. `mutates` is the load-bearing field — a wrong value is a safety defect, not a cosmetic one. This gateway ships dark (selectionListService.enabled AND selectionListsMcp.enabled both required). `resolveSelectionListItems` is POST-but-read-only by the spec's explicit design decision; mutates stays false.",
+  "tools": [
+    {
+      "name": "listSelectionLists",
+      "description": "[READ-ONLY] List selection lists in the caller's organization (GET /v1/selection-lists). Cursor-paginated. With include_shared=true also returns shared org/platform lists readable through visibility.",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50,
+            "description": "Page size."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Opaque pagination cursor from page.nextCursor."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "archived", "all"],
+            "default": "active",
+            "description": "Filter lists by lifecycle status."
+          },
+          "locale": {
+            "type": "string",
+            "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+            "description": "Preferred locale for resolved text in each row."
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$",
+            "maxLength": 64,
+            "description": "Exact-match filter on the org-unique list key. With include_shared=true returns the effective list for that key."
+          },
+          "include_shared": {
+            "type": "boolean",
+            "default": false,
+            "description": "Also return lists readable through visibility (org/platform). Requires SelectionListCatalog:read_shared."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": ["private", "org", "platform"],
+            "description": "Filter to only lists with this visibility."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "createSelectionList",
+      "description": "[WRITE] Create a selection list (POST /v1/selection-lists). Server mints the id. key must be org-unique. visibility defaults to private; platform requires publish_platform in the platform organization.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["key", "name"],
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$",
+                "minLength": 2,
+                "maxLength": 64,
+                "description": "Org-unique, stable slug (e.g. countries). Immutable after create."
+              },
+              "source_locale": {
+                "type": "string",
+                "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+                "description": "The authoritative locale for name/description. Defaults to the org's primary locale."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "List name in source_locale. Seeds the source translation."
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": "Optional description in source_locale."
+              },
+              "visibility": {
+                "type": "string",
+                "enum": ["private", "org", "platform"],
+                "default": "private",
+                "description": "Who may read without an instance grant. platform requires publish_platform in the platform org."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getSelectionList",
+      "description": "[READ-ONLY] Get one selection list (GET /v1/selection-lists/{listId}). Returns 404 — never 403 — when the caller cannot read it. Readable through an instance grant or shared read for org/platform lists.",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "locale": {
+            "type": "string",
+            "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+            "description": "Preferred locale for resolved text."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "updateSelectionList",
+      "description": "[WRITE] Partial update of a selection list (PATCH /v1/selection-lists/{listId}). Omitted fields are left untouched. Changing visibility requires manage_access; promoting to platform requires publish_platform. A platform list can never be demoted.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "body"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "body": {
+            "type": "object",
+            "description": "Fields to update. At least one field required.",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$",
+                "minLength": 2,
+                "maxLength": 64
+              },
+              "source_locale": {
+                "type": "string",
+                "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"]
+              },
+              "status": {
+                "type": "string",
+                "enum": ["active", "archived"],
+                "description": "Setting archived requires delete permission in addition to update."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": {
+                "type": ["string", "null"],
+                "maxLength": 2000,
+                "description": "null clears the description."
+              },
+              "visibility": {
+                "type": "string",
+                "enum": ["private", "org", "platform"],
+                "description": "Requires manage_access. platform is one-way — a platform list cannot be demoted (409 visibility_locked)."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "deleteSelectionList",
+      "description": "[WRITE — IRREVERSIBLE WHEN purge=true] Archive (default) or purge a selection list (DELETE /v1/selection-lists/{listId}). Archive is reversible; purge permanently destroys the list, all items, translations and grants, and breaks every consumer reference.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "purge": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, permanently deletes instead of archiving. IRREVERSIBLE."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "archiveSelectionList",
+      "description": "[WRITE — reversible] Archive a selection list (POST /v1/selection-lists/{listId}/archive). Sets status=archived. Idempotent. Reversible via PATCH { status: active }.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "forkSelectionList",
+      "description": "[WRITE] Fork a common list into the caller's organization (POST /v1/selection-lists/{listId}/fork). Copies a platform list as an editable list in the caller's org, keeping the same key. Idempotent per (org, source) — returns the existing fork on a second call. Subject to org_lists, user_lists and list_items quotas.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed id of the platform list to fork."
+          },
+          "body": {
+            "type": "object",
+            "description": "Optional fork settings. Omit for defaults.",
+            "additionalProperties": false,
+            "properties": {
+              "visibility": {
+                "type": "string",
+                "enum": ["private", "org"],
+                "default": "org",
+                "description": "Visibility of the fork. org (default) makes it the org's version; private keeps it a draft. Cannot be platform."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "listSelectionListItems",
+      "description": "[READ-ONLY] List the items of a selection list (GET /v1/selection-lists/{listId}/items). Cursor-paginated, ordered by sort_order. Defaults to status=active.",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Opaque pagination cursor."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "archived", "all"],
+            "default": "active"
+          },
+          "locale": {
+            "type": "string",
+            "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+            "description": "Preferred locale for resolved text."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "createSelectionListItem",
+      "description": "[WRITE] Add an item to a selection list (POST /v1/selection-lists/{listId}/items). Server mints the id. code must be unique within the list (immutable after create). label seeds the source_locale translation.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "body"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["code", "label"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Unique, immutable item code within this list."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Item label in the list's source_locale."
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": "Optional helper text in the list's source_locale."
+              },
+              "sort_order": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Explicit position. Omit to append at max(sort_order) + 100."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reorderSelectionListItems",
+      "description": "[WRITE] Set the order of every item in a list (PUT /v1/selection-lists/{listId}/items/reorder). item_ids must contain every non-archived item exactly once. Atomic whole-collection replace.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "body"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["item_ids"],
+            "properties": {
+              "item_ids": {
+                "type": "array",
+                "description": "Every non-archived item id, in the desired display order.",
+                "minItems": 1,
+                "maxItems": 5000,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^front_sli_[0-9a-z]+$",
+                  "maxLength": 255
+                }
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "updateSelectionListItem",
+      "description": "[WRITE] Partial update of an item (PATCH /v1/selection-lists/{listId}/items/{itemId}). code is immutable and rejected by additionalProperties:false. Omitted fields are left untouched.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "itemId", "body"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^front_sli_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sli_-prefixed item id."
+          },
+          "body": {
+            "type": "object",
+            "description": "Fields to update. At least one required.",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "New label in source_locale."
+              },
+              "description": {
+                "type": ["string", "null"],
+                "maxLength": 2000,
+                "description": "New helper text; null clears it."
+              },
+              "sort_order": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "status": {
+                "type": "string",
+                "enum": ["active", "archived"]
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "deleteSelectionListItem",
+      "description": "[WRITE — IRREVERSIBLE WHEN purge=true] Archive (default) or purge an item (DELETE /v1/selection-lists/{listId}/items/{itemId}). Archived items keep resolving. Purge is irreversible and turns every stored reference into missing.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "itemId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^front_sli_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sli_-prefixed item id."
+          },
+          "purge": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, permanently deletes instead of archiving. IRREVERSIBLE."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "archiveSelectionListItem",
+      "description": "[WRITE — reversible] Archive an item (POST /v1/selection-lists/{listId}/items/{itemId}/archive). Sets status=archived. Idempotent. Archived items keep their sort_order and keep resolving.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "itemId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^front_sli_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sli_-prefixed item id."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "listSelectionListTranslations",
+      "description": "[READ-ONLY] List translated locales for a selection list (GET /v1/selection-lists/{listId}/translations). Returns one status entry per locale that has a list-level translation (source_locale excluded). Unbounded (max 11 locales).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "upsertSelectionListTranslation",
+      "description": "[WRITE] Create or replace a list's translation for one locale (PUT /v1/selection-lists/{listId}/translations/{locale}). Idempotent. Sets is_machine=false and stamps source_hash — protects the translation from autofill overwrites.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "locale", "body"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "locale": {
+            "type": "string",
+            "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+            "description": "Target locale."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Translated list name."
+              },
+              "description": {
+                "type": ["string", "null"],
+                "maxLength": 2000,
+                "description": "Translated description; null clears it."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "deleteSelectionListTranslation",
+      "description": "[WRITE — IRREVERSIBLE] Remove a list's translation for one locale (DELETE /v1/selection-lists/{listId}/translations/{locale}). The source_locale cannot be deleted. Idempotent (deleting a non-existent translation returns 204).",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "locale"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "locale": {
+            "type": "string",
+            "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+            "description": "Target locale. Cannot be the list's source_locale."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "autofillSelectionListTranslations",
+      "description": "[WRITE] Machine-translate every missing or stale translation for one locale (POST /v1/selection-lists/{listId}/translations/{locale}/autofill). Human translations (is_machine=false) are never overwritten. Synchronous.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "locale"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "locale": {
+            "type": "string",
+            "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+            "description": "Target locale. Must differ from source_locale."
+          },
+          "body": {
+            "type": "object",
+            "description": "Optional scoping. Omit for defaults.",
+            "additionalProperties": false,
+            "properties": {
+              "overwrite_machine": {
+                "type": "boolean",
+                "default": false,
+                "description": "Also refresh existing machine-translated rows. Never touches is_machine=false rows."
+              },
+              "item_ids": {
+                "type": "array",
+                "description": "Restrict to these items. Omit to cover the list and all non-archived items.",
+                "maxItems": 5000,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^front_sli_[0-9a-z]+$",
+                  "maxLength": 255
+                }
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "listSelectionListItemTranslations",
+      "description": "[READ-ONLY] List all translated locales for one item (GET /v1/selection-lists/{listId}/items/{itemId}/translations). One status entry per locale with a translation (source_locale excluded). Unbounded (max 11 locales).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "itemId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^front_sli_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sli_-prefixed item id."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "upsertSelectionListItemTranslation",
+      "description": "[WRITE] Create or replace an item's translation for one locale (PUT /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}). Idempotent. Sets is_machine=false and stamps source_hash.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "itemId", "locale", "body"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^front_sli_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sli_-prefixed item id."
+          },
+          "locale": {
+            "type": "string",
+            "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+            "description": "Target locale."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["label"],
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Translated item label."
+              },
+              "description": {
+                "type": ["string", "null"],
+                "maxLength": 2000,
+                "description": "Translated helper text; null clears it."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "deleteSelectionListItemTranslation",
+      "description": "[WRITE — IRREVERSIBLE] Remove an item's translation for one locale (DELETE /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}). The source_locale cannot be deleted. Idempotent.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "itemId", "locale"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "itemId": {
+            "type": "string",
+            "pattern": "^front_sli_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sli_-prefixed item id."
+          },
+          "locale": {
+            "type": "string",
+            "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+            "description": "Target locale. Cannot be the list's source_locale."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "listSelectionListAccess",
+      "description": "[READ-ONLY] List the access grants on a selection list (GET /v1/selection-lists/{listId}/access). Cursor-paginated. Requires manage_access (list-owner only).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Opaque pagination cursor."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "setSelectionListAccess",
+      "description": "[WRITE] Grant or change a user's role on a selection list (PUT /v1/selection-lists/{listId}/access/{userId}). Idempotent upsert. Roles do not stack — a user holds exactly one. Demoting the last list-owner is refused (409).",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "userId", "body"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "userId": {
+            "type": "string",
+            "pattern": "^usr_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The usr_-prefixed id of the user to grant."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["role"],
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": ["list-owner", "list-editor", "list-contributor", "list-translator", "list-viewer"],
+                "description": "The role to grant."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "revokeSelectionListAccess",
+      "description": "[WRITE — IRREVERSIBLE] Revoke a user's access to a selection list (DELETE /v1/selection-lists/{listId}/access/{userId}). Idempotent (revoking a non-existent grant returns 204). Revoking the last list-owner is refused (409). A new grant must be issued to restore access — no unrevoke operation.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["listId", "userId"],
+        "properties": {
+          "listId": {
+            "type": "string",
+            "pattern": "^front_sl_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The front_sl_-prefixed selection-list id."
+          },
+          "userId": {
+            "type": "string",
+            "pattern": "^usr_[0-9a-z]+$",
+            "maxLength": 255,
+            "description": "The usr_-prefixed id of the user whose grant to revoke."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getSelectionListQuota",
+      "description": "[READ-ONLY] Get quota usage and ceilings for the caller's organization (GET /v1/selection-lists/quota). Returns four quota scopes (org_lists, user_lists, list_items, list_locales). Requires read_quota (admin only).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "resolveSelectionListItems",
+      "description": "[READ-ONLY] Bulk-resolve item ids to their labels (POST /v1/resolve). POST because the id batch does not fit a URL — the operation is read-only and cacheable. Returns labels, locale, status for each resolved id, plus the set of missing ids. Archived items resolve normally; only purged ids land in missing.",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["ids"],
+            "properties": {
+              "ids": {
+                "type": "array",
+                "description": "Item ids to resolve. Bounded at 500 per call.",
+                "minItems": 1,
+                "maxItems": 500,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^front_sli_[0-9a-z]+$",
+                  "maxLength": 255
+                }
+              },
+              "locale": {
+                "type": "string",
+                "enum": ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"],
+                "description": "Preferred locale for resolved labels."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}

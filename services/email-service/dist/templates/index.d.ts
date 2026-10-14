@@ -1,4 +1,4 @@
-import { SUPPORTED_TEMPLATES } from '@fuzefront/shared';
+import { SUPPORTED_TEMPLATES } from '@fuzefront/shared/kafka';
 export interface TemplateResult {
     subject: string;
     html: string;

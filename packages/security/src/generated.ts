@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Current identity ("me")
-         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode.
+         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode. An explicit tenant requires active SQL membership and an active organization and returns its canonical UUID.
          */
         get: operations["getSession"];
         put?: never;
@@ -442,6 +442,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/authz/membership-proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify current active SQL tenant membership for ownership provisioning
+         * @description Requires an authz:admin machine or a human authorized to manage the target Organization. Reads active SQL membership and active organization; organization ownership alone is insufficient. Returns canonical typed IDs and Cache-Control no-store. Grant creation independently repeats the check.
+         */
+        get: operations["getMembershipProof"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/authz/grants": {
         parameters: {
             query?: never;
@@ -514,12 +534,16 @@ export interface paths {
         /**
          * List tenants visible to the caller
          * @description Unbounded collection — cursor-paginated per the family pagination standard.
+         *
+         *     **Visibility.** A platform administrator (`Organization:manage` on the platform root tenant) or a machine caller holding `authz:admin` sees every tenant; any other authenticated caller sees only the tenants in which they hold a role. This is a filter, never a `403`. A provider outage while deciding which view applies fails closed (`502`) — the caller is never silently widened or downgraded.
          */
         get: operations["listTenants"];
         put?: never;
         /**
          * Create a tenant
          * @description Creates a new tenant/organization scope.
+         *
+         *     **Authorization — platform act.** Creating a tenant mints a new authorization scope that every later grant is made inside, so it is a platform act, not an act inside any one tenant. A human (session) caller must be a platform administrator (`Organization:manage` on the platform root tenant — FuzeFront platform staff); an administrator of an ordinary customer tenant has no standing here. A machine caller must hold the `authz:admin` scope. Anyone else is `403 FORBIDDEN`, decided BEFORE the body is validated (so an unauthorized caller gets `403`, not `400`). A provider outage while deciding fails closed (`502`), never allow. Customer organizations are created through the organization APIs, which provision their tenant themselves.
          */
         post: operations["createTenant"];
         delete?: never;
@@ -1394,6 +1418,8 @@ export interface components {
             /** @description Optional explicit `resource:action` permission to grant alongside the role. */
             permission?: string;
             resource?: components["schemas"]["ResourceRef"];
+            /** @description Required for fuzekeys_Connector owner grants. Canonical provider from the reviewed ownership inventory; the exact resource key must equal connector: plus lowercase SHA256 of UTF-8 JSON [tenant, subject, connectorProvider]. This metadata confers no grant authority. Operator authorization and fresh SQL membership are independently required; no email or directory tenant inference. */
+            connectorProvider?: string;
         };
         /** @description A created, revocable grant wrapping the provider's assignment. */
         Grant: {
@@ -1404,6 +1430,8 @@ export interface components {
             permission?: string;
             resource?: components["schemas"]["ResourceRef"];
             createdAt?: number;
+            /** @description Canonical provider acknowledged by a validated fuzekeys_Connector owner grant. */
+            connectorProvider?: string;
         };
         /** @description Revoke a grant by `grantId` OR by its identity tuple `{ subject, tenant, role, resource? }`. Supply exactly one form. */
         GrantRevokeRequest: {
@@ -2104,7 +2132,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     getSession: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional organization UUID or typed organization ID. When supplied, requires canonical active membership in an active organization and returns its canonical UUID as identity.tenantId. */
+                tenant?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2120,7 +2151,16 @@ export interface operations {
                     "application/json": components["schemas"]["SessionInfo"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description Active tenant membership is required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     createSession: {
@@ -2773,6 +2813,70 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getMembershipProof: {
+        parameters: {
+            query: {
+                subject: string;
+                tenant: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active membership */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        subject: string;
+                        tenant: string;
+                        /** @enum {boolean} */
+                        active: true;
+                    };
+                };
+            };
+            /** @description Malformed subject or tenant */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller forbidden or membership inactive */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authorization provider unavailable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description SQL membership proof unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     listGrants: {
         parameters: {
             query: {
@@ -2917,7 +3021,9 @@ export interface operations {
                     "application/json": components["schemas"]["TenantPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            502: components["responses"]["ProviderError"];
         };
     };
     createTenant: {
@@ -2944,6 +3050,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description The caller is authenticated but is not a platform administrator (`Organization:manage` on the platform root tenant), or is a machine caller lacking the `authz:admin` scope (`code: FORBIDDEN`). Fail-closed; no tenant is created. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             502: components["responses"]["ProviderError"];
         };
     };

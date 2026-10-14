@@ -14,6 +14,11 @@ export const TOPICS = {
   IDENTITY_MEMBERSHIP_REMOVED: 'identity.membership.removed',
   IDENTITY_INVITATION_CREATED: 'identity.invitation.created',
   IDENTITY_INVITATION_ACCEPTED: 'identity.invitation.accepted',
+  /**
+   * A tenant authorization decision changed. Consumers use this to invalidate
+   * derived grants/caches; it intentionally never carries a policy document.
+   */
+  IDENTITY_AUTHORIZATION_CHANGED: 'identity.authorization.changed',
   NOTIFY_EMAIL_REQUESTED: 'notify.email.requested',
   NOTIFY_EMAIL_STATUS: 'notify.email.status',
   BILLING_USAGE_RECORDED: 'billing.usage.recorded',
@@ -32,6 +37,9 @@ export const TOPICS = {
   SELECTION_LISTS_LIST_UPDATED: 'selection-lists.list.updated',
   SELECTION_LISTS_LIST_ARCHIVED: 'selection-lists.list.archived',
   SELECTION_LISTS_LIST_DELETED: 'selection-lists.list.deleted',
+  // shared 1.3.0 / HTTP contract 4.1.0 (docs/planning/selection-lists-shared-and-fork.md)
+  SELECTION_LISTS_LIST_FORKED: 'selection-lists.list.forked',
+  SELECTION_LISTS_VISIBILITY_CHANGED: 'selection-lists.visibility.changed',
   SELECTION_LISTS_ITEM_CREATED: 'selection-lists.item.created',
   SELECTION_LISTS_ITEM_UPDATED: 'selection-lists.item.updated',
   SELECTION_LISTS_ITEM_ARCHIVED: 'selection-lists.item.archived',

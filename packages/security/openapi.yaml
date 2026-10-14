@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.10.0
+  version: 0.10.2
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -210,10 +210,19 @@ paths:
       tags: [session]
       summary: Current identity ("me")
       operationId: getSession
+      parameters:
+        - name: tenant
+          in: query
+          required: false
+          description: Optional organization UUID or typed organization ID. When supplied, requires canonical active membership in an active organization and returns its canonical UUID as identity.tenantId.
+          schema:
+            type: string
+            maxLength: 255
       description: >-
         Returns the normalized `Identity` and hydrated user for the presented
         session token. This is the source of any out-of-band role/tenant
-        hydration in legacy token mode.
+        hydration in legacy token mode. An explicit tenant requires active SQL
+        membership and an active organization and returns its canonical UUID.
       security:
         - bearerAuth: []
       responses:
@@ -223,6 +232,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Active tenant membership is required.
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '401':
           $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
@@ -975,6 +990,48 @@ paths:
         Bounded by the policy model (fixed resource/action catalogue for one
         subject in one tenant), not by user-controlled data growth.
   # ─────────────────────────────── AuthZ: grants ────────────────────────────
+  /v1/security/authz/membership-proof:
+    get:
+      tags: [authz]
+      summary: Verify current active SQL tenant membership for ownership provisioning
+      operationId: getMembershipProof
+      description: >-
+        Requires an authz:admin machine or a human authorized to manage the
+        target Organization. Reads active SQL membership and active organization;
+        organization ownership alone is insufficient. Returns canonical typed IDs
+        and Cache-Control no-store. Grant creation independently repeats the check.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subject
+          in: query
+          required: true
+          schema: { type: string }
+        - name: tenant
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Active membership
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subject, tenant, active]
+                additionalProperties: false
+                properties:
+                  subject: { type: string }
+                  tenant: { type: string }
+                  active: { type: boolean, enum: [true] }
+        '400': { description: Malformed subject or tenant }
+        '401': { description: Authentication required }
+        '403': { description: Caller forbidden or membership inactive }
+        '502': { description: Authorization provider unavailable }
+        '503': { description: SQL membership proof unavailable }
   /v1/security/authz/grants:
     post:
       tags: [authz]
@@ -1214,7 +1271,16 @@ paths:
       tags: [tenants]
       summary: List tenants visible to the caller
       operationId: listTenants
-      description: Unbounded collection — cursor-paginated per the family pagination standard.
+      description: >-
+        Unbounded collection — cursor-paginated per the family pagination standard.
+
+
+        **Visibility.** A platform administrator (`Organization:manage` on the
+        platform root tenant) or a machine caller holding `authz:admin` sees
+        every tenant; any other authenticated caller sees only the tenants in
+        which they hold a role. This is a filter, never a `403`. A provider
+        outage while deciding which view applies fails closed (`502`) — the
+        caller is never silently widened or downgraded.
       security:
         - bearerAuth: []
       parameters:
@@ -1227,13 +1293,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TenantPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
     post:
       tags: [tenants]
       summary: Create a tenant
       operationId: createTenant
-      description: Creates a new tenant/organization scope.
+      description: >-
+        Creates a new tenant/organization scope.
+
+
+        **Authorization — platform act.** Creating a tenant mints a new
+        authorization scope that every later grant is made inside, so it is a
+        platform act, not an act inside any one tenant. A human (session)
+        caller must be a platform administrator (`Organization:manage` on the
+        platform root tenant — FuzeFront platform staff); an administrator of
+        an ordinary customer tenant has no standing here. A machine caller
+        must hold the `authz:admin` scope. Anyone else is `403 FORBIDDEN`,
+        decided BEFORE the body is validated (so an unauthorized caller gets
+        `403`, not `400`). A provider outage while deciding fails closed
+        (`502`), never allow. Customer organizations are created through the
+        organization APIs, which provision their tenant themselves.
       security:
         - bearerAuth: []
       requestBody:
@@ -1253,6 +1337,16 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >-
+            The caller is authenticated but is not a platform administrator
+            (`Organization:manage` on the platform root tenant), or is a
+            machine caller lacking the `authz:admin` scope (`code:
+            FORBIDDEN`). Fail-closed; no tenant is created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
         '502':
           $ref: '#/components/responses/ProviderError'
       x-pagination: exempt
@@ -3037,6 +3131,17 @@ components:
           description: Optional explicit `resource:action` permission to grant alongside the role.
         resource:
           $ref: '#/components/schemas/ResourceRef'
+        connectorProvider:
+          type: string
+          maxLength: 80
+          pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: >-
+            Required for fuzekeys_Connector owner grants. Canonical provider
+            from the reviewed ownership inventory; the exact resource key must
+            equal connector: plus lowercase SHA256 of UTF-8 JSON [tenant,
+            subject, connectorProvider]. This metadata confers no grant
+            authority. Operator authorization and fresh SQL membership are
+            independently required; no email or directory tenant inference.
       required: [subject, tenant, role]
     Grant:
       type: object
@@ -3056,6 +3161,9 @@ components:
           $ref: '#/components/schemas/ResourceRef'
         createdAt:
           type: integer
+        connectorProvider:
+          type: string
+          description: Canonical provider acknowledged by a validated fuzekeys_Connector owner grant.
       required: [id, subject, tenant, role]
     GrantRevokeRequest:
       type: object
