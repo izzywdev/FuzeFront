@@ -9,7 +9,9 @@
 
 Companion to `docs/runbooks/s2s-client-credentials.md` (the generic onboarding
 recipe — read it first) and `docs/runbooks/per-service-database-and-role.md`
-(the sealed-secret conventions this page borrows).
+(the sealed-secret conventions this page borrows). The end-to-end enablement order
+(flags, Kafka topics, monitoring, rollback) is in
+`docs/runbooks/selection-lists-seeding-operations.md`.
 
 ## What a seed client is
 
@@ -17,7 +19,7 @@ recipe — read it first) and `docs/runbooks/per-service-database-and-role.md`
 (plan §8). The token is a short-lived `client_credentials` token minted by the
 **requesting** service. The selection-list-service introspects it and requires
 `active == true` and `scopes` containing `selection-lists:seed`; the introspected
-`subject` must be in that source's `allowed_subjects` in
+`subject` must be in that source's `allowedSubjects` in
 `services/selection-list-service/seed-sources.json`.
 
 Rules that make this safe (plan §8):
@@ -38,7 +40,7 @@ Rules that make this safe (plan §8):
 | Authentik service name (`register-s2s-cli.js` arg 1; `^[a-z][a-z0-9-]{0,63}$`) | `<app>-seed` (e.g. `fuzecall-seed`) |
 | Authentik application slug (derived) | `s2s-<app>-seed` |
 | Scope | `selection-lists:seed` |
-| `seed-sources.json` entry | `app: "<app>"`, `allowed_subjects: [<introspected subject for this client>]`, `key_prefixes` default `["<app>-"]` |
+| `seed-sources.json` entry | `app: "<app>"`, `allowedSubjects: [<introspected subject for this client>]`, `keyPrefixes` default `["<app>-"]` |
 | Consumer-side Secret (in the requester's namespace) | `<app>-seed-client` with keys `CLIENT_ID`, `CLIENT_SECRET` (proposed) |
 
 The `seed-sources.json` allowlist entry is a reviewed PR owned by

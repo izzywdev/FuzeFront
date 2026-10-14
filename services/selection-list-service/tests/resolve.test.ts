@@ -248,8 +248,8 @@ describe('POST /v1/resolve', () => {
 
     it('allows exactly 500 ids (the maximum)', async () => {
       mockDbRows([]);
-      // 500 identical ids: DB returns nothing, all go to missing — that is fine.
-      const ids = Array.from({ length: 500 }, () => 'front_sli_01h455vb4pex5vsknk084sn02q');
+      // 500 DISTINCT ids (uniqueItems): DB returns nothing, all go to missing — that is fine.
+      const ids = Array.from({ length: 500 }, (_v, i) => `front_sli_${String(i).padStart(26, '0')}`);
 
       const res = await request(app)
         .post('/v1/resolve')
@@ -262,7 +262,8 @@ describe('POST /v1/resolve', () => {
 
   // ── Empty ids array ───────────────────────────────────────────────────────
   describe('empty ids array', () => {
-    it('returns 200 with empty results and missing for an empty array', async () => {
+    // openapi.yaml ResolveRequest.ids: `minItems: 1` -> an empty batch is a 400, not an empty 200.
+    it('returns 400 VALIDATION_ERROR for an empty array (spec: minItems 1)', async () => {
       mockFlagEnabled.mockResolvedValue(true);
 
       const res = await request(app)
@@ -270,8 +271,8 @@ describe('POST /v1/resolve', () => {
         .set('Authorization', `Bearer ${makeToken('org_test01h455vb4pex5vs')}`)
         .send({ ids: [] });
 
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ results: {}, missing: [] });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
     });
 
     it('does not query the DB for an empty ids array', async () => {
@@ -431,8 +432,8 @@ describe('POST /v1/resolve', () => {
       expect(res.status).not.toBe(403);
     });
 
-    it('ids with a wrong TypeID prefix go to missing without hitting DB', async () => {
-      // 'front_sl_…' is a list id, not an item id — invalid for this endpoint.
+    it('ids with a wrong TypeID prefix are a 400 VALIDATION_ERROR (not "missing"), without hitting the DB', async () => {
+      // 'front_sl_…' is a list id, not an item id — invalid for this endpoint (references carry their type).
       const wrongTypeId = 'front_sl_01h455vb4pex5vsknk084sn02q';
       const validId = 'front_sli_01h455vb4pex5vsknk084sn02q';
       mockDbRows([makeRow(validId)]);
@@ -442,9 +443,9 @@ describe('POST /v1/resolve', () => {
         .set('Authorization', `Bearer ${makeToken('org_test01h455vb4pex5vs')}`)
         .send({ ids: [wrongTypeId, validId] });
 
-      expect(res.status).toBe(200);
-      expect(res.body.missing).toContain(wrongTypeId);
-      expect(res.body.results[validId]).toBeDefined();
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(mockDbRaw).not.toHaveBeenCalled();
     });
   });
 
@@ -515,16 +516,16 @@ describe('POST /v1/resolve', () => {
       expect(bindings[0]).toBe('fr');
     });
 
-    it('ignores unsupported locale values from body (falls through to Accept-Language)', async () => {
-      await request(app)
+    it('rejects an unsupported body locale with 400 (spec: Locale enum), whatever Accept-Language says', async () => {
+      const res = await request(app)
         .post('/v1/resolve')
         .set('Authorization', `Bearer ${AUTH()}`)
         .set('Accept-Language', 'es')
         .send({ ids: ['front_sli_01h455vb4pex5vsknk084sn02q'], locale: 'klingon' });
 
-      const [, bindings] = mockDbRaw.mock.calls[0];
-      // 'klingon' is not in SUPPORTED_LOCALES; falls back to Accept-Language 'es'
-      expect(bindings[0]).toBe('es');
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(mockDbRaw).not.toHaveBeenCalled();
     });
   });
 
@@ -581,19 +582,24 @@ describe('POST /v1/resolve', () => {
       expect(item).not.toHaveProperty('organization_id');
     });
 
-    it('missing array contains unique ids (deduped)', async () => {
-      // Two identical ids → query returns nothing → missing should not duplicate.
+    it('duplicate ids are a 400 (spec: uniqueItems); the missing array lists each distinct id once', async () => {
       mockDbRows([]);
       const id = 'front_sli_01h455vb4pex5vsknk084sn02q';
+      const other = 'front_sli_01h455vb4pex5vsknk084sn02r';
+
+      const dup = await request(app)
+        .post('/v1/resolve')
+        .set('Authorization', `Bearer ${AUTH()}`)
+        .send({ ids: [id, id] }); // duplicate
+      expect(dup.status).toBe(400);
+      expect(dup.body.code).toBe('VALIDATION_ERROR');
 
       const res = await request(app)
         .post('/v1/resolve')
         .set('Authorization', `Bearer ${AUTH()}`)
-        .send({ ids: [id, id] }); // duplicate
-
+        .send({ ids: [id, other] });
       expect(res.status).toBe(200);
-      const missingCount = res.body.missing.filter((m: string) => m === id).length;
-      expect(missingCount).toBe(1); // deduped
+      expect([...res.body.missing].sort()).toEqual([id, other].sort());
     });
 
     it('is_machine is a boolean (not a truthy integer from Postgres)', async () => {

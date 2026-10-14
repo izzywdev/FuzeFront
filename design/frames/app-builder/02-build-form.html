@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Build your application — form — frame (b)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="02-build-form">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Flow 2 · Build session · Frame (b) · route /applications/build</div>
+  <h1>Describe the app</h1>
+  <p class="lead">Three inputs, nothing else: <b>where</b> the app will live, its <b>name</b>, and a
+    plain-language <b>brief</b> (≤ 4000 characters) handed to FuzeAgent. Submitting calls
+    <code>POST /api/v1/app-registry/build-sessions</code> and moves to progress (frame c).</p>
+
+  <!-- b1: default (org context) -->
+  <div class="state-block">
+    <div class="state-label">(b1) Default — active org context “Acme Corp”, so org is preselected</div>
+    <form class="panel panel--seam" data-panel="build-form" onsubmit="return false">
+      <div class="panel-head"><div><h2>Build your application</h2>
+        <p class="sub">FuzeAgent develops the app and deploys it here. You'll follow along in FuzeAgent.</p></div></div>
+      <div class="panel-body">
+        <fieldset class="field" data-input="target" role="radiogroup" aria-labelledby="where-l">
+          <legend class="label" id="where-l">Where should it live?</legend>
+          <div class="targets">
+            <div class="target" role="radio" aria-checked="false" tabindex="-1" data-target="personal">
+              <span class="radio" aria-hidden="true"></span>
+              <div><b>Personal workspace</b><span>Only you. Owned by your personal account.</span></div>
+            </div>
+            <div class="target" role="radio" aria-checked="true" tabindex="0" data-target="organization">
+              <span class="radio" aria-hidden="true"></span>
+              <div><b>Acme Corp</b><span>Owned by the organization. You're listed as creator.</span></div>
+            </div>
+          </div>
+          <p class="hint">Defaults to your current context. The org option appears only when you're an active member of it.</p>
+        </fieldset>
+
+        <div class="field">
+          <label class="label" for="app-name">Name</label>
+          <input class="input" id="app-name" data-input="name" value="Expense tracker" maxlength="120" />
+          <p class="hint">Shown in the menu. You can rename it later; the slug is chosen at deploy and never changes.</p>
+        </div>
+
+        <div class="field">
+          <div class="counter"><label class="label" for="app-brief">What should it do?</label>
+            <span class="count" data-counter="brief" aria-live="polite">412 / 4000</span></div>
+          <textarea class="textarea" id="app-brief" data-input="brief" maxlength="4000">Let team members log expenses with a receipt photo, amount, currency and category. Managers approve or reject with a comment. Show a monthly summary per person and per category, and export a CSV for finance. Only members of the org can see entries; managers see their reports' entries.</textarea>
+          <p class="hint">Plain language is fine. Mention who uses it, what they do, and any rules.</p>
+        </div>
+      </div>
+      <div class="panel-foot">
+        <a class="btn btn-ghost" href="01-build-entry.html" data-action="cancel-form">Cancel</a>
+        <button class="btn btn-accent" type="submit" data-action="start-build">Start building</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- b2: personal-only -->
+  <div class="state-block">
+    <div class="state-label">(b2) Personal context, or no active org membership — org option absent</div>
+    <div class="panel"><div class="panel-body">
+      <fieldset class="field" data-input="target" role="radiogroup" aria-label="Where should it live?">
+        <div class="targets">
+          <div class="target" role="radio" aria-checked="true" tabindex="0" data-target="personal">
+            <span class="radio" aria-hidden="true"></span>
+            <div><b>Personal workspace</b><span>Only you. Owned by your personal account.</span></div>
+          </div>
+        </div>
+        <p class="hint">Building into an organization needs an active membership there. Switch context from the top bar to choose one.</p>
+      </fieldset>
+    </div></div>
+  </div>
+
+  <!-- b3: validation -->
+  <div class="state-block">
+    <div class="state-label">(b3) Client validation — empty name, brief over 4000 (submit disabled; 400 VALIDATION renders the same, inline)</div>
+    <div class="panel" data-state="invalid"><div class="panel-body">
+      <div class="field">
+        <label class="label" for="n2">Name</label>
+        <input class="input input--invalid" id="n2" data-input="name" value="" aria-invalid="true" aria-describedby="n2-e" />
+        <p class="hint hint--error" id="n2-e" data-error-code="VALIDATION">Give the app a name.</p>
+      </div>
+      <div class="field">
+        <div class="counter"><label class="label" for="b2">What should it do?</label>
+          <span class="count count--over" data-counter="brief">4,127 / 4000</span></div>
+        <textarea class="textarea textarea--invalid" id="b2" data-input="brief" aria-invalid="true" aria-describedby="b2-e">…</textarea>
+        <p class="hint hint--error" id="b2-e">The brief is 127 characters over the 4000 limit. Trim it before starting.</p>
+      </div>
+      <div class="actions" style="justify-content: flex-end">
+        <button class="btn btn-accent" data-action="start-build" disabled aria-disabled="true">Start building</button>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- b4: submitting -->
+  <div class="state-block">
+    <div class="state-label">(b4) Submitting — inputs locked, one request in flight (no double-submit)</div>
+    <div class="panel" data-state="submitting" aria-busy="true"><div class="panel-body">
+      <div class="rowflex" style="justify-content: space-between">
+        <span class="muted">Starting a FuzeAgent session for “Expense tracker” in Acme Corp…</span>
+        <button class="btn btn-accent" data-action="start-build" disabled aria-disabled="true">
+          <span class="spinner" aria-hidden="true"></span>Starting…</button>
+      </div>
+    </div></div>
+  </div>
+
+  <p class="note">
+    <b>Request.</b> <code>CreateBuildSessionRequest</code> = <code>{ context, organizationId?, name, brief }</code>.
+    <code>context=organization</code> sends the active org's <code>org_…</code> id; <code>context=personal</code>
+    sends <b>no</b> <code>organizationId</code> (the server resolves the personal org and rejects one if sent).
+    No id is ever sent — the session id is server-minted. <code>name</code> 1–120, <code>brief</code> 1–4000,
+    both trimmed client-side.<br />
+    <b>Response.</b> <code>201 BuildSession</code> → navigate to <code>/applications/build/:id</code> (frame c).
+    Every non-2xx — <code>503 builder_unavailable</code>, <code>403</code>, <code>502</code>, <code>409 no_personal_org</code>,
+    <code>429</code> — is rendered by frame (d), with the form's values kept.<br />
+    Test hooks: <code>[data-frame='02-build-form']</code> · <code>[data-panel='build-form']</code> ·
+    <code>[data-input='target']</code> · <code>[data-target='personal']</code> · <code>[data-target='organization']</code> ·
+    <code>[data-input='name']</code> · <code>[data-input='brief']</code> · <code>[data-counter='brief']</code> ·
+    <code>[data-action='start-build']</code> · <code>[data-state='invalid']</code> · <code>[data-state='submitting']</code>.
+  </p>
+
+  <div class="pager"><a href="01-build-entry.html">← Entry card</a><a href="03-build-progress.html">Session progress →</a></div>
+</div>
+</body>
+</html>

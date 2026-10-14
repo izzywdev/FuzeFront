@@ -82,6 +82,48 @@ describe('contract discovery', () => {
     })
   })
 
+  it('publishes structured execution threshold input and evaluated evidence', async () => {
+    await withSurface({ OPENAPI_SPEC_PATH: REPO_SPEC }, async base => {
+      const response = await fetch(`${base}/openapi.json`)
+      expect(response.status).toBe(200)
+      const document = await response.json()
+      const schemas = document.components.schemas
+      expect(schemas.TestExecutionInput.properties.thresholds.items.$ref).toBe(
+        '#/components/schemas/TestExecutionThresholdInput'
+      )
+      expect(schemas.TestExecutionThreshold.required).toContain('passed')
+      expect(schemas.TestExecution.required).toContain('thresholds')
+      expect(schemas.TestExecutionInput.properties.gateEvaluations.items.$ref).toBe(
+        '#/components/schemas/TestExecutionGateEvaluation'
+      )
+      expect(schemas.TestExecution.required).toContain('gateEvaluations')
+      expect(schemas.TestExecutionInput.properties.evidenceLinks.items.$ref).toBe(
+        '#/components/schemas/TestExecutionEvidenceLink'
+      )
+      expect(schemas.TestExecution.required).toContain('evidenceLinks')
+      expect(schemas.TestExecutionEvidenceLink.properties.url.pattern).toBe('^https://')
+      expect(schemas.PolicyGateEvaluation.required).toEqual(
+        expect.arrayContaining(['confidence', 'scope'])
+      )
+      const ingestionSchema = schemas.PolicyGateEvaluationInput
+      expect(
+        document.paths['/api/v1/internal/policy-gate-evaluations'].post.requestBody.content[
+          'application/json'
+        ].schema.properties.evaluations.items.$ref
+      ).toBe('#/components/schemas/PolicyGateEvaluationInput')
+      expect(ingestionSchema.additionalProperties).toBe(false)
+      expect(ingestionSchema.properties.reviewStatus.enum).toEqual(['proposed'])
+      expect(ingestionSchema.properties).not.toHaveProperty('reviewedAt')
+      expect(ingestionSchema.properties).not.toHaveProperty('reviewedBy')
+      expect(ingestionSchema.properties).not.toHaveProperty('reviewReason')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters.map(
+          (parameter: { name: string }) => parameter.name
+        )
+      ).toEqual(['source', 'status', 'revision'])
+    })
+  })
+
   it('answers 503 — not 404 — when the document is missing', async () => {
     // 404 would read as "this service publishes no spec". It does; the document
     // is what is missing, and the two need different fixes.
@@ -96,16 +138,15 @@ describe('contract discovery', () => {
 })
 
 describe('the contract and the implementation agree', () => {
-  it('every path the contract declares is served by this process', async () => {
-    // The guard against a contract describing endpoints nobody implemented —
-    // which is precisely the failure FuzeQuality exists to detect in OTHER
-    // repositories. /health/live, /health/ready and /metrics live in index.ts
-    // rather than this router, so they are asserted separately below.
+  it('every contract path owned by the discovery surface is served', async () => {
+    // Repository-intelligence endpoints live in index.ts and are covered by
+    // the API route suites and the contract-conformance test. This unit mounts
+    // only createOpenApiSurface(), so keep its reachability assertion scoped to
+    // the routes that router actually owns.
     const loaded = loadSpec({ OPENAPI_SPEC_PATH: REPO_SPEC })
     expect(loaded.ok).toBe(true)
     if (!loaded.ok) return
-    const document = JSON.parse(loaded.spec.json) as { paths: Record<string, unknown> }
-    const routed = Object.keys(document.paths).filter(path => !path.startsWith('/health/'))
+    const routed = ['/health', '/openapi.yaml', '/openapi.json']
 
     await withSurface({ OPENAPI_SPEC_PATH: REPO_SPEC }, async base => {
       for (const path of routed) {
@@ -123,9 +164,21 @@ describe('the contract and the implementation agree', () => {
     const loaded = loadSpec({ OPENAPI_SPEC_PATH: REPO_SPEC })
     expect(loaded.ok).toBe(true)
     if (!loaded.ok) return
-    const document = JSON.parse(loaded.spec.json) as { paths: Record<string, unknown> }
+    const document = JSON.parse(loaded.spec.json) as {
+      paths: Record<string, { get?: { tags?: string[] } }>
+    }
 
-    for (const path of Object.keys(document.paths)) {
+    const operationalPaths = Object.entries(document.paths)
+      .filter(([, item]) => item.get?.tags?.includes('operations'))
+      .map(([path]) => path)
+    expect(operationalPaths).toEqual([
+      '/health',
+      '/health/live',
+      '/health/ready',
+      '/openapi.yaml',
+      '/openapi.json',
+    ])
+    for (const path of operationalPaths) {
       expect(isPublicRequest('GET', path), `${path} must be public`).toBe(true)
     }
   })

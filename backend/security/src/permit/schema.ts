@@ -106,6 +106,21 @@ export const permitSchema: PermitSchema = {
         install: action('Install'),
         uninstall: action('Uninstall'),
       },
+      // "Org-held, user-originated" ownership (docs/planning/app-builder-and-ownership.md).
+      // The creator of an app holds this role ON that app instance, in the owning
+      // org's tenant (applications-service assigns it via assignAppCreatorRole,
+      // behind fuzefront.apps.creator-ownership). Direct assignment only — no
+      // `granted_to` derivation; org owners/admins keep control through their
+      // tenant roles, never through this one. Deliberately NO `delete`/`create`:
+      // removing an org's app stays an org-admin decision. The grant lives and
+      // dies with the org membership — see PermitAuthorizationProvider.removeMember,
+      // which revokes instance-scoped assignments too.
+      roles: {
+        creator: {
+          name: 'App Creator',
+          permissions: ['read', 'update', 'install', 'uninstall'],
+        },
+      },
     },
     {
       key: 'UserManagement',
@@ -184,6 +199,17 @@ export const permitSchema: PermitSchema = {
         create: action('Create'),
         read_quota: action('Read Quota'),
         resolve: action('Resolve'),
+        // Contract 4.1.0 (docs/planning/selection-lists-shared-and-fork.md).
+        // read_shared: the membership proof behind list `visibility` — the
+        // service admits a read of an `org` list (same org) or a `platform`
+        // common list without an instance grant only when the caller holds
+        // this IN ITS OWN TENANT. Confers no SelectionList:* action.
+        read_shared: action('Read Shared Lists'),
+        // publish_platform: create / promote / purge a `platform` common list.
+        // Granted via tenant `admin`, but the service evaluates it in the
+        // PLATFORM organization's tenant and requires the caller to act there,
+        // so a customer-org admin holding it in its own tenant cannot publish.
+        publish_platform: action('Publish Platform Lists'),
       },
     },
     {
@@ -229,6 +255,7 @@ export const permitSchema: PermitSchema = {
         'Chat:stream', 'Chat:manage',
         'SelectionListCatalog:list', 'SelectionListCatalog:create',
         'SelectionListCatalog:read_quota', 'SelectionListCatalog:resolve',
+        'SelectionListCatalog:read_shared', 'SelectionListCatalog:publish_platform',
       ],
     },
     {
@@ -241,6 +268,7 @@ export const permitSchema: PermitSchema = {
         'Docs:read',
         'Chat:stream',
         'SelectionListCatalog:list', 'SelectionListCatalog:create', 'SelectionListCatalog:resolve',
+        'SelectionListCatalog:read_shared',
       ],
     },
     {
@@ -253,6 +281,7 @@ export const permitSchema: PermitSchema = {
         'Docs:read',
         'Chat:stream',
         'SelectionListCatalog:list', 'SelectionListCatalog:resolve',
+        'SelectionListCatalog:read_shared',
       ],
     },
     {

@@ -1,0 +1,7 @@
+# Connector resource organization
+
+Set server configuration FUZE_CONNECTOR_AUTHZ_TENANT to the reviewed canonical resource organization used by FuzeKeys FUZEKEYS_AUTHZ_TENANT. The shared connector router also accepts options.resourceTenant for explicit deployment wiring. No default organization exists: missing or malformed configuration denies connector delegation before credential access. An explicitly empty option cannot fall back to environment configuration.
+
+This selector is not authorization proof. Security token exchange must canonicalize it and freshly verify the authenticated user's active SQL membership in the active organization. Do not substitute Authentik directory tid, email, request body organization, or a guessed tenant. The legacy Gmail and shared provider transports both send this selector through the shared service-auth SDK.
+
+Deploy Security bootstrap #1389 and its organization-bound exchange contract first. Verify the actual tenant mapping and membership evidence, configure the same reviewed organization on Front and Keys, then exercise authorized, different-owner and different-tenant canaries. Signed continuation tokens preserve the tenant; later exchanges cannot expand scopes or change audience actor. FuzeKeys must preserve verified delegated tenant_id and enforce its own Connector resource policy and grant lifecycle. This source change does not provision grants or prove production readiness.

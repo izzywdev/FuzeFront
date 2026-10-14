@@ -40,7 +40,7 @@ describe('PermitSyncService.syncPlanToPermit', () => {
       const ok = await svc.syncPlanToPermit({
         entityType: 'user',
         entityId: 'user-1',
-        planTier: 'pro',
+        planTier: 'professional',
         status: 'active',
       });
 
@@ -64,7 +64,7 @@ describe('PermitSyncService.syncPlanToPermit', () => {
       const ok = await svc.syncPlanToPermit({
         entityType: 'user',
         entityId: 'user-1',
-        planTier: 'pro',
+        planTier: 'professional',
         status: 'active',
       });
 
@@ -72,7 +72,7 @@ describe('PermitSyncService.syncPlanToPermit', () => {
       expect(authz.setAttributes).toHaveBeenCalledWith(
         {
           subject: { type: 'user', key: 'user-1' },
-          attributes: { plan_tier: 'pro', plan_status: 'active' },
+          attributes: { plan_tier: 'professional', plan_status: 'active' },
         },
         'tok-123',
       );
@@ -113,7 +113,7 @@ describe('PermitSyncService.syncPlanToPermit', () => {
       const ok = await svc.syncPlanToPermit({
         entityType: 'user',
         entityId: 'user-1',
-        planTier: 'pro',
+        planTier: 'professional',
         status: 'active',
       });
 
@@ -130,7 +130,7 @@ describe('PermitSyncService.syncPlanToPermit', () => {
       const ok = await svc.syncPlanToPermit({
         entityType: 'user',
         entityId: 'user-1',
-        planTier: 'pro',
+        planTier: 'professional',
         status: 'active',
       });
 

@@ -67,6 +67,65 @@
     "listKey": "ticket-priority",
     "listRevision": 9
   },
+  "selection-lists.list.forked": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e21",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn0fk",
+    "listKey": "priority",
+    "listRevision": 1,
+    "list": {
+      "listId": "front_sl_01h455vb4pex5vsknk084sn0fk",
+      "key": "priority",
+      "sourceLocale": "en",
+      "status": "active",
+      "name": "Priority",
+      "description": null,
+      "seed": null,
+      "visibility": "org",
+      "forkedFrom": {
+        "listId": "front_sl_01h455vb4pex5vsknk084sn0pl",
+        "organizationId": "org_01h455vb4pex5vsknk084sn0pf",
+        "listRevision": 3,
+        "forkedAt": "2026-10-05T12:00:00.000Z"
+      },
+      "createdAt": "2026-10-05T12:00:00.000Z",
+      "updatedAt": "2026-10-05T12:00:00.000Z"
+    },
+    "source": {
+      "listId": "front_sl_01h455vb4pex5vsknk084sn0pl",
+      "organizationId": "org_01h455vb4pex5vsknk084sn0pf",
+      "listKey": "priority",
+      "listRevision": 3
+    },
+    "itemMap": [
+      { "originItemId": "front_sli_01h455vb4pex5vsknk084sn0p1", "itemId": "front_sli_01h455vb4pex5vsknk084sn0f1" },
+      { "originItemId": "front_sli_01h455vb4pex5vsknk084sn0p2", "itemId": "front_sli_01h455vb4pex5vsknk084sn0f2" }
+    ]
+  },
+  "selection-lists.visibility.changed": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e22",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "ticket-priority",
+    "listRevision": 4,
+    "list": {
+      "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+      "key": "ticket-priority",
+      "sourceLocale": "en",
+      "status": "active",
+      "name": "Ticket priority",
+      "description": null,
+      "seed": null,
+      "visibility": "org",
+      "forkedFrom": null,
+      "createdAt": "2026-10-04T12:00:00.000Z",
+      "updatedAt": "2026-10-05T12:10:00.000Z"
+    },
+    "previousVisibility": "private",
+    "visibility": "org"
+  },
   "selection-lists.item.created": {
     "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e05",
     "organizationId": "org_01h455vb4pex5vsknk084sn02q",

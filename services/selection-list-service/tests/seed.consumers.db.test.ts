@@ -636,7 +636,7 @@ dbDescribe('seeding consumers (real Postgres, real TypedConsumer, real token ver
   // -----------------------------------------------------------------------------------------
   describe('bootstrap', () => {
     it('both seeding consumers run in their own consumer groups, started unconditionally (the flag is per message)', async () => {
-      expect(Object.keys(runners).sort()).toEqual(['identity.org.created', 'identity.org.deleted', 'identity.user.deleted', 'selection-lists.seed.requested']);
+      expect(Object.keys(runners).sort()).toEqual(['identity.org.created', 'identity.org.deleted', 'identity.org.updated', 'identity.user.deleted', 'selection-lists.seed.requested']);
     });
   });
 });

@@ -59,20 +59,20 @@ describe('server graceful degradation', () => {
       metadata: { name: 'hanging' },
       runsOn: 'server',
       initialize: () => new Promise<void>(() => {}),
-      resolveBooleanEvaluation: (_f, def): ResolutionDetails<boolean> => ({
+      resolveBooleanEvaluation: async (_f, def): Promise<ResolutionDetails<boolean>> => ({
         value: def,
         errorCode: ErrorCode.PROVIDER_NOT_READY,
         reason: 'ERROR',
       }),
-      resolveStringEvaluation: (_f, def): ResolutionDetails<string> => ({
+      resolveStringEvaluation: async (_f, def): Promise<ResolutionDetails<string>> => ({
         value: def,
         reason: 'ERROR',
       }),
-      resolveNumberEvaluation: (_f, def): ResolutionDetails<number> => ({
+      resolveNumberEvaluation: async (_f, def): Promise<ResolutionDetails<number>> => ({
         value: def,
         reason: 'ERROR',
       }),
-      resolveObjectEvaluation: (_f, def: any): ResolutionDetails<any> => ({
+      resolveObjectEvaluation: async (_f, def: any): Promise<ResolutionDetails<any>> => ({
         value: def,
         reason: 'ERROR',
       }),

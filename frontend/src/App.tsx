@@ -56,12 +56,14 @@ import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
 import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
 import ConnectorsPage from './pages/ConnectorsPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
+import FuzePickerMentionsPage from './pages/FuzePickerMentionsPage'
 import {
   SelectionListManagementFlow,
   TranslationWorkbenchFlow,
   SelectionListAccessFlow,
   SelectionListPickerHarness,
 } from '@fuzeone/selection-lists-ui'
+import { useSelectionListsAuth } from './lib/selectionListsAuth'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -374,6 +376,7 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/fuzepicker/mentions" element={<FuzePickerMentionsPage />} />
             <Route path="/applications" element={<ApplicationsPage />} />
             <Route path="/applications/new" element={<AddApplicationPage />} />
             <Route path="/organizations" element={<OrganizationsRoute />} />
@@ -588,6 +591,9 @@ const SELECTION_LISTS_FLAG = 'fuzefront.selection-lists.service'
  * `App.selection-lists-flag-ready.test.tsx` pins its specific loading testid.
  */
 function useSelectionListsGate(): ReactNode | null {
+  // Org-scoped bearer for the flows' API client. Installed here, in the guard
+  // every selection-list route runs first, so it exists before any flow mounts.
+  useSelectionListsAuth()
   const { enabled, ready } = useFlagState(SELECTION_LISTS_FLAG, false)
   if (!ready) {
     return (

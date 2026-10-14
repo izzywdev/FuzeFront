@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Security status (profile, mobile)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { display: grid; place-items: center; background: var(--bg-primary); padding: var(--space-6) 0 96px; }
+  .phone { width: 375px; min-height: 720px; background: var(--bg-primary); border: 1px solid var(--border-color);
+    border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); margin-bottom: var(--space-8); }
+  .m-topbar { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary); position: relative; }
+  .m-topbar::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: var(--seam); opacity: .7; }
+  .m-topbar .back { width: 32px; height: 32px; display: grid; place-items: center; color: var(--text-secondary); }
+  .m-topbar .title { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-md); }
+  .m-body { flex: 1; overflow: auto; padding: 18px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 12px 14px; margin-bottom: 10px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+  .row .ico { width: 34px; height: 34px; border-radius: var(--radius-sm); display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent-color); flex: none; font-size: 15px; }
+  .row .main { flex: 1; min-width: 0; }
+  .row .main b { display: block; font-size: var(--text-md); }
+  .row .main small { display: block; color: var(--text-tertiary); font-size: 12px; margin-top: 2px; }
+  .row .act { min-height: 44px; min-width: 44px; display: grid; place-items: center; color: var(--text-tertiary); }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 10px;
+    padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border-color); color: var(--text-secondary);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide); margin-top: 6px; }
+  .chip.active, .chip.verified { color: var(--success-color); border-color: rgba(52,211,153,0.4); }
+  .chip.unverified { color: var(--warning-color); border-color: rgba(245,185,80,0.4); }
+  .section-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: 18px 0 8px; }
+  .section-label:first-child { margin-top: 0; }
+  .sk-row { height: 56px; margin-bottom: 10px; border-radius: var(--radius-md);
+    background: linear-gradient(90deg, var(--bg-quaternary), var(--border-color), var(--bg-quaternary));
+    background-size: 200% 100%; animation: sksh 1.3s ease-in-out infinite; }
+  @keyframes sksh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @media (prefers-reduced-motion: reduce){ .sk-row{ animation:none; } }
+  .notice { text-align: center; padding: 28px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    background: var(--bg-tertiary); }
+  .notice .ico { font-size: 28px; margin-bottom: 10px; color: var(--error-color); }
+  .notice h3 { margin: 0 0 6px; font-size: var(--text-md); }
+  .notice p { margin: 0 0 16px; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+  .btn { font-family: var(--font-sans); font-size: var(--text-md); font-weight: var(--weight-medium);
+    border-radius: var(--radius-md); padding: 12px 18px; min-height: 44px; cursor: pointer; border: 1px solid transparent; width: 100%; }
+  .btn-primary { background: var(--accent-color); color: #0b0e15; }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border-color: var(--border-color); }
+  .btn-danger-ghost { background: transparent; color: var(--error-color); border-color: rgba(243,105,127,0.4); }
+  .modal { position: absolute; inset: 0; background: rgba(10,13,20,0.72); display: grid; place-items: end center;
+    padding: 16px; backdrop-filter: blur(2px); }
+  .sheet { width: 100%; background: var(--bg-tertiary); border: 1px solid var(--border-strong); border-radius: 18px 18px 0 0;
+    padding: 20px 18px calc(18px + env(safe-area-inset-bottom)); }
+  .sheet h3 { margin: 0 0 8px; font-size: var(--text-md); color: var(--error-color); }
+  .sheet p { margin: 0 0 16px; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+  .state-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: 28px 0 10px; text-align: center; }
+  .caption { text-align:center; font-size: 11px; color: var(--text-tertiary); margin-top: 6px; }
+  .reconcile { max-width: 375px; margin: 0 auto 8px; font-size: 12px; color: var(--text-tertiary);
+    border: 1px dashed var(--border-strong); border-radius: var(--radius-md); padding: 10px 12px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<p class="reconcile" data-note="reconciliation">Scope note: this is an <b>additive</b>, mobile-shaped combined status
+  view (2FA + contact verification in one screen) for the TWA app shell — it does not replace the approved desktop
+  <code class="mono">account-security/01-hub.html</code> entry point, nor <code class="mono">mfa-management/01-mfa-overview.html</code>'s
+  enrol/manage flows. It reuses their chip/badge language. Password state is out of scope for this screen (owned by
+  <code class="mono">account-security/02-states.html</code>) — not duplicated here.</p>
+
+<div class="state-label">Default · loaded</div>
+<div class="phone" data-frame="04-security-status" data-state="default" data-route="/account/security" data-viewport="375">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Security</span></header>
+  <main class="m-body" data-panel="security-status" data-state="loaded">
+    <div class="section-label">Two-factor authentication</div>
+    <div class="row" data-factor="totp">
+      <span class="ico" aria-hidden="true">🔑</span>
+      <span class="main"><b>Authenticator app</b><small>Primary factor</small><span class="chip active" data-status="active">Active</span></span>
+      <span class="act" data-action="manage-factor" data-factor-id="fct_totp_1" aria-label="Manage">›</span>
+    </div>
+    <div class="row" data-factor="sms">
+      <span class="ico" aria-hidden="true">💬</span>
+      <span class="main"><b>Text message</b><small>•••• •• 4471</small><span class="chip active" data-status="active">Active</span></span>
+      <span class="act" data-action="remove-factor" data-factor-id="fct_sms_1" aria-label="Remove">⋯</span>
+    </div>
+    <button class="btn btn-ghost" data-action="add-factor" style="margin-bottom:18px">+ Add a method</button>
+
+    <div class="section-label">Contact verification</div>
+    <div class="row" data-channel="email">
+      <span class="ico" aria-hidden="true">✉️</span>
+      <span class="main"><b>Email</b><small>a•••@rowan.co</small><span class="chip verified" data-status="verified">Verified</span></span>
+    </div>
+    <div class="row" data-channel="phone">
+      <span class="ico" aria-hidden="true">📱</span>
+      <span class="main"><b>Phone</b><small>Not confirmed yet</small><span class="chip unverified" data-status="unverified">Unverified</span></span>
+      <span class="act" data-action="verify-phone" aria-label="Verify">›</span>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Loading · fetching status</div>
+<div class="phone" data-frame="04-security-status" data-state="loading">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Security</span></header>
+  <main class="m-body" data-panel="security-status" data-state="loading" aria-busy="true">
+    <div class="section-label">Two-factor authentication</div>
+    <div class="sk-row"></div><div class="sk-row"></div>
+    <div class="section-label">Contact verification</div>
+    <div class="sk-row"></div><div class="sk-row"></div>
+  </main>
+</div>
+
+<div class="state-label">Error · couldn't load status (retry, never a stale guess)</div>
+<div class="phone" data-frame="04-security-status" data-state="error">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Security</span></header>
+  <main class="m-body" data-panel="security-status" data-state="error">
+    <div class="notice" data-state="load-error">
+      <div class="ico" aria-hidden="true">⚠</div>
+      <h3>Couldn't load your security status</h3>
+      <p>We don't show factor or verification state we can't confirm. Try again.</p>
+      <button class="btn btn-primary" data-action="retry">Try again</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Fail-closed · remove/disable last 2FA factor → 409 BLOCKED</div>
+<div class="phone" data-frame="04-security-status" data-state="remove-last-blocked" style="position:relative">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Security</span></header>
+  <main class="m-body" data-panel="security-status" data-state="loaded">
+    <div class="section-label">Two-factor authentication</div>
+    <div class="row" data-factor="totp">
+      <span class="ico" aria-hidden="true">🔑</span>
+      <span class="main"><b>Authenticator app</b><small>Only active factor</small><span class="chip active" data-status="active">Active</span></span>
+      <span class="act" data-action="remove-factor" data-factor-id="fct_totp_1" aria-label="Remove">⋯</span>
+    </div>
+  </main>
+  <div class="modal">
+    <div class="sheet" data-component="remove-factor-dialog" data-state="remove-last-blocked" data-http-status="409">
+      <h3>Can't remove your last method</h3>
+      <p data-error="remove-last">Two-factor authentication is required on this account, and this is your only
+        active factor. Add another method before removing this one — you can't lock yourself out.</p>
+      <button class="btn btn-primary" data-action="add-factor">Add another method</button>
+      <button class="btn btn-ghost" data-action="dismiss" style="margin-top:8px">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<p class="caption">Frame <b>04 / 04</b> · Security status (profile) · <code class="mono">/account/security</code> — 375px (Android TWA)</p>
+</body>
+</html>
