@@ -51,13 +51,18 @@ async function main() {
 
   // --- HTTP ---
   const app = createApp();
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     console.log(`[email-service] Listening on port ${config.port}`);
   });
 
   // --- Graceful shutdown ---
   const shutdown = async () => {
     console.log('[email-service] Shutting down...');
+    // Close the listener (letting in-flight requests finish) BEFORE flushing
+    // telemetry — otherwise a request still in flight when SIGTERM arrives
+    // either finishes after the SDK has shut down (its span lost) or is cut
+    // off by process.exit(0) below.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     await consumer.disconnect();
     await statusProducer.disconnect();
     // Flush any spans still buffered before the process exits — otherwise the
