@@ -208,6 +208,30 @@ describe('tracingMiddleware', () => {
     expect(span.name).toBe('GET /v1/selection-lists/items/:itemId');
   });
 
+  it('preserves the matched baseUrl+route snapshot across Express restoring req.baseUrl during error-forwarding out of a nested router', () => {
+    const middleware = tracingMiddleware();
+    const req = fakeReq() as Request & { route?: { path?: string }; baseUrl?: string };
+    const res = fakeRes();
+    res.statusCode = 500;
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    // The normal match: req.baseUrl carries the mount prefix while
+    // req.route is set to the inner router's local-only pattern.
+    req.baseUrl = '/v1/items';
+    req.route = { path: '/:itemId' };
+    // The handler then calls next(err) to escape the nested router.
+    // Verified empirically against real Express: it restores req.baseUrl
+    // to the OUTER scope's value ('') while unwinding, WITHOUT touching
+    // req.route, which still points at the inner route. Recomputing from
+    // the then-current values would wrongly produce 'GET /:itemId'.
+    req.baseUrl = '';
+    res._finish();
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('GET /v1/items/:itemId');
+    expect(span.attributes['http.route']).toBe('/v1/items/:itemId');
+  });
+
   it('collapses an unmatched request (404, or rejected before routing) to a fixed name, never the raw path', () => {
     const middleware = tracingMiddleware();
     // No req.route is ever set on this request — simulates a request that

@@ -3,6 +3,25 @@
 All notable changes to this package are documented here. Versioned
 independently — bump on every interface change (SemVer).
 
+## 0.1.3 — matched-route snapshot survives error-forwarding out of a nested router
+
+### Fixed
+
+- `tracingMiddleware()` recomputed `req.baseUrl + req.route.path` lazily at
+  response-end. When a handler inside a mounted `Router` calls `next(err)`
+  to escape it, Express restores `req.baseUrl` to the OUTER scope's value
+  while unwinding, but leaves `req.route` pointing at the INNER router's
+  (now mismatched) route — verified empirically against real Express.
+  Recombining them live then paired an unwound `baseUrl` with a
+  `route.path` from a different scope, under-reporting the span name and
+  `http.route` for every 5xx that error-forwards this way — exactly where
+  accurate attribution matters most. Caught by a Codex review on PR #1489.
+  Fixed by snapshotting `baseUrl + route.path` the instant Express sets
+  `req.route` (intercepting that assignment via a property accessor),
+  rather than reading both lazily later. Verified against both the mocked
+  unit test and a real Express app with a genuine nested-router
+  `next(err)` path.
+
 ## 0.1.2 — span names include the router mount prefix; unmatched requests no longer leak the raw path; Express 5 peer range restored
 
 ### Fixed

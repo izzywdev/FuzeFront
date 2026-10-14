@@ -73,6 +73,20 @@ export interface TracingMiddlewareOptions {
 // mounted routers' endpoints (e.g. `GET /docs/` and `GET /v1/selection-lists/`)
 // down to the same span name `GET /`.
 function matchedRoutePath(req: Request): string | undefined {
+  // Prefer the snapshot `tracingMiddleware()` captures the INSTANT Express
+  // sets `req.route` (see the `Object.defineProperty` below) over
+  // recomputing from the CURRENT `req.route`/`req.baseUrl`: when a handler
+  // inside a mounted Router calls `next(err)`, Express restores
+  // `req.baseUrl` to the OUTER router's value while unwinding — but leaves
+  // `req.route` pointing at the INNER router's (now stale-paired) route.
+  // Recombining them live at response-end (this function's fallback path,
+  // for a request that somehow never went through the setter — e.g. this
+  // middleware mounted after the router already set req.route) would then
+  // pair an unwound baseUrl with a route.path from a different scope,
+  // under-reporting the route for every 5xx that error-forwards out of a
+  // nested router — exactly where accurate attribution matters most.
+  const snapshot = (req as { __fuzefrontMatchedRoute?: string }).__fuzefrontMatchedRoute;
+  if (snapshot) return snapshot;
   const routePath = (req as { route?: { path?: string } }).route?.path;
   if (!routePath) return undefined;
   const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
@@ -112,6 +126,31 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
     const spanContext = span.spanContext();
     req.traceId = spanContext.traceId;
     req.spanId = spanContext.spanId;
+
+    // Intercept Express's own `req.route = route` assignment (a plain
+    // property set, deep inside Router/Layer dispatch) to snapshot
+    // `req.baseUrl + route.path` the INSTANT a route actually matches,
+    // rather than recomputing it later from whatever `req.baseUrl` and
+    // `req.route` happen to hold when the response ends — see
+    // `matchedRoutePath()`'s comment for why those can disagree by then.
+    // `configurable: true` so nothing downstream that re-defines this
+    // property throws.
+    let matchedRoute: { path?: string } | undefined;
+    Object.defineProperty(req, 'route', {
+      configurable: true,
+      enumerable: true,
+      get(): { path?: string } | undefined {
+        return matchedRoute;
+      },
+      set(value: { path?: string } | undefined) {
+        matchedRoute = value;
+        if (value?.path) {
+          const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
+          const full = `${baseUrl}${value.path}`.replace(/\/{2,}/g, '/');
+          (req as { __fuzefrontMatchedRoute?: string }).__fuzefrontMatchedRoute = full === '' ? '/' : full;
+        }
+      },
+    });
 
     const requestContext = trace.setSpan(parentContext, span);
 
