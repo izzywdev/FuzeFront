@@ -1,0 +1,6 @@
+# Per-file rule suppressions for files managed by governance-sync whose source
+# (FuzeSDLC) has not yet been updated to comply with ruff 0.16.7's default rule set.
+# Governance-sync reconciles these files verbatim from FuzeSDLC; suppressing here
+# avoids a revert loop while the upstream fix propagates.
+[lint.per-file-ignores]
+".github/actions/fuze-code-action/__tests__/test_rung_gating.py" = ["UP031"]

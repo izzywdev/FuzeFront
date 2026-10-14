@@ -28,6 +28,7 @@ on:
             org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
             selection-lists     — fuzefront.selection-lists.service (staged ramp via `rollout`; rollback via `action: disable`)
             app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
+            authz-enabled       — fuzefront.billing.authz-enabled (100%) — run AFTER prod-billing-s2s-provision succeeds
             root-membership     — fuzefront.identity.root-membership (100%): new signups take the root-membership path instead of a personal org (FF-EPIC-17-S1/S2; the S2 backfill is #1095, deployed)
             selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + fuzefront.selection-lists.seed-defaults, left OFF
         required: true
@@ -40,6 +41,7 @@ on:
           - org-context-gating
           - selection-lists
           - app-builder
+          - authz-enabled
           - root-membership
           - selection-lists-create
       rollout:
@@ -273,6 +275,12 @@ jobs:
               "Release flag, default OFF. Gates the marketplace publication-request endpoints (submit/approve/reject/get) and the Publish to marketplace UI. Owner: backend-engineer. Removal: once the marketplace flow is rolled out and stable."
           }
 
+          # ── Billing authz-enabled (run AFTER prod-billing-s2s-provision) ──────
+          apply_authz_enabled() {
+            enable_ga "fuzefront.billing.authz-enabled" \
+              "Release flag. Gates PermitSyncService.syncPlanToPermit() in billing-service — syncs plan tier to the Security API on every subscription change. Run prod-billing-s2s-provision first to seal AUTHENTIK_CLIENT_ID/SECRET. GA when S2S credentials are verified in prod. Owner: platform team. Removal: once authz sync is GA and stable."
+          }
+
           # ── Root membership (FF-EPIC-17-S1/S2) ─────────────────────────────
           # Backend release flag (web_exposed:false). ON = signup / auth
           # self-heal upserts a root organization_memberships(role='member')
@@ -310,6 +318,7 @@ jobs:
             org-context-gating)  apply_org_context_gating ;;
             selection-lists)     apply_selection_lists ;;
             app-builder)         apply_app_builder ;;
+            authz-enabled)       apply_authz_enabled ;;
             root-membership)     apply_root_membership ;;
             selection-lists-create) apply_selection_lists_create ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
@@ -377,6 +386,8 @@ jobs:
               check_flag "fuzefront.apps.build-with-agent"
               check_flag "fuzefront.apps.creator-ownership"
               check_flag "fuzefront.apps.marketplace-publishing" ;;
+            authz-enabled)
+              check_flag "fuzefront.billing.authz-enabled" ;;
             root-membership)
               check_flag "fuzefront.identity.root-membership" ;;
             selection-lists-create)
