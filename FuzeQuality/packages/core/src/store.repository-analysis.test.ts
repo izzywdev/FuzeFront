@@ -30,6 +30,52 @@ describe('repository analysis lifecycle storage', () => {
     expect((await store.repository('repo-1'))?.lastAnalysis).toEqual({ revision: 'new-revision', status: 'queued' })
   })
 
+  it('publishes successful reviewed analysis completion exactly once', async () => {
+    const store = new MemoryCatalogStore(seed({
+      ...repository,
+      lastAnalysis: { revision: 'catalog-revision', status: 'running' },
+    }))
+    const complete = {
+      revision: 'catalog-revision',
+      status: 'complete' as const,
+      counts: { deterministic: 2, evaluations: 3, proposed: 1 },
+    }
+
+    await store.setRepositoryAnalysis('repo-1', complete)
+    await store.setRepositoryAnalysis('repo-1', complete)
+
+    const bus = new InProcessEventBus()
+    await expect(relayOutboxBatch(store, bus)).resolves.toBe(1)
+    expect(bus.events).toEqual([expect.objectContaining({
+      topic: TOPICS.ANALYSIS_COMPLETED,
+      key: 'repo-1',
+      payload: { repositoryId: 'repo-1', revision: 'catalog-revision' },
+    })])
+  })
+
+  it('rolls back Postgres analysis completion when its projection event cannot be enqueued', async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT last_analysis FROM updated')) {
+        return { rowCount: 1, rows: [{ last_analysis: { status: 'running' } }] }
+      }
+      if (sql.includes('INSERT INTO fuzequality.outbox_events')) throw new Error('outbox unavailable')
+      return { rowCount: 0, rows: [] }
+    })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = {
+      connect: vi.fn().mockResolvedValue({ query, release }),
+    }
+
+    await expect(store.setRepositoryAnalysis('repo-1', {
+      revision: 'catalog-revision',
+      status: 'complete',
+      counts: { deterministic: 2, evaluations: 3, proposed: 1 },
+    })).rejects.toThrow('outbox unavailable')
+    expect(query).toHaveBeenLastCalledWith('ROLLBACK')
+    expect(release).toHaveBeenCalledOnce()
+  })
+
   it('durably requeues only a failed current revision and publishes it once', async () => {
     const store = new MemoryCatalogStore(seed())
 

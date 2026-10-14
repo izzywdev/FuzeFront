@@ -456,6 +456,42 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('drops an obsolete UX-flow continuation after filters change', async () => {
+    mockEvidenceApis()
+    let resolveContinuation!: (value: Awaited<ReturnType<typeof api.repositoryFlowCandidates>>) => void
+    const continuation = new Promise<Awaited<ReturnType<typeof api.repositoryFlowCandidates>>>(resolve => {
+      resolveContinuation = resolve
+    })
+    const obsoleteFlow = {
+      ...candidate,
+      id: 'flow-obsolete',
+      title: 'Obsolete flow continuation',
+      createdAt: '2026-10-08T00:00:00.000Z',
+    }
+    vi.spyOn(api, 'repositoryFlowCandidates').mockImplementation(async (_repositoryId, filter = {}) => {
+      if (filter.cursor) return continuation
+      if (filter.source === 'deterministic') {
+        return { items: [], page: { nextCursor: null, hasMore: false } }
+      }
+      return { items: [candidate], page: { nextCursor: 'flow-page-2', hasMore: true } }
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more UX-flow history' }))
+    fireEvent.change(screen.getByLabelText('Origin'), { target: { value: 'deterministic' } })
+    await waitFor(() => expect(api.repositoryFlowCandidates).toHaveBeenLastCalledWith(
+      repository.id,
+      { source: 'deterministic' },
+    ))
+    await act(async () => {
+      resolveContinuation({ items: [obsoleteFlow], page: { nextCursor: null, hasMore: false } })
+      await continuation
+    })
+
+    expect(screen.queryByText(obsoleteFlow.title)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Load more UX-flow history' })).not.toBeInTheDocument()
+  })
+
   it('loads bounded artifact context for governance revisions introduced by continuation', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
@@ -549,6 +585,43 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
       cursor: 'execution-page-2',
     })
+  })
+
+  it('drops an obsolete execution continuation after filters change', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    let resolveContinuation!: (value: Awaited<ReturnType<typeof api.testExecutions>>) => void
+    const continuation = new Promise<Awaited<ReturnType<typeof api.testExecutions>>>(resolve => {
+      resolveContinuation = resolve
+    })
+    const obsoleteExecution: TestExecution = {
+      ...postProductionExecution,
+      id: 'execution-obsolete',
+      name: 'Obsolete execution continuation',
+    }
+    vi.mocked(api.testExecutions).mockImplementation(async (_repositoryId, filter = {}) => {
+      if (filter.cursor) return continuation
+      if (filter.status === 'failed') {
+        return { items: [loadExecution], page: { nextCursor: null, hasMore: false } }
+      }
+      return { items: [loadExecution], page: { nextCursor: 'execution-page-2', hasMore: true } }
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more execution evidence' }))
+    const filters = screen.getByLabelText('Execution evidence filters')
+    fireEvent.change(within(filters).getByLabelText('Outcome'), { target: { value: 'failed' } })
+    await waitFor(() => expect(api.testExecutions).toHaveBeenLastCalledWith(
+      repository.id,
+      { status: 'failed' },
+    ))
+    await act(async () => {
+      resolveContinuation({ items: [obsoleteExecution], page: { nextCursor: null, hasMore: false } })
+      await continuation
+    })
+
+    expect(screen.queryByText(obsoleteExecution.name)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Load more execution evidence' })).not.toBeInTheDocument()
   })
 
   it('renders complete server-aggregated outcome history independently of loaded execution rows', async () => {

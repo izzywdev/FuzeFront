@@ -3511,6 +3511,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowMinimumConfidencePercent,
     flowMaximumConfidencePercent,
   ])
+  const flowQueryRef = useRef(flowQuery)
+  flowQueryRef.current = flowQuery
   const flowResultsAreCurrent =
     !loadingFlows && loadedFlowQuery === flowQuery
   const inspectFlow = async (flow: RepositoryFlowCandidate) => {
@@ -3822,6 +3824,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   useEffect(() => {
     let active = true
     setLoadingFlows(true)
+    setLoadingMoreFlows(false)
     setFlowNextCursors({})
     setRepositoryFlowFailures([])
     setHistoryPaginationError(undefined)
@@ -3937,6 +3940,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     let active = true
     setExecutionNextCursors({})
     setExecutionPaginationError(undefined)
+    setLoadingMoreExecutions(false)
     setExecutionTrendNextCursors({})
     setExecutionTrendPaginationError(undefined)
     setLoadingMoreExecutionTrend(false)
@@ -4114,6 +4118,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const loadMoreExecutions = async () => {
     const cursors = Object.entries(executionNextCursors)
     if (!cursors.length) return
+    const query = executionTrendQueryRef.current
     setLoadingMoreExecutions(true)
     setExecutionPaginationError(undefined)
     try {
@@ -4124,6 +4129,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           cursor,
         })),
       })))
+      if (executionTrendQueryRef.current !== query) return
       const continuedExecutions = groups.flatMap(group => group.page.items)
       setExecutions(current => [...new Map(
         [...current, ...continuedExecutions].map(item => [item.id, item])
@@ -4140,9 +4146,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           : [])
       ))
     } catch (cause) {
-      setExecutionPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution evidence.')
+      if (executionTrendQueryRef.current === query) {
+        setExecutionPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution evidence.')
+      }
     } finally {
-      setLoadingMoreExecutions(false)
+      if (executionTrendQueryRef.current === query) setLoadingMoreExecutions(false)
     }
   }
   const loadMorePerformance = async () => {
@@ -4192,6 +4200,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const loadMoreFlows = async () => {
     const cursors = Object.entries(flowNextCursors)
     if (!cursors.length) return
+    const query = flowQueryRef.current
     setLoadingMoreFlows(true)
     setHistoryPaginationError(undefined)
     try {
@@ -4213,6 +4222,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         ))
         return { repositoryId, page }
       }))
+      if (flowQueryRef.current !== query) return
       setFlowCandidates(current => [...new Map(
         [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
       ).values()])
@@ -4220,9 +4230,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
       ))
     } catch (cause) {
-      setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more UX-flow history.')
+      if (flowQueryRef.current === query) {
+        setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more UX-flow history.')
+      }
     } finally {
-      setLoadingMoreFlows(false)
+      if (flowQueryRef.current === query) setLoadingMoreFlows(false)
     }
   }
   const loadMorePolicyGates = async () => {

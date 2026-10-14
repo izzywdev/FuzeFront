@@ -69,12 +69,13 @@ src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
 src FuzeQuality/apps/api/src/index.ts:463                   # FuzeQuality-owned test-execution entity
 src FuzeQuality/packages/core/src/store.ts:592              # FuzeQuality-owned repository entity
-src FuzeQuality/packages/core/src/store.ts:627              # FuzeQuality-owned repository-inventory outbox entity
-src FuzeQuality/packages/core/src/store.ts:676              # FuzeQuality-owned repository-scan revision entity
-src FuzeQuality/packages/core/src/store.ts:677              # FuzeQuality-owned repository-inventory outbox entity
-src FuzeQuality/packages/core/src/store.ts:694              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:705              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:791              # FuzeQuality-owned admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:879              # FuzeQuality-owned identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:890              # FuzeQuality-owned design-test-link outbox entity
-src FuzeQuality/packages/core/src/store.ts:2209             # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:626              # FuzeQuality-owned analysis-completed outbox entity
+src FuzeQuality/packages/core/src/store.ts:640              # FuzeQuality-owned repository-inventory outbox entity
+src FuzeQuality/packages/core/src/store.ts:689              # FuzeQuality-owned repository-scan revision entity
+src FuzeQuality/packages/core/src/store.ts:690              # FuzeQuality-owned repository-inventory outbox entity
+src FuzeQuality/packages/core/src/store.ts:707              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:718              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:804              # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:892              # FuzeQuality-owned identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:903              # FuzeQuality-owned design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:2252             # FuzeQuality-owned admin-context audit entity

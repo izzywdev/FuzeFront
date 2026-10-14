@@ -617,7 +617,20 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>) {
     const repository = this.data.repositories.find(item => item.id === id)
-    if (repository?.lastScanRevision === analysis.revision) repository.lastAnalysis = analysis
+    if (repository?.lastScanRevision !== analysis.revision) return
+    const previousStatus = repository.lastAnalysis?.status
+    if (JSON.stringify(repository.lastAnalysis) === JSON.stringify(analysis)) return
+    repository.lastAnalysis = analysis
+    if (analysis.status === 'complete' && previousStatus !== 'complete') {
+      this.outboxEvents.push({
+        id: randomUUID(),
+        topic: TOPICS.ANALYSIS_COMPLETED,
+        key: id,
+        payload: { repositoryId: id, revision: analysis.revision },
+        attempts: 0,
+        createdAt: new Date().toISOString(),
+      })
+    }
   }
 
   async queueRepositoryAnalysis(id: string, tenantId: string) {
@@ -1922,10 +1935,40 @@ export class PostgresCatalogStore implements CatalogStore {
 
 
   async setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>) {
-    await this.pool.query(
-      'UPDATE fuzequality.repositories SET last_analysis=$2, updated_at=now() WHERE id=$1 AND last_scan_revision=$3',
-      [id, JSON.stringify(analysis), analysis.revision],
-    )
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `WITH current AS (
+           SELECT id,last_analysis
+           FROM fuzequality.repositories
+           WHERE id=$1 AND last_scan_revision=$3
+           FOR UPDATE
+         ), updated AS (
+           UPDATE fuzequality.repositories repository
+           SET last_analysis=$2::jsonb,updated_at=now()
+           FROM current
+           WHERE repository.id=current.id
+             AND repository.last_analysis IS DISTINCT FROM $2::jsonb
+           RETURNING current.last_analysis
+         )
+         SELECT last_analysis FROM updated`,
+        [id, JSON.stringify(analysis), analysis.revision],
+      )
+      const previousStatus = result.rows[0]?.last_analysis?.status
+      if (result.rowCount && analysis.status === 'complete' && previousStatus !== 'complete') {
+        await client.query(
+          'INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+          [TOPICS.ANALYSIS_COMPLETED, id, JSON.stringify({ repositoryId: id, revision: analysis.revision })],
+        )
+      }
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async queueRepositoryAnalysis(id: string, tenantId: string) {
