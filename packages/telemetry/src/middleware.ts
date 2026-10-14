@@ -101,7 +101,14 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
 
     const requestContext = trace.setSpan(parentContext, span);
 
-    res.on('finish', () => {
+    // Idempotent: `finish` AND `close` can both fire for the same response
+    // (and `close` fires EVEN AFTER `finish` on some Node versions), so a
+    // bare boolean guard — not two independent `span.end()` calls — is what
+    // keeps this from double-ending the span.
+    let ended = false;
+    const endSpan = () => {
+      if (ended) return;
+      ended = true;
       span.setAttribute('http.status_code', res.statusCode);
       span.setAttribute('http.method', req.method);
       span.setAttribute('http.route', (req as { route?: { path?: string } }).route?.path ?? req.path);
@@ -109,7 +116,14 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
         span.setAttribute('error', true);
       }
       span.end();
-    });
+    };
+    res.on('finish', endSpan);
+    // `finish` fires only when the response is fully sent. A long-lived
+    // connection that the CLIENT drops first (an SSE `/stream` route; any
+    // route whose handler never calls `res.end()`) never emits `finish` —
+    // only `close`. Without this, that span is never ended/exported, and
+    // the request silently disappears from the trace.
+    res.on('close', endSpan);
 
     // Run the rest of the request inside the span's context so any code that
     // starts a CHILD span downstream (e.g. `HttpInstrumentation`'s outbound

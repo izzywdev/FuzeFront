@@ -56,11 +56,22 @@ async function main() {
     }
   }
 
-  // Without DB or Stripe we can only serve /health (degraded mode).
+  // Without DB or Stripe we can only serve /health (degraded mode). Still
+  // register a shutdown hook here: without it, SIGTERM/SIGINT in this mode
+  // exits without ever calling telemetry.shutdown(), discarding every
+  // buffered health-request span on each restart in this supported mode.
   if (!pool || !config.stripeSecretKey) {
     console.warn('[billing-service] DATABASE_URL or STRIPE_SECRET_KEY missing — serving /health only');
     const app = createApp();
-    startHttp(app, config.port);
+    const server = startHttp(app, config.port);
+    const degradedShutdown = () => {
+      console.log('[billing-service] Shutting down (degraded mode)...');
+      server.close(() => {
+        telemetry.shutdown().catch(() => {}).finally(() => process.exit(0));
+      });
+    };
+    process.on('SIGTERM', degradedShutdown);
+    process.on('SIGINT', degradedShutdown);
     return;
   }
 
