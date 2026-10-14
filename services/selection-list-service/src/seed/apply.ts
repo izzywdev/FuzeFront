@@ -60,7 +60,7 @@ import {
 } from '../events/emitters';
 import { enqueueEvent, lockOrgOutbox, mintEventId, wireOrgId } from '../events/outbox';
 import { logger } from '../lib/logger';
-import { configuredPlatformOrgId, orgRenderings, resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
+import { configuredPlatformOrgId, orgRenderings, platformWritesSuspended, resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
 import { getQuota, lockQuotaScope } from '../services/quota.service';
 import { canonicalJson, computeSourceHash, hashCanonical, hashText } from './canonical';
 import {
@@ -372,6 +372,16 @@ async function applyVisibilityRules(
     }
   }
   const targetIsPlatform = platformOrg !== null && sameOrg(req.organizationId, platformOrg);
+  if (hasPlatformLists && targetIsPlatform && (await platformWritesSuspended(trx))) {
+    // The platform org is SUSPENDED (deactivation recorded): publishing its common lists is a platform write, so it
+    // fails closed - retryably, nothing written - until the org is reactivated.
+    throw new SeedFailure(
+      'INTERNAL_ERROR',
+      'The platform organization is suspended (a deactivation was recorded), so its common lists cannot be seeded; nothing was written. Retry once it is reactivated.',
+      [],
+      true,
+    );
+  }
   for (const spec of all) {
     const v: Visibility = spec.visibility ?? 'private';
     if (v === 'platform' && !targetIsPlatform) platformSkipped.add(spec.key);

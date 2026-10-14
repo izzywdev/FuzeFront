@@ -889,7 +889,7 @@ router.delete('/:listId/items/:itemId', requireListMutation('remove_value'), req
         // The pre-transaction guard decided from an earlier read of the list: re-check it under the org lock
         // (a promotion to a common list takes the same lock, so what we read now cannot change under us).
         const listRow = await trx.raw<{ rows: Array<{ visibility: string | null }> }>(`SELECT visibility FROM selection_lists WHERE id = ?`, [listId]);
-        await assertMayPurgeLocked(req, listRow?.rows?.[0]?.visibility);
+        await assertMayPurgeLocked(req, listRow?.rows?.[0]?.visibility, trx);
         await trx.raw(
           `DELETE FROM selection_list_item_translations WHERE item_id = ?`,
           [itemId],

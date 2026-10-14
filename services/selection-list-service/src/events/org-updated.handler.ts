@@ -25,7 +25,7 @@ import { FuzeEvent, IdentityOrgUpdatedPayloadV1 } from '@fuzefront/shared/kafka'
 import { db as defaultDb } from '../db';
 import { logger, timed } from '../lib/logger';
 import { upsertOrgProjection } from './orgProjection';
-import { isProtectedPlatformOrg, snapshotBreaksPlatformOrg } from './platformGuard';
+import { handlePlatformSnapshot, resumeIfReactivated } from './platformGuard';
 
 export interface OrgUpdatedDeps {
   db: Knex;
@@ -40,15 +40,9 @@ export async function handleOrgUpdated(
   const log = logger.child({ reqId: event.correlationId, component: 'org-updated' });
   log.info({ organizationId, type, isActive }, 'identity.org.updated received');
 
-  // The platform organization is immutable here: a snapshot that retypes it away from `platform` or deactivates it
-  // would disable every common list for every tenant (platformGuard.ts). Refused, acknowledged, nothing recorded.
-  if (snapshotBreaksPlatformOrg({ type, isActive }) && (await isProtectedPlatformOrg(deps.db, organizationId))) {
-    log.error(
-      { organizationId, type, isActive, eventId: event.correlationId, occurredAt: event.occurredAt, topic: event.topic },
-      'SECURITY: identity.org.updated that retypes or deactivates the PLATFORM organization REFUSED; nothing was changed',
-    );
-    return { organizationId };
-  }
+  // The platform organization: a deactivation SUSPENDS its writes, a retype is refused (platformGuard.ts).
+  const ctx = { topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt };
+  if (await handlePlatformSnapshot(deps.db, { organizationId, type, isActive }, ctx, log)) return { organizationId };
 
   const wire = await timed(
     log,
@@ -56,6 +50,7 @@ export async function handleOrgUpdated(
     () => upsertOrgProjection(deps.db, { organizationId, type, isActive, name, occurredAt: event.occurredAt }),
     { organizationId },
   );
+  await resumeIfReactivated(deps.db, { organizationId, type, isActive }, ctx, log);
   log.info({ organizationId: wire, type, isActive }, 'org projection refreshed from identity.org.updated');
   return { organizationId: wire };
 }

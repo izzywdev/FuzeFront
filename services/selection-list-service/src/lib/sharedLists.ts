@@ -18,7 +18,7 @@
 
 import type { Request } from 'express';
 import type { Knex } from 'knex';
-import { fromUuid, toUuid } from '@izzywdev/fuzefront-identity';
+import { fromUuid, parseId, toUuid } from '@izzywdev/fuzefront-identity';
 import { db } from '../db';
 import { isSharedListsEnabled } from '../flags';
 import { logger } from './logger';
@@ -178,10 +178,35 @@ export const PLATFORM_ORG_ENV = 'SELECTION_LIST_PLATFORM_ORG_ID';
 /** TypeID of the root platform organization (backend ROOT_ORG_ID 00000000-0000-0000-0000-000000000010). */
 export const ROOT_PLATFORM_ORG_WIRE = 'org_0000000000000000000000000g';
 
-/** The configured platform org wire id; null when unset or not an `org_…` TypeID (see `verifyPlatformOrgConfig`). */
-export function configuredPlatformOrgId(env: NodeJS.ProcessEnv = process.env): string | null {
+/**
+ * THE one validated parse of SELECTION_LIST_PLATFORM_ORG_ID: a CODEC-VALID `org_…` TypeID in its canonical
+ * spelling (`parseId('organization', raw)` decodes it, and re-encoding the decoded UUID gives back exactly `raw`).
+ * A string that merely looks like one (`org_notatypeid`) is not an organization id and can never match anything.
+ * Returns the wire id, or null when unset/blank. Throws `PlatformOrgConfigError` when set but invalid - callers on
+ * the request path use `configuredPlatformOrgId` (which never throws); the boot check uses this.
+ */
+export function parseConfiguredPlatformOrg(env: NodeJS.ProcessEnv = process.env): string | null {
   const raw = env[PLATFORM_ORG_ENV]?.trim();
-  return raw && ORG_WIRE_RE.test(raw) && raw.length <= 255 ? raw : null;
+  if (!raw) return null;
+  try {
+    if (raw.length <= 255 && ORG_WIRE_RE.test(raw) && fromUuid('organization', toUuid(parseId('organization', raw))) === raw) return raw;
+  } catch {
+    // fall through: the identity codec cannot decode it
+  }
+  throw new PlatformOrgConfigError(`${PLATFORM_ORG_ENV} must be a valid org_… TypeID (the identity codec cannot decode "${raw.slice(0, 64)}")`);
+}
+
+/**
+ * The configured platform org wire id; null when unset OR invalid (platform features then fail closed; every
+ * runtime reader shares this one validated parse, so an undecodable value never reaches a comparison). An invalid
+ * value is refused loudly at boot by `verifyPlatformOrgConfig`.
+ */
+export function configuredPlatformOrgId(env: NodeJS.ProcessEnv = process.env): string | null {
+  try {
+    return parseConfiguredPlatformOrg(env);
+  } catch {
+    return null;
+  }
 }
 
 interface ProjectionRow {
@@ -271,6 +296,25 @@ export async function resolvePlatformOrgId(ex: Executor = db, now: number = Date
   return value;
 }
 
+/**
+ * Is the platform organization's WRITE side suspended (a deactivation / deletion event was recorded for it, see
+ * events/platformGuard.ts)? Read FRESH from the projection every time - never from the platform-org cache, which
+ * keeps serving READS (common lists, resolve, ids) while the writes (publish_platform, platform list/item
+ * mutations, platform purge, platform seeding) fail closed. Unconfigured: false (every platform feature is off then).
+ * A database fault throws: callers fail closed.
+ */
+export async function platformWritesSuspended(ex: Executor = db, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  const configured = configuredPlatformOrgId(env);
+  if (!configured) return false;
+  const row = await ex('selection_list_ref_index').where({ entity_type: 'organization', wire_id: configured }).first('suspended_at');
+  return Boolean(row && row.suspended_at);
+}
+
+/** `platformWritesSuspended`, evaluated once per request (a fresh read per REQUEST, never across requests). */
+export function platformWritesSuspendedFor(req: Pick<Request, 'orgId' | 'userId'>): Promise<boolean> {
+  return memoPerRequest(req, 'platform-writes-suspended', () => platformWritesSuspended());
+}
+
 /** Is the caller acting in the platform organization? Memoised per request. */
 export function callerInPlatformOrg(req: Pick<Request, 'orgId' | 'userId'>): Promise<boolean> {
   return memoPerRequest(req, 'platform-org:caller', async () => {
@@ -283,18 +327,15 @@ export function callerInPlatformOrg(req: Pick<Request, 'orgId' | 'userId'>): Pro
  * Boot check (index.ts). Refuses to start on a CONTRADICTION; an unconfirmed value (no projection row yet,
  * e.g. a fresh environment) is accepted with a warning but platform features stay DISABLED until the
  * projection confirms it (resolvePlatformOrgId), because the projection is fed asynchronously.
- *   - set but not an `org_…` TypeID                                   -> fatal
+ *   - set but not a codec-valid `org_…` TypeID                         -> fatal
  *   - set and the projection says it is not a platform org / deleted  -> fatal
  *   - unset                                                           -> warn (platform features DISABLED; no projection fallback)
  */
 export async function verifyPlatformOrgConfig(ex: Executor = db, env: NodeJS.ProcessEnv = process.env): Promise<'unset' | 'confirmed' | 'unconfirmed'> {
-  const raw = env[PLATFORM_ORG_ENV]?.trim();
+  const raw = parseConfiguredPlatformOrg(env); // throws PlatformOrgConfigError on a value the codec cannot decode
   if (!raw) {
     logger.warn(`${PLATFORM_ORG_ENV} not set — platform features (common lists) are DISABLED (fail closed); there is no fallback to the org projection`);
     return 'unset';
-  }
-  if (!ORG_WIRE_RE.test(raw) || raw.length > 255) {
-    throw new PlatformOrgConfigError(`${PLATFORM_ORG_ENV} must be an org_… TypeID`);
   }
   const row = await projectionByWire(ex, raw);
   if (!row) {

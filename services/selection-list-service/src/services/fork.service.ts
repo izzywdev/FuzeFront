@@ -25,6 +25,7 @@ import { emitForkEvents, EventContext } from '../events/emitters';
 import { lockOrgOutbox, wireOrgId, wireUserId } from '../events/outbox';
 import { canonicalOrgId, orgRenderings, sameOrg } from '../lib/sharedLists';
 import { checkForkQuota, checkListQuotaAcross, lockQuotaScope } from './quota.service';
+import { renderingWinnerOrder } from './sharedReads';
 
 /** Hard bound on the items of a fork source: the bound of the `list.forked` itemMap (shared 1.3.0). */
 export const FORK_MAX_ITEMS = 5000;
@@ -83,8 +84,8 @@ export async function forkList(input: ForkInput): Promise<ForkOutcome> {
 
     // 2. idempotency
     const existing = await trx.raw(
-      `SELECT id FROM selection_lists WHERE organization_id = ANY(?) AND forked_from_list_id = ?`,
-      [renderings, sourceId],
+      `SELECT id FROM selection_lists WHERE organization_id = ANY(?) AND forked_from_list_id = ? ORDER BY ${renderingWinnerOrder('', orgId).sql}`,
+      [renderings, sourceId, ...renderingWinnerOrder('', orgId).params],
     );
     const already = (existing as { rows?: Array<{ id: string }> }).rows?.[0];
     if (already) return { kind: 'exists', listId: already.id };

@@ -9,7 +9,7 @@
 // (or again AFTER) `org.created`. Both writes are idempotent upserts so redelivery is a no-op.
 
 import type { Knex } from 'knex';
-import { fromUuid } from '@izzywdev/fuzefront-identity';
+import { fromUuid, toUuid } from '@izzywdev/fuzefront-identity';
 import { invalidatePlatformOrgCache } from '../lib/sharedLists';
 
 export interface OrgProjectionSnapshot {
@@ -63,6 +63,47 @@ export async function upsertOrgProjection(ex: Knex | Knex.Transaction, snapshot:
   // pass the pool, not an open transaction; inside a transaction this would run before the commit.)
   invalidatePlatformOrgCache();
   return wire;
+}
+
+/**
+ * Record the platform organization's WRITE suspension (see platformGuard.ts): `suspended_at` is set (first time wins),
+ * nothing else about the row changes - never a tombstone, never `is_active`, never its type - so reads stay available.
+ * Inserts a typeless active row when the org is not projected yet (its reads are unconfirmed anyway). Returns true
+ * when this call newly suspended it.
+ */
+export async function suspendOrgProjection(ex: Knex | Knex.Transaction, organizationId: string): Promise<boolean> {
+  // identity events carry the bare UUID (schema-enforced); an `org_...` TypeID is tolerated so the guard works for either
+  const entityId = organizationId.startsWith('org_') ? toUuid(organizationId as never) : organizationId.toLowerCase();
+  const wire = fromUuid('organization', entityId);
+  const before = await ex('selection_list_ref_index').where({ entity_type: 'organization', entity_id: entityId }).first('suspended_at');
+  await ex.raw(
+    `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, suspended_at, updated_at)
+     VALUES ('organization', ?, 'active', ?, now(), now())
+     ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+       wire_id      = COALESCE(selection_list_ref_index.wire_id, EXCLUDED.wire_id),
+       suspended_at = COALESCE(selection_list_ref_index.suspended_at, EXCLUDED.suspended_at),
+       updated_at   = now()`,
+    [entityId, wire],
+  );
+  return !before?.suspended_at; // newly suspended by this call (for the operator log)
+}
+
+/**
+ * Clear the suspension on a legitimate re-activation snapshot (`is_active=true`, type `platform`) that is not older
+ * than the newest snapshot applied. Returns true when something was resumed.
+ */
+export async function resumeOrgProjection(ex: Knex | Knex.Transaction, organizationId: string, occurredAt: string | undefined): Promise<boolean> {
+  const entityId = organizationId.startsWith('org_') ? toUuid(organizationId as never) : organizationId.toLowerCase();
+  const when = occurredAt && !Number.isNaN(Date.parse(occurredAt)) ? new Date(occurredAt).toISOString() : null;
+  const res = await ex.raw(
+    `UPDATE selection_list_ref_index
+        SET suspended_at = NULL, updated_at = now()
+      WHERE entity_type = 'organization' AND entity_id = ? AND suspended_at IS NOT NULL
+        AND (snapshot_at IS NULL OR snapshot_at <= COALESCE(?::timestamptz, now()))
+      RETURNING 1`,
+    [entityId, when],
+  );
+  return Boolean((res as { rows?: unknown[] }).rows?.length);
 }
 
 /**

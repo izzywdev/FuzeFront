@@ -28,6 +28,7 @@ import { QuotaExceededError } from '../services/quota.service';
 import { sendQuotaExceeded } from '../middleware/quota';
 import { forkList, FORK_MAX_ITEMS } from '../services/fork.service';
 import { restoreAuthority } from '../services/authority';
+import { renderingWinnerOrder } from '../services/sharedReads';
 import { eventContextFromRequest } from '../events/emitters';
 import { formatList, LIST_COLUMNS, singleCtx, type ListRow } from './listShape';
 
@@ -99,6 +100,7 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
     const existingFork = await db('selection_lists')
       .whereIn('organization_id', orgRenderings(orgId))
       .where({ forked_from_list_id: sourceId })
+      .orderByRaw(renderingWinnerOrder('', orgId).sql, renderingWinnerOrder('', orgId).params)
       .first('id');
     if (existingFork) {
       await answerExisting(req, res, existingFork.id);
@@ -209,7 +211,11 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
     if (pg?.code === '23505') {
       if (pg.constraint === 'ux_sl_fork_per_org') {
         // Lost a race with a concurrent fork of the same source: answer as the idempotent repeat.
-        const winner = await db('selection_lists').whereIn('organization_id', orgRenderings(orgId)).where({ forked_from_list_id: sourceId }).first('id');
+        const winner = await db('selection_lists')
+          .whereIn('organization_id', orgRenderings(orgId))
+          .where({ forked_from_list_id: sourceId })
+          .orderByRaw(renderingWinnerOrder('', orgId).sql, renderingWinnerOrder('', orgId).params)
+          .first('id');
         if (winner) {
           await answerExisting(req, res, winner.id);
           return;

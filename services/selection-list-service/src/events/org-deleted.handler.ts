@@ -2,7 +2,7 @@ import { FuzeEvent, IdentityOrgDeletedPayloadV1 } from '@fuzefront/shared/kafka'
 import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { db } from '../db';
 import { logger, timed } from '../lib/logger';
-import { markOrgProjectionDeleted } from './orgProjection';
+import { markOrgProjectionDeleted, suspendOrgProjection } from './orgProjection';
 import { isProtectedPlatformOrg } from './platformGuard';
 
 /**
@@ -61,13 +61,16 @@ export async function handleOrgDeleted(
   const log = logger.child({ reqId: event.correlationId, component: 'org-deleted' });
   log.info({ organizationId, cascade }, 'identity.org.deleted received');
 
-  // The platform organization owns every common list: it is IMMUTABLE here, whatever the envelope says (see
-  // platformGuard.ts). Nothing destructive is recorded - no cascade, no tombstone - and the message is
-  // acknowledged (a normal return) so the consumer does not loop on it. Flag-independent.
+  // The platform organization owns every common list: nothing is deleted, archived or tombstoned for it, whatever the
+  // envelope says (platformGuard.ts). Its deactivation SUSPENDS platform writes instead (fail closed: publish_platform,
+  // platform list/item changes, purge, seeding) while every tenant keeps READING the common lists; reactivation
+  // (identity.org.updated {isActive:true}) resumes. The message is acknowledged (a normal return) so the consumer does
+  // not loop on it. Flag-independent.
   if (await isProtectedPlatformOrg(db, organizationId)) {
+    const newly = await suspendOrgProjection(db, organizationId);
     log.error(
-      { organizationId, cascade, eventId: event.correlationId, occurredAt: event.occurredAt, topic: event.topic },
-      'SECURITY: identity.org.deleted for the PLATFORM organization REFUSED - it owns the common lists and is never deleted, archived or tombstoned by an event; nothing was changed',
+      { organizationId, cascade, eventId: event.correlationId, occurredAt: event.occurredAt, topic: event.topic, newlySuspended: newly },
+      'SECURITY: identity.org.deleted for the PLATFORM organization - platform WRITES are SUSPENDED (publish_platform, platform list/item changes, platform purge, platform seeding); reads/resolve stay available; nothing was deleted, archived or tombstoned. Reactivate with identity.org.updated {isActive:true}',
     );
     return;
   }

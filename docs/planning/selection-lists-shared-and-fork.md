@@ -485,6 +485,27 @@ Authorization never routes through the flag (Permit stays the authority).
   minted only by the service; `404` (never `403`) for unreadable lists.
 - Tenant roles confer no `SelectionList:*` action; no admin → owner derivation.
 
+**Platform organization lifecycle (suspend writes, never break reads).** The configured value must be a codec-valid
+`org_…` TypeID (`parseId` decodes it and re-encoding gives the same string); anything else is a fatal boot error, not
+an "unconfirmed" state. Because the platform org owns every common list, the org lifecycle consumers treat it as
+immutable: no event deletes, archives or tombstones it, and a type change away from `platform` is refused. A
+**deactivation** (`identity.org.deleted` soft or hard, or `org.updated`/`org.created` with `isActive:false`) is split into
+its two effects: **reads stay available** to every tenant (list reads, items, resolve, fork, ids), and **writes fail
+closed** — the projection row records `suspended_at`, and while it is set `publish_platform`, every mutation of a
+`platform` list (list, items, translations, grants), purge of a platform list or item, and seeding of platform lists are
+refused, the state read fresh per request (never from the platform-org cache). A legitimate reactivation (`isActive:true`,
+type `platform`) clears it. A forged event can therefore at worst pause platform publishing; recovery steps are in
+`docs/runbooks/selection-lists-rollout.md` §10.3. Protected = the configured platform org, the root platform org, or any
+org owning a `visibility = 'platform'` row (the fallback when unconfigured); never the projection's user-controllable
+`org_type`.
+
+**One effective list per key.** `(organization_id, key)` is unique per *stored string*, so one org can hold a key under both
+renderings of its id (possible while the flag is OFF). With the flag ON every key-resolving consumer (the listing /
+effective-key lookup, the resolve fork redirect, the fork idempotency lookup, shadowing) picks the same single row: an
+active row over an archived one, then the row stored under the caller's claim, then the oldest, then the smallest id.
+Flag-OFF create behaviour is unchanged; the pre-enable audit and reconciliation are in
+`docs/runbooks/selection-lists-rollout.md` §10.1–10.2.
+
 ## 9. Rollout and migration of existing data
 
 Order matters (fail-closed authz): **Permit schema → service → flag → data**.
@@ -536,7 +557,7 @@ Every stream gates on this contract PR being **merged**.
 | 7 | `backend-engineer` | Resolve: platform ids + fork redirect + `effective_item_id`; keep one round trip; cache key unchanged except fork presence (ETag must vary) | resolve tests incl. private-fork no-redirect |
 | 8 | `backend-engineer` | Events: add both topics to `PRODUCED_TOPICS`; emitters for `list.forked` / `visibility.changed`; snapshots carry `visibility`/`forkedFrom`/`originItemId` | `outbox.*` tests; payloads validate via `SCHEMA_BY_TOPIC` |
 | 9 | `backend-engineer` | Seeding: honour seed-list `visibility` (`org` per org; `platform` once into the platform org, skipped per org); refuse `platform` from apps (schema already does) | seed tests; ledger semantics unchanged |
-| 10 | `backend-engineer` + `database-engineer` | Rollout data migrations §9.4 and §9.6 as idempotent, flag-independent jobs with dry-run | dry-run report on staging; re-run is a no-op |
+| 10 | `backend-engineer` + `database-engineer` | Rollout data migrations §9.4 and §9.6 as idempotent, flag-independent jobs with dry-run. **Plus, before the flag is turned on:** the read-only duplicate-key audit (the same key, or the same fork, held by one org under both renderings of its id) and its reconciliation (winner = active, then oldest, then smallest id; loser renamed and archived, never deleted) — the exact queries and statements are in `docs/runbooks/selection-lists-rollout.md` §10.1–10.2. The service resolves such duplicates deterministically at read time with the same rule, so the audit is for cleanliness, not correctness | dry-run report on staging; re-run is a no-op; the audit returns 0 rows before the flag goes ON |
 | 11 | `test-engineer` | `tests/selection-list-service/contract` + `security`: shared-read allow/deny per tenant role (incl. `developer` 403/404), cross-org `404`, fork 201/200/409×3, precedence, resolve redirect, `fork_required` body, visibility lock, purge needs operator; `helpers/fake-security-api.mjs` evaluates `publish_platform` with tenant = platform org | suites green against the running service, both flag states |
 | 12 | `docs-maintainer` | Drop the "contract only" banners from the guides/skill once the service ships; runbook entries for §9 jobs | docs match code |
 | 13 | `product-designer` | Frames for: shared/common badge + read-only list detail, "fork to edit" CTA on `fork_required`, fork confirmation (visibility choice), fork provenance + "behind source" indicator, picker unchanged except effective-list lookup; loading/empty/error/`fork_exists`/quota states | frames PR approved per flow (`gate-frames-first`) |

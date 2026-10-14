@@ -62,7 +62,7 @@ import {
   requirePublishWhenBodyIsPlatform,
 } from '../middleware/listAccess';
 import { sameUser, canonicalOrgId, isVisibility, orgForms, orgIs, orgRenderings, writeOrgs, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
-import { editableIds, getReadScope, readableByOrg } from '../services/sharedReads';
+import { editableIds, getReadScope, notOutrankedByRendering, readableByOrg } from '../services/sharedReads';
 import { formatList, LIST_COLUMNS, singleCtx, type ListRow } from './listShape';
 import { lockOrgOutbox, wireUserId } from '../events/outbox';
 import { refreshListUserModified } from '../seed/content';
@@ -314,6 +314,20 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
     const scope = readableByOrg('sl', req.orgId as string, { shared, platformOrg, includePlatform: includeShared });
     const whereClause: string[] = [scope.sql];
     const params: (string | number | boolean | null | Date | string[])[] = [...scope.params] as never[];
+
+    // Shared lists ON merges the renderings of the caller's org (and of the platform org): when the same key exists
+    // under several of them, exactly ONE row per key is effective (sharedReads.renderingWinnerOrder). Applies to every
+    // listing, so `key=` returns at most one row and a picker never sees two lists for one key.
+    if (shared) {
+      const own = notOutrankedByRendering('sl', orgRenderings(req.orgId as string), req.orgId as string);
+      whereClause.push(own.sql);
+      params.push(...own.params);
+      if (includeShared && platformOrg) {
+        const common = notOutrankedByRendering('sl', orgForms(platformOrg), platformOrg);
+        whereClause.push(common.sql);
+        params.push(...common.params);
+      }
+    }
 
     if (statusFilter !== 'all') {
       whereClause.push('sl.status = ?');
@@ -1127,7 +1141,7 @@ router.delete('/:listId', requireListMutation('delete'), requirePublishForPlatfo
       if (purge) {
         // The pre-transaction guard decided from an earlier read: re-check the LOCKED row (it may have been
         // promoted to a common list since).
-        await assertMayPurgeLocked(req, existing.rows[0]?.visibility);
+        await assertMayPurgeLocked(req, existing.rows[0]?.visibility, trx);
         // list.deleted tombstone FIRST: it reads the key and bumps the revision,
         // which needs the row. No per-item/translation/access events: it implies them.
         await emitListDeleted(trx, ctx, listId);

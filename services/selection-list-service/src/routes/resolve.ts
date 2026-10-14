@@ -178,12 +178,18 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
     FROM selection_list_items sli
     JOIN selection_lists sl
       ON sl.id = sli.list_id
-    LEFT JOIN selection_lists fl
-      ON sl.visibility = 'platform'
-     AND fl.forked_from_list_id = sl.id
-     AND fl.organization_id = ANY(?)
-     AND fl.visibility = 'org'
-     AND fl.status = 'active'
+    LEFT JOIN LATERAL (
+      -- the caller org's fork of a common list; when the org holds forks under SEVERAL renderings of its id exactly one
+      -- is effective (sharedReads.renderingWinnerOrder), so a stored id never resolves to two rows
+      SELECT f.* FROM selection_lists f
+       WHERE sl.visibility = 'platform'
+         AND f.forked_from_list_id = sl.id
+         AND f.organization_id = ANY(?)
+         AND f.visibility = 'org'
+         AND f.status = 'active'
+       ORDER BY (f.organization_id = ?) DESC, f.created_at ASC, f.id ASC
+       LIMIT 1
+    ) fl ON TRUE
     LEFT JOIN selection_list_items fi
       ON fi.list_id = fl.id AND fi.origin_item_id = sli.id
     LEFT JOIN selection_list_item_translations t1
@@ -195,7 +201,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
     WHERE sli.id = ANY(?)
       AND (sl.organization_id = ANY(?) OR (sl.visibility = 'platform' AND sl.organization_id = ANY(?)))
     `,
-        [effectiveLocale, orgRenderings(orgId), effectiveLocale, validIds, orgRenderings(orgId), scope.platformOrg ? orgForms(scope.platformOrg) : []],
+        [effectiveLocale, orgRenderings(orgId), orgId, effectiveLocale, validIds, orgRenderings(orgId), scope.platformOrg ? orgForms(scope.platformOrg) : []],
       )
     : await db.raw<{ rows: typeof dbRows }>(
     `

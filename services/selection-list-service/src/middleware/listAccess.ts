@@ -34,7 +34,7 @@
 import { NextFunction, Request, RequestHandler, Response } from 'express';
 import { db } from '../db';
 import { getLog, timed } from '../lib/logger';
-import { callerInPlatformOrg, memoPerRequest, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
+import { callerInPlatformOrg, memoPerRequest, platformWritesSuspended, platformWritesSuspendedFor, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
 import {
   bearer,
   getAuthzClient,
@@ -96,6 +96,12 @@ export function catalogAllowed(req: Request, action: CatalogAction): Promise<boo
  */
 export async function mayPublishPlatform(req: Request): Promise<boolean> {
   if (!(await callerInPlatformOrg(req))) return false;
+  // A suspended platform org (deactivation / deletion recorded) publishes nothing, whatever Permit still says:
+  // forwarded decisions and already minted 15-minute org-session tokens do not re-check the org's activity.
+  if (await platformWritesSuspendedFor(req)) {
+    getLog(req).warn({ userId: req.userId, orgId: req.orgId }, 'publish_platform refused: the platform organization is SUSPENDED (deactivation recorded)');
+    return false;
+  }
   return catalogAllowed(req, 'publish_platform');
 }
 
@@ -178,6 +184,14 @@ export function requireListMutation(action: string, opts: MutationOptions = {}):
     const listId = req.params['listId'];
     try {
       const row = await lookupList(req, listId);
+      // The platform organization is SUSPENDED (a deactivation / deletion was recorded): its common lists stay
+      // readable by every tenant, but nobody changes them. Only a caller acting in the owning (platform) org gets
+      // here as a writer; other tenants keep their usual fork_required / 403 / 404.
+      if (row && row.visibility === 'platform' && sameOrg(row.organization_id, orgId) && (await platformWritesSuspendedFor(req))) {
+        getLog(req).warn({ listId, op: action, userId, orgId }, 'mutation of a common list refused: the platform organization is SUSPENDED');
+        res.status(403).json({ code: 'FORBIDDEN', reason: 'platform_suspended', message: 'The platform organization is suspended; common lists are read-only until it is reactivated.' });
+        return;
+      }
       // Unknown id, or one of the caller's own org: the 4.0.0 guard answers (its own org-scoped pre-check
       // gives the 404 / the instance decision).
       if (!row || sameOrg(row.organization_id, orgId)) return legacy(req, res, next);
@@ -288,11 +302,16 @@ export const PLATFORM_PURGE_DENIED_BODY = {
  * had not needed it - it is memoised per request otherwise). Independent of the release flag, like the guard
  * it backs. A Security API failure fails closed (denied).
  */
-export async function assertMayPurgeLocked(req: Request, lockedVisibility: string | null | undefined): Promise<void> {
+export async function assertMayPurgeLocked(
+  req: Request,
+  lockedVisibility: string | null | undefined,
+  executor?: Parameters<typeof platformWritesSuspended>[0],
+): Promise<void> {
   if (lockedVisibility !== 'platform') return;
   let allowed = false;
   try {
-    allowed = await mayPublishPlatform(req);
+    // fresh inside the purge transaction: a suspension recorded after the request's first look still stops the purge
+    allowed = (await mayPublishPlatform(req)) && !(await platformWritesSuspended(executor));
   } catch (err) {
     getLog(req).error({ err, userId: req.userId, orgId: req.orgId }, 'purge re-check of a common list threw - failing closed');
   }

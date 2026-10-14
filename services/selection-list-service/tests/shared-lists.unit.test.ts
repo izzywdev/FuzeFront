@@ -18,6 +18,7 @@ import {
   ROOT_PLATFORM_ORG_WIRE,
   sharedPredicate,
   verifyPlatformOrgConfig,
+  parseConfiguredPlatformOrg,
 } from '../src/lib/sharedLists';
 import { readableByOrg } from '../src/services/sharedReads';
 import { orgRenderings } from '../src/lib/sharedLists';
@@ -243,6 +244,17 @@ describe('verifyPlatformOrgConfig — the boot check', () => {
   it('set to something that is not an org_ TypeID: refuses to start', async () => {
     await expect(verifyPlatformOrgConfig(exec({}), { [PLATFORM_ORG_ENV]: UUID })).rejects.toBeInstanceOf(PlatformOrgConfigError);
     await expect(verifyPlatformOrgConfig(exec({}), { [PLATFORM_ORG_ENV]: 'usr_abc' })).rejects.toBeInstanceOf(PlatformOrgConfigError);
+    // looks like an org TypeID, but the identity codec cannot decode it: FATAL, not "no projection row yet"
+    for (const bad of ['org_notatypeid', 'org_' + 'z'.repeat(26), 'org_01jpmf4z1yf88rpb9z9sd6pzgZ', 'org_0', 'org_' + 'a'.repeat(300)]) {
+      await expect(verifyPlatformOrgConfig(exec({}), { [PLATFORM_ORG_ENV]: bad })).rejects.toBeInstanceOf(PlatformOrgConfigError);
+      expect(configuredPlatformOrgId({ [PLATFORM_ORG_ENV]: bad })).toBeNull(); // every runtime reader sees "not configured"
+      expect(() => parseConfiguredPlatformOrg({ [PLATFORM_ORG_ENV]: bad })).toThrow(PlatformOrgConfigError);
+    }
+    // a non-canonical spelling of a valid id is not accepted either
+    expect(configuredPlatformOrgId({ [PLATFORM_ORG_ENV]: PLATFORM.toUpperCase() })).toBeNull();
+    // valid, unprojected: still the documented asynchronous state
+    expect(configuredPlatformOrgId({ [PLATFORM_ORG_ENV]: PLATFORM })).toBe(PLATFORM);
+    expect(configuredPlatformOrgId({ [PLATFORM_ORG_ENV]: ROOT_PLATFORM_ORG_WIRE })).toBe(ROOT_PLATFORM_ORG_WIRE);
   });
 
   it('set and the projection says it is a platform org: confirmed', async () => {

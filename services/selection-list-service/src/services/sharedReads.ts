@@ -51,6 +51,41 @@ export function readableByOrg(alias: string, orgId: string, scope: ReadScope): {
   };
 }
 
+/**
+ * ONE deterministic answer per key when an organization holds the same key under SEVERAL renderings of its id.
+ *
+ * `(organization_id, key)` is unique per stored string, so rows created under both the bare UUID and the `org_...`
+ * TypeID (possible while shared lists were OFF, or from older data) can coexist, and the rendering-aware own-org
+ * scope merges them into one org. Every consumer that resolves "the list for this key" must pick the SAME row:
+ *
+ *   1. an ACTIVE row over an archived one;
+ *   2. the row whose organization_id equals the caller's claim EXACTLY;
+ *   3. the oldest (`created_at`), then the smallest `id`.
+ *
+ * `rendering_winner_order(claim)` is that order as an ORDER BY fragment (first row wins);
+ * `notOutrankedByRendering(alias, renderings, claim)` is the WHERE predicate that keeps a row only if no row of the
+ * same org-group and key outranks it (so a listing returns exactly one row per key).
+ */
+export function renderingWinnerOrder(alias: string, claim: string): { sql: string; params: string[] } {
+  const p = alias ? `${alias}.` : '';
+  return { sql: `(${p}status = 'active') DESC, (${p}organization_id = ?) DESC, ${p}created_at ASC, ${p}id ASC`, params: [claim] };
+}
+
+export function notOutrankedByRendering(alias: string, renderings: string[], claim: string): { sql: string; params: Array<string | string[]> } {
+  const p = alias ? `${alias}.` : '';
+  return {
+    sql: `NOT EXISTS (
+      SELECT 1 FROM selection_lists d
+       WHERE ${p}organization_id = ANY(?) AND d.organization_id = ANY(?) AND d.key = ${p}key AND d.id <> ${p}id
+         AND ( (d.status = 'active' AND ${p}status <> 'active')
+            OR ( (d.status = 'active') = (${p}status = 'active')
+                 AND ( (d.organization_id = ? AND ${p}organization_id <> ?)
+                    OR ( (d.organization_id = ?) = (${p}organization_id = ?)
+                         AND (d.created_at < ${p}created_at OR (d.created_at = ${p}created_at AND d.id < ${p}id)) ) ) ) ) )`,
+    params: [renderings, renderings, claim, claim, claim, claim],
+  };
+}
+
 const BULK_CHECK_MAX = 200;
 
 /**

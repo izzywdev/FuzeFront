@@ -247,3 +247,131 @@ After the merge: Argo sync green, then section 6 / stage 0, **with both flags st
 ## 9. Out of scope for this runbook
 
 App code / API / authz policy (`backend-engineer`, authz review), the shell UI and `@fuzefront/selection-lists-ui` (`frontend-engineer`), tests (`test-engineer`, `frontend-test-engineer`), org-wide hardening policy (`platform-governance`), and the shared cluster (FuzeInfra).
+
+## 10. Shared lists (SL9): run BEFORE turning `fuzefront.selection-lists.shared-lists` on
+
+This section applies to the second flag (`fuzefront.selection-lists.shared-lists`, design record
+`docs/planning/selection-lists-shared-and-fork.md`). The service has never been enabled in production, so the audit
+below is expected to return **no rows**. Run it anyway: with the flag ON the service treats the bare-UUID and the
+`org_…` rendering of one organization id as the same organization, and the database constraint
+`UNIQUE (organization_id, key)` does not (it compares the stored text).
+
+### 10.1 Pre-enable audit (read-only): the same key under two renderings of one org
+
+Run against the service database (`selection_list_svc`, read access is enough). It groups rows by the organization's
+**UUID** (taken from the org projection, which stores both renderings of every org it has seen) and reports every
+group with more than one row for a key **and** more than one stored rendering:
+
+```sql
+-- A. keys duplicated across renderings of the same org (expect 0 rows)
+WITH rows AS (
+  SELECT l.id, l.organization_id, l.key, l.status, l.visibility, l.created_at,
+         COALESCE(r.entity_id, l.organization_id) AS org_uuid
+    FROM selection_lists l
+    LEFT JOIN selection_list_ref_index r
+           ON r.entity_type = 'organization'
+          AND (r.wire_id = l.organization_id OR r.entity_id = l.organization_id)
+)
+SELECT org_uuid, key,
+       count(*)                                   AS rows,
+       array_agg(organization_id ORDER BY created_at, id) AS stored_as,
+       array_agg(id ORDER BY (status = 'active') DESC, created_at, id) AS ids_winner_first
+  FROM rows
+ GROUP BY org_uuid, key
+HAVING count(*) > 1 AND count(DISTINCT organization_id) > 1
+ ORDER BY org_uuid, key;
+
+-- B. forks of the same common list held by one org under two renderings (expect 0 rows)
+WITH rows AS (
+  SELECT l.id, l.organization_id, l.forked_from_list_id, l.created_at,
+         COALESCE(r.entity_id, l.organization_id) AS org_uuid
+    FROM selection_lists l
+    LEFT JOIN selection_list_ref_index r
+           ON r.entity_type = 'organization'
+          AND (r.wire_id = l.organization_id OR r.entity_id = l.organization_id)
+   WHERE l.forked_from_list_id IS NOT NULL
+)
+SELECT org_uuid, forked_from_list_id, array_agg(id ORDER BY created_at, id) AS fork_ids
+  FROM rows
+ GROUP BY org_uuid, forked_from_list_id
+HAVING count(*) > 1 AND count(DISTINCT organization_id) > 1;
+
+-- C. organizations whose renderings this audit cannot pair (not in the org projection): expect 0 rows.
+--    A TypeID cannot be decoded in SQL; if rows appear, decode them with the identity package
+--    (`toUuid('<org_…>')`) and re-run A/B for those orgs by hand.
+SELECT DISTINCT l.organization_id
+  FROM selection_lists l
+ WHERE NOT EXISTS (SELECT 1 FROM selection_list_ref_index r
+                    WHERE r.entity_type = 'organization' AND (r.wire_id = l.organization_id OR r.entity_id = l.organization_id));
+```
+
+If A, B and C return nothing, there is nothing to reconcile: go on with section 5.
+
+### 10.2 Reconciliation (only if A or B returned rows)
+
+**Which row wins** — the same rule the service applies at read time, so reconciling changes nothing a user can see:
+an **active** row beats an archived one; then the **oldest** (`created_at`), then the smallest `id`. (At read time an
+exact match of the caller's claim also outranks age; after reconciliation there is only one row, so that no longer
+matters.) The winner keeps its key, its id, its items, translations and grants. **Stored values elsewhere point at ids,
+so no id is ever deleted or changed.**
+
+**What happens to the loser** — it is renamed out of the way and archived, never deleted (its ids keep resolving, its
+audit trail stays). Preferred path, per loser (emits `list.updated` through the outbox, needs a `list-owner`/admin
+token of that org): `PATCH /v1/selection-lists/{loserId}` with
+`{"key": "<key>--dup-<first 8 chars of the id>", "status": "archived"}`.
+
+Fallback when no token can be produced, **with the shared-lists flag still OFF**, in one transaction, losers taken from
+query A (`ids_winner_first` without its first element) — it bypasses the outbox, so downstream projections learn the
+new key only from the next change of that list:
+
+```sql
+BEGIN;
+UPDATE selection_lists
+   SET key = key || '--dup-' || substr(id, length(id) - 7),
+       status = 'archived',
+       updated_at = now()
+ WHERE id IN ('<loser id>', '<loser id>');
+-- re-run query A: it must now return 0 rows
+COMMIT;
+```
+
+For B (duplicate forks): keep the winner (same rule), archive the loser fork and rename its key as above; then confirm
+`POST /v1/resolve` of one of the org's stored common ids returns one `effective_item_id`.
+
+**Order of operations:** audit (10.1) → reconcile (10.2) → re-run the audit (0 rows) → only then set
+`fuzefront.selection-lists.shared-lists` ON. Do not skip the re-run.
+
+### 10.3 The platform organization: deactivation = writes suspended, reads available
+
+`SELECTION_LIST_PLATFORM_ORG_ID` must be a codec-valid `org_…` TypeID. A value that merely looks like one
+(`org_notatypeid`) is a **fatal boot error** (`PlatformOrgConfigError`, the pod crash-loops with a clear message),
+not a silent "waiting for the projection".
+
+The platform org owns every common list, so its lifecycle events are never allowed to delete or break them:
+
+| Event for the platform org | What the service does |
+|---|---|
+| `identity.org.deleted` (soft or hard) | **Nothing is deleted, archived or tombstoned.** Platform **writes are suspended** (`selection_list_ref_index.suspended_at` is set); logged at **error** with the event's `correlationId` (`SECURITY: … platform WRITES are SUSPENDED`) |
+| `identity.org.updated` / `identity.org.created` with `isActive:false` | Same: writes suspended, projection otherwise unchanged |
+| `identity.org.updated` / `identity.org.created` that changes its type away from `platform` | **Refused** (logged at error), no state change |
+| `identity.org.updated` / `identity.org.created`, `isActive:true`, type `platform` (re-activation) | Suspension **cleared**, writes resume; logged at **warn** (`platform writes RESUMED`) |
+
+While suspended, **reads keep working for every tenant** (common lists, items, resolve, ids, fork), and these are
+refused with 403: `publish_platform` (publishing, promoting a list to `platform`), any mutation of a `platform` list or
+its items/translations/grants by the platform org, purge of a platform list or item, and seeding of platform lists
+(`seed.failed`/`INTERNAL_ERROR`, retryable — it succeeds after reactivation). The state is read fresh on every request;
+the platform-org cache never masks it.
+
+**Operator recovery.** A *legitimate* deactivation: nothing to do (that is the intended outcome). A *forged or
+mistaken* one: confirm in the log (`grep 'platform WRITES are SUSPENDED'`, note the `eventId`), then either have
+identity re-emit `identity.org.updated` with `isActive:true` for the platform org, or, if that is not possible,
+clear the flag directly:
+
+```sql
+SELECT wire_id, suspended_at FROM selection_list_ref_index WHERE wire_id = '<SELECTION_LIST_PLATFORM_ORG_ID>';
+UPDATE selection_list_ref_index SET suspended_at = NULL, updated_at = now()
+ WHERE wire_id = '<SELECTION_LIST_PLATFORM_ORG_ID>' AND suspended_at IS NOT NULL;
+```
+
+A forged event can therefore at worst *pause* platform publishing (recoverable as above); it can never break common-list
+reads or delete data. Broker ACLs on the `identity.*` topics (FuzeInfra#1394) remain the real producer control.
