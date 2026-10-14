@@ -61,6 +61,7 @@ export type PolicyGatePerformancePage = {
 export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'revision' | 'workflowPath'>> & {
   attemptScope?: 'initial' | 'retry' | 'recovered'
   minimumDurationMs?: number
+  maximumDurationMs?: number
   from?: string
   until?: string
 }
@@ -91,10 +92,13 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.attemptScope === 'initial' && execution.attempt !== 1) return false
     if (filter.attemptScope === 'retry' && execution.attempt <= 1) return false
     if (filter.attemptScope === 'recovered' && !isRecoveredExecution(execution, history)) return false
-    if (filter.minimumDurationMs !== undefined) {
+    if (filter.minimumDurationMs !== undefined || filter.maximumDurationMs !== undefined) {
       const startedAt = Date.parse(execution.startedAt ?? '')
       const completedAt = Date.parse(execution.completedAt ?? '')
-      if (!Number.isFinite(startedAt) || !Number.isFinite(completedAt) || completedAt < startedAt || completedAt - startedAt < filter.minimumDurationMs) return false
+      if (!Number.isFinite(startedAt) || !Number.isFinite(completedAt) || completedAt < startedAt) return false
+      const durationMs = completedAt - startedAt
+      if (filter.minimumDurationMs !== undefined && durationMs < filter.minimumDurationMs) return false
+      if (filter.maximumDurationMs !== undefined && durationMs > filter.maximumDurationMs) return false
     }
     const occurredAt = Date.parse(execution.completedAt ?? execution.startedAt ?? '')
     if (from !== undefined && (!Number.isFinite(occurredAt) || occurredAt < from)) return false

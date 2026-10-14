@@ -196,6 +196,11 @@ describe('contract discovery', () => {
         in: 'query',
         schema: { type: 'integer', minimum: 0, maximum: 2147483647 },
       })
+      expect(document.components.parameters.ExecutionMaximumDurationMs).toMatchObject({
+        name: 'maximumDurationMs',
+        in: 'query',
+        schema: { type: 'integer', minimum: 0, maximum: 2147483647 },
+      })
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )

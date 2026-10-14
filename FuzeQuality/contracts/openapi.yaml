@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.32.0
+  version: 0.33.0
   license:
     name: UNLICENSED
 servers:
@@ -796,6 +796,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionAttemptScope'
         - $ref: '#/components/parameters/ExecutionMinimumDurationMs'
+        - $ref: '#/components/parameters/ExecutionMaximumDurationMs'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
         - name: limit
@@ -928,6 +929,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionAttemptScope'
         - $ref: '#/components/parameters/ExecutionMinimumDurationMs'
+        - $ref: '#/components/parameters/ExecutionMaximumDurationMs'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
         - name: limit
@@ -974,6 +976,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionAttemptScope'
         - $ref: '#/components/parameters/ExecutionMinimumDurationMs'
+        - $ref: '#/components/parameters/ExecutionMaximumDurationMs'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
         - name: limit
@@ -1128,6 +1131,11 @@ components:
       name: minimumDurationMs
       in: query
       description: Restrict evidence to completed executions whose valid duration is at least this many milliseconds.
+      schema: { type: integer, minimum: 0, maximum: 2147483647 }
+    ExecutionMaximumDurationMs:
+      name: maximumDurationMs
+      in: query
+      description: Restrict evidence to completed executions whose valid duration is at most this many milliseconds. Must be greater than or equal to minimumDurationMs when both are supplied.
       schema: { type: integer, minimum: 0, maximum: 2147483647 }
     ExecutionFrom:
       name: from

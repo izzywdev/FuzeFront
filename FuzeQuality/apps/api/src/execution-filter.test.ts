@@ -11,6 +11,7 @@ describe('execution evidence filter', () => {
       workflowPath: '.github/workflows/load.yml',
       attemptScope: 'retry',
       minimumDurationMs: '60000',
+      maximumDurationMs: '120000',
       from: '2026-10-01T00:00:00.000Z',
       until: '2026-10-08T00:00:00.000Z',
     }).success).toBe(true)
@@ -33,6 +34,15 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.safeParse({ minimumDurationMs: '-1' }).success).toBe(false)
     expect(executionFilterSchema.safeParse({ minimumDurationMs: '1.5' }).success).toBe(false)
     expect(executionFilterSchema.safeParse({ minimumDurationMs: '2147483648' }).success).toBe(false)
+  })
+
+  it('bounds maximum duration and rejects an inverted duration range', () => {
+    expect(executionFilterSchema.parse({ maximumDurationMs: '120000' }).maximumDurationMs).toBe(120_000)
+    expect(executionFilterSchema.safeParse({ maximumDurationMs: '-1' }).success).toBe(false)
+    const result = executionFilterSchema.safeParse({ minimumDurationMs: '120000', maximumDurationMs: '60000' })
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error.flatten().fieldErrors.maximumDurationMs).toContain('maximumDurationMs must be greater than or equal to minimumDurationMs')
+    expect(executionPageFilterSchema.safeParse({ minimumDurationMs: '120000', maximumDurationMs: '60000' }).success).toBe(false)
   })
 
   it('rejects an empty or oversized revision', () => {

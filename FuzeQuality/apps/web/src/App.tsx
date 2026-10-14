@@ -3372,12 +3372,18 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionRevision, setExecutionRevision] = useState('')
   const [executionWorkflowPath, setExecutionWorkflowPath] = useState('')
   const [executionMinimumDurationSeconds, setExecutionMinimumDurationSeconds] = useState('')
+  const [executionMaximumDurationSeconds, setExecutionMaximumDurationSeconds] = useState('')
   const [executionFrom, setExecutionFrom] = useState('')
   const [executionUntil, setExecutionUntil] = useState('')
   const invalidExecutionRange = Boolean(
     executionFrom &&
     executionUntil &&
     Date.parse(executionFrom) > Date.parse(executionUntil)
+  )
+  const invalidExecutionDurationRange = Boolean(
+    executionMinimumDurationSeconds !== '' &&
+    executionMaximumDurationSeconds !== '' &&
+    Number(executionMinimumDurationSeconds) > Number(executionMaximumDurationSeconds)
   )
   const [policyGateKind, setPolicyGateKind] = useState<
     PolicyGateEvaluation['kind'] | ''
@@ -3560,16 +3566,20 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         minimumDurationMs: executionMinimumDurationSeconds
           ? String(Math.round(Number(executionMinimumDurationSeconds) * 1000))
           : '',
+        maximumDurationMs: executionMaximumDurationSeconds
+          ? String(Math.round(Number(executionMaximumDurationSeconds) * 1000))
+          : '',
         from: iso(executionFrom),
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
     executionFilter,
     invalidExecutionRange,
+    invalidExecutionDurationRange,
   ])
   const executionTrendQueryRef = useRef(executionTrendQuery)
   executionTrendQueryRef.current = executionTrendQuery
@@ -3841,7 +3851,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setExecutionHistoryFailures([])
     setExecutionTrendFailures([])
     setExecutionPerformanceFailures([])
-    if (invalidExecutionRange) {
+    if (invalidExecutionRange || invalidExecutionDurationRange) {
       setExecutions([])
       setPerformanceExecutions([])
       setPerformanceEvidenceFailures([])
@@ -3976,6 +3986,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     executionFilter,
     executionRepositoryId,
     invalidExecutionRange,
+    invalidExecutionDurationRange,
   ])
   const loadMoreExecutionTrend = async () => {
     const cursors = Object.entries(executionTrendNextCursors)
@@ -5025,6 +5036,18 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               />
             </label>
             <label>
+              Maximum duration (seconds)
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={executionMaximumDurationSeconds}
+                placeholder="Any duration"
+                aria-invalid={invalidExecutionDurationRange}
+                onChange={event => setExecutionMaximumDurationSeconds(event.target.value)}
+              />
+            </label>
+            <label>
               From
               <input
                 type="datetime-local"
@@ -5052,6 +5075,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </button>
             )}
           </div>
+          {invalidExecutionDurationRange && (
+            <p className="form-error" role="alert">
+              Maximum duration must be greater than or equal to minimum duration.
+            </p>
+          )}
           {executionTrendFailures.length > 0 && (
             <p className="form-error" role="alert">
               Execution outcome trend is temporarily unavailable for {executionTrendFailures.length}{' '}

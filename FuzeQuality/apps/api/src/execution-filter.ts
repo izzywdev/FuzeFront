@@ -16,16 +16,16 @@ export const executionFilterSchema = z.object({
   workflowPath: z.string().trim().min(1).max(1000).optional(),
   attemptScope: z.enum(['initial', 'retry', 'recovered']).optional(),
   minimumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
+  maximumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
   from: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
 }).strict().superRefine((value, context) => {
-  if (!value.from || !value.until) return
-  if (Date.parse(value.from) <= Date.parse(value.until)) return
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    path: ['until'],
-    message: 'until must be greater than or equal to from',
-  })
+  if (value.from && value.until && Date.parse(value.from) > Date.parse(value.until)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['until'], message: 'until must be greater than or equal to from' })
+  }
+  if (value.minimumDurationMs !== undefined && value.maximumDurationMs !== undefined && value.minimumDurationMs > value.maximumDurationMs) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['maximumDurationMs'], message: 'maximumDurationMs must be greater than or equal to minimumDurationMs' })
+  }
 })
 
 export const executionPageFilterSchema = z.object({
@@ -36,17 +36,17 @@ export const executionPageFilterSchema = z.object({
   workflowPath: z.string().trim().min(1).max(1000).optional(),
   attemptScope: z.enum(['initial', 'retry', 'recovered']).optional(),
   minimumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
+  maximumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
   from: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
   ...historyPageQueryFields,
 }).strict().superRefine((value, context) => {
-  if (!value.from || !value.until) return
-  if (Date.parse(value.from) <= Date.parse(value.until)) return
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    path: ['until'],
-    message: 'until must be greater than or equal to from',
-  })
+  if (value.from && value.until && Date.parse(value.from) > Date.parse(value.until)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['until'], message: 'until must be greater than or equal to from' })
+  }
+  if (value.minimumDurationMs !== undefined && value.maximumDurationMs !== undefined && value.minimumDurationMs > value.maximumDurationMs) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['maximumDurationMs'], message: 'maximumDurationMs must be greater than or equal to minimumDurationMs' })
+  }
 })
 
 export const executionPerformanceFilterSchema = executionPageFilterSchema
