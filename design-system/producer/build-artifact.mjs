@@ -351,32 +351,39 @@ const cleanJsdoc = (raw) => raw
   .join('\n')
   .trim()
 
-// Escape a component name before splicing it into a RegExp — names come from
-// the filesystem (not user input), but escaping keeps the pattern literal and
-// clears the static-analysis non-literal-RegExp warning.
-const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// These scanners use STATIC regexes that capture the declared name, then
+// compare it to `name` in JS — never `new RegExp(<name>)` — so a component
+// name is never spliced into a pattern (keeps the scan literal/ReDoS-free).
 
 // A component-level JSDoc is one that immediately precedes the component's
 // function/interface declaration — including `export interface <Name>Props`,
 // where many components put their summary — not a stray per-prop comment.
+const DECL_RE = /\/\*\*([\s\S]*?)\*\/\s*export (?:declare function|function|interface) ([A-Za-z_$][\w$]*)/g
 function componentJsdoc(name, dtsText) {
-  const n = reEscape(name)
-  const re = new RegExp(`\\/\\*\\*([\\s\\S]*?)\\*\\/\\s*export (?:declare function|function|interface) ${n}(?:Props)?\\b`)
-  const m = re.exec(dtsText)
-  return m ? cleanJsdoc(m[1]) : ''
+  DECL_RE.lastIndex = 0
+  let m
+  while ((m = DECL_RE.exec(dtsText))) {
+    if (m[2] === name || m[2] === `${name}Props`) return cleanJsdoc(m[1])
+  }
+  return ''
 }
 
+// `[^{}]*` tolerates an `extends React.HTMLAttributes<…>` clause before the body.
+const PROPS_IFACE_RE = /export interface ([A-Za-z_$][\w$]*)Props[^{}]*\{([\s\S]*?)\n\}/g
 // Fallback doc for components with no .prompt.md: the component-level JSDoc (if
 // any) plus a Props list parsed from `export interface <Comp>Props { … }`,
 // carrying each prop's own inline `/** … */` note.
 function fallbackFromDts(name, group, dtsText) {
   const lead = componentJsdoc(name, dtsText)
-  // `[^{}]*` tolerates an `extends React.HTMLAttributes<…>` clause before the body.
-  const body = new RegExp(`export interface ${reEscape(name)}Props[^{}]*\\{([\\s\\S]*?)\\n\\}`).exec(dtsText)
+  PROPS_IFACE_RE.lastIndex = 0
+  let iface, body = null
+  while ((iface = PROPS_IFACE_RE.exec(dtsText))) {
+    if (iface[1] === name) { body = iface[2]; break }
+  }
   const props = []
   if (body) {
     // Drop the `[key: string]: unknown` index signature before parsing props.
-    const interfaceBody = body[1].replace(/\[[^\]]+\]\s*:\s*[^;]+;/g, '')
+    const interfaceBody = body.replace(/\[[^\]]+\]\s*:\s*[^;]+;/g, '')
     // Match only members at the top level of the interface body (line-anchored),
     // each optionally preceded by its own JSDoc. The line anchor keeps a callback
     // parameter (e.g. the `page` in `onChange?: (page: number) => void`, which is

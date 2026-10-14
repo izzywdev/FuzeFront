@@ -1,6 +1,4 @@
-A single tab in the BottomNav bar. */
-export interface BottomNavItem {
-/** Unique identifier matched against `activeId`. */
+Unique identifier matched against `activeId`. */
 id: string;
 /** Short label rendered below the icon (≤10 chars recommended). */
 label: string;
