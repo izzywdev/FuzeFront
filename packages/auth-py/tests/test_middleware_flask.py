@@ -3,7 +3,7 @@ import pytest
 flask = pytest.importorskip("flask")
 
 from conftest import SECRET, make_token
-from fuzefront_auth import LegacyHs256Config, create_verifier
+from fuzefront_auth import LegacyHs256Config, ResolvedPortal, create_verifier
 from fuzefront_auth.middleware.flask import (
     require_auth,
     require_roles,
@@ -121,10 +121,15 @@ def test_portal_bound_token_is_enforced_by_the_decorator():
 
         return app.test_client()
 
-    assert build_portal(lambda req: "p-1").get("/private", headers=headers).status_code == 200
-    r = build_portal(lambda req: "p-2").get("/private", headers=headers)
+    assert build_portal(lambda req: ResolvedPortal(id="p-1")).get("/private", headers=headers).status_code == 200
+    r = build_portal(lambda req: ResolvedPortal(id="p-2")).get("/private", headers=headers)
     assert r.status_code == 401 and r.json["code"] == "INVALID_AUDIENCE"
     assert build_portal(None).get("/private", headers=headers).status_code == 401  # fail closed
+
+    # A pre-portal token (no portalId) is valid only on the root portal.
+    plain = {"Authorization": f"Bearer {make_token(SECRET, claims={'userId': 'u-1'})}"}
+    assert build_portal(lambda req: ResolvedPortal(id="p-1")).get("/private", headers=plain).status_code == 401
+    assert build_portal(lambda req: ResolvedPortal(id="root", is_root=True)).get("/private", headers=plain).status_code == 200
 
     def down(req):
         raise RuntimeError("db down")

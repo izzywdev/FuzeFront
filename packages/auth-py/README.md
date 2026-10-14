@@ -120,19 +120,30 @@ session table directly); a service that needs revocation must supply one.
 
 With multi-tenant portals on, FuzeFront mints session tokens carrying a `portalId`, and
 the host rejects a token presented on a different portal. A Python service reachable
-through several portal hosts must do the same: pass a resolver that returns the portal id
-for the request.
+through several portal hosts must do the same: pass a resolver that returns the portal the
+request arrived on, as a `ResolvedPortal(id, is_root)` (or `None` for no portal context).
 
 ```python
-@require_auth(verifier, portal=lambda req: lookup_portal(req.host))   # Flask
-auth = auth_dependency(verifier, portal=lambda req: lookup_portal(req.url.hostname))   # FastAPI
+from fuzefront_auth import ResolvedPortal
+
+def portal_for(req):                      # your own host -> portal lookup
+    row = lookup_portal(req.host)
+    return ResolvedPortal(id=row.id, is_root=row.is_root) if row else None
+
+@require_auth(verifier, portal=portal_for)                  # Flask
+auth = auth_dependency(verifier, portal=portal_for)         # FastAPI
 ```
 
-A token with a `portalId` is accepted only if the resolver returns the same id (mismatch =
-401); with no resolver configured it is rejected (a claimed binding with nothing to check it
-against never falls through); a resolver that raises is a retryable 503. Tokens with no
-`portalId` are accepted; the host's policy for such legacy tokens on non-root portals is
-enforced at the host/gateway, not here. `Identity.portal_id` carries the claim.
+Rules, all fail closed:
+
+- A token with a `portalId` is accepted only if the resolver returns the same id (mismatch
+  is 401). With no resolver configured it is rejected: a claimed binding with nothing to
+  check it against never falls through.
+- A token with no `portalId` (pre-portal / flag-off) has no verifiable binding, so it is
+  valid only on the root portal: on a non-root portal it is a 401, as at the host. With no
+  portal context (or no resolver) it is accepted.
+- A resolver that raises, or returns anything other than `ResolvedPortal`/`None`, is a
+  retryable 503, never a 401. `Identity.portal_id` carries the claim.
 
 ## Signing-key rules (federated-jwks)
 
