@@ -36,7 +36,7 @@ Three families, each with a job: **Space Grotesk** (`display`) carries the perso
 
 ## Components
 
-67 primitives across 13 groups, each styled entirely with tokens — no raw hex, px or font outside the token set. Guideline docs are generated from each component's source `.prompt.md` / `.d.ts`; a curated set carries a rich visual preview (the rest show a usage specimen). The authoritative implementations ship as the private npm package `@fuzefront/design-system`.
+68 primitives across 13 groups, each styled entirely with tokens — no raw hex, px or font outside the token set. Guideline docs are generated from each component's source `.prompt.md` / `.d.ts`; a curated set carries a rich visual preview (the rest show a usage specimen). The authoritative implementations ship as the private npm package `@fuzefront/design-system`.
 
 | Group | Primitives |
 |---|---|
@@ -48,7 +48,7 @@ Three families, each with a job: **Space Grotesk** (`display`) carries the perso
 | Feedback | `Alert`, `EmptyState`, `ProgressMeter`, `Rating`, `Skeleton`, `Spinner`, `StatusCallout`, `StatusPill`, `Stepper`, `Toast` |
 | Forms | `CodeField`, `FieldLabel`, `FieldStatus`, `FileDropZone`, `Input`, `PasswordChecklist`, `SearchField`, `Select`, `Textarea`, `Toggle` |
 | Launcher | `AppCard`, `AppTile`, `HealthDot`, `IntegrationBadge` |
-| Layout | `AuthCard`, `Center`, `CenteredCard`, `Container`, `Eyebrow`, `InfoRow`, `ListStack`, `Panel`, `ResponsiveGrid`, `SectionHead`, `Stack`, `Wrap` |
+| Layout | `AuthCard`, `Center`, `CenteredCard`, `Container`, `Eyebrow`, `InfoRow`, `ListStack`, `Panel`, `ResponsiveGrid`, `Section`, `SectionHead`, `Stack`, `Wrap` |
 | Mobile | `BottomNav`, `BottomSheet`, `Drawer` |
 | Navigation | `Breadcrumb`, `Pagination` |
 | Overlay | `Modal` |

@@ -287,6 +287,8 @@ export interface IconButtonProps
   /** Toggled/selected state — holds the quaternary fill and accent color. */
   active?: boolean;
   disabled?: boolean;
+  /** Native button ref, used by dialogs and drawers to restore focus. */
+  ref?: React.Ref<HTMLButtonElement>;
 }
 
 export function IconButton(props: IconButtonProps): React.JSX.Element;
@@ -1082,6 +1084,27 @@ export interface ResponsiveGridProps {
 }
 
 export declare function ResponsiveGrid(props: ResponsiveGridProps): JSX.Element;
+
+// ----- Section (layout) -----
+export type SectionTone = "surface" | "muted" | "transparent";
+export type SectionPadding = "sm" | "md" | "lg";
+
+export interface SectionProps {
+  /** Element/component to render as. Default "section". */
+  as?: ElementType;
+  /** Background tone, from the DS surface tokens. Default "surface" (white in light theme). */
+  tone?: SectionTone;
+  /** Vertical rhythm, mapped to the spacing scale: sm=--space-16 (64px), md=--space-20 (80px), lg=--space-24 (96px). Default "lg". */
+  padding?: SectionPadding;
+  /** Adds a top divider (border-block-start) in --border-color. Default false. */
+  divider?: boolean;
+  className?: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+export declare function Section(props: SectionProps): JSX.Element;
 
 // ----- SectionHead (layout) -----
 export interface SectionHeadProps extends HTMLAttributes<HTMLDivElement> {
