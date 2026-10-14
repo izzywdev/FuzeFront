@@ -46,10 +46,14 @@ export type PolicyGatePerformance = {
   revisions?: string[]
   revisionCount?: number
   latestRevision?: string
+  /** All explicit outcomes observed for this policy/gate pair. */
+  total: number
   passed: number
   failed: number
   cancelled: number
   running: number
+  /** Passed share of terminal outcomes; zero when no terminal outcome exists. */
+  passRate: number
   latestCompletedAt?: string
 }
 
@@ -216,14 +220,19 @@ export function executionPerformance(executions: TestExecution[], artifacts: Qua
         gateArtifactId: evaluation.gateArtifactId,
         ...(gate?.kind === 'gate' ? { gateTitle: gate.title, gateSourcePath: gate.sourcePath } : {}),
         revisions: [],
+        total: 0,
         passed: 0,
         failed: 0,
         cancelled: 0,
         running: 0,
+        passRate: 0,
       }
       current.revisions ??= []
       if (!current.revisions.includes(execution.revision)) current.revisions.push(execution.revision)
+      current.total++
       current[evaluation.status]++
+      const terminalOutcomes = current.passed + current.failed + current.cancelled
+      current.passRate = terminalOutcomes ? current.passed / terminalOutcomes : 0
       if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
       results.set(key, current)
     }

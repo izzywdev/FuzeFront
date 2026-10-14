@@ -1438,10 +1438,16 @@ export class PostgresCatalogStore implements CatalogStore {
            AND pair.value->>'gateArtifactId' IS NOT NULL
        ), aggregates AS (
          SELECT repository_id,policy_artifact_id,gate_artifact_id,
+                count(*)::integer AS total,
                 (count(*) FILTER (WHERE outcome='passed'))::integer AS passed,
                 (count(*) FILTER (WHERE outcome='failed'))::integer AS failed,
                 (count(*) FILTER (WHERE outcome='cancelled'))::integer AS cancelled,
                 (count(*) FILTER (WHERE outcome='running'))::integer AS running,
+                CASE
+                  WHEN count(*) FILTER (WHERE outcome<>'running')=0 THEN 0
+                  ELSE (count(*) FILTER (WHERE outcome='passed'))::double precision /
+                       (count(*) FILTER (WHERE outcome<>'running'))
+                END AS pass_rate,
                 count(DISTINCT revision)::integer AS revision_count,
                 (array_agg(revision ORDER BY occurred_at DESC,revision DESC))[1] AS latest_revision,
                 max(completed_at) AS latest_completed_at
@@ -1463,10 +1469,12 @@ export class PostgresCatalogStore implements CatalogStore {
       repositoryId: row.repository_id,
       policyArtifactId: row.policy_artifact_id,
       gateArtifactId: row.gate_artifact_id,
+      total: row.total,
       passed: row.passed,
       failed: row.failed,
       cancelled: row.cancelled,
       running: row.running,
+      passRate: row.pass_rate,
       revisionCount: row.revision_count,
       latestRevision: row.latest_revision,
       latestCompletedAt: row.latest_completed_at?.toISOString(),

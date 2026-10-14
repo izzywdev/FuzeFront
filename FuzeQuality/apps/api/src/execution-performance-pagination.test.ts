@@ -3,7 +3,8 @@ import type { PolicyGatePerformance } from '@fuzequality/core'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
 
 const pair = (policyArtifactId: string, gateArtifactId: string, failed: number, passed: number): PolicyGatePerformance => ({
-  repositoryId: 'repo-1', policyArtifactId, gateArtifactId, failed, passed, cancelled: 0, running: 0,
+  repositoryId: 'repo-1', policyArtifactId, gateArtifactId, total: failed + passed, failed, passed,
+  cancelled: 0, running: 0, passRate: passed / (failed + passed),
 })
 
 describe('policy-gate performance pagination', () => {

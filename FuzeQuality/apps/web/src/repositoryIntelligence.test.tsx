@@ -642,10 +642,12 @@ describe('RepositoryIntelligence flow inventory', () => {
       repositoryId: repository.id,
       policyArtifactId: 'policy-auth',
       gateArtifactId: 'gate-auth',
+      total: 3,
       passed: 2,
       failed: 1,
       cancelled: 0,
       running: 0,
+      passRate: 2 / 3,
     }])
     vi.mocked(api.executionTrend).mockRejectedValue(new Error('trend unavailable'))
 
@@ -683,17 +685,21 @@ describe('RepositoryIntelligence flow inventory', () => {
       repositoryId: repository.id,
       policyArtifactId: 'policy-latest',
       gateArtifactId: 'gate-latest',
+      total: 4,
       failed: 3,
       passed: 1,
       cancelled: 0,
       running: 0,
+      passRate: 0.25,
     }
     const older = {
       ...latest,
       policyArtifactId: 'policy-older',
       gateArtifactId: 'gate-older',
+      total: 5,
       failed: 1,
       passed: 4,
+      passRate: 0.8,
     }
     vi.mocked(api.executionPerformance)
       .mockResolvedValueOnce({ items: [latest], page: { nextCursor: 'performance-page-2', hasMore: true } })
@@ -718,13 +724,15 @@ describe('RepositoryIntelligence flow inventory', () => {
       repositoryId: repository.id,
       policyArtifactId: 'policy-first',
       gateArtifactId: 'gate-first',
-      failed: 2, passed: 1, cancelled: 0, running: 0,
+      total: 3, failed: 2, passed: 1, cancelled: 0, running: 0, passRate: 1 / 3,
     }
     const continued = {
       ...first,
       policyArtifactId: 'policy-continued',
       gateArtifactId: 'gate-continued',
+      total: 2,
       failed: 1,
+      passRate: 0.5,
     }
     vi.mocked(api.executionPerformance).mockImplementation(async (repositoryId, filter) => {
       if (!filter?.cursor) return {
@@ -1451,10 +1459,12 @@ describe('RepositoryIntelligence flow inventory', () => {
         gateSourcePath: '.github/workflows/auth.yml',
         revisionCount: 3,
         latestRevision: 'historical-source-revision',
+        total: 4,
         passed: 3,
         failed: 1,
         cancelled: 0,
         running: 0,
+        passRate: 0.75,
       },
     ])
 
@@ -1465,6 +1475,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText('governance/auth.md → .github/workflows/auth.yml')).toBeVisible()
     expect(screen.getByText('Observed across 3 source revisions')).toHaveAttribute('title', 'historical-source-revision')
     expect(screen.getByText(/3 passed · 1 failed/)).toBeVisible()
+    expect(screen.getByText('4 observations · 75% passed among terminal outcomes')).toBeVisible()
   })
 
   it('filters execution evidence and gate performance by provider', async () => {

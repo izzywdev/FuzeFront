@@ -40,11 +40,12 @@ describe('execution performance', () => {
       { id: '1', repositoryId: 'repo', tenantId: 'org', provider: 'external', externalRunId: '1', attempt: 1, revision: 'a', kind: 'ci', status: 'passed', name: 'auth', policyArtifactIds: ['policy'], gateArtifactIds: ['gate'], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
       { id: '2', repositoryId: 'repo', tenantId: 'org', provider: 'external', externalRunId: '2', attempt: 1, revision: 'b', kind: 'ci', status: 'failed', name: 'auth', policyArtifactIds: ['policy', 'policy-other'], gateArtifactIds: ['gate', 'gate-other'], gateEvaluations: [{ policyArtifactId: 'policy', gateArtifactId: 'gate', status: 'failed' }], thresholds: [], evidenceLinks: [], completedAt: '2026-01-02T00:00:00.000Z' },
       { id: '3', repositoryId: 'repo', tenantId: 'org', provider: 'external', externalRunId: '3', attempt: 1, revision: 'c', kind: 'ci', status: 'passed', name: 'unlinked', policyArtifactIds: [], gateArtifactIds: ['gate'], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
+      { id: '4', repositoryId: 'repo', tenantId: 'org', provider: 'external', externalRunId: '4', attempt: 1, revision: 'd', kind: 'ci', status: 'running', name: 'auth', policyArtifactIds: ['policy'], gateArtifactIds: ['gate'], gateEvaluations: [{ policyArtifactId: 'policy', gateArtifactId: 'gate', status: 'running' }], thresholds: [], evidenceLinks: [] },
     ], [
       { id: 'policy', repositoryId: 'repo', kind: 'policy', title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Require authentication', evidence: [] },
       { id: 'gate', repositoryId: 'repo', kind: 'gate', title: 'Authentication gate', sourcePath: '.github/workflows/auth.yml', summary: 'Enforce authentication', evidence: [] },
     ])
-    expect(rows).toEqual([{ repositoryId: 'repo', policyArtifactId: 'policy', policyTitle: 'Authentication policy', policySourcePath: 'governance/auth.md', gateArtifactId: 'gate', gateTitle: 'Authentication gate', gateSourcePath: '.github/workflows/auth.yml', revisions: ['a', 'b'], passed: 1, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-01-02T00:00:00.000Z' }])
+    expect(rows).toEqual([{ repositoryId: 'repo', policyArtifactId: 'policy', policyTitle: 'Authentication policy', policySourcePath: 'governance/auth.md', gateArtifactId: 'gate', gateTitle: 'Authentication gate', gateSourcePath: '.github/workflows/auth.yml', revisions: ['a', 'b', 'd'], total: 3, passed: 1, failed: 1, cancelled: 0, running: 1, passRate: 0.5, latestCompletedAt: '2026-01-02T00:00:00.000Z' }])
   })
 
   it('keeps identical artifact identifiers isolated by repository', () => {
@@ -67,8 +68,8 @@ describe('execution performance', () => {
     })
 
     expect(executionPerformance([execution('repo-one', 'passed'), execution('repo-two', 'failed')])).toEqual([
-      { repositoryId: 'repo-two', policyArtifactId: 'policy', gateArtifactId: 'gate', revisions: ['a'], passed: 0, failed: 1, cancelled: 0, running: 0 },
-      { repositoryId: 'repo-one', policyArtifactId: 'policy', gateArtifactId: 'gate', revisions: ['a'], passed: 1, failed: 0, cancelled: 0, running: 0 },
+      { repositoryId: 'repo-two', policyArtifactId: 'policy', gateArtifactId: 'gate', revisions: ['a'], total: 1, passed: 0, failed: 1, cancelled: 0, running: 0, passRate: 0 },
+      { repositoryId: 'repo-one', policyArtifactId: 'policy', gateArtifactId: 'gate', revisions: ['a'], total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1 },
     ])
   })
 })

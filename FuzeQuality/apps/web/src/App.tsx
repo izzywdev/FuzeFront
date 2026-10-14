@@ -5234,6 +5234,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     {pair.cancelled} cancelled · {pair.running} running
                   </code>
                   <small>
+                    {pair.total} observations · {Math.round(pair.passRate * 100)}% passed among terminal outcomes
+                  </small>
+                  <small>
                     {pair.latestCompletedAt
                       ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}`
                       : 'No completed run yet'}

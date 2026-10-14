@@ -208,7 +208,7 @@ describe('test execution evidence', () => {
     const completedAt = new Date('2026-10-10T12:00:00.000Z')
     const query = vi.fn().mockResolvedValue({ rows: [{
       repository_id: 'repo-1', policy_artifact_id: 'policy-1', gate_artifact_id: 'gate-1',
-      passed: 4, failed: 2, cancelled: 0, running: 0, revision_count: 3,
+      total: 6, passed: 4, failed: 2, cancelled: 0, running: 0, pass_rate: 2 / 3, revision_count: 3,
       latest_revision: 'revision-c', latest_completed_at: completedAt,
     }] })
     const store = new PostgresCatalogStore('postgres://unused')
@@ -220,7 +220,7 @@ describe('test execution evidence', () => {
       limit: 51,
     })).resolves.toEqual([{
       repositoryId: 'repo-1', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1',
-      passed: 4, failed: 2, cancelled: 0, running: 0, revisionCount: 3,
+      total: 6, passed: 4, failed: 2, cancelled: 0, running: 0, passRate: 2 / 3, revisionCount: 3,
       latestRevision: 'revision-c', latestCompletedAt: completedAt.toISOString(),
     }])
 
@@ -235,6 +235,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("$8='recovered'")
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
+    expect(String(sql)).toContain('AS pass_rate')
     expect(String(sql)).toContain('ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id')
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', null, 'github-actions', null, null, 'recovered', 90_000, 300_000, null, null, null,
@@ -340,7 +341,7 @@ describe('test execution evidence', () => {
 
     await expect(store.policyGatePerformance('repo-1', 'org-1', { limit: 2 })).resolves.toEqual([
       expect.objectContaining({
-        policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', passed: 1, failed: 1,
+        policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', total: 2, passed: 1, failed: 1, passRate: 0.5,
         revisionCount: 2, latestRevision: 'revision-b', revisions: undefined,
       }),
     ])

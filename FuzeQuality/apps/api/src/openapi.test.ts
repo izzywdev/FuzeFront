@@ -161,6 +161,12 @@ describe('contract discovery', () => {
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.PolicyGatePerformance.properties.revisionCount.minimum).toBe(0)
       expect(schemas.PolicyGatePerformance.properties.latestRevision.type).toBe('string')
+      expect(schemas.PolicyGatePerformance.required).toEqual(
+        ['repositoryId', 'policyArtifactId', 'gateArtifactId', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate']
+      )
+      expect(schemas.PolicyGatePerformance.properties.passRate).toMatchObject({
+        type: 'number', format: 'double', minimum: 0, maximum: 1,
+      })
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/execution-trend'].get.parameters
           .filter((parameter: { name?: string }) => parameter.name)

@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.34.0
+  version: 0.35.0
   license:
     name: UNLICENSED
 servers:
@@ -1682,7 +1682,7 @@ components:
           description: False when the received lifecycle event was an idempotent replay.
     PolicyGatePerformance:
       type: object
-      required: [repositoryId, policyArtifactId, gateArtifactId, passed, failed, cancelled, running]
+      required: [repositoryId, policyArtifactId, gateArtifactId, total, passed, failed, cancelled, running, passRate]
       properties:
         repositoryId: { type: string }
         policyArtifactId: { type: string }
@@ -1693,10 +1693,20 @@ components:
         gateSourcePath: { type: string }
         revisionCount: { type: integer, minimum: 0 }
         latestRevision: { type: string }
+        total:
+          type: integer
+          minimum: 0
+          description: All explicit outcomes observed for this policy/gate pair.
         passed: { type: integer, minimum: 0 }
         failed: { type: integer, minimum: 0 }
         cancelled: { type: integer, minimum: 0 }
         running: { type: integer, minimum: 0 }
+        passRate:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Passed share of terminal outcomes; zero when no terminal outcome exists.
         latestCompletedAt: { type: string, format: date-time }
     ExecutionOutcomeTrend:
       type: object
