@@ -83,7 +83,7 @@ it('filters and trends only timestamped execution evidence', () => {
   const executions = [
     { id: 'one', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'three', attempt: 1, revision: 'a', kind: 'ci' as const, status: 'failed' as const, name: 'CI', startedAt: '2026-10-07T11:59:30.000Z', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
     { id: 'two', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'two', attempt: 2, revision: 'b', kind: 'load' as const, status: 'failed' as const, name: 'Load', completedAt: '2026-10-08T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
-    { id: 'three', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'three', attempt: 2, revision: 'c', kind: 'ci' as const, status: 'passed' as const, name: 'CI', startedAt: '2026-10-07T11:59:00.000Z', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [{ kind: 'video' as const, name: 'Playwright recording', url: 'https://evidence.example/post-prod.webm' }] },
+    { id: 'three', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'three', attempt: 2, revision: 'c', kind: 'ci' as const, status: 'passed' as const, name: 'CI', startedAt: '2026-10-07T11:59:00.000Z', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [{ metric: 'p95', observed: 640, unit: 'ms', operator: 'lte' as const, target: 500, passed: false }], evidenceLinks: [{ kind: 'video' as const, name: 'Playwright recording', url: 'https://evidence.example/post-prod.webm' }] },
   ]
   expect(filterTestExecutions(executions, { kind: 'load', from: '2026-10-08T00:00:00.000Z' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { provider: 'github-actions' })).toEqual([])
@@ -91,6 +91,8 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { externalRunId: 'three' })).toEqual([executions[0], executions[2]])
   expect(filterTestExecutions(executions, { evidenceKind: 'video' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { evidenceKind: 'report' })).toEqual([])
+  expect(filterTestExecutions(executions, { thresholdOutcome: 'failed' })).toEqual([executions[2]])
+  expect(filterTestExecutions(executions, { thresholdOutcome: 'passed' })).toEqual([])
   expect(filterTestExecutions(executions, { revision: 'b' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { workflowPath: '.github/workflows/load.yml' })).toEqual([])
   expect(filterTestExecutions(executions, { attemptScope: 'initial' })).toEqual([executions[0]])

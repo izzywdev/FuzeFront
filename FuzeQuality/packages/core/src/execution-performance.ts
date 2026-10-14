@@ -64,6 +64,7 @@ export type PolicyGatePerformancePage = {
 
 export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'externalRunId' | 'revision' | 'workflowPath'>> & {
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
+  thresholdOutcome?: 'passed' | 'failed'
   policyArtifactId?: string
   gateArtifactId?: string
   attemptScope?: 'initial' | 'retry' | 'recovered'
@@ -121,6 +122,9 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.status && execution.status !== filter.status) return false
     if (filter.provider && execution.provider !== filter.provider) return false
     if (filter.evidenceKind && !execution.evidenceLinks.some(link => link.kind === filter.evidenceKind)) return false
+    if (filter.thresholdOutcome && !execution.thresholds.some(threshold =>
+      threshold.passed === (filter.thresholdOutcome === 'passed')
+    )) return false
     if (filter.externalRunId && execution.externalRunId !== filter.externalRunId) return false
     if (!executionMatchesPolicyGate(execution, filter.policyArtifactId, filter.gateArtifactId)) return false
     if (filter.revision && execution.revision !== filter.revision) return false

@@ -1621,6 +1621,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('isolates execution history, trends, and policy-gate outcomes with breached thresholds', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Threshold evidence'), {
+      target: { value: 'failed' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        thresholdOutcome: 'failed',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        thresholdOutcome: 'failed',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        thresholdOutcome: 'failed',
+      })
+    })
+  })
+
   it('drills execution history, trends, and gate performance into one provider run', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

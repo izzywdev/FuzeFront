@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.41.0
+  version: 0.42.0
   license:
     name: UNLICENSED
 servers:
@@ -825,6 +825,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
+        - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
         - $ref: '#/components/parameters/ExecutionPolicyArtifactId'
         - $ref: '#/components/parameters/ExecutionGateArtifactId'
@@ -962,6 +963,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
+        - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
         - $ref: '#/components/parameters/ExecutionPolicyArtifactId'
         - $ref: '#/components/parameters/ExecutionGateArtifactId'
@@ -1013,6 +1015,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
+        - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
         - $ref: '#/components/parameters/ExecutionPolicyArtifactId'
         - $ref: '#/components/parameters/ExecutionGateArtifactId'
@@ -1161,6 +1164,11 @@ components:
       in: query
       description: Require at least one retained execution attachment of this kind.
       schema: { type: string, enum: [video, report, trace, screenshot, log, other] }
+    ExecutionThresholdOutcome:
+      name: thresholdOutcome
+      in: query
+      description: Require at least one retained threshold measurement with this evaluated outcome.
+      schema: { type: string, enum: [passed, failed] }
     ExecutionExternalRunId:
       name: externalRunId
       in: query

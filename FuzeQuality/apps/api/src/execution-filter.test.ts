@@ -8,6 +8,7 @@ describe('execution evidence filter', () => {
       status: 'failed',
       provider: 'github-actions',
       evidenceKind: 'video',
+      thresholdOutcome: 'failed',
       externalRunId: '123456789',
       policyArtifactId: 'policy-auth',
       gateArtifactId: 'gate-auth',
@@ -36,6 +37,12 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.parse({ evidenceKind: 'video' }).evidenceKind).toBe('video')
     expect(executionPageFilterSchema.parse({ evidenceKind: 'trace' }).evidenceKind).toBe('trace')
     expect(executionFilterSchema.safeParse({ evidenceKind: 'artifact' }).success).toBe(false)
+  })
+
+  it('accepts only evaluated threshold outcomes', () => {
+    expect(executionFilterSchema.parse({ thresholdOutcome: 'failed' }).thresholdOutcome).toBe('failed')
+    expect(executionPageFilterSchema.parse({ thresholdOutcome: 'passed' }).thresholdOutcome).toBe('passed')
+    expect(executionFilterSchema.safeParse({ thresholdOutcome: 'running' }).success).toBe(false)
   })
 
   it('bounds an exact provider run identifier', () => {

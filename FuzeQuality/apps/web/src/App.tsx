@@ -3398,6 +3398,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceKind, setExecutionEvidenceKind] = useState<
     TestExecution['evidenceLinks'][number]['kind'] | ''
   >('')
+  const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
+    'passed' | 'failed' | ''
+  >('')
   const [executionExternalRunId, setExecutionExternalRunId] = useState('')
   const [executionPolicyArtifactId, setExecutionPolicyArtifactId] = useState('')
   const [executionGateArtifactId, setExecutionGateArtifactId] = useState('')
@@ -3611,6 +3614,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         status: executionStatus,
         provider: executionProvider,
         evidenceKind: executionEvidenceKind,
+        thresholdOutcome: executionThresholdOutcome,
         externalRunId: executionExternalRunId.trim(),
         policyArtifactId: executionPolicyArtifactId,
         gateArtifactId: executionGateArtifactId,
@@ -3627,7 +3631,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionExternalRunId, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionThresholdOutcome, executionExternalRunId, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5133,6 +5137,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="screenshot">Screenshot</option>
                 <option value="log">Log</option>
                 <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              Threshold evidence
+              <select
+                value={executionThresholdOutcome}
+                onChange={event =>
+                  setExecutionThresholdOutcome(event.target.value as 'passed' | 'failed' | '')
+                }
+              >
+                <option value="">All threshold states</option>
+                <option value="failed">Breached thresholds</option>
+                <option value="passed">Satisfied thresholds</option>
               </select>
             </label>
             <label>

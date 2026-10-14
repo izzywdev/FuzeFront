@@ -136,6 +136,7 @@ describe('contract discovery', () => {
         const parameterRefs = document.paths[path].get.parameters.map((parameter: { $ref?: string }) => parameter.$ref)
         expect(parameterRefs).toContain('#/components/parameters/ExecutionExternalRunId')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceKind')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionThresholdOutcome')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionPolicyArtifactId')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionGateArtifactId')
       }
@@ -143,6 +144,9 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionGateArtifactId.schema.maxLength).toBe(500)
       expect(document.components.parameters.ExecutionEvidenceKind.schema.enum).toEqual([
         'video', 'report', 'trace', 'screenshot', 'log', 'other',
+      ])
+      expect(document.components.parameters.ExecutionThresholdOutcome.schema.enum).toEqual([
+        'passed', 'failed',
       ])
       expect(document.components.parameters.ExecutionWorkflowPath.schema.maxLength).toBe(1000)
       expect(
