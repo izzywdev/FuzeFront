@@ -12,7 +12,7 @@ import path from 'path';
 import type { Knex } from 'knex';
 import { dbDescribe } from './helpers/testDb';
 import { fromUuid, toUuid } from '@izzywdev/fuzefront-identity';
-import { createWorld, EDITOR_ACTIONS as EDITOR, PLATFORM, Principal, publishPriorityList, World } from './helpers/sharedWorld';
+import { ADMIN_ACTIONS, createWorld, EDITOR_ACTIONS as EDITOR, P, PLATFORM, Principal, publishPriorityList, World } from './helpers/sharedWorld';
 import { flagClientWith } from './helpers/flagClient';
 
 const state: { db: Knex | undefined } = { db: undefined };
@@ -140,6 +140,51 @@ dbDescribe('duplicate keys across renderings yield exactly one effective row (re
         expect(res.status).toBe(200);
         expect(res.body.items.map((r: any) => r.id)).toEqual([first]);
       }
+    });
+
+    it('the PLATFORM OPERATOR (caller org == platform org): a key duplicated across the two renderings of the platform org is returned exactly ONCE, for either claim, with correct paging', async () => {
+      const platformUuid = toUuid(PLATFORM as never);
+      const opByUuid: Principal = { userId: toUuid(P.op.userId as never), orgId: platformUuid };
+      w.authz.allowCatalog(opByUuid.orgId, opByUuid.userId, ADMIN_ACTIONS);
+      const typeRow = await insertList(PLATFORM, 'dup-op', { visibility: 'platform' }, 10);
+      const uuidRow = await insertList(platformUuid, 'dup-op', { visibility: 'platform' }, 20); // older, but not the TypeID claim's
+      const soloUuid = await insertList(platformUuid, 'dup-op-solo', { visibility: 'platform' }, 5);
+      // the exact claim wins, each time (it used to return NEITHER: two predicates with two claims were ANDed)
+      for (let i = 0; i < 3; i++) {
+        const t = await list(P.op, '?include_shared=true&key=dup-op');
+        expect({ status: t.status, ids: t.body.items.map((r: any) => r.id) }).toEqual({ status: 200, ids: [typeRow] });
+        const u = await list(opByUuid, '?include_shared=true&key=dup-op');
+        expect({ status: u.status, ids: u.body.items.map((r: any) => r.id) }).toEqual({ status: 200, ids: [uuidRow] });
+      }
+      // the default listing (instance roles only) is the same single scope
+      w.authz.give(PLATFORM, P.op.userId, typeRow, 'list-owner');
+      w.authz.give(PLATFORM, P.op.userId, uuidRow, 'list-owner');
+      expect((await list(P.op, '?key=dup-op&visibility=platform')).body.items.map((r: any) => r.id)).toEqual([typeRow]);
+      // the whole platform set pages exactly once per key, whatever the page size and the claim
+      const distinctKeys = (await w.db('selection_lists').where({ visibility: 'platform', status: 'active' }).distinct('key')).map((r: any) => r.key).sort();
+      expect(distinctKeys).toContain('dup-op');
+      for (const [claim, who] of [['TypeID', P.op], ['bare UUID', opByUuid]] as Array<[string, Principal]>) {
+        for (const limit of [1, 2, 50]) {
+          const seen: any[] = [];
+          let cursor: string | null = null;
+          let pages = 0;
+          do {
+            const res: any = await list(who, `?include_shared=true&visibility=platform&limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`);
+            expect(res.status).toBe(200);
+            seen.push(...res.body.items);
+            cursor = res.body.page.nextCursor;
+            pages += 1;
+          } while (cursor && pages < 100);
+          expect({ claim, limit, keys: seen.map((r) => r.key).sort() }).toEqual({ claim, limit, keys: distinctKeys });
+          expect(new Set(seen.map((r) => r.id)).size).toBe(seen.length);
+          const op = seen.find((r) => r.key === 'dup-op');
+          expect(op.id).toBe(claim === 'TypeID' ? typeRow : uuidRow);
+          expect(seen.find((r) => r.key === 'dup-op-solo').id).toBe(soloUuid);
+        }
+      }
+      // other tenants still see ONE row of the platform org's duplicated key (the platform group's own winner)
+      const x = orgWorld();
+      for (const p of [x.byType, x.byUuid]) expect((await list(p, '?include_shared=true&key=dup-op')).body.items.map((r: any) => r.id)).toEqual([typeRow]);
     });
 
     it('shadowing: the org\'s own (duplicated) list hides the common list of the same key, and appears once', async () => {

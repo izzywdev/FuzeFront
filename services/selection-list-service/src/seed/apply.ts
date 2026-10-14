@@ -58,10 +58,11 @@ import {
   systemEventContext,
   type EventContext,
 } from '../events/emitters';
+import { isSharedListsEnabled } from '../flags';
 import { enqueueEvent, lockOrgOutbox, mintEventId, wireOrgId } from '../events/outbox';
 import { logger } from '../lib/logger';
-import { configuredPlatformOrgId, orgRenderings, orgWritesSuspended, resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
-import { getQuota, lockQuotaScope } from '../services/quota.service';
+import { canonicalOrgId, configuredPlatformOrgId, orgRenderings, orgWritesSuspended, resolvePlatformOrgId, ROOT_PLATFORM_ORG_WIRE, sameOrg, type Visibility } from '../lib/sharedLists';
+import { getQuota, getQuotaAcross, lockQuotaScope } from '../services/quota.service';
 import { canonicalJson, computeSourceHash, hashCanonical, hashText } from './canonical';
 import {
   hashItemContent,
@@ -719,11 +720,19 @@ async function planLists(
 // ---------------------------------------------------------------------------
 
 async function enforceQuota(trx: Trx, org: string, plans: ListPlan[]): Promise<void> {
-  const quota = await getQuota(org, trx);
-  await lockQuotaScope(trx, `org_lists:${org}`);
+  // Shared lists ON: the org is ONE org whatever rendering of its id a list or an override was stored under (a
+  // bare-UUID list or override written through the HTTP API belongs to the same organization as this TypeID-targeted
+  // seed event). So, exactly like the HTTP write paths: ONE canonical quota lock, the most restrictive override across
+  // every rendering, and the active lists counted across every rendering. OFF: the 4.0.0 exact id (unchanged).
+  const shared = await isSharedListsEnabled({ organizationId: org });
+  const renderings = shared ? orgRenderings(org) : null;
+  // (the org outbox lock is already held by runSeed: outbox lock -> quota lock, the order the HTTP paths use)
+  await lockQuotaScope(trx, `org_lists:${renderings ? canonicalOrgId(org) ?? org : org}`);
+  const quota = renderings ? await getQuotaAcross(renderings, trx) : await getQuota(org, trx);
   const details: SeedFailureDetail[] = [];
 
-  const [{ count }] = await trx('selection_lists').where({ organization_id: org, status: 'active' }).count('id as count');
+  const activeLists = trx('selection_lists').where({ status: 'active' });
+  const [{ count }] = await (renderings ? activeLists.whereIn('organization_id', renderings) : activeLists.where({ organization_id: org })).count('id as count');
   const current = parseInt(String(count), 10);
   const newlyActive = plans.filter((p) => p.kind === 'create' || (p.kind === 'update' && p.reactivate)).length;
   if (current + newlyActive > quota.maxLists) {

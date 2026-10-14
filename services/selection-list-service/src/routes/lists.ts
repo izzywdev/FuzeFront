@@ -324,7 +324,10 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
       const own = notOutrankedByRendering('sl', orgRenderings(req.orgId as string), req.orgId as string);
       whereClause.push(own.sql);
       params.push(...own.params);
-      if (includeShared && platformOrg) {
+      // The common-list group is the platform org's renderings. When the caller IS the platform org the two groups are
+      // the SAME set of rows: a second predicate (a different claim, so a different winner) would be ANDed with the
+      // first and reject both rows of a duplicated key. One scope, one winner rule: the caller's claim decides.
+      if (includeShared && platformOrg && !sameOrg(req.orgId, platformOrg)) {
         const common = notOutrankedByRendering('sl', orgForms(platformOrg), platformOrg);
         whereClause.push(common.sql);
         params.push(...common.params);
