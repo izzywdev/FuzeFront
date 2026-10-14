@@ -177,7 +177,8 @@ if (process.env.MUTATE_MIRROR && listId) {
 `MUTATE_MIRROR=typeid`, then `MUTATE_MIRROR=uuid`, and run `npx jest security/mirror-not-authority`: the six
 `USER_B cannot ...` tests must FAIL under both. Recorded result (current master service): both forms fail 6 of 8.
 The previous harness (TypeID-only injection) failed 6 of 8 under `typeid` but PASSED 8 of 8 under `uuid` - the
-vacuous pass this fixes. Discard the patched `dist` afterwards (rebuild).
+vacuous pass this fixes. Against the PR #1462 service (bare-UUID rows) the new harness fails 6 of 8 under both forms, and the old one
+failed 6 of 8 under `typeid` but passed 8 of 8 under `uuid`. Discard the patched `dist` afterwards (rebuild).
 
 ## What these tests do NOT cover
 
