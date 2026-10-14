@@ -404,8 +404,14 @@ class TestRungGating(unittest.TestCase):
         self.assertEqual(_norm(w["fallback-anthropic-key"]), "${{ inputs.anthropic-api-key }}")
         for vendor in ("openai", "gemini"):
             expr = _norm(w[f"fallback-{vendor}-key"])
-            self.assertIn("inputs.review-only == 'true'", expr)
-            self.assertIn(f"inputs.{vendor}-api-key", expr)
+            # The `a && b || c` ternary only yields b when b is truthy. The suppression
+            # branch must therefore be the `|| ''` fallback, never a falsy `&& ''`
+            # middle operand (that always falls through to the key).
+            self.assertNotRegex(expr, r"&&\s*''", "falsy '' as the && operand never suppresses")
+            self.assertEqual(
+                expr,
+                f"${{{{ inputs.review-only != 'true' && inputs.{vendor}-api-key || '' }}}}",
+            )
 
 
 class TestEvaluator(unittest.TestCase):
