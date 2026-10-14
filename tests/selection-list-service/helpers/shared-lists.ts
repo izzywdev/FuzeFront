@@ -29,11 +29,13 @@
 import { mintTestToken } from './auth';
 import { rawFetch, SERVICE_BASE_URL } from './client';
 import { testOrg, testUser } from './ids';
+import { FAKE_SECURITY_URL } from './security-url';
 import { PLATFORM_ORG_ID } from './sl9-constants';
 
 export { PLATFORM_ORG_ID };
 
-export const FAKE_SECURITY_URL: string = process.env['FAKE_SECURITY_URL'] ?? 'http://localhost:3002';
+// Resolved in helpers/security-url.ts (SECURITY_SERVICE_URL by default; FAKE_SECURITY_URL only as an explicit override).
+export { FAKE_SECURITY_URL };
 
 /** Base URL of a second service instance running with the shared-lists flag OFF (see header). */
 export const FLAG_OFF_BASE_URL: string | undefined = process.env['SHARED_LISTS_FLAG_OFF_URL'];
