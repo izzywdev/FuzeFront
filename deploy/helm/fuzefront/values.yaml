@@ -184,6 +184,9 @@ secret:
   # Override via --set or a gitignored values file. NEVER commit real creds.
   googleClientId: ""
   googleClientSecret: ""
+  # Supply via a private values file or existingSecret. Never commit OAuth secrets.
+  connectorStateEncryptionKey: ""
+  connectorOAuth: {}
   # SMTP password for Authentik's email backend (leave empty for MailHog / open relay).
   smtpPassword: ""
   # AI provider keys for the chat-service and LiteLLM gateway.
@@ -242,7 +245,10 @@ backend:
   tolerations: []
 
 connectors:
-  fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8000"
+  # FuzeKeys' backend Service exposes its HTTP API on 8002.  Using the old
+  # 8000 development port makes every connector status request fail at the
+  # FuzeFront proxy with a 502, even when the FuzeKeys pods are healthy.
+  fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8002"
 
 # Backend 3-way split (dual-serving). Both default to disabled; the old backend
 # still serves every route until the Phase 3 cutover flips routing. Enable in
@@ -255,23 +261,40 @@ securityService:
     clusterRbac:
       # Renders the ClusterRole/ClusterRoleBinding that let fuzefront-security
       # create TokenReviews. TokenReview is a non-namespaced virtual resource, so
-      # this grant CANNOT be narrowed to a Role — the only way to remove it from
-      # this repo is to stop performing TokenReviews here and consume FuzeInfra's
-      # identity broker instead (docs/planning/workload-identity-layering.md).
+      # this grant CANNOT be narrowed to a Role in THIS chart — the only way to
+      # remove it from this repo is to stop performing TokenReviews here and
+      # consume FuzeInfra's identity broker instead
+      # (docs/planning/workload-identity-layering.md).
       #
       # Declared explicitly, with a value, rather than left to a `| default` at
       # the render site: per CLAUDE.md "Helm values hygiene", a coercion filter on
       # a .Values lookup hides a missing default instead of declaring it.
       #
-      # DEFAULT ON, deliberately, and this is NOT the end state. The broker does
-      # not exist yet and `POST /api/v1/security/tokens/workload` is a live route,
-      # so flipping this to false today breaks workload identity and the FuzeKeys
-      # registration that PR #1198 unblocked. Retirement is a single coordinated
-      # change: set this false AND drop ClusterRole/ClusterRoleBinding from
-      # clusterResourceWhitelist in deploy/argocd/project.yaml. Dropping only one
-      # of the two fails deploy/scripts/check-cluster-scoped-whitelist.sh, which
-      # is how that pairing is enforced rather than merely documented.
-      enabled: true
+      # RETIRED to false (issue #1137 / FuzeInfra#1306, #1308). The broker is now
+      # SERVING for prod: FuzeInfra#1306 adopted the `fuzefront-workload-
+      # authenticator` ClusterRole/ClusterRoleBinding into its own chart (same
+      # names — the live objects and the TokenReview grant are UNCHANGED, only
+      # ownership moved) and narrowed them to `tokenreviews: create` only.
+      # FuzeInfra#1308 then deleted FuzeInfra's stale duplicate `fuzefront`
+      # AppProject and gated registration so a wide copy (ClusterRole-permitting)
+      # can never be re-applied — so this chart must stop rendering these two
+      # objects, paired with narrowing clusterResourceWhitelist in
+      # deploy/argocd/project.yaml back to Namespace-only in the same change (see
+      # that file). That pairing is what unblocks every FuzeFront rollout — Argo
+      # aborts the WHOLE sync over one unpermitted cluster-scoped resource, which
+      # is the actual root cause of applications-service migrations 013/014
+      # never executing: the pods that would have run them were never created.
+      #
+      # LOCAL (kind): this is a plain `helm upgrade --install` (no Argo, no
+      # AppProject), so nothing here is enforced locally — but FuzeInfra's
+      # adoption above is PROD-ONLY (helm/fuzeinfra values-contabo.yaml; the base
+      # values.yaml ships `workloadIdentity.authenticators: []`), so a kind
+      # cluster gets NO TokenReview grant for fuzefront-security from either
+      # side once this default is false. If you need to exercise
+      # `POST /api/v1/security/tokens/workload` / the FuzeKeys workload-identity
+      # flow locally, override explicitly:
+      #   --set securityService.workloadIdentity.clusterRbac.enabled=true
+      enabled: false
   # See templates/security-networkpolicy.yaml. port/*Namespace were dropped by the
   # values.yaml rewrite in 8dedb865 (#523) and are restored here — without them the
   # template renders `port: 0`, which the API server rejects (FuzeInfra#501).
@@ -300,6 +323,15 @@ securityService:
   replicas: 1
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # backend/security/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from the
+  # env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster, so every span
+  # export fails silently and nothing reaches Tempo. Point it at FuzeInfra's
+  # collector explicitly, the same way kafka.brokers/PERMIT_PDP_URL are wired
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # @fuzefront/feature-flags (OpenFeature + Unleash) client — gates
   # fuzefront.identity.root-membership (FF-EPIC-17) and future security-service
   # release/kill-switch flags (utils/feature-flags.ts / rootMembershipFlag.ts).
@@ -908,6 +940,34 @@ selectionListService:
   # and the flag fuzefront.selection-lists.service (default OFF => 404) gates it.
   ingress:
     enabled: true
+    # Edge rate limit on the two published route families (review M-4), per
+    # client IP. ENABLED by default: it only renders when this service AND its
+    # ingress are enabled (the service ships dark), it touches only these two
+    # route families (never another service's traffic), and the defaults are an
+    # abuse bound, not a meter -- interactive use stays far below them.
+    #   rps             sustained requests per second per client
+    #   burstMultiplier extra requests tolerated = rps x burstMultiplier
+    # nginx-ingress: limit-rps / limit-burst-multiplier annotations.
+    # traefik:       a rateLimit Middleware (average = rps, burst = rps x multiplier).
+    # `resolve` is the hot path (one call renders a page of stored ids), so its
+    # ceiling is higher than the CRUD family (`api`), which cannot be split into
+    # reads vs writes at the edge (same path, different method). Every key is
+    # declared here on purpose: the template fails the render if one is missing
+    # (`required`), it never substitutes a default.
+    rateLimit:
+      enabled: true
+      # Traefik only: group clients by this request header instead of the TCP
+      # peer. REQUIRED behind a CDN, where the peer is a shared edge address and
+      # per-peer limiting would throttle unrelated users together. Empty =
+      # Traefik's default source (the peer, or X-Forwarded-For per Traefik's own
+      # trusted-proxy config). values-prod.yaml sets it (Cloudflare).
+      clientIpHeader: ""
+      resolve:
+        rps: 100
+        burstMultiplier: 4
+      api:
+        rps: 30
+        burstMultiplier: 4
 
 # MCP SSE gateway for the selection-list-service. Ships dark by default alongside
 # the service itself. Both selectionListService.enabled AND selectionListsMcp.enabled
@@ -985,6 +1045,11 @@ devportalService:
   # role — same EXTRA_DATABASES pattern as notificationService.dbName) so
   # devportal's knex_migrations ledger never collides with the backend's.
   dbName: "fuzefront_devportal"
+  # The in-cluster FuzeInfra PostgreSQL Service does not terminate TLS.
+  # Keep this explicit: devportal-service otherwise defaults DB_SSL to true in
+  # production, which makes migration fail at startup and leaves the public
+  # catalog behind a 503 with every pod CrashLoopBackOff.
+  dbSsl: "false"
   image:
     repository: fuzefront/devportal-service
     tag: local
@@ -1504,6 +1569,14 @@ kafkaTopics:
       partitions: 1
       replicationFactor: 1
       retentionMs: 1209600000
+    - name: identity.authorization.changed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: identity.authorization.changed.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000
     # --- notifications (backend/security → email-service) ---
     - name: notify.email.requested
       partitions: 3
@@ -1562,6 +1635,18 @@ kafkaTopics:
       retentionMs: 604800000
       cleanupPolicy: delete
     - name: selection-lists.list.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    # Shared + common lists and copy-on-write forks (HTTP contract 4.1.0, @fuzefront/shared 1.3.0;
+    # docs/planning/selection-lists-shared-and-fork.md). Same settings as the other change events.
+    - name: selection-lists.list.forked
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.visibility.changed
       partitions: 3
       replicationFactor: 1
       retentionMs: 604800000

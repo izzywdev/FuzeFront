@@ -37,7 +37,7 @@ When reporting security vulnerabilities, please include:
 
 ### Automated Security Scanning
 
-FrontFuse employs a comprehensive security scanning approach using **GitHub Advanced Security** and complementary tools:
+FuzeFront employs a comprehensive security scanning approach using **GitHub Advanced Security** and complementary tools:
 
 #### Primary Security Stack
 
@@ -147,7 +147,7 @@ We provide security updates for the following versions:
 
 ## 📋 Security Checklist for Contributors
 
-When contributing to FrontFuse, please ensure:
+When contributing to FuzeFront, please ensure:
 
 ### Code Review Security
 
@@ -258,7 +258,7 @@ For security-related questions or concerns:
 
 ## 🏆 Security Hall of Fame
 
-We recognize and thank security researchers who help improve FrontFuse security:
+We recognize and thank security researchers who help improve FuzeFront security:
 
 <!-- Security researchers will be listed here -->
 
@@ -274,4 +274,4 @@ Security updates and announcements are published:
 
 ---
 
-**Remember: Security is everyone's responsibility. Thank you for helping keep FrontFuse secure!** 🔐
+**Remember: Security is everyone's responsibility. Thank you for helping keep FuzeFront secure!** 🔐

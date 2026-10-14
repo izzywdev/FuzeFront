@@ -23,7 +23,7 @@ FuzeQuality API -- session lookup --> FuzeFront Security
         |                                  |
         |<-- user ID, active tenant, roles -+
         |
-        +-- authorization check (tenant, quality_<resource>, action) --> FuzeFront Security / Permit
+        +-- authorization check (tenant, fuzequality_<resource>, action) --> FuzeFront Security / Permit
         |                                                                  |
         +<------------------------------ allow or deny ------------------+
         |
@@ -41,20 +41,20 @@ decision could be attempted.
 ## Product policy contract
 
 `FuzeQuality/registration/policy.json` is the source declaration. FuzeFront
-namespaces every bare resource as `quality_<BareResource>` before synchronizing
+namespaces every bare resource as `fuzequality_<BareResource>` before synchronizing
 the product policy to Permit. API code must use the constants in
 `apps/api/src/platform-permissions.ts`; it must not assemble ad-hoc
 `fuzequality.*` names.
 
 | API concern | Product resource | Representative actions |
 | --- | --- | --- |
-| Repository catalog and scans | `quality_Repository` | `read`, `onboard`, `scan` |
-| Evidence and requirements | `quality_Evidence` | `read`, `export` |
-| Review proposals | `quality_Suggestion` | `read`, `review`, `suppress` |
-| Requested test implementation | `quality_TestImplementation` | `create`, `read` |
-| Tenant membership | `quality_OrganizationAccess` | `read`, `manage` |
-| Repository configuration | `quality_RepositoryAdministration` | `manage` |
-| Cross-tenant platform administration | `quality_PlatformAdministration` | `read` |
+| Repository catalog and scans | `fuzequality_Repository` | `read`, `onboard`, `scan` |
+| Evidence and requirements | `fuzequality_Evidence` | `read`, `export` |
+| Review proposals | `fuzequality_Suggestion` | `read`, `review`, `suppress` |
+| Requested test implementation | `fuzequality_TestImplementation` | `create`, `read` |
+| Tenant membership | `fuzequality_OrganizationAccess` | `read`, `manage` |
+| Repository configuration | `fuzequality_RepositoryAdministration` | `manage` |
+| Cross-tenant platform administration | `fuzequality_PlatformAdministration` | `read` |
 
 Platform-administration checks require both an allowed product-policy decision
 and the platform `admin` role returned by FuzeFront. Tenant owner/admin roles
