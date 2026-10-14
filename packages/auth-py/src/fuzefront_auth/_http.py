@@ -52,12 +52,21 @@ def is_loopback_http(url: Any) -> bool:
 
 
 def _non_public_literal(host: str) -> bool:
+    host = host.lower().rstrip(".")
     if host == "localhost" or host.endswith(".localhost"):
         return True
     try:
-        ip = ipaddress.ip_address(host)
+        ip: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(host)
     except ValueError:
-        return False  # a DNS name: see the module docstring
+        # Not a canonical literal. The platform resolver still reads legacy IPv4 spellings
+        # ("2130706433", "127.1", "0x7f.1", octal) as addresses, so decode them the same way
+        # before deciding it is a DNS name.
+        try:
+            ip = ipaddress.IPv4Address(socket.inet_aton(host))
+        except OSError:
+            return False  # a DNS name: see the module docstring
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped  # ::ffff:127.0.0.1 is the loopback address
     return not ip.is_global
 
 
@@ -75,6 +84,22 @@ def _check_url(url: Any, allow_loopback_http: bool) -> None:
     if parsed.scheme == "http" and allow_loopback_http and host in _LOOPBACK_HOSTS:
         return
     raise ValueError("only https URLs are permitted")
+
+
+MAX_REDIRECT_BODY_BYTES = 65_536
+
+
+class CappedBody:
+    """Wraps a redirect response so the base handler's drain ``read()`` is bounded."""
+
+    def __init__(self, fp: Any) -> None:
+        self._fp = fp
+
+    def read(self, amt: int | None = None) -> bytes:
+        return self._fp.read(MAX_REDIRECT_BODY_BYTES)
+
+    def close(self) -> None:
+        self._fp.close()
 
 
 class _Sockets:
@@ -110,15 +135,25 @@ class _Sockets:
 
 
 def _opener(allow_loopback_http: bool, socks: _Sockets) -> urllib.request.OpenerDirector:
+    def tracked(create):
+        # Register the raw socket the moment it exists, i.e. BEFORE any proxy CONNECT or TLS
+        # handshake, so a stall in those phases can be cut off at the deadline too.
+        def wrapper(*args, **kwargs):
+            sock = create(*args, **kwargs)
+            socks.add(sock)
+            return sock
+
+        return wrapper
+
     class HTTPConn(http.client.HTTPConnection):
-        def connect(self) -> None:
-            super().connect()
-            socks.add(self.sock)
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self._create_connection = tracked(self._create_connection)
 
     class HTTPSConn(http.client.HTTPSConnection):
-        def connect(self) -> None:
-            super().connect()
-            socks.add(self.sock)
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self._create_connection = tracked(self._create_connection)
 
     class Http(urllib.request.HTTPHandler):
         def http_open(self, req):
@@ -129,13 +164,21 @@ def _opener(allow_loopback_http: bool, socks: _Sockets) -> urllib.request.Opener
             return self.do_open(HTTPSConn, req, context=self._context)
 
     class CheckedRedirect(urllib.request.HTTPRedirectHandler):
-        """Validate each redirect target before the redirected request is made."""
+        """Validate each redirect target before the redirected request is made, and never
+        read more than a small, fixed amount of a redirect response's body."""
 
         max_redirections = _MAX_REDIRECTS
 
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             _check_url(newurl, allow_loopback_http)
             return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+        # The base class drains the whole redirect body with an unbounded fp.read() before it
+        # follows the Location; hand it a bounded reader instead.
+        def http_error_302(self, req, fp, code, msg, headers):
+            return super().http_error_302(req, CappedBody(fp), code, msg, headers)
+
+        http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
 
     opener = urllib.request.OpenerDirector()
     for handler in (

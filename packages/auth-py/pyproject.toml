@@ -9,7 +9,9 @@ description = "Consumable authN middleware for Python FuzeFront-family services 
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "UNLICENSED" }
-dependencies = ["PyJWT[crypto]>=2.8,<3"]
+# >=2.10.1: 2.10.0 accepted an `iss` that was merely a substring of the configured issuer
+# (GHSA-75c5-xw7c-p5pm). The verifier also compares `iss` exactly itself.
+dependencies = ["PyJWT[crypto]>=2.10.1,<3"]
 
 [project.optional-dependencies]
 fastapi = ["fastapi>=0.100", "starlette>=0.27"]

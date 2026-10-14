@@ -502,3 +502,55 @@ def test_a_discovered_loopback_jwks_uri_is_refused_when_the_configured_issuer_is
     assert attempted == [("http://127.0.0.1:9/jwks", False)]
     # Refused by the URL policy itself (ValueError), not by a failed connection attempt.
     assert raised == [ValueError]
+
+
+def test_a_key_rotated_in_place_under_the_same_kid_is_picked_up_after_the_cooldown(
+    jwks_server, rsa_key, other_rsa_key, clock
+):
+    from conftest import _jwk
+
+    v = verifier(jwks_server)
+    assert v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)).user_id == "u-9"
+    # The issuer replaces the key MATERIAL but keeps the kid.
+    jwks_server["keys"][:] = [_jwk(other_rsa_key.public_key(), "rsa-1", "RS256")]
+    rotated = make_token(other_rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)
+    assert code_of(v, rotated) == "INVALID_SIGNATURE"  # inside the cooldown: no refetch yet
+    clock(31)
+    assert v.verify(rotated).user_id == "u-9"  # one cooldown-controlled refresh, then accepted
+
+
+def test_bad_signatures_cannot_drive_refreshes_faster_than_the_cooldown(jwks_server, rsa_key, other_rsa_key, clock):
+    v = verifier(jwks_server)
+    v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD))
+    hits = jwks_server["jwks_hits"]
+    forged = make_token(other_rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)
+    for _ in range(20):
+        clock(1)
+        assert code_of(v, forged) == "INVALID_SIGNATURE"
+    assert jwks_server["jwks_hits"] <= hits + 1  # at most one refresh in the 20s window
+
+
+def test_a_failed_refresh_after_a_bad_signature_still_reports_the_bad_signature(
+    jwks_server, rsa_key, other_rsa_key, clock
+):
+    v = verifier(jwks_server)
+    v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD))
+    jwks_server["fail"] = True
+    clock(31)
+    forged = make_token(other_rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)
+    assert code_of(v, forged) == "INVALID_SIGNATURE"  # not turned into an outage by the refresh
+
+
+def test_the_issuer_is_compared_exactly_even_if_the_library_is_lenient(jwks_server, rsa_key, monkeypatch):
+    # PyJWT 2.10.0 accepted an `iss` that was merely a substring of the configured issuer.
+    import jwt as pyjwt
+
+    real = pyjwt.decode
+
+    def lenient(token, key, **kwargs):
+        kwargs.pop("issuer", None)  # behave as if the library's issuer check passed anything
+        return real(token, key, **kwargs)
+
+    monkeypatch.setattr(pyjwt, "decode", lenient)
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "iss": "https://issuer"})  # prefix
+    assert code_of(verifier(jwks_server), token) == "INVALID_ISSUER"

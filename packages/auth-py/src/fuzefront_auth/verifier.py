@@ -135,6 +135,13 @@ def _bound_claim(payload: dict[str, Any], name: str) -> str | None:
     raise AuthError("MALFORMED", f"token has a malformed `{name}` claim")
 
 
+def _require_exact_issuer(payload: dict[str, Any], expected: str) -> None:
+    """Exact `iss` match, independent of the JWT library. PyJWT 2.10.0 accepted an issuer that
+    was merely a substring of the configured one; never rely on a single layer for this."""
+    if payload.get("iss") != expected:
+        raise AuthError("INVALID_ISSUER", "unexpected token issuer")
+
+
 def _claim_roles(payload: dict[str, Any], name: str) -> tuple[str, ...]:
     value = payload.get(name)
     if isinstance(value, list):
@@ -215,6 +222,8 @@ class _LegacyVerifier:
             )
         except Exception as err:  # noqa: BLE001 - every failure is a denial
             raise _to_auth_error(err) from None
+        if cfg.issuer is not None:
+            _require_exact_issuer(payload, cfg.issuer)
 
         # Only a PLAIN platform session authenticates here. A token carrying a
         # `kind` (`fuze-org-session`, `fuze-workload`, `fuze-delegation`) is a
@@ -422,8 +431,12 @@ class _KeyResolver:
         # signature verification may be used.
         return [c for c in candidates if c.can_verify(alg)]
 
-    def get_keys(self, token: str) -> list[Any]:
-        """Candidate verification keys for ``token`` (never empty; raises otherwise)."""
+    def get_keys(self, token: str, after_signature_failure: bool = False) -> list[Any]:
+        """Candidate verification keys for ``token`` (never empty; raises otherwise).
+
+        With ``after_signature_failure`` the cached keys just failed to verify the token, so a
+        fresh key set is fetched (at most once per cooldown) and the result may be EMPTY,
+        meaning there is nothing newer to try."""
         header = jwt.get_unverified_header(token)
         kid = header.get("kid")
         alg = header.get("alg")
@@ -433,6 +446,12 @@ class _KeyResolver:
             # Refuse before any key lookup: HS*/none can never be valid here, and an
             # unusable token must not be able to trigger a JWKS refresh.
             raise AuthError("INVALID_SIGNATURE", "token algorithm is not permitted")
+        if after_signature_failure:
+            with self._lock:
+                if not self._may_attempt():
+                    return []
+                self._refresh()
+                return [cand.jwk.key for cand in self._lookup(kid, alg)]
         with self._lock:
             if self._expired():
                 self._keys, self._keyless = {}, []  # an expired set is never served, even if the refetch fails
@@ -483,7 +502,7 @@ class _FederatedVerifier:
         last: Exception | None = None
         for key in keys:
             try:
-                return jwt.decode(
+                payload = jwt.decode(
                     token,
                     key,
                     algorithms=_FEDERATED_ALGORITHMS,
@@ -494,14 +513,33 @@ class _FederatedVerifier:
                 )
             except jwt.InvalidSignatureError as err:
                 last = err
+                continue
+            _require_exact_issuer(payload, cfg.issuer)
+            return payload
         raise last if last is not None else AuthError("JWKS_UNAVAILABLE", "could not resolve signing key")
+
+    def _verified_payload(self, token: str) -> dict[str, Any]:
+        resolver = self._resolver()
+        try:
+            return self._decode_with_any(token, resolver.get_keys(token))
+        except jwt.InvalidSignatureError:
+            # The cached key(s) may be stale: an issuer can rotate key MATERIAL under the same
+            # kid. Re-fetch once (cooldown-controlled, so bad tokens cannot drive refreshes) and
+            # retry; if there is nothing newer to try, the signature really is bad.
+            try:
+                fresh = resolver.get_keys(token, after_signature_failure=True)
+            except AuthError:
+                fresh = []  # could not refresh: the original answer (bad signature) stands
+            if not fresh:
+                raise
+            return self._decode_with_any(token, fresh)
 
     def verify(self, token: str) -> Identity:
         if not token:
             raise AuthError("NO_TOKEN", "no bearer token presented")
         cfg = self._config
         try:
-            payload = self._decode_with_any(token, self._resolver().get_keys(token))
+            payload = self._verified_payload(token)
         except Exception as err:  # noqa: BLE001 - every failure is a denial
             raise _to_auth_error(err) from None
 

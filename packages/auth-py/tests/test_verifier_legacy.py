@@ -222,3 +222,18 @@ def test_a_malformed_session_id_is_rejected_not_passed_as_none(bad):
 def test_absent_binding_claims_are_still_fine():
     ident = verifier().verify(make_token(SECRET, claims={"userId": "u"}))
     assert (ident.portal_id, ident.session_id) == (None, None)
+
+
+def test_legacy_issuer_is_compared_exactly_even_if_the_library_is_lenient(monkeypatch):
+    import jwt as pyjwt
+
+    real = pyjwt.decode
+
+    def lenient(token, key, **kwargs):
+        kwargs.pop("issuer", None)
+        return real(token, key, **kwargs)
+
+    monkeypatch.setattr(pyjwt, "decode", lenient)
+    v = verifier(issuer="urn:expected")
+    assert code_of(v, make_token(SECRET, claims={"userId": "u", "iss": "urn:"})) == "INVALID_ISSUER"
+    assert v.verify(make_token(SECRET, claims={"userId": "u", "iss": "urn:expected"})).user_id == "u"

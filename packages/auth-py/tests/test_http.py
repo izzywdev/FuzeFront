@@ -55,6 +55,16 @@ def server():
         "https://169.254.169.254/latest/meta-data",
         "https://[::1]/jwks",
         "https://0.0.0.0/jwks",
+        # legacy / non-canonical spellings the platform resolver reads as addresses
+        "https://2130706433/jwks",  # 127.0.0.1
+        "https://127.1/jwks",
+        "https://0x7f000001/jwks",
+        "https://017700000001/jwks",
+        "https://2852039166/jwks",  # 169.254.169.254
+        "https://[::ffff:127.0.0.1]/jwks",
+        "https://[::ffff:169.254.169.254]/jwks",
+        "https://LOCALHOST/jwks",
+        "https://localhost./jwks",
         # loopback http is refused unless the CALLER opts in from configuration
         "http://127.0.0.1/jwks",
         "http://localhost/jwks",
@@ -328,3 +338,112 @@ def _dribble_with_length(body: bytes, gap: float):
 
     threading.Thread(target=serve, daemon=True).start()
     return srv, stop
+
+
+
+def test_public_dns_names_and_global_addresses_are_not_blocked_by_the_literal_policy():
+    from fuzefront_auth._http import _non_public_literal
+
+    for host in ("example.com", "issuer.example.co.uk", "8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"):
+        assert _non_public_literal(host) is False, host
+
+
+def test_a_stalled_proxy_connect_is_cut_off_and_its_socket_released(monkeypatch):
+    import time
+
+    # HTTPS goes through a configured proxy that dribbles its CONNECT response. The socket
+    # must be tracked before the CONNECT/TLS phase or the deadline cannot reach it.
+    srv, stop = _dribble_server(b"HTTP/1.1 200 Connection established\r\nX-Pad: " + b"a" * 20_000, 0.2)
+    try:
+        for var in ("no_proxy", "NO_PROXY"):
+            monkeypatch.setenv(var, "")
+        monkeypatch.setenv("https_proxy", f"http://127.0.0.1:{srv.getsockname()[1]}")
+        monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{srv.getsockname()[1]}")
+        t0 = time.monotonic()
+        with pytest.raises(OSError):
+            fetch_json("https://issuer.example.com/jwks", 0.5)
+        assert time.monotonic() - t0 < 3.0
+        assert _wait_until_gone(), "worker thread was abandoned during proxy CONNECT"
+    finally:
+        stop.set()
+        srv.close()
+
+
+def test_redirect_bodies_are_read_through_a_bounded_reader(monkeypatch):
+    import io
+    import urllib.request
+
+    from fuzefront_auth._http import MAX_REDIRECT_BODY_BYTES, CappedBody
+
+    reads = []
+
+    class Spy(io.BytesIO):
+        def read(self, n=-1):
+            data = super().read(n)
+            reads.append(len(data))
+            return data
+
+    body = CappedBody(Spy(b"x" * (5 * 1024 * 1024)))
+    assert len(body.read()) == MAX_REDIRECT_BODY_BYTES
+    assert len(body.read(None)) == MAX_REDIRECT_BODY_BYTES  # never unbounded, whatever is asked
+
+    # and the redirect handler really hands the base class the bounded wrapper
+    seen = {}
+
+    def fake_302(self, req, fp, code, msg, headers):
+        seen["fp"] = fp
+        return "followed"
+
+    monkeypatch.setattr(urllib.request.HTTPRedirectHandler, "http_error_302", fake_302)
+    from fuzefront_auth import _http
+
+    opener = _http._opener(True, _http._Sockets())
+    handler = next(h for h in opener.handlers if h.__class__.__name__ == "CheckedRedirect")
+    for code in ("301", "302", "303", "307", "308"):
+        seen.clear()
+        assert getattr(handler, f"http_error_{code}")(None, io.BytesIO(b"x"), int(code), "m", {}) == "followed"
+        assert isinstance(seen["fp"], CappedBody)
+
+
+def test_a_redirect_with_a_large_body_is_still_followed(server):
+    server["/ok"] = ("json", {"ok": True})
+
+    class Big(BaseHTTPRequestHandler):
+        pass
+
+    # server fixture sends redirects with no body; build one with a 3 MiB body on its own port
+    import socket
+    import threading as th
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(5)
+    stop = th.Event()
+    target = f"{server['base']}/ok"
+
+    def serve():
+        srv.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                continue
+            try:
+                conn.recv(4096)
+                body = b"x" * (3 * 1024 * 1024)
+                conn.sendall(
+                    f"HTTP/1.1 302 Found\r\nLocation: {target}\r\nContent-Length: {len(body)}\r\n\r\n".encode()
+                )
+                try:
+                    conn.sendall(body)
+                except OSError:
+                    pass  # the client stopped reading, which is the point
+            finally:
+                conn.close()
+
+    th.Thread(target=serve, daemon=True).start()
+    try:
+        assert fetch_json(f"http://127.0.0.1:{srv.getsockname()[1]}/r", 3, allow_loopback_http=True) == {"ok": True}
+    finally:
+        stop.set()
+        srv.close()
