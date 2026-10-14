@@ -167,7 +167,8 @@ instances on the same database**, both started like the CI job does (`NODE_ENV=t
 
 | | main instance (`SERVICE_BASE_URL`) | flag-OFF instance (`SHARED_LISTS_FLAG_OFF_URL`) |
 |---|---|---|
-| `FLAGS_FORCE_ON` | `fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists` | `fuzefront.selection-lists.service` |
+| `FUZE_FLAGS_PROVIDER` | `offline` | `offline` |
+| `FUZE_FLAGS_OFFLINE_ON` | `fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists` | `fuzefront.selection-lists.service` |
 | `SELECTION_LIST_PLATFORM_ORG_ID` | `org_01test00000000platform00000` | the same |
 | `PORT` | e.g. `3011` | e.g. `3012` |
 

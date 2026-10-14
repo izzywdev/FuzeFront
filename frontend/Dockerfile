@@ -62,7 +62,8 @@ ARG VITE_APP_TITLE="FuzeFront Platform"
 # PER USER at runtime via GET /api/flags (backend -> Unleash), so they can be
 # targeted (e.g. the `developers` segment). A build-time constant is baked into
 # the bundle and identical for every user, which made per-user rollout
-# impossible. Local/e2e forcing is done with the backend's FLAGS_FORCE_ON env.
+# impossible. Local/e2e forcing is done with the backend's offline OpenFeature
+# provider (FUZE_FLAGS_PROVIDER=offline).
 
 # Set environment variables for build
 ENV VITE_API_URL=$VITE_API_URL

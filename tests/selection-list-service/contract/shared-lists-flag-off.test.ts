@@ -7,7 +7,7 @@
  * create / PATCH with a non-`private` visibility -> 400 VALIDATION_ERROR. Authorization never routes through the flag.
  *
  * HOW THE HARNESS RUNS THIS SUITE: a flag is process-wide, so it needs a SECOND service instance on the SAME database with
- * the shared-lists flag NOT forced on, reached through SHARED_LISTS_FLAG_OFF_URL (see helpers/shared-lists.ts). The main
+ * the shared-lists flag NOT on (FUZE_FLAGS_OFFLINE_ON without it), reached through SHARED_LISTS_FLAG_OFF_URL (see helpers/shared-lists.ts). The main
  * instance (SERVICE_BASE_URL, flag ON) is used here only to WRITE the shared data the OFF instance must refuse to serve
  * (a common list, an `org` list, a fork), so the suite proves "OFF hides what ON created" and not merely "OFF has no data".
  * A missing / misconfigured OFF instance fails the suite with an explicit PRECONDITION message — it is never skipped.

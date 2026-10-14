@@ -4,14 +4,16 @@
  *
  * HOW THE HARNESS TURNS THE FEATURE ON (CI / local)
  *   The feature is behind the release flag `fuzefront.selection-lists.shared-lists`
- *   (default OFF, design §7). Like the service flag, the harness forces it with the
- *   non-production escape hatch in the service's flags.ts:
+ *   (default OFF, design §7). Like the service flag, the harness turns it on with the one
+ *   sanctioned CI mechanism, the offline OpenFeature provider (refused under NODE_ENV=production):
  *
- *     main service      FLAGS_FORCE_ON=fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists
+ *     main service      FUZE_FLAGS_PROVIDER=offline
+ *                       FUZE_FLAGS_OFFLINE_ON=fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists
  *                       SELECTION_LIST_PLATFORM_ORG_ID=org_01test00000000platform00000
- *     flag-OFF service  a SECOND instance on the SAME database, FLAGS_FORCE_ON=fuzefront.selection-lists.service
- *                       (shared-lists flag absent), same SELECTION_LIST_PLATFORM_ORG_ID, on its own port;
- *                       tests reach it through SHARED_LISTS_FLAG_OFF_URL (suite: shared-lists-flag-off).
+ *     flag-OFF service  a SECOND instance on the SAME database, FUZE_FLAGS_PROVIDER=offline,
+ *                       FUZE_FLAGS_OFFLINE_ON=fuzefront.selection-lists.service (shared-lists flag absent), same
+ *                       SELECTION_LIST_PLATFORM_ORG_ID, on its own port; tests reach it through
+ *                       SHARED_LISTS_FLAG_OFF_URL (suite: shared-lists-flag-off).
  *
  *   A flag is process-wide, so "both states" needs two processes; sharing the database is what lets
  *   the OFF suite prove that data written while ON is served as 4.0.0 while OFF.
@@ -118,7 +120,7 @@ export async function assertSharedListsOn(baseUrl?: string): Promise<void> {
     throw new Error(
       `PRECONDITION: the service at ${baseUrl ?? SERVICE_BASE_URL} does not run the shared-lists feature ` +
         `(POST visibility:"org" -> ${res.status} ${JSON.stringify(res.body)}). Either the feature is not implemented, or ` +
-        `FLAGS_FORCE_ON lacks fuzefront.selection-lists.shared-lists (see helpers/shared-lists.ts header).`,
+        `FUZE_FLAGS_OFFLINE_ON lacks fuzefront.selection-lists.shared-lists (see helpers/shared-lists.ts header).`,
     );
   }
   await declarePlatformOrg();
