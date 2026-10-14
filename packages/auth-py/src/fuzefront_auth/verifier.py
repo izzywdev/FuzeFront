@@ -450,12 +450,16 @@ class _KeyResolver:
         # signature verification may be used.
         return [c for c in candidates if c.can_verify(alg)]
 
-    def get_keys(self, token: str, after_signature_failure: bool = False) -> list[Any]:
+    def get_keys(
+        self, token: str, after_signature_failure: bool = False, tried: tuple[Any, ...] = ()
+    ) -> list[Any]:
         """Candidate verification keys for ``token`` (never empty; raises otherwise).
 
-        With ``after_signature_failure`` the cached keys just failed to verify the token, so a
-        fresh key set is fetched (at most once per cooldown) and the result may be EMPTY,
-        meaning there is nothing newer to try."""
+        With ``after_signature_failure`` the keys in ``tried`` just failed to verify the token,
+        so a fresh key set is fetched (at most once per cooldown) and the result is the
+        candidates that were NOT already tried; it may be EMPTY, meaning there is nothing newer.
+        Another request may already have installed a newer set (and started the cooldown) after
+        this one read its keys, so the current set is consulted even when no fetch is allowed."""
         header = jwt.get_unverified_header(token)
         kid = header.get("kid")
         alg = header.get("alg")
@@ -467,10 +471,10 @@ class _KeyResolver:
             raise AuthError("INVALID_SIGNATURE", "token algorithm is not permitted")
         if after_signature_failure:
             with self._lock:
-                if not self._may_attempt():
-                    return []
-                self._refresh()
-                return [cand.jwk.key for cand in self._lookup(kid, alg)]
+                if self._may_attempt():
+                    self._refresh()
+                current = [cand.jwk.key for cand in self._lookup(kid, alg)]
+                return [k for k in current if not any(k is t for t in tried)]
         with self._lock:
             if self._expired():
                 self._keys, self._keyless = {}, []  # an expired set is never served, even if the refetch fails
@@ -540,8 +544,9 @@ class _FederatedVerifier:
 
     def _verified_payload(self, token: str) -> dict[str, Any]:
         resolver = self._resolver()
+        keys = resolver.get_keys(token)
         try:
-            return self._decode_with_any(token, resolver.get_keys(token))
+            return self._decode_with_any(token, keys)
         except jwt.InvalidSignatureError:
             # The cached key(s) may be stale: an issuer can rotate key MATERIAL under the same
             # kid. Re-fetch once (cooldown-controlled, so bad tokens cannot drive refreshes) and
@@ -549,7 +554,7 @@ class _FederatedVerifier:
             # A refresh that FAILS is an outage (503): the token may well be valid, and an
             # outage must not read as "your credentials are invalid". Only "no refresh was
             # allowed" (cooldown) or "nothing newer" leaves the bad-signature answer standing.
-            fresh = resolver.get_keys(token, after_signature_failure=True)
+            fresh = resolver.get_keys(token, after_signature_failure=True, tried=tuple(keys))
             if not fresh:
                 raise
             return self._decode_with_any(token, fresh)

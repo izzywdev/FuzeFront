@@ -617,3 +617,40 @@ def test_an_outage_during_a_same_kid_rotation_is_a_503_not_a_bad_signature(
     with pytest.raises(AuthError) as info:
         v.verify(rotated)
     assert (info.value.code, info.value.status) == ("JWKS_UNAVAILABLE", 503)
+
+
+def test_a_request_that_read_stale_keys_retries_the_set_a_concurrent_refresh_installed(
+    jwks_server, rsa_key, other_rsa_key, clock
+):
+    # Request B read the old key set; request A then refreshed (installing the rotated key and
+    # starting the cooldown). B's signature failure must not be final: the cooldown only limits
+    # network fetches, and the current cached set holds a key B has not tried.
+    from conftest import _jwk
+
+    v = verifier(jwks_server)
+    v.verify(make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD))
+    jwks_server["keys"][:] = [_jwk(other_rsa_key.public_key(), "rsa-1", "RS256")]
+    clock(31)
+    rotated = make_token(other_rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)
+
+    resolver = v._resolver()
+    stale = resolver.get_keys(rotated)  # B's read, before anyone refreshed
+    assert v.verify(rotated).user_id == "u-9"  # A: refreshes, installs the rotated key
+    hits = jwks_server["jwks_hits"]
+
+    real = resolver.get_keys
+    calls = []
+
+    def get_keys(token, after_signature_failure=False, tried=()):
+        calls.append(after_signature_failure)
+        if not after_signature_failure and len(calls) == 1:
+            return stale
+        return real(token, after_signature_failure=after_signature_failure, tried=tried)
+
+    resolver.get_keys = get_keys
+    try:
+        assert v.verify(rotated).user_id == "u-9"  # B
+    finally:
+        del resolver.get_keys
+    assert calls == [False, True]
+    assert jwks_server["jwks_hits"] == hits  # no extra network fetch: still inside the cooldown
