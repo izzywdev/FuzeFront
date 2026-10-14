@@ -3,12 +3,17 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
-from fastapi import Depends, FastAPI  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+from typing import Annotated
 
-from fuzefront_auth import Identity, LegacyHs256Config, create_verifier  # noqa: E402
-from fuzefront_auth.middleware.fastapi import auth_dependency, require_roles, require_tenant  # noqa: E402
-from conftest import SECRET, make_token  # noqa: E402
+from conftest import SECRET, make_token
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+from fuzefront_auth import Identity, LegacyHs256Config, create_verifier
+from fuzefront_auth.middleware.fastapi import (
+    auth_dependency,
+    require_roles,
+    require_tenant,
+)
 
 
 def build(resolver=None):
@@ -18,19 +23,19 @@ def build(resolver=None):
     app = FastAPI()
 
     @app.get("/private")
-    def private(identity: Identity = Depends(auth)):
+    def private(identity: Annotated[Identity, Depends(auth)]):
         return {"user": identity.user_id}
 
     @app.get("/open")
-    def open_route(identity: Identity | None = Depends(maybe)):
+    def open_route(identity: Annotated[Identity | None, Depends(maybe)]):
         return {"user": identity.user_id if identity else None}
 
     @app.get("/admin")
-    def admin(identity: Identity = Depends(require_roles(auth, ["admin"]))):
+    def admin(identity: Annotated[Identity, Depends(require_roles(auth, ["admin"]))]):
         return {"ok": True}
 
     @app.get("/t1")
-    def tenant(identity: Identity = Depends(require_tenant(auth, "t-1"))):
+    def tenant(identity: Annotated[Identity, Depends(require_tenant(auth, "t-1"))]):
         return {"ok": True}
 
     return TestClient(app)

@@ -1,7 +1,6 @@
 import pytest
-
-from fuzefront_auth import AuthError, verifier_from_env
 from conftest import AUDIENCE, ISSUER, SECRET, make_token
+from fuzefront_auth import AuthError, verifier_from_env
 
 
 def test_legacy_from_env_verifies_and_enforces_optional_iss_aud():

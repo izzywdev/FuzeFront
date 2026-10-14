@@ -3,9 +3,8 @@ import json
 import time
 
 import pytest
-
-from fuzefront_auth import AuthError, LegacyHs256Config, create_verifier
 from conftest import AUDIENCE, ISSUER, SECRET, make_token
+from fuzefront_auth import AuthError, LegacyHs256Config, create_verifier
 
 
 def verifier(**kw):

@@ -25,8 +25,9 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 import jwt
 from jwt import PyJWKClient
@@ -214,7 +215,7 @@ def _resolve_jwks_uri(config: FederatedJwksConfig) -> str:
         return config.jwks_uri
     discovery = f"{config.issuer.rstrip('/')}/.well-known/openid-configuration"
     try:
-        with urllib.request.urlopen(discovery, timeout=_DISCOVERY_TIMEOUT_SEC) as res:  # noqa: S310 - issuer is server-side config
+        with urllib.request.urlopen(discovery, timeout=_DISCOVERY_TIMEOUT_SEC) as res:
             doc = json.load(res)
     except (urllib.error.URLError, OSError, ValueError):
         raise AuthError("JWKS_UNAVAILABLE", "OIDC discovery failed") from None

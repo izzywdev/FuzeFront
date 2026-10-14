@@ -10,12 +10,11 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+import fuzefront_auth.verifier as verifier_module
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
-
-import fuzefront_auth.verifier as verifier_module
 
 SECRET = "unit-test-shared-secret-0123456789abcdef"  # test-only, not a real credential
 ISSUER = "https://issuer.test.invalid"
@@ -61,7 +60,7 @@ def jwks_server(rsa_key, ec_key):
         def log_message(self, *args):  # keep test output quiet
             pass
 
-        def do_GET(self):  # noqa: N802
+        def do_GET(self):
             if state["fail"]:
                 self.send_response(503)
                 self.end_headers()

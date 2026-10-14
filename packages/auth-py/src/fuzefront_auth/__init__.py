@@ -5,7 +5,13 @@ Python peer of ``@fuzefront/auth``. See README.md and
 """
 
 from .config import verifier_from_env
-from .types import AUTH_CONTRACT_VERSION, AUTH_ERROR_CODES, AuthError, AuthMode, Identity
+from .types import (
+    AUTH_CONTRACT_VERSION,
+    AUTH_ERROR_CODES,
+    AuthError,
+    AuthMode,
+    Identity,
+)
 from .verifier import (
     FederatedJwksConfig,
     LegacyHs256Config,
@@ -28,6 +34,6 @@ __all__ = [
     "Verifier",
     "VerifierConfig",
     "create_verifier",
-    "verify_token",
     "verifier_from_env",
+    "verify_token",
 ]

@@ -9,7 +9,8 @@ threadpool instead of stalling the event loop.
 
 from __future__ import annotations
 
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 try:
     from fastapi import Depends, HTTPException, Request

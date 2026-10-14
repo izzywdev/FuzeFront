@@ -1,16 +1,14 @@
 import time
 
 import pytest
-
-from fuzefront_auth import AuthError, FederatedJwksConfig, create_verifier
 from conftest import AUDIENCE, ISSUER, make_token
+from fuzefront_auth import AuthError, FederatedJwksConfig, create_verifier
 
 GOOD = {"sub": "u-9", "iss": ISSUER, "aud": AUDIENCE, "tenantId": "t-7", "roles": ["editor"], "email": "e@x.y"}
 
 
 def verifier(jwks_server, **kw):
-    cfg = dict(issuer=ISSUER, audience=AUDIENCE, jwks_uri=f"{jwks_server['base']}/jwks")
-    cfg.update(kw)
+    cfg = {"issuer": ISSUER, "audience": AUDIENCE, "jwks_uri": f"{jwks_server['base']}/jwks", **kw}
     return create_verifier(FederatedJwksConfig(**cfg))
 
 

@@ -10,7 +10,8 @@ reach the view.
 from __future__ import annotations
 
 import functools
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 try:
     from flask import g, jsonify, request

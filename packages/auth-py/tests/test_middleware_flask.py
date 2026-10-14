@@ -2,9 +2,13 @@ import pytest
 
 flask = pytest.importorskip("flask")
 
-from fuzefront_auth import LegacyHs256Config, create_verifier  # noqa: E402
-from fuzefront_auth.middleware.flask import require_auth, require_roles, require_tenant  # noqa: E402
-from conftest import SECRET, make_token  # noqa: E402
+from conftest import SECRET, make_token
+from fuzefront_auth import LegacyHs256Config, create_verifier
+from fuzefront_auth.middleware.flask import (
+    require_auth,
+    require_roles,
+    require_tenant,
+)
 
 
 def build(resolver=None):

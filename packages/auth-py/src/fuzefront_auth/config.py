@@ -15,10 +15,16 @@ federated-jwks: FUZEFRONT_AUTH_ISSUER (required), FUZEFRONT_AUTH_AUDIENCE
 from __future__ import annotations
 
 import os
-from typing import Mapping
+from collections.abc import Mapping
 
 from .types import AuthError
-from .verifier import FederatedJwksConfig, LegacyHs256Config, Resolver, Verifier, create_verifier
+from .verifier import (
+    FederatedJwksConfig,
+    LegacyHs256Config,
+    Resolver,
+    Verifier,
+    create_verifier,
+)
 
 
 def verifier_from_env(env: Mapping[str, str] | None = None, *, resolver: Resolver | None = None) -> Verifier:
