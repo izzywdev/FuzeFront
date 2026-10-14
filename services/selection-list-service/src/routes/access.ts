@@ -254,6 +254,10 @@ router.put(
     // Authority-write bookkeeping for compensation (see header).
     const writes: AuthorityWrites = { revokeAttempted: false, grantAttempted: false };
     let prior: string | null = null;
+    // The tenant this user's grant on this list lives in: where an existing grant was made (the mirror's org_id),
+    // else the caller's. Role changes revoke/re-grant/compensate THERE, so a grant is never split across two
+    // renderings of the org id.
+    let grantTenant = orgId;
 
     try {
       if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
@@ -290,9 +294,10 @@ router.put(
         const existing = await trx('selection_list_access')
           .where({ list_id: listId, user_id: userId })
           .whereNull('revoked_at')
-          .first('role');
+          .first('role', 'org_id');
 
         prior = existing ? (existing['role'] as string) : null;
+        if (existing?.['org_id']) grantTenant = existing['org_id'] as string;
 
         // Last-owner guard: demoting the only list-owner is refused. Decided by
         // the AUTHORITY (review M-2): another mirror owner must be confirmed by
@@ -316,7 +321,7 @@ router.put(
 
         const assignment = {
           subject: userId,
-          tenant: orgId,
+          tenant: grantTenant,
           role,
           resource: { type: 'SelectionList', key: listId },
         };
@@ -335,7 +340,7 @@ router.put(
           await getAuthzClient().revoke(
             {
               subject: userId,
-              tenant: orgId,
+              tenant: grantTenant,
               role: existing['role'],
               resource: { type: 'SelectionList', key: listId },
             },
@@ -369,7 +374,7 @@ router.put(
             updated_at = now(),
             revoked_at = NULL
           `,
-          [listId, userId, role, actorId, orgId],
+          [listId, userId, role, actorId, grantTenant],
         );
 
         // Outbox, same transaction: access.granted (previousRole null for a new
@@ -400,7 +405,7 @@ router.put(
         await restoreAuthority({
           op: 'put',
           subject: userId,
-          tenant: orgId,
+          tenant: grantTenant,
           listId,
           prior,
           target: role,
@@ -441,6 +446,7 @@ router.delete(
     // Authority-write bookkeeping for compensation (see file header).
     const writes: AuthorityWrites = { revokeAttempted: false, grantAttempted: false };
     let prior: string | null = null;
+    let grantTenant = orgId; // where the grant being removed was made (see PUT)
 
     try {
       if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
@@ -461,11 +467,12 @@ router.delete(
         const existing = await trx('selection_list_access')
           .where({ list_id: listId, user_id: userId })
           .whereNull('revoked_at')
-          .first('role');
+          .first('role', 'org_id');
 
         // Idempotent: no active grant → nothing to do (204).
         if (!existing) return;
         prior = existing['role'] as string;
+        if (existing['org_id']) grantTenant = existing['org_id'] as string;
 
         // Last-owner guard, decided by the AUTHORITY (review M-2): another
         // mirror owner must be confirmed by the Security API.
@@ -494,7 +501,7 @@ router.delete(
         await getAuthzClient().revoke(
           {
             subject: userId,
-            tenant: orgId,
+            tenant: grantTenant,
             role: existing['role'],
             resource: { type: 'SelectionList', key: listId },
           },
@@ -525,7 +532,7 @@ router.delete(
         await restoreAuthority({
           op: 'delete',
           subject: userId,
-          tenant: orgId,
+          tenant: grantTenant,
           listId,
           prior,
           target: null,

@@ -1145,7 +1145,7 @@ router.delete('/:listId', requireListMutation('delete'), requirePublishForPlatfo
         // ones are remembered so the Security API assignments can be revoked
         // once this transaction has committed (review L-5).
         const liveGrants = await trx.raw<{ rows?: InstanceGrant[] }>(
-          `SELECT user_id, role FROM selection_list_access WHERE list_id = ? AND revoked_at IS NULL`,
+          `SELECT user_id, role, org_id FROM selection_list_access WHERE list_id = ? AND revoked_at IS NULL`,
           [listId],
         );
         purgedGrants = liveGrants?.rows ?? [];

@@ -83,7 +83,11 @@ export async function hasConfirmedOtherOwner(q: OtherOwnerQuery): Promise<boolea
     .executor('selection_list_access')
     .where({ list_id: q.listId, role: 'list-owner' })
     .whereNull('revoked_at')
-    .select('user_id')) as Array<{ user_id: string }>;
+    .select('user_id', 'org_id')) as Array<{ user_id: string; org_id: string | null }>;
+  // Each owner is confirmed in the tenant its grant was made in (the mirror's `org_id`): the grant tenant is
+  // whatever the granting token carried, which need not be the rendering this caller (or the stored list)
+  // uses. Legacy rows without it fall back to the caller's tenant.
+  const grantTenant = new Map(rows.map((r) => [r.user_id, r.org_id ?? q.orgId]));
   const candidates = rows.map((r) => r.user_id).filter((u) => !excluded.has(u));
 
   if (candidates.length === 0) {
@@ -97,7 +101,7 @@ export async function hasConfirmedOtherOwner(q: OtherOwnerQuery): Promise<boolea
     const decisions = await getAuthzClient().bulkCheck(
       chunk.map((subject) => ({
         subject,
-        tenant: q.orgId,
+        tenant: grantTenant.get(subject) ?? q.orgId,
         resource: { type: SELECTION_LIST_RESOURCE, key: q.listId },
         action: OWNER_PROBE_ACTION,
       })),
@@ -214,6 +218,8 @@ export async function restoreAuthority(q: RestoreQuery): Promise<void> {
 export interface InstanceGrant {
   user_id: string;
   role: string;
+  /** The tenant the grant was made in (the mirror's `org_id`); absent on legacy rows => the query's `orgId`. */
+  org_id?: string | null;
 }
 
 export interface RevokeInstanceQuery {
@@ -246,7 +252,7 @@ export async function revokeInstanceGrants(q: RevokeInstanceQuery): Promise<{ re
       getAuthzClient().revoke(
         {
           subject: g.user_id,
-          tenant: q.orgId,
+          tenant: g.org_id ?? q.orgId, // revoke where the grant was made
           role: g.role,
           resource: { type: SELECTION_LIST_RESOURCE, key: q.listId },
         },

@@ -312,7 +312,7 @@ describe('GET /v1/selection-lists/quota — flag ON, happy path', () => {
       .get('/v1/selection-lists/quota')
       .set('Authorization', `Bearer ${token}`);
 
-    expect(mockGetQuotaUsage).toHaveBeenCalledWith('org_myorg', 'usr_myuser');
+    expect(mockGetQuotaUsage).toHaveBeenCalledWith('org_myorg', 'usr_myuser', null);
   });
 
   it('returns 500 when getQuotaUsage throws unexpectedly', async () => {

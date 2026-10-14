@@ -424,22 +424,22 @@ export interface QuotaUsage {
  * @param userId When supplied, `user_lists.current` is the count of active
  *   lists that this user created within the org.
  */
-export async function getQuotaUsage(orgId: string, userId?: string): Promise<QuotaUsage> {
-  const quota = await getQuota(orgId);
+export async function getQuotaUsage(orgId: string, userId?: string, renderings?: string[] | null): Promise<QuotaUsage> {
+  // Shared lists ON (`renderings` given): the org is ONE org whatever rendering of its id the token carries -
+  // limits are the override rows of every rendering (most restrictive wins) and usage counts the lists stored
+  // under any of them, exactly as the write paths enforce. OFF (null): the 4.0.0 exact-id scope. The reported
+  // `organization_id` is always the caller's own claim (wire contract unchanged).
+  const quota = await quotaForScope(renderings ?? orgId);
+  const countActive = async (extra: Record<string, unknown>): Promise<number> => {
+    if (!renderings) return countRows('selection_lists', { organization_id: orgId, ...extra, status: 'active' });
+    const r = await (db('selection_lists').whereIn('organization_id', renderings).where({ ...extra, status: 'active' }).count('id as count').first() as Promise<any>);
+    return parseInt(String(r?.count ?? '0'), 10);
+  };
 
-  const orgListsCurrent = await countRows('selection_lists', {
-    organization_id: orgId,
-    status: 'active',
-  });
+  const orgListsCurrent = await countActive({});
 
   // Count active lists created by the requesting user (0 when userId is absent).
-  const userListsCurrent = userId
-    ? await countRows('selection_lists', {
-        organization_id: orgId,
-        created_by: userId,
-        status: 'active',
-      })
-    : 0;
+  const userListsCurrent = userId ? await countActive({ created_by: userId }) : 0;
 
   return {
     organization_id: orgId,
