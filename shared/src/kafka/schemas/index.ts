@@ -30,6 +30,8 @@ export * from './selection-lists.list.created';
 export * from './selection-lists.list.updated';
 export * from './selection-lists.list.archived';
 export * from './selection-lists.list.deleted';
+export * from './selection-lists.list.forked';
+export * from './selection-lists.visibility.changed';
 export * from './selection-lists.item.created';
 export * from './selection-lists.item.updated';
 export * from './selection-lists.item.archived';

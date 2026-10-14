@@ -1,10 +1,10 @@
-# FrontFuse Module Federation Implementation Guide
+# FuzeFront Module Federation Implementation Guide
 
-This guide demonstrates how to implement a complete module federation system with runtime app registration using FrontFuse.
+This guide demonstrates how to implement a complete module federation system with runtime app registration using FuzeFront.
 
 ## Architecture Overview
 
-FrontFuse implements a **runtime module federation** system where:
+FuzeFront implements a **runtime module federation** system where:
 
 1. **Hub Portal** (Frontend) - Acts as the container application that dynamically loads micro-frontends
 2. **Backend API** - Manages app registry and provides WebSocket notifications
@@ -23,7 +23,7 @@ FrontFuse implements a **runtime module federation** system where:
 
 ## Quick Start
 
-### 1. Start the FrontFuse Platform
+### 1. Start the FuzeFront Platform
 
 ```bash
 # Install dependencies
@@ -46,7 +46,7 @@ cd my-app
 # Install module federation plugin
 npm install @originjs/vite-plugin-federation --save-dev
 
-# Install FrontFuse SDK
+# Install FuzeFront SDK
 npm install @frontfuse/sdk-react
 ```
 
@@ -123,7 +123,7 @@ export async function registerWithHub() {
 
     if (response.ok) {
       const app = await response.json()
-      console.log('✅ Registered with FrontFuse hub:', app)
+      console.log('✅ Registered with FuzeFront hub:', app)
 
       // Start heartbeat
       const heartbeat = createHeartbeat({
@@ -160,7 +160,7 @@ import App from './App.tsx'
 import './index.css'
 import { autoRegister } from './registration'
 
-// Auto-register with FrontFuse hub
+// Auto-register with FuzeFront hub
 autoRegister().catch(console.error)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -242,7 +242,7 @@ docker run -p 3003:3003 my-app
 
 ## Integration Types
 
-FrontFuse supports three integration types:
+FuzeFront supports three integration types:
 
 ### 1. Module Federation (Recommended)
 
@@ -288,7 +288,7 @@ FrontFuse supports three integration types:
 
 ## SDK Features
 
-The FrontFuse SDK provides:
+The FuzeFront SDK provides:
 
 ### Module Federation Utilities
 
