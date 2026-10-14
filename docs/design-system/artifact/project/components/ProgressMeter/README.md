@@ -1,4 +1,6 @@
-`ProgressMeter` — a FuzeFront design-system `feedback` primitive, styled entirely with tokens.
+Horizontal progress / usage meter — labelled track + fill keyed to a
+fraction of a limit. Used for usage-based billing (seats, metered units)
+and quota displays.
 
 **Props**
 

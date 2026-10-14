@@ -1,4 +1,6 @@
-`Wrap` — a FuzeFront design-system `layout` primitive, styled entirely with tokens.
+Wrap — a flex row that wraps onto multiple lines, spaced by a
+`--space-*` token. Use for badge/tag groups and button rows that should
+reflow on narrow viewports rather than overflow.
 
 **Props**
 

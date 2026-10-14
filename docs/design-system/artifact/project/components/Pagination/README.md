@@ -5,6 +5,5 @@
 - `page?` — Current active page (1-indexed).
 - `total?` — Total number of pages.
 - `onChange?` — Called with the new page number when a page button is clicked.
-- `page`
 
 See `components/index.d.ts` for the full prop contract.

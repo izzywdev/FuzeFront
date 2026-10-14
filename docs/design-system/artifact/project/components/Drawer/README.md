@@ -1,4 +1,7 @@
-`Drawer` — a FuzeFront design-system `mobile` primitive, styled entirely with tokens.
+Slide-in navigation drawer for mobile (<768px). Opens from the left at
+`--drawer-width` (280px). The header slot carries the fuse-seam bottom
+border matching the desktop SidePanel identity. Focus is trapped inside;
+Escape and backdrop tap call `onClose`.
 
 **Props**
 
