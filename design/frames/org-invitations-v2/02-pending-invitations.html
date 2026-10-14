@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Org invitations v2 — Pending invitations</title>
+<link rel="stylesheet" href="tokens.css" />
+</head>
+<body>
+<div class="shell" data-frame="02-pending-invitations">
+  <div class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" aria-hidden="true">▦</div>
+    <div class="avatar">IZ</div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Organization · Northwind</div>
+      <a class="nav-item"><span class="ico">📊</span> Overview</a>
+      <a class="nav-item active" data-nav="members"><span class="ico">👥</span> Members &amp; roles</a>
+      <a class="nav-item"><span class="ico">🧾</span> Billing</a>
+      <a class="nav-item"><span class="ico">⚙️</span> Settings</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Members &amp; roles</h1>
+      <p class="page-sub">Pending invitations sit above the member list. Each can be resent (rate-limited)
+        or revoked. Accepted invitations drop off this list and appear as members.</p>
+
+      <section class="ffi-panel" data-panel="pending-invitations">
+        <div class="ffi-panel__seam"></div>
+        <div class="ffi-panel__head">
+          <h2 class="ffi-panel__title">Pending invitations</h2>
+          <span class="ffi-panel__count" data-count="pending">3 pending</span>
+        </div>
+        <div data-list="pending">
+
+          <div class="ffi-row" data-invitation="inv_01hy" data-status="sent">
+            <div class="ffi-row__main">
+              <div class="ffi-row__top">
+                <span class="ffi-row__addr">jordan@acme.com</span>
+                <span class="ffi-tag ffi-tag--admin"><span class="ffi-tag__dot"></span>Admin</span>
+                <span class="ffi-tag ffi-tag--employee"><span class="ffi-tag__dot"></span>Employee</span>
+              </div>
+              <div class="ffi-row__meta">
+                <span class="ffi-chan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg> email</span>
+                · invited by you · 2 days ago · expires in 5 days</div>
+            </div>
+            <div class="ffi-row__side">
+              <span class="ffi-tag ffi-tag--sent"><span class="ffi-tag__dot"></span>Sent</span>
+              <button class="ffi-iconbtn" data-action="resend" data-for="inv_01hy">↻ Resend</button>
+              <button class="ffi-iconbtn ffi-iconbtn--danger" data-action="revoke" data-for="inv_01hy">Revoke</button>
+            </div>
+          </div>
+
+          <div class="ffi-row" data-invitation="inv_02kp" data-status="sent">
+            <div class="ffi-row__main">
+              <div class="ffi-row__top">
+                <span class="ffi-row__addr">+1 555 010 4477</span>
+                <span class="ffi-tag ffi-tag--member"><span class="ffi-tag__dot"></span>Member</span>
+                <span class="ffi-tag ffi-tag--employee"><span class="ffi-tag__dot"></span>Employee</span>
+              </div>
+              <div class="ffi-row__meta">
+                <span class="ffi-chan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 00-7.8 13.5L3 21l4.7-1.2A9 9 0 1012 3z"/></svg> WhatsApp</span>
+                · invited by you · 6 hours ago · expires in 7 days</div>
+            </div>
+            <div class="ffi-row__side">
+              <span class="ffi-tag ffi-tag--sent"><span class="ffi-tag__dot"></span>Sent</span>
+              <button class="ffi-iconbtn" data-action="resend" data-for="inv_02kp" disabled title="Resend available in 09:41">↻ Resend</button>
+              <button class="ffi-iconbtn ffi-iconbtn--danger" data-action="revoke" data-for="inv_02kp">Revoke</button>
+            </div>
+          </div>
+
+          <div class="ffi-row" data-invitation="inv_03zt" data-status="pending">
+            <div class="ffi-row__main">
+              <div class="ffi-row__top">
+                <span class="ffi-row__addr">sam@globex.io</span>
+                <span class="ffi-tag ffi-tag--viewer"><span class="ffi-tag__dot"></span>Viewer</span>
+                <span class="ffi-tag ffi-tag--customer"><span class="ffi-tag__dot"></span>Customer</span>
+              </div>
+              <div class="ffi-row__meta">
+                <span class="ffi-chan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg> email</span>
+                · invited by Dana · just now · expires in 7 days</div>
+            </div>
+            <div class="ffi-row__side">
+              <span class="ffi-tag ffi-tag--pending"><span class="ffi-tag__dot"></span>Sending…</span>
+              <button class="ffi-iconbtn" data-action="resend" data-for="inv_03zt" disabled>↻ Resend</button>
+              <button class="ffi-iconbtn ffi-iconbtn--danger" data-action="revoke" data-for="inv_03zt">Revoke</button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption">Frame (b) · <b>Pending invitations</b> — list · resend (cooldown) · revoke · status pills · GET /invitations</span>
+  <span class="links">
+    <a href="01-invite-modal.html" class="btn btn-ghost">← Invite</a>
+    <a href="03-accept-resolve.html" class="btn btn-ghost">Next: Accept →</a>
+  </span>
+</div>
+</body>
+</html>
