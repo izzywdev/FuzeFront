@@ -302,6 +302,16 @@ jobs:
           npm run -w @fuzefront/shared build
           npm run -w @fuzefront/service-auth build
 
+      - name: Build @fuzefront/telemetry (for backend build + frontend bundle)
+        # backend/src/index.ts now mounts tracingMiddleware()/initTelemetry()
+        # (@fuzefront/telemetry), and frontend imports
+        # @fuzefront/telemetry/browser at its bootstrap (main.tsx); both
+        # resolve through its uncommitted dist/. Must precede the backend
+        # build below — moved here from just before "Build frontend", where
+        # it ran AFTER backend and left backend's own build failing with
+        # TS2307 "Cannot find module '@fuzefront/telemetry'".
+        run: npm run -w @fuzefront/telemetry build
+
       - name: Build backend
         run: cd backend && npm run build
 
@@ -316,11 +326,6 @@ jobs:
       # resolve the package entry until it has been built.
       - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
         run: npm run -w @fuzeone/selection-lists-ui build
-
-      - name: Build @fuzefront/telemetry (for frontend bundle)
-        # frontend imports @fuzefront/telemetry/browser at its bootstrap
-        # (main.tsx); its `exports` map points at dist/, unbuilt by default.
-        run: npm run -w @fuzefront/telemetry build
 
       - name: Build frontend
         run: cd frontend && npm run build
