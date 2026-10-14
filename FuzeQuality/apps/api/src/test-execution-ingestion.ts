@@ -1,4 +1,4 @@
-import { normalizeWorkflowPath, testExecutionInputSchema, type QualityArtifact, type TestExecution } from '@fuzequality/contracts'
+import { normalizeWorkflowPath, testExecutionInputSchema, type QualityArtifact, type ScanResult, type TestExecution } from '@fuzequality/contracts'
 import { linkExecutionArtifacts } from '@fuzequality/core'
 import type { WorkflowExecutionCommand } from '@fuzequality/github-app'
 
@@ -98,6 +98,50 @@ export function webhookExecutionRecord(
     gateEvaluations,
     kind: links.kind ?? execution.kind,
   }
+}
+
+/**
+ * Repairs workflow evidence that arrived before its asynchronous repository
+ * scan. Only the scan's exact source revision is eligible, and an existing
+ * producer/catalog linkage is never replaced.
+ */
+export async function reconcileExecutionEvidenceForScan(
+  result: ScanResult,
+  tenantId: string,
+  loadExecutions: (repositoryId: string, tenantId: string, revision: string) => Promise<TestExecution[]>,
+  saveExecution: (execution: TestExecution) => Promise<void>,
+) {
+  const sourceRevision = result.scanDetails.sourceRevision
+  if (!sourceRevision) return 0
+  const artifacts = result.qualityArtifacts ?? []
+  const executions = await loadExecutions(result.repository.id, tenantId, sourceRevision)
+  let reconciled = 0
+  for (const execution of executions) {
+    if (execution.policyArtifactIds.length || execution.gateArtifactIds.length || execution.gateEvaluations.length) continue
+    const links = await linkExecutionToRevisionArtifacts(
+      execution,
+      tenantId,
+      async (repositoryId, candidateTenantId, candidateSourceRevision) =>
+        repositoryId === result.repository.id && candidateTenantId === tenantId && candidateSourceRevision === sourceRevision
+          ? result.revision
+          : undefined,
+      async (repositoryId, candidateTenantId, candidateCatalogRevision) =>
+        repositoryId === result.repository.id && candidateTenantId === tenantId && candidateCatalogRevision === result.revision
+          ? artifacts
+          : [],
+    )
+    const kind = links.kind ?? execution.kind
+    if (!links.policyArtifactIds.length && !links.gateArtifactIds.length && kind === execution.kind) continue
+    await saveExecution({
+      ...execution,
+      kind,
+      policyArtifactIds: links.policyArtifactIds,
+      gateArtifactIds: links.gateArtifactIds,
+      gateEvaluations: links.policyGatePairs.map(pair => ({ ...pair, status: execution.status })),
+    })
+    reconciled += 1
+  }
+  return reconciled
 }
 
 export type ExecutionEvidencePreparation =

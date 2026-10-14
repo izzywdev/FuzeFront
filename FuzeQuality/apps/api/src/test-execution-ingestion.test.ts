@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { testExecutionInputSchema } from '@fuzequality/contracts'
-import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, webhookExecutionRecord } from './test-execution-ingestion'
+import { testExecutionInputSchema, type ScanResult } from '@fuzequality/contracts'
+import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, webhookExecutionRecord } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
   it('merges provider artifacts without duplicating or overflowing evidence', () => {
@@ -101,6 +101,54 @@ describe('internal execution ingestion compatibility', () => {
       loadArtifacts,
     )).resolves.toEqual({ policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
     expect(loadArtifacts).not.toHaveBeenCalled()
+  })
+
+  it('reconciles an early workflow run after its exact source revision is scanned', async () => {
+    const execution = {
+      id: 'github-actions:42:1:repo-1', repositoryId: 'repo-1', tenantId: 'org-1',
+      provider: 'github-actions' as const, externalRunId: '42', attempt: 1,
+      revision: 'a'.repeat(40), branch: 'feature/auth', kind: 'ci' as const,
+      status: 'passed' as const, name: 'Authentication integration',
+      workflowPath: '.github/workflows/integration.yml', policyArtifactIds: [], gateArtifactIds: [],
+      gateEvaluations: [], thresholds: [], evidenceLinks: [],
+    }
+    const result: ScanResult = {
+      repository: {
+        id: 'repo-1', tenantId: 'org-1', owner: 'fuze', name: 'front',
+        canonicalUrl: 'https://github.com/fuze/front', defaultBranch: 'main', kind: 'application',
+        includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true,
+        lastScanStatus: 'complete',
+      },
+      revision: 'catalog-1', scannedAt: '2026-10-14T10:00:00.000Z',
+      operations: [], surfaces: [], tests: [], expectations: [], findings: [], diagnostics: [],
+      scanDetails: {
+        sourceRevision: 'a'.repeat(40), catalogRevision: 'catalog-1', scannerVersion: 'v1',
+        configVersion: 'v1', partial: false, candidates: [],
+        counts: { candidates: 0, operations: 0, frontendSurfaces: 0, tests: 0, diagnostics: 0 },
+      },
+      qualityArtifacts: [
+        { id: 'policy-auth', repositoryId: 'repo-1', kind: 'policy' as const, title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Authentication requirements', evidence: ['Authentication must be integration tested.'] },
+        { id: 'gate-auth', repositoryId: 'repo-1', kind: 'gate' as const, title: 'Authentication integration gate', sourcePath: '.github/workflows/integration.yml', summary: 'Authentication integration gate', evidence: ['Authentication must pass integration tests.'] },
+        { id: 'test-auth', repositoryId: 'repo-1', kind: 'integration-test' as const, title: 'Authentication integration', sourcePath: '.github/workflows/integration.yml', summary: 'Authentication integration suite', evidence: [] },
+      ],
+    }
+    const saveExecution = vi.fn().mockResolvedValue(undefined)
+
+    await expect(reconcileExecutionEvidenceForScan(
+      result,
+      'org-1',
+      vi.fn().mockResolvedValue([execution]),
+      saveExecution,
+    )).resolves.toBe(1)
+    expect(saveExecution).toHaveBeenCalledWith(expect.objectContaining({
+      id: execution.id,
+      revision: execution.revision,
+      branch: 'feature/auth',
+      kind: 'integration',
+      policyArtifactIds: ['policy-auth'],
+      gateArtifactIds: ['gate-auth'],
+      gateEvaluations: [{ policyArtifactId: 'policy-auth', gateArtifactId: 'gate-auth', status: 'passed' }],
+    }))
   })
 
   it('classifies a neutral workflow from reviewed performance metadata at its exact revision', async () => {

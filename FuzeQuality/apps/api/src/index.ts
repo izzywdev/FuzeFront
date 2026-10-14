@@ -12,6 +12,7 @@ import {
   testImplementationRequestSchema,
   type OrganizationQualitySummary,
   type Portfolio,
+  type ScanResult,
 } from '@fuzequality/contracts'
 import {
   apiCoverageCatalog,
@@ -42,7 +43,7 @@ import { createOpenApiSurface } from './openapi'
 import { executionPerformanceFilterSchema, executionPageFilterSchema } from './execution-filter'
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
-import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
@@ -88,6 +89,19 @@ const maySyncRequirements: express.RequestHandler = (request, response, next) =>
 }
 const mayCreateTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'create')
 const mayReadTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'read')
+
+async function saveScanWithExecutionReconciliation(result: ScanResult) {
+  await store.saveScan(result)
+  const tenantId = result.repository.tenantId
+  if (!tenantId) return
+  await reconcileExecutionEvidenceForScan(
+    result,
+    tenantId,
+    (repositoryId, executionTenantId, revision) =>
+      store.testExecutions(repositoryId, executionTenantId, { revision }),
+    execution => store.saveTestExecution(execution),
+  )
+}
 const mayRunExecution = requirePlatformPermission(qualityResources.execution, 'run')
 const mayReadOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'read')
 const mayManageOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'manage')
@@ -925,7 +939,7 @@ app.post('/api/v1/repositories/:id/scans', mayScanRepositories, async (request, 
     await store.setRepositoryStatus(repository.id, 'running')
     try {
       const result = await scanRepository(repository, localPath)
-      await store.saveScan(result)
+      await saveScanWithExecutionReconciliation(result)
       return response.status(202).json({ status: 'complete', revision: result.revision })
     } catch (error) {
       await store.setRepositoryStatus(repository.id, 'failed')
@@ -1166,7 +1180,7 @@ app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
 )
 
 app.post('/api/v1/internal/scans/results', async (request, response) => {
-  await store.saveScan(request.body)
+  await saveScanWithExecutionReconciliation(request.body)
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/intelligence/results', async (request, response) => {

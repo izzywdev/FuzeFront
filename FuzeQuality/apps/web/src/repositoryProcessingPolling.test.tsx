@@ -34,6 +34,27 @@ describe('repository processing polling', () => {
     expect(updateProcessingStatus).toHaveBeenCalledWith(status)
   })
 
+  it('reloads the catalog once repository processing reaches a terminal state', async () => {
+    const status: RepositoryProcessingStatus = {
+      id: 'repo-1', lastScanStatus: 'complete', lastScanRevision: 'new-catalog',
+      lastAnalysis: { revision: 'new-catalog', status: 'queued' },
+    }
+    vi.spyOn(api, 'repositoryProcessingStatus').mockResolvedValue(status)
+    const reload = vi.fn().mockResolvedValue(undefined)
+    const data: Portfolio = {
+      repositories: [{
+        id: 'repo-1', owner: 'fuze', name: 'front', canonicalUrl: 'https://github.com/fuze/front', defaultBranch: 'main',
+        kind: 'application', includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true,
+        lastScanStatus: 'running', lastScanRevision: 'old-catalog',
+      }],
+      operations: [], surfaces: [], tests: [], expectations: [], findings: [], diagnostics: [], requirements: [], flows: [], suggestions: [],
+    }
+
+    render(<Repositories data={data} reload={reload} updateProcessingStatus={vi.fn()} />)
+
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce())
+  })
+
   it('requeues failed analysis and immediately projects its queued status', async () => {
     const queued: RepositoryProcessingStatus = {
       id: 'repo-1', lastScanStatus: 'complete', lastScanRevision: 'abc',

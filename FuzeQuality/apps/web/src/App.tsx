@@ -81,7 +81,7 @@ import { FlowInspector } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
 import { governanceEvidenceSelection } from './governanceEvidence'
-import { applyRepositoryProcessingStatus, repositoryNeedsProcessingPoll } from './repositoryProcessing'
+import { applyRepositoryProcessingStatus, repositoryNeedsProcessingPoll, repositoryProcessingTransitionCompleted } from './repositoryProcessing'
 
 export type View =
   | 'overview'
@@ -909,6 +909,11 @@ export function Repositories({
     .map(repository => repository.id)
     .sort()
     .join(',')
+  const processingStateKey = data.repositories
+    .filter(repositoryNeedsProcessingPoll)
+    .map(repository => `${repository.id}:${repository.lastScanStatus}:${repository.lastScanRevision ?? ''}:${repository.lastAnalysis?.status ?? ''}`)
+    .sort()
+    .join(',')
   useEffect(() => {
     if (!processingRepositoryIds) return
     let active = true
@@ -925,6 +930,11 @@ export function Repositories({
         setPollError(results.some(result => result.status === 'rejected')
           ? 'Repository processing status is temporarily unavailable; the scan continues in the background.'
           : '')
+        if (results.some(result => {
+          if (result.status !== 'fulfilled') return false
+          const repository = data.repositories.find(item => item.id === result.value.id)
+          return repository ? repositoryProcessingTransitionCompleted(repository, result.value) : false
+        })) await reload()
       }
       refreshing = false
     }
@@ -934,7 +944,7 @@ export function Repositories({
       active = false
       window.clearInterval(interval)
     }
-  }, [processingRepositoryIds, updateProcessingStatus])
+  }, [processingRepositoryIds, processingStateKey, reload, updateProcessingStatus])
   async function submit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
@@ -5556,7 +5566,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   // The portal owns the active account vault. A federated remote receives its
   // bearer-token resolver from the host rather than reading portal storage.
   useEffect(() => configurePlatformSecurity(getToken), [getToken])
-  async function reload() {
+  const reload = useCallback(async () => {
     setLoading(true)
     setData(null)
     setOrganizations(undefined)
@@ -5574,10 +5584,10 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
   useEffect(() => {
     void reload()
-  }, [portalContext])
+  }, [portalContext, reload])
   const visibleNavigation = useMemo(
     () =>
       navigation.filter(item => item.id !== 'administration' || organizations),
