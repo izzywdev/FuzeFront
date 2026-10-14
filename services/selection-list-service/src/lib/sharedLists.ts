@@ -169,21 +169,39 @@ export class PlatformOrgConfigError extends Error {
  * the projection confirms the configured id (we prefer "disabled until confirmed" to refusing to boot).
  * Unset => null. The projection is never a SOURCE of the platform org (see the header): it only CONFIRMS a
  * configured one.
- * Cached briefly (it is on the read path of every shared list): a confirmed value for 30 s, an UNRESOLVED
- * one for only 5 s, so a projection that catches up enables the features almost at once.
+ * Cached briefly (it is on the read path of every shared list), but this is AUTHORIZATION state, so the
+ * cache is bounded and explicitly invalidated:
+ *   - the projection writers (`upsertOrgProjection` / `markOrgProjectionDeleted`, i.e. the
+ *     identity.org.created / .updated / .deleted handlers) call `invalidatePlatformOrgCache()` right after
+ *     they write, so on the replica that processed the event a deactivation / deletion / retype denies the very
+ *     next request. A resolution that was already in flight when the invalidation happened is discarded
+ *     (generation counter), never stored.
+ *   - the cache is per PROCESS. Another replica does not see this replica's invalidation (a Kafka event is
+ *     handled by ONE consumer of the group), so there a positive answer can outlive the change by at most
+ *     CACHE_TTL_MS (5 s). That is the remaining multi-replica staleness; the unresolved answer is cached for
+ *     the same time so a projection that catches up enables the features almost at once.
  */
-const CACHE_TTL_MS = 30_000;
+const CACHE_TTL_MS = 5_000;
 const NEGATIVE_CACHE_TTL_MS = 5_000;
 let cache: { at: number; value: string | null; key: string } | null = null;
+let cacheGeneration = 0;
 
 export function _resetPlatformOrgCacheForTesting(): void {
   cache = null;
+  cacheGeneration++;
+}
+
+/** Drop the cached platform-org resolution (called by the org projection writers after every write). */
+export function invalidatePlatformOrgCache(): void {
+  cache = null;
+  cacheGeneration++;
 }
 
 export async function resolvePlatformOrgId(ex: Executor = db, now: number = Date.now()): Promise<string | null> {
   const configured = configuredPlatformOrgId();
   const key = configured ?? '';
   if (cache && cache.key === key && now - cache.at < (cache.value === null ? NEGATIVE_CACHE_TTL_MS : CACHE_TTL_MS)) return cache.value;
+  const generation = cacheGeneration;
   let value: string | null = null;
   try {
     if (configured) {
@@ -202,7 +220,8 @@ export async function resolvePlatformOrgId(ex: Executor = db, now: number = Date
     logger.error({ err }, 'could not resolve the platform organization — platform features fail closed');
     return null; // not cached: retry on the next request
   }
-  cache = { at: now, value, key };
+  // An invalidation that happened while we were reading means the row may be stale: answer, don't store.
+  if (generation === cacheGeneration) cache = { at: now, value, key };
   return value;
 }
 

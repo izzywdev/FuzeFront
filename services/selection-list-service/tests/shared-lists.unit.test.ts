@@ -165,7 +165,7 @@ describe('platform organization resolution', () => {
     expect(await resolvePlatformOrgId(exec({ 'wire_id = ?': [{ org_type: 'platform', status: 'active', is_active: null, wire_id: PLATFORM }] }))).toBeNull();
   });
 
-  it('an UNRESOLVED answer is cached only briefly (5 s), a confirmed one for 30 s', async () => {
+  it('an UNRESOLVED answer is cached only briefly (5 s) and so is a confirmed one (explicitly invalidated on projection writes)', async () => {
     process.env[PLATFORM_ORG_ENV] = PLATFORM;
     const pending = exec({});
     await resolvePlatformOrgId(pending, 1_000);
@@ -173,8 +173,10 @@ describe('platform organization resolution', () => {
     expect(pending.raw).toHaveBeenCalledTimes(1);
     const confirmed = exec({ 'wire_id = ?': [{ org_type: 'platform', status: 'active', is_active: true, wire_id: PLATFORM }] });
     expect(await resolvePlatformOrgId(confirmed, 1_000 + 6_000)).toBe(PLATFORM); // negative entry expired after 5 s
-    await resolvePlatformOrgId(confirmed, 1_000 + 20_000);
-    expect(confirmed.raw).toHaveBeenCalledTimes(1);
+    await resolvePlatformOrgId(confirmed, 1_000 + 6_000 + 4_999);
+    expect(confirmed.raw).toHaveBeenCalledTimes(1); // inside the 5 s window
+    await resolvePlatformOrgId(confirmed, 1_000 + 6_000 + 5_000);
+    expect(confirmed.raw).toHaveBeenCalledTimes(2); // window closed: re-read
   });
 
   it('configured but the projection says it is an ordinary or a deleted org: fails closed (null)', async () => {

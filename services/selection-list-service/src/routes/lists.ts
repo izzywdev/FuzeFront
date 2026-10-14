@@ -293,7 +293,12 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
   if (queryLocale && SUPPORTED_LOCALES.has(queryLocale)) requestedLocales.push(queryLocale);
   const al = parseAcceptLanguage(acceptLang);
   if (al && !requestedLocales.includes(al)) requestedLocales.push(al);
-  if (!requestedLocales.includes('en')) requestedLocales.push('en');
+  // Chain slots: the requested locales, then the ROW's own source_locale (per-row, so a list whose source is
+  // not 'en' - e.g. a 'de' common list read by an en-only caller with no Accept-Language - still resolves
+  // its name/description instead of an empty string), then the last-resort 'en'. `null` marks the
+  // per-row source slot.
+  const chain: Array<string | null> = [...requestedLocales, null];
+  if (!requestedLocales.includes('en')) chain.push('en');
 
   try {
     // The platform organization (common lists) only matters for include_shared; unresolved => fail closed
@@ -339,24 +344,19 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
     }
 
     // Build translation JOINs - one per requested locale
-    const joinClauses = requestedLocales.map(
-      (_, i) => `LEFT JOIN selection_list_translations t${i} ON t${i}.list_id = sl.id AND t${i}.locale = ?`,
+    const joinClauses = chain.map((slot, i) =>
+      slot === null
+        ? `LEFT JOIN selection_list_translations t${i} ON t${i}.list_id = sl.id AND t${i}.locale = sl.source_locale`
+        : `LEFT JOIN selection_list_translations t${i} ON t${i}.list_id = sl.id AND t${i}.locale = ?`,
     );
-    const joinParams = requestedLocales;
+    const joinParams = chain.filter((slot): slot is string => slot !== null);
 
     // COALESCE across translation rows for name, description, resolved_locale, is_machine
-    const nameCoalesce = requestedLocales.length > 0
-      ? `COALESCE(${requestedLocales.map((_, i) => `t${i}.name`).join(', ')})`
-      : 'NULL';
-    const descCoalesce = requestedLocales.length > 0
-      ? `COALESCE(${requestedLocales.map((_, i) => `t${i}.description`).join(', ')})`
-      : 'NULL';
-    const localeCoalesce = requestedLocales.length > 0
-      ? `COALESCE(${requestedLocales.map((_, i) => `t${i}.locale`).join(', ')})`
-      : 'NULL';
-    const machineCoalesce = requestedLocales.length > 0
-      ? `COALESCE(${requestedLocales.map((_, i) => `t${i}.is_machine`).join(', ')})`
-      : 'NULL';
+    const coalesceOf = (col: string): string => `COALESCE(${chain.map((_, i) => `t${i}.${col}`).join(', ')})`;
+    const nameCoalesce = coalesceOf('name');
+    const descCoalesce = coalesceOf('description');
+    const localeCoalesce = coalesceOf('locale');
+    const machineCoalesce = coalesceOf('is_machine');
 
     const allParams = [...joinParams, ...params];
     const result = await db.raw<{ rows: ListRow[] }>(

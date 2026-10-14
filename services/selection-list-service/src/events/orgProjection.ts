@@ -10,6 +10,7 @@
 
 import type { Knex } from 'knex';
 import { fromUuid } from '@izzywdev/fuzefront-identity';
+import { invalidatePlatformOrgCache } from '../lib/sharedLists';
 
 export interface OrgProjectionSnapshot {
   /** The bare UUID the identity events carry. */
@@ -56,6 +57,9 @@ export async function upsertOrgProjection(ex: Knex | Knex.Transaction, snapshot:
        updated_at  = now()`,
     [entityId, wire, snapshot.type, snapshot.isActive, ownerWire, snapshot.name ?? null, occurredAt],
   );
+  // The platform-org resolution is cached authorization state derived from this row: drop it now. (Callers
+  // pass the pool, not an open transaction; inside a transaction this would run before the commit.)
+  invalidatePlatformOrgCache();
   return wire;
 }
 
@@ -75,5 +79,6 @@ export async function markOrgProjectionDeleted(ex: Knex | Knex.Transaction, orga
        updated_at = now()`,
     [entityId, wire],
   );
+  invalidatePlatformOrgCache(); // see upsertOrgProjection
   return wire;
 }
