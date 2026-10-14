@@ -266,6 +266,15 @@ function buildTokens() {
   })
   const shadowInk = pick('--shadow')
   const shadowAccent = pick('--accent-color')
+  // Fail loud rather than letting String.replace coerce an unresolved color to
+  // the literal "null"/"undefined" and emit invalid CSS (e.g. `0 1px 2px null`).
+  for (const [label, pair] of [['--shadow', shadowInk], ['--accent-color', shadowAccent]]) {
+    for (const theme of ['dark', 'light']) {
+      if (typeof pair[theme] !== 'string') {
+        throw new Error(`tokens: could not resolve ${label} (${theme}) for shadow inlining`)
+      }
+    }
+  }
   const inlineShadow = (name, theme) => {
     const v = spacing.get(`--${name}`)
     if (v == null) throw new Error(`tokens: --${name} missing from spacing.css`)
