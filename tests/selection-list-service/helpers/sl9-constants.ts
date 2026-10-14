@@ -5,7 +5,7 @@
 
 /** The platform organization (FuzeFront's root org) as the service under test is configured with it
  *  (`SELECTION_LIST_PLATFORM_ORG_ID`). Override with TEST_PLATFORM_ORG_ID in both places. */
-export const PLATFORM_ORG_ID: string = process.env['TEST_PLATFORM_ORG_ID'] ?? 'org_01test00000000platform00000';
+export const PLATFORM_ORG_ID: string = process.env['TEST_PLATFORM_ORG_ID'] ?? 'org_01jpmf4z1yf88rpb9z9sd6pz00';
 
 /** Org capped at ONE active list (fork `org_lists` quota refusal). Seeded by global-setup. */
 export const FORK_QUOTA_LISTS_ORG_ID = 'org_01test0000000forkqlists0000';

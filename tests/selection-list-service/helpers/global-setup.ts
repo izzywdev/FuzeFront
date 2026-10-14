@@ -110,7 +110,7 @@ export default async function globalSetup(): Promise<void> {
       // shows an ACTIVE row, is_active = true, org_type = 'platform' for it. Plain SQL, not a service back door.
       // The decoy is projected as a platform org too but is NOT the configured id: it must get nothing.
       for (const [entityId, wire] of [
-        ['0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7d01', PLATFORM_ORG_ID],
+        ['0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7c00', PLATFORM_ORG_ID],
         ['0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7d02', DECOY_PLATFORM_ORG_ID],
       ] as const) {
         await client.query(

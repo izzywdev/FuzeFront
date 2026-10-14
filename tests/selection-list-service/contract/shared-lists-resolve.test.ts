@@ -164,6 +164,31 @@ describe('§11.9 / D9: the org-visible fork redirects the common ids', () => {
   });
 });
 
+describe('§11.9 / D9: when the fork lacks the item, resolve falls back to the COMMON item in the COMMON list\'s source locale', () => {
+  it('the common list is French, the fork re-sourced to Spanish and missing item A: A resolves to the common (French) text and locale, not the fork\'s Spanish source locale', async () => {
+    const org5 = newOrg('rsv5');
+    const a5 = actor('a5', org5, 'admin');
+    const v5 = actor('v5', org5, 'viewer');
+    const p = await createPlatformList({ itemCodes: ['A', 'B'], extra: { source_locale: 'fr' } });
+    expect(p.list.source_locale).toBe('fr');
+    const { fork, byCode } = await forkWithItems(p, a5);
+    expect(fork.source_locale).toBe('fr');
+    // give the fork Spanish text first (changing source_locale does not re-translate), then re-source it
+    expect((await call(a5, 'PUT', `${L(fork.id)}/translations/es`, { name: 'Lista comun' })).status).toBe(200);
+    expect((await call(a5, 'PUT', `${L(fork.id)}/items/${byCode.get('B')!.id}/translations/es`, { label: 'B en espanol' })).status).toBe(200);
+    expect((await call(a5, 'PATCH', L(fork.id), { source_locale: 'es' })).status).toBe(200); // the fork now has a DIFFERENT source locale
+    expect((await call(a5, 'DELETE', `${L(fork.id)}/items/${byCode.get('A')!.id}?purge=true`)).status).toBe(204); // ...and lacks item A
+
+    const res = await resolve(v5, [p.items[0].id]);
+    expect(res.status).toBe(200);
+    const a = res.body.results[p.items[0].id];
+    expect(a).toMatchObject({ label: p.items[0].label, status: 'active', locale: 'fr' }); // the common list's text, in the common list's source locale
+    expect(a.effective_item_id).toBeUndefined(); // not redirected: the fork has no such item
+    // control: B is still in the fork, so it redirects (the lookup really is per item)
+    expect((await resolve(v5, [p.items[1].id])).body.results[p.items[1].id].effective_item_id).toBe(byCode.get('B')!.id);
+  });
+});
+
 describe('§11.9: a private fork (a draft) never redirects', () => {
   it('not for members, not even for the fork\'s owner; publishing it to the org starts the redirect, unpublishing stops it', async () => {
     const org3 = newOrg('rsv3');

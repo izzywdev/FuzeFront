@@ -169,7 +169,7 @@ instances on the same database**, both started like the CI job does (`NODE_ENV=t
 |---|---|---|
 | `FUZE_FLAGS_PROVIDER` | `offline` | `offline` |
 | `FUZE_FLAGS_OFFLINE_ON` | `fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists` | `fuzefront.selection-lists.service` |
-| `SELECTION_LIST_PLATFORM_ORG_ID` | `org_01test00000000platform00000` | the same |
+| `SELECTION_LIST_PLATFORM_ORG_ID` | `org_01jpmf4z1yf88rpb9z9sd6pz00` | the same |
 | `PORT` | e.g. `3011` | e.g. `3012` |
 
 * The platform org id is **configuration only** (service 1.1.0): `SELECTION_LIST_PLATFORM_ORG_ID` is honoured once
@@ -179,7 +179,7 @@ instances on the same database**, both started like the CI job does (`NODE_ENV=t
   setting - unset / an org with no projection row / an org projected `is_active=false` - passed as
   `SHARED_LISTS_PLATFORM_DISABLED_URLS="unset=<url>,unconfirmed=<url>,deactivated=<url>"`
   (`.github/workflows/ci.yml` starts them on 3013-3015; the flag-OFF instance is 3012).
-* `TEST_PLATFORM_ORG_ID` (default `org_01test00000000platform00000`) must equal the service's
+* `TEST_PLATFORM_ORG_ID` (default `org_01jpmf4z1yf88rpb9z9sd6pz00`) must equal the service's
   `SELECTION_LIST_PLATFORM_ORG_ID`. The suites tell the stand-in Security API which org is the platform org
   through `POST /__fixture/platform-org`; `publish_platform` is effective only in that tenant.
 * Every flag-ON suite starts with a precondition probe (`assertSharedListsOn`): a service without the feature fails

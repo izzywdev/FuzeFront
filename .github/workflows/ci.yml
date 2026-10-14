@@ -773,7 +773,7 @@ jobs:
           # tests/selection-list-service/helpers/global-setup.ts writes before the tests run.
           FUZE_FLAGS_PROVIDER: ${{ matrix.flag == 'on' && 'offline' || '' }}
           FUZE_FLAGS_OFFLINE_ON: ${{ matrix.flag == 'on' && 'fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists' || '' }}
-          SELECTION_LIST_PLATFORM_ORG_ID: org_01test00000000platform00000
+          SELECTION_LIST_PLATFORM_ORG_ID: org_01jpmf4z1yf88rpb9z9sd6pz00
           SECURITY_SERVICE_URL: http://localhost:3002
           FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED: 'true'
           # CI-only projected token fixture exchanges for owner-bootstrap scope.
@@ -846,7 +846,7 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           # SL9 suites: the flag-OFF instance and the three platform-disabled instances started above.
-          # (The platform org's id is TEST_PLATFORM_ORG_ID, default org_01test00000000platform00000, as configured above.)
+          # (The platform org's id is TEST_PLATFORM_ORG_ID, default org_01jpmf4z1yf88rpb9z9sd6pz00, as configured above.)
           SHARED_LISTS_FLAG_OFF_URL: http://localhost:3012
           SHARED_LISTS_PLATFORM_DISABLED_URLS: unset=http://localhost:3013,unconfirmed=http://localhost:3014,deactivated=http://localhost:3015
         run: cd tests/selection-list-service && npm test

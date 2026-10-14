@@ -183,9 +183,26 @@ function orgOf(claims) {
   return claims?.orgId ?? claims?.organization_id ?? claims?.organizationId;
 }
 
+/**
+ * An organization id in its `org_<base32>` TypeID rendering. Production tokens carry the bare UUID of the same org
+ * (the service accepts either), and a sane policy backend treats the two as ONE tenant, so every tenant comparison here
+ * goes through this (TypeID suffix = 128-bit UUID, 2 zero bits, 26 Crockford-base32 chars). Anything else is returned as is.
+ */
+const B32 = '0123456789abcdefghjkmnpqrstvwxyz';
+function canonOrg(x) {
+  if (typeof x !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x)) return x;
+  let n = BigInt('0x' + x.replace(/-/g, ''));
+  let out = '';
+  for (let i = 0; i < 26; i++) {
+    out = B32[Number(n & 31n)] + out;
+    n >>= 5n;
+  }
+  return `org_${out}`;
+}
+
 /** The caller's tenant role, from the JWT `roles` claim (see header). */
 function tenantRoleOf(claims, subject, tenant) {
-  if (!(claims && subjectOf(claims) === subject && orgOf(claims) === tenant)) return 'developer'; // unknowable -> least
+  if (!(claims && subjectOf(claims) === subject && canonOrg(orgOf(claims)) === canonOrg(tenant))) return 'developer'; // unknowable -> least
   const roles = Array.isArray(claims.roles) ? claims.roles.map((r) => (r === 'org-admin' ? 'admin' : r)) : [];
   return TENANT_ROLE_ORDER.find((r) => roles.includes(r)) ?? 'admin';
 }
@@ -204,7 +221,7 @@ function decide(q, claims) {
     if (resource.key) return false; // the catalog has no instances
     if (!TENANT_ROLE_ACTIONS[tenantRoleOf(claims, subject, tenant)].includes(action)) return false;
     // publish_platform is granted to tenant `admin` but only EFFECTIVE in the platform org's tenant (D5).
-    if (action === 'publish_platform') return tenant === platformOrgId || publishAnywhere.has(tenant);
+    if (action === 'publish_platform') return (platformOrgId !== null && canonOrg(tenant) === canonOrg(platformOrgId)) || publishAnywhere.has(canonOrg(tenant));
     return true;
   }
 

@@ -216,6 +216,20 @@ describe('on-delete of the SOURCE (data-contract: provenance references are `kee
     expect((await call(A, 'PATCH', L(mk.body.id), { name: 'Still ours' })).status).toBe(200);
   });
 
+  it('a repeated fork AFTER the common source was purged is 200 with the existing fork (idempotency does not need the source); an org without a fork gets 404', async () => {
+    const p = await createPlatformList({ itemCodes: ['A', 'B'] });
+    const mk = await forkList(A, p.list.id);
+    expect(mk.status).toBe(201);
+    expect((await call(p.owner, 'DELETE', `${L(p.list.id)}?purge=true`)).status).toBe(204);
+    const again = await forkList(A, p.list.id);
+    expect(again.status).toBe(200);
+    expect(again.body.id).toBe(mk.body.id);
+    expect(again.body.forked_from).toEqual(mk.body.forked_from);
+    expect((await walkItems(A, mk.body.id, 'all')).length).toBe(2); // nothing re-copied
+    // control: an organization that never forked it finds the source gone
+    expectError(await forkList(actor('nf', newOrg('nofork'), 'admin'), p.list.id), 404, 'NOT_FOUND');
+  });
+
   it('archiving the common list does not touch the fork either (and the common ids keep resolving)', async () => {
     const p = await createPlatformList({ itemCodes: ['A'] });
     const mk = await forkList(A, p.list.id);

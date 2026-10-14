@@ -9,7 +9,7 @@
  *
  *     main service      FUZE_FLAGS_PROVIDER=offline
  *                       FUZE_FLAGS_OFFLINE_ON=fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists
- *                       SELECTION_LIST_PLATFORM_ORG_ID=org_01test00000000platform00000
+ *                       SELECTION_LIST_PLATFORM_ORG_ID=org_01jpmf4z1yf88rpb9z9sd6pz00
  *     flag-OFF service  a SECOND instance on the SAME database, FUZE_FLAGS_PROVIDER=offline,
  *                       FUZE_FLAGS_OFFLINE_ON=fuzefront.selection-lists.service (shared-lists flag absent), same
  *                       SELECTION_LIST_PLATFORM_ORG_ID, on its own port; tests reach it through
@@ -26,6 +26,7 @@
  * running the feature. A red result caused by "feature not implemented / flag off" is therefore
  * recognisable as such.
  */
+import { randomUUID } from 'crypto';
 import { mintTestToken } from './auth';
 import { rawFetch, SERVICE_BASE_URL } from './client';
 import { PLATFORM_ORG_ID } from './sl9-constants';
@@ -42,6 +43,24 @@ export const rnd = (): string => Math.random().toString(36).slice(2, 8).padEnd(6
 /** A fresh, per-run org id (so reruns against one database never accumulate state in an org). */
 export const newOrg = (tag: string): string => `org_01sl9${tag}${rnd()}${rnd()}`.toLowerCase();
 export const newUser = (tag: string): string => `usr_01sl9${tag}${rnd()}${rnd()}`.toLowerCase();
+
+/**
+ * Both renderings of ONE organization: its `org_…` TypeID and the bare UUID production tokens carry (the service accepts
+ * either as the token's org claim). Needs codec-valid ids, so a fresh random org is minted through the identity package.
+ */
+export function newCodecOrg(): { wire: string; uuid: string } {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { fromUuid } = require('@izzywdev/fuzefront-identity') as { fromUuid: (type: string, uuid: string) => string };
+  const uuid = randomUUID();
+  return { wire: fromUuid('organization', uuid), uuid };
+}
+
+/** The bare-UUID rendering of an `org_…` TypeID. */
+export function orgUuidOf(wire: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { toUuid } = require('@izzywdev/fuzefront-identity') as { toUuid: (id: string) => string };
+  return toUuid(wire);
+}
 
 export type TenantRole = 'admin' | 'editor' | 'viewer' | 'developer';
 
