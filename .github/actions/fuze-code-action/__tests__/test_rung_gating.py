@@ -404,8 +404,11 @@ class TestRungGating(unittest.TestCase):
         self.assertEqual(_norm(w["fallback-anthropic-key"]), "${{ inputs.anthropic-api-key }}")
         for vendor in ("openai", "gemini"):
             expr = _norm(w[f"fallback-{vendor}-key"])
-            self.assertIn("inputs.review-only == 'true'", expr)
-            self.assertIn(f"inputs.{vendor}-api-key", expr)
+            self.assertEqual(
+                expr,
+                "${{ inputs.review-only != 'true' && inputs.%s-api-key || '' }}" % vendor,
+                f"fallback-{vendor}-key must suppress under review-only",
+            )
 
 
 class TestEvaluator(unittest.TestCase):

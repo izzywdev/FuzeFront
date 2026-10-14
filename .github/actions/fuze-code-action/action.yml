@@ -578,8 +578,14 @@ runs:
         # review-only: do not forward the non-Anthropic keys, so the runner-local chain is
         # anthropic-only and ./llm-endpoint goes DIRECT to api.anthropic.com instead of
         # starting a multi-vendor LiteLLM container (see the `review-only` input).
-        fallback-openai-key: ${{ inputs.review-only == 'true' && '' || inputs.openai-api-key }}
-        fallback-gemini-key: ${{ inputs.review-only == 'true' && '' || inputs.gemini-api-key }}
+        # NOTE the ternary shape: `cond && VALUE || ''`, never `cond && '' || VALUE`.
+        # In a GitHub Actions expression '' is falsy, so `review-only == 'true' && ''`
+        # evaluates to '' and the trailing `|| inputs.*-api-key` then always wins —
+        # i.e. the inverted form forwards the key even under review-only, defeating the
+        # suppression entirely. Phrase the guard positively so the key is the value only
+        # when it must be forwarded, and '' is the hard default.
+        fallback-openai-key: ${{ inputs.review-only != 'true' && inputs.openai-api-key || '' }}
+        fallback-gemini-key: ${{ inputs.review-only != 'true' && inputs.gemini-api-key || '' }}
 
     # RUNG 1 — claude-code-action, credentialed via LiteLLM-or-direct-Anthropic
     # (see llm step above). Gated on the llm step's own outcome, not on raw input
