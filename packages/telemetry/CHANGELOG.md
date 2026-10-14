@@ -3,6 +3,19 @@
 All notable changes to this package are documented here. Versioned
 independently — bump on every interface change (SemVer).
 
+## 0.1.2 — span names include the router mount prefix, not just the local route pattern
+
+### Fixed
+
+- `tracingMiddleware()` renamed a matched request's span using only
+  `req.route.path`, which is the pattern LOCAL to whichever `Router` matched
+  it — dropping the mount prefix (`req.baseUrl`) entirely. Two different
+  mounted routers' equally-shaped inner routes (e.g. `GET /docs/` and
+  `GET /v1/selection-lists/`) collapsed to the same span name `GET /`.
+  Caught by a Codex review on PR #1489. Fixed by combining `req.baseUrl` +
+  `req.route.path` wherever a matched route name is derived — both the
+  default `spanName()` and the `http.route` attribute.
+
 ## 0.1.1 — tracingMiddleware() ends streaming spans on `close`, not just `finish`
 
 > This branch forked before `fix/telemetry-express-5-peer-range` (PR #1487,

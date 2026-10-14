@@ -65,9 +65,23 @@ export interface TracingMiddlewareOptions {
   spanName?: (req: Request) => string;
 }
 
-function defaultSpanName(req: Request): string {
+// `req.route.path` is only the pattern matched by the ROUTER THAT MATCHED IT —
+// for a router mounted with `app.use('/v1/selection-lists', itemsRouter)`,
+// an inner route `/:itemId` reports route.path as just `/:itemId`, dropping
+// the mount prefix entirely. `req.baseUrl` carries exactly that prefix, so
+// combining them is required: using route.path alone collapsed distinct
+// mounted routers' endpoints (e.g. `GET /docs/` and `GET /v1/selection-lists/`)
+// down to the same span name `GET /`.
+function matchedRoutePath(req: Request): string | undefined {
   const routePath = (req as { route?: { path?: string } }).route?.path;
-  return `${req.method} ${routePath ?? req.path}`;
+  if (!routePath) return undefined;
+  const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
+  const full = `${baseUrl}${routePath}`.replace(/\/{2,}/g, '/');
+  return full === '' ? '/' : full;
+}
+
+function defaultSpanName(req: Request): string {
+  return `${req.method} ${matchedRoutePath(req) ?? req.path}`;
 }
 
 /**
@@ -117,10 +131,11 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
       // `/:listId/items/:itemId`) keeps the raw, UUID-bearing `req.path` as
       // its permanent span name, fragmenting Tempo's operation list and
       // trace-index cardinality per id instead of collapsing to one name.
-      const routePath = (req as { route?: { path?: string } }).route?.path;
+      const routePath = matchedRoutePath(req);
       if (routePath) {
-        // Express sets `req.route` in place on the same request object, so
-        // re-invoking `spanName` now (vs. at span-start time) picks it up.
+        // Express sets `req.route`/`req.baseUrl` in place on the same request
+        // object, so re-invoking `spanName` now (vs. at span-start time)
+        // picks them up.
         span.updateName(spanName(req));
       }
       span.setAttribute('http.status_code', res.statusCode);

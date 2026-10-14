@@ -189,6 +189,25 @@ describe('tracingMiddleware', () => {
     expect(span.name).toBe('GET /widgets/:id');
   });
 
+  it('includes the router mount prefix (req.baseUrl) in the renamed span, not just req.route.path', () => {
+    const middleware = tracingMiddleware();
+    const req = fakeReq() as Request & { route?: { path?: string }; baseUrl?: string };
+    const res = fakeRes();
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    // A route matched inside a Router mounted at a prefix: req.route.path is
+    // only the pattern LOCAL to that router ('/:itemId'); req.baseUrl carries
+    // the mount prefix ('/v1/selection-lists/items'). Using route.path alone
+    // would collapse this with every other mounted router's equally-named
+    // inner route to the same span name.
+    req.baseUrl = '/v1/selection-lists/items';
+    req.route = { path: '/:itemId' };
+    res._finish();
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('GET /v1/selection-lists/items/:itemId');
+  });
+
   it('does not double-end the span when BOTH `finish` and `close` fire', () => {
     const middleware = tracingMiddleware();
     const req = fakeReq();
