@@ -103,11 +103,31 @@ jobs:
             exit 1
           fi
 
+      - name: Refuse to overwrite an existing release tag from a different commit
+        # workflow_dispatch can run on any branch. If the canonical tag already
+        # exists it must point at the commit being published, or the Release
+        # step would replace immutable assets consumers install.
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          BUILT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          REFS=$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
+          # Peeled (^{}) line is the commit for annotated tags; else the tag line.
+          TAG_SHA=$(echo "$REFS" | awk '/\^\{\}$/{print $1; exit}')
+          [ -n "$TAG_SHA" ] || TAG_SHA=$(echo "$REFS" | awk 'NR==1{print $1}')
+          if [ -n "$TAG_SHA" ] && [ "$TAG_SHA" != "$BUILT_SHA" ]; then
+            echo "::error::Tag $TAG already exists at $TAG_SHA, not $BUILT_SHA -- refusing to overwrite its release assets"
+            exit 1
+          fi
+
       - name: Attach to the Release
         uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7  # v2
         with:
           files: packages/config-client-py/dist/*
           tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           name: fuzefront-config-client ${{ steps.version.outputs.tag }}
           body: |
             Python client for the FuzeFront config-service -- namespaced,
