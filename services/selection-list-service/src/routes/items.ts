@@ -441,7 +441,7 @@ router.post('/:listId/items', requireListMutation('add_value'), enforceItemQuota
       // Exact quota enforcement: serialise creates for this list, re-check the
       // ceiling under the lock, then insert (see quota.service.ts header).
       await lockQuotaScope(trx, `list_items:${listId}`);
-      await checkItemQuota(listId, req.orgId as string, trx);
+      await checkItemQuota(listId, (await writeOrgs(req)) ?? (req.orgId as string), trx);
 
       let resolvedSortOrder: number;
       if (explicitSortOrder !== undefined) {
@@ -725,7 +725,7 @@ router.patch('/:listId/items/:itemId', requireListMutation('update_value'), asyn
       // subject to `list_items` too (review M-4), under the create path's lock.
       if (body.status === 'active' && existing.rows[0].status === 'archived') {
         await lockQuotaScope(trx, `list_items:${listId}`);
-        await checkActiveItemQuota(listId, req.orgId as string, trx);
+        await checkActiveItemQuota(listId, (await writeOrgs(req)) ?? (req.orgId as string), trx);
       }
 
       // Update item row — always bump updated_at (plus any changed scalars)

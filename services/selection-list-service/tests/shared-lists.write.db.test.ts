@@ -300,6 +300,76 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
     });
   });
 
+  describe('item and locale quotas follow the org across renderings of its id', () => {
+    // Each case: the list is created through one rendering, the override row is stored under `overrideRendering`
+    // and the write comes through the OTHER one. n picks fresh orgs.
+    const world = (n: number) => {
+      const typeId = fromUuid('organization', `0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7f${n}0`);
+      const uuid = toUuid(typeId as never);
+      const byType = { userId: `usr_01iquota${n}00000000000000000a`, orgId: typeId };
+      const byUuid = { userId: `usr_01iquota${n}00000000000000000b`, orgId: uuid };
+      for (const p of [byType, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, EDITOR);
+      return { typeId, uuid, byType, byUuid };
+    };
+    const mkList = async (creator: Principal, other: Principal, key: string) => {
+      const r = await w.api(creator).post('/v1/selection-lists', { key, name: key });
+      expect(r.status).toBe(201);
+      w.authz.give(other.orgId, other.userId, r.body.id, 'list-owner'); // the Security API holds the role in either tenant
+      return r.body.id as string;
+    };
+
+    it.each([
+      ['override under the TypeID, write through the UUID', 1, true],
+      ['override under the UUID, write through the TypeID', 2, false],
+    ] as const)('list_items: %s', async (_n, n, overrideOnType) => {
+      const x = world(n);
+      const [creator, writer] = overrideOnType ? [x.byType, x.byUuid] : [x.byUuid, x.byType];
+      await w.db('selection_list_org_quota').insert({ organization_id: overrideOnType ? x.typeId : x.uuid, updated_by: 'usr_x', max_items_per_list: 1 });
+      const listId = await mkList(creator, writer, `iq-items-${n}`);
+      const first = await w.api(creator).post(`/v1/selection-lists/${listId}/items`, { code: 'A', label: 'A' });
+      expect(first.status).toBe(201);
+      const second = await w.api(writer).post(`/v1/selection-lists/${listId}/items`, { code: 'B', label: 'B' });
+      expect(second.status).toBe(403);
+      expect(second.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_items', limit: 1 });
+    });
+
+    it('list_items: re-activating an archived item counts across renderings', async () => {
+      const x = world(3);
+      await w.db('selection_list_org_quota').insert({ organization_id: x.typeId, updated_by: 'usr_x', max_items_per_list: 1 });
+      const listId = await mkList(x.byType, x.byUuid, 'iq-react');
+      const a = await w.api(x.byType).post(`/v1/selection-lists/${listId}/items`, { code: 'A', label: 'A' });
+      await w.api(x.byType).post(`/v1/selection-lists/${listId}/items/${a.body.id}/archive`);
+      expect((await w.api(x.byType).post(`/v1/selection-lists/${listId}/items`, { code: 'B', label: 'B' })).status).toBe(201);
+      const res = await w.api(x.byUuid).patch(`/v1/selection-lists/${listId}/items/${a.body.id}`, { status: 'active' });
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_items' });
+    });
+
+    it.each([
+      ['override under the TypeID, write through the UUID', 4, true],
+      ['override under the UUID, write through the TypeID', 5, false],
+    ] as const)('list_locales: %s', async (_n, n, overrideOnType) => {
+      const x = world(n);
+      const [creator, writer] = overrideOnType ? [x.byType, x.byUuid] : [x.byUuid, x.byType];
+      await w.db('selection_list_org_quota').insert({ organization_id: overrideOnType ? x.typeId : x.uuid, updated_by: 'usr_x', max_locales: 1 });
+      const listId = await mkList(creator, writer, `iq-loc-${n}`);
+      const put = await w.api(writer).put(`/v1/selection-lists/${listId}/translations/fr`, { name: 'Clé' });
+      expect(put.status).toBe(403);
+      expect(put.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_locales', limit: 1 });
+      // the PATCH path that writes a new source-locale row is held to the same ceiling
+      const patch = await w.api(writer).patch(`/v1/selection-lists/${listId}`, { source_locale: 'de', name: 'Name' });
+      expect(patch.status).toBe(403);
+      expect(patch.body.scope).toBe('list_locales');
+    });
+
+    it('without any override the defaults apply and nothing is blocked (no false positives)', async () => {
+      const x = world(6);
+      const listId = await mkList(x.byType, x.byUuid, 'iq-free');
+      expect((await w.api(x.byUuid).post(`/v1/selection-lists/${listId}/items`, { code: 'A', label: 'A' })).status).toBe(201);
+      expect((await w.api(x.byUuid).put(`/v1/selection-lists/${listId}/translations/fr`, { name: 'Clé' })).status).toBe(200);
+    });
+  });
+
   describe('PATCH visibility', () => {
     let listId: string;
     beforeAll(async () => {

@@ -165,6 +165,15 @@ export async function getQuota(orgId: string, executor: Executor = db): Promise<
 }
 
 /**
+ * The quota owner of an item / locale write: a single org id (the 4.0.0 exact lookup) or EVERY rendering of the
+ * org's id (shared lists ON: the override rows of all renderings apply, the most restrictive wins), so a list
+ * written through one rendering cannot dodge an override stored under the other.
+ */
+export function quotaForScope(orgId: string | string[], executor: Executor = db): Promise<QuotaLimits> {
+  return Array.isArray(orgId) ? getQuotaAcross(orgId, executor) : getQuota(orgId, executor);
+}
+
+/**
  * Take a transaction-scoped advisory lock for one quota scope (e.g.
  * `org_lists:<orgId>` or `list_items:<listId>`). Released automatically at
  * COMMIT/ROLLBACK. Call FIRST inside the create transaction, then
@@ -244,10 +253,10 @@ export async function checkListQuota(
  */
 export async function checkActiveItemQuota(
   listId: string,
-  orgId: string,
+  orgId: string | string[],
   executor: Executor = db,
 ): Promise<void> {
-  const quota = await getQuota(orgId, executor);
+  const quota = await quotaForScope(orgId, executor);
   const current = await countRows(
     'selection_list_items',
     { list_id: listId, status: 'active' },
@@ -268,12 +277,12 @@ export async function checkActiveItemQuota(
  */
 export async function checkItemQuota(
   listId: string,
-  orgId: string,
+  orgId: string | string[],
   executor: Executor = db,
 ): Promise<void> {
   await checkActiveItemQuota(listId, orgId, executor);
 
-  const quota = await getQuota(orgId, executor);
+  const quota = await quotaForScope(orgId, executor);
   const ceiling = quota.maxItemsPerList * storageCeilingFactor();
   const stored = await countRows('selection_list_items', { list_id: listId }, executor);
   if (stored >= ceiling) {
@@ -370,7 +379,7 @@ export async function checkForkQuota(
  */
 export async function checkLocaleQuota(
   listId: string,
-  orgId: string,
+  orgId: string | string[],
   locale: string,
   executor: Executor = db,
 ): Promise<void> {
@@ -379,7 +388,7 @@ export async function checkLocaleQuota(
     .first('locale');
   if (existing) return;
 
-  const quota = await getQuota(orgId, executor);
+  const quota = await quotaForScope(orgId, executor);
   const result = await (executor('selection_list_translations')
     .where({ list_id: listId })
     .count('* as count')

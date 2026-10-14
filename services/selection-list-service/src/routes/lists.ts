@@ -913,7 +913,7 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
         if (newName) {
           // Writing a locale the list does not have yet adds one (list_locales).
           await lockQuotaScope(trx, `list_locales:${listId}`);
-          await checkLocaleQuota(listId, req.orgId as string, targetLocale, trx);
+          await checkLocaleQuota(listId, writeScope ?? (req.orgId as string), targetLocale, trx);
           await trx.raw(
             `
             INSERT INTO selection_list_translations (list_id, locale, name, description, source_hash, is_machine)

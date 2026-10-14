@@ -127,7 +127,7 @@ function reply(res: Response, a: Answer) {
 async function localeQuotaAnswer(
   trx: Knex.Transaction,
   listId: string,
-  orgId: string,
+  orgId: string | string[],
   locale: string,
 ): Promise<Answer | null> {
   await lockQuotaScope(trx, `list_locales:${listId}`);
@@ -289,7 +289,7 @@ router.put('/:listId/translations/:locale', requireListMutation('translate'), as
       };
     }
 
-    const overQuota = await localeQuotaAnswer(trx, listId, orgId, locale);
+    const overQuota = await localeQuotaAnswer(trx, listId, orgScope, locale);
     if (overQuota) return overQuota;
 
     const sourceTrans = await trx('selection_list_translations')
@@ -705,7 +705,7 @@ router.post('/:listId/translations/:locale/autofill', requireListMutation('trans
     if (shouldTranslateList) {
       // A machine translation into a locale the list does not have yet adds one.
       if (!existingListTrans) {
-        const overQuota = await localeQuotaAnswer(trx, listId, orgId, locale);
+        const overQuota = await localeQuotaAnswer(trx, listId, orgScope, locale);
         if (overQuota) return overQuota;
       }
       const translatedName = machineText(sourceListTrans.name, NAME_MAX);

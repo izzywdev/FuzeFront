@@ -20,6 +20,7 @@ import { Request, Response, NextFunction } from 'express';
 import { checkListQuota, checkItemQuota, QuotaExceededError } from '../services/quota.service';
 import { isSelectionListsEnabled } from '../flags';
 import { getLog } from '../lib/logger';
+import { writeOrgs } from '../lib/sharedLists';
 
 /** Wire-format 403 QUOTA_EXCEEDED body (shared with the create handlers' locked re-check). */
 export function sendQuotaExceeded(res: Response, err: QuotaExceededError): void {
@@ -124,7 +125,7 @@ export const enforceItemQuota = async (
   }
 
   try {
-    await checkItemQuota(listId, req.orgId);
+    await checkItemQuota(listId, (await writeOrgs(req)) ?? req.orgId);
     next();
   } catch (err) {
     if (err instanceof QuotaExceededError) {
