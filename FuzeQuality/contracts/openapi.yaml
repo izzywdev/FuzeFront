@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.38.0
+  version: 0.39.0
   license:
     name: UNLICENSED
 servers:
@@ -547,6 +547,10 @@ paths:
           in: query
           description: Exact reviewed repository-analysis revision.
           schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: subject
+          in: query
+          description: Exact case-insensitive policy or gate subject retained with the finding.
+          schema: { type: string, minLength: 1, maxLength: 200 }
         - name: minConfidence
           in: query
           description: Inclusive lower detector-confidence bound.
@@ -629,6 +633,10 @@ paths:
           in: query
           description: Exact repository analysis revision that produced the finding.
           schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: subject
+          in: query
+          description: Exact case-insensitive policy or gate subject retained with the finding.
+          schema: { type: string, minLength: 1, maxLength: 200 }
         - name: minConfidence
           in: query
           description: Inclusive lower detector-confidence bound.

@@ -3221,6 +3221,7 @@ type PolicyGateInventorySelection = {
   severity: PolicyGateEvaluation['severity'] | ''
   reviewStatus: PolicyGateEvaluation['reviewStatus'] | ''
   revisionScope: FlowRevisionScope
+  subject: string
   minimumConfidencePercent: string
   maximumConfidencePercent: string
 }
@@ -3238,12 +3239,20 @@ export function policyGateEvaluationMatchesInventory(
   repositories: Repository[],
   selection: PolicyGateInventorySelection
 ) {
+  const normalizedSubject = selection.subject.toLowerCase()
   if (selection.kind && evaluation.kind !== selection.kind) return false
   if (selection.severity && evaluation.severity !== selection.severity)
     return false
   if (
     selection.reviewStatus &&
     evaluation.reviewStatus !== selection.reviewStatus
+  )
+    return false
+  if (
+    normalizedSubject &&
+    !evaluation.scope.subjects.some(subject =>
+      subject.toLowerCase() === normalizedSubject
+    )
   )
     return false
   if (selection.minimumConfidencePercent !== '' && evaluation.confidence < Number(selection.minimumConfidencePercent) / 100) return false
@@ -3417,6 +3426,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   >('')
   const [policyGateRevisionScope, setPolicyGateRevisionScope] =
     useState<FlowRevisionScope>('current')
+  const [policyGateSubject, setPolicyGateSubject] = useState('')
   const [policyGateMinimumConfidencePercent, setPolicyGateMinimumConfidencePercent] = useState('')
   const [policyGateMaximumConfidencePercent, setPolicyGateMaximumConfidencePercent] = useState('')
   const invalidPolicyGateConfidenceRange = Boolean(
@@ -3429,6 +3439,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     severity: policyGateSeverity,
     reviewStatus: policyGateReviewStatus,
     revisionScope: policyGateRevisionScope,
+    subject: policyGateSubject.trim(),
     minimumConfidencePercent: policyGateMinimumConfidencePercent,
     maximumConfidencePercent: policyGateMaximumConfidencePercent,
   }
@@ -3651,6 +3662,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       policyGateRevisionScope === 'current'
                         ? repository.lastScanRevision ?? ''
                         : '',
+                    subject: policyGateSubject.trim(),
                     minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
                     maxConfidence: policyGateMaximumConfidencePercent === '' ? '' : String(Number(policyGateMaximumConfidencePercent) / 100),
                   }).filter(([, value]) => Boolean(value))
@@ -3712,6 +3724,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     policyGateRevisionScope,
     policyGateReviewStatus,
     policyGateSeverity,
+    policyGateSubject,
     policyGateMinimumConfidencePercent,
     policyGateMaximumConfidencePercent,
     invalidPolicyGateConfidenceRange,
@@ -4201,6 +4214,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             severity: policyGateSeverity,
             reviewStatus: policyGateReviewStatus,
             revision: policyGateRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
+            subject: policyGateSubject.trim(),
             minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
             maxConfidence: policyGateMaximumConfidencePercent === '' ? '' : String(Number(policyGateMaximumConfidencePercent) / 100),
             cursor,
@@ -4493,6 +4507,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="current">Current analysis</option>
                 <option value="all">All revisions</option>
               </select>
+            </label>
+            <label>
+              Governance subject
+              <input
+                value={policyGateSubject}
+                maxLength={200}
+                placeholder="authentication"
+                onChange={event => setPolicyGateSubject(event.target.value)}
+              />
             </label>
             <label>
               Minimum governance confidence (%)

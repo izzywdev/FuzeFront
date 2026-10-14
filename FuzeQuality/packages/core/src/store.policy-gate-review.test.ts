@@ -48,6 +48,7 @@ describe('policy-gate review lifecycle', () => {
       { ...base, id: 'low', title: 'Low confidence', confidence: 0.69 },
       { ...base, id: 'minimum', title: 'Minimum confidence', confidence: 0.7 },
       { ...base, id: 'maximum', title: 'Maximum confidence', confidence: 0.9 },
+      { ...base, id: 'other-subject', title: 'Other subject', confidence: 0.8, scope: { sourcePaths: ['governance/authentication.md'], subjects: ['authentication'] } },
       { ...base, id: 'high', title: 'High confidence', confidence: 0.91 },
       { ...base, id: 'other-tenant', tenantId: 'tenant-2', title: 'Other tenant', confidence: 0.8 },
     ])
@@ -55,6 +56,7 @@ describe('policy-gate review lifecycle', () => {
     const matches = await store.policyGateEvaluations('repo-1', 'tenant-1', {
       minConfidence: 0.7,
       maxConfidence: 0.9,
+      subject: 'DEPLOYMENT',
     })
     expect(matches.map(item => item.id).sort()).toEqual(['maximum', 'minimum'])
   })
@@ -67,6 +69,7 @@ describe('policy-gate review lifecycle', () => {
     await store.policyGateEvaluations('repo-1', 'tenant-1', {
       minConfidence: 0.7,
       maxConfidence: 0.9,
+      subject: 'Deployment',
       after: { createdAt: '2026-10-09T00:00:00.000Z', id: 'evaluation-1' },
       limit: 25,
     })
@@ -75,9 +78,11 @@ describe('policy-gate review lifecycle', () => {
     expect(String(statement)).toContain('confidence >= $8')
     expect(String(statement)).toContain('confidence <= $9')
     expect(String(statement)).toContain('(created_at,id) < ($10::timestamptz,$11::text)')
+    expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(scope->'subjects', '[]'::jsonb))")
+    expect(String(statement)).toContain('lower(scoped_subject.value)=lower($13)')
     expect(parameters).toEqual([
       'repo-1', 'tenant-1', null, null, null, null, null,
-      0.7, 0.9, '2026-10-09T00:00:00.000Z', 'evaluation-1', 25,
+      0.7, 0.9, '2026-10-09T00:00:00.000Z', 'evaluation-1', 25, 'Deployment',
     ])
   })
 

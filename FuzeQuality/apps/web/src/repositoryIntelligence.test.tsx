@@ -495,7 +495,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     expect(await screen.findByText(historicalEvaluation.title)).toBeVisible()
     const evidence = screen.getByLabelText(`${historicalEvaluation.title} evidence`)
-    expect(within(evidence).getByText(historicalArtifact.title)).toBeVisible()
+    expect(await within(evidence).findByText(historicalArtifact.title)).toBeVisible()
     expect(within(evidence).queryByText(historicalArtifact.id)).not.toBeInTheDocument()
     expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
       repository.id,
@@ -1804,6 +1804,7 @@ describe('RepositoryIntelligence flow inventory', () => {
           severity: '',
           reviewStatus: 'proposed',
           revisionScope: 'current',
+          subject: '',
           minimumConfidencePercent: '',
           maximumConfidencePercent: '',
         }
@@ -1815,10 +1816,49 @@ describe('RepositoryIntelligence flow inventory', () => {
         severity: '',
         reviewStatus: '',
         revisionScope: 'current',
+        subject: '',
         minimumConfidencePercent: '91',
         maximumConfidencePercent: '100',
       })
     ).toBe(false)
+    expect(
+      policyGateEvaluationMatchesInventory(governanceEvaluation, [repository], {
+        kind: '',
+        severity: '',
+        reviewStatus: '',
+        revisionScope: 'current',
+        subject: 'deployment',
+        minimumConfidencePercent: '',
+        maximumConfidencePercent: '',
+      })
+    ).toBe(false)
+  })
+
+  it('filters governance by exact subject and retains it during continuation', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+
+    fireEvent.change(screen.getByLabelText('Governance subject'), {
+      target: { value: ' authentication ' },
+    })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      subject: 'authentication',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      subject: 'authentication',
+      cursor: 'policy-page-2',
+    }))
   })
 
   it('filters governance by confidence and retains the window during continuation', async () => {

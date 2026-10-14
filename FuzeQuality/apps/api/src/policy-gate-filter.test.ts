@@ -30,7 +30,7 @@ const evaluation = (
 })
 
 describe('policy-gate inventory filter', () => {
-  it('filters anomaly, severity, review status, and exact revision together', () => {
+  it('filters anomaly, severity, review status, exact revision, subject, and confidence together', () => {
     const evaluations = [
       evaluation(),
       evaluation({
@@ -55,6 +55,7 @@ describe('policy-gate inventory filter', () => {
       severity: 'medium',
       reviewStatus: 'accepted',
       revision: 'def',
+      subject: 'DEPLOYMENT',
       minConfidence: '0.8',
       maxConfidence: '0.8',
     })
@@ -83,6 +84,8 @@ describe('policy-gate inventory filter', () => {
     ).toBe(false)
     expect(policyGateFilterSchema.safeParse({ minConfidence: -0.01 }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ maxConfidence: 1.01 }).success).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ subject: '' }).success).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ subject: 'x'.repeat(201) }).success).toBe(false)
     const inverted = policyGateFilterSchema.safeParse({ minConfidence: 0.9, maxConfidence: 0.7 })
     expect(inverted.success).toBe(false)
     if (!inverted.success) expect(inverted.error.issues[0]).toMatchObject({
@@ -90,6 +93,11 @@ describe('policy-gate inventory filter', () => {
       message: 'maxConfidence must be greater than or equal to minConfidence',
     })
     expect(policyGateFilterSchema.parse({ limit: 101 }).limit).toBe(100)
+  })
+
+  it('requires an exact case-insensitive subject match', () => {
+    expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ subject: 'DEPLOYMENT' }))).toHaveLength(1)
+    expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ subject: 'deploy' }))).toEqual([])
   })
 
   it('defaults bounded pagination and accepts an opaque continuation cursor', () => {

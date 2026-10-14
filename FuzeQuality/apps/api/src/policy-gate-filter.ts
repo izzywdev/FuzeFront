@@ -16,6 +16,7 @@ export const policyGateFilterSchema = z
     severity: z.enum(['high', 'medium', 'low']).optional(),
     reviewStatus: z.enum(['proposed', 'accepted', 'dismissed']).optional(),
     revision: z.string().trim().min(1).max(500).optional(),
+    subject: z.string().trim().min(1).max(200).optional(),
     minConfidence: z.coerce.number().min(0).max(1).optional(),
     maxConfidence: z.coerce.number().min(0).max(1).optional(),
     ...historyPageQueryFields,
@@ -31,6 +32,7 @@ export function filterPolicyGateEvaluations(
   evaluations: PolicyGateEvaluation[],
   filter: z.infer<typeof policyGateFilterSchema>
 ) {
+  const normalizedSubject = filter.subject?.toLowerCase()
   return evaluations.filter(
     evaluation =>
       (!filter.kind || evaluation.kind === filter.kind) &&
@@ -38,6 +40,7 @@ export function filterPolicyGateEvaluations(
       (!filter.reviewStatus ||
         evaluation.reviewStatus === filter.reviewStatus) &&
       (!filter.revision || evaluation.revision === filter.revision) &&
+      (!normalizedSubject || evaluation.scope.subjects.some(subject => subject.toLowerCase() === normalizedSubject)) &&
       (filter.minConfidence === undefined || evaluation.confidence >= filter.minConfidence) &&
       (filter.maxConfidence === undefined || evaluation.confidence <= filter.maxConfidence)
   )

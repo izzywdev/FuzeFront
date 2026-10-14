@@ -62,6 +62,7 @@ export type PolicyGateEvaluationQuery = {
   severity?: PolicyGateEvaluation['severity']
   reviewStatus?: PolicyGateEvaluation['reviewStatus']
   revision?: string
+  subject?: string
   minConfidence?: number
   maxConfidence?: number
   after?: HistoryCursor
@@ -412,6 +413,7 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async policyGateEvaluations(repositoryId: string, tenantId: string, query: PolicyGateEvaluationQuery = {}) {
+    const normalizedSubject = query.subject?.toLowerCase()
     const items = this.policyGateResults
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
@@ -420,6 +422,7 @@ export class MemoryCatalogStore implements CatalogStore {
         (!query.severity || item.severity === query.severity) &&
         (!query.reviewStatus || item.reviewStatus === query.reviewStatus) &&
         (!query.revision || item.revision === query.revision) &&
+        (!normalizedSubject || item.scope.subjects.some(subject => subject.toLowerCase() === normalizedSubject)) &&
         (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
         (query.maxConfidence === undefined || item.confidence <= query.maxConfidence)
       )
@@ -1147,9 +1150,13 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($8::double precision IS NULL OR confidence >= $8)
          AND ($9::double precision IS NULL OR confidence <= $9)
          AND ($10::timestamptz IS NULL OR (created_at,id) < ($10::timestamptz,$11::text))
+         AND ($13::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(scope->'subjects', '[]'::jsonb)) AS scoped_subject(value)
+           WHERE lower(scoped_subject.value)=lower($13)
+         ))
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($12::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
