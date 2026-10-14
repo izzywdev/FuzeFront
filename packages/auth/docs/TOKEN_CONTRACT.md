@@ -46,6 +46,16 @@ Because the token lacks tenant/roles, `legacy-hs256` accepts an optional
 middleware does) to hydrate `tenantId`/`roles`/`email`. Without a resolver,
 `tenantId` is `null` and `roles` is `[]` — safe by fail-closed default.
 
+**Only a plain session authenticates.** A token carrying a `kind` claim —
+`fuze-org-session` (Security API org exchange), `fuze-workload`, or
+`fuze-delegation` — is a narrowed/machine credential that merely shares
+`JWT_SECRET`; it is never a user session. The verifier throws `AuthError`
+`INVALID_AUDIENCE` (401, fixed message, no token material) when `kind` is
+present, *before* the resolver runs, so such a token is never hydrated with a
+user's roles/tenant. This mirrors `backend/src/middleware/auth.ts` and the
+Python `fuzefront-auth` verifier. `federated-jwks` is unaffected (`iss`/`aud`
+enforced).
+
 ```ts
 import { createVerifier, requireAuth } from '@fuzefront/auth';
 

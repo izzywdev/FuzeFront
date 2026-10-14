@@ -323,6 +323,15 @@ securityService:
   replicas: 1
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # backend/security/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from the
+  # env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster, so every span
+  # export fails silently and nothing reaches Tempo. Point it at FuzeInfra's
+  # collector explicitly, the same way kafka.brokers/PERMIT_PDP_URL are wired
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # @fuzefront/feature-flags (OpenFeature + Unleash) client — gates
   # fuzefront.identity.root-membership (FF-EPIC-17) and future security-service
   # release/kill-switch flags (utils/feature-flags.ts / rootMembershipFlag.ts).
