@@ -241,6 +241,8 @@ describe('contract discovery', () => {
         'model',
         'promptVersion',
         'schemaVersion',
+        'minConfidence',
+        'maxConfidence',
         'limit',
         'cursor',
       ])

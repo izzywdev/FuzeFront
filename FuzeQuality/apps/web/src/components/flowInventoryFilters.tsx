@@ -11,6 +11,9 @@ export function FlowInventoryFilters({
   model,
   promptVersion,
   schemaVersion,
+  minimumConfidencePercent,
+  maximumConfidencePercent,
+  invalidConfidenceRange,
   onRepositoryIdChange,
   onSourceChange,
   onStatusChange,
@@ -18,6 +21,8 @@ export function FlowInventoryFilters({
   onModelChange,
   onPromptVersionChange,
   onSchemaVersionChange,
+  onMinimumConfidencePercentChange,
+  onMaximumConfidencePercentChange,
 }: {
   repositories: Repository[]
   repositoryId: string
@@ -27,6 +32,9 @@ export function FlowInventoryFilters({
   model: string
   promptVersion: string
   schemaVersion: string
+  minimumConfidencePercent: string
+  maximumConfidencePercent: string
+  invalidConfidenceRange: boolean
   onRepositoryIdChange: (value: string) => void
   onSourceChange: (value: RepositoryFlowCandidate['source'] | '') => void
   onStatusChange: (value: RepositoryFlowCandidate['status'] | '') => void
@@ -34,6 +42,8 @@ export function FlowInventoryFilters({
   onModelChange: (value: string) => void
   onPromptVersionChange: (value: string) => void
   onSchemaVersionChange: (value: string) => void
+  onMinimumConfidencePercentChange: (value: string) => void
+  onMaximumConfidencePercentChange: (value: string) => void
 }) {
   return (
     <div className="catalog-filters" aria-label="UX flow inventory filters">
@@ -83,6 +93,14 @@ export function FlowInventoryFilters({
       <label>
         Schema version
         <input value={schemaVersion} placeholder="All schema versions" onChange={event => onSchemaVersionChange(event.target.value)} />
+      </label>
+      <label>
+        Minimum confidence (%)
+        <input type="number" min="0" max="100" step="1" value={minimumConfidencePercent} placeholder="Any" onChange={event => onMinimumConfidencePercentChange(event.target.value)} />
+      </label>
+      <label>
+        Maximum confidence (%)
+        <input type="number" min="0" max="100" step="1" value={maximumConfidencePercent} placeholder="Any" aria-invalid={invalidConfidenceRange} onChange={event => onMaximumConfidencePercentChange(event.target.value)} />
       </label>
     </div>
   )

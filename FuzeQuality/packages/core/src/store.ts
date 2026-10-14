@@ -51,6 +51,8 @@ export type RepositoryFlowCandidateQuery = {
   model?: string
   promptVersion?: string
   schemaVersion?: string
+  minConfidence?: number
+  maxConfidence?: number
   after?: HistoryCursor
   limit?: number
 }
@@ -361,7 +363,9 @@ export class MemoryCatalogStore implements CatalogStore {
         (!query.revision || item.revision === query.revision) &&
         (!query.model || item.analysis?.model === query.model) &&
         (!query.promptVersion || item.analysis?.promptVersion === query.promptVersion) &&
-        (!query.schemaVersion || item.analysis?.schemaVersion === query.schemaVersion)
+        (!query.schemaVersion || item.analysis?.schemaVersion === query.schemaVersion) &&
+        (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
+        (query.maxConfidence === undefined || item.confidence <= query.maxConfidence)
       )
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
       .filter(item => !query.after || item.createdAt < query.after.createdAt || (item.createdAt === query.after.createdAt && item.id < query.after.id))
@@ -1057,10 +1061,12 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($7::text IS NULL OR analysis_provenance->>'model'=$7)
          AND ($8::text IS NULL OR analysis_provenance->>'promptVersion'=$8)
          AND ($9::text IS NULL OR analysis_provenance->>'schemaVersion'=$9)
-         AND ($10::timestamptz IS NULL OR (created_at,id) < ($10::timestamptz,$11::text))
+         AND ($10::double precision IS NULL OR confidence >= $10)
+         AND ($11::double precision IS NULL OR confidence <= $11)
+         AND ($12::timestamptz IS NULL OR (created_at,id) < ($12::timestamptz,$13::text))
        ORDER BY created_at DESC,id DESC
-       LIMIT COALESCE($12::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.source ?? null, query.status ?? null, query.revision ?? null, query.model ?? null, query.promptVersion ?? null, query.schemaVersion ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+       LIMIT COALESCE($14::integer, 2147483647)`,
+      [repositoryId, tenantId, query.id ?? null, query.source ?? null, query.status ?? null, query.revision ?? null, query.model ?? null, query.promptVersion ?? null, query.schemaVersion ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, analysis: row.analysis_provenance ?? undefined, source: row.source, createdAt: row.created_at.toISOString() }))
   }

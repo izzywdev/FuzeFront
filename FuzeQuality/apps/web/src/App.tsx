@@ -3212,6 +3212,8 @@ type FlowInventorySelection = {
   model: string
   promptVersion: string
   schemaVersion: string
+  minimumConfidencePercent: string
+  maximumConfidencePercent: string
 }
 
 type PolicyGateInventorySelection = {
@@ -3290,6 +3292,8 @@ export function flowCandidateMatchesInventory(
     flow.analysis?.schemaVersion !== selection.schemaVersion
   )
     return false
+  if (selection.minimumConfidencePercent !== '' && flow.confidence < Number(selection.minimumConfidencePercent) / 100) return false
+  if (selection.maximumConfidencePercent !== '' && flow.confidence > Number(selection.maximumConfidencePercent) / 100) return false
   if (selection.revisionScope === 'current') {
     const repository = repositories.find(item => item.id === flow.repositoryId)
     return Boolean(
@@ -3325,6 +3329,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowModel, setFlowModel] = useState('')
   const [flowPromptVersion, setFlowPromptVersion] = useState('')
   const [flowSchemaVersion, setFlowSchemaVersion] = useState('')
+  const [flowMinimumConfidencePercent, setFlowMinimumConfidencePercent] = useState('')
+  const [flowMaximumConfidencePercent, setFlowMaximumConfidencePercent] = useState('')
+  const invalidFlowConfidenceRange = Boolean(
+    flowMinimumConfidencePercent !== '' &&
+    flowMaximumConfidencePercent !== '' &&
+    Number(flowMinimumConfidencePercent) > Number(flowMaximumConfidencePercent)
+  )
   const [flowInspectorOpen, setFlowInspectorOpen] = useState(false)
   const [inspectedFlow, setInspectedFlow] = useState<RepositoryFlowCandidate>()
   const [flowInspectorLoading, setFlowInspectorLoading] = useState(false)
@@ -3432,6 +3443,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     model: flowModel.trim(),
     promptVersion: flowPromptVersion.trim(),
     schemaVersion: flowSchemaVersion.trim(),
+    minimumConfidencePercent: flowMinimumConfidencePercent,
+    maximumConfidencePercent: flowMaximumConfidencePercent,
   }
   const flowSelectionRef = useRef(flowSelection)
   flowSelectionRef.current = flowSelection
@@ -3447,6 +3460,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowModel.trim(),
     flowPromptVersion.trim(),
     flowSchemaVersion.trim(),
+    flowMinimumConfidencePercent,
+    flowMaximumConfidencePercent,
   ])
   const flowResultsAreCurrent =
     !loadingFlows && loadedFlowQuery === flowQuery
@@ -3747,6 +3762,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setFlowNextCursors({})
     setRepositoryFlowFailures([])
     setHistoryPaginationError(undefined)
+    if (invalidFlowConfidenceRange) {
+      setFlowCandidates([])
+      setLoadedFlowQuery(flowQuery)
+      setLoadingFlows(false)
+      return () => { active = false }
+    }
     void Promise.allSettled(
       data.repositories.map(repository =>
         flowRepositoryId && flowRepositoryId !== repository.id
@@ -3766,6 +3787,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     model: flowModel.trim(),
                     promptVersion: flowPromptVersion.trim(),
                     schemaVersion: flowSchemaVersion.trim(),
+                    minConfidence: flowMinimumConfidencePercent === '' ? '' : String(Number(flowMinimumConfidencePercent) / 100),
+                    maxConfidence: flowMaximumConfidencePercent === '' ? '' : String(Number(flowMaximumConfidencePercent) / 100),
                   }).filter(([, value]) => Boolean(value))
                 )
               ).then(response => ({ repositoryId: repository.id, page: normalizeHistoryPage(response) }))
@@ -3802,6 +3825,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowModel,
     flowPromptVersion,
     flowSchemaVersion,
+    flowMinimumConfidencePercent,
+    flowMaximumConfidencePercent,
+    invalidFlowConfidenceRange,
   ])
   useEffect(() => {
     let active = true
@@ -4117,6 +4143,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             model: flowModel.trim(),
             promptVersion: flowPromptVersion.trim(),
             schemaVersion: flowSchemaVersion.trim(),
+            minConfidence: flowMinimumConfidencePercent === '' ? '' : String(Number(flowMinimumConfidencePercent) / 100),
+            maxConfidence: flowMaximumConfidencePercent === '' ? '' : String(Number(flowMaximumConfidencePercent) / 100),
             cursor,
           }).filter(([, value]) => Boolean(value)))
         ))
@@ -4322,6 +4350,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             model={flowModel}
             promptVersion={flowPromptVersion}
             schemaVersion={flowSchemaVersion}
+            minimumConfidencePercent={flowMinimumConfidencePercent}
+            maximumConfidencePercent={flowMaximumConfidencePercent}
+            invalidConfidenceRange={invalidFlowConfidenceRange}
             onRepositoryIdChange={setFlowRepositoryId}
             onSourceChange={setFlowSource}
             onStatusChange={setFlowStatus}
@@ -4329,7 +4360,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             onModelChange={setFlowModel}
             onPromptVersionChange={setFlowPromptVersion}
             onSchemaVersionChange={setFlowSchemaVersion}
+            onMinimumConfidencePercentChange={setFlowMinimumConfidencePercent}
+            onMaximumConfidencePercentChange={setFlowMaximumConfidencePercent}
           />
+          {invalidFlowConfidenceRange && (
+            <p className="form-error" role="alert">
+              Maximum confidence must be greater than or equal to minimum confidence.
+            </p>
+          )}
           {Object.keys(artifactNextCursors).length > 0 && (
             <QualityAction
               intent="quiet"

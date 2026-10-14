@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.35.0
+  version: 0.36.0
   license:
     name: UNLICENSED
 servers:
@@ -365,6 +365,14 @@ paths:
           in: query
           description: Exact structured-output schema version.
           schema: { type: string, minLength: 1, maxLength: 100 }
+        - name: minConfidence
+          in: query
+          description: Inclusive lower detector-confidence bound.
+          schema: { type: number, format: double, minimum: 0, maximum: 1 }
+        - name: maxConfidence
+          in: query
+          description: Inclusive upper detector-confidence bound. Must not be lower than minConfidence.
+          schema: { type: number, format: double, minimum: 0, maximum: 1 }
         - name: limit
           in: query
           description: Maximum number of candidates to return in this page.

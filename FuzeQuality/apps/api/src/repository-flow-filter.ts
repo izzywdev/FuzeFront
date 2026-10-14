@@ -9,8 +9,14 @@ export const repositoryFlowFilterSchema = z.object({
   model: z.string().trim().min(1).max(200).optional(),
   promptVersion: z.string().trim().min(1).max(100).optional(),
   schemaVersion: z.string().trim().min(1).max(100).optional(),
+  minConfidence: z.coerce.number().min(0).max(1).optional(),
+  maxConfidence: z.coerce.number().min(0).max(1).optional(),
   ...historyPageQueryFields,
-}).strict()
+}).strict().superRefine((value, context) => {
+  if (value.minConfidence !== undefined && value.maxConfidence !== undefined && value.minConfidence > value.maxConfidence) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['maxConfidence'], message: 'maxConfidence must be greater than or equal to minConfidence' })
+  }
+})
 
 export function filterRepositoryFlowCandidates(
   candidates: RepositoryFlowCandidate[],
@@ -22,6 +28,8 @@ export function filterRepositoryFlowCandidates(
     (!filter.revision || candidate.revision === filter.revision) &&
     (!filter.model || candidate.analysis?.model === filter.model) &&
     (!filter.promptVersion || candidate.analysis?.promptVersion === filter.promptVersion) &&
-    (!filter.schemaVersion || candidate.analysis?.schemaVersion === filter.schemaVersion)
+    (!filter.schemaVersion || candidate.analysis?.schemaVersion === filter.schemaVersion) &&
+    (filter.minConfidence === undefined || candidate.confidence >= filter.minConfidence) &&
+    (filter.maxConfidence === undefined || candidate.confidence <= filter.maxConfidence)
   )
 }

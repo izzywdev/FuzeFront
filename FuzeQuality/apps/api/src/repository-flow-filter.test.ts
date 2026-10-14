@@ -13,10 +13,10 @@ describe('repository flow inventory filter', () => {
   it('filters source, review status, revision, and exact LiteLLM provenance together', () => {
     const candidates = [
       candidate(),
-      candidate({ id: 'flow-2', source: 'litellm', status: 'confirmed', revision: 'def', analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0' } }),
-      candidate({ id: 'flow-3', source: 'litellm', status: 'confirmed', revision: 'def', analysis: { provider: 'fuzeinfra-litellm', model: 'legacy-analysis', promptVersion: 'flow-v1', schemaVersion: '1.0' } }),
+      candidate({ id: 'flow-2', confidence: 0.8, source: 'litellm', status: 'confirmed', revision: 'def', analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0' } }),
+      candidate({ id: 'flow-3', confidence: 0.7, source: 'litellm', status: 'confirmed', revision: 'def', analysis: { provider: 'fuzeinfra-litellm', model: 'legacy-analysis', promptVersion: 'flow-v1', schemaVersion: '1.0' } }),
     ]
-    const filter = repositoryFlowFilterSchema.parse({ source: 'litellm', status: 'confirmed', revision: 'def', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0' })
+    const filter = repositoryFlowFilterSchema.parse({ source: 'litellm', status: 'confirmed', revision: 'def', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0', minConfidence: '0.8', maxConfidence: '0.8' })
     expect(filterRepositoryFlowCandidates(candidates, filter)).toEqual([candidates[1]])
   })
 
@@ -30,6 +30,14 @@ describe('repository flow inventory filter', () => {
     expect(repositoryFlowFilterSchema.safeParse({ status: 'published' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ model: '' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ unexpected: 'value' }).success).toBe(false)
+    expect(repositoryFlowFilterSchema.safeParse({ minConfidence: -0.01 }).success).toBe(false)
+    expect(repositoryFlowFilterSchema.safeParse({ maxConfidence: 1.01 }).success).toBe(false)
+    const inverted = repositoryFlowFilterSchema.safeParse({ minConfidence: 0.9, maxConfidence: 0.7 })
+    expect(inverted.success).toBe(false)
+    if (!inverted.success) expect(inverted.error.issues[0]).toMatchObject({
+      path: ['maxConfidence'],
+      message: 'maxConfidence must be greater than or equal to minConfidence',
+    })
     expect(repositoryFlowFilterSchema.parse({ limit: 101 }).limit).toBe(100)
   })
 

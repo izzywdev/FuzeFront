@@ -898,6 +898,8 @@ describe('RepositoryIntelligence flow inventory', () => {
         model: '',
         promptVersion: '',
         schemaVersion: '',
+        minimumConfidencePercent: '',
+        maximumConfidencePercent: '',
       })
     ).toBe(true)
     expect(
@@ -912,8 +914,23 @@ describe('RepositoryIntelligence flow inventory', () => {
           model: '',
           promptVersion: '',
           schemaVersion: '',
+          minimumConfidencePercent: '',
+          maximumConfidencePercent: '',
         }
       )
+    ).toBe(false)
+    expect(
+      flowCandidateMatchesInventory(candidate, [repository], {
+        repositoryId: repository.id,
+        source: 'litellm',
+        status: 'proposed',
+        revisionScope: 'current',
+        model: '',
+        promptVersion: '',
+        schemaVersion: '',
+        minimumConfidencePercent: '91',
+        maximumConfidencePercent: '100',
+      })
     ).toBe(false)
   })
 
@@ -944,14 +961,69 @@ describe('RepositoryIntelligence flow inventory', () => {
     fireEvent.change(screen.getByLabelText('Schema version'), {
       target: { value: '2.0' },
     })
+    fireEvent.change(screen.getByLabelText('Minimum confidence (%)'), {
+      target: { value: '70' },
+    })
+    fireEvent.change(screen.getByLabelText('Maximum confidence (%)'), {
+      target: { value: '90' },
+    })
 
     await waitFor(() =>
       expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
         model: 'quality-analysis',
         promptVersion: 'flow-v2',
         schemaVersion: '2.0',
+        minConfidence: '0.7',
+        maxConfidence: '0.9',
       })
     )
+  })
+
+  it('blocks an inverted confidence window before querying the API', async () => {
+    mockEvidenceApis()
+    const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+
+    fireEvent.change(screen.getByLabelText('Minimum confidence (%)'), {
+      target: { value: '90' },
+    })
+    fireEvent.change(screen.getByLabelText('Maximum confidence (%)'), {
+      target: { value: '70' },
+    })
+
+    expect(await screen.findByText('Maximum confidence must be greater than or equal to minimum confidence.')).toBeVisible()
+    expect(screen.getByLabelText('Maximum confidence (%)')).toHaveAttribute('aria-invalid', 'true')
+    expect(flowRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('retains the confidence window when continuing UX-flow history', async () => {
+    mockEvidenceApis()
+    const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates').mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [candidate], page: { nextCursor: 'flow-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+
+    fireEvent.change(screen.getByLabelText('Minimum confidence (%)'), {
+      target: { value: '70' },
+    })
+    fireEvent.change(screen.getByLabelText('Maximum confidence (%)'), {
+      target: { value: '90' },
+    })
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      minConfidence: '0.7',
+      maxConfidence: '0.9',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more UX-flow history' }))
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      minConfidence: '0.7',
+      maxConfidence: '0.9',
+      cursor: 'flow-page-2',
+    }))
   })
 
   it('loads the tenant-scoped flow detail before opening the wireframe inspector', async () => {

@@ -50,6 +50,57 @@ describe('repository flow review lifecycle', () => {
     ])
   })
 
+  it('filters confidence inclusively while preserving tenant isolation', async () => {
+    const store = new MemoryCatalogStore()
+    await store.saveRepositoryFlowCandidates([
+      { ...candidate, id: 'low', title: 'Low confidence', confidence: 0.69 },
+      { ...candidate, id: 'minimum', title: 'Minimum confidence', confidence: 0.7 },
+      { ...candidate, id: 'maximum', title: 'Maximum confidence', confidence: 0.9 },
+      { ...candidate, id: 'high', title: 'High confidence', confidence: 0.91 },
+      { ...candidate, id: 'other-tenant', title: 'Other tenant', tenantId: 'tenant-2', confidence: 0.8 },
+    ])
+
+    const matches = await store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, {
+      minConfidence: 0.7,
+      maxConfidence: 0.9,
+    })
+    expect(matches.map(item => item.id).sort()).toEqual(['maximum', 'minimum'])
+  })
+
+  it('binds confidence filters before the stable Postgres continuation cursor', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+
+    await store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, {
+      minConfidence: 0.7,
+      maxConfidence: 0.9,
+      after: { createdAt: candidate.createdAt, id: candidate.id },
+      limit: 25,
+    })
+
+    const [statement, parameters] = query.mock.calls[0]
+    expect(String(statement)).toContain('confidence >= $10')
+    expect(String(statement)).toContain('confidence <= $11')
+    expect(String(statement)).toContain('(created_at,id) < ($12::timestamptz,$13::text)')
+    expect(parameters).toEqual([
+      candidate.repositoryId,
+      candidate.tenantId,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.7,
+      0.9,
+      candidate.createdAt,
+      candidate.id,
+      25,
+    ])
+  })
+
   it('preserves the human decision and attribution when the same analysis is replayed', async () => {
     const store = new MemoryCatalogStore()
     await store.saveRepositoryFlowCandidates([candidate])
