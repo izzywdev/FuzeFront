@@ -79,7 +79,10 @@ jobs:
           base="$UNLEASH_ADMIN_URL/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT"
 
           if [ "$ACTION" = "disable" ]; then
-            curl -sf "${AUTH[@]}" -X POST "$base/off"
+            # Capture HTTP status explicitly — curl -sf alone does not fail on 3xx
+            # (e.g. a CF-Access login redirect), which would falsely report success.
+            off_code=$(curl -sS -o /tmp/off.json -w '%{http_code}' "${AUTH[@]}" -X POST "$base/off")
+            case "$off_code" in 200|204) : ;; *) echo "disable failed ($off_code)"; cat /tmp/off.json; exit 1;; esac
             echo "::notice::disabled $FLAG in $ENVIRONMENT (strategy left intact for clean re-enable)"
             exit 0
           fi
@@ -104,8 +107,9 @@ print(json.dumps({"name": os.environ["FLAG"], "type": unleash_type, "description
           # followed by a failed strategy upsert would leave the flag live at a stale %.
           # Select only unsegmented strategies to avoid ambiguity when a flag has both a
           # segment-targeted and an unsegmented ramp strategy; fail if multiple match.
-          existing=$(curl -sf "${AUTH[@]}" "$base/strategies")
-          sid=$(printf '%s' "$existing" | python3 -c "
+          strategies_code=$(curl -sS -o /tmp/strats.json -w '%{http_code}' "${AUTH[@]}" "$base/strategies")
+          case "$strategies_code" in 200) : ;; *) echo "strategies GET failed ($strategies_code)"; cat /tmp/strats.json; exit 1;; esac
+          sid=$(cat /tmp/strats.json | python3 -c "
 import sys, json
 xs = [s for s in json.load(sys.stdin)
       if s.get('name') == 'flexibleRollout' and not s.get('segments')]
@@ -117,11 +121,14 @@ print(xs[0]['id'] if xs else '')
           patch_body=$(python3 -c 'import json,os;print(json.dumps({"parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
           post_body=$(python3 -c 'import json,os;print(json.dumps({"name":"flexibleRollout","parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
           if [ -n "$sid" ]; then
-            curl -sf "${AUTH[@]}" -H 'Content-Type: application/json' -X PUT "$base/strategies/$sid" -d "$patch_body"
+            strat_code=$(curl -sS -o /tmp/strat_w.json -w '%{http_code}' "${AUTH[@]}" -H 'Content-Type: application/json' -X PUT "$base/strategies/$sid" -d "$patch_body")
+            case "$strat_code" in 200) : ;; *) echo "strategy PUT failed ($strat_code)"; cat /tmp/strat_w.json; exit 1;; esac
           else
-            curl -sf "${AUTH[@]}" -H 'Content-Type: application/json' -X POST "$base/strategies" -d "$post_body"
+            strat_code=$(curl -sS -o /tmp/strat_w.json -w '%{http_code}' "${AUTH[@]}" -H 'Content-Type: application/json' -X POST "$base/strategies" -d "$post_body")
+            case "$strat_code" in 200|201) : ;; *) echo "strategy POST failed ($strat_code)"; cat /tmp/strat_w.json; exit 1;; esac
           fi
 
           # Enable the environment only after the strategy is in the desired state.
-          curl -sf "${AUTH[@]}" -X POST "$base/on"
+          on_code=$(curl -sS -o /tmp/on.json -w '%{http_code}' "${AUTH[@]}" -X POST "$base/on")
+          case "$on_code" in 200|204) : ;; *) echo "environment enable failed ($on_code)"; cat /tmp/on.json; exit 1;; esac
           echo "::notice::$FLAG set to ${ROLLOUT}% in $ENVIRONMENT"
