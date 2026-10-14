@@ -31,7 +31,7 @@ import {
   mkdirSync, rmSync, cpSync,
 } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join, basename, relative, resolve } from 'node:path'
+import { dirname, join, basename, relative, resolve, sep } from 'node:path'
 
 const PRODUCER_DIR = dirname(fileURLToPath(import.meta.url))  // scripts/ds-artifact/
 const REPO_ROOT = dirname(dirname(PRODUCER_DIR))      // repo root
@@ -166,6 +166,7 @@ function buildTokens() {
     ['warning-soft', 'Soft warning tint — callout / pill fill.'],
     ['error-soft', 'Soft error tint — callout / pill fill.'],
     ['scrim', 'Modal / dialog scrim dimming the shell behind overlays.'],
+    ['primary-foreground', 'Text/icon on accent and status fills.'],
   ]
 
   const colorTokens = []
@@ -182,12 +183,6 @@ function buildTokens() {
     const light = lv != null ? toColorValue(lv) : dark
     colorTokens.push({ name, value: dark === light ? dark : { dark, light }, usage })
   }
-  // on-accent ink is a product constant, not a CSS var — carried explicitly.
-  colorTokens.splice(
-    colorTokens.findIndex((t) => t.name === 'error-soft') + 1,
-    0,
-    { name: 'primary-foreground', value: '#ffffff', usage: 'Text/icon on accent and status fills.' },
-  )
 
   // ----- type: families parsed from CSS; groups are an editorial mapping ----
   const fam = (k) => {
@@ -605,6 +600,16 @@ function generate() {
 
 /* ---- write or check ------------------------------------------------------ */
 function writeAll() {
+  // writeAll recursively deletes OUT_DIR first. Refuse to do that for the
+  // filesystem root, the repo root, the cwd, or any ancestor of them — a
+  // mistaken `--out .` or `--out ..` must never wipe the working tree (incl. .git).
+  const isAncestorOrSelf = (p) => p === OUT_DIR || p.startsWith(OUT_DIR + sep)
+  if (OUT_DIR === dirname(OUT_DIR) || isAncestorOrSelf(REPO_ROOT) || isAncestorOrSelf(process.cwd())) {
+    throw new Error(
+      `refusing to write to --out ${OUT_DIR}: it is the filesystem root, the repo root, the cwd, or an ancestor. ` +
+      `Pass --out to a dedicated directory.`,
+    )
+  }
   if (existsSync(OUT_DIR)) rmSync(OUT_DIR, { recursive: true, force: true })
   for (const [rel, text] of Object.entries(files)) {
     const dest = join(OUT_DIR, rel)
