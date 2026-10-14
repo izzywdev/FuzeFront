@@ -539,6 +539,18 @@ app.use((req, res) => {
 function gracefulShutdown(signal: string) {
   console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`)
 
+  // `httpServer.close()` only invokes its callback once every connection —
+  // INCLUDING an upgraded Socket.IO websocket, which the HTTP server still
+  // tracks as an open connection — has ended. `io.close()` is what actively
+  // disconnects those clients, so it must run unnested (not inside
+  // httpServer.close()'s own callback) or the two deadlock: httpServer.close()
+  // waits forever for connections that only io.close() would terminate, and
+  // io.close() never runs because it's waiting for that callback to fire
+  // first. Verified empirically: with io.close() nested inside, the callback
+  // never fires while a client is connected; calling it unnested instead
+  // (so both close concurrently) lets httpServer.close() complete normally.
+  io.close()
+
   httpServer.close(err => {
     if (err) {
       console.error('❌ Error during server shutdown:', err)
@@ -546,11 +558,9 @@ function gracefulShutdown(signal: string) {
     }
 
     console.log('✅ HTTP server closed')
+    console.log('✅ Socket.IO server closed')
 
-    // Close Socket.IO connections
-    io.close(async () => {
-      console.log('✅ Socket.IO server closed')
-
+    ;(async () => {
       // Close database connections
       try {
         await closeDatabase()
@@ -589,7 +599,7 @@ function gracefulShutdown(signal: string) {
 
       console.log('🎯 Graceful shutdown complete')
       process.exit(0)
-    })
+    })()
   })
 
   // Force exit after 30 seconds if graceful shutdown fails

@@ -186,15 +186,22 @@ attachErrorHandlers(app)
 
 function gracefulShutdown(signal: string) {
   console.log(`\n🛑 [applications-service] Received ${signal}. Shutting down...`)
-  httpServer.close(() => {
-    io.close(async () => {
-      await stopRefIndexProjection().catch(() => undefined)
-      await closeDatabase().catch(() => undefined)
-      // Flush any spans still buffered before the process exits — otherwise the
-      // last few requests before shutdown silently never reach Tempo.
-      await telemetry.shutdown().catch(() => undefined)
-      process.exit(0)
-    })
+  // `httpServer.close()` only fires its callback once every connection —
+  // INCLUDING an upgraded Socket.IO websocket, which the HTTP server still
+  // tracks as open — has ended. `io.close()` is what actively disconnects
+  // those clients, so it must run unnested, not inside httpServer.close()'s
+  // own callback, or the two deadlock the same way: httpServer.close() waits
+  // forever for connections only io.close() would terminate, while io.close()
+  // never runs because it's waiting for that callback to fire first. Verified
+  // empirically (see backend/src/index.ts's identical fix for the repro).
+  io.close()
+  httpServer.close(async () => {
+    await stopRefIndexProjection().catch(() => undefined)
+    await closeDatabase().catch(() => undefined)
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => undefined)
+    process.exit(0)
   })
   setTimeout(() => process.exit(1), 30000)
 }
