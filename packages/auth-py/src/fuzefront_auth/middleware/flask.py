@@ -71,14 +71,14 @@ def require_auth(
                 identity = verifier.verify(token)
                 enforce_portal(identity, request, portal)
             except AuthError as err:
-                if optional:
+                # `optional` degrades CLIENT authentication failures (4xx) to anonymous.
+                # A server-side failure (5xx: JWKS/validator/resolver/portal outage) must
+                # surface, or an authenticated caller silently gets the anonymous flow.
+                if optional and err.status < 500:
                     g.identity = None
                     return view(*args, **kwargs)
                 return _deny(err)
             except Exception:  # noqa: BLE001 - an unknown failure is still a denial
-                if optional:
-                    g.identity = None
-                    return view(*args, **kwargs)
                 return _deny(AuthError("UNKNOWN", "authentication failed"))
             g.identity = identity
             return view(*args, **kwargs)

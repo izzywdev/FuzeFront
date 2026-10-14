@@ -38,6 +38,15 @@ class ResolvedPortal:
     id: str
     is_root: bool = False
 
+    def __post_init__(self) -> None:
+        # Loosely typed resolver data must not be able to widen access: `is_root="false"`
+        # or `1` is truthy, and a claimless token would be treated as being on the root
+        # portal. Raising here surfaces as the documented 503 (the resolver raised).
+        if not isinstance(self.id, str) or not self.id:
+            raise TypeError("ResolvedPortal.id must be a non-empty string")
+        if not isinstance(self.is_root, bool):
+            raise TypeError("ResolvedPortal.is_root must be a bool")
+
 
 # (request) -> the portal the request resolved to, or None when it has no portal context.
 PortalResolver = Callable[[Any], "ResolvedPortal | None"]
@@ -52,8 +61,14 @@ def enforce_portal(identity: Identity, request: Any, resolver: PortalResolver | 
         resolved = resolver(request)
     except Exception:  # noqa: BLE001 - a transient lookup failure is not an invalid token
         raise AuthError("VERIFIER_UNAVAILABLE", "portal context is temporarily unavailable", 503) from None
-    if resolved is not None and not isinstance(resolved, ResolvedPortal):
-        # A resolver returning the wrong type is a wiring bug; never guess at its meaning.
+    if resolved is not None and (
+        not isinstance(resolved, ResolvedPortal)
+        or not isinstance(resolved.id, str)
+        or not resolved.id
+        or not isinstance(resolved.is_root, bool)
+    ):
+        # A resolver returning the wrong type (or a hand-mutated/subclassed value) is a
+        # wiring bug; never guess at its meaning.
         raise AuthError("VERIFIER_UNAVAILABLE", "portal context is temporarily unavailable", 503)
 
     if identity.portal_id is not None:

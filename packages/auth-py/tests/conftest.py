@@ -79,7 +79,7 @@ def jwks_server(rsa_key, ec_key):
                 return
             base = f"http://127.0.0.1:{self.server.server_port}"
             if self.path == "/.well-known/openid-configuration":
-                body = {"issuer": base, "jwks_uri": f"{base}/jwks"}
+                body = {"issuer": state.get("discovery_issuer", base), "jwks_uri": f"{base}/jwks"}
             elif self.path == "/jwks":
                 state["jwks_hits"] += 1
                 body = {"keys": keys}

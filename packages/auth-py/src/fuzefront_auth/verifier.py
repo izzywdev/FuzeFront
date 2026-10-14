@@ -308,15 +308,20 @@ def _load_jwk(raw: Any) -> _Candidate | None:
         jwk = PyJWK(raw)
     except Exception:  # noqa: BLE001
         return None
+    # A restriction that is PRESENT but malformed must never be read as "unrestricted":
+    # skip the key rather than let bad issuer data broaden what it may do.
+    for name in ("alg", "use", "crv"):
+        if name in raw and not isinstance(raw[name], str):
+            return None
     key_ops = raw.get("key_ops")
-    ops = tuple(o for o in key_ops if isinstance(o, str)) if isinstance(key_ops, list) else None
-    alg, use, crv = raw.get("alg"), raw.get("use"), raw.get("crv")
+    if "key_ops" in raw and not (isinstance(key_ops, list) and all(isinstance(o, str) for o in key_ops)):
+        return None
     return _Candidate(
         jwk=jwk,
-        alg=alg if isinstance(alg, str) else None,
-        use=use if isinstance(use, str) else None,
-        key_ops=ops,
-        crv=crv if isinstance(crv, str) else None,
+        alg=raw.get("alg"),
+        use=raw.get("use"),
+        key_ops=tuple(key_ops) if "key_ops" in raw else None,
+        crv=raw.get("crv"),
     )
 
 
@@ -352,6 +357,11 @@ class _KeyResolver:
         uri = doc.get("jwks_uri") if isinstance(doc, dict) else None
         if not isinstance(uri, str) or not uri:
             raise AuthError("JWKS_UNAVAILABLE", "discovery document has no `jwks_uri`", 503)
+        # OIDC Discovery 4.3: the document's `issuer` MUST be identical to the issuer URL
+        # the discovery URL was built from. Without this, metadata served for a different
+        # tenant/authority would make us trust ITS signing keys for our issuer.
+        if doc.get("issuer") != self._config.issuer:
+            raise AuthError("JWKS_UNAVAILABLE", "discovery document is for a different issuer", 503)
         self._jwks_uri = uri
         return uri
 

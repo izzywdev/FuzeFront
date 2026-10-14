@@ -384,3 +384,29 @@ def test_es_algorithms_are_bound_to_their_curve(jwks_server, curve, token_alg, o
         assert v.verify(token).user_id == "u-9"
     else:
         assert code_of(v, token) == "JWKS_UNAVAILABLE"
+
+
+def test_discovery_for_a_different_issuer_is_refused(jwks_server, rsa_key):
+    # The document says it belongs to another authority: its keys must not be trusted
+    # for ours, even though its jwks_uri is reachable and signs "correctly".
+    jwks_server["discovery_issuer"] = "https://another-tenant.invalid"
+    v = create_verifier(FederatedJwksConfig(issuer=jwks_server["base"], audience=AUDIENCE))
+    token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "iss": jwks_server["base"]})
+    with pytest.raises(AuthError) as info:
+        v.verify(token)
+    assert (info.value.code, info.value.status) == ("JWKS_UNAVAILABLE", 503)
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [{"key_ops": "verify"}, {"key_ops": [1]}, {"key_ops": {"verify": True}}, {"use": 5}, {"alg": ["RS256"]}],
+)
+def test_malformed_restriction_metadata_skips_the_key(jwks_server, rsa_key, malformed):
+    # A present-but-malformed restriction must not be read as "unrestricted".
+    from conftest import _jwk
+
+    entry = _jwk(rsa_key.public_key(), "rsa-1", "RS256")
+    entry.pop("use", None)
+    entry.pop("alg", None)
+    _only(jwks_server, {**entry, **malformed})
+    assert code_of(verifier(jwks_server), make_token(rsa_key, alg="RS256", kid="rsa-1", claims=GOOD)) == "JWKS_UNAVAILABLE"

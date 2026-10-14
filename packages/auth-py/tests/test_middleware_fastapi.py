@@ -103,3 +103,33 @@ def test_portal_bound_token_is_enforced_by_the_dependency():
         raise RuntimeError("db down")
 
     assert build_portal(down).get("/private", headers=headers).status_code == 503
+
+
+def test_optional_degrades_client_failures_but_surfaces_server_failures():
+    token = make_token(SECRET, claims={"userId": "u-1", "portalId": "p-1"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def build_optional(resolver, verifier=None):
+        verifier = verifier or create_verifier(LegacyHs256Config(secret=SECRET))
+        maybe = auth_dependency(verifier, optional=True, portal=resolver)
+        app = FastAPI()
+
+        @app.get("/open")
+        def open_route(identity: Annotated[Identity | None, Depends(maybe)]):
+            return {"user": identity.user_id if identity else None}
+
+        return TestClient(app)
+
+    assert build_optional(lambda req: ResolvedPortal(id="p-2")).get("/open", headers=headers).json() == {"user": None}
+
+    def down(req):
+        raise RuntimeError("portal lookup down")
+
+    assert build_optional(down).get("/open", headers=headers).status_code == 503
+
+    def validator_down(*a):
+        raise RuntimeError("sessions down")
+
+    broken = create_verifier(LegacyHs256Config(secret=SECRET, session_validator=validator_down))
+    plain = {"Authorization": f"Bearer {make_token(SECRET, claims={'userId': 'u-1'})}"}
+    assert build_optional(None, broken).get("/open", headers=plain).status_code == 503

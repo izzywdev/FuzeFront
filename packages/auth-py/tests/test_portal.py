@@ -80,3 +80,30 @@ def test_legacy_verifier_exposes_portal_id():
     v = create_verifier(LegacyHs256Config(secret=SECRET))
     assert v.verify(make_token(SECRET, claims={"userId": "u", "portalId": "p-1"})).portal_id == "p-1"
     assert v.verify(make_token(SECRET, claims={"userId": "u"})).portal_id is None
+
+
+@pytest.mark.parametrize("bad_root", ["false", "true", 1, 0, None])
+def test_resolved_portal_rejects_non_boolean_is_root(bad_root):
+    # A truthy string/int must never be read as "this is the root portal".
+    with pytest.raises(TypeError):
+        ResolvedPortal(id="p-1", is_root=bad_root)
+
+
+@pytest.mark.parametrize("bad_id", ["", None, 5])
+def test_resolved_portal_rejects_bad_ids(bad_id):
+    with pytest.raises(TypeError):
+        ResolvedPortal(id=bad_id)
+
+
+def test_a_resolver_that_builds_a_malformed_portal_is_a_503():
+    def sloppy(req):
+        return ResolvedPortal(id="p-1", is_root="false")  # raises inside the resolver
+
+    denied(ident(None), sloppy, status=503)
+    denied(ident("p-1"), sloppy, status=503)
+
+
+def test_a_hand_mutated_portal_is_still_caught():
+    mutated = ResolvedPortal(id="p-1")
+    object.__setattr__(mutated, "is_root", "false")
+    denied(ident(None), lambda req: mutated, status=503)
