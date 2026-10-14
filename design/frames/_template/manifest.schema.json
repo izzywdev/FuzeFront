@@ -157,8 +157,8 @@
         },
         "packages": {
           "type": "array",
-          "description": "npm packages to be created/extended. Private: publishConfig → GitHub Packages, access restricted.",
-          "items": { "type": "string", "pattern": "^@fuzefront/" }
+          "description": "npm packages to be created/extended. Private: publishConfig → GitHub Packages, access restricted. Scope is @fuzefront/* or @fuzeone/* — the latter by owner decision for packages published under the `fuzeone` GitHub org (GitHub Packages requires the npm scope to equal the owning org; see docs/planning/epics/EPIC-17-selection-lists.md).",
+          "items": { "type": "string", "pattern": "^@(fuzefront|fuzeone)/" }
         }
       }
     }
