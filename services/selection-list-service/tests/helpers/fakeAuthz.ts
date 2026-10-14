@@ -8,6 +8,15 @@
 //   - every query is recorded (`asked`) so tests can pin WHICH decisions a route asked for, in which tenant.
 
 import type { AuthzClient } from '@fuzefront/auth';
+import { permitSubjectKey, permitTenantKey } from '../../src/lib/permitKeys';
+
+// Permit knows tenants and users by their BARE UUID (the service sends exactly that, see src/lib/permitKeys.ts), so
+// this double keys everything by it: a setup call may name an id in either rendering, but a decision or grant
+// is only ever found under the key that was actually SENT (exact match).
+const pk = (tenant: string, subject: string): string => `${permitTenantKey(tenant)}|${permitSubjectKey(subject)}`;
+// Lookups are EXACT on what was sent: Permit does not know a TypeID as a second name for a UUID, so a request that
+// reaches this double with a TypeID (or anything not already a Permit key) matches nothing.
+const pkOrRaw = (tenant: string, subject: string): string => `${tenant}|${subject}`;
 
 export const ROLE_ACTIONS: Record<string, string[]> = {
   'list-owner': ['read', 'add_value', 'update_value', 'remove_value', 'translate', 'update', 'delete', 'manage_access'],
@@ -36,18 +45,38 @@ export class FakeAuthz {
   grantFails: Error | null = null;
 
   allowCatalog(tenant: string, subject: string, actions: string[]): void {
-    this.catalog.set(`${tenant}|${subject}`, new Set(actions));
+    this.catalog.set(pk(tenant, subject), new Set(actions));
   }
 
   give(tenant: string, subject: string, listId: string, role: string): void {
-    this.roles.set(`${tenant}|${subject}|${listId}`, role);
+    this.roles.set(`${pk(tenant, subject)}|${listId}`, role);
+  }
+
+  /** The role `subject` holds on `listId` in `tenant` (either rendering of the ids), if any. */
+  roleOf(tenant: string, subject: string, listId: string): string | undefined {
+    return this.roles.get(`${pk(tenant, subject)}|${listId}`);
+  }
+
+  /** Forget a role (test cleanup). */
+  dropRole(tenant: string, subject: string, listId: string): void {
+    this.roles.delete(`${pk(tenant, subject)}|${listId}`);
+  }
+
+  /** The catalog actions `subject` holds in `tenant` (either rendering of the ids), if any. */
+  catalogOf(tenant: string, subject: string): Set<string> | undefined {
+    return this.catalog.get(pk(tenant, subject));
+  }
+
+  /** `Organization:read` (the membership probe of access PUT): the double models it as a role on key `undefined`. */
+  member(tenant: string, subject: string): void {
+    this.roles.set(`${pk(tenant, subject)}|undefined`, 'list-viewer');
   }
 
   private decide(q: Asked): boolean {
     if (q.resource.type === 'SelectionListCatalog') {
-      return this.catalog.get(`${q.tenant}|${q.subject}`)?.has(q.action) ?? false;
+      return this.catalog.get(pkOrRaw(q.tenant, q.subject))?.has(q.action) ?? false;
     }
-    const role = this.roles.get(`${q.tenant}|${q.subject}|${q.resource.key}`);
+    const role = this.roles.get(`${pkOrRaw(q.tenant, q.subject)}|${q.resource.key}`);
     return role ? (ROLE_ACTIONS[role] ?? []).includes(q.action) : false;
   }
 
@@ -70,7 +99,7 @@ export class FakeAuthz {
         return r;
       },
       revoke: async (r: { subject: string; tenant: string; role: string; resource: { key: string } }) => {
-        this.roles.delete(`${r.tenant}|${r.subject}|${r.resource.key}`);
+        this.roles.delete(`${pkOrRaw(r.tenant, r.subject)}|${r.resource.key}`);
         this.revokes.push({ subject: r.subject, tenant: r.tenant, role: r.role, listId: r.resource.key });
       },
       listGrants: async () => ({ items: [], page: { nextCursor: null, hasMore: false } }),

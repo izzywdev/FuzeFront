@@ -120,7 +120,7 @@ suite('seed/events migrations on real Postgres', () => {
   it('applies from scratch and creates every new table/column', async () => {
     const db = await fresh();
     const [, applied] = await db.migrate.latest();
-    expect(applied.length).toBe(11);
+    expect(applied.length).toBe(12);
 
     const lists = await columns(db, 'selection_lists');
     const items = await columns(db, 'selection_list_items');
@@ -158,7 +158,7 @@ suite('seed/events migrations on real Postgres', () => {
     });
 
     const [, applied] = await db.migrate.latest();
-    expect(applied.length).toBe(6);
+    expect(applied.length).toBe(7);
 
     const lists = await db('selection_lists').orderBy('id');
     expect(lists).toHaveLength(2);
@@ -212,7 +212,7 @@ suite('seed/events migrations on real Postgres', () => {
   it('down() then up() round-trips cleanly (and leaves migrations 1-5 intact)', async () => {
     const db = await fresh();
     await db.migrate.latest();
-    for (let i = 0; i < 6; i++) await db.migrate.down();
+    for (let i = 0; i < 7; i++) await db.migrate.down();
     const t = await tables(db);
     for (const name of ['selection_list_seed_ledger', 'selection_list_seed_sources', 'event_outbox', 'selection_list_ref_index']) {
       expect(t).not.toContain(name);
@@ -220,7 +220,7 @@ suite('seed/events migrations on real Postgres', () => {
     expect(await columns(db, 'selection_lists')).not.toContain('seed_source');
     expect(await columns(db, 'selection_lists')).toContain('key');
     const [, applied] = await db.migrate.latest();
-    expect(applied.length).toBe(6);
+    expect(applied.length).toBe(7);
   });
 
   describe('constraints and semantics', () => {

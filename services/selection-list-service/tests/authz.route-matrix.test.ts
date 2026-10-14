@@ -53,15 +53,16 @@ import {
   SELECTION_LIST_CATALOG_RESOURCE,
   SELECTION_LIST_RESOURCE,
 } from '../src/middleware/authz';
+import { usr, org, permitKey } from './helpers/ids';
 
 const ENV_VAR = 'FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED';
 const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-authz-matrix';
 
-const USER = 'usr_01testuserid0000000000000';
-const ORG = 'org_01testorgid00000000000000';
+const USER = usr('testuser');
+const ORG = org('testorg');
 const LIST = 'front_sl_01testlistid000000000000';
 const ITEM = 'front_sli_01testitemid00000000000';
-const OTHER_USER = 'usr_01otheruserid000000000000';
+const OTHER_USER = usr('otheruser');
 
 const CATALOG = SELECTION_LIST_CATALOG_RESOURCE;
 const LIST_RES = SELECTION_LIST_RESOURCE;
@@ -259,8 +260,8 @@ describe('authz matrix — every mounted /v1 route is covered, and asks the righ
       );
       // Every check is made for the CALLER in the caller's tenant.
       for (const q of asked.filter((x) => x.resource.type === LIST_RES || x.resource.type === CATALOG)) {
-        expect(q.subject).toBe(USER);
-        expect(q.tenant).toBe(ORG);
+        expect(q.subject).toBe(permitKey(USER)); // the Security API is sent Permit's key (bare UUID)
+        expect(q.tenant).toBe(permitKey(ORG));
       }
     },
   );
@@ -383,8 +384,8 @@ describe('GET /v1/selection-lists — the catalog `list` action only authorizes 
     const kept = await filterReadable(req, [{ id: A }, { id: B }]);
     expect(kept.map((r) => r.id)).toEqual([A, B]);
     expect((client.bulkCheck as jest.Mock).mock.calls[0][0]).toEqual([
-      { subject: USER, tenant: ORG, resource: { type: LIST_RES, key: A }, action: 'read' },
-      { subject: USER, tenant: ORG, resource: { type: LIST_RES, key: B }, action: 'read' },
+      { subject: permitKey(USER), tenant: permitKey(ORG), resource: { type: LIST_RES, key: A }, action: 'read' },
+      { subject: permitKey(USER), tenant: permitKey(ORG), resource: { type: LIST_RES, key: B }, action: 'read' },
     ]);
   });
 });

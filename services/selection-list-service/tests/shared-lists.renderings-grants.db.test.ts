@@ -2,18 +2,19 @@
 // presented under two renderings of its id (bare UUID vs `org_...`), through the real app, real handlers and
 // REAL Postgres.
 //
-// GRANT TENANT RULE. A list-owner grant is made in the tenant the granting token carries (the same string every
-// authorization check later uses for that caller) and RECORDED in the mirror row (`selection_list_access.org_id`).
-// A common list is stored under the configured platform org id, which may be the other rendering, so the stored
-// `organization_id` is NOT the grant tenant. Every later revoke / confirm / compensate acts in the RECORDED
-// tenant (legacy rows without it fall back to the old derivation), so a grant is never stranded in a tenant the
-// cleanup does not look at.
+// GRANT KEY RULE. Every call to the Security API names the tenant and the user by Permit's key (the bare UUID,
+// src/lib/permitKeys.ts), whichever rendering the token or the stored row carries, and the mirror row
+// (`selection_list_access.user_id` / `org_id`) records what was sent. A common list is stored under the configured
+// platform org id (maybe the other rendering), so the stored `organization_id` can differ from the recorded
+// `org_id` in form but never in meaning. Revoke / confirm / compensate use the recorded values, normalised at the
+// boundary (legacy rows holding a TypeID, or no `org_id`, therefore still hit the right key).
 
 import type { Knex } from 'knex';
 import { dbDescribe } from './helpers/testDb';
 import { fromUuid, toUuid } from '@izzywdev/fuzefront-identity';
 import { ADMIN_ACTIONS, createWorld, P, PLATFORM, Principal, World } from './helpers/sharedWorld';
 import { flagClientWith } from './helpers/flagClient';
+import { permitKey } from './helpers/ids';
 
 const state: { db: Knex | undefined } = { db: undefined };
 jest.mock('../src/db', () => ({
@@ -123,10 +124,10 @@ dbDescribe('quota reporting and grant tenants across renderings (real Postgres)'
       const r = await w.api(opUuid).post('/v1/selection-lists', { key, name: key, visibility: 'platform' });
       expect(r.status).toBe(201);
       expect(r.body.organization_id).toBe(PLATFORM); // stored under the configured org_ id...
-      const mirror = await w.db('selection_list_access').where({ list_id: r.body.id, user_id: P.op.userId }).first();
+      const mirror = await w.db('selection_list_access').where({ list_id: r.body.id, user_id: permitKey(P.op.userId) }).first();
       expect(mirror.org_id).toBe(PLATFORM_UUID); // ...but the grant was made, and is recorded, in the token's tenant
       expect(w.authz.grants.filter((g) => g.listId === r.body.id)).toEqual([
-        { subject: P.op.userId, tenant: PLATFORM_UUID, role: 'list-owner', listId: r.body.id },
+        { subject: permitKey(P.op.userId), tenant: PLATFORM_UUID, role: 'list-owner', listId: r.body.id },
       ]);
       return r.body.id as string;
     };
@@ -137,8 +138,8 @@ dbDescribe('quota reporting and grant tenants across renderings (real Postgres)'
       const before = w.authz.revokes.length;
       expect((await w.api(P.op).del(`/v1/selection-lists/${id}?purge=true`)).status).toBe(204);
       const mine = w.authz.revokes.slice(before).filter((r) => r.listId === id);
-      expect(mine).toEqual([{ subject: P.op.userId, tenant: PLATFORM_UUID, role: 'list-owner', listId: id }]);
-      expect(w.authz.roles.has(`${PLATFORM_UUID}|${P.op.userId}|${id}`)).toBe(false);
+      expect(mine).toEqual([{ subject: permitKey(P.op.userId), tenant: PLATFORM_UUID, role: 'list-owner', listId: id }]);
+      expect(w.authz.roleOf(PLATFORM_UUID, P.op.userId, id)).toBeUndefined();
     });
 
     it('access DELETE removes a grant in its recorded tenant, and the last-owner guard confirms the other owner there', async () => {
@@ -152,19 +153,19 @@ dbDescribe('quota reporting and grant tenants across renderings (real Postgres)'
       const res = await w.api(THIRD).del(`/v1/selection-lists/${id}/access/${P.opEditor.userId}`);
       expect(res.status).toBe(204); // the other owner (op) is confirmed in the UUID tenant, where its grant is
       expect(w.authz.revokes.slice(before).filter((r) => r.listId === id)).toEqual([
-        { subject: P.opEditor.userId, tenant: PLATFORM_UUID, role: 'list-owner', listId: id },
+        { subject: permitKey(P.opEditor.userId), tenant: PLATFORM_UUID, role: 'list-owner', listId: id },
       ]);
-      expect(w.authz.roles.has(`${PLATFORM_UUID}|${P.opEditor.userId}|${id}`)).toBe(false);
+      expect(w.authz.roleOf(PLATFORM_UUID, P.opEditor.userId, id)).toBeUndefined();
     });
 
-    it('a legacy mirror row without org_id falls back to the stored organization (old behaviour)', async () => {
+    it('a legacy mirror row without org_id falls back to the stored organization (its TypeID, normalised to the Permit key at the boundary)', async () => {
       const id = await publish('gr-legacy');
       await w.db('selection_list_access').where({ list_id: id }).update({ org_id: null });
       const { handleUserDeleted } = await import('../src/events/user-deleted.handler');
       const before = w.authz.revokes.length;
       await handleUserDeleted(deletedEvent(P.op.userId));
       const mine = w.authz.revokes.slice(before).filter((r) => r.listId === id);
-      expect(mine).toEqual([{ subject: P.op.userId, tenant: PLATFORM, role: 'list-owner', listId: id }]);
+      expect(mine).toEqual([{ subject: permitKey(P.op.userId), tenant: PLATFORM_UUID, role: 'list-owner', listId: id }]);
     });
 
     it('identity.user.deleted revokes the grant in the tenant it was made in, then drops the mirror row', async () => {
@@ -173,8 +174,8 @@ dbDescribe('quota reporting and grant tenants across renderings (real Postgres)'
       const before = w.authz.revokes.length;
       await handleUserDeleted(deletedEvent(P.op.userId));
       const mine = w.authz.revokes.slice(before).filter((r) => r.listId === id);
-      expect(mine).toEqual([{ subject: P.op.userId, tenant: PLATFORM_UUID, role: 'list-owner', listId: id }]);
-      expect(w.authz.roles.has(`${PLATFORM_UUID}|${P.op.userId}|${id}`)).toBe(false); // the real grant is gone, not left behind
+      expect(mine).toEqual([{ subject: permitKey(P.op.userId), tenant: PLATFORM_UUID, role: 'list-owner', listId: id }]);
+      expect(w.authz.roleOf(PLATFORM_UUID, P.op.userId, id)).toBeUndefined(); // the real grant is gone, not left behind
       expect(await w.db('selection_list_access').where({ list_id: id, user_id: P.op.userId }).first()).toBeUndefined();
     });
   });

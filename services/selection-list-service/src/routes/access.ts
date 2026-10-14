@@ -56,7 +56,8 @@ import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { getAuthzClient, bearer } from '../middleware/authz';
 import { requireListMutation } from '../middleware/listAccess';
-import { canonicalUserId, sharedListsOn, userScope, writeOrgs } from '../lib/sharedLists';
+import { canonicalUserId, userScope, writeOrgs } from '../lib/sharedLists';
+import { PermitKeyError, permitSubjectKey, permitTenantKey } from '../lib/permitKeys';
 import { authMiddleware } from '../middleware/auth';
 import { lockOrgOutbox } from '../events/outbox';
 import { eventContextFromRequest, emitAccessGranted, emitAccessRevoked } from '../events/emitters';
@@ -116,18 +117,18 @@ function iso(v: Date | string): string {
   return v instanceof Date ? v.toISOString() : new Date(v).toISOString();
 }
 
-/** `wire`: render the user as its `usr_...` TypeID even if the mirror holds the bare-UUID rendering (flag ON). */
-function formatGrant(r: AccessRow, wire = false) {
-  let userId = r.user_id;
-  if (wire) {
-    const c = canonicalUserId(r.user_id);
-    if (c) userId = c;
-  }
+/**
+ * The mirror records the key the Security API was sent (the bare UUID, see lib/permitKeys.ts), but the contract
+ * names users by their `usr_...` TypeID: render both user fields in the wire form (legacy rows already holding a
+ * TypeID, and `system:*` principals, are left as they are).
+ */
+function formatGrant(r: AccessRow) {
+  const wire = (id: string): string => canonicalUserId(id) ?? id;
   return {
     list_id: r.list_id,
-    user_id: userId,
+    user_id: wire(r.user_id),
     role: r.role,
-    granted_by: r.granted_by,
+    granted_by: wire(r.granted_by),
     granted_at: iso(r.granted_at),
     updated_at: iso(r.updated_at),
   };
@@ -187,9 +188,8 @@ router.get(
           ? encodeCursor(items[items.length - 1]['user_id'])
           : null;
 
-      const wireUsers = await sharedListsOn(req);
       res.status(200).json({
-        items: items.map((r) => formatGrant(r as AccessRow, wireUsers)),
+        items: items.map((r) => formatGrant(r as AccessRow)),
         page: {
           nextCursor,
           hasMore,
@@ -290,6 +290,8 @@ router.put(
     const userForms = await userScope(req, userId);
 
     try {
+      // A NEW grant is keyed (and recorded in the mirror) by the key the Security API is sent: the bare UUID.
+      subject = permitSubjectKey(userId);
       if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
         return;
@@ -326,6 +328,12 @@ router.put(
         prior = existing ? (existing['role'] as string) : null;
         if (existing?.['org_id']) grantTenant = existing['org_id'] as string;
         if (existing?.['user_id']) subject = existing['user_id'] as string;
+        else {
+          // No live grant: a previously REVOKED row of this user (under any rendering) is re-activated in place,
+          // rather than leaving a second row for the same user next to it.
+          const revoked = await trx('selection_list_access').where({ list_id: listId }).whereIn('user_id', userForms).first('user_id');
+          if (revoked?.['user_id']) subject = revoked['user_id'] as string;
+        }
 
         // Last-owner guard: demoting the only list-owner is refused. Decided by
         // the AUTHORITY (review M-2): another mirror owner must be confirmed by
@@ -402,7 +410,7 @@ router.put(
             updated_at = now(),
             revoked_at = NULL
           `,
-          [listId, subject, role, actorId, grantTenant],
+          [listId, subject, role, actorId, permitTenantKey(grantTenant)],
         );
 
         // Outbox, same transaction: access.granted (previousRole null for a new
@@ -421,10 +429,14 @@ router.put(
           .first('list_id', 'user_id', 'role', 'granted_by', 'granted_at', 'updated_at')) as AccessRow;
       });
 
-      res.status(200).json(formatGrant(row, await sharedListsOn(req)));
+      res.status(200).json(formatGrant(row));
     } catch (err) {
       if (err instanceof HttpError) {
         res.status(err.status).json(err.body);
+        return;
+      }
+      if (err instanceof PermitKeyError) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: err.message });
         return;
       }
       // The mirror rolled back with the transaction; the Security API did not.
@@ -551,6 +563,10 @@ router.delete(
     } catch (err) {
       if (err instanceof HttpError) {
         res.status(err.status).json(err.body);
+        return;
+      }
+      if (err instanceof PermitKeyError) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: err.message });
         return;
       }
       // The mirror rolled back with the transaction (a later step, e.g. the

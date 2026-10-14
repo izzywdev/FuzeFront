@@ -57,6 +57,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { AuthzClient, createAuthzClient } from '@fuzefront/auth';
+import { permitKeyedClient, permitSubjectKey, permitTenantKey } from '../lib/permitKeys';
 import type { Knex } from 'knex';
 import { db } from '../db';
 import { isAuthzEnforced, FLAGS, FlagContext } from './authz.flags';
@@ -134,9 +135,16 @@ let _authzClient: AuthzClient = isNoOpMode
     // propagation on every Security API call; behaviour is otherwise unchanged.
     createAuthzClient({ baseUrl: SECURITY_SERVICE_URL, fetch: createLoggedFetch() });
 
-/** Returns the active authz client (real or no-op). */
+let _keyed: { inner: AuthzClient; wrapped: AuthzClient } | null = null;
+
+/**
+ * Returns the active authz client (real, no-op or an injected double), wrapped so that EVERY tenant / subject it
+ * sends to the Security API is in the form Permit provisions (the bare UUID; see lib/permitKeys.ts). The one
+ * boundary: no call site converts ids itself, and a malformed id is refused rather than passed through.
+ */
 export function getAuthzClient(): AuthzClient {
-  return _authzClient;
+  if (!_keyed || _keyed.inner !== _authzClient) _keyed = { inner: _authzClient, wrapped: permitKeyedClient(_authzClient) };
+  return _keyed.wrapped;
 }
 
 /**
@@ -420,10 +428,13 @@ export async function grantListOwner(
   executor: Knex | Knex.Transaction = db,
 ): Promise<void> {
   const machineToken = await getGrantToken();
+  // The mirror records what was actually sent to the Security API: the Permit keys (bare UUIDs).
+  const subject = permitSubjectKey(userId);
+  const tenant = permitTenantKey(orgId);
   await getAuthzClient().grant(
     {
-      subject: userId,
-      tenant: orgId,
+      subject,
+      tenant,
       role: 'list-owner',
       resource: { type: 'SelectionList', key: listId },
     },
@@ -436,10 +447,10 @@ export async function grantListOwner(
   await executor('selection_list_access')
     .insert({
       list_id: listId,
-      user_id: userId,
+      user_id: subject,
       role: 'list-owner',
       granted_by: grantedBy,
-      org_id: orgId,
+      org_id: tenant,
       granted_at: db.fn.now(),
       updated_at: db.fn.now(),
       revoked_at: null,

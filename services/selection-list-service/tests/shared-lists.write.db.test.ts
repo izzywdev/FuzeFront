@@ -13,6 +13,7 @@ import { TOPICS } from '@fuzefront/shared/kafka';
 import { dbDescribe } from './helpers/testDb';
 import { fromUuid, toUuid } from '@izzywdev/fuzefront-identity';
 import { ADMIN_ACTIONS, createWorld, EDITOR_ACTIONS as EDITOR, ORG_A, P, PLATFORM, Principal, publishPriorityList, World } from './helpers/sharedWorld';
+import { usr as mkUsr, org as mkOrg, permitKey } from './helpers/ids';
 import { assertConforms } from './helpers/openapi';
 
 const state: { db: Knex | undefined } = { db: undefined };
@@ -51,13 +52,13 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
       expect(res.body).toMatchObject({ visibility: 'platform', organization_id: PLATFORM });
       expect(w.authz.since(mark)).toEqual(['catalog:create', 'catalog:publish_platform']);
       const asked = w.authz.asked.slice(mark).find((q) => q.action === 'publish_platform')!;
-      expect(asked.tenant).toBe(PLATFORM); // evaluated in the PLATFORM tenant
+      expect(asked.tenant).toBe(permitKey(PLATFORM)); // evaluated in the PLATFORM tenant
       const events = await w.newEvents();
       expect(events.some((e) => e.topic === TOPICS.SELECTION_LISTS_LIST_CREATED && e.p.list.visibility === 'platform')).toBe(true);
     });
 
     it('platform: a customer-org admin HOLDS publish_platform in its own tenant and still gets 403', async () => {
-      expect(w.authz.catalog.get(`${ORG_A}|${P.aAdmin.userId}`)?.has('publish_platform')).toBe(true);
+      expect(w.authz.catalogOf(ORG_A, P.aAdmin.userId)?.has('publish_platform')).toBe(true);
       const res = await w.api(P.aAdmin).post('/v1/selection-lists', { key: 'wp-nope', name: 'Nope', visibility: 'platform' });
       expect(res.status).toBe(403);
       expect(await w.db('selection_lists').where({ key: 'wp-nope' }).first()).toBeUndefined();
@@ -262,8 +263,8 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
     it('org_lists override stored under the TypeID applies to a create through the UUID rendering (flag ON)', async () => {
       const typeId = fromUuid('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e91');
       const uuid = toUuid(typeId as never);
-      const byType = { userId: 'usr_01quotaren0000000000000000a', orgId: typeId };
-      const byUuid = { userId: 'usr_01quotaren0000000000000000b', orgId: uuid };
+      const byType = { userId: mkUsr('01quotaren0000000000000000a'), orgId: typeId };
+      const byUuid = { userId: mkUsr('01quotaren0000000000000000b'), orgId: uuid };
       for (const p of [byType, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, EDITOR);
       await w.db('selection_list_org_quota').insert({ organization_id: typeId, updated_by: 'usr_x', max_lists: 1 });
       expect((await w.api(byType).post('/v1/selection-lists', { key: 'q-one', name: 'One' })).status).toBe(201);
@@ -289,8 +290,8 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
     it('un-archiving counts across renderings too', async () => {
       const typeId = fromUuid('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e92');
       const uuid = toUuid(typeId as never);
-      const byType = { userId: 'usr_01quotaren0000000000000000c', orgId: typeId };
-      const byUuid = { userId: 'usr_01quotaren0000000000000000d', orgId: uuid };
+      const byType = { userId: mkUsr('01quotaren0000000000000000c'), orgId: typeId };
+      const byUuid = { userId: mkUsr('01quotaren0000000000000000d'), orgId: uuid };
       for (const p of [byType, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, EDITOR);
       await w.db('selection_list_org_quota').insert({ organization_id: typeId, updated_by: 'usr_x', max_lists: 1 });
       const first = await w.api(byType).post('/v1/selection-lists', { key: 'u-one', name: 'One' });
@@ -309,8 +310,8 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
     const world = (n: number) => {
       const typeId = fromUuid('organization', `0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7f${n}0`);
       const uuid = toUuid(typeId as never);
-      const byType = { userId: `usr_01iquota${n}00000000000000000a`, orgId: typeId };
-      const byUuid = { userId: `usr_01iquota${n}00000000000000000b`, orgId: uuid };
+      const byType = { userId: mkUsr(`iquota${n}a`), orgId: typeId };
+      const byUuid = { userId: mkUsr(`iquota${n}b`), orgId: uuid };
       for (const p of [byType, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, EDITOR);
       return { typeId, uuid, byType, byUuid };
     };
@@ -444,7 +445,7 @@ dbDescribe('shared lists — write path (real Postgres)', () => {
       expect(res.status).toBe(200);
       expect(res.body.visibility).toBe('platform');
       expect(w.authz.since(mark)).toEqual(['list:update', 'list:manage_access', 'catalog:publish_platform']);
-      expect(w.authz.asked.slice(mark).pop()!.tenant).toBe(PLATFORM);
+      expect(w.authz.asked.slice(mark).pop()!.tenant).toBe(permitKey(PLATFORM));
       // ...and a platform-org owner WITHOUT publish_platform may not
       const mk2 = await w.api(P.opEditor).post('/v1/selection-lists', { key: 'to-common-2', name: 'To common 2' });
       const denied = await w.api(P.opEditor).patch(`/v1/selection-lists/${mk2.body.id}`, { visibility: 'platform' });

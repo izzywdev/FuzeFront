@@ -87,7 +87,7 @@ suite('migration 11 (shared lists + forks) on real Postgres', () => {
     await db('selection_list_items').insert({ id: 'front_sli_a', list_id: 'front_sl_a', code: 'RED', sort_order: 100, created_by: 'usr_1' });
 
     const [, applied] = await db.migrate.latest();
-    expect(applied).toEqual(['20261005_000011_shared_lists_and_forks.ts']);
+    expect(applied).toEqual(['20261005_000011_shared_lists_and_forks.ts', '20261014_000012_ref_index_owner_uuid.ts']);
 
     const lists = await db('selection_lists').orderBy('id');
     expect(lists.map((l: any) => [l.id, l.visibility, l.forked_from_list_id, l.forked_from_org_id, l.forked_from_revision, l.forked_at, l.status]))
@@ -220,7 +220,8 @@ suite('migration 11 (shared lists + forks) on real Postgres', () => {
     const db = await fresh();
     await db.migrate.latest();
     await db('selection_lists').insert({ id: 'front_sl_d0', organization_id: 'org_1', key: 'k', created_by: 'usr_1', visibility: 'org' });
-    await db.migrate.down();
+    await db.migrate.down(); // 12 (owner_uuid)
+    await db.migrate.down(); // 11 (this migration)
     expect(await columns(db, 'selection_lists')).not.toContain('visibility');
     expect(await columns(db, 'selection_lists')).not.toContain('forked_from_list_id');
     expect(await columns(db, 'selection_list_items')).not.toContain('origin_item_id');
@@ -230,7 +231,7 @@ suite('migration 11 (shared lists + forks) on real Postgres', () => {
     const cons = await db.raw(`SELECT conname FROM pg_constraint WHERE conrelid = 'selection_lists'::regclass AND conname LIKE 'ck_sl_%'`);
     expect(cons.rows.map((r: any) => r.conname).sort()).toEqual(['ck_sl_revision_positive', 'ck_sl_seed_all_or_none', 'ck_sl_seed_modified_needs_seed']);
     const [, applied] = await db.migrate.latest();
-    expect(applied).toEqual(['20261005_000011_shared_lists_and_forks.ts']);
+    expect(applied).toEqual(['20261005_000011_shared_lists_and_forks.ts', '20261014_000012_ref_index_owner_uuid.ts']);
     // the row survives a down/up as private (the visibility value is not preserved by a down)
     expect((await db('selection_lists').where({ id: 'front_sl_d0' }).first()).visibility).toBe('private');
   });

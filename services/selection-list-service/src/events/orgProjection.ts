@@ -41,21 +41,23 @@ export async function upsertOrgProjection(ex: Knex | Knex.Transaction, snapshot:
   const entityId = snapshot.organizationId.toLowerCase();
   const wire = fromUuid('organization', entityId);
   const ownerWire = snapshot.ownerId ? fromUuid('user', snapshot.ownerId.toLowerCase()) : null;
+  const ownerUuid = snapshot.ownerId ? snapshot.ownerId.toLowerCase() : null;
   // An unparseable envelope timestamp must never wedge the consumer: fall back to now().
   const occurredAt = snapshot.occurredAt && !Number.isNaN(Date.parse(snapshot.occurredAt)) ? new Date(snapshot.occurredAt).toISOString() : null;
   const stale = `(selection_list_ref_index.snapshot_at IS NOT NULL AND EXCLUDED.snapshot_at < selection_list_ref_index.snapshot_at)`;
   await ex.raw(
-    `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, org_type, is_active, owner_id, org_name, snapshot_at, updated_at)
-     VALUES ('organization', ?, 'active', ?, ?, ?, ?, ?, COALESCE(?::timestamptz, now()), now())
+    `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, org_type, is_active, owner_id, owner_uuid, org_name, snapshot_at, updated_at)
+     VALUES ('organization', ?, 'active', ?, ?, ?, ?, ?, ?, COALESCE(?::timestamptz, now()), now())
      ON CONFLICT (entity_type, entity_id) DO UPDATE SET
        wire_id     = EXCLUDED.wire_id,
        org_type    = CASE WHEN ${stale} THEN selection_list_ref_index.org_type  ELSE EXCLUDED.org_type  END,
        is_active   = CASE WHEN ${stale} THEN selection_list_ref_index.is_active ELSE EXCLUDED.is_active END,
        org_name    = CASE WHEN ${stale} THEN selection_list_ref_index.org_name  ELSE COALESCE(EXCLUDED.org_name, selection_list_ref_index.org_name) END,
        owner_id    = COALESCE(EXCLUDED.owner_id, selection_list_ref_index.owner_id),
+       owner_uuid  = COALESCE(EXCLUDED.owner_uuid, selection_list_ref_index.owner_uuid),
        snapshot_at = GREATEST(selection_list_ref_index.snapshot_at, EXCLUDED.snapshot_at),
        updated_at  = now()`,
-    [entityId, wire, snapshot.type, snapshot.isActive, ownerWire, snapshot.name ?? null, occurredAt],
+    [entityId, wire, snapshot.type, snapshot.isActive, ownerWire, ownerUuid, snapshot.name ?? null, occurredAt],
   );
   // The platform-org resolution is cached authorization state derived from this row: drop it now. (Callers
   // pass the pool, not an open transaction; inside a transaction this would run before the commit.)

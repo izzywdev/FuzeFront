@@ -14,6 +14,7 @@ import yaml from 'js-yaml';
 import type { Knex } from 'knex';
 import { dbDescribe } from './helpers/testDb';
 import { createWorld, P, PLATFORM, publishPriorityList, World } from './helpers/sharedWorld';
+import { permitKey } from './helpers/ids';
 
 const state: { db: Knex | undefined } = { db: undefined };
 jest.mock('../src/db', () => ({
@@ -97,7 +98,7 @@ dbDescribe('x-permit-additional-actions / x-permit-shared-read are enforced (rea
     const r = await asked(() => w.api(P.op).post('/v1/selection-lists', { key: 'mx-1', name: 'M', visibility: 'platform' }));
     expect(r.res.status).toBe(201);
     expect(r.checks).toEqual(['catalog:create', 'catalog:publish_platform']);
-    expect(r.lastTenant).toBe(PLATFORM);
+    expect(r.lastTenant).toBe(permitKey(PLATFORM));
     // not asked for org / private / absent
     for (const visibility of ['org', 'private', undefined]) {
       const o = await asked(() => w.api(P.aAdmin).post('/v1/selection-lists', { key: `mx-${visibility}`, name: 'M', ...(visibility ? { visibility } : {}) }));
@@ -118,7 +119,7 @@ dbDescribe('x-permit-additional-actions / x-permit-shared-read are enforced (rea
     const o = await mk2(P.op, 'mx-promote');
     const promote = await asked(() => w.api(P.op).patch(`/v1/selection-lists/${o}`, { visibility: 'platform' }));
     expect(promote.checks).toEqual(['list:update', 'list:manage_access', 'catalog:publish_platform']);
-    expect(promote.lastTenant).toBe(PLATFORM);
+    expect(promote.lastTenant).toBe(permitKey(PLATFORM));
     async function mk2(p: typeof P.op, key: string) {
       return (await w.api(p).post('/v1/selection-lists', { key, name: key })).body.id as string;
     }
@@ -132,7 +133,7 @@ dbDescribe('x-permit-additional-actions / x-permit-shared-read are enforced (rea
     const purge = await asked(() => w.api(P.op).del(`/v1/selection-lists/${one}?purge=true`));
     expect(purge.res.status).toBe(204);
     expect(purge.checks).toEqual(['list:delete', 'catalog:publish_platform']);
-    expect(purge.lastTenant).toBe(PLATFORM);
+    expect(purge.lastTenant).toBe(permitKey(PLATFORM));
     const p = await asked(() => w.api(P.aAdmin).del(`/v1/selection-lists/${priv}?purge=true`));
     expect(p.res.status).toBe(204);
     expect(p.checks).toEqual(['list:delete']);
@@ -150,7 +151,7 @@ dbDescribe('x-permit-additional-actions / x-permit-shared-read are enforced (rea
     const purgeCommon = await asked(() => w.api(P.op).del(`/v1/selection-lists/${c.listId}/items/${ci}?purge=true`));
     expect(purgeCommon.res.status).toBe(204);
     expect(purgeCommon.checks).toEqual(['list:remove_value', 'list:delete', 'catalog:publish_platform']);
-    expect(purgeCommon.lastTenant).toBe(PLATFORM);
+    expect(purgeCommon.lastTenant).toBe(permitKey(PLATFORM));
   });
 
   it('forkSelectionList -> create (catalog) + the source read (shared read, memoised once)', async () => {

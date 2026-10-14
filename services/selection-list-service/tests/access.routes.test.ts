@@ -56,6 +56,10 @@ function builder(table: string): any {
       else filters.push((r) => r[a] === op);
       return b;
     },
+    whereIn(c: string, vals: unknown[]) {
+      filters.push((r) => vals.includes(r[c]));
+      return b;
+    },
     whereNull(c: string) {
       filters.push((r) => r[c] == null);
       return b;
@@ -132,6 +136,7 @@ import accessRouter from '../src/routes/access';
 import { _setAuthzClientForTesting, makeNoOpProxy } from '../src/middleware/authz';
 import { _setGrantTokenProviderForTesting } from '../src/lib/machineIdentity';
 import { emitAccessGranted, emitAccessRevoked } from '../src/events/emitters';
+import { usr, org, permitKey } from './helpers/ids';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 // Test-only signing secret (never a production credential); overridable via
@@ -140,9 +145,9 @@ const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-s
 process.env.JWT_SECRET = JWT_SECRET;
 
 const LIST_ID = 'front_sl_testlist01'; // contract shape (^front_sl_[0-9a-z]+$) — edge validation 400s anything else
-const USER_ID = 'usr_alice';
-const ACTOR_ID = 'usr_admin';
-const ORG_ID = 'org_corp';
+const USER_ID = usr('alice');
+const ACTOR_ID = usr('admin');
+const ORG_ID = org('corp');
 // The workload token must never reach a human-initiated grant/revoke/compensation.
 const MACHINE_TOKEN = 'workload-token-must-not-be-used';
 const machineGetToken = jest.fn();
@@ -223,17 +228,18 @@ describe('GET /:listId/access', () => {
   });
 
   it('returns the pagination envelope with snake_case SelectionListAccessGrant items', async () => {
-    seedAccess('usr_a', 'list-owner');
-    seedAccess('usr_b', 'list-viewer');
+    seedAccess(usr('a'), 'list-owner');
+    seedAccess(usr('b'), 'list-viewer');
 
     const res = await request(makeApp()).get(`/lists/${LIST_ID}/access`).set(auth());
 
     expect(res.status).toBe(200);
     expect(res.body.page).toEqual({ nextCursor: null, hasMore: false });
     expect(res.body.items).toHaveLength(2);
-    expect(res.body.items[0]).toEqual({
+    // (ordered by the stored user id, which is arbitrary for TypeIDs: find the row by its role)
+    expect(res.body.items.find((i: Row) => i.role === 'list-owner')).toEqual({
       list_id: LIST_ID,
-      user_id: 'usr_a',
+      user_id: usr('a'),
       role: 'list-owner',
       granted_by: ACTOR_ID,
       granted_at: '2026-01-01T00:00:00.000Z',
@@ -246,16 +252,16 @@ describe('GET /:listId/access', () => {
   });
 
   it('omits revoked grants', async () => {
-    seedAccess('usr_a', 'list-owner');
-    seedAccess('usr_gone', 'list-viewer', { revoked_at: new Date() });
+    seedAccess(usr('a'), 'list-owner');
+    seedAccess(usr('gone'), 'list-viewer', { revoked_at: new Date() });
 
     const res = await request(makeApp()).get(`/lists/${LIST_ID}/access`).set(auth());
 
-    expect(res.body.items.map((i: Row) => i.user_id)).toEqual(['usr_a']);
+    expect(res.body.items.map((i: Row) => i.user_id)).toEqual([usr('a')]);
   });
 
   it('clamps limit to the 200 maximum server-side', async () => {
-    for (let i = 0; i < 250; i++) seedAccess(`usr_${String(i).padStart(3, '0')}`, 'list-viewer');
+    for (let i = 0; i < 250; i++) seedAccess(usr(String(i).padStart(3, '0')), 'list-viewer');
 
     const res = await request(makeApp()).get(`/lists/${LIST_ID}/access?limit=9999`).set(auth());
 
@@ -266,7 +272,7 @@ describe('GET /:listId/access', () => {
   });
 
   it('pages through every grant exactly once by echoing nextCursor (no gaps, no duplicates)', async () => {
-    for (let i = 0; i < 7; i++) seedAccess(`usr_${i}`, 'list-viewer');
+    for (let i = 0; i < 7; i++) seedAccess(usr(String(i)), 'list-viewer');
 
     const seen: string[] = [];
     let cursor: string | null = null;
@@ -281,11 +287,13 @@ describe('GET /:listId/access', () => {
     } while (cursor && pages < 10);
 
     expect(pages).toBe(3);
-    expect(seen).toEqual(['usr_0', 'usr_1', 'usr_2', 'usr_3', 'usr_4', 'usr_5', 'usr_6']);
+    // each grant exactly once, in the stored (user id) order
+    expect(seen).toEqual([...seen].sort());
+    expect([...seen].sort()).toEqual([0, 1, 2, 3, 4, 5, 6].map((i) => usr(String(i))).sort());
   });
 
   it('returns 404 for a list that is not in the caller\'s organization', async () => {
-    tables.selection_lists = [{ id: LIST_ID, organization_id: 'org_other' }];
+    tables.selection_lists = [{ id: LIST_ID, organization_id: org('other') }];
     const res = await request(makeApp()).get(`/lists/${LIST_ID}/access`).set(auth());
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('NOT_FOUND');
@@ -330,7 +338,7 @@ describe('PUT /:listId/access/:userId', () => {
   });
 
   it('rejects unknown body properties (additionalProperties: false)', async () => {
-    const res = await put({ role: 'list-viewer', user_id: 'usr_mallory' });
+    const res = await put({ role: 'list-viewer', user_id: usr('mallory') });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
@@ -342,7 +350,7 @@ describe('PUT /:listId/access/:userId', () => {
   });
 
   it('returns 404 when the list is not in the caller\'s organization', async () => {
-    tables.selection_lists = [{ id: LIST_ID, organization_id: 'org_other' }];
+    tables.selection_lists = [{ id: LIST_ID, organization_id: org('other') }];
     const res = await put({ role: 'list-viewer' });
     expect(res.status).toBe(404);
   });
@@ -358,7 +366,7 @@ describe('PUT /:listId/access/:userId', () => {
     expect(res.body.code).toBe('VALIDATION_ERROR');
     // Membership is asked about the TARGET user, in the list's org.
     expect(check).toHaveBeenCalledWith(
-      { subject: USER_ID, tenant: ORG_ID, resource: { type: 'Organization' }, action: 'read' },
+      { subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), resource: { type: 'Organization' }, action: 'read' },
       expect.any(String),
     );
     expect(grant).not.toHaveBeenCalled();
@@ -394,10 +402,10 @@ describe('PUT /:listId/access/:userId', () => {
     // resource MUST reach the wire — its absence would silently turn this
     // list-scoped grant into a tenant-wide one (real privilege escalation).
     expect(grant).toHaveBeenCalledWith(
-      { subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource: { type: 'SelectionList', key: LIST_ID } },
+      { subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-viewer', resource: { type: 'SelectionList', key: LIST_ID } },
       makeToken(),
     );
-    expect(accessRow(USER_ID)).toMatchObject({ role: 'list-viewer', org_id: ORG_ID });
+    expect(accessRow(permitKey(USER_ID))).toMatchObject({ role: 'list-viewer', org_id: permitKey(ORG_ID) });
   });
 
   it('writes the Security API BEFORE the mirror', async () => {
@@ -417,7 +425,7 @@ describe('PUT /:listId/access/:userId', () => {
     expect(res.body.role).toBe('list-editor');
     expect(res.body.granted_at).toBe('2026-01-01T00:00:00.000Z'); // first-created time is preserved
     expect(revoke).toHaveBeenCalledWith(
-      { subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource: { type: 'SelectionList', key: LIST_ID } },
+      { subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-viewer', resource: { type: 'SelectionList', key: LIST_ID } },
       makeToken(),
     );
     // Revoke-first fails safe (a failure between the two leaves LESS access).
@@ -463,7 +471,7 @@ describe('PUT /:listId/access/:userId', () => {
 
   it('allows demoting an owner when another owner exists', async () => {
     seedAccess(USER_ID, 'list-owner');
-    seedAccess('usr_other_owner', 'list-owner');
+    seedAccess(usr('other_owner'), 'list-owner');
 
     const res = await put({ role: 'list-editor' });
 
@@ -473,7 +481,7 @@ describe('PUT /:listId/access/:userId', () => {
 
   it('an owner can demote themselves without losing authority before the replacement grant', async () => {
     seedAccess(ACTOR_ID, 'list-owner');
-    seedAccess('usr_other_owner', 'list-owner');
+    seedAccess(usr('other_owner'), 'list-owner');
     const roles = new Set(['list-owner']);
     _setAuthzClientForTesting(makeAuthzClient({
       grant: jest.fn(async (assignment) => {
@@ -492,7 +500,7 @@ describe('PUT /:listId/access/:userId', () => {
     expect(res.status).toBe(200);
     expect([...roles]).toEqual(['list-editor']);
     expect(accessRow(ACTOR_ID)!.role).toBe('list-editor');
-    expect(accessRow('usr_other_owner')!.role).toBe('list-owner');
+    expect(accessRow(usr('other_owner'))!.role).toBe('list-owner');
   });
 
   it('returns 500 and leaves the mirror UNCHANGED when AuthzClient.grant() throws (write-ordering fail-closed guarantee)', async () => {
@@ -544,7 +552,7 @@ describe('DELETE /:listId/access/:userId', () => {
   });
 
   it('returns 404 when the list is not in the caller\'s organization', async () => {
-    tables.selection_lists = [{ id: LIST_ID, organization_id: 'org_other' }];
+    tables.selection_lists = [{ id: LIST_ID, organization_id: org('other') }];
     const res = await del();
     expect(res.status).toBe(404);
   });
@@ -574,7 +582,7 @@ describe('DELETE /:listId/access/:userId', () => {
 
   it('revokes an owner when another owner exists, scoping the revoke to this list instance', async () => {
     seedAccess(USER_ID, 'list-owner');
-    seedAccess('usr_other_owner', 'list-owner');
+    seedAccess(usr('other_owner'), 'list-owner');
     const revoke = jest.fn(async () => { callLog.push('authz:revoke'); });
     _setAuthzClientForTesting(makeAuthzClient({ revoke }));
 
@@ -583,7 +591,7 @@ describe('DELETE /:listId/access/:userId', () => {
     expect(res.status).toBe(204);
     // resource MUST reach the wire on revoke too — same rationale as grant.
     expect(revoke).toHaveBeenCalledWith(
-      { subject: USER_ID, tenant: ORG_ID, role: 'list-owner', resource: { type: 'SelectionList', key: LIST_ID } },
+      { subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-owner', resource: { type: 'SelectionList', key: LIST_ID } },
       makeToken(),
     );
     expect(accessRow(USER_ID)!.revoked_at).not.toBeNull();
@@ -743,7 +751,7 @@ describe('last-owner guard is decided by the Security API, not the mirror count 
 
   it('PUT demotion is refused 409 when the only OTHER mirror owner is not confirmed by the authority (stale mirror row)', async () => {
     seedAccess(USER_ID, 'list-owner');
-    seedAccess('usr_ghost_owner', 'list-owner'); // the mirror says owner; the authority no longer agrees
+    seedAccess(usr('ghost_owner'), 'list-owner'); // the mirror says owner; the authority no longer agrees
     const bulkCheck = jest.fn(async (checks: unknown[]) => checks.map(() => ({ allow: false })));
     const grant = jest.fn();
     const revoke = jest.fn();
@@ -755,7 +763,7 @@ describe('last-owner guard is decided by the Security API, not the mirror count 
     expect(res.body.code).toBe('CONFLICT');
     // asked the authority about the OTHER owner only, for manage_access on THIS instance, with the caller's token
     expect(bulkCheck).toHaveBeenCalledWith(
-      [{ subject: 'usr_ghost_owner', tenant: ORG_ID, resource: { type: 'SelectionList', key: LIST_ID }, action: 'manage_access' }],
+      [{ subject: permitKey(usr('ghost_owner')), tenant: permitKey(ORG_ID), resource: { type: 'SelectionList', key: LIST_ID }, action: 'manage_access' }],
       expect.any(String),
     );
     expect(grant).not.toHaveBeenCalled();
@@ -765,7 +773,7 @@ describe('last-owner guard is decided by the Security API, not the mirror count 
 
   it('DELETE of an owner is refused 409 on the same evidence', async () => {
     seedAccess(USER_ID, 'list-owner');
-    seedAccess('usr_ghost_owner', 'list-owner');
+    seedAccess(usr('ghost_owner'), 'list-owner');
     const revoke = jest.fn();
     _setAuthzClientForTesting(
       makeAuthzClient({ bulkCheck: jest.fn(async (c: unknown[]) => c.map(() => ({ allow: false }))), revoke }),
@@ -780,12 +788,12 @@ describe('last-owner guard is decided by the Security API, not the mirror count 
 
   it('PUT demotion is allowed when at least one other owner is confirmed (one confirmed of several)', async () => {
     seedAccess(USER_ID, 'list-owner');
-    seedAccess('usr_a_ghost', 'list-owner');
-    seedAccess('usr_b_real', 'list-owner');
+    seedAccess(usr('a_ghost'), 'list-owner');
+    seedAccess(usr('b_real'), 'list-owner');
     _setAuthzClientForTesting(
       makeAuthzClient({
         bulkCheck: jest.fn(async (checks: Array<{ subject: string }>) =>
-          checks.map((c) => ({ allow: c.subject === 'usr_b_real' })),
+          checks.map((c) => ({ allow: c.subject === permitKey(usr('b_real')) })),
         ),
       }),
     );
@@ -809,7 +817,7 @@ describe('last-owner guard is decided by the Security API, not the mirror count 
 
   it('a revoked mirror row is not a candidate', async () => {
     seedAccess(USER_ID, 'list-owner');
-    seedAccess('usr_revoked_owner', 'list-owner', { revoked_at: new Date() });
+    seedAccess(usr('revoked_owner'), 'list-owner', { revoked_at: new Date() });
     const bulkCheck = jest.fn(async (checks: unknown[]) => checks.map(() => ({ allow: true })));
     _setAuthzClientForTesting(makeAuthzClient({ bulkCheck }));
 
@@ -821,7 +829,7 @@ describe('last-owner guard is decided by the Security API, not the mirror count 
 
   it('fails closed (500, nothing written) when the Security API cannot answer the guard question', async () => {
     seedAccess(USER_ID, 'list-owner');
-    seedAccess('usr_other_owner', 'list-owner');
+    seedAccess(usr('other_owner'), 'list-owner');
     const grant = jest.fn();
     const revoke = jest.fn();
     _setAuthzClientForTesting(
@@ -864,7 +872,7 @@ describe('a failed access change is compensated in the Security API (review M-2)
 
   it('PUT role change: when the new grant fails after the old role was revoked, the OLD role is re-granted', async () => {
     seedAccess(USER_ID, 'list-owner');
-    seedAccess('usr_other_owner', 'list-owner');
+    seedAccess(usr('other_owner'), 'list-owner');
     const grant = jest
       .fn()
       .mockRejectedValueOnce(new AuthzError('PROVIDER_ERROR', '502')) // the new role
@@ -878,14 +886,14 @@ describe('a failed access change is compensated in the Security API (review M-2)
     expect(accessRow(USER_ID)!.role).toBe('list-owner'); // mirror rolled back...
     // ...and the authority is put back in step with it: new role dropped (idempotent), old role restored,
     // both with the ACTING HUMAN's token (the workload identity may not repair a role).
-    expect(revoke).toHaveBeenCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-editor', resource }, makeToken());
-    expect(grant).toHaveBeenLastCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-owner', resource }, makeToken());
+    expect(revoke).toHaveBeenCalledWith({ subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-editor', resource }, makeToken());
+    expect(grant).toHaveBeenLastCalledWith({ subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-owner', resource }, makeToken());
     expect(machineGetToken).not.toHaveBeenCalled();
   });
 
   it('PUT self-demotion (grant the weaker role FIRST, revoke owner last): a failed revoke drops the new role and re-asserts owner, with the caller token', async () => {
     seedAccess(ACTOR_ID, 'list-owner');
-    seedAccess('usr_other_owner', 'list-owner');
+    seedAccess(usr('other_owner'), 'list-owner');
     const calls: string[] = [];
     const grant = jest.fn(async (a: any) => { calls.push(`grant:${a.role}`); return { id: 'g' }; });
     const revoke = jest
@@ -918,8 +926,8 @@ describe('a failed access change is compensated in the Security API (review M-2)
     expect(res.status).toBe(500);
     expect(accessRow(USER_ID)!.role).toBe('list-viewer');
     // order: drop the new role first (never more access than the user started with), then restore the old one
-    expect(revoke).toHaveBeenNthCalledWith(2, { subject: USER_ID, tenant: ORG_ID, role: 'list-editor', resource }, makeToken());
-    expect(grant).toHaveBeenLastCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource }, makeToken());
+    expect(revoke).toHaveBeenNthCalledWith(2, { subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-editor', resource }, makeToken());
+    expect(grant).toHaveBeenLastCalledWith({ subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-viewer', resource }, makeToken());
   });
 
   it('PUT of a brand-new grant that fails afterwards removes the grant it made (nothing to restore)', async () => {
@@ -931,7 +939,7 @@ describe('a failed access change is compensated in the Security API (review M-2)
     const res = await put({ role: 'list-viewer' });
 
     expect(res.status).toBe(500);
-    expect(revoke).toHaveBeenCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource }, makeToken());
+    expect(revoke).toHaveBeenCalledWith({ subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-viewer', resource }, makeToken());
     expect(grant).toHaveBeenCalledTimes(1); // no "prior" role to re-grant
     expect(accessRow(USER_ID)).toBeUndefined();
   });
@@ -971,7 +979,7 @@ describe('a failed access change is compensated in the Security API (review M-2)
 
     expect(res.status).toBe(500);
     expect(accessRow(USER_ID)!.revoked_at).toBeNull();
-    expect(grant).toHaveBeenCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource }, makeToken());
+    expect(grant).toHaveBeenCalledWith({ subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-viewer', resource }, makeToken());
   });
 
   it('DELETE: a failure after the revoke landed (outbox) re-grants the role the mirror still shows', async () => {
@@ -985,7 +993,7 @@ describe('a failed access change is compensated in the Security API (review M-2)
 
     expect(res.status).toBe(500);
     expect(accessRow(USER_ID)!.revoked_at).toBeNull(); // mirror rolled back
-    expect(grant).toHaveBeenCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource }, makeToken());
+    expect(grant).toHaveBeenCalledWith({ subject: permitKey(USER_ID), tenant: permitKey(ORG_ID), role: 'list-viewer', resource }, makeToken());
   });
 
   it('a compensation that itself fails never masks the original error and never throws (still a clean 500)', async () => {

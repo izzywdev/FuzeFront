@@ -31,6 +31,7 @@ import { PLATFORM_SEED_SOURCE } from '@fuzefront/shared/kafka';
 import { grantListOwner } from '../middleware/authz';
 import { mintEventId, wireOrgId } from '../events/outbox';
 import { logger } from '../lib/logger';
+import { userRenderings } from '../lib/sharedLists';
 import { ownerGrantSkippedTotal, ownerGrantsTotal } from '../lib/metrics';
 import { readOrgProjection } from './org';
 import { SEED_PRINCIPAL } from './types';
@@ -121,9 +122,9 @@ async function pendingLists(ex: Knex | Knex.Transaction, org: string, owner: str
       WHERE l.organization_id = ?
         AND l.seed_source = ?
         AND l.status = 'active'
-        AND NOT EXISTS (SELECT 1 FROM selection_list_access a WHERE a.list_id = l.id AND a.user_id = ?)
+        AND NOT EXISTS (SELECT 1 FROM selection_list_access a WHERE a.list_id = l.id AND a.user_id = ANY(?))
       ORDER BY l.id`,
-    [org, PLATFORM_SEED_SOURCE, owner],
+    [org, PLATFORM_SEED_SOURCE, userRenderings(owner)],
   );
   return res.rows as PendingList[];
 }
@@ -132,4 +133,4 @@ async function pendingLists(ex: Knex | Knex.Transaction, org: string, owner: str
 export const OWNER_GRANT_PENDING_SQL = `(r.owner_id IS NOT NULL AND EXISTS (
     SELECT 1 FROM selection_lists sl
      WHERE sl.organization_id = r.wire_id AND sl.seed_source = '${PLATFORM_SEED_SOURCE}' AND sl.status = 'active'
-       AND NOT EXISTS (SELECT 1 FROM selection_list_access a WHERE a.list_id = sl.id AND a.user_id = r.owner_id)))`;
+       AND NOT EXISTS (SELECT 1 FROM selection_list_access a WHERE a.list_id = sl.id AND a.user_id IN (r.owner_id, r.owner_uuid))))`;

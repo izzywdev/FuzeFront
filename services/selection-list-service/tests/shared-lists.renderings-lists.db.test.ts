@@ -12,6 +12,7 @@ import type { Knex } from 'knex';
 import { dbDescribe } from './helpers/testDb';
 import { fromUuid, toUuid } from '@izzywdev/fuzefront-identity';
 import { ADMIN_ACTIONS, createWorld, EDITOR_ACTIONS as EDITOR, ORG_A, P, PLATFORM, Principal, World } from './helpers/sharedWorld';
+import { usr as mkUsr, org as mkOrg, permitKey } from './helpers/ids';
 import { flagClientWith } from './helpers/flagClient';
 
 const state: { db: Knex | undefined } = { db: undefined };
@@ -43,8 +44,8 @@ dbDescribe('lists under two renderings of one org id (real Postgres)', () => {
   const orgWorld = (n: number) => {
     const typeId = fromUuid('organization', `0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7c${n}0`);
     const uuid = toUuid(typeId as never);
-    const byType: Principal = { userId: `usr_01rendlst${n}00000000000000000a`, orgId: typeId };
-    const byUuid: Principal = { userId: `usr_01rendlst${n}00000000000000000b`, orgId: uuid };
+    const byType: Principal = { userId: mkUsr(`rendlst${n}a`), orgId: typeId };
+    const byUuid: Principal = { userId: mkUsr(`rendlst${n}b`), orgId: uuid };
     for (const p of [byType, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, EDITOR);
     return { typeId, uuid, byType, byUuid };
   };

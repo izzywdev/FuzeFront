@@ -137,9 +137,9 @@ dbDescribe('one user under two renderings of their id (real Postgres)', () => {
       expect(made.status).toBe(201);
       const listId: string = made.body.id;
       const mirror = await w.db('selection_list_access').where({ list_id: listId }).first();
-      expect(mirror.user_id).toBe(x.byU.userId); // stored verbatim (UUID)
+      expect(mirror.user_id).toBe(x.byU.userId); // Permit's key (UUID), as sent to the Security API
       // the Security API membership probe (`Organization:read`) passes for the targets used below
-      for (const u of [x.byT.userId, x.byU.userId, x.byOther.userId]) w.authz.roles.set(`${x.org}|${u}|undefined`, 'list-viewer');
+      for (const u of [x.byT.userId, x.byU.userId, x.byOther.userId]) w.authz.member(x.org, u);
       return { ...x, listId };
     };
     const second = (x: Awaited<ReturnType<typeof setup>>) => {
@@ -190,13 +190,14 @@ dbDescribe('one user under two renderings of their id (real Postgres)', () => {
       expect(res.body.items.map((i: any) => i.user_id)).toEqual([x.byT.userId]);
     });
 
-    it('flag OFF: the 4.0.0 exact lookup (the usr_ path id does not find a UUID-keyed grant: idempotent 204)', async () => {
+    it('the lookup is rendering-tolerant whatever the release flag says (the mirror records Permit keys, the path names a usr_ TypeID)', async () => {
       const x = await setup();
+      await second(x);
       await off(async () => {
         const del = await w.api(x.byU).del(`/v1/selection-lists/${x.listId}/access/${x.byT.userId}`);
-        expect(del.status).toBe(204);
+        expect(del.status).toBe(204); // found by its UUID key, revoked there
       });
-      expect((await w.db('selection_list_access').where({ list_id: x.listId, user_id: x.byU.userId }).first()).revoked_at).toBeNull();
+      expect((await w.db('selection_list_access').where({ list_id: x.listId, user_id: x.byU.userId }).first()).revoked_at).not.toBeNull();
     });
   });
 });

@@ -142,11 +142,12 @@ export function userRenderings(stored: string): string[] {
 }
 
 /**
- * The renderings under which to look a user up in STORED data for this request: every rendering while the
- * shared-lists flag is ON, exactly the id as given while it is OFF (the 4.0.0 exact match).
+ * The renderings under which to look a user up in the access mirror: every rendering, whatever the release flag
+ * says. The mirror records the key the Security API was sent (the bare UUID, lib/permitKeys.ts), while the routes
+ * address users by their `usr_...` TypeID and older rows hold whichever form the granting token carried.
  */
-export async function userScope(req: Pick<Request, 'orgId' | 'userId'>, userId: string): Promise<string[]> {
-  return (await sharedListsOn(req)) ? userRenderings(userId) : [userId];
+export async function userScope(_req: Pick<Request, 'orgId' | 'userId'>, userId: string): Promise<string[]> {
+  return userRenderings(userId);
 }
 
 /**

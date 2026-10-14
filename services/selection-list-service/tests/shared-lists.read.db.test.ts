@@ -91,7 +91,7 @@ dbDescribe('shared lists — read path (real Postgres)', () => {
       expect(viewer.body).toMatchObject({ visibility: 'private', editable: false }); // a viewer holds no write role
       w.authz.give(ORG_A, P.aMember.userId, aPrivate, 'list-translator');
       expect((await w.api(P.aMember).get(`/v1/selection-lists/${aPrivate}`)).body.editable).toBe(true);
-      w.authz.roles.delete(`${ORG_A}|${P.aMember.userId}|${aPrivate}`); // leave the world as found
+      w.authz.dropRole(ORG_A, P.aMember.userId, aPrivate); // leave the world as found
     });
 
     it("another org's private/org list and an unknown id are indistinguishable (404, never 403)", async () => {

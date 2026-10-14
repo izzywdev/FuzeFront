@@ -13,6 +13,7 @@ import { TOPICS, schemaForTopic } from '@fuzefront/shared/kafka';
 import { dbDescribe } from './helpers/testDb';
 import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { createWorld, ORG_A, ORG_B, P, PLATFORM, publishPriorityList, World } from './helpers/sharedWorld';
+import { usr as mkUsr, org as mkOrg, permitKey } from './helpers/ids';
 import { parseId } from '@izzywdev/fuzefront-identity';
 import { flagClientWith } from './helpers/flagClient';
 import { assertConforms } from './helpers/openapi';
@@ -93,8 +94,8 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       expect(it.filter((t: any) => t.item_id === lowFork.id).map((t: any) => [t.locale, t.label])).toEqual([['en', 'Low'], ['fr', 'Basse']]);
 
       // the caller is list-owner on the fork, granted with the MACHINE identity (service grant, tenant = caller org)
-      expect(w.authz.grants.filter((g) => g.listId === forkId)).toEqual([{ subject: P.aMember.userId, tenant: ORG_A, role: 'list-owner', listId: forkId }]);
-      expect(await w.db('selection_list_access').where({ list_id: forkId }).first()).toMatchObject({ user_id: P.aMember.userId, role: 'list-owner' });
+      expect(w.authz.grants.filter((g) => g.listId === forkId)).toEqual([{ subject: permitKey(P.aMember.userId), tenant: permitKey(ORG_A), role: 'list-owner', listId: forkId }]);
+      expect(await w.db('selection_list_access').where({ list_id: forkId }).first()).toMatchObject({ user_id: permitKey(P.aMember.userId), org_id: permitKey(ORG_A), role: 'list-owner' });
     });
 
     it('the source is untouched; a fork is a different entity (editing it does not move the common list)', async () => {
@@ -195,7 +196,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       const mine = await fork(bOwner, { visibility: 'private' });
       expect(mine.status).toBe(201);
       expect(mine.body.visibility).toBe('private');
-      const bOther = { userId: 'usr_01bother00000000000000000000', orgId: ORG_B };
+      const bOther = { userId: mkUsr('01bother00000000000000000000'), orgId: ORG_B };
       w.authz.allowCatalog(ORG_B, bOther.userId, ['list', 'create', 'resolve', 'read_shared']);
       const res = await fork(bOther);
       expect(res.status).toBe(409);
@@ -245,7 +246,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
 
     it('400: the body rejects `id`, `key` and any unknown property; visibility is org | private only', async () => {
       for (const body of [{ id: 'front_sl_abc' }, { key: 'other' }, { organization_id: ORG_B }, { visibility: 'platform' }, { visibility: 'public' }]) {
-        const res = await fork({ userId: 'usr_01bother00000000000000000000', orgId: ORG_B }, body);
+        const res = await fork({ userId: mkUsr('01bother00000000000000000000'), orgId: ORG_B }, body);
         expect(res.status).toBe(400);
         expect(res.body.code).toBe('VALIDATION_ERROR');
       }
@@ -269,7 +270,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       setFlagClient(flagClientWith(false));
       try {
         const mark = w.authz.asked.length;
-        const res = await fork({ userId: 'usr_01bother00000000000000000000', orgId: ORG_B });
+        const res = await fork({ userId: mkUsr('01bother00000000000000000000'), orgId: ORG_B });
         expect(res.status).toBe(404);
         expect(w.authz.since(mark)).toEqual([]);
       } finally {
@@ -280,7 +281,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     it('fails closed when the Security API is down (403 from the catalog check; nothing is copied)', async () => {
       w.authz.down = new Error('DECISION_UNAVAILABLE');
       try {
-        expect((await fork({ userId: 'usr_01bother00000000000000000000', orgId: ORG_B })).status).toBe(403);
+        expect((await fork({ userId: mkUsr('01bother00000000000000000000'), orgId: ORG_B })).status).toBe(403);
       } finally {
         w.authz.down = null;
       }
@@ -288,8 +289,8 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
   });
 
   describe('quotas (403 QUOTA_EXCEEDED) — exact, inside the transaction', () => {
-    const quotaOrg = (n: number) => `org_01quota${n}00000000000000000`;
-    const quotaUser = (n: number) => `usr_01quota${n}00000000000000000`;
+    const quotaOrg = (n: number) => mkOrg(`quota${n}`);
+    const quotaUser = (n: number) => mkUsr(`quota${n}`);
     const setup = (n: number, quota: Record<string, number>) => {
       const p = { userId: quotaUser(n), orgId: quotaOrg(n) };
       w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
@@ -338,8 +339,8 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     it('cannot fork the same source twice (nor take its key) by presenting the other rendering', async () => {
       const uuid = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7ebb';
       const typeId = fromUuid('organization', uuid);
-      const byTypeId = { userId: 'usr_01render0000000000000000000a', orgId: typeId };
-      const byUuid = { userId: 'usr_01render0000000000000000000b', orgId: uuid };
+      const byTypeId = { userId: mkUsr('01render0000000000000000000a'), orgId: typeId };
+      const byUuid = { userId: mkUsr('01render0000000000000000000b'), orgId: uuid };
       for (const p of [byTypeId, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
       expect((await fork(byTypeId)).status).toBe(201);
       const again = await fork(byUuid);
@@ -357,8 +358,8 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     it('after the common list is PURGED the existing fork is still answered (200 / fork_exists), never a 404', async () => {
       const common = await w.api(P.op).post('/v1/selection-lists', { key: 'soon-gone', name: 'Gone', visibility: 'platform' });
       await w.api(P.op).post(`/v1/selection-lists/${common.body.id}/items`, { code: 'A', label: 'A' });
-      const org = { userId: 'usr_01purged00000000000000000000', orgId: 'org_01purged00000000000000000000' };
-      const stranger = { userId: 'usr_01purged00000000000000000001', orgId: org.orgId };
+      const org = { userId: mkUsr('01purged00000000000000000000'), orgId: mkOrg('01purged00000000000000000000') };
+      const stranger = { userId: mkUsr('01purged00000000000000000001'), orgId: org.orgId };
       for (const p of [org, stranger]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
       const first = await fork(org, { visibility: 'private' }, common.body.id);
       expect(first.status).toBe(201);
@@ -379,7 +380,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       const common = await w.api(P.op).post('/v1/selection-lists', { key: 'de-source', name: 'Quelle', source_locale: 'de', visibility: 'platform' });
       const mk = async (code: string, label: string) => (await w.api(P.op).post(`/v1/selection-lists/${common.body.id}/items`, { code, label })).body.id as string;
       const a = await mk('A', 'Eins');
-      const org = { userId: 'usr_01locale0000000000000000000a', orgId: 'org_01locale0000000000000000000a' };
+      const org = { userId: mkUsr('01locale0000000000000000000a'), orgId: mkOrg('01locale0000000000000000000a') };
       w.authz.allowCatalog(org.orgId, org.userId, ['list', 'create', 'resolve', 'read_shared']);
       const f = await fork(org, {}, common.body.id);
       expect(f.status).toBe(201);
@@ -403,8 +404,8 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     it('resolve finds a fork created under the OTHER rendering of the org id (redirect + platform ids)', async () => {
       const uuid = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7ecc';
       const typeId = fromUuid('organization', uuid);
-      const byUuid = { userId: 'usr_01renres0000000000000000000a', orgId: uuid };
-      const byTypeId = { userId: 'usr_01renres0000000000000000000b', orgId: typeId };
+      const byUuid = { userId: mkUsr('01renres0000000000000000000a'), orgId: uuid };
+      const byTypeId = { userId: mkUsr('01renres0000000000000000000b'), orgId: typeId };
       for (const p of [byUuid, byTypeId]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
       const before = await w.api(byTypeId).post('/v1/resolve', { ids: [platform.low] });
       expect(before.body.results[platform.low]).not.toHaveProperty('effective_item_id');
@@ -420,8 +421,8 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     it('quotas count lists and load overrides across BOTH renderings (no exceeding limits via the other one)', async () => {
       const uuid = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7edd';
       const typeId = fromUuid('organization', uuid);
-      const byUuid = { userId: 'usr_01renquo0000000000000000000a', orgId: uuid };
-      const byTypeId = { userId: 'usr_01renquo0000000000000000000b', orgId: typeId };
+      const byUuid = { userId: mkUsr('01renquo0000000000000000000a'), orgId: uuid };
+      const byTypeId = { userId: mkUsr('01renquo0000000000000000000b'), orgId: typeId };
       for (const p of [byUuid, byTypeId]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
       // lists live under the UUID rendering, the override row under the TypeID one
       await w.db('selection_list_org_quota').insert({ organization_id: typeId, updated_by: 'usr_x', max_lists: 1 });
@@ -432,7 +433,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       // an item ceiling stored under the other rendering applies too
       const uuid2 = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7ede';
       const typeId2 = fromUuid('organization', uuid2);
-      const p2 = { userId: 'usr_01renquo0000000000000000000c', orgId: typeId2 };
+      const p2 = { userId: mkUsr('01renquo0000000000000000000c'), orgId: typeId2 };
       w.authz.allowCatalog(p2.orgId, p2.userId, ['list', 'create', 'resolve', 'read_shared']);
       await w.db('selection_list_org_quota').insert({ organization_id: uuid2, updated_by: 'usr_x', max_items_per_list: 1 });
       const items = await fork(p2);
@@ -447,7 +448,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       const spy = jest.spyOn(listShape, 'formatList').mockImplementationOnce(() => {
         throw new Error('boom: formatting after commit');
       });
-      const p = { userId: 'usr_01commit0000000000000000000a', orgId: 'org_01commit0000000000000000000a' };
+      const p = { userId: mkUsr('01commit0000000000000000000a'), orgId: mkOrg('01commit0000000000000000000a') };
       w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
       const grantsBefore = w.authz.grants.length;
       const revokesBefore = w.authz.revokes.length;
@@ -464,7 +465,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       expect(w.authz.revokes.length).toBe(revokesBefore); // the owner grant was NOT taken back
       const granted = w.authz.grants.slice(grantsBefore);
       expect(granted).toHaveLength(1);
-      expect(w.authz.roles.get(`${p.orgId}|${p.userId}|${row.id}`)).toBe('list-owner');
+      expect(w.authz.roleOf(p.orgId, p.userId, row.id)).toBe('list-owner');
       // retry-safe: the repeat answers the existing fork, with the creator still its owner
       const retry = await fork(p);
       expect(retry.status).toBe(200);
@@ -474,7 +475,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     it('a failure after the owner grant rolls EVERYTHING back and takes the grant back (compensation)', async () => {
       const emitters = await import('../src/events/emitters');
       const spy = jest.spyOn(emitters, 'emitForkEvents').mockRejectedValueOnce(new Error('boom: outbox unavailable'));
-      const p = { userId: 'usr_01atomic00000000000000000000', orgId: 'org_01atomic00000000000000000000' };
+      const p = { userId: mkUsr('01atomic00000000000000000000'), orgId: mkOrg('01atomic00000000000000000000') };
       w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
       const listsBefore = (await w.db('selection_lists').count('* as n').first())!.n;
       const eventsBefore = (await w.db('event_outbox').count('* as n').first())!.n;
@@ -493,15 +494,15 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       const granted = w.authz.grants.slice(grantsBefore);
       expect(granted).toHaveLength(1);
       expect(w.authz.revokes.filter((r) => r.listId === granted[0].listId)).toEqual([
-        { subject: p.userId, tenant: p.orgId, role: 'list-owner', listId: granted[0].listId },
+        { subject: permitKey(p.userId), tenant: permitKey(p.orgId), role: 'list-owner', listId: granted[0].listId },
       ]);
-      expect(w.authz.roles.has(`${p.orgId}|${p.userId}|${granted[0].listId}`)).toBe(false);
+      expect(w.authz.roleOf(p.orgId, p.userId, granted[0].listId) !== undefined).toBe(false);
       // and the org can fork afterwards
       expect((await fork(p)).status).toBe(201);
     });
 
     it('a failing owner grant (Security API) fails the fork cleanly: no list, no events', async () => {
-      const p = { userId: 'usr_01grant000000000000000000000', orgId: 'org_01grant000000000000000000000' };
+      const p = { userId: mkUsr('01grant000000000000000000000'), orgId: mkOrg('01grant000000000000000000000') };
       w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
       w.authz.grantFails = new Error('grant refused');
       try {
@@ -514,7 +515,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     });
 
     it('two concurrent forks of the same source by one org: exactly one 201, the other the idempotent 200', async () => {
-      const p = { userId: 'usr_01race0000000000000000000000', orgId: 'org_01race0000000000000000000000' };
+      const p = { userId: mkUsr('01race0000000000000000000000'), orgId: mkOrg('01race0000000000000000000000') };
       w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
       const [a, b] = await Promise.all([fork(p), fork(p)]);
       expect([a.status, b.status].sort()).toEqual([200, 201]);
@@ -529,7 +530,7 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     let forkItems: Record<string, string>; // code -> fork item id
 
     beforeAll(async () => {
-      forkOrg = { userId: 'usr_01resolve0000000000000000000', orgId: 'org_01resolve0000000000000000000' };
+      forkOrg = { userId: mkUsr('01resolve0000000000000000000'), orgId: mkOrg('01resolve0000000000000000000') };
       w.authz.allowCatalog(forkOrg.orgId, forkOrg.userId, ['list', 'create', 'resolve', 'read_shared']);
     });
 
