@@ -1,5 +1,33 @@
 # Changelog — @fuzefront/security-client
 
+## 0.10.1 — AuthZ: document the platform-admin gate on tenant creation and the caller-scoped tenant list (documentation fix, unreleased)
+
+**Documentation only, no shape change.** `info.version` 0.10.0 -> 0.10.1,
+`SECURITY_CONTRACT_VERSION` 0.10.0 -> 0.10.1. Request and response schemas are
+unchanged; this release documents status codes and visibility rules the
+`/v1/security/tenants` collection enforces once the platform-scope authz
+hardening lands, so consumers can handle them from the generated types.
+
+### Changed (documentation)
+
+- `POST /v1/security/tenants` (`createTenant`): documents `403 FORBIDDEN`
+  (the shared `ErrorBody`). Creating a tenant is a platform act: a human
+  caller must be a platform administrator (`Organization:manage` on the
+  platform root tenant), a machine caller must hold `authz:admin`. The check
+  runs before body validation, so an unauthorized caller gets `403`, not
+  `400`. An administrator of an ordinary customer tenant has no standing.
+- `GET /v1/security/tenants` (`listTenants`): documents that the list is the
+  tenants VISIBLE TO THE CALLER — every tenant for a platform administrator
+  or an `authz:admin` machine caller, otherwise only the tenants the caller
+  holds a role in (a filter, never a `403`). Documents `400` (malformed
+  pagination cursor) and `502` (provider unavailable while deciding which view
+  applies — fail-closed, never widened or downgraded).
+
+### Consumers
+
+No code change is required. A UI that offers "create tenant" should hide or
+disable it for non-platform-admins and render the `403` in place.
+
 ## 0.10.0 — Trusted membership bootstrap (unreleased)
 
 - Adds operator membership proof and explicit session tenant verification.

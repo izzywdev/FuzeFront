@@ -108,12 +108,19 @@ describe('ensurePersonalOrg — owner membership emit (site 1)', () => {
 
     await ensurePersonalOrg(USER_ID, { db })
 
-    expect(enqueueEventMock).toHaveBeenCalledTimes(1)
+    expect(enqueueEventMock).toHaveBeenCalledTimes(2)
     const [trxArg, topic, payload, correlationId] = enqueueEventMock.mock.calls[0]
     expect(trxArg).toBe(trx)
     expect(topic).toBe(TOPICS.IDENTITY_MEMBERSHIP_ADDED)
     expect(payload).toEqual({ organizationId: ORG_ID, userId: USER_ID, role: 'owner' })
     expect(correlationId).toMatch(/^identity-membership-added-[0-9a-f-]{36}$/)
+    expect(enqueueEventMock.mock.calls[1][1]).toBe(TOPICS.IDENTITY_AUTHORIZATION_CHANGED)
+    expect(enqueueEventMock.mock.calls[1][2]).toEqual({
+      organizationId: ORG_ID,
+      subjectId: USER_ID,
+      change: 'membership_added',
+      role: 'owner',
+    })
   })
 
   it('does NOT emit when ON CONFLICT ignored the insert (membership already existed)', async () => {
@@ -160,11 +167,12 @@ describe('ensurePersonalOrg — slug-conflict self-heal owner emit (site 2)', ()
 
     await ensurePersonalOrg(USER_ID, { db })
 
-    expect(enqueueEventMock).toHaveBeenCalledTimes(1)
+    expect(enqueueEventMock).toHaveBeenCalledTimes(2)
     const [trxArg, topic, payload] = enqueueEventMock.mock.calls[0]
     expect(trxArg).toBe(trx)
     expect(topic).toBe(TOPICS.IDENTITY_MEMBERSHIP_ADDED)
     expect(payload).toEqual({ organizationId: ORG_ID, userId: USER_ID, role: 'owner' })
+    expect(enqueueEventMock.mock.calls[1][1]).toBe(TOPICS.IDENTITY_AUTHORIZATION_CHANGED)
   })
 
   it('does NOT emit when the self-heal insert was a no-op (membership already present)', async () => {
@@ -193,11 +201,12 @@ describe('ensureRootMembership — root `member` emit (site 3)', () => {
 
     await ensureRootMembership(USER_ID, { db })
 
-    expect(enqueueEventMock).toHaveBeenCalledTimes(1)
+    expect(enqueueEventMock).toHaveBeenCalledTimes(2)
     const [trxArg, topic, payload] = enqueueEventMock.mock.calls[0]
     expect(trxArg).toBe(trx)
     expect(topic).toBe(TOPICS.IDENTITY_MEMBERSHIP_ADDED)
     expect(payload).toEqual({ organizationId: ROOT_ORG_ID, userId: USER_ID, role: 'member' })
+    expect(enqueueEventMock.mock.calls[1][1]).toBe(TOPICS.IDENTITY_AUTHORIZATION_CHANGED)
   })
 
   it('does NOT emit on a repeat login (ON CONFLICT inserted no row)', async () => {
@@ -231,11 +240,12 @@ describe('ensureDeveloperMembership — developer emit (site 4)', () => {
 
     await ensureDeveloperMembership(USER_ID, { db })
 
-    expect(enqueueEventMock).toHaveBeenCalledTimes(1)
+    expect(enqueueEventMock).toHaveBeenCalledTimes(2)
     const [trxArg, topic, payload] = enqueueEventMock.mock.calls[0]
     expect(trxArg).toBe(trx)
     expect(topic).toBe(TOPICS.IDENTITY_MEMBERSHIP_ADDED)
     expect(payload).toEqual({ organizationId: ROOT_ORG_ID, userId: USER_ID, role: 'developer' })
+    expect(enqueueEventMock.mock.calls[1][1]).toBe(TOPICS.IDENTITY_AUTHORIZATION_CHANGED)
   })
 
   it('does NOT emit when a root membership already exists (metadata-only update)', async () => {

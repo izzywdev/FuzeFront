@@ -1,36 +1,175 @@
 {{- /*
-  Kafka topic pre-creation (Phase D).
+  Kafka topic reconciliation (Phase D) -- an ORDINARY, NON-BLOCKING Job.
 
-  A Helm post-install/post-upgrade hook Job that idempotently creates the
-  fuzefront.* / identity.* / notify.* / billing.* topics on the FuzeInfra Kafka
-  broker, with explicit partitions + retention, so prod does not rely on broker
-  auto-create. `kafka-topics.sh --create --if-not-exists` is a no-op for topics
-  that already exist, so re-running on every upgrade is safe. Partition counts
-  and retention can only grow safely with --alter; this Job does NOT shrink them.
+  Idempotently creates the fuzefront.* / identity.* / notify.* / billing.* /
+  selection-lists.* topics on the FuzeInfra Kafka broker with explicit
+  partitions + retention + cleanup.policy, so prod does not rely on broker
+  auto-create (which silently drops the intended retention -- notably the 1d
+  retention on selection-lists.seed.requested, whose messages carry bearer tokens).
 
-  Gated behind .Values.kafkaTopics.enabled (off locally; on in values-prod.yaml).
-  The topic set is reconciled from the shared @fuzefront/shared TOPICS constant
-  plus the planned billing/chat events — keep .Values.kafkaTopics.topics in sync
-  when that constant changes.
+  WHY THIS IS NOT A HELM HOOK (it used to be, and it wedged every Argo sync):
+  the old version was a post-install/post-upgrade hook with
+  hook-delete-policy: before-hook-creation running one JVM per topic (~40s each).
+  Argo deleted + recreated it on every sync attempt and blocked the whole sync on
+  it, so it never finished and no chart change could deploy. This version:
+    * has NO helm.sh/hook* annotations, so Argo treats it as a plain resource;
+    * is named fuzefront-kafka-topics-<hash>, the hash covering the rendered
+      topic spec, the script and the image. An unchanged render produces the SAME
+      Job (a no-op for Argo/Helm: already Complete, nothing to apply); a changed
+      topic list produces a NEW Job and the old one is pruned. Job .spec.template
+      is immutable, which is exactly why the name must change with the content;
+    * has NO ttlSecondsAfterFinished. A TTL would make the Job controller delete
+      the finished Job, Argo would see a desired resource missing (OutOfSync) and
+      -- with selfHeal -- recreate and re-run it forever. A completed Job is
+      tiny; the hash-rotation prune is what keeps old ones from accumulating;
+    * sits in the LAST Argo sync wave, so it cannot hold up any other resource,
+      and is bounded by activeDeadlineSeconds so a slow/dead broker fails the Job
+      (Argo shows the app Degraded -- a visible signal) rather than hanging;
+    * lists topics ONCE, creates only the MISSING ones in parallel (bounded), and
+      alters retention/cleanup.policy in place on existing topics that drifted --
+      this is how topics that were first auto-created with broker defaults get
+      their declared retention. It never deletes topics and never reduces
+      partitions (partitions of an existing topic are not touched at all).
+
+  Gated behind .Values.kafkaTopics.enabled (off in the base values and locally,
+  where there is no broker; on in values-prod.yaml). The topic set is reconciled
+  from the shared @fuzefront/shared TOPICS constant plus the planned billing/chat
+  events -- keep .Values.kafkaTopics.topics in sync when that constant changes.
+
+  Topic spec lines are: <name> <partitions> <replicationFactor> <retentionMs>
+  <cleanupPolicy|-> <explicitRetention 0|1>. explicitRetention=1 means the topic
+  declares its own retentionMs, which makes it eligible for in-place alteration
+  of existing topics; topics that merely inherit defaultRetentionMs are only ever
+  applied at creation, never forced onto an already-existing topic.
 */}}
+{{- define "fuzefront.kafkaTopicsScript" -}}
+{{- $kt := .Values.kafkaTopics -}}
+# kafka-topics.sh lives in /opt/kafka/bin on apache/kafka and
+# /opt/bitnami/kafka/bin on bitnami images -- add both so the bare command
+# resolves regardless of which image is pinned.
+export PATH="/opt/kafka/bin:/opt/bitnami/kafka/bin:${PATH}"
+BOOTSTRAP="{{ $kt.bootstrapServer }}"
+CONCURRENCY=8
+WORK="$(mktemp -d)"
+FAILED="${WORK}/failed"
+: > "${FAILED}"
+
+cat > "${WORK}/spec.txt" <<'SPEC'
+{{- range $kt.topics }}
+{{ .name }} {{ .partitions }} {{ .replicationFactor }} {{ .retentionMs | default (required "kafkaTopics.defaultRetentionMs must be set" $kt.defaultRetentionMs) | int64 }} {{ .cleanupPolicy | default "-" }} {{ if .retentionMs }}1{{ else }}0{{ end }}
+{{- end }}
+SPEC
+
+echo "Reconciling $(wc -l < "${WORK}/spec.txt") FuzeFront Kafka topics against ${BOOTSTRAP}"
+
+# 1. Wait (bounded: 30 x 5s) for the broker, and take the topic listing from the
+#    successful probe -- this is the ONE kafka-topics.sh --list of the run.
+reachable=0
+for i in $(seq 1 30); do
+  if kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --list > "${WORK}/existing.txt" 2> "${WORK}/list.err"; then
+    reachable=1; echo "broker reachable ($(wc -l < "${WORK}/existing.txt") existing topics)"; break
+  fi
+  echo "waiting for broker ($i/30)..."; sleep 5
+done
+if [ "${reachable}" != 1 ]; then
+  echo "ERROR: broker ${BOOTSTRAP} not reachable after 150s:"; cat "${WORK}/list.err"; exit 1
+fi
+
+# Block until fewer than CONCURRENCY background jobs are in flight.
+throttle() {
+  while [ "$(jobs -rp | wc -l)" -ge "${CONCURRENCY}" ]; do wait -n || true; done
+}
+
+create_topic() {
+  local name="$1" parts="$2" rf="$3" ret="$4" cp="$5" out
+  local cfg=(--config "retention.ms=${ret}")
+  if [ "${cp}" != "-" ]; then cfg+=(--config "cleanup.policy=${cp}"); fi
+  if out="$(kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --create --if-not-exists \
+        --topic "${name}" --partitions "${parts}" --replication-factor "${rf}" "${cfg[@]}" 2>&1)"; then
+    echo "created ${name} (partitions=${parts}, rf=${rf}, retention.ms=${ret}, cleanup.policy=${cp})"
+  else
+    echo "FAILED create ${name}: ${out}"; echo "create ${name}" >> "${FAILED}"
+  fi
+}
+
+alter_topic() {
+  local name="$1" ret="$2" cp="$3" out
+  local kv="retention.ms=${ret}"
+  if [ "${cp}" != "-" ]; then kv="${kv},cleanup.policy=${cp}"; fi
+  if out="$(kafka-configs.sh --bootstrap-server "${BOOTSTRAP}" --alter \
+        --entity-type topics --entity-name "${name}" --add-config "${kv}" 2>&1)"; then
+    echo "altered ${name} -> ${kv}"
+  else
+    echo "FAILED alter ${name}: ${out}"; echo "alter ${name}" >> "${FAILED}"
+  fi
+}
+
+# 2. Create only the MISSING topics, in parallel.
+awk 'FILENAME == ARGV[1] { have[$0]=1; next } !($1 in have)' "${WORK}/existing.txt" "${WORK}/spec.txt" > "${WORK}/missing.txt"
+echo "$(wc -l < "${WORK}/missing.txt") topic(s) to create"
+while read -r name parts rf ret cp _; do
+  [ -n "${name}" ] || continue
+  throttle
+  create_topic "${name}" "${parts}" "${rf}" "${ret}" "${cp}" &
+done < "${WORK}/missing.txt"
+wait || true
+
+# 3. Converge retention.ms / cleanup.policy on EXISTING topics that declare an
+#    explicit retention (e.g. topics first auto-created with broker defaults).
+#    ONE kafka-configs.sh --describe for all topics finds the drift; only drifted
+#    topics are altered (add-config is idempotent). If the describe fails, treat
+#    every candidate as drifted -- altering to the declared value is harmless.
+awk 'FILENAME == ARGV[1] { have[$0]=1; next } ($1 in have) && $6 == 1' "${WORK}/existing.txt" "${WORK}/spec.txt" > "${WORK}/candidates.txt"
+if kafka-configs.sh --bootstrap-server "${BOOTSTRAP}" --describe --entity-type topics > "${WORK}/describe.txt" 2> "${WORK}/describe.err"; then
+  # Reduce the describe output to "<topic> <retention.ms|-> <cleanup.policy|->".
+  awk '
+    /^Dynamic configs for topic / { if (t != "") print t, r, c; t=$5; r="-"; c="-"; next }
+    /^[ \t]+retention\.ms=/       { split($1, a, "="); r=a[2]; next }
+    /^[ \t]+cleanup\.policy=/     { split($1, a, "="); c=a[2]; next }
+    END { if (t != "") print t, r, c }
+  ' "${WORK}/describe.txt" > "${WORK}/current.txt"
+  awk 'FILENAME == ARGV[1] { r[$1]=$2; c[$1]=$3; next }
+       { if (!($1 in r) || r[$1] != $4 || ($5 != "-" && c[$1] != $5)) print }' \
+      "${WORK}/current.txt" "${WORK}/candidates.txt" > "${WORK}/drifted.txt"
+else
+  echo "WARN: could not describe topic configs (treating all explicit-retention topics as drifted): $(cat "${WORK}/describe.err")"
+  cp "${WORK}/candidates.txt" "${WORK}/drifted.txt"
+fi
+echo "$(wc -l < "${WORK}/drifted.txt") existing topic(s) with drifted retention/cleanup.policy"
+while read -r name parts rf ret cp _; do
+  [ -n "${name}" ] || continue
+  throttle
+  alter_topic "${name}" "${ret}" "${cp}" &
+done < "${WORK}/drifted.txt"
+wait || true
+
+if [ -s "${FAILED}" ]; then
+  echo "ERROR: Kafka topic reconciliation failed for:"; sort "${FAILED}"; exit 1
+fi
+echo "Topic reconciliation complete."
+{{- end -}}
 {{- if .Values.kafkaTopics.enabled }}
 {{- $kt := .Values.kafkaTopics }}
+{{- $script := include "fuzefront.kafkaTopicsScript" . }}
+{{- $hash := printf "%s|%s:%s" $script $kt.image.repository $kt.image.tag | sha256sum | trunc 8 }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: fuzefront-kafka-topics
+  name: fuzefront-kafka-topics-{{ $hash }}
   labels:
     {{- include "fuzefront.labels" . | nindent 4 }}
     app.kubernetes.io/component: kafka-topics
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    # After db-bootstrap (-5) / before permit-schema-sync (5); topics only need
-    # the broker, which is external (FuzeInfra), so ordering is loose.
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    # NOT a helm hook (see header). Last sync wave: applied after everything
+    # else, so a slow broker can never hold up another resource.
+    argocd.argoproj.io/sync-wave: "100"
+    fuzefront.io/kafka-topics-hash: {{ $hash | quote }}
 spec:
-  backoffLimit: 4
-  ttlSecondsAfterFinished: 600
+  # Hard wall-clock bound: a wedged broker FAILS the Job (Degraded in Argo)
+  # instead of hanging. Honest worst case: 150s broker wait + ~50 creates at
+  # 8-way concurrency.
+  activeDeadlineSeconds: 600
+  backoffLimit: 2
   template:
     metadata:
       labels:
@@ -47,36 +186,10 @@ spec:
         - name: kafka-topics
           image: "{{ $kt.image.repository }}:{{ $kt.image.tag }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
-          command: ["/bin/bash", "-ec"]
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
-              # kafka-topics.sh lives in /opt/kafka/bin on apache/kafka and
-              # /opt/bitnami/kafka/bin on bitnami images — add both so the bare
-              # command resolves regardless of which image is pinned.
-              export PATH="/opt/kafka/bin:/opt/bitnami/kafka/bin:${PATH}"
-              BOOTSTRAP="{{ $kt.bootstrapServer }}"
-              echo "Reconciling FuzeFront Kafka topics against ${BOOTSTRAP}"
-              # Wait for the broker to accept connections (FuzeInfra Kafka may
-              # still be coming up on first install).
-              for i in $(seq 1 30); do
-                if kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --list >/dev/null 2>&1; then
-                  echo "broker reachable"; break
-                fi
-                echo "waiting for broker ($i/30)..."; sleep 5
-              done
-              {{- range $kt.topics }}
-              echo "ensure topic {{ .name }} (partitions={{ .partitions }}, rf={{ .replicationFactor }})"
-              kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" \
-                --create --if-not-exists \
-                --topic {{ .name | quote }} \
-                --partitions {{ .partitions }} \
-                --replication-factor {{ .replicationFactor }} \
-                {{- with .cleanupPolicy }}
-                --config cleanup.policy={{ . }} \
-                {{- end }}
-                --config retention.ms={{ .retentionMs | default $kt.defaultRetentionMs | int64 }}
-              {{- end }}
-              echo "Topic reconciliation complete."
+              {{- $script | nindent 14 }}
           resources:
             {{- toYaml $kt.resources | nindent 12 }}
 {{- end }}
