@@ -554,3 +554,29 @@ def test_the_issuer_is_compared_exactly_even_if_the_library_is_lenient(jwks_serv
     monkeypatch.setattr(pyjwt, "decode", lenient)
     token = make_token(rsa_key, alg="RS256", kid="rsa-1", claims={**GOOD, "iss": "https://issuer"})  # prefix
     assert code_of(verifier(jwks_server), token) == "INVALID_ISSUER"
+
+
+def test_a_loopback_issuer_does_not_widen_the_allowance_for_a_remote_configured_jwks_uri(rsa_key):
+    # Each endpoint is judged on its own configured origin: a local-dev (loopback http) issuer
+    # must not turn on the loopback exception for an explicitly configured https JWKS URI,
+    # or a compromised JWKS host could redirect the fetch to http://localhost/....
+    import fuzefront_auth.verifier as vm
+
+    issuer = "http://localhost:8080"
+    jwks_uri = "https://keys.example.invalid/jwks"
+    seen = []
+
+    def fake(url, timeout, allow_loopback_http=False):
+        seen.append((url, allow_loopback_http))
+        raise OSError("down")
+
+    real = vm._fetch_json
+    vm._fetch_json = fake
+    try:
+        v = create_verifier(FederatedJwksConfig(issuer=issuer, audience=AUDIENCE, jwks_uri=jwks_uri))
+        token = make_token(rsa_key, alg="RS256", kid="k", claims={"sub": "u", "iss": issuer, "aud": AUDIENCE})
+        with pytest.raises(AuthError):
+            v.verify(token)
+    finally:
+        vm._fetch_json = real
+    assert seen == [(jwks_uri, False)]

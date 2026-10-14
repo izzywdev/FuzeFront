@@ -362,7 +362,12 @@ class _KeyResolver:
         # Plain http to loopback is a local-development exception that must come from the
         # CONFIGURED issuer / JWKS URI, never from anything a remote server returns
         # (a discovered jwks_uri or a redirect Location).
-        self._dev_http = is_loopback_http(config.issuer) or is_loopback_http(config.jwks_uri)
+        # The allowance is judged per endpoint: a loopback issuer must not widen what an
+        # explicitly configured (remote) JWKS URI may be redirected to, nor vice versa.
+        self._dev_discovery = is_loopback_http(config.issuer)
+        self._dev_jwks = (
+            is_loopback_http(config.jwks_uri) if config.jwks_uri else self._dev_discovery
+        )
         self._lock = threading.Lock()
         self._keys: dict[str, list[_Candidate]] = {}
         self._keyless: list[_Candidate] = []
@@ -377,7 +382,7 @@ class _KeyResolver:
             return self._config.jwks_uri
         discovery = f"{self._config.issuer.rstrip('/')}/.well-known/openid-configuration"
         try:
-            doc = _fetch_json(discovery, _DISCOVERY_TIMEOUT_SEC, self._dev_http)
+            doc = _fetch_json(discovery, _DISCOVERY_TIMEOUT_SEC, self._dev_discovery)
         except (urllib.error.URLError, OSError, ValueError):
             raise AuthError("JWKS_UNAVAILABLE", "OIDC discovery failed", 503) from None
         uri = doc.get("jwks_uri") if isinstance(doc, dict) else None
@@ -394,7 +399,7 @@ class _KeyResolver:
         """Fetch the key set. Caller holds the lock and has checked the cooldown."""
         self._last_attempt = _now()
         try:
-            doc = _fetch_json(self._resolve_jwks_uri(), _JWKS_TIMEOUT_SEC, self._dev_http)
+            doc = _fetch_json(self._resolve_jwks_uri(), _JWKS_TIMEOUT_SEC, self._dev_jwks)
             raw_keys = doc.get("keys") if isinstance(doc, dict) else None
             if not isinstance(raw_keys, list):
                 raise TypeError("no keys")
