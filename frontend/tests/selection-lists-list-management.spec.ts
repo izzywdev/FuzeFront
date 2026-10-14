@@ -1194,10 +1194,13 @@ test.describe('Selection Lists list-management — flag-gated deep links (shell)
   // The other specs reach their route through gotoFlagGatedRoute() (shell first, flags
   // settled, then client-side nav). These deliberately do a raw hard load — a bookmark,
   // a refresh, a link from an email — with `fuzefront.selection-lists.service` ON.
-  // Known gap (frontend/src/App.tsx SelectionListsRoute & siblings): useFlag() returns
-  // its OFF default until GET /api/flags settles, so the route renders
-  // <Navigate to="/dashboard"> before the flag can say ON. The gate must wait for
-  // `loaded` (or render a pending state) instead of redirecting on the default.
+  // This pinned a real shell defect: useFlag() returns its OFF default until
+  // GET /api/flags settles, so SelectionListsRoute & siblings rendered
+  // <Navigate to="/dashboard"> before the flag could say ON, and every deep link
+  // into a flagged route was lost. Fixed by frontend/src/App.tsx's FlagGatedRoute,
+  // which holds on useFlagsLoaded() and only then decides. Keep these asserting
+  // the hard load — the client-side path through gotoFlagGatedRoute() cannot
+  // catch a regression here.
   for (const [name, route, hook] of [
     ['list index', LIST_INDEX_ROUTE, "[data-panel='list-index']"],
     ['list detail', LIST_DETAIL_ROUTE, "[data-panel='value-editor']"],
