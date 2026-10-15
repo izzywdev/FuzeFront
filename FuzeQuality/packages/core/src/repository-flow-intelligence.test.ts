@@ -56,6 +56,51 @@ describe('repository flow wireframes', () => {
     ])
   })
 
+  it('keeps same-title proposals with different grounded journeys independently reviewable', async () => {
+    const inventory = [
+      ...artifacts,
+      { ...artifacts[0], id: 'route-2', title: 'Checkout confirmation', sourcePath: 'apps/web/Confirmation.tsx' },
+    ]
+    const fetchImpl = (async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      flows: [
+        {
+          title: 'Checkout', confidence: 0.8, evidenceArtifactIds: ['route-1'],
+          steps: [{ actor: 'buyer', action: 'opens checkout', expectedOutcome: 'checkout appears', targetIds: ['route-1'] }],
+        },
+        {
+          title: 'Checkout', confidence: 0.75, evidenceArtifactIds: ['route-2'],
+          steps: [{ actor: 'buyer', action: 'reviews confirmation', expectedOutcome: 'confirmation appears', targetIds: ['route-2'] }],
+        },
+      ],
+    }) } }] }))) as typeof fetch
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl)
+
+    const flows = await analyzer.analyze(repository, 'abc', inventory)
+
+    expect(flows).toHaveLength(2)
+    expect(flows[0].title).toBe(flows[1].title)
+    expect(flows[0].id).not.toBe(flows[1].id)
+  })
+
+  it('keeps candidate identity stable when evidence set ordering changes', async () => {
+    const inventory = [
+      ...artifacts,
+      { ...artifacts[0], id: 'route-2', title: 'Confirmation' },
+    ]
+    const response = (evidenceArtifactIds: string[], targetIds: string[]) =>
+      new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ flows: [{
+        title: 'Checkout', confidence: 0.8, evidenceArtifactIds,
+        steps: [{ actor: 'buyer', action: 'checks out', expectedOutcome: 'confirmation appears', targetIds }],
+      }] }) } }] }))
+    const first = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, (async () => response(['route-1', 'route-2'], ['route-1', 'route-2'])) as typeof fetch)
+    const second = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, (async () => response(['route-2', 'route-1'], ['route-2', 'route-1'])) as typeof fetch)
+
+    const [firstFlow] = await first.analyze(repository, 'abc', inventory)
+    const [secondFlow] = await second.analyze(repository, 'abc', inventory)
+
+    expect(firstFlow.id).toBe(secondFlow.id)
+  })
+
   it('keeps every repository evidence class represented in bounded LiteLLM input', async () => {
     const manyRoutes = Array.from({ length: 110 }, (_, index) => ({
       ...artifacts[0],

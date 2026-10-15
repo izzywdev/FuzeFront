@@ -390,16 +390,22 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]) {
     for (const candidate of candidates) {
-      const index = this.flowCandidates.findIndex(item => item.repositoryId === candidate.repositoryId && item.revision === candidate.revision && item.title === candidate.title && item.source === candidate.source)
-      if (index >= 0) this.flowCandidates[index] = {
+      const index = this.flowCandidates.findIndex(item => item.id === candidate.id)
+      const existing = index >= 0 ? this.flowCandidates[index] : undefined
+      if (!existing) this.flowCandidates.push(candidate)
+      else if (
+        existing.repositoryId === candidate.repositoryId &&
+        existing.tenantId === candidate.tenantId &&
+        existing.revision === candidate.revision &&
+        existing.source === candidate.source
+      ) this.flowCandidates[index] = {
         ...candidate,
-        id: this.flowCandidates[index].id,
-        status: this.flowCandidates[index].status,
-        reviewedAt: this.flowCandidates[index].reviewedAt,
-        reviewedBy: this.flowCandidates[index].reviewedBy,
-        reviewReason: this.flowCandidates[index].reviewReason,
+        id: existing.id,
+        status: existing.status,
+        reviewedAt: existing.reviewedAt,
+        reviewedBy: existing.reviewedBy,
+        reviewReason: existing.reviewReason,
       }
-      else this.flowCandidates.push(candidate)
     }
   }
 
@@ -1113,7 +1119,11 @@ export class PostgresCatalogStore implements CatalogStore {
     for (const item of candidates) await this.pool.query(
       `INSERT INTO fuzequality.repository_flow_candidates (id,repository_id,tenant_id,revision,title,confidence,evidence,steps,wireframe,status,source,analysis_provenance,created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT (repository_id,revision,title,source) DO UPDATE SET confidence=EXCLUDED.confidence,evidence=EXCLUDED.evidence,steps=EXCLUDED.steps,wireframe=EXCLUDED.wireframe,analysis_provenance=EXCLUDED.analysis_provenance,created_at=EXCLUDED.created_at`,
+       ON CONFLICT (id) DO UPDATE SET confidence=EXCLUDED.confidence,evidence=EXCLUDED.evidence,steps=EXCLUDED.steps,wireframe=EXCLUDED.wireframe,analysis_provenance=EXCLUDED.analysis_provenance,created_at=EXCLUDED.created_at
+       WHERE repository_flow_candidates.repository_id=EXCLUDED.repository_id
+         AND repository_flow_candidates.tenant_id=EXCLUDED.tenant_id
+         AND repository_flow_candidates.revision=EXCLUDED.revision
+         AND repository_flow_candidates.source=EXCLUDED.source`,
       [item.id,item.repositoryId,item.tenantId,item.revision,item.title,item.confidence,JSON.stringify(item.evidence),JSON.stringify(item.steps),JSON.stringify(item.wireframe ?? { kind: 'sequence', nodes: [] }),item.status,item.source,item.analysis ? JSON.stringify(item.analysis) : null,item.createdAt],
     )
   }

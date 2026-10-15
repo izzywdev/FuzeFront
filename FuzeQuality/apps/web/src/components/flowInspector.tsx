@@ -58,6 +58,7 @@ export function FlowInspector({
               </span>
               <strong>{repositoryLabel ?? flow.repositoryId}</strong>
               <code>{flow.revision}</code>
+              <code title="Stable grounded-candidate identity">{flow.id}</code>
             </div>
             <div>
               <span className={`status-pill status-${flow.status}`}>{flow.status}</span>

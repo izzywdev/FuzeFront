@@ -30,6 +30,7 @@ describe('FlowInspector', () => {
     expect(wireframe).toHaveTextContent('Dashboard')
     expect(screen.getByRole('region', { name: 'Flow steps' })).toHaveTextContent('Dashboard opens')
     expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('fuzeinfra-litellm')
+    expect(screen.getByTitle('Stable grounded-candidate identity')).toHaveTextContent('flow-1')
     expect(screen.getByText('apps/web/src/routes/login.tsx')).toBeVisible()
     screen.getByRole('button', { name: 'Close flow inspector' }).click()
     expect(onClose).toHaveBeenCalledOnce()

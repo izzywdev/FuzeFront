@@ -24,8 +24,8 @@ export class RepositoryFlowAnalysisTimeoutError extends Error {
   }
 }
 
-const candidateId = (repositoryId: string, revision: string, source: string, title: string) =>
-  `repo-flow:${createHash('sha256').update(`${repositoryId}\u0000${revision}\u0000${source}\u0000${title}`).digest('hex').slice(0, 24)}`
+const candidateId = (repositoryId: string, revision: string, source: string, identity: unknown) =>
+  `repo-flow:${createHash('sha256').update(`${repositoryId}\u0000${revision}\u0000${source}\u0000${JSON.stringify(identity)}`).digest('hex').slice(0, 24)}`
 
 /**
  * Keep the bounded prompt representative when a large application has more
@@ -96,7 +96,7 @@ function promptArtifacts(artifacts: QualityArtifact[]) {
 
 export function deterministicRepositoryFlows(repository: Repository, revision: string, artifacts: QualityArtifact[]): RepositoryFlowCandidate[] {
   return artifacts.filter(item => item.kind === 'route').slice(0, 30).map(item => ({
-    id: candidateId(repository.id, revision, 'deterministic', item.title), repositoryId: repository.id, tenantId: repository.tenantId ?? 'legacy', revision,
+    id: candidateId(repository.id, revision, 'deterministic', { title: item.title, artifactId: item.id }), repositoryId: repository.id, tenantId: repository.tenantId ?? 'legacy', revision,
     title: item.title, confidence: 1, evidence: [item.id, ...item.evidence], source: 'deterministic', status: 'proposed', createdAt: new Date().toISOString(),
     steps: [{ actor: 'User or service', action: item.summary, expectedOutcome: 'Reach the indexed route or operation', targetIds: [item.id] }],
     wireframe: { kind: 'sequence', nodes: [{ label: item.summary, targetIds: [item.id] }] },
@@ -153,14 +153,24 @@ export class LiteLlmRepositoryFlowAnalyzer {
       const steps = flow.steps.map(step => ({ ...step, targetIds: step.targetIds.filter(id => allowed.has(id)) }))
       const groundedIds = new Set([...explicitEvidence, ...steps.flatMap(step => step.targetIds)])
       if (groundedIds.size === 0) return []
+      const evidence = [...groundedIds]
       return [{
-        id: candidateId(repository.id, revision, 'litellm', flow.title),
+        id: candidateId(repository.id, revision, 'litellm', {
+          title: flow.title,
+          evidence: [...evidence].sort(),
+          steps: steps.map(step => ({
+            actor: step.actor,
+            action: step.action,
+            expectedOutcome: step.expectedOutcome,
+            targetIds: [...step.targetIds].sort(),
+          })),
+        }),
         repositoryId: repository.id,
         tenantId: repository.tenantId ?? 'legacy',
         revision,
         title: flow.title,
         confidence: flow.confidence,
-        evidence: [...groundedIds],
+        evidence,
         steps,
         wireframe: { kind: 'sequence' as const, nodes: steps.map(step => ({ label: step.action, targetIds: step.targetIds })) },
         status: 'proposed' as const,

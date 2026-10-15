@@ -20,5 +20,11 @@ export default defineConfig({
     environment: 'node',
     include: ['**/*.test.ts', '**/*.test.tsx'],
     exclude: ['node_modules', 'dist'],
+    server: {
+      // The Design System package intentionally publishes JSX primitives.
+      // Keep it in Vite's transform pipeline instead of handing raw .jsx to
+      // Node's ESM loader when component tests import it through pnpm.
+      deps: { inline: ['@fuzefront/design-system'] },
+    },
   },
 })

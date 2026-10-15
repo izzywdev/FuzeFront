@@ -127,6 +127,53 @@ describe('repository flow review lifecycle', () => {
     ])
   })
 
+  it('persists same-title candidates independently by grounded identity', async () => {
+    const store = new MemoryCatalogStore()
+    await store.saveRepositoryFlowCandidates([
+      candidate,
+      {
+        ...candidate,
+        id: 'flow-candidate-2',
+        evidence: ['route-2'],
+        steps: [{ ...candidate.steps[0], targetIds: ['route-2'] }],
+        wireframe: { kind: 'sequence', nodes: [{ label: 'Install the app', targetIds: ['route-2'] }] },
+      },
+    ])
+
+    const candidates = await store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId)
+    expect(candidates).toHaveLength(2)
+    expect(candidates.map(item => item.id).sort()).toEqual(['flow-candidate-1', 'flow-candidate-2'])
+  })
+
+  it('upserts Postgres candidates by id without allowing cross-tenant identity mutation', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+
+    await store.saveRepositoryFlowCandidates([candidate])
+
+    const [statement] = query.mock.calls[0]
+    expect(String(statement)).toContain('ON CONFLICT (id) DO UPDATE')
+    expect(String(statement)).toContain('repository_flow_candidates.tenant_id=EXCLUDED.tenant_id')
+    expect(String(statement)).not.toContain('ON CONFLICT (repository_id,revision,title,source)')
+  })
+
+  it('does not let an id collision mutate a candidate owned by another tenant', async () => {
+    const store = new MemoryCatalogStore()
+    await store.saveRepositoryFlowCandidates([candidate])
+    await store.saveRepositoryFlowCandidates([{
+      ...candidate,
+      tenantId: 'tenant-2',
+      title: 'Injected title',
+      evidence: ['route-injected'],
+    }])
+
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId)).resolves.toEqual([
+      expect.objectContaining({ title: candidate.title, evidence: candidate.evidence }),
+    ])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, 'tenant-2')).resolves.toEqual([])
+  })
+
   it('keeps immutable newest-first history and isolates it by tenant', async () => {
     const store = new MemoryCatalogStore()
     await store.saveRepositoryFlowCandidates([candidate])
