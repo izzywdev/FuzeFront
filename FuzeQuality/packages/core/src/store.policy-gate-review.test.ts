@@ -41,7 +41,7 @@ describe('policy-gate review lifecycle', () => {
     await expect(store.reviewPolicyGateEvaluation(evaluation.id, 'tenant-2', { status: 'dismissed', reviewedBy: 'user-2' })).resolves.toBeUndefined()
   })
 
-  it('filters policy findings by inclusive confidence bounds and tenant', async () => {
+  it('filters policy findings by remediation, inclusive confidence bounds, and tenant', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-09T00:00:00.000Z' }
     await store.savePolicyGateEvaluations([
@@ -49,6 +49,7 @@ describe('policy-gate review lifecycle', () => {
       { ...base, id: 'minimum', title: 'Minimum confidence', confidence: 0.7 },
       { ...base, id: 'maximum', title: 'Maximum confidence', confidence: 0.9 },
       { ...base, id: 'other-subject', title: 'Other subject', confidence: 0.8, scope: { sourcePaths: ['governance/authentication.md'], subjects: ['authentication'] } },
+      { ...base, id: 'other-remediation', title: 'Other remediation', confidence: 0.8, remediationAction: 'disambiguate-policy' },
       { ...base, id: 'high', title: 'High confidence', confidence: 0.91 },
       { ...base, id: 'other-tenant', tenantId: 'tenant-2', title: 'Other tenant', confidence: 0.8 },
     ])
@@ -57,6 +58,7 @@ describe('policy-gate review lifecycle', () => {
       minConfidence: 0.7,
       maxConfidence: 0.9,
       subject: 'DEPLOYMENT',
+      remediationAction: 'build-gate',
     })
     expect(matches.map(item => item.id).sort()).toEqual(['maximum', 'minimum'])
   })
@@ -67,6 +69,7 @@ describe('policy-gate review lifecycle', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await store.policyGateEvaluations('repo-1', 'tenant-1', {
+      remediationAction: 'build-gate',
       minConfidence: 0.7,
       maxConfidence: 0.9,
       subject: 'Deployment',
@@ -80,9 +83,10 @@ describe('policy-gate review lifecycle', () => {
     expect(String(statement)).toContain('(created_at,id) < ($10::timestamptz,$11::text)')
     expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(scope->'subjects', '[]'::jsonb))")
     expect(String(statement)).toContain('lower(scoped_subject.value)=lower($13)')
+    expect(String(statement)).toContain('remediation_action=$14')
     expect(parameters).toEqual([
       'repo-1', 'tenant-1', null, null, null, null, null,
-      0.7, 0.9, '2026-10-09T00:00:00.000Z', 'evaluation-1', 25, 'Deployment',
+      0.7, 0.9, '2026-10-09T00:00:00.000Z', 'evaluation-1', 25, 'Deployment', 'build-gate',
     ])
   })
 

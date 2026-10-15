@@ -31,13 +31,14 @@ const evaluation = (
 })
 
 describe('policy-gate inventory filter', () => {
-  it('filters anomaly, severity, review status, exact revision, subject, and confidence together', () => {
+  it('filters anomaly, remediation, severity, review status, exact revision, subject, and confidence together', () => {
     const evaluations = [
       evaluation(),
       evaluation({
         id: 'evaluation-2',
         confidence: 0.8,
         kind: 'ambiguous-policy',
+        remediationAction: 'disambiguate-policy',
         severity: 'medium',
         reviewStatus: 'accepted',
         revision: 'def',
@@ -53,6 +54,7 @@ describe('policy-gate inventory filter', () => {
     ]
     const filter = policyGateFilterSchema.parse({
       kind: 'ambiguous-policy',
+      remediationAction: 'disambiguate-policy',
       severity: 'medium',
       reviewStatus: 'accepted',
       revision: 'def',
@@ -79,6 +81,9 @@ describe('policy-gate inventory filter', () => {
     ).toBe(false)
     expect(
       policyGateFilterSchema.safeParse({ severity: 'critical' }).success
+    ).toBe(false)
+    expect(
+      policyGateFilterSchema.safeParse({ remediationAction: 'delete-policy' }).success
     ).toBe(false)
     expect(
       policyGateFilterSchema.safeParse({ unexpected: 'value' }).success

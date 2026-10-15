@@ -15,6 +15,7 @@ export const policyGateFilterSchema = z
       .optional(),
     severity: z.enum(['high', 'medium', 'low']).optional(),
     reviewStatus: z.enum(['proposed', 'accepted', 'dismissed']).optional(),
+    remediationAction: z.enum(['build-gate', 'build-policy', 'disambiguate-policy', 'align-policy-gate']).optional(),
     revision: z.string().trim().min(1).max(500).optional(),
     subject: z.string().trim().min(1).max(200).optional(),
     minConfidence: z.coerce.number().min(0).max(1).optional(),
@@ -36,6 +37,7 @@ export function filterPolicyGateEvaluations(
   return evaluations.filter(
     evaluation =>
       (!filter.kind || evaluation.kind === filter.kind) &&
+      (!filter.remediationAction || evaluation.remediationAction === filter.remediationAction) &&
       (!filter.severity || evaluation.severity === filter.severity) &&
       (!filter.reviewStatus ||
         evaluation.reviewStatus === filter.reviewStatus) &&

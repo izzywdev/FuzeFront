@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.48.0
+  version: 0.49.0
   license:
     name: UNLICENSED
 servers:
@@ -537,6 +537,9 @@ paths:
         - name: kind
           in: query
           schema: { $ref: '#/components/schemas/PolicyGateFindingKind' }
+        - name: remediationAction
+          in: query
+          schema: { $ref: '#/components/schemas/PolicyGateRemediationAction' }
         - name: severity
           in: query
           schema: { type: string, enum: [high, medium, low] }
@@ -623,6 +626,9 @@ paths:
           schema:
             type: string
             enum: [guarded-policy, unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
+        - name: remediationAction
+          in: query
+          schema: { $ref: '#/components/schemas/PolicyGateRemediationAction' }
         - name: severity
           in: query
           schema: { type: string, enum: [high, medium, low] }

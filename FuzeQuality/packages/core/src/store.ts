@@ -59,6 +59,7 @@ export type RepositoryFlowCandidateQuery = {
 export type PolicyGateEvaluationQuery = {
   id?: string
   kind?: PolicyGateEvaluation['kind']
+  remediationAction?: PolicyGateEvaluation['remediationAction']
   severity?: PolicyGateEvaluation['severity']
   reviewStatus?: PolicyGateEvaluation['reviewStatus']
   revision?: string
@@ -430,6 +431,7 @@ export class MemoryCatalogStore implements CatalogStore {
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
         (!query.id || item.id === query.id) &&
         (!query.kind || item.kind === query.kind) &&
+        (!query.remediationAction || item.remediationAction === query.remediationAction) &&
         (!query.severity || item.severity === query.severity) &&
         (!query.reviewStatus || item.reviewStatus === query.reviewStatus) &&
         (!query.revision || item.revision === query.revision) &&
@@ -1182,9 +1184,10 @@ export class PostgresCatalogStore implements CatalogStore {
            SELECT 1 FROM jsonb_array_elements_text(COALESCE(scope->'subjects', '[]'::jsonb)) AS scoped_subject(value)
            WHERE lower(scoped_subject.value)=lower($13)
          ))
+         AND ($14::text IS NULL OR remediation_action=$14)
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($12::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null],
+      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], remediationAction: row.remediation_action, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }

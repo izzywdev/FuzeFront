@@ -3246,6 +3246,7 @@ type FlowInventorySelection = {
 
 type PolicyGateInventorySelection = {
   kind: PolicyGateEvaluation['kind'] | ''
+  remediationAction: PolicyGateEvaluation['remediationAction'] | ''
   severity: PolicyGateEvaluation['severity'] | ''
   reviewStatus: PolicyGateEvaluation['reviewStatus'] | ''
   revisionScope: FlowRevisionScope
@@ -3269,6 +3270,7 @@ export function policyGateEvaluationMatchesInventory(
 ) {
   const normalizedSubject = selection.subject.toLowerCase()
   if (selection.kind && evaluation.kind !== selection.kind) return false
+  if (selection.remediationAction && evaluation.remediationAction !== selection.remediationAction) return false
   if (selection.severity && evaluation.severity !== selection.severity)
     return false
   if (
@@ -3462,6 +3464,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateSeverity, setPolicyGateSeverity] = useState<
     PolicyGateEvaluation['severity'] | ''
   >('')
+  const [policyGateRemediationAction, setPolicyGateRemediationAction] = useState<
+    PolicyGateEvaluation['remediationAction'] | ''
+  >('')
   const [policyGateReviewStatus, setPolicyGateReviewStatus] = useState<
     PolicyGateEvaluation['reviewStatus'] | ''
   >('')
@@ -3477,6 +3482,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   )
   const policyGateSelection: PolicyGateInventorySelection = {
     kind: policyGateKind,
+    remediationAction: policyGateRemediationAction,
     severity: policyGateSeverity,
     reviewStatus: policyGateReviewStatus,
     revisionScope: policyGateRevisionScope,
@@ -3706,6 +3712,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 Object.fromEntries(
                   Object.entries({
                     kind: policyGateKind,
+                    remediationAction: policyGateRemediationAction,
                     severity: policyGateSeverity,
                     reviewStatus: policyGateReviewStatus,
                     revision:
@@ -3771,6 +3778,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   }, [
     data.repositories,
     policyGateKind,
+    policyGateRemediationAction,
     policyGateRevisionScope,
     policyGateReviewStatus,
     policyGateSeverity,
@@ -4271,6 +4279,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           repositoryId,
           Object.fromEntries(Object.entries({
             kind: policyGateKind,
+            remediationAction: policyGateRemediationAction,
             severity: policyGateSeverity,
             reviewStatus: policyGateReviewStatus,
             revision: policyGateRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
@@ -4515,6 +4524,23 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     {kind}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label>
+              Proposed remediation
+              <select
+                value={policyGateRemediationAction}
+                onChange={event =>
+                  setPolicyGateRemediationAction(
+                    event.target.value as PolicyGateEvaluation['remediationAction'] | ''
+                  )
+                }
+              >
+                <option value="">All remediation actions</option>
+                <option value="build-gate">Build a gate</option>
+                <option value="build-policy">Build a policy</option>
+                <option value="disambiguate-policy">Disambiguate policy</option>
+                <option value="align-policy-gate">Align policy and gate</option>
               </select>
             </label>
             <label>

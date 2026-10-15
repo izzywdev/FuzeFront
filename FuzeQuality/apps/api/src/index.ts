@@ -429,6 +429,7 @@ app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (requ
   const limit = filter.data.limit
   const evaluations = await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy', {
     kind: filter.data.kind,
+    remediationAction: filter.data.remediationAction,
     severity: filter.data.severity,
     reviewStatus: filter.data.reviewStatus,
     revision: filter.data.revision,

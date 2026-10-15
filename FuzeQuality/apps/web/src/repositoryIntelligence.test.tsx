@@ -2065,6 +2065,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         [repository],
         {
           kind: '',
+          remediationAction: '',
           severity: '',
           reviewStatus: 'proposed',
           revisionScope: 'current',
@@ -2077,6 +2078,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(
       policyGateEvaluationMatchesInventory(governanceEvaluation, [repository], {
         kind: '',
+        remediationAction: '',
         severity: '',
         reviewStatus: '',
         revisionScope: 'current',
@@ -2088,6 +2090,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(
       policyGateEvaluationMatchesInventory(governanceEvaluation, [repository], {
         kind: '',
+        remediationAction: '',
         severity: '',
         reviewStatus: '',
         revisionScope: 'current',
@@ -2096,6 +2099,33 @@ describe('RepositoryIntelligence flow inventory', () => {
         maximumConfidencePercent: '',
       })
     ).toBe(false)
+  })
+
+  it('filters governance by remediation action and retains it during continuation', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+
+    fireEvent.change(screen.getByLabelText('Proposed remediation'), {
+      target: { value: 'build-gate' },
+    })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      remediationAction: 'build-gate',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      remediationAction: 'build-gate',
+      cursor: 'policy-page-2',
+    }))
   })
 
   it('filters governance by exact subject and retains it during continuation', async () => {
