@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.49.0
+  version: 0.50.0
   license:
     name: UNLICENSED
 servers:
@@ -437,6 +437,13 @@ paths:
               properties:
                 status: { type: string, enum: [confirmed, rejected] }
                 reason: { type: string, minLength: 3, maxLength: 2000 }
+                expectedReviewedAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: >-
+                    Optimistic review-state precondition. Null asserts that no prior
+                    decision exists; an omitted value keeps legacy last-write-wins behavior.
       responses:
         '200':
           description: The reviewed candidate.
@@ -448,10 +455,13 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: The candidate is not from the repository current analyzed revision and cannot be reviewed.
+          description: The candidate revision or human-review state changed and must be refreshed.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/StaleFlowCandidateError' }
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/StaleFlowCandidateError' }
+                  - { $ref: '#/components/schemas/StaleFlowReviewError' }
 
   /api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/history:
     parameters:
@@ -1888,6 +1898,15 @@ components:
         code: { type: string, enum: [STALE_FLOW_CANDIDATE] }
         candidateRevision: { type: string }
         currentRevision: { type: string, nullable: true }
+    StaleFlowReviewError:
+      type: object
+      additionalProperties: false
+      required: [error, code, expectedReviewedAt, currentReviewedAt]
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [STALE_FLOW_REVIEW] }
+        expectedReviewedAt: { type: string, format: date-time, nullable: true }
+        currentReviewedAt: { type: string, format: date-time, nullable: true }
     StalePolicyGateEvaluationError:
       type: object
       additionalProperties: false

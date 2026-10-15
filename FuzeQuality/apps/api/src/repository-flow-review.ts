@@ -19,3 +19,21 @@ export function repositoryFlowReviewConflict(
     currentRevision: repository.lastScanRevision ?? null,
   } as const
 }
+
+export function repositoryFlowReviewStateConflict(
+  candidate: RepositoryFlowCandidate,
+  expectedReviewedAt: string | null | undefined,
+) {
+  if (
+    expectedReviewedAt === undefined ||
+    (candidate.reviewedAt ?? null) === expectedReviewedAt
+  ) return undefined
+
+  return {
+    error:
+      'This UX-flow review changed while you were deciding. Refresh the current decision before reviewing it again.',
+    code: 'STALE_FLOW_REVIEW',
+    expectedReviewedAt,
+    currentReviewedAt: candidate.reviewedAt ?? null,
+  } as const
+}

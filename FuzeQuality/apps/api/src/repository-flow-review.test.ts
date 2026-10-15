@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { repositoryFlowReviewConflict } from './repository-flow-review'
+import { repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
 
 const repository = {
   id: 'repo-1',
@@ -69,6 +69,24 @@ describe('repository UX-flow review revision guard', () => {
     ).toMatchObject({
       code: 'STALE_FLOW_CANDIDATE',
       currentRevision: null,
+    })
+  })
+
+  it('detects when another reviewer changed the current decision', () => {
+    const reviewed = {
+      ...candidate,
+      status: 'confirmed' as const,
+      reviewedAt: '2026-10-15T01:00:00.000Z',
+      reviewedBy: 'reviewer-1',
+    }
+
+    expect(repositoryFlowReviewStateConflict(reviewed, reviewed.reviewedAt)).toBeUndefined()
+    expect(repositoryFlowReviewStateConflict(reviewed, undefined)).toBeUndefined()
+    expect(repositoryFlowReviewStateConflict(reviewed, null)).toEqual({
+      error: 'This UX-flow review changed while you were deciding. Refresh the current decision before reviewing it again.',
+      code: 'STALE_FLOW_REVIEW',
+      expectedReviewedAt: null,
+      currentReviewedAt: reviewed.reviewedAt,
     })
   })
 })

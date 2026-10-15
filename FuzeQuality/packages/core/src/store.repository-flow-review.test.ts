@@ -199,6 +199,29 @@ describe('repository flow review lifecycle', () => {
     })).resolves.toBeUndefined()
   })
 
+  it('rejects an obsolete human-review precondition without adding history', async () => {
+    const store = new MemoryCatalogStore()
+    const unreviewed = {
+      ...candidate,
+      status: 'proposed' as const,
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      reviewReason: undefined,
+    }
+    await store.saveRepositoryFlowCandidates([unreviewed])
+    const first = await store.reviewRepositoryFlowCandidate(unreviewed.id, unreviewed.tenantId, {
+      status: 'confirmed', reviewedBy: 'reviewer-1', expectedReviewedAt: null,
+    })
+
+    await expect(store.reviewRepositoryFlowCandidate(unreviewed.id, unreviewed.tenantId, {
+      status: 'rejected', reviewedBy: 'reviewer-2', expectedReviewedAt: null,
+    })).resolves.toBeUndefined()
+    await expect(store.repositoryFlowCandidates(unreviewed.repositoryId, unreviewed.tenantId)).resolves.toEqual([
+      expect.objectContaining({ status: 'confirmed', reviewedAt: first?.reviewedAt }),
+    ])
+    await expect(store.repositoryFlowReviewHistory(unreviewed.id, unreviewed.tenantId)).resolves.toHaveLength(1)
+  })
+
   it('atomically rejects a review when the repository revision changed', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const release = vi.fn()
@@ -215,8 +238,10 @@ describe('repository flow review lifecycle', () => {
     const [statement, parameters] = query.mock.calls[1]
     expect(String(statement)).toContain('candidate.revision=$6')
     expect(String(statement)).toContain('repository.last_scan_revision=$6')
+    expect(String(statement)).toContain('candidate.reviewed_at IS NOT DISTINCT FROM $8::timestamptz')
     expect(String(statement)).toContain('FOR UPDATE')
     expect(parameters[5]).toBe(candidate.revision)
+    expect(parameters.slice(6)).toEqual([false, null])
     expect(query).toHaveBeenCalledTimes(3)
     expect(release).toHaveBeenCalledOnce()
   })
@@ -244,8 +269,12 @@ describe('repository flow review lifecycle', () => {
     }
 
     await store.reviewRepositoryFlowCandidate(candidate.id, candidate.tenantId, {
-      status: 'confirmed', reviewedBy: 'reviewer-1',
+      status: 'confirmed', reviewedBy: 'reviewer-1', expectedReviewedAt: candidate.createdAt,
     })
+    const reviewUpdate = query.mock.calls.find(([statement]) =>
+      String(statement).includes('UPDATE fuzequality.repository_flow_candidates')
+    )
+    expect(reviewUpdate?.[1].slice(6)).toEqual([true, candidate.createdAt])
     const historyInsert = query.mock.calls.find(([statement]) =>
       String(statement).includes('INSERT INTO fuzequality.repository_flow_review_history')
     )

@@ -46,7 +46,7 @@ import { decodePerformanceCursor, performancePage } from './execution-performanc
 import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
-import { repositoryFlowReviewConflict } from './repository-flow-review'
+import { repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
@@ -117,6 +117,7 @@ const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
 const repositoryFlowReviewSchema = z.object({
   status: z.enum(['confirmed', 'rejected']),
   reason: z.string().trim().min(3).max(2000).optional(),
+  expectedReviewedAt: z.string().datetime().nullable().optional(),
 }).strict()
 const policyGateReviewSchema = z.object({ status: z.enum(['accepted', 'dismissed']), reason: z.string().trim().min(3).max(2000).optional() }).strict()
 const intelligenceFailureSchema = z.object({
@@ -645,6 +646,7 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
     status: parsed.data.status,
     reviewedBy: requestIdentity(request)!.userId,
     reason: parsed.data.reason,
+    expectedReviewedAt: parsed.data.expectedReviewedAt,
   }, existingCandidate.revision)
   if (!candidate) {
     const latestRepository = await store.repository(repositoryId, tenantId)
@@ -655,6 +657,11 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
       (id, tenant, query) => store.repositoryFlowCandidates(id, tenant, query),
     )
     if (!latestRepository || !latestCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
+    const reviewConflict = repositoryFlowReviewStateConflict(
+      latestCandidate,
+      parsed.data.expectedReviewedAt,
+    )
+    if (reviewConflict) return response.status(409).json(reviewConflict)
     return response.status(409).json(repositoryFlowReviewConflict(latestRepository, latestCandidate) ?? {
       error: 'The UX-flow candidate changed while it was being reviewed. Refresh before deciding.',
       code: 'STALE_FLOW_CANDIDATE',

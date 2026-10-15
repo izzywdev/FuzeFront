@@ -46,4 +46,26 @@ describe('FuzeQuality portal API identity context', () => {
     expect(headers.get('authorization')).toBe('Bearer portal-token')
     expect(headers.get('x-fuzefront-tenant-id')).toBe('personal-tenant-1')
   })
+
+  it('sends the current flow-review timestamp as an optimistic precondition', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.reviewRepositoryFlowCandidate(
+      'repo-1',
+      'flow-1',
+      'rejected',
+      'The implementation changed.',
+      '2026-10-15T01:00:00.000Z',
+    )
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      status: 'rejected',
+      reason: 'The implementation changed.',
+      expectedReviewedAt: '2026-10-15T01:00:00.000Z',
+    })
+  })
 })

@@ -328,8 +328,16 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['409'].content[
           'application/json'
-        ].schema.$ref
-      ).toBe('#/components/schemas/StaleFlowCandidateError')
+        ].schema.oneOf
+      ).toEqual([
+        { $ref: '#/components/schemas/StaleFlowCandidateError' },
+        { $ref: '#/components/schemas/StaleFlowReviewError' },
+      ])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.requestBody.content[
+          'application/json'
+        ].schema.properties.expectedReviewedAt
+      ).toMatchObject({ type: 'string', format: 'date-time', nullable: true })
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['409'].content[
           'application/json'

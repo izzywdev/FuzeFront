@@ -2965,7 +2965,10 @@ function FlowReviewControls({
       await onReview(flow, status, reason.trim() || undefined)
       setReason('')
     } catch (cause) {
-      if (cause instanceof CatalogApiError && cause.code === 'STALE_FLOW_CANDIDATE') {
+      if (
+        cause instanceof CatalogApiError &&
+        ['STALE_FLOW_CANDIDATE', 'STALE_FLOW_REVIEW'].includes(cause.code ?? '')
+      ) {
         setStale(true)
       }
       setError(cause instanceof Error ? cause.message : 'Unable to save review')
@@ -2986,46 +2989,50 @@ function FlowReviewControls({
           {flow.reviewReason && <p>{flow.reviewReason}</p>}
         </div>
       )}
-      {flow.status === 'proposed' && (
-        <div className="flow-review-controls">
-          {!isCurrentRevision && (
-            <p className="form-error" role="status">
-              Historical proposal — review is locked until repository analysis
-              produces a candidate for the current revision.
-            </p>
-          )}
-          <label>
-            Optional review rationale
-            <input
-              value={reason}
-              disabled={!isReviewable || busy}
-              onChange={event => setReason(event.target.value)}
-              placeholder="Why is this flow accurate or unsuitable?"
-            />
-          </label>
-          <div className="row-actions">
-            <QualityAction
-              intent="secondary"
-              disabled={busy || !isReviewable}
-              onClick={() => void submit('confirmed')}
-            >
-              <Check size={14} /> Confirm
-            </QualityAction>
-            <QualityAction
-              intent="danger"
-              disabled={busy || !isReviewable}
-              onClick={() => void submit('rejected')}
-            >
-              <X size={14} /> Reject
-            </QualityAction>
-          </div>
-          {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          )}
+      <div className="flow-review-controls">
+        {flow.status !== 'proposed' && (
+          <p className="performance-inventory-only" role="status">
+            This decision can be revised. Every saved decision remains in the
+            immutable review history.
+          </p>
+        )}
+        {!isCurrentRevision && (
+          <p className="form-error" role="status">
+            Historical proposal — review is locked until repository analysis
+            produces a candidate for the current revision.
+          </p>
+        )}
+        <label>
+          Optional review rationale
+          <input
+            value={reason}
+            disabled={!isReviewable || busy}
+            onChange={event => setReason(event.target.value)}
+            placeholder="Why is this flow accurate or unsuitable?"
+          />
+        </label>
+        <div className="row-actions">
+          <QualityAction
+            intent="secondary"
+            disabled={busy || !isReviewable}
+            onClick={() => void submit('confirmed')}
+          >
+            <Check size={14} /> Confirm
+          </QualityAction>
+          <QualityAction
+            intent="danger"
+            disabled={busy || !isReviewable}
+            onClick={() => void submit('rejected')}
+          >
+            <X size={14} /> Reject
+          </QualityAction>
         </div>
-      )}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
       <FlowReviewHistory flow={flow} />
     </>
   )
@@ -3574,7 +3581,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       flow.repositoryId,
       flow.id,
       status,
-      reason
+      reason,
+      flow.reviewedAt ?? null
     )
     setFlowCandidates(current =>
       flowCandidateMatchesInventory(

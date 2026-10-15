@@ -922,6 +922,41 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('allows a current reviewed flow decision to be revised with a concurrency precondition', async () => {
+    mockEvidenceApis()
+    const reviewedAt = '2026-10-09T01:00:00.000Z'
+    const reviewedCandidate = {
+      ...candidate,
+      status: 'confirmed' as const,
+      reviewedAt,
+      reviewedBy: 'reviewer-1',
+    }
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([reviewedCandidate])
+    const review = vi.spyOn(api, 'reviewRepositoryFlowCandidate').mockResolvedValue({
+      ...reviewedCandidate,
+      status: 'rejected',
+      reviewedAt: '2026-10-09T02:00:00.000Z',
+      reviewedBy: 'reviewer-2',
+      reviewReason: 'The route no longer exists.',
+    })
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(/This decision can be revised/)).toBeVisible()
+    fireEvent.change(screen.getByLabelText('Optional review rationale'), {
+      target: { value: 'The route no longer exists.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+
+    await waitFor(() => expect(review).toHaveBeenCalledWith(
+      repository.id,
+      candidate.id,
+      'rejected',
+      'The route no longer exists.',
+      reviewedAt,
+    ))
+    expect(await screen.findByText('The route no longer exists.')).toBeVisible()
+  })
+
   it('locks review controls for a candidate from a historical revision', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([
@@ -955,6 +990,36 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Refresh before deciding')
     expect(rationale).toHaveValue('Matches the observed path.')
+    expect(rationale).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
+  })
+
+  it('locks re-review after another reviewer changes the decision and preserves rationale', async () => {
+    mockEvidenceApis()
+    const reviewedCandidate = {
+      ...candidate,
+      status: 'confirmed' as const,
+      reviewedAt: '2026-10-09T01:00:00.000Z',
+      reviewedBy: 'reviewer-1',
+    }
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([reviewedCandidate])
+    vi.spyOn(api, 'reviewRepositoryFlowCandidate').mockRejectedValue(
+      new CatalogApiError(
+        'This UX-flow review changed while you were deciding. Refresh the current decision before reviewing it again.',
+        'STALE_FLOW_REVIEW',
+        409,
+      )
+    )
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(/This decision can be revised/)
+    const rationale = screen.getByLabelText('Optional review rationale')
+    fireEvent.change(rationale, { target: { value: 'The route was removed.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('changed while you were deciding')
+    expect(rationale).toHaveValue('The route was removed.')
     expect(rationale).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
