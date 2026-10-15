@@ -849,7 +849,7 @@ paths:
           description: The repository has no failed current-revision analysis to retry.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Problem' }
+              schema: { $ref: '#/components/schemas/ApiError' }
 
   /api/v1/repositories/{repositoryId}/test-executions:
     parameters:
@@ -1435,6 +1435,7 @@ components:
         lastScanDetails:
           type: object
           additionalProperties: true
+        lastScanFailure: { $ref: '#/components/schemas/RepositoryScanFailure' }
         lastAnalysis:
           type: object
           additionalProperties: false

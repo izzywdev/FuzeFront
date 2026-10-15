@@ -404,6 +404,14 @@ describe('contract discovery', () => {
         required: ['code', 'message', 'observedBytes', 'maxBytes', 'failedAt'],
       })
       expect(schemas.RepositoryScanFailure.properties.code.enum).toEqual(['SCAN_TRANSPORT_LIMIT_EXCEEDED'])
+      expect(schemas.RepositoryProcessingStatus.properties.lastScanFailure.$ref).toBe(
+        '#/components/schemas/RepositoryScanFailure'
+      )
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/analysis-retries'].post.responses['409'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/ApiError')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
       ).toContain('immutable analyzed commit')

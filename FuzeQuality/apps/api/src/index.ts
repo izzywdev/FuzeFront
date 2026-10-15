@@ -60,6 +60,7 @@ import { reviewedPerformanceWorkflowPaths } from './latest-performance-execution
 import { reviewedIntegrationWorkflowPaths } from './latest-integration-executions'
 import { reviewedPostProductionWorkflowPaths } from './latest-post-production-executions'
 import { repositoryProcessingStatus } from './repository-processing-status'
+import { dispatchWebhookScans } from './webhook-scan-dispatch'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -1334,26 +1335,8 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
     )
     await store.saveTestExecution(webhookExecutionRecord(executionWithEvidence, repository.tenantId, links))
   }
-  for (const command of commands) {
-    let commitSha = command.commitSha
-    if (!commitSha) {
-      const repository = repositories.find(item => item.id === command.repositoryId)
-      if (!repository?.installationId) continue
-      const access = await repositoryAccess.verify({
-        owner: repository.owner,
-        name: repository.name,
-        defaultBranch: repository.defaultBranch,
-        installationId: repository.installationId,
-      })
-      commitSha = access.commitSha
-    }
-    await events.publish(
-      TOPICS.REPOSITORY_SCAN_REQUESTED,
-      { ...command, commitSha },
-      command.repositoryId
-    )
-  }
-  response.status(202).json({ accepted: true, delivery: headers.data.delivery, queued: commands.length, executions: workflowExecutions.length })
+  const queued = await dispatchWebhookScans(commands, repositories, { store, repositoryAccess, events })
+  response.status(202).json({ accepted: true, delivery: headers.data.delivery, queued, executions: workflowExecutions.length })
 })
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
