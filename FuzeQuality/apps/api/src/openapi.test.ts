@@ -395,6 +395,16 @@ describe('contract discovery', () => {
         document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.responses
       ).toHaveProperty('400')
       expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/scan-failure'].post.requestBody.content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/RepositoryScanFailure')
+      expect(schemas.RepositoryScanFailure).toMatchObject({
+        additionalProperties: false,
+        required: ['code', 'message', 'observedBytes', 'maxBytes', 'failedAt'],
+      })
+      expect(schemas.RepositoryScanFailure.properties.code.enum).toEqual(['SCAN_TRANSPORT_LIMIT_EXCEEDED'])
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
       ).toContain('immutable analyzed commit')
       expect(
