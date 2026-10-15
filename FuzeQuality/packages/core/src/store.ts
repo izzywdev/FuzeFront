@@ -206,9 +206,9 @@ export interface CatalogStore {
   reviewPolicyGateEvaluation(id: string, tenantId: string, review: PolicyGateReview, expectedRevision?: string): Promise<PolicyGateEvaluation | undefined>
   policyGateReviewHistory(evaluationId: string, tenantId: string, query?: ReviewHistoryQuery): Promise<PolicyGateReviewHistoryEntry[]>
   testExecutions(repositoryId: string, tenantId: string, query?: TestExecutionQuery): Promise<TestExecution[]>
-  latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]): Promise<TestExecution[]>
-  latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]): Promise<TestExecution[]>
-  latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]): Promise<TestExecution[]>
+  latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]>
+  latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]>
+  latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]>
   executionOutcomeTrend(repositoryId: string, tenantId: string, query?: ExecutionOutcomeTrendQuery): Promise<ExecutionOutcomeTrend[]>
   policyGatePerformance(repositoryId: string, tenantId: string, query?: PolicyGatePerformanceQuery): Promise<PolicyGatePerformance[]>
   saveTestExecution(execution: TestExecution): Promise<void>
@@ -523,12 +523,13 @@ export class MemoryCatalogStore implements CatalogStore {
     return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
-  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]) {
+  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string) {
     const allowed = new Set(workflowPaths)
     const latest = new Map<string, TestExecution>()
     for (const execution of this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        item.branch === branch &&
         (item.kind === 'load' || item.kind === 'stress') &&
         Boolean(item.workflowPath && allowed.has(item.workflowPath))
       )
@@ -538,12 +539,13 @@ export class MemoryCatalogStore implements CatalogStore {
     return [...latest.values()]
   }
 
-  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]) {
+  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string) {
     const allowed = new Set(workflowPaths)
     const latest = new Map<string, TestExecution>()
     for (const execution of this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        item.branch === branch &&
         item.kind === 'post-production' &&
         Boolean(item.workflowPath && allowed.has(item.workflowPath))
       )
@@ -553,12 +555,13 @@ export class MemoryCatalogStore implements CatalogStore {
     return [...latest.values()]
   }
 
-  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]) {
+  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string) {
     const allowed = new Set(workflowPaths)
     const latest = new Map<string, TestExecution>()
     for (const execution of this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        item.branch === branch &&
         item.kind === 'integration' &&
         Boolean(item.workflowPath && allowed.has(item.workflowPath))
       )
@@ -1398,7 +1401,7 @@ export class PostgresCatalogStore implements CatalogStore {
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
 
-  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]): Promise<TestExecution[]> {
+  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]> {
     if (!workflowPaths.length) return []
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workflow_path) *
@@ -1406,13 +1409,14 @@ export class PostgresCatalogStore implements CatalogStore {
        WHERE repository_id=$1 AND tenant_id=$2
          AND kind IN ('load','stress')
          AND workflow_path=ANY($3::text[])
+         AND branch=$4
        ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
-      [repositoryId, tenantId, workflowPaths],
+      [repositoryId, tenantId, workflowPaths, branch],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
 
-  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]): Promise<TestExecution[]> {
+  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]> {
     if (!workflowPaths.length) return []
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workflow_path) *
@@ -1420,13 +1424,14 @@ export class PostgresCatalogStore implements CatalogStore {
        WHERE repository_id=$1 AND tenant_id=$2
          AND kind='post-production'
          AND workflow_path=ANY($3::text[])
+         AND branch=$4
        ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
-      [repositoryId, tenantId, workflowPaths],
+      [repositoryId, tenantId, workflowPaths, branch],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
 
-  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]): Promise<TestExecution[]> {
+  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]> {
     if (!workflowPaths.length) return []
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workflow_path) *
@@ -1434,8 +1439,9 @@ export class PostgresCatalogStore implements CatalogStore {
        WHERE repository_id=$1 AND tenant_id=$2
          AND kind='integration'
          AND workflow_path=ANY($3::text[])
+         AND branch=$4
        ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
-      [repositoryId, tenantId, workflowPaths],
+      [repositoryId, tenantId, workflowPaths, branch],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }

@@ -41,7 +41,8 @@ export function ExecutionSourceLink({ execution }: { execution: TestExecution })
 /** Finds the newest ingested run matching one scanner-verified performance definition. */
 export function latestPerformanceExecution(
   artifact: QualityArtifact,
-  executions: TestExecution[]
+  executions: TestExecution[],
+  branch?: string,
 ): TestExecution | undefined {
   if (
     !['load-test', 'stress-test'].includes(artifact.kind) ||
@@ -52,6 +53,7 @@ export function latestPerformanceExecution(
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
+      (!branch || execution.branch === branch) &&
       execution.workflowPath === artifact.execution?.workflowPath
     )
     .sort((left, right) => {
@@ -66,12 +68,14 @@ export function latestPerformanceExecution(
 /** Finds the newest ingested run for one scanner-detected post-production workflow. */
 export function latestPostProductionExecution(
   artifact: QualityArtifact,
-  executions: TestExecution[]
+  executions: TestExecution[],
+  branch?: string,
 ): TestExecution | undefined {
   if (artifact.kind !== 'post-production-test') return undefined
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
+      (!branch || execution.branch === branch) &&
       execution.kind === 'post-production' &&
       execution.workflowPath === artifact.sourcePath
     )
@@ -87,12 +91,14 @@ export function latestPostProductionExecution(
 /** Finds the newest ingested run for one scanner-detected integration workflow. */
 export function latestIntegrationExecution(
   artifact: QualityArtifact,
-  executions: TestExecution[]
+  executions: TestExecution[],
+  branch?: string,
 ): TestExecution | undefined {
   if (artifact.kind !== 'integration-test') return undefined
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
+      (!branch || execution.branch === branch) &&
       execution.kind === 'integration' &&
       execution.workflowPath === artifact.sourcePath
     )

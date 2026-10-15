@@ -195,7 +195,7 @@ const guardedEvaluation: PolicyGateEvaluation = {
 const loadExecution: TestExecution = {
   id: 'execution-load-1', repositoryId: repository.id, tenantId: 'tenant-1',
   provider: 'github-actions', externalRunId: '12345', attempt: 1,
-  revision: 'revision-1', kind: 'load', status: 'failed', name: 'Load test',
+  revision: 'revision-1', branch: 'main', kind: 'load', status: 'failed', name: 'Load test',
   workflowPath: loadArtifact.sourcePath,
   sourceUrl: 'https://github.com/fuze/front/actions/runs/12345',
   completedAt: '2026-10-09T12:00:00.000Z',
@@ -455,20 +455,23 @@ describe('RepositoryIntelligence flow inventory', () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([governanceEvaluation])
+    let governanceReviewed = false
     vi.mocked(api.policyGateReviewHistory)
-      .mockResolvedValueOnce({
+      .mockImplementation(async () => governanceReviewed ? {
+        items: [{ id: 'policy-review-new', evaluationId: governanceEvaluation.id, tenantId: governanceEvaluation.tenantId, status: 'accepted', reviewedBy: 'current-governance-reviewer', createdAt: '2026-10-11T01:00:00.000Z' }],
+        page: { nextCursor: null, hasMore: false },
+      } : {
         items: [{ id: 'policy-review-old', evaluationId: governanceEvaluation.id, tenantId: governanceEvaluation.tenantId, status: 'dismissed', reviewedBy: 'previous-governance-reviewer', createdAt: '2026-10-09T01:00:00.000Z' }],
         page: { nextCursor: null, hasMore: false },
       })
-      .mockResolvedValueOnce({
-        items: [{ id: 'policy-review-new', evaluationId: governanceEvaluation.id, tenantId: governanceEvaluation.tenantId, status: 'accepted', reviewedBy: 'current-governance-reviewer', createdAt: '2026-10-11T01:00:00.000Z' }],
-        page: { nextCursor: null, hasMore: false },
-      })
-    vi.spyOn(api, 'reviewPolicyGateEvaluation').mockResolvedValue({
-      ...governanceEvaluation,
-      reviewStatus: 'accepted',
-      reviewedAt: '2026-10-11T01:00:00.000Z',
-      reviewedBy: 'current-governance-reviewer',
+    vi.spyOn(api, 'reviewPolicyGateEvaluation').mockImplementation(async () => {
+      governanceReviewed = true
+      return {
+        ...governanceEvaluation,
+        reviewStatus: 'accepted',
+        reviewedAt: '2026-10-11T01:00:00.000Z',
+        reviewedBy: 'current-governance-reviewer',
+      }
     })
 
     render(<RepositoryIntelligence data={portfolio} />)

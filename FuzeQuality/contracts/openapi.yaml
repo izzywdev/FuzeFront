@@ -947,7 +947,7 @@ paths:
       summary: Read the latest execution for every current reviewed load or stress workflow
       description: >-
         Resolves workflow paths only from the repository current analyzed load/stress artifacts,
-        then returns at most one latest execution per path. This read model is independent of
+        then returns at most one latest default-branch execution per path. This read model is independent of
         the mixed execution-history page so unrelated CI runs cannot hide performance evidence.
       tags: [executions]
       security: [{ platformBearer: [] }]
@@ -976,7 +976,7 @@ paths:
       summary: Read the latest execution for every current detected integration workflow
       description: >-
         Resolves workflow paths only from the repository current analyzed integration-test
-        artifacts, then returns at most one latest execution per path. This read model is
+        artifacts, then returns at most one latest default-branch execution per path. This read model is
         independent of mixed execution-history filters and pagination.
       tags: [executions]
       security: [{ platformBearer: [] }]
@@ -1005,7 +1005,7 @@ paths:
       summary: Read the latest execution for every current detected post-production workflow
       description: >-
         Resolves workflow paths only from the repository current analyzed post-production
-        artifacts, then returns at most one latest execution per path. This read model is
+        artifacts, then returns at most one latest default-branch execution per path. This read model is
         independent of mixed execution-history filters and pagination.
       tags: [executions]
       security: [{ platformBearer: [] }]

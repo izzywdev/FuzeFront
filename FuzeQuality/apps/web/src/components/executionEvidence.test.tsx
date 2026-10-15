@@ -120,6 +120,29 @@ describe('ExecutionThresholdEvidence', () => {
     expect(latestIntegrationExecution(artifact, [{ ...run, kind: 'ci' }])).toBeUndefined()
   })
 
+  it('keeps newer feature-branch runs out of current default-branch evidence', () => {
+    const artifact: QualityArtifact = {
+      id: 'integration-workflow', repositoryId: execution.repositoryId, kind: 'integration-test',
+      title: 'Integration', sourcePath: '.github/workflows/integration.yml', summary: 'Integration tests', evidence: [],
+    }
+    const main = {
+      ...execution,
+      id: 'main-run',
+      branch: 'main',
+      kind: 'integration' as const,
+      workflowPath: artifact.sourcePath,
+      completedAt: '2026-10-14T00:00:00.000Z',
+    }
+    const feature = {
+      ...main,
+      id: 'feature-run',
+      branch: 'feature/checkout',
+      completedAt: '2026-10-15T00:00:00.000Z',
+    }
+
+    expect(latestIntegrationExecution(artifact, [feature, main], 'main')).toBe(main)
+  })
+
   it('renders the workflow file with the provider-owned run identity', () => {
     render(<ExecutionEvidenceMetadata execution={execution} />)
 

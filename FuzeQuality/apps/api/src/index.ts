@@ -811,7 +811,7 @@ app.get('/api/v1/repositories/:id/performance-test-executions/latest', mayReadCa
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
   const workflowPaths = reviewedPerformanceWorkflowPaths(artifacts)
-  response.json({ items: await store.latestPerformanceExecutions(repositoryId, tenantId, workflowPaths) })
+  response.json({ items: await store.latestPerformanceExecutions(repositoryId, tenantId, workflowPaths, repository.defaultBranch) })
 })
 app.get('/api/v1/repositories/:id/integration-test-executions/latest', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
@@ -820,7 +820,7 @@ app.get('/api/v1/repositories/:id/integration-test-executions/latest', mayReadCa
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
   const workflowPaths = reviewedIntegrationWorkflowPaths(artifacts)
-  response.json({ items: await store.latestIntegrationExecutions(repositoryId, tenantId, workflowPaths) })
+  response.json({ items: await store.latestIntegrationExecutions(repositoryId, tenantId, workflowPaths, repository.defaultBranch) })
 })
 app.get('/api/v1/repositories/:id/post-production-test-executions/latest', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
@@ -829,7 +829,7 @@ app.get('/api/v1/repositories/:id/post-production-test-executions/latest', mayRe
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
   const workflowPaths = reviewedPostProductionWorkflowPaths(artifacts)
-  response.json({ items: await store.latestPostProductionExecutions(repositoryId, tenantId, workflowPaths) })
+  response.json({ items: await store.latestPostProductionExecutions(repositoryId, tenantId, workflowPaths, repository.defaultBranch) })
 })
 app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

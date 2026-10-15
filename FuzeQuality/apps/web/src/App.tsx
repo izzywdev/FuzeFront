@@ -5080,14 +5080,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                           </article>
                         ))}
                     {items.map(item => {
-                      const latestExecution = item.kind === 'integration-test'
-                        ? latestIntegrationExecution(item, integrationExecutions)
-                        : item.kind === 'post-production-test'
-                          ? latestPostProductionExecution(item, postProductionExecutions)
-                          : latestPerformanceExecution(item, performanceExecutions)
                       const repository = data.repositories.find(
                         candidate => candidate.id === item.repositoryId
                       )
+                      const latestExecution = item.kind === 'integration-test'
+                        ? latestIntegrationExecution(item, integrationExecutions, repository?.defaultBranch)
+                        : item.kind === 'post-production-test'
+                          ? latestPostProductionExecution(item, postProductionExecutions, repository?.defaultBranch)
+                          : latestPerformanceExecution(item, performanceExecutions, repository?.defaultBranch)
                       const analyzedRevision = repository
                         ? analyzedSourceRevision(repository)
                         : undefined
