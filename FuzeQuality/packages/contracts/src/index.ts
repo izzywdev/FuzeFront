@@ -49,6 +49,7 @@ export type Repository = RepositoryInput & {
   lastScanRevision?: string
   lastScanStatus: 'never' | 'queued' | 'running' | 'complete' | 'failed'
   lastScanDetails?: RepositoryScanDetails
+  lastScanFailure?: RepositoryScanFailure
   /** Revision-scoped lifecycle for deterministic governance plus reviewed LiteLLM proposals. */
   lastAnalysis?: RepositoryAnalysisStatus
 }
@@ -64,8 +65,19 @@ export type RepositoryAnalysisStatus = {
 }
 
 export type RepositoryProcessingStatus = Pick<Repository,
-  'id' | 'lastScanAt' | 'lastScanRevision' | 'lastScanStatus' | 'lastScanDetails' | 'lastAnalysis'
+  'id' | 'lastScanAt' | 'lastScanRevision' | 'lastScanStatus' | 'lastScanDetails' | 'lastScanFailure' | 'lastAnalysis'
 >
+
+export const repositoryScanFailureSchema = z.object({
+  code: z.enum(['SCAN_TRANSPORT_LIMIT_EXCEEDED']),
+  message: z.string().trim().min(1).max(500),
+  sourceRevision: z.string().regex(/^[0-9a-f]{40}$/i).optional(),
+  observedBytes: z.number().int().positive(),
+  maxBytes: z.number().int().positive(),
+  failedAt: z.string().datetime(),
+}).strict()
+
+export type RepositoryScanFailure = z.infer<typeof repositoryScanFailureSchema>
 
 /** Local, event-carried projection of the FuzeFront identity hierarchy. */
 export type QualityTenant = {

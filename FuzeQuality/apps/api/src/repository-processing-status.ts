@@ -7,6 +7,7 @@ export function repositoryProcessingStatus(repository: Repository): RepositoryPr
     lastScanRevision: repository.lastScanRevision,
     lastScanStatus: repository.lastScanStatus,
     lastScanDetails: repository.lastScanDetails,
+    lastScanFailure: repository.lastScanFailure,
     lastAnalysis: repository.lastAnalysis,
   }
 }

@@ -1055,6 +1055,11 @@ export function Repositories({
                 onRetry={repository.lastAnalysis?.status === 'failed' ? () => void retryAnalysis(repository.id) : undefined}
                 retrying={retryingAnalysis === repository.id}
               />
+              {repository.lastScanStatus === 'failed' && repository.lastScanFailure && (
+                <p className="form-error" role="alert">
+                  {repository.lastScanFailure.message}
+                </p>
+              )}
               <dl>
                 <div>
                   <dt>Branch</dt>
@@ -2024,6 +2029,11 @@ function Operations({ data }: { data: Portfolio }) {
                     ? new Date(repository.lastScanAt).toLocaleString()
                     : 'not scanned'}
                 </small>
+                {repository.lastScanFailure && (
+                  <p className="form-error" role="alert">
+                    {repository.lastScanFailure.message} ({repository.lastScanFailure.code})
+                  </p>
+                )}
                 {diagnostics.length ? (
                   <p>
                     {diagnostics.length} parser diagnostics:{' '}

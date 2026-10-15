@@ -17,6 +17,7 @@ import {
   normalizeItemList,
   policyGateEvaluationMatchesInventory,
   RepositoryIntelligence,
+  Repositories,
 } from './App'
 import { api, CatalogApiError } from './api'
 
@@ -240,6 +241,33 @@ afterEach(() => {
 })
 
 describe('RepositoryIntelligence flow inventory', () => {
+  it('shows the controlled repository scan failure reason in inventory', () => {
+    const failureMessage = 'Repository inventory exceeds the safe ingestion limit. Narrow the repository include globs and retry.'
+    render(
+      <Repositories
+        data={{
+          ...portfolio,
+          repositories: [{
+            ...repository,
+            lastScanStatus: 'failed',
+            lastScanFailure: {
+              code: 'SCAN_TRANSPORT_LIMIT_EXCEEDED',
+              message: failureMessage,
+              sourceRevision: 'a'.repeat(40),
+              observedBytes: 4_600_000,
+              maxBytes: 4_500_000,
+              failedAt: '2026-10-15T10:00:00.000Z',
+            },
+          }],
+        }}
+        reload={vi.fn()}
+        updateProcessingStatus={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(failureMessage)
+  })
+
   it('normalizes malformed optional execution evidence without exposing undefined rows', () => {
     expect(normalizeItemList<TestExecution>({})).toEqual([])
     expect(normalizeItemList<TestExecution>({ items: [loadExecution, undefined] })).toEqual([

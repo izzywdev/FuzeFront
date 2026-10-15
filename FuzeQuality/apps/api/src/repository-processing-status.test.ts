@@ -12,7 +12,7 @@ describe('repository processing status response', () => {
     }
     expect(repositoryProcessingStatus(repository)).toEqual({
       id: 'repo-1', lastScanAt: undefined, lastScanRevision: 'abc', lastScanStatus: 'complete',
-      lastScanDetails: undefined, lastAnalysis: { revision: 'abc', status: 'running' },
+      lastScanDetails: undefined, lastScanFailure: undefined, lastAnalysis: { revision: 'abc', status: 'running' },
     })
     expect(repositoryProcessingStatus(repository)).not.toHaveProperty('installationId')
   })

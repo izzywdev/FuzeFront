@@ -59,13 +59,22 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.10.0'
-const MAX_SCAN_RESULT_BYTES = 4_500_000
+export const SCANNER_VERSION = '1.11.0'
+export const MAX_SCAN_RESULT_BYTES = 4_500_000
 const TRANSPORT_DIAGNOSTIC_RESERVE_BYTES = 2_048
 
 const serializedBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8')
 
-function boundQualityArtifactsForTransport(
+export class ScanTransportLimitError extends Error {
+  readonly code = 'SCAN_TRANSPORT_LIMIT_EXCEEDED' as const
+
+  constructor(readonly observedBytes: number, readonly maxBytes: number) {
+    super(`Repository inventory is ${observedBytes} bytes and exceeds the ${maxBytes}-byte scan transport limit`)
+    this.name = 'ScanTransportLimitError'
+  }
+}
+
+export function boundQualityArtifactsForTransport(
   result: Omit<ScanResult, 'qualityArtifacts'>,
   artifacts: QualityArtifact[],
 ): ScanResult {
@@ -73,6 +82,9 @@ function boundQualityArtifactsForTransport(
   if (serializedBytes(unbounded) <= MAX_SCAN_RESULT_BYTES) return unbounded
 
   const emptyPayloadBytes = serializedBytes({ ...result, qualityArtifacts: [] })
+  if (emptyPayloadBytes + TRANSPORT_DIAGNOSTIC_RESERVE_BYTES > MAX_SCAN_RESULT_BYTES) {
+    throw new ScanTransportLimitError(emptyPayloadBytes, MAX_SCAN_RESULT_BYTES)
+  }
   let remainingBytes = Math.max(
     0,
     MAX_SCAN_RESULT_BYTES - emptyPayloadBytes - TRANSPORT_DIAGNOSTIC_RESERVE_BYTES,
@@ -93,7 +105,7 @@ function boundQualityArtifactsForTransport(
   }
   const qualityArtifacts = artifacts.filter(item => retainedIds.has(item.id))
   const omitted = artifacts.length - qualityArtifacts.length
-  return {
+  const bounded: ScanResult = {
     ...result,
     diagnostics: [
       ...result.diagnostics,
@@ -107,6 +119,11 @@ function boundQualityArtifactsForTransport(
     ],
     qualityArtifacts,
   }
+  const boundedBytes = serializedBytes(bounded)
+  if (boundedBytes > MAX_SCAN_RESULT_BYTES) {
+    throw new ScanTransportLimitError(boundedBytes, MAX_SCAN_RESULT_BYTES)
+  }
+  return bounded
 }
 
 const TEST_GLOBS = [

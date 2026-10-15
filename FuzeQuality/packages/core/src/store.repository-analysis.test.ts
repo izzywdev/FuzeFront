@@ -18,6 +18,30 @@ function seed(repositoryValue: Repository = repository) {
 }
 
 describe('repository analysis lifecycle storage', () => {
+  it('records a controlled scan failure only while work is active and clears it on retry', async () => {
+    const store = new MemoryCatalogStore(seed({ ...repository, lastScanStatus: 'running', lastScanFailure: undefined }))
+    const failure = {
+      code: 'SCAN_TRANSPORT_LIMIT_EXCEEDED' as const,
+      message: 'Repository inventory exceeds the safe ingestion limit.',
+      sourceRevision: 'a'.repeat(40),
+      observedBytes: 4_600_000,
+      maxBytes: 4_500_000,
+      failedAt: '2026-10-15T10:00:00.000Z',
+    }
+
+    await store.setRepositoryScanFailure(repository.id, failure)
+    expect(await store.repository(repository.id, 'tenant-1')).toMatchObject({
+      lastScanStatus: 'failed',
+      lastScanFailure: failure,
+    })
+
+    await store.setRepositoryStatus(repository.id, 'queued')
+    expect(await store.repository(repository.id, 'tenant-1')).toMatchObject({
+      lastScanStatus: 'queued',
+      lastScanFailure: undefined,
+    })
+  })
+
   it('does not let a delayed prior-revision analysis overwrite the current revision', async () => {
     const store = new MemoryCatalogStore(seed({
         id: 'repo-1', owner: 'fuze', name: 'front', canonicalUrl: 'https://github.com/fuze/front',

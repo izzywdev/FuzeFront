@@ -13,6 +13,7 @@ import {
   type OrganizationQualitySummary,
   type Portfolio,
   type ScanResult,
+  repositoryScanFailureSchema,
 } from '@fuzequality/contracts'
 import {
   apiCoverageCatalog,
@@ -405,6 +406,15 @@ app.post('/api/v1/internal/repositories/:id/analysis-status', async (request, re
   const repository = await store.repository(repositoryId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   await store.setRepositoryAnalysis(repositoryId, parsed.data)
+  response.status(202).json({ accepted: true })
+})
+app.post('/api/v1/internal/repositories/:id/scan-failure', async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const parsed = repositoryScanFailureSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const repository = await store.repository(repositoryId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  await store.setRepositoryScanFailure(repositoryId, parsed.data)
   response.status(202).json({ accepted: true })
 })
 app.get('/api/v1/internal/repositories/:id/quality-artifacts', async (request, response) => {

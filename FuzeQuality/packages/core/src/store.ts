@@ -219,6 +219,7 @@ export interface CatalogStore {
     value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
   ): Promise<Repository | undefined>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
+  setRepositoryScanFailure(id: string, failure: NonNullable<Repository['lastScanFailure']>): Promise<void>
   setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>): Promise<void>
   queueRepositoryAnalysis(id: string, tenantId: string): Promise<Repository | undefined>
   saveScan(result: ScanResult): Promise<void>
@@ -661,7 +662,18 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async setRepositoryStatus(id: string, status: Repository['lastScanStatus']) {
     const repository = this.data.repositories.find(item => item.id === id)
-    if (repository) repository.lastScanStatus = status
+    if (repository) {
+      repository.lastScanStatus = status
+      if (status !== 'failed') repository.lastScanFailure = undefined
+    }
+  }
+
+  async setRepositoryScanFailure(id: string, failure: NonNullable<Repository['lastScanFailure']>) {
+    const repository = this.data.repositories.find(item => item.id === id)
+    if (repository && ['queued', 'running'].includes(repository.lastScanStatus)) {
+      repository.lastScanStatus = 'failed'
+      repository.lastScanFailure = failure
+    }
   }
 
   async setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>) {
@@ -699,6 +711,7 @@ export class MemoryCatalogStore implements CatalogStore {
         lastScanRevision: result.revision,
         lastScanStatus: 'complete',
         lastScanDetails: result.scanDetails,
+        lastScanFailure: undefined,
         lastAnalysis: { revision: result.revision, status: 'queued' },
       })
     }
@@ -1026,6 +1039,7 @@ export class PostgresCatalogStore implements CatalogStore {
         lastScanRevision: row.last_scan_revision ?? undefined,
         lastScanStatus: row.last_scan_status,
         lastScanDetails: row.last_scan_details ?? undefined,
+        lastScanFailure: row.last_scan_failure ?? undefined,
         lastAnalysis: row.last_analysis ?? undefined,
       })),
       operations: operations.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, documentPath: row.document_path, operationId: row.operation_id ?? undefined, method: row.method, path: row.path, summary: row.summary, tags: row.tags, security: row.security, parameters: row.parameters, responses: row.responses, ...(row.details ?? {}) })),
@@ -1996,7 +2010,21 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async setRepositoryStatus(id: string, status: Repository['lastScanStatus']) {
-    await this.pool.query('UPDATE fuzequality.repositories SET last_scan_status=$2, updated_at=now() WHERE id=$1', [id, status])
+    await this.pool.query(
+      `UPDATE fuzequality.repositories
+       SET last_scan_status=$2,last_scan_failure=CASE WHEN $2 <> 'failed' THEN NULL ELSE last_scan_failure END,updated_at=now()
+       WHERE id=$1`,
+      [id, status],
+    )
+  }
+
+  async setRepositoryScanFailure(id: string, failure: NonNullable<Repository['lastScanFailure']>) {
+    await this.pool.query(
+      `UPDATE fuzequality.repositories
+       SET last_scan_status='failed',last_scan_failure=$2::jsonb,updated_at=now()
+       WHERE id=$1 AND last_scan_status IN ('queued','running')`,
+      [id, JSON.stringify(failure)],
+    )
   }
 
 
@@ -2102,7 +2130,7 @@ export class PostgresCatalogStore implements CatalogStore {
          ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,execution_target=EXCLUDED.execution_target,discovered_at=now()`,
         [item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence), item.execution ? JSON.stringify(item.execution) : null],
       )
-      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,last_analysis=$5,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails),JSON.stringify({ revision: result.revision, status: 'queued' })])
+      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,last_scan_failure=NULL,last_analysis=$5,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails),JSON.stringify({ revision: result.revision, status: 'queued' })])
       await client.query('INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
         [TOPICS.REPOSITORY_INVENTORY_CHANGED, result.repository.id, JSON.stringify({ repositoryId: result.repository.id, revision: result.revision })])
       await client.query('COMMIT')

@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Repository } from '@fuzequality/contracts'
-import { isCredentialFreeRepositoryUrl, scanRepository } from './index'
+import {
+  MAX_SCAN_RESULT_BYTES,
+  ScanTransportLimitError,
+  boundQualityArtifactsForTransport,
+  isCredentialFreeRepositoryUrl,
+  scanRepository,
+} from './index'
 
 const repository: Repository = {
   id: 'b4908e35-8a57-4c13-9366-489ec59071fe',
@@ -40,6 +46,33 @@ describe('repository scanner', () => {
     }))
     expect(Buffer.byteLength(JSON.stringify(result), 'utf8')).toBeLessThanOrEqual(4_500_000)
   }, 30_000)
+
+  it('rejects an oversized canonical inventory before the worker attempts ingestion', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-transport-rejection-'))
+    const scanned = await scanRepository(repository, root)
+    const { qualityArtifacts: _qualityArtifacts, ...base } = scanned
+    base.tests = Array.from({ length: 18_000 }, (_, index) => ({
+      id: `test-${index}`,
+      repositoryId: repository.id,
+      framework: 'vitest',
+      level: 'integration' as const,
+      title: `canonical test ${index} ${'x'.repeat(240)}`,
+      sourcePath: 'tests/inventory.test.ts',
+      assertionCount: 1,
+      targets: [],
+    }))
+
+    expect(() => boundQualityArtifactsForTransport(base, [])).toThrow(ScanTransportLimitError)
+    try {
+      boundQualityArtifactsForTransport(base, [])
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: 'SCAN_TRANSPORT_LIMIT_EXCEEDED',
+        maxBytes: MAX_SCAN_RESULT_BYTES,
+      })
+      expect((error as ScanTransportLimitError).observedBytes).toBeGreaterThan(MAX_SCAN_RESULT_BYTES)
+    }
+  })
 
   it('reports and omits repository evidence that exceeds the safe read limit', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-oversized-evidence-'))
@@ -322,7 +355,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.10.0',
+      scannerVersion: '1.11.0',
       partial: false,
       counts: {
         operations: 1,
