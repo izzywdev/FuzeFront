@@ -90,4 +90,23 @@ describe('FuzeQuality portal API identity context', () => {
       expectedReviewedAt: '2026-10-15T01:00:00.000Z',
     })
   })
+
+  it('requests attempt history by exact encoded provider identity', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.testExecutionAttempts(
+      'repo-1',
+      'github-actions',
+      'run/id with spaces',
+      'next page',
+    )
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/v1/repositories/repo-1/test-executions/attempts?provider=github-actions&externalRunId=run%2Fid+with+spaces&cursor=next+page'
+    )
+  })
 })

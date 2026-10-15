@@ -130,6 +130,20 @@ describe('contract discovery', () => {
           .map((parameter: { $ref?: string }) => parameter.$ref)
       ).toContain('#/components/parameters/ExecutionExternalRunId')
       expect(document.components.parameters.ExecutionExternalRunId.schema.maxLength).toBe(500)
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions/attempts'].get.parameters
+          .map((parameter: { $ref?: string }) => parameter.$ref)
+      ).toEqual([
+        '#/components/parameters/ExecutionProvider',
+        '#/components/parameters/ExecutionExternalRunId',
+        undefined,
+        undefined,
+      ])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions/attempts'].get.responses['200'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/TestExecutionPage')
       expect(document.components.parameters.ExecutionName).toMatchObject({
         name: 'name',
         in: 'query',

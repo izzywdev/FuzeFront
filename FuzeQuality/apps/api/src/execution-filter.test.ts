@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { executionFilterSchema, executionPageFilterSchema } from './execution-filter'
+import { executionAttemptHistoryFilterSchema, executionFilterSchema, executionPageFilterSchema } from './execution-filter'
 
 describe('execution evidence filter', () => {
   it('accepts a chronological ISO-8601 range', () => {
@@ -118,5 +118,19 @@ describe('execution evidence filter', () => {
   it('bounds immutable execution pages and accepts opaque continuation cursors', () => {
     const result = executionPageFilterSchema.parse({ limit: '1000', cursor: 'opaque-page' })
     expect(result).toMatchObject({ limit: 100, cursor: 'opaque-page' })
+  })
+
+  it('requires a bounded provider-owned identity for attempt history', () => {
+    expect(executionAttemptHistoryFilterSchema.parse({
+      provider: 'github-actions',
+      externalRunId: ' 123456789 ',
+      limit: '1000',
+    })).toMatchObject({
+      provider: 'github-actions',
+      externalRunId: '123456789',
+      limit: 100,
+    })
+    expect(executionAttemptHistoryFilterSchema.safeParse({ provider: 'github-actions' }).success).toBe(false)
+    expect(executionAttemptHistoryFilterSchema.safeParse({ provider: 'jenkins', externalRunId: '42' }).success).toBe(false)
   })
 })

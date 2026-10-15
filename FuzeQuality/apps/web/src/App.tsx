@@ -3273,6 +3273,115 @@ export function normalizeHistoryPage<T>(value: T[] | HistoryPage<T>): HistoryPag
     : value
 }
 
+function hasRetainedFailureBefore(
+  execution: TestExecution,
+  history: TestExecution[],
+) {
+  return execution.attempt > 1 && execution.status === 'passed' && history.some(previous =>
+    previous.repositoryId === execution.repositoryId &&
+    previous.provider === execution.provider &&
+    previous.externalRunId === execution.externalRunId &&
+    previous.attempt < execution.attempt &&
+    previous.status === 'failed'
+  )
+}
+
+function ExecutionAttemptHistory({ execution }: { execution: TestExecution }) {
+  const [attempts, setAttempts] = useState<TestExecution[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+  const requestInFlight = useRef(false)
+  const requestVersion = useRef(0)
+
+  const loadAttempts = useCallback(async (cursor?: string) => {
+    if (requestInFlight.current) return
+    const request = ++requestVersion.current
+    requestInFlight.current = true
+    setLoading(true)
+    setError(undefined)
+    try {
+      const page = normalizeHistoryPage(await api.testExecutionAttempts(
+        execution.repositoryId,
+        execution.provider,
+        execution.externalRunId,
+        cursor,
+      ))
+      if (request !== requestVersion.current) return
+      setAttempts(current => cursor
+        ? [...new Map([...current, ...page.items].map(item => [item.id, item])).values()]
+        : page.items)
+      setNextCursor(page.page.nextCursor)
+    } catch (cause) {
+      if (request === requestVersion.current) {
+        setError(cause instanceof Error ? cause.message : 'Unable to load attempt history')
+      }
+    } finally {
+      if (request === requestVersion.current) {
+        requestInFlight.current = false
+        setLoading(false)
+      }
+    }
+  }, [execution.externalRunId, execution.provider, execution.repositoryId])
+
+  useEffect(() => {
+    requestVersion.current++
+    requestInFlight.current = false
+    setAttempts([])
+    setNextCursor(null)
+    setError(undefined)
+  }, [execution.externalRunId, execution.provider, execution.repositoryId])
+
+  return (
+    <details
+      className="policy-review-history"
+      onToggle={event => {
+        if (event.currentTarget.open && !attempts.length && !loading) void loadAttempts()
+      }}
+    >
+      <summary>Attempt history</summary>
+      <small>{execution.provider} run {execution.externalRunId}</small>
+      {loading && !attempts.length ? (
+        <small>Loading attempts…</small>
+      ) : error ? (
+        <small className="policy-review-error">{error}</small>
+      ) : attempts.length ? (
+        <>
+          <ol>
+            {attempts.map(attempt => (
+              <li key={attempt.id}>
+                <span className={`status-pill status-${attempt.status}`}>
+                  {attempt.status}
+                </span>
+                <strong>Attempt {attempt.attempt}</strong>
+                <time dateTime={attempt.completedAt ?? attempt.startedAt}>
+                  {attempt.completedAt || attempt.startedAt
+                    ? new Date(attempt.completedAt ?? attempt.startedAt ?? '').toLocaleString()
+                    : 'Time unavailable'}
+                </time>
+                {hasRetainedFailureBefore(attempt, attempts) && (
+                  <p>Recovered after retained failure evidence.</p>
+                )}
+              </li>
+            ))}
+          </ol>
+          {nextCursor && (
+            <QualityAction
+              intent="quiet"
+              disabled={loading}
+              onClick={() => void loadAttempts(nextCursor)}
+            >
+              <ChevronRight size={14} /> Load more attempts
+            </QualityAction>
+          )}
+        </>
+      ) : (
+        <small>No attempt evidence retained for this provider run.</small>
+      )}
+    </details>
+  )
+}
+
 export function policyGateEvaluationMatchesInventory(
   evaluation: PolicyGateEvaluation,
   repositories: Repository[],
@@ -5468,6 +5577,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   />
                   <ExecutionThresholdEvidence execution={execution} />
                   <ExecutionSourceLink execution={execution} />
+                  <ExecutionAttemptHistory execution={execution} />
                 </div>
               </article>
             ))}

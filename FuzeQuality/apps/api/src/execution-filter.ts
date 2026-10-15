@@ -66,3 +66,9 @@ export const executionPageFilterSchema = z.object({
 })
 
 export const executionPerformanceFilterSchema = executionPageFilterSchema
+
+export const executionAttemptHistoryFilterSchema = z.object({
+  provider: z.enum(['github-actions', 'external']),
+  externalRunId: z.string().trim().min(1).max(500),
+  ...historyPageQueryFields,
+}).strict()

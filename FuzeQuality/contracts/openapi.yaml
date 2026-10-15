@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.51.0
+  version: 0.52.0
   license:
     name: UNLICENSED
 servers:
@@ -881,6 +881,40 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/TestExecution' }
                   page: { $ref: '#/components/schemas/HistoryCursorPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/test-executions/attempts:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listTestExecutionAttempts
+      summary: List the immutable attempt history for one provider-owned execution
+      description: >-
+        Returns only attempts sharing the exact repository, provider, and provider run identifier.
+        This preserves tenant isolation and lets the portal prove a recovery from retained failure
+        evidence instead of inferring flakiness from a partial mixed-execution page.
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionExternalRunId'
+        - name: limit
+          in: query
+          description: Maximum number of immutable attempts to return in this page.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned by the preceding attempt-history page.
+          schema: { type: string, maxLength: 2000 }
+      responses:
+        '200':
+          description: Provider attempt history, newest evidence first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestExecutionPage' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }

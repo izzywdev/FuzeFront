@@ -40,7 +40,7 @@ import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermiss
 import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
-import { executionPerformanceFilterSchema, executionPageFilterSchema } from './execution-filter'
+import { executionAttemptHistoryFilterSchema, executionPerformanceFilterSchema, executionPageFilterSchema } from './execution-filter'
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
 import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, webhookExecutionRecord } from './test-execution-ingestion'
@@ -759,6 +759,31 @@ app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (reque
     limit: limit + 1,
   })
   const cursorItems = executions.map(execution => ({
+    ...execution,
+    createdAt: testExecutionOccurredAt(execution),
+  }))
+  const page = historyPage(cursorItems, limit)
+  response.json({
+    items: page.items.map(({ createdAt: _createdAt, ...execution }) => execution),
+    page: page.page,
+  })
+})
+app.get('/api/v1/repositories/:id/test-executions/attempts', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const filter = executionAttemptHistoryFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const { provider, externalRunId, limit } = filter.data
+  const attempts = await store.testExecutions(repositoryId, tenantId, {
+    provider,
+    externalRunId,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  const cursorItems = attempts.map(execution => ({
     ...execution,
     createdAt: testExecutionOccurredAt(execution),
   }))

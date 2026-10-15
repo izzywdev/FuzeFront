@@ -223,6 +223,7 @@ function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifactsByIds').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
+  vi.spyOn(api, 'testExecutionAttempts').mockResolvedValue([])
   vi.spyOn(api, 'latestPerformanceExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'latestIntegrationExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'latestPostProductionExecutions').mockResolvedValue({ items: [] })
@@ -635,6 +636,43 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
       cursor: 'execution-page-2',
     })
+  })
+
+  it('loads exact provider attempt history and proves recovery from retained failure evidence', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const failedAttempt: TestExecution = {
+      ...postProductionExecution,
+      id: 'execution-post-production-attempt-1',
+      attempt: 1,
+      status: 'failed',
+      completedAt: '2026-10-09T11:55:00.000Z',
+    }
+    const recoveredAttempt: TestExecution = {
+      ...postProductionExecution,
+      id: 'execution-post-production-attempt-2',
+      attempt: 2,
+      status: 'passed',
+      completedAt: '2026-10-09T12:00:00.000Z',
+    }
+    vi.mocked(api.testExecutions).mockResolvedValue([recoveredAttempt])
+    vi.mocked(api.testExecutionAttempts).mockResolvedValue({
+      items: [recoveredAttempt, failedAttempt],
+      page: { nextCursor: null, hasMore: false },
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    fireEvent.click(await screen.findByText('Attempt history'))
+    await waitFor(() => expect(api.testExecutionAttempts).toHaveBeenCalledWith(
+      repository.id,
+      recoveredAttempt.provider,
+      recoveredAttempt.externalRunId,
+      undefined,
+    ))
+    expect(await screen.findByText('Attempt 2')).toBeVisible()
+    expect(screen.getByText('Attempt 1')).toBeVisible()
+    expect(screen.getByText('Recovered after retained failure evidence.')).toBeVisible()
   })
 
   it('drops an obsolete execution continuation after filters change', async () => {
