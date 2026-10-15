@@ -1242,3 +1242,44 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Review queue cleared')).toBeVisible()
   })
 })
+
+test.describe('FuzeQuality standalone Security session', () => {
+  test('completes MFA before loading tenant-scoped quality evidence', async ({ page }) => {
+    let portfolioHeaders: Record<string, string> = {}
+    await page.route('**/api/v1/**', async route => {
+      const url = new URL(route.request().url())
+      const method = route.request().method()
+      const respond = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+      if (url.pathname.endsWith('/security/session') && method === 'POST') {
+        return respond({ status: 'mfa_required', challengeId: 'challenge-1', factors: [{ factorId: 'totp-1', type: 'totp' }] })
+      }
+      if (url.pathname.endsWith('/security/mfa/challenge')) {
+        return respond({ challengeId: 'challenge-1', factorId: 'totp-1', delivered: false }, 202)
+      }
+      if (url.pathname.endsWith('/security/mfa/verify')) {
+        return respond({ token: 'verified-token', sessionId: 'session-1' })
+      }
+      if (url.pathname.endsWith('/security/session') && method === 'GET') {
+        return respond({ identity: { tenantId: 'tenant-mfa' } })
+      }
+      if (url.pathname.endsWith('/portfolio')) {
+        portfolioHeaders = route.request().headers()
+        return respond(portfolio)
+      }
+      return respond({})
+    })
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await page.getByLabel('Email').fill('mfa@example.com')
+    await page.getByLabel('Password').fill('secret')
+    await page.getByRole('button', { name: 'Sign in securely' }).click()
+    await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible()
+    await expect(page.getByText('Enter the current code from your authenticator app.')).toBeVisible()
+    await page.getByLabel('Verification code').fill('123456')
+    await page.getByRole('button', { name: 'Verify and continue' }).click()
+
+    await expect(page.getByRole('heading', { name: /See what the platform promises/i })).toBeVisible()
+    expect(portfolioHeaders.authorization).toBe('Bearer verified-token')
+    expect(portfolioHeaders['x-fuzefront-tenant-id']).toBe('tenant-mfa')
+  })
+})

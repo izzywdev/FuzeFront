@@ -14,6 +14,19 @@ type AuthenticatedSessionResponse = {
 
 type MfaRequiredResponse = {
   status: 'mfa_required'
+  challengeId: string
+  factors: StandaloneMfaFactor[]
+}
+
+export type StandaloneMfaFactor = {
+  factorId: string
+  type: 'totp' | 'sms' | 'email'
+}
+
+export type StandaloneMfaChallenge = {
+  status: 'mfa_required'
+  challengeId: string
+  factors: StandaloneMfaFactor[]
 }
 
 type SessionInfoResponse = {
@@ -25,7 +38,17 @@ export type StandaloneSession = {
   tenantId: string
 }
 
+export function portalTokenProvider(hostWindow: Window = window): (() => string | null) | undefined {
+  const context = (hostWindow as Window & {
+    __FRONTFUSE_CONTEXT__?: { getAccessToken?: () => string | null }
+  }).__FRONTFUSE_CONTEXT__
+  return typeof context?.getAccessToken === 'function'
+    ? () => context.getAccessToken?.() ?? null
+    : undefined
+}
+
 type SessionResult = AuthenticatedSessionResponse | MfaRequiredResponse
+type StandaloneSignInResult = StandaloneSession | StandaloneMfaChallenge
 
 export class StandaloneAuthenticationError extends Error {
   constructor(message: string, readonly code?: string) {
@@ -97,7 +120,7 @@ export async function signInStandalone(
   email: string,
   password: string,
   fetcher: typeof fetch = fetch,
-): Promise<StandaloneSession> {
+): Promise<StandaloneSignInResult> {
   const response = await fetcher(SESSION_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -111,13 +134,56 @@ export async function signInStandalone(
     )
   }
   if (body?.status === 'mfa_required') {
-    throw new StandaloneAuthenticationError(
-      'This account requires an MFA step-up. Complete sign-in in the FuzeFront portal, then retry here.',
-      'MFA_REQUIRED',
-    )
+    if (!body.challengeId || !body.factors?.length) {
+      throw new StandaloneAuthenticationError('FuzeFront returned an invalid MFA challenge.', 'INVALID_MFA_CHALLENGE')
+    }
+    return body
   }
   if (body?.status !== 'authenticated' || !body.token) {
     throw new StandaloneAuthenticationError('FuzeFront returned an invalid session.', 'INVALID_SESSION')
+  }
+  return canonicalSession(body.token, fetcher)
+}
+
+export async function challengeStandaloneMfa(
+  challengeId: string,
+  factorId: string,
+  fetcher: typeof fetch = fetch,
+) {
+  const response = await fetcher('/api/v1/security/mfa/challenge', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ challengeId, factorId }),
+  })
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new StandaloneAuthenticationError(
+      errorMessage(body, 'Could not start additional verification.'),
+      'MFA_CHALLENGE_FAILED',
+    )
+  }
+}
+
+export async function verifyStandaloneMfa(
+  challengeId: string,
+  factorId: string,
+  code: string,
+  fetcher: typeof fetch = fetch,
+): Promise<StandaloneSession> {
+  const response = await fetcher('/api/v1/security/mfa/verify', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ challengeId, factorId, code }),
+  })
+  const body = await response.json().catch(() => null) as { token?: string } | null
+  if (!response.ok) {
+    throw new StandaloneAuthenticationError(
+      errorMessage(body, 'The verification code was not accepted.'),
+      response.status === 401 ? 'INVALID_MFA_CODE' : 'MFA_VERIFICATION_FAILED',
+    )
+  }
+  if (!body?.token) {
+    throw new StandaloneAuthenticationError('FuzeFront returned an invalid verified session.', 'INVALID_SESSION')
   }
   return canonicalSession(body.token, fetcher)
 }
@@ -140,6 +206,9 @@ export function StandaloneAuthBoundary({
   const [checking, setChecking] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [mfa, setMfa] = useState<StandaloneMfaChallenge | null>(null)
+  const [factorId, setFactorId] = useState('')
+  const [code, setCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string>()
 
@@ -173,6 +242,9 @@ export function StandaloneAuthBoundary({
     clearStandaloneSession()
     setSession(null)
     setPassword('')
+    setMfa(null)
+    setFactorId('')
+    setCode('')
     setError(undefined)
   }, [fetcher, session])
 
@@ -181,10 +253,18 @@ export function StandaloneAuthBoundary({
     setSubmitting(true)
     setError(undefined)
     try {
-      const authenticated = await signInStandalone(email, password, fetcher)
-      saveStandaloneSession(authenticated)
-      setSession(authenticated)
-      setPassword('')
+      const result = await signInStandalone(email, password, fetcher)
+      if ('status' in result) {
+        const selectedFactor = result.factors[0].factorId
+        await challengeStandaloneMfa(result.challengeId, selectedFactor, fetcher)
+        setMfa(result)
+        setFactorId(selectedFactor)
+        setPassword('')
+      } else {
+        saveStandaloneSession(result)
+        setSession(result)
+        setPassword('')
+      }
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value))
     } finally {
@@ -192,11 +272,46 @@ export function StandaloneAuthBoundary({
     }
   }, [email, fetcher, password])
 
+  const chooseFactor = useCallback(async (nextFactorId: string) => {
+    if (!mfa) return
+    setSubmitting(true)
+    setError(undefined)
+    try {
+      await challengeStandaloneMfa(mfa.challengeId, nextFactorId, fetcher)
+      setFactorId(nextFactorId)
+      setCode('')
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value))
+    } finally {
+      setSubmitting(false)
+    }
+  }, [fetcher, mfa])
+
+  const verify = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!mfa || !factorId) return
+    setSubmitting(true)
+    setError(undefined)
+    try {
+      const authenticated = await verifyStandaloneMfa(mfa.challengeId, factorId, code, fetcher)
+      saveStandaloneSession(authenticated)
+      setSession(authenticated)
+      setMfa(null)
+      setCode('')
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value))
+    } finally {
+      setSubmitting(false)
+    }
+  }, [code, factorId, fetcher, mfa])
+
   const content = useMemo(() => session ? children(session, signOut) : null, [children, session, signOut])
   if (checking) {
     return <main className="standalone-auth-state" aria-label="Restoring FuzeFront session"><RefreshCw className="spin" /> Restoring secure session…</main>
   }
   if (session) return content
+
+  const activeFactor = mfa?.factors.find(factor => factor.factorId === factorId)
 
   return (
     <main className="standalone-auth-shell">
@@ -212,16 +327,32 @@ export function StandaloneAuthBoundary({
         </div>
       </section>
       <section className="standalone-auth-panel">
-        <form className="standalone-auth-form" onSubmit={submit}>
+        <form className="standalone-auth-form" onSubmit={mfa ? verify : submit}>
           <LockKeyhole aria-hidden="true" />
-          <div><p className="eyebrow">Standalone session</p><h2>Sign in</h2></div>
-          <Input label="Email" name="email" type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} />
-          <Input label="Password" name="password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} />
+          <div><p className="eyebrow">Standalone session</p><h2>{mfa ? 'Verify your identity' : 'Sign in'}</h2></div>
+          {mfa ? (
+            <>
+              <label className="standalone-auth-field">
+                <span>Verification method</span>
+                <select aria-label="Verification method" value={factorId} disabled={submitting} onChange={event => void chooseFactor(event.target.value)}>
+                  {mfa.factors.map(factor => <option key={factor.factorId} value={factor.factorId}>{factor.type === 'totp' ? 'Authenticator app' : factor.type === 'sms' ? 'Text message' : 'Email'}</option>)}
+                </select>
+              </label>
+              <p className="standalone-auth-hint">{activeFactor?.type === 'totp' ? 'Enter the current code from your authenticator app.' : `A one-time code was sent by ${activeFactor?.type === 'sms' ? 'text message' : 'email'}.`}</p>
+              <Input label="Verification code" name="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={event => setCode(event.target.value)} />
+            </>
+          ) : (
+            <>
+              <Input label="Email" name="email" type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} />
+              <Input label="Password" name="password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} />
+            </>
+          )}
           {error && <p className="form-error" role="alert">{error}</p>}
-          <QualityAction type="submit" disabled={submitting || !email || !password}>
+          <QualityAction type="submit" disabled={submitting || (mfa ? !code : !email || !password)}>
             {submitting ? <RefreshCw className="spin" size={14} /> : <LockKeyhole size={14} />}
-            {submitting ? 'Signing in…' : 'Sign in securely'}
+            {submitting ? (mfa ? 'Verifying…' : 'Signing in…') : (mfa ? 'Verify and continue' : 'Sign in securely')}
           </QualityAction>
+          {mfa && <QualityAction type="button" intent="quiet" disabled={submitting} onClick={() => { setMfa(null); setFactorId(''); setCode(''); setError(undefined) }}>Back to sign in</QualityAction>}
         </form>
       </section>
     </main>
