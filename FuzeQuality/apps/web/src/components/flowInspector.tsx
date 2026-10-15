@@ -138,6 +138,16 @@ export function FlowInspector({
                 <div><dt>Model</dt><dd>{flow.analysis.model}</dd></div>
                 <div><dt>Prompt</dt><dd>{flow.analysis.promptVersion}</dd></div>
                 <div><dt>Schema</dt><dd>{flow.analysis.schemaVersion}</dd></div>
+                {flow.analysis.inputArtifactCount !== undefined &&
+                  flow.analysis.promptArtifactCount !== undefined && (
+                    <div>
+                      <dt>Prompt evidence</dt>
+                      <dd>
+                        {flow.analysis.promptArtifactCount} of {flow.analysis.inputArtifactCount} artifacts
+                        {flow.analysis.promptTruncated ? ' · bounded' : ' · complete'}
+                      </dd>
+                    </div>
+                  )}
               </dl>
             ) : (
               <small>Deterministic analysis; no model invocation.</small>

@@ -14,7 +14,10 @@ const candidate: RepositoryFlowCandidate = {
   wireframe: { kind: 'sequence', nodes: [{ label: 'Open checkout', targetIds: ['route-1'] }] },
   status: 'proposed',
   source: 'litellm',
-  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'fuzequality-repository-flow-v1', schemaVersion: '1.0' },
+  analysis: {
+    provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'fuzequality-repository-flow-v1', schemaVersion: '1.0',
+    inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true,
+  },
   createdAt: '2026-10-09T08:00:00.000Z',
 }
 
@@ -37,5 +40,20 @@ describe('repository flow candidate ingestion', () => {
       candidateId: candidate.id,
       repositoryId: candidate.repositoryId,
     })
+  })
+
+  it('rejects inconsistent prompt coverage provenance', () => {
+    expect(repositoryFlowCandidateIngestionSchema.safeParse({
+      candidates: [{
+        ...candidate,
+        analysis: { ...candidate.analysis!, promptArtifactCount: 141 },
+      }],
+    }).success).toBe(false)
+    expect(repositoryFlowCandidateIngestionSchema.safeParse({
+      candidates: [{
+        ...candidate,
+        analysis: { ...candidate.analysis!, promptTruncated: false },
+      }],
+    }).success).toBe(false)
   })
 })

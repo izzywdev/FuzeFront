@@ -6,7 +6,41 @@ const analysisSchema = z.object({
   model: z.string().trim().min(1).max(200),
   promptVersion: z.string().trim().min(1).max(100),
   schemaVersion: z.string().trim().min(1).max(100),
-}).strict()
+  inputArtifactCount: z.number().int().nonnegative().optional(),
+  promptArtifactCount: z.number().int().nonnegative().optional(),
+  promptTruncated: z.boolean().optional(),
+}).strict().superRefine((analysis, context) => {
+  const hasInputCount = analysis.inputArtifactCount !== undefined
+  const hasPromptCount = analysis.promptArtifactCount !== undefined
+  if (hasInputCount !== hasPromptCount) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['promptArtifactCount'],
+      message: 'Prompt and input artifact counts must be supplied together',
+    })
+  }
+  if (
+    analysis.inputArtifactCount !== undefined &&
+    analysis.promptArtifactCount !== undefined &&
+    analysis.promptArtifactCount > analysis.inputArtifactCount
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['promptArtifactCount'],
+      message: 'Prompt artifact count cannot exceed repository input',
+    })
+  }
+  if (
+    analysis.promptTruncated === false &&
+    analysis.inputArtifactCount !== analysis.promptArtifactCount
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['promptTruncated'],
+      message: 'Complete prompt provenance requires equal artifact counts',
+    })
+  }
+})
 
 const stepSchema = z.object({
   actor: z.string().trim().min(1).max(500),

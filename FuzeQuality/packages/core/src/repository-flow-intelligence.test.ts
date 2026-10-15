@@ -23,6 +23,9 @@ describe('repository flow wireframes', () => {
         model: 'quality-analysis',
         promptVersion: REPOSITORY_FLOW_PROMPT_VERSION,
         schemaVersion: REPOSITORY_FLOW_SCHEMA_VERSION,
+        inputArtifactCount: 1,
+        promptArtifactCount: 1,
+        promptTruncated: false,
       },
     })])
   })
@@ -37,6 +40,32 @@ describe('repository flow wireframes', () => {
     const analyzer = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl)
 
     await expect(analyzer.analyze(repository, 'abc', artifacts)).resolves.toEqual([])
+  })
+
+  it('rejects real repository IDs that were omitted from the bounded LiteLLM prompt', async () => {
+    const inventory = Array.from({ length: 101 }, (_, index) => ({
+      ...artifacts[0],
+      id: `route-${String(index).padStart(3, '0')}`,
+      title: `Route ${index}`,
+      sourcePath: `apps/web/Route${index}.tsx`,
+    }))
+    let omittedId = ''
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      const prompt = JSON.parse(body.messages[1].content)
+      const promptedIds = new Set(prompt.artifacts.map((item: { id: string }) => item.id))
+      omittedId = inventory.find(item => !promptedIds.has(item.id))!.id
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+        flows: [{
+          title: 'Unseen real route', confidence: 0.9, evidenceArtifactIds: [omittedId],
+          steps: [{ actor: 'User', action: 'opens unseen route', expectedOutcome: 'route opens', targetIds: [omittedId] }],
+        }],
+      }) } }] }))
+    }) as typeof fetch
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl)
+
+    await expect(analyzer.analyze(repository, 'abc', inventory)).resolves.toEqual([])
+    expect(omittedId).not.toBe('')
   })
 
   it('persists validated step targets as reviewable flow evidence', async () => {

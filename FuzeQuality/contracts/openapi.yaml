@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.52.0
+  version: 0.53.0
   license:
     name: UNLICENSED
 servers:
@@ -1490,6 +1490,9 @@ components:
         model: { type: string }
         promptVersion: { type: string }
         schemaVersion: { type: string }
+        inputArtifactCount: { type: integer, minimum: 0 }
+        promptArtifactCount: { type: integer, minimum: 0 }
+        promptTruncated: { type: boolean }
     RepositoryFlowReviewHistoryEntry:
       type: object
       additionalProperties: false

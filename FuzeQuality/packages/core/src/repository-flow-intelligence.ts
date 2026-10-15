@@ -75,16 +75,25 @@ function truncateUtf8(value: string, maxBytes: number): string {
  */
 function promptArtifacts(artifacts: QualityArtifact[]) {
   let remainingBytes = REPOSITORY_FLOW_SOURCE_BUDGET_BYTES
+  let sourceTruncated = false
   const consume = (value: string) => {
-    if (remainingBytes <= 0) return ''
+    const inputBytes = Buffer.byteLength(value, 'utf8')
+    if (remainingBytes <= 0) {
+      if (inputBytes > 0) sourceTruncated = true
+      return ''
+    }
     const bounded = truncateUtf8(
       value,
       Math.min(REPOSITORY_FLOW_SOURCE_FIELD_BYTES, remainingBytes)
     )
-    remainingBytes -= Buffer.byteLength(bounded, 'utf8')
+    const boundedBytes = Buffer.byteLength(bounded, 'utf8')
+    if (boundedBytes < inputBytes) sourceTruncated = true
+    remainingBytes -= boundedBytes
     return bounded
   }
-  return balancedAnalysisArtifacts(artifacts).map(item => ({
+  const selected = balancedAnalysisArtifacts(artifacts)
+  if (selected.some(item => item.evidence.length > 8)) sourceTruncated = true
+  const prompt = selected.map(item => ({
     id: item.id,
     kind: item.kind,
     title: consume(item.title),
@@ -92,6 +101,10 @@ function promptArtifacts(artifacts: QualityArtifact[]) {
     summary: consume(item.summary),
     evidence: item.evidence.slice(0, 8).map(consume).filter(Boolean),
   }))
+  return {
+    artifacts: prompt,
+    truncated: sourceTruncated || selected.length < artifacts.length,
+  }
 }
 
 export function deterministicRepositoryFlows(repository: Repository, revision: string, artifacts: QualityArtifact[]): RepositoryFlowCandidate[] {
@@ -119,7 +132,8 @@ export class LiteLlmRepositoryFlowAnalyzer {
   }
 
   async analyze(repository: Repository, revision: string, artifacts: QualityArtifact[]): Promise<RepositoryFlowCandidate[]> {
-    const safeArtifacts = promptArtifacts(artifacts)
+    const prompt = promptArtifacts(artifacts)
+    const safeArtifacts = prompt.artifacts
     const signal = AbortSignal.timeout(this.timeoutMs)
     let response: Response
     try {
@@ -146,7 +160,9 @@ export class LiteLlmRepositoryFlowAnalyzer {
     const content = payload.choices?.[0]?.message?.content
     if (!content) throw new Error('LiteLLM returned no repository flow analysis')
     const parsed = responseSchema.parse(JSON.parse(content))
-    const allowed = new Set(artifacts.map(item => item.id))
+    // Grounding means evidence the model actually received, not merely an ID
+    // that happens to exist elsewhere in a larger repository inventory.
+    const allowed = new Set(safeArtifacts.map(item => item.id))
     const now = new Date().toISOString()
     return parsed.flows.flatMap(flow => {
       const explicitEvidence = flow.evidenceArtifactIds.filter(id => allowed.has(id))
@@ -180,6 +196,9 @@ export class LiteLlmRepositoryFlowAnalyzer {
           model: this.model,
           promptVersion: REPOSITORY_FLOW_PROMPT_VERSION,
           schemaVersion: REPOSITORY_FLOW_SCHEMA_VERSION,
+          inputArtifactCount: artifacts.length,
+          promptArtifactCount: safeArtifacts.length,
+          promptTruncated: prompt.truncated,
         },
         createdAt: now,
       }]

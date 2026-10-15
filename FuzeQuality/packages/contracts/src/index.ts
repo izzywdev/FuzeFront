@@ -477,6 +477,12 @@ export type RepositoryFlowCandidate = {
     model: string
     promptVersion: string
     schemaVersion: string
+    /** Total repository artifacts available before prompt bounding. */
+    inputArtifactCount?: number
+    /** Repository artifacts whose IDs and bounded content were sent to LiteLLM. */
+    promptArtifactCount?: number
+    /** True when artifact selection or source-byte limits omitted input evidence. */
+    promptTruncated?: boolean
   }
   source: 'deterministic' | 'litellm'
   createdAt: string

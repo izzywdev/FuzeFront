@@ -4897,6 +4897,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <dt>Schema</dt>
                                   <dd>{flow.analysis.schemaVersion}</dd>
                                 </div>
+                                {flow.analysis.inputArtifactCount !== undefined &&
+                                  flow.analysis.promptArtifactCount !== undefined && (
+                                    <div>
+                                      <dt>Prompt evidence</dt>
+                                      <dd>
+                                        {flow.analysis.promptArtifactCount} of{' '}
+                                        {flow.analysis.inputArtifactCount} artifacts
+                                        {flow.analysis.promptTruncated ? ' · bounded' : ' · complete'}
+                                      </dd>
+                                    </div>
+                                  )}
                               </dl>
                             ) : flow.source === 'litellm' ? (
                               <small className="flow-provenance-missing">

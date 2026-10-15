@@ -16,7 +16,10 @@ const flow: RepositoryFlowCandidate = {
   steps: [{ actor: 'User', action: 'Submits credentials', expectedOutcome: 'Dashboard opens', targetIds: [artifact.id] }],
   wireframe: { kind: 'sequence', nodes: [{ label: 'Login', targetIds: [artifact.id] }, { label: 'Dashboard', targetIds: [] }] },
   status: 'proposed', source: 'litellm', createdAt: '2026-10-11T00:00:00.000Z',
-  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0' },
+  analysis: {
+    provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0',
+    inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true,
+  },
 }
 
 describe('FlowInspector', () => {
@@ -30,6 +33,7 @@ describe('FlowInspector', () => {
     expect(wireframe).toHaveTextContent('Dashboard')
     expect(screen.getByRole('region', { name: 'Flow steps' })).toHaveTextContent('Dashboard opens')
     expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('fuzeinfra-litellm')
+    expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('100 of 140 artifacts · bounded')
     expect(screen.getByTitle('Stable grounded-candidate identity')).toHaveTextContent('flow-1')
     expect(screen.getByText('apps/web/src/routes/login.tsx')).toBeVisible()
     screen.getByRole('button', { name: 'Close flow inspector' }).click()
