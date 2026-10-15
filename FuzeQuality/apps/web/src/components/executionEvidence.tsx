@@ -1,4 +1,5 @@
 import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
+import { artifactWorkflowExecutionKind } from '@fuzequality/contracts/workflow-execution'
 import { ExternalLink } from 'lucide-react'
 
 const THRESHOLD_OPERATOR_LABELS = {
@@ -44,17 +45,14 @@ export function latestPerformanceExecution(
   executions: TestExecution[],
   branch?: string,
 ): TestExecution | undefined {
-  if (
-    !['load-test', 'stress-test'].includes(artifact.kind) ||
-    artifact.execution?.provider !== 'github-actions' ||
-    artifact.execution.trigger !== 'workflow_dispatch' ||
-    artifact.execution.workflowPath !== artifact.sourcePath
-  ) return undefined
+  const executionKind = artifactWorkflowExecutionKind(artifact)
+  if (executionKind !== 'load' && executionKind !== 'stress') return undefined
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
       (!branch || execution.branch === branch) &&
-      execution.workflowPath === artifact.execution?.workflowPath
+      execution.kind === executionKind &&
+      execution.workflowPath === artifact.sourcePath
     )
     .sort((left, right) => {
       const leftTime = Date.parse(left.completedAt ?? left.startedAt ?? '')

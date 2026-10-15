@@ -10,15 +10,19 @@ const artifact = (overrides: Partial<QualityArtifact> = {}): QualityArtifact => 
 })
 
 describe('reviewed performance workflow lookup', () => {
-  it('deduplicates executable load and stress workflow paths', () => {
-    expect(reviewedPerformanceWorkflowPaths([artifact(), artifact({ id: 'load-2' })])).toEqual(['.github/workflows/load.yml'])
+  it('deduplicates reviewed load and stress workflow paths independently of dispatch eligibility', () => {
+    expect(reviewedPerformanceWorkflowPaths([
+      artifact(),
+      artifact({ id: 'load-2', execution: undefined }),
+      artifact({ id: 'stress-1', kind: 'stress-test', sourcePath: '.github/workflows/stress.yaml', execution: undefined }),
+    ])).toEqual(['.github/workflows/load.yml', '.github/workflows/stress.yaml'])
   })
 
-  it('excludes inventory-only, mismatched, and unresolved-input definitions', () => {
+  it('excludes non-performance and non-workflow definitions', () => {
     expect(reviewedPerformanceWorkflowPaths([
-      artifact({ execution: undefined }),
-      artifact({ sourcePath: '.github/workflows/other.yml' }),
-      artifact({ execution: { ...artifact().execution!, requiredInputs: ['environment'] } }),
+      artifact({ kind: 'integration-test' }),
+      artifact({ sourcePath: 'tests/performance/load.js', execution: undefined }),
+      artifact({ sourcePath: '.github/workflows/load.txt', execution: undefined }),
     ])).toEqual([])
   })
 })

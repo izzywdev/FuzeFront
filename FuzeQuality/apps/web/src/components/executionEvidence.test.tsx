@@ -73,7 +73,7 @@ const artifacts = [
 ]
 
 describe('ExecutionThresholdEvidence', () => {
-  it('matches a scanner-verified performance workflow despite heuristic run kind differences', () => {
+  it('matches a scanner-verified performance workflow only to its current artifact kind', () => {
     const artifact: QualityArtifact = {
       id: 'performance-workflow',
       repositoryId: execution.repositoryId,
@@ -88,16 +88,34 @@ describe('ExecutionThresholdEvidence', () => {
         trigger: 'workflow_dispatch',
       },
     }
-    const heuristicStressRun = { ...execution, kind: 'stress' as const }
+    const loadRun = { ...execution, id: 'load-run', kind: 'load' as const }
+    const newerStressRun = {
+      ...execution,
+      id: 'stress-run',
+      kind: 'stress' as const,
+      completedAt: '2026-10-15T00:00:00.000Z',
+    }
 
-    expect(latestPerformanceExecution(artifact, [heuristicStressRun])).toBe(
-      heuristicStressRun
-    )
+    expect(latestPerformanceExecution(artifact, [newerStressRun, loadRun])).toBe(loadRun)
     expect(
       latestPerformanceExecution(artifact, [
-        { ...heuristicStressRun, workflowPath: '.github/workflows/other.yml' },
+        { ...loadRun, workflowPath: '.github/workflows/other.yml' },
       ])
     ).toBeUndefined()
+  })
+
+  it('shows ingested evidence for a non-dispatch performance workflow', () => {
+    const artifact: QualityArtifact = {
+      id: 'scheduled-load-workflow',
+      repositoryId: execution.repositoryId,
+      kind: 'load-test',
+      title: 'Scheduled load workflow',
+      sourcePath: '.github/workflows/load-test.yml',
+      summary: 'Nightly load coverage',
+      evidence: ['schedule'],
+    }
+
+    expect(latestPerformanceExecution(artifact, [execution])).toBe(execution)
   })
 
   it('matches post-production evidence only by detected workflow identity', () => {
