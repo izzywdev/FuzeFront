@@ -117,13 +117,13 @@ export function evaluatePolicyGates(repository: Repository, revision: string, ar
     const policyText = `${policy.title} ${policy.summary} ${policy.evidence.join(' ')}`.toLowerCase()
     if (/\b(should|appropriate|reasonable|where possible|as needed|when practical)\b/.test(policyText)) {
       const title = `Ambiguous policy needs measurable criteria: ${policy.title}`
-      result.push({ id: id(repository.id, revision, 'ambiguous-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'ambiguous-policy', severity: 'medium', title, detail: `${policy.sourcePath} uses discretionary language that a CI or post-production gate cannot evaluate deterministically.`, policyArtifactIds: [policy.id], gateArtifactIds: [], confidence: 0.9, scope: scope([policy]), evidencePassages: [passageWithSignal(policy, 'ambiguous')].filter(item => item !== undefined), recommendation: 'Replace discretionary wording with an owner, scope, measurable threshold, and explicit exception path before creating or changing a gate.', reviewStatus: 'proposed', createdAt })
+      result.push({ id: id(repository.id, revision, 'ambiguous-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'ambiguous-policy', severity: 'medium', title, detail: `${policy.sourcePath} uses discretionary language that a CI or post-production gate cannot evaluate deterministically.`, policyArtifactIds: [policy.id], gateArtifactIds: [], confidence: 0.9, scope: scope([policy]), evidencePassages: [passageWithSignal(policy, 'ambiguous')].filter(item => item !== undefined), remediationAction: 'disambiguate-policy', recommendation: 'Replace discretionary wording with an owner, scope, measurable threshold, and explicit exception path before creating or changing a gate.', reviewStatus: 'proposed', createdAt })
     }
     const matching = gates.filter(gate => sharedTerms(policy, gate).length > 0)
     if (!matching.length) {
       const decision = policyPolarity(policy)
       const title = `Policy has no detected gate: ${policy.title}`
-      result.push({ id: id(repository.id, revision, 'unguarded-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'unguarded-policy', severity: 'high', title, detail: `No gate evidence shares an enforceable subject with ${policy.sourcePath}.`, policyArtifactIds: [policy.id], gateArtifactIds: [], confidence: 0.75, scope: scope([policy]), evidencePassages: [passageWithSignal(policy, decision?.polarity ?? 'policy', [], decision?.text)].filter(item => item !== undefined), recommendation: 'Define a named CI or post-production gate that verifies this policy and cite the policy in its configuration.', reviewStatus: 'proposed', createdAt })
+      result.push({ id: id(repository.id, revision, 'unguarded-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'unguarded-policy', severity: 'high', title, detail: `No gate evidence shares an enforceable subject with ${policy.sourcePath}.`, policyArtifactIds: [policy.id], gateArtifactIds: [], confidence: 0.75, scope: scope([policy]), evidencePassages: [passageWithSignal(policy, decision?.polarity ?? 'policy', [], decision?.text)].filter(item => item !== undefined), remediationAction: 'build-gate', recommendation: 'Define a named CI or post-production gate that verifies this policy and cite the policy in its configuration.', reviewStatus: 'proposed', createdAt })
     } else {
       for (const gate of matching) {
         const subjects = sharedTerms(policy, gate)
@@ -146,6 +146,7 @@ export function evaluatePolicyGates(repository: Repository, revision: string, ar
             passageWithSignal(policy, decision?.polarity ?? 'policy', subjects, decision?.text),
             passageWithSignal(gate, 'gate', subjects),
           ].filter(item => item !== undefined),
+          remediationAction: 'align-policy-gate',
           recommendation: 'Review the detected relationship and keep the policy reference and measurable gate criteria aligned.',
           reviewStatus: 'proposed',
           createdAt,
@@ -157,7 +158,7 @@ export function evaluatePolicyGates(repository: Repository, revision: string, ar
     const matching = policies.filter(policy => sharedTerms(policy, gate).length > 0)
     if (!matching.length) {
       const title = `Gate has no detected policy: ${gate.title}`
-      result.push({ id: id(repository.id, revision, 'guard-without-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'guard-without-policy', severity: 'medium', title, detail: `No repository policy explains what ${gate.sourcePath} is meant to guard.`, policyArtifactIds: [], gateArtifactIds: [gate.id], confidence: 0.75, scope: scope([gate]), evidencePassages: [passageWithSignal(gate, 'gate')].filter(item => item !== undefined), recommendation: 'Write an explicit policy statement with owner, scope, and pass/fail criteria, then link it from the gate.', reviewStatus: 'proposed', createdAt })
+      result.push({ id: id(repository.id, revision, 'guard-without-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'guard-without-policy', severity: 'medium', title, detail: `No repository policy explains what ${gate.sourcePath} is meant to guard.`, policyArtifactIds: [], gateArtifactIds: [gate.id], confidence: 0.75, scope: scope([gate]), evidencePassages: [passageWithSignal(gate, 'gate')].filter(item => item !== undefined), remediationAction: 'build-policy', recommendation: 'Write an explicit policy statement with owner, scope, and pass/fail criteria, then link it from the gate.', reviewStatus: 'proposed', createdAt })
     }
   }
   for (let index = 0; index < policies.length; index++) for (let other = index + 1; other < policies.length; other++) {
@@ -166,7 +167,7 @@ export function evaluatePolicyGates(repository: Repository, revision: string, ar
     const leftDecision = policyPolarity(left, subject), rightDecision = policyPolarity(right, subject)
     if (subject.length && leftDecision && rightDecision && leftDecision.polarity !== rightDecision.polarity) {
       const title = `Potentially contradictory policies: ${left.title} / ${right.title}`
-      result.push({ id: id(repository.id, revision, 'contradictory-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'contradictory-policy', severity: 'high', title, detail: `The policies share ${subject.slice(0, 3).join(', ')} while containing opposing obligation and prohibition language.`, policyArtifactIds: [left.id, right.id], gateArtifactIds: [], confidence: Math.min(0.95, 0.8 + subject.length * 0.05), scope: scope([left, right], subject), evidencePassages: [passageWithSignal(left, leftDecision.polarity, subject, leftDecision.text), passageWithSignal(right, rightDecision.polarity, subject, rightDecision.text)].filter(item => item !== undefined), recommendation: 'Clarify precedence, scope, and exceptions in one authoritative policy before changing gates.', reviewStatus: 'proposed', createdAt })
+      result.push({ id: id(repository.id, revision, 'contradictory-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'contradictory-policy', severity: 'high', title, detail: `The policies share ${subject.slice(0, 3).join(', ')} while containing opposing obligation and prohibition language.`, policyArtifactIds: [left.id, right.id], gateArtifactIds: [], confidence: Math.min(0.95, 0.8 + subject.length * 0.05), scope: scope([left, right], subject), evidencePassages: [passageWithSignal(left, leftDecision.polarity, subject, leftDecision.text), passageWithSignal(right, rightDecision.polarity, subject, rightDecision.text)].filter(item => item !== undefined), remediationAction: 'disambiguate-policy', recommendation: 'Clarify precedence, scope, and exceptions in one authoritative policy before changing gates.', reviewStatus: 'proposed', createdAt })
     }
   }
   return result

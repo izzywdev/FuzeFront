@@ -17,6 +17,7 @@ const evaluation: PolicyGateEvaluation = {
   confidence: 0.75,
   scope: { sourcePaths: ['governance/auth.md'], subjects: ['authentication'] },
   evidencePassages: [{ artifactId: 'policy-auth', sourcePath: 'governance/auth.md', text: 'Authentication is required.', signal: 'obligation' }],
+  remediationAction: 'build-gate',
   recommendation: 'Add an authentication gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T08:00:00.000Z',

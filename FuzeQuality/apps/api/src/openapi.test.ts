@@ -256,8 +256,15 @@ describe('contract discovery', () => {
         schema: { type: 'integer', minimum: 0, maximum: 2147483647 },
       })
       expect(schemas.PolicyGateEvaluation.required).toEqual(
-        expect.arrayContaining(['confidence', 'scope'])
+        expect.arrayContaining(['confidence', 'scope', 'remediationAction'])
       )
+      expect(schemas.PolicyGateRemediationAction.enum).toEqual([
+        'build-gate',
+        'build-policy',
+        'disambiguate-policy',
+        'align-policy-gate',
+      ])
+      expect(schemas.PolicyGateEvaluationInput.required).toContain('remediationAction')
       expect(schemas.PolicyGateEvaluationInput.properties.evidencePassages.items.$ref).toBe(
         '#/components/schemas/PolicyGateEvidencePassage'
       )

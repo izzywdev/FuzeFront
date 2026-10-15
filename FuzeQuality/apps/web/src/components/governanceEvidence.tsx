@@ -8,6 +8,13 @@ const evidenceSignalLabels = {
   ambiguous: 'Ambiguous',
 } as const
 
+const remediationActionLabels = {
+  'build-gate': 'Build a gate',
+  'build-policy': 'Build a policy',
+  'disambiguate-policy': 'Disambiguate policy',
+  'align-policy-gate': 'Align policy and gate',
+} as const
+
 /** App-specific governance evidence composed from semantic HTML primitives. */
 export function PolicyGateEvidence({
   evaluation,
@@ -96,6 +103,16 @@ export function PolicyGateEvidence({
           </ul>
         </div>
       )}
+      <div className="governance-remediation">
+        <strong>Proposed remediation</strong>
+        <span className="status-pill">
+          {evaluation.remediationAction
+            ? remediationActionLabels[evaluation.remediationAction]
+            : 'Review recommendation'}
+        </span>
+        <p>{evaluation.recommendation}</p>
+        <small>Proposal only — a reviewer must accept it before implementation.</small>
+      </div>
     </section>
   )
 }

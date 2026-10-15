@@ -14,8 +14,8 @@ describe('policy gate evaluation', () => {
     expect(results.every(item => item.reviewStatus === 'proposed')).toBe(true)
     expect(results.every(item => item.confidence >= 0 && item.confidence <= 1)).toBe(true)
     expect(results).toEqual(expect.arrayContaining([
-      expect.objectContaining({ scope: expect.objectContaining({ sourcePaths: ['governance/auth.md'] }) }),
-      expect.objectContaining({ scope: expect.objectContaining({ sourcePaths: ['.github/lint.yml'] }) }),
+      expect.objectContaining({ remediationAction: 'build-gate', scope: expect.objectContaining({ sourcePaths: ['governance/auth.md'] }) }),
+      expect.objectContaining({ remediationAction: 'build-policy', scope: expect.objectContaining({ sourcePaths: ['.github/lint.yml'] }) }),
     ]))
   })
 
@@ -66,7 +66,7 @@ describe('policy gate evaluation', () => {
     const results = evaluatePolicyGates(repository, 'abc', [
       { id: 'policy-quality', repositoryId: 'repo-1', kind: 'policy', title: 'Quality policy', sourcePath: 'governance/quality.md', summary: 'Teams should use reasonable coverage.', evidence: [] },
     ])
-    expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'ambiguous-policy', severity: 'medium', policyArtifactIds: ['policy-quality'] })]))
+    expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'ambiguous-policy', severity: 'medium', remediationAction: 'disambiguate-policy', policyArtifactIds: ['policy-quality'] })]))
   })
 
   it('requires opposing policy polarity and retains the decisive passages', () => {
@@ -78,6 +78,7 @@ describe('policy gate evaluation', () => {
     expect(results).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: 'contradictory-policy',
+        remediationAction: 'disambiguate-policy',
         evidencePassages: [
           expect.objectContaining({ artifactId: 'policy-require', signal: 'obligation', text: 'Every production change must require approval.' }),
           expect.objectContaining({ artifactId: 'policy-forbid', signal: 'prohibition', text: 'Emergency production changes must not require approval.' }),

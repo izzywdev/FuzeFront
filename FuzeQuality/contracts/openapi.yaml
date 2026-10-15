@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.47.0
+  version: 0.48.0
   license:
     name: UNLICENSED
 servers:
@@ -1462,10 +1462,13 @@ components:
         signal:
           type: string
           enum: [policy, gate, obligation, prohibition, ambiguous]
+    PolicyGateRemediationAction:
+      type: string
+      enum: [build-gate, build-policy, disambiguate-policy, align-policy-gate]
     PolicyGateEvaluationInput:
       type: object
       additionalProperties: false
-      required: [id, repositoryId, tenantId, revision, kind, severity, title, detail, policyArtifactIds, gateArtifactIds, confidence, scope, recommendation, reviewStatus, createdAt]
+      required: [id, repositoryId, tenantId, revision, kind, severity, title, detail, policyArtifactIds, gateArtifactIds, confidence, scope, remediationAction, recommendation, reviewStatus, createdAt]
       properties:
         id: { type: string, minLength: 1, maxLength: 200 }
         repositoryId: { type: string, format: uuid }
@@ -1505,12 +1508,13 @@ components:
           maxItems: 100
           default: []
           items: { $ref: '#/components/schemas/PolicyGateEvidencePassage' }
+        remediationAction: { $ref: '#/components/schemas/PolicyGateRemediationAction' }
         recommendation: { type: string, minLength: 1, maxLength: 5000 }
         reviewStatus: { type: string, enum: [proposed] }
         createdAt: { type: string, format: date-time }
     PolicyGateEvaluation:
       type: object
-      required: [id, repositoryId, tenantId, revision, kind, severity, title, detail, policyArtifactIds, gateArtifactIds, confidence, scope, recommendation, reviewStatus, createdAt]
+      required: [id, repositoryId, tenantId, revision, kind, severity, title, detail, policyArtifactIds, gateArtifactIds, confidence, scope, remediationAction, recommendation, reviewStatus, createdAt]
       properties:
         id: { type: string }
         repositoryId: { type: string, format: uuid }
@@ -1544,6 +1548,7 @@ components:
         evidencePassages:
           type: array
           items: { $ref: '#/components/schemas/PolicyGateEvidencePassage' }
+        remediationAction: { $ref: '#/components/schemas/PolicyGateRemediationAction' }
         recommendation: { type: string }
         reviewStatus: { type: string, enum: [proposed, accepted, dismissed] }
         reviewedAt: { type: string, format: date-time }

@@ -21,6 +21,7 @@ const evaluation = (
   confidence: 1,
   scope: { sourcePaths: [], subjects: [] },
   evidencePassages: [{ artifactId: `passage-${id}`, sourcePath: 'policy.md', text: id, signal: 'obligation' }],
+  remediationAction: 'build-gate',
   recommendation: id,
   reviewStatus: 'proposed',
   createdAt,

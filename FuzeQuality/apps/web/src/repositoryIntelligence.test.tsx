@@ -166,6 +166,7 @@ const governanceEvaluation: PolicyGateEvaluation = {
   gateArtifactIds: [],
   confidence: 0.9,
   scope: { sourcePaths: ['governance/auth.md'], subjects: ['authentication'] },
+  remediationAction: 'build-gate',
   recommendation: 'Add an authentication gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T00:00:00.000Z',
@@ -185,6 +186,7 @@ const guardedEvaluation: PolicyGateEvaluation = {
     { artifactId: policyArtifact.id, sourcePath: policyArtifact.sourcePath, text: policyArtifact.evidence[0], signal: 'obligation' },
     { artifactId: gateArtifact.id, sourcePath: gateArtifact.sourcePath, text: gateArtifact.evidence[0], signal: 'gate' },
   ],
+  remediationAction: 'align-policy-gate',
   recommendation: 'Keep the policy and gate aligned.',
 }
 

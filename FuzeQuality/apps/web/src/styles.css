@@ -147,6 +147,10 @@ button:disabled { cursor: wait; opacity: .55; }
 .governance-passages li { display: grid; grid-template-columns: auto minmax(180px, 1fr) auto; align-items: start; gap: 8px; padding: 8px; border-left: 2px solid var(--line); background: #0d1d2b; }
 .governance-passages q { color: var(--text); font-size: 11px; }
 .governance-passages code { color: var(--muted); font: 9px var(--font-mono); overflow-wrap: anywhere; }
+.governance-remediation { display: grid; grid-template-columns: 1fr auto; gap: 7px; padding-top: 9px; border-top: 1px solid var(--line); }
+.governance-remediation p, .governance-remediation small { grid-column: 1 / -1; margin: 0; }
+.governance-remediation p { color: var(--text); font-size: 11px; }
+.governance-remediation small { color: var(--muted); }
 .governance-passage-source { display: grid; gap: 3px; min-width: 140px; }
 .governance-passage-source strong { color: var(--text); font-size: 10px; }
 .governance-signal-obligation { color: var(--cyan); }.governance-signal-prohibition { color: var(--coral); }.governance-signal-ambiguous { color: var(--amber); }

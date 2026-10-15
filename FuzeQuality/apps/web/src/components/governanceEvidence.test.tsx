@@ -28,6 +28,7 @@ const evaluation: PolicyGateEvaluation = {
     text: 'Authentication is required.',
     signal: 'obligation',
   }],
+  remediationAction: 'build-gate',
   recommendation: 'Add a gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T08:00:00.000Z',
@@ -54,6 +55,9 @@ describe('PolicyGateEvidence', () => {
     expect(screen.getByText('policy · governance/auth.md')).toBeInTheDocument()
     expect(screen.getByRole('generic', { name: 'Decisive policy passages' })).toHaveTextContent('Authentication is required.')
     expect(screen.getByText('Requires')).toBeInTheDocument()
+    expect(screen.getByText('Build a gate')).toBeInTheDocument()
+    expect(screen.getByText('Add a gate.')).toBeInTheDocument()
+    expect(screen.getByText(/Proposal only/)).toBeInTheDocument()
   })
 
   it('compares contradiction polarity with the resolved policy sources', () => {

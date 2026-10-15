@@ -525,6 +525,8 @@ export type PolicyGateEvaluation = {
     text: string
     signal: 'policy' | 'gate' | 'obligation' | 'prohibition' | 'ambiguous'
   }>
+  /** The concrete, review-only remediation proposed by the detector. */
+  remediationAction: 'build-gate' | 'build-policy' | 'disambiguate-policy' | 'align-policy-gate'
   recommendation: string
   /** Human review is required before a remediation recommendation is acted on. */
   reviewStatus: 'proposed' | 'accepted' | 'dismissed'

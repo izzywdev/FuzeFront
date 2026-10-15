@@ -25,6 +25,7 @@ const policyGateEvaluationSchema = z.object({
     subjects: z.array(z.string().trim().min(1).max(200)).max(100),
   }).strict(),
   evidencePassages: z.array(policyGateEvidencePassageSchema).max(100).default([]),
+  remediationAction: z.enum(['build-gate', 'build-policy', 'disambiguate-policy', 'align-policy-gate']),
   recommendation: z.string().trim().min(1).max(5000),
   reviewStatus: z.literal('proposed'),
   createdAt: z.string().datetime(),

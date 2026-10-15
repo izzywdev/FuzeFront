@@ -4857,15 +4857,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 {evaluation.reviewStatus}
                               </code>
                               <p>{evaluation.detail}</p>
-                              <small>
-                                {evaluation.recommendation}
-                                {evaluation.reviewedAt
-                                  ? ` · Reviewed ${new Date(evaluation.reviewedAt).toLocaleString()}${evaluation.reviewedBy ? ` by ${evaluation.reviewedBy}` : ''}`
-                                  : ''}
-                                {evaluation.reviewReason
-                                  ? ` · ${evaluation.reviewReason}`
-                                  : ''}
-                              </small>
+                              {evaluation.reviewedAt && (
+                                <small>
+                                  Reviewed {new Date(evaluation.reviewedAt).toLocaleString()}
+                                  {evaluation.reviewedBy ? ` by ${evaluation.reviewedBy}` : ''}
+                                  {evaluation.reviewReason ? ` · ${evaluation.reviewReason}` : ''}
+                                </small>
+                              )}
                               <PolicyGateEvidence
                                 evaluation={evaluation}
                                 artifacts={evidenceArtifacts}

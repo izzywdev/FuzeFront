@@ -4,7 +4,7 @@ import { MemoryCatalogStore, PostgresCatalogStore } from './store'
 describe('policy-gate review lifecycle', () => {
   it('paginates tenant-scoped findings with stable timestamp tie-breaking', async () => {
     const store = new MemoryCatalogStore()
-    const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const }
+    const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const }
     await store.savePolicyGateEvaluations([
       { ...base, id: 'evaluation-c', title: 'Finding C', createdAt: '2026-10-09T00:00:00.000Z' },
       { ...base, id: 'evaluation-b', title: 'Finding B', createdAt: '2026-10-09T00:00:00.000Z' },
@@ -22,7 +22,7 @@ describe('policy-gate review lifecycle', () => {
 
   it('keeps an explicit review decision when the same revision is re-analysed', async () => {
     const store = new MemoryCatalogStore()
-    const evaluation = { id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, title: 'Missing deployment guard', detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-08T00:00:00.000Z' }
+    const evaluation = { id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, title: 'Missing deployment guard', detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-08T00:00:00.000Z' }
     await store.savePolicyGateEvaluations([evaluation])
     await expect(store.reviewPolicyGateEvaluation(evaluation.id, evaluation.tenantId, { status: 'accepted', reviewedBy: 'user-1', reason: 'Threshold is already enforced elsewhere.' })).resolves.toMatchObject({ reviewStatus: 'accepted', reviewedBy: 'user-1' })
     await store.savePolicyGateEvaluations([evaluation])
@@ -43,7 +43,7 @@ describe('policy-gate review lifecycle', () => {
 
   it('filters policy findings by inclusive confidence bounds and tenant', async () => {
     const store = new MemoryCatalogStore()
-    const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-09T00:00:00.000Z' }
+    const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-09T00:00:00.000Z' }
     await store.savePolicyGateEvaluations([
       { ...base, id: 'low', title: 'Low confidence', confidence: 0.69 },
       { ...base, id: 'minimum', title: 'Minimum confidence', confidence: 0.7 },
@@ -93,11 +93,13 @@ describe('policy-gate review lifecycle', () => {
     const evidencePassages = [{ artifactId: 'policy-1', sourcePath: 'governance/deployment.md', text: 'Every deployment must be approved.', signal: 'obligation' as const }]
 
     await store.savePolicyGateEvaluations([{
-      id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy', severity: 'high', title: 'Missing deployment guard', detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, evidencePassages, recommendation: 'Add a deployment gate', reviewStatus: 'proposed', createdAt: '2026-10-08T00:00:00.000Z',
+      id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy', severity: 'high', title: 'Missing deployment guard', detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, evidencePassages, remediationAction: 'build-gate', recommendation: 'Add a deployment gate', reviewStatus: 'proposed', createdAt: '2026-10-08T00:00:00.000Z',
     }])
 
     expect(String(query.mock.calls[0][0])).toContain('evidence_passages')
+    expect(String(query.mock.calls[0][0])).toContain('remediation_action')
     expect(query.mock.calls[0][1][12]).toBe(JSON.stringify(evidencePassages))
+    expect(query.mock.calls[0][1][13]).toBe('build-gate')
   })
 
   it('atomically rejects a review when a newer analysis revision wins the race', async () => {
@@ -132,6 +134,7 @@ describe('policy-gate review lifecycle', () => {
           kind: 'unguarded-policy', severity: 'high', title: 'Missing deployment guard', detail: 'No matching gate',
           policy_artifact_ids: ['policy-1'], gate_artifact_ids: [], confidence: 0.75,
           scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, evidence_passages: [],
+          remediation_action: 'build-gate',
           recommendation: 'Add a deployment gate', review_status: 'accepted', reviewed_at: reviewedAt,
           reviewed_by: 'reviewer-1', review_reason: null, created_at: createdAt,
         }] }
