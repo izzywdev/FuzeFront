@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.50.0
+  version: 0.51.0
   license:
     name: UNLICENSED
 servers:
@@ -708,6 +708,7 @@ paths:
               properties:
                 status: { type: string, enum: [accepted, dismissed] }
                 reason: { type: string, minLength: 3, maxLength: 2000 }
+                expectedReviewedAt: { type: string, format: date-time, nullable: true }
       responses:
         '200':
           description: The evaluation with its updated review state.
@@ -719,10 +720,13 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: The finding is not from the repository current analyzed revision and cannot be reviewed.
+          description: The finding revision is stale or another reviewer changed the decision.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/StalePolicyGateEvaluationError' }
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/StalePolicyGateEvaluationError' }
+                  - { $ref: '#/components/schemas/StalePolicyGateReviewError' }
 
   /api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/history:
     parameters:
@@ -1916,6 +1920,15 @@ components:
         code: { type: string, enum: [STALE_POLICY_GATE_EVALUATION] }
         evaluationRevision: { type: string }
         currentRevision: { type: string, nullable: true }
+    StalePolicyGateReviewError:
+      type: object
+      additionalProperties: false
+      required: [error, code, expectedReviewedAt, currentReviewedAt]
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [STALE_POLICY_GATE_REVIEW] }
+        expectedReviewedAt: { type: string, format: date-time, nullable: true }
+        currentReviewedAt: { type: string, format: date-time, nullable: true }
     Health:
       type: object
       required: [status, service, version, openapi]

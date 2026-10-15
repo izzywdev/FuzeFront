@@ -32,3 +32,21 @@ export function policyGateReviewConflict(
     currentRevision: repository.lastScanRevision ?? null,
   } as const
 }
+
+export function policyGateReviewStateConflict(
+  evaluation: PolicyGateEvaluation,
+  expectedReviewedAt: string | null | undefined,
+) {
+  if (
+    expectedReviewedAt === undefined ||
+    (evaluation.reviewedAt ?? null) === expectedReviewedAt
+  ) return undefined
+
+  return {
+    error:
+      'This policy/gate review changed while you were deciding. Refresh the current decision before reviewing it again.',
+    code: 'STALE_POLICY_GATE_REVIEW',
+    expectedReviewedAt,
+    currentReviewedAt: evaluation.reviewedAt ?? null,
+  } as const
+}

@@ -64,6 +64,13 @@ export type RepositoryFlowReview = {
   /** Undefined keeps backwards compatibility; null asserts no prior decision. */
   expectedReviewedAt?: string | null
 }
+export type PolicyGateReview = {
+  status: 'accepted' | 'dismissed'
+  reviewedBy: string
+  reason?: string
+  /** Undefined keeps backwards compatibility; null asserts no prior decision. */
+  expectedReviewedAt?: string | null
+}
 export type PolicyGateEvaluationQuery = {
   id?: string
   kind?: PolicyGateEvaluation['kind']
@@ -196,7 +203,7 @@ export interface CatalogStore {
   repositoryFlowReviewHistory(candidateId: string, tenantId: string, query?: ReviewHistoryQuery): Promise<RepositoryFlowReviewHistoryEntry[]>
   policyGateEvaluations(repositoryId: string, tenantId: string, query?: PolicyGateEvaluationQuery): Promise<PolicyGateEvaluation[]>
   savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]): Promise<void>
-  reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }, expectedRevision?: string): Promise<PolicyGateEvaluation | undefined>
+  reviewPolicyGateEvaluation(id: string, tenantId: string, review: PolicyGateReview, expectedRevision?: string): Promise<PolicyGateEvaluation | undefined>
   policyGateReviewHistory(evaluationId: string, tenantId: string, query?: ReviewHistoryQuery): Promise<PolicyGateReviewHistoryEntry[]>
   testExecutions(repositoryId: string, tenantId: string, query?: TestExecutionQuery): Promise<TestExecution[]>
   latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[]): Promise<TestExecution[]>
@@ -467,11 +474,12 @@ export class MemoryCatalogStore implements CatalogStore {
     }
   }
 
-  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }, expectedRevision?: string) {
+  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: PolicyGateReview, expectedRevision?: string) {
     const item = this.policyGateResults.find(evaluation => evaluation.id === id && evaluation.tenantId === tenantId)
     if (!item) return undefined
     const repository = this.data.repositories.find(candidate => candidate.id === item.repositoryId && candidate.tenantId === tenantId)
     if (expectedRevision && (item.revision !== expectedRevision || repository?.lastScanRevision !== expectedRevision)) return undefined
+    if (review.expectedReviewedAt !== undefined && (item.reviewedAt ?? null) !== review.expectedReviewedAt) return undefined
     item.reviewStatus = review.status
     item.reviewedAt = new Date().toISOString()
     item.reviewedBy = review.reviewedBy
@@ -1221,7 +1229,7 @@ export class PostgresCatalogStore implements CatalogStore {
     )
   }
 
-  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }, expectedRevision?: string) {
+  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: PolicyGateReview, expectedRevision?: string) {
     const client = await this.pool.connect()
     let result: pg.QueryResult
     try {
@@ -1240,8 +1248,9 @@ export class PostgresCatalogStore implements CatalogStore {
                FOR UPDATE
              )
            ))
+           AND ($7::boolean = false OR evaluation.reviewed_at IS NOT DISTINCT FROM $8::timestamptz)
          RETURNING evaluation.*`,
-        [id, tenantId, review.status, review.reviewedBy, review.reason ?? null, expectedRevision ?? null],
+        [id, tenantId, review.status, review.reviewedBy, review.reason ?? null, expectedRevision ?? null, review.expectedReviewedAt !== undefined, review.expectedReviewedAt ?? null],
       )
       if (result.rows[0]) await client.query('INSERT INTO fuzequality.policy_gate_review_history (id,evaluation_id,tenant_id,status,reviewed_by,reason) VALUES ($1,$2,$3,$4,$5,$6)', [randomUUID(), id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
       await client.query('COMMIT')

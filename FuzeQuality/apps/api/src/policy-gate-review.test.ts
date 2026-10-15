@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PolicyGateEvaluation, Repository } from '@fuzequality/contracts'
-import { policyGateEvaluationForReview, policyGateReviewConflict } from './policy-gate-review'
+import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewStateConflict } from './policy-gate-review'
 
 const repository = {
   id: 'repo-1',
@@ -82,5 +82,29 @@ describe('policy-gate review revision guard', () => {
       code: 'STALE_POLICY_GATE_EVALUATION',
       currentRevision: null,
     })
+  })
+
+  it('rejects a decision when another reviewer changed the current review', () => {
+    const reviewedEvaluation = {
+      ...evaluation,
+      reviewStatus: 'accepted' as const,
+      reviewedAt: '2026-10-15T01:00:00.000Z',
+      reviewedBy: 'reviewer-2',
+    }
+
+    expect(policyGateReviewStateConflict(
+      reviewedEvaluation,
+      '2026-10-15T00:00:00.000Z',
+    )).toEqual({
+      error: 'This policy/gate review changed while you were deciding. Refresh the current decision before reviewing it again.',
+      code: 'STALE_POLICY_GATE_REVIEW',
+      expectedReviewedAt: '2026-10-15T00:00:00.000Z',
+      currentReviewedAt: '2026-10-15T01:00:00.000Z',
+    })
+    expect(policyGateReviewStateConflict(
+      reviewedEvaluation,
+      reviewedEvaluation.reviewedAt,
+    )).toBeUndefined()
+    expect(policyGateReviewStateConflict(evaluation, undefined)).toBeUndefined()
   })
 })

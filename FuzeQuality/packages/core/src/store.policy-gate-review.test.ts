@@ -41,6 +41,23 @@ describe('policy-gate review lifecycle', () => {
     await expect(store.reviewPolicyGateEvaluation(evaluation.id, 'tenant-2', { status: 'dismissed', reviewedBy: 'user-2' })).resolves.toBeUndefined()
   })
 
+  it('atomically rejects a policy/gate re-review with an obsolete decision timestamp', async () => {
+    const store = new MemoryCatalogStore()
+    const evaluation = { id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, title: 'Missing deployment guard', detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-08T00:00:00.000Z' }
+    await store.savePolicyGateEvaluations([evaluation])
+    const accepted = await store.reviewPolicyGateEvaluation(evaluation.id, evaluation.tenantId, {
+      status: 'accepted', reviewedBy: 'user-1', expectedReviewedAt: null,
+    })
+
+    await expect(store.reviewPolicyGateEvaluation(evaluation.id, evaluation.tenantId, {
+      status: 'dismissed', reviewedBy: 'user-2', expectedReviewedAt: null,
+    })).resolves.toBeUndefined()
+    await expect(store.reviewPolicyGateEvaluation(evaluation.id, evaluation.tenantId, {
+      status: 'dismissed', reviewedBy: 'user-2', expectedReviewedAt: accepted?.reviewedAt,
+    })).resolves.toMatchObject({ reviewStatus: 'dismissed', reviewedBy: 'user-2' })
+    await expect(store.policyGateReviewHistory(evaluation.id, evaluation.tenantId)).resolves.toHaveLength(2)
+  })
+
   it('filters policy findings by remediation, inclusive confidence bounds, and tenant', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-09T00:00:00.000Z' }
@@ -117,13 +134,16 @@ describe('policy-gate review lifecycle', () => {
     await expect(store.reviewPolicyGateEvaluation('evaluation-1', 'tenant-1', {
       status: 'accepted',
       reviewedBy: 'reviewer-1',
+      expectedReviewedAt: '2026-10-15T01:00:00.000Z',
     }, 'revision-1')).resolves.toBeUndefined()
 
     const [statement, parameters] = query.mock.calls[1]
     expect(String(statement)).toContain('evaluation.revision=$6')
     expect(String(statement)).toContain('repository.last_scan_revision=$6')
     expect(String(statement)).toContain('FOR UPDATE')
+    expect(String(statement)).toContain('evaluation.reviewed_at IS NOT DISTINCT FROM $8::timestamptz')
     expect(parameters[5]).toBe('revision-1')
+    expect(parameters.slice(6)).toEqual([true, '2026-10-15T01:00:00.000Z'])
     expect(query).toHaveBeenCalledTimes(3)
     expect(release).toHaveBeenCalledOnce()
   })

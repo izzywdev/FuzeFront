@@ -3178,7 +3178,7 @@ function PolicyGateReviewControls({
     } catch (cause) {
       if (
         cause instanceof CatalogApiError &&
-        cause.code === 'STALE_POLICY_GATE_EVALUATION'
+        ['STALE_POLICY_GATE_EVALUATION', 'STALE_POLICY_GATE_REVIEW'].includes(cause.code ?? '')
       ) {
         setStale(true)
       }
@@ -3194,8 +3194,12 @@ function PolicyGateReviewControls({
 
   return (
     <>
-      {evaluation.reviewStatus === 'proposed' && (
-        <div className="flow-review-controls">
+      <div className="flow-review-controls">
+          {evaluation.reviewStatus !== 'proposed' && (
+            <p className="flow-review-guidance" role="status">
+              This governance decision can be revised. Every saved decision remains in the immutable review history.
+            </p>
+          )}
           {!isCurrentRevision && (
             <p className="form-error" role="status">
               Historical governance finding — review is locked until repository
@@ -3233,7 +3237,6 @@ function PolicyGateReviewControls({
             </p>
           )}
         </div>
-      )}
       <PolicyGateReviewHistory evaluation={evaluation} />
     </>
   )
@@ -3604,7 +3607,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       evaluation.repositoryId,
       evaluation.id,
       status,
-      reason
+      reason,
+      evaluation.reviewedAt ?? null
     )
     setPolicyGateEvaluations(current =>
       policyGateEvaluationMatchesInventory(

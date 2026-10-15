@@ -68,4 +68,26 @@ describe('FuzeQuality portal API identity context', () => {
       expectedReviewedAt: '2026-10-15T01:00:00.000Z',
     })
   })
+
+  it('sends the current policy/gate review timestamp as an optimistic precondition', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.reviewPolicyGateEvaluation(
+      'repo-1',
+      'evaluation-1',
+      'dismissed',
+      'The guard was replaced.',
+      '2026-10-15T01:00:00.000Z',
+    )
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      status: 'dismissed',
+      reason: 'The guard was replaced.',
+      expectedReviewedAt: '2026-10-15T01:00:00.000Z',
+    })
+  })
 })

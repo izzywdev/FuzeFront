@@ -50,7 +50,7 @@ import { repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from 
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
-import { policyGateEvaluationForReview, policyGateReviewConflict } from './policy-gate-review'
+import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewStateConflict } from './policy-gate-review'
 import { decodeHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
 import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
 import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
@@ -119,7 +119,11 @@ const repositoryFlowReviewSchema = z.object({
   reason: z.string().trim().min(3).max(2000).optional(),
   expectedReviewedAt: z.string().datetime().nullable().optional(),
 }).strict()
-const policyGateReviewSchema = z.object({ status: z.enum(['accepted', 'dismissed']), reason: z.string().trim().min(3).max(2000).optional() }).strict()
+const policyGateReviewSchema = z.object({
+  status: z.enum(['accepted', 'dismissed']),
+  reason: z.string().trim().min(3).max(2000).optional(),
+  expectedReviewedAt: z.string().datetime().nullable().optional(),
+}).strict()
 const intelligenceFailureSchema = z.object({
   sourceType: z.literal('jira'),
   sourceKey: z.string().trim().min(1).max(200),
@@ -716,11 +720,21 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
   if (!existingEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
   const conflict = policyGateReviewConflict(repository, existingEvaluation)
   if (conflict) return response.status(409).json(conflict)
-  const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, { status: parsed.data.status, reviewedBy: requestIdentity(request)!.userId, reason: parsed.data.reason }, existingEvaluation.revision)
+  const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, {
+    status: parsed.data.status,
+    reviewedBy: requestIdentity(request)!.userId,
+    reason: parsed.data.reason,
+    expectedReviewedAt: parsed.data.expectedReviewedAt,
+  }, existingEvaluation.revision)
   if (!evaluation) {
     const latestRepository = await store.repository(repositoryId, tenantId)
     const latestEvaluation = await policyGateEvaluationForReview(store, repositoryId, tenantId, evaluationId)
     if (!latestRepository || !latestEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+    const reviewConflict = policyGateReviewStateConflict(
+      latestEvaluation,
+      parsed.data.expectedReviewedAt,
+    )
+    if (reviewConflict) return response.status(409).json(reviewConflict)
     return response.status(409).json(policyGateReviewConflict(latestRepository, latestEvaluation) ?? {
       error: 'The policy-gate evaluation changed while it was being reviewed. Refresh before deciding.',
       code: 'STALE_POLICY_GATE_EVALUATION',

@@ -2085,12 +2085,14 @@ describe('RepositoryIntelligence flow inventory', () => {
         repository.id,
         governanceEvaluation.id,
         'accepted',
-        'Required before release.'
+        'Required before release.',
+        null
       )
     )
     expect(
-      screen.queryByRole('button', { name: 'Accept recommendation' })
-    ).not.toBeInTheDocument()
+      screen.getByRole('button', { name: 'Accept recommendation' })
+    ).toBeEnabled()
+    expect(screen.getByText(/This governance decision can be revised/)).toBeVisible()
   })
 
   it('removes a reviewed governance finding that no longer matches the active filter', async () => {
@@ -2368,6 +2370,44 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Refresh before deciding')
     expect(rationale).toHaveValue('Needs a named owner.')
+    expect(rationale).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Accept recommendation' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
+  })
+
+  it('locks governance re-review after another reviewer changes the decision and preserves rationale', async () => {
+    mockEvidenceApis()
+    const reviewedEvaluation = {
+      ...governanceEvaluation,
+      reviewStatus: 'accepted' as const,
+      reviewedAt: '2026-10-09T01:00:00.000Z',
+      reviewedBy: 'reviewer-1',
+    }
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([reviewedEvaluation])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'reviewPolicyGateEvaluation').mockRejectedValue(
+      new CatalogApiError(
+        'This policy/gate review changed while you were deciding. Refresh the current decision before reviewing it again.',
+        'STALE_POLICY_GATE_REVIEW',
+        409
+      )
+    )
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(/This governance decision can be revised/)
+    const rationale = screen.getByLabelText('Optional governance rationale')
+    fireEvent.change(rationale, { target: { value: 'The guard was replaced.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('changed while you were deciding')
+    expect(api.reviewPolicyGateEvaluation).toHaveBeenCalledWith(
+      repository.id,
+      reviewedEvaluation.id,
+      'dismissed',
+      'The guard was replaced.',
+      reviewedEvaluation.reviewedAt
+    )
+    expect(rationale).toHaveValue('The guard was replaced.')
     expect(rationale).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Accept recommendation' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
