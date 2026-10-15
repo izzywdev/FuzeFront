@@ -67,6 +67,7 @@
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.20",
     "eventsource-parser": "^1.1.2",
+    "imapflow": "^1.0.178",
     "jsdom": "^22.1.0",
     "papaparse": "^5.5.4",
     "postcss": "^8.5.6",

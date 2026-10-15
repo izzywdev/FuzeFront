@@ -68,6 +68,10 @@ on:
         required: false
       POST_PROD_ADMIN_PASSWORD:
         required: false
+      POST_PROD_TEST_RECIPIENT_PASSWORD:
+        required: false
+      POST_PROD_TEST_RECIPIENT_ZOHO_APP_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -115,8 +119,9 @@ jobs:
           # assertion; when unset that one test self-skips as missing coverage.
           POST_PROD_ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
           POST_PROD_ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
-          POST_PROD_FUZEPICKER_RECIPIENT_EMAIL: ${{ secrets.POST_PROD_FUZEPICKER_RECIPIENT_EMAIL }}
-          POST_PROD_FUZEPICKER_RECIPIENT_PASSWORD: ${{ secrets.POST_PROD_FUZEPICKER_RECIPIENT_PASSWORD }}
+          POST_PROD_TEST_RECIPIENT_EMAIL: tests@fuzefront.com
+          POST_PROD_TEST_RECIPIENT_PASSWORD: ${{ secrets.POST_PROD_TEST_RECIPIENT_PASSWORD }}
+          POST_PROD_TEST_RECIPIENT_ZOHO_APP_PASSWORD: ${{ secrets.POST_PROD_TEST_RECIPIENT_ZOHO_APP_PASSWORD }}
           POST_PROD_RUN_FUZEPICKER_MENTION: ${{ inputs.run_fuzepicker_mention || false }}
         run: |
           cd frontend
