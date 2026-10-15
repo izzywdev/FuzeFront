@@ -16,11 +16,11 @@ const baseFiles = {
   },
   'android/twa-manifest.json': {
     packageId: 'com.example.mobile',
+    minSdkVersion: 24,
     host: 'mobile.fuzefront.com',
     startUrl: '/',
     fullScopeUrl: 'https://mobile.fuzefront.com/',
     webManifestUrl: 'https://mobile.fuzefront.com/manifest.webmanifest',
-    minSdkVersion: 24,
     name: 'Mobile App',
     signingKey: { alias: 'release' },
     fingerprints: [{ name: 'release', value: fingerprint }],
@@ -88,12 +88,12 @@ test('rejects malformed signing fingerprints', () => {
   assert.match(result.stderr, /invalid TWA signing fingerprint/)
 })
 
-test('rejects an Android SDK floor below Android Browser Helper requirements', () => {
+test('rejects a TWA below Android API 24', () => {
   const twa = structuredClone(baseFiles['android/twa-manifest.json'])
   twa.minSdkVersion = 21
   const result = runGate({ 'android/twa-manifest.json': twa })
   assert.equal(result.status, 1)
-  assert.match(result.stderr, /minSdkVersion must be at least 24/)
+  assert.match(result.stderr, /minSdkVersion must be an integer of at least 24/)
 })
 
 test('supports a nested product using the Vite apps/web public directory', () => {
