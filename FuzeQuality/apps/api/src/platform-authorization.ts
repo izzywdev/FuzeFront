@@ -43,6 +43,16 @@ export function requirePlatformPermission(resource: string, action: string) {
       const body = await sessionResponse.json() as { identity?: Partial<Identity> }
       if (!body.identity?.userId || !body.identity.tenantId) return response.status(403).json({ error: 'A tenant-scoped identity is required', code: 'TENANT_UNRESOLVED' })
       const identity = body.identity as PlatformIdentity
+      // A selected workspace is part of the authorization boundary. Even
+      // though Security proves membership, do not silently fall back to a
+      // token's default tenant if an older or misconfigured Security service
+      // ignores the requested tenant selector.
+      if (tenantHint && identity.tenantId !== tenantHint) {
+        return response.status(409).json({
+          error: 'The resolved tenant does not match the active portal workspace',
+          code: 'TENANT_CONTEXT_MISMATCH',
+        })
+      }
       const decisionResponse = await fetch(`${baseUrl}/api/v1/security/authz/check`, {
         method: 'POST',
         headers: { ...identityHeaders, 'content-type': 'application/json' },

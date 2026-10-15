@@ -47,4 +47,34 @@ describe('catalog failure recovery', () => {
     await waitFor(() => expect(portfolio).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
+
+  it('does not render a stale response after the portal switches tenants', async () => {
+    let publishContext: ((context: { user: { id: string }; tenantId: string }) => void) | undefined
+    ;(window as Window & { __FUZEFRONT__?: unknown }).__FUZEFRONT__ = {
+      getContext: () => ({ user: { id: 'user-1' }, tenantId: 'tenant-1' }),
+      subscribe: (listener: typeof publishContext) => {
+        publishContext = listener
+        return () => undefined
+      },
+    }
+    let rejectFirst: ((reason: Error) => void) | undefined
+    const firstPortfolio = new Promise<Portfolio>((_resolve, reject) => {
+      rejectFirst = reject
+    })
+    const portfolio = vi.spyOn(api, 'portfolio')
+      .mockReturnValueOnce(firstPortfolio)
+      .mockResolvedValueOnce(emptyPortfolio)
+    vi.spyOn(api, 'platformOrganizations').mockRejectedValue(new Error('not a platform administrator'))
+
+    render(<App />)
+    await waitFor(() => expect(portfolio).toHaveBeenCalledOnce())
+
+    publishContext?.({ user: { id: 'user-1' }, tenantId: 'tenant-2' })
+    await waitFor(() => expect(portfolio).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByText('Loading evidence graph…')).not.toBeInTheDocument())
+
+    rejectFirst?.(new Error('stale tenant failure'))
+    await Promise.resolve()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 })

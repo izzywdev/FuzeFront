@@ -5738,6 +5738,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   const [organizations, setOrganizations] =
     useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
+  const reloadGeneration = useRef(0)
   const portalContext = usePortalContextKey()
   const embedded = Boolean(runtimeBridge()?.menu)
   const updateProcessingStatus = useCallback((status: import('@fuzequality/contracts').RepositoryProcessingStatus) => {
@@ -5755,22 +5756,29 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   // bearer-token resolver from the host rather than reading portal storage.
   useEffect(() => configurePlatformSecurity(getToken), [getToken])
   const reload = useCallback(async () => {
+    const generation = ++reloadGeneration.current
     setLoading(true)
     setData(null)
     setOrganizations(undefined)
     setError(undefined)
     try {
-      setData(await api.portfolio())
+      const portfolio = await api.portfolio()
+      if (generation !== reloadGeneration.current) return
+      setData(portfolio)
       setError(undefined)
       try {
-        setOrganizations(await api.platformOrganizations())
+        const availableOrganizations = await api.platformOrganizations()
+        if (generation === reloadGeneration.current)
+          setOrganizations(availableOrganizations)
       } catch {
-        setOrganizations(undefined)
+        if (generation === reloadGeneration.current)
+          setOrganizations(undefined)
       }
     } catch (value) {
-      setError(value instanceof Error ? value.message : String(value))
+      if (generation === reloadGeneration.current)
+        setError(value instanceof Error ? value.message : String(value))
     } finally {
-      setLoading(false)
+      if (generation === reloadGeneration.current) setLoading(false)
     }
   }, [])
   useEffect(() => {
