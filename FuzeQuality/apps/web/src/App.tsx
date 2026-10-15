@@ -3267,6 +3267,19 @@ type PolicyGateInventorySelection = {
 
 type HistoryPage<T> = { items: T[]; page: { nextCursor: string | null; hasMore: boolean } }
 
+/** Keep optional evidence endpoints from taking down the inventory on malformed data. */
+export function normalizeItemList<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value.filter((item): item is T => item != null)
+  if (
+    value &&
+    typeof value === 'object' &&
+    Array.isArray((value as { items?: unknown }).items)
+  ) {
+    return (value as { items: T[] }).items.filter((item): item is T => item != null)
+  }
+  return []
+}
+
 export function normalizeHistoryPage<T>(value: T[] | HistoryPage<T>): HistoryPage<T> {
   return Array.isArray(value)
     ? { items: value, page: { nextCursor: null, hasMore: false } }
@@ -4152,13 +4165,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             ? normalizeHistoryPage(trendResult.value)
             : { items: [] as ExecutionOutcomeTrend[], page: { nextCursor: null, hasMore: false } },
           performanceExecutions: performanceExecutionsResult.status === 'fulfilled'
-            ? performanceExecutionsResult.value.items
+            ? normalizeItemList<TestExecution>(performanceExecutionsResult.value)
             : [],
           integrationExecutions: integrationExecutionsResult.status === 'fulfilled'
-            ? integrationExecutionsResult.value.items
+            ? normalizeItemList<TestExecution>(integrationExecutionsResult.value)
             : [],
           postProductionExecutions: postProductionExecutionsResult.status === 'fulfilled'
-            ? postProductionExecutionsResult.value.items
+            ? normalizeItemList<TestExecution>(postProductionExecutionsResult.value)
             : [],
           executionFailed: executionResult.status === 'rejected',
           performanceExecutionsFailed: performanceExecutionsResult.status === 'rejected',

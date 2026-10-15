@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   flowCandidateMatchesInventory,
   mergePolicyGateContinuation,
+  normalizeItemList,
   policyGateEvaluationMatchesInventory,
   RepositoryIntelligence,
 } from './App'
@@ -239,6 +240,13 @@ afterEach(() => {
 })
 
 describe('RepositoryIntelligence flow inventory', () => {
+  it('normalizes malformed optional execution evidence without exposing undefined rows', () => {
+    expect(normalizeItemList<TestExecution>({})).toEqual([])
+    expect(normalizeItemList<TestExecution>({ items: [loadExecution, undefined] })).toEqual([
+      loadExecution,
+    ])
+  })
+
   it('shows reviewable policy-to-gate relationships from repository analysis', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([policyArtifact, gateArtifact])
