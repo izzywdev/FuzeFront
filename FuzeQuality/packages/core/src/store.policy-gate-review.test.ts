@@ -42,6 +42,26 @@ describe('policy-gate review lifecycle', () => {
     await expect(store.reviewPolicyGateEvaluation(evaluation.id, 'tenant-2', { status: 'dismissed', reviewedBy: 'user-2' })).resolves.toBeUndefined()
   })
 
+  it('keeps the pagination timestamp immutable when a finding is re-analysed', async () => {
+    const store = new MemoryCatalogStore()
+    const evaluation = { id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, title: 'Missing deployment guard', detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-08T00:00:00.000Z' }
+    await store.savePolicyGateEvaluations([
+      evaluation,
+      { ...evaluation, id: 'evaluation-older', title: 'Older finding', policyArtifactIds: ['policy-2'], createdAt: '2026-10-07T00:00:00.000Z' },
+    ])
+
+    const [first] = await store.policyGateEvaluations(evaluation.repositoryId, evaluation.tenantId, { limit: 1 })
+    await store.savePolicyGateEvaluations([{ ...evaluation, confidence: 0.92, createdAt: '2026-10-10T00:00:00.000Z' }])
+
+    await expect(store.policyGateEvaluations(evaluation.repositoryId, evaluation.tenantId, {
+      after: { createdAt: first.createdAt, id: first.id },
+      limit: 1,
+    })).resolves.toEqual([expect.objectContaining({ id: 'evaluation-older' })])
+    await expect(store.policyGateEvaluations(evaluation.repositoryId, evaluation.tenantId, { id: evaluation.id })).resolves.toEqual([
+      expect.objectContaining({ confidence: 0.92, createdAt: evaluation.createdAt }),
+    ])
+  })
+
   it('persists same-title relationships independently by artifact identity', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'guarded-policy' as const, severity: 'low' as const, title: 'Policy is guarded: security.md / Authentication gate', detail: 'A gate matches.', gateArtifactIds: ['gate-auth'], confidence: 0.9, scope: { sourcePaths: [], subjects: ['authentication'] }, remediationAction: 'align-policy-gate' as const, recommendation: 'Keep aligned.', reviewStatus: 'proposed' as const, createdAt: '2026-10-08T00:00:00.000Z' }
@@ -65,6 +85,7 @@ describe('policy-gate review lifecycle', () => {
 
     expect(String(query.mock.calls[0][0])).toContain('ON CONFLICT (repository_id,revision,kind,policy_artifact_ids,gate_artifact_ids)')
     expect(String(query.mock.calls[0][0])).not.toContain('kind,title')
+    expect(String(query.mock.calls[0][0])).not.toContain('created_at=EXCLUDED.created_at')
     expect(query.mock.calls[0][1][8]).toBe(JSON.stringify(['policy-a', 'policy-b']))
     expect(query.mock.calls[0][1][9]).toBe(JSON.stringify(['gate-a', 'gate-b']))
   })

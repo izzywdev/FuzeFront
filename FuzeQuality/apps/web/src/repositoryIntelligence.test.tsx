@@ -13,9 +13,11 @@ import type {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   flowCandidateMatchesInventory,
+  FlowReviewControls,
   mergePolicyGateContinuation,
   normalizeItemList,
   policyGateEvaluationMatchesInventory,
+  PolicyGateReviewControls,
   RepositoryIntelligence,
   Repositories,
 } from './App'
@@ -1135,6 +1137,38 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
   })
 
+  it('unlocks an in-place stale flow control when a newer decision version arrives', async () => {
+    const onReview = vi.fn().mockRejectedValue(new CatalogApiError(
+      'This UX-flow review changed while you were deciding.',
+      'STALE_FLOW_REVIEW',
+      409,
+    ))
+    const reviewedCandidate = {
+      ...candidate,
+      status: 'confirmed' as const,
+      reviewedAt: '2026-10-09T01:00:00.000Z',
+    }
+    const view = render(
+      <FlowReviewControls flow={reviewedCandidate} currentRevision={candidate.revision} onReview={onReview} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    expect(await screen.findByRole('alert')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
+
+    view.rerender(
+      <FlowReviewControls
+        flow={{ ...reviewedCandidate, reviewedAt: '2026-10-09T02:00:00.000Z' }}
+        currentRevision={candidate.revision}
+        onReview={onReview}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
   it('locks re-review after another reviewer changes the decision and preserves rationale', async () => {
     mockEvidenceApis()
     const reviewedCandidate = {
@@ -1143,7 +1177,15 @@ describe('RepositoryIntelligence flow inventory', () => {
       reviewedAt: '2026-10-09T01:00:00.000Z',
       reviewedBy: 'reviewer-1',
     }
-    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([reviewedCandidate])
+    const refreshedCandidate = {
+      ...reviewedCandidate,
+      reviewedAt: '2026-10-09T02:00:00.000Z',
+      reviewedBy: 'reviewer-2',
+      reviewReason: 'Decision refreshed from the server.',
+    }
+    vi.spyOn(api, 'repositoryFlowCandidates')
+      .mockResolvedValueOnce([reviewedCandidate])
+      .mockResolvedValue([refreshedCandidate])
     vi.spyOn(api, 'reviewRepositoryFlowCandidate').mockRejectedValue(
       new CatalogApiError(
         'This UX-flow review changed while you were deciding. Refresh the current decision before reviewing it again.',
@@ -1163,6 +1205,17 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(rationale).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Origin'), {
+      target: { value: 'litellm' },
+    })
+    expect(await screen.findByText('Decision refreshed from the server.')).toBeVisible()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Optional review rationale')).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
   })
 
   it('reloads only flows, hides stale results, and is not blocked by an invalid execution range', async () => {
@@ -2584,6 +2637,38 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
   })
 
+  it('unlocks an in-place stale governance control when a newer decision version arrives', async () => {
+    const onReview = vi.fn().mockRejectedValue(new CatalogApiError(
+      'This policy/gate review changed while you were deciding.',
+      'STALE_POLICY_GATE_REVIEW',
+      409,
+    ))
+    const reviewedEvaluation = {
+      ...governanceEvaluation,
+      reviewStatus: 'accepted' as const,
+      reviewedAt: '2026-10-09T01:00:00.000Z',
+    }
+    const view = render(
+      <PolicyGateReviewControls evaluation={reviewedEvaluation} currentRevision={repository.lastScanRevision} onReview={onReview} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(await screen.findByRole('alert')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
+
+    view.rerender(
+      <PolicyGateReviewControls
+        evaluation={{ ...reviewedEvaluation, reviewedAt: '2026-10-09T02:00:00.000Z' }}
+        currentRevision={repository.lastScanRevision}
+        onReview={onReview}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
   it('locks governance re-review after another reviewer changes the decision and preserves rationale', async () => {
     mockEvidenceApis()
     const reviewedEvaluation = {
@@ -2592,7 +2677,15 @@ describe('RepositoryIntelligence flow inventory', () => {
       reviewedAt: '2026-10-09T01:00:00.000Z',
       reviewedBy: 'reviewer-1',
     }
-    vi.mocked(api.policyGateEvaluations).mockResolvedValue([reviewedEvaluation])
+    const refreshedEvaluation = {
+      ...reviewedEvaluation,
+      reviewedAt: '2026-10-09T02:00:00.000Z',
+      reviewedBy: 'reviewer-2',
+      reviewReason: 'Governance decision refreshed from the server.',
+    }
+    vi.mocked(api.policyGateEvaluations)
+      .mockResolvedValueOnce([reviewedEvaluation])
+      .mockResolvedValue([refreshedEvaluation])
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
     vi.spyOn(api, 'reviewPolicyGateEvaluation').mockRejectedValue(
       new CatalogApiError(
@@ -2620,5 +2713,17 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(rationale).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Accept recommendation' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Relationship or anomaly'), {
+      target: { value: governanceEvaluation.kind },
+    })
+    expect(rationale).toHaveValue('The guard was replaced.')
+    await waitFor(() => {
+      expect(screen.getByText(/Governance decision refreshed from the server/)).toBeVisible()
+      expect(rationale).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Accept recommendation' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
   })
 })

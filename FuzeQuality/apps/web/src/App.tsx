@@ -2946,7 +2946,7 @@ function FlowReviewHistory({
   )
 }
 
-function FlowReviewControls({
+export function FlowReviewControls({
   flow,
   currentRevision,
   onReview,
@@ -2971,7 +2971,7 @@ function FlowReviewControls({
   useEffect(() => {
     setStale(false)
     setError(undefined)
-  }, [flow.id, flow.revision])
+  }, [flow.id, flow.revision, flow.reviewedAt])
 
   const submit = async (status: 'confirmed' | 'rejected') => {
     setBusy(true)
@@ -3157,7 +3157,7 @@ function PolicyGateReviewHistory({
   )
 }
 
-function PolicyGateReviewControls({
+export function PolicyGateReviewControls({
   evaluation,
   currentRevision,
   onReview,
@@ -3182,7 +3182,7 @@ function PolicyGateReviewControls({
   useEffect(() => {
     setStale(false)
     setError(undefined)
-  }, [evaluation.id, evaluation.revision])
+  }, [evaluation.id, evaluation.revision, evaluation.reviewedAt])
 
   const submit = async (status: 'accepted' | 'dismissed') => {
     setBusy(true)

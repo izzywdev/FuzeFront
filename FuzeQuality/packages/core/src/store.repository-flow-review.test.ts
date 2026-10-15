@@ -50,6 +50,25 @@ describe('repository flow review lifecycle', () => {
     ])
   })
 
+  it('keeps the pagination timestamp immutable when analysis is replayed', async () => {
+    const store = new MemoryCatalogStore()
+    await store.saveRepositoryFlowCandidates([
+      candidate,
+      { ...candidate, id: 'flow-older', title: 'Older flow', createdAt: '2026-10-08T00:00:00.000Z' },
+    ])
+
+    const [first] = await store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { limit: 1 })
+    await store.saveRepositoryFlowCandidates([{ ...candidate, confidence: 0.98, createdAt: '2026-10-10T00:00:00.000Z' }])
+
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, {
+      after: { createdAt: first.createdAt, id: first.id },
+      limit: 1,
+    })).resolves.toEqual([expect.objectContaining({ id: 'flow-older' })])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { id: candidate.id })).resolves.toEqual([
+      expect.objectContaining({ confidence: 0.98, createdAt: candidate.createdAt }),
+    ])
+  })
+
   it('filters confidence inclusively while preserving tenant isolation', async () => {
     const store = new MemoryCatalogStore()
     await store.saveRepositoryFlowCandidates([
@@ -155,6 +174,7 @@ describe('repository flow review lifecycle', () => {
     const [statement] = query.mock.calls[0]
     expect(String(statement)).toContain('ON CONFLICT (id) DO UPDATE')
     expect(String(statement)).toContain('repository_flow_candidates.tenant_id=EXCLUDED.tenant_id')
+    expect(String(statement)).not.toContain('created_at=EXCLUDED.created_at')
     expect(String(statement)).not.toContain('ON CONFLICT (repository_id,revision,title,source)')
   })
 

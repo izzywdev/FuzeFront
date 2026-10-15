@@ -424,6 +424,7 @@ export class MemoryCatalogStore implements CatalogStore {
       ) this.flowCandidates[index] = {
         ...candidate,
         id: existing.id,
+        createdAt: existing.createdAt,
         status: existing.status,
         reviewedAt: existing.reviewedAt,
         reviewedBy: existing.reviewedBy,
@@ -486,7 +487,7 @@ export class MemoryCatalogStore implements CatalogStore {
         JSON.stringify([...item.policyArtifactIds].sort()) === policyIdentity &&
         JSON.stringify([...item.gateArtifactIds].sort()) === gateIdentity
       )
-      if (index >= 0) this.policyGateResults[index] = { ...evaluation, id: this.policyGateResults[index].id, reviewStatus: this.policyGateResults[index].reviewStatus, reviewedAt: this.policyGateResults[index].reviewedAt, reviewedBy: this.policyGateResults[index].reviewedBy, reviewReason: this.policyGateResults[index].reviewReason }
+      if (index >= 0) this.policyGateResults[index] = { ...evaluation, id: this.policyGateResults[index].id, createdAt: this.policyGateResults[index].createdAt, reviewStatus: this.policyGateResults[index].reviewStatus, reviewedAt: this.policyGateResults[index].reviewedAt, reviewedBy: this.policyGateResults[index].reviewedBy, reviewReason: this.policyGateResults[index].reviewReason }
       else this.policyGateResults.push(evaluation)
     }
   }
@@ -1174,7 +1175,7 @@ export class PostgresCatalogStore implements CatalogStore {
     for (const item of candidates) await this.pool.query(
       `INSERT INTO fuzequality.repository_flow_candidates (id,repository_id,tenant_id,revision,title,confidence,evidence,steps,wireframe,status,source,analysis_provenance,created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT (id) DO UPDATE SET confidence=EXCLUDED.confidence,evidence=EXCLUDED.evidence,steps=EXCLUDED.steps,wireframe=EXCLUDED.wireframe,analysis_provenance=EXCLUDED.analysis_provenance,created_at=EXCLUDED.created_at
+       ON CONFLICT (id) DO UPDATE SET confidence=EXCLUDED.confidence,evidence=EXCLUDED.evidence,steps=EXCLUDED.steps,wireframe=EXCLUDED.wireframe,analysis_provenance=EXCLUDED.analysis_provenance
        WHERE repository_flow_candidates.repository_id=EXCLUDED.repository_id
          AND repository_flow_candidates.tenant_id=EXCLUDED.tenant_id
          AND repository_flow_candidates.revision=EXCLUDED.revision
@@ -1265,7 +1266,7 @@ export class PostgresCatalogStore implements CatalogStore {
     for (const item of evaluations) await this.pool.query(
       `INSERT INTO fuzequality.policy_gate_evaluations (id,repository_id,tenant_id,revision,kind,severity,title,detail,policy_artifact_ids,gate_artifact_ids,confidence,scope,evidence_passages,remediation_action,recommendation,review_status,reviewed_at,created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-       ON CONFLICT (repository_id,revision,kind,policy_artifact_ids,gate_artifact_ids) DO UPDATE SET title=EXCLUDED.title,severity=EXCLUDED.severity,detail=EXCLUDED.detail,confidence=EXCLUDED.confidence,scope=EXCLUDED.scope,evidence_passages=EXCLUDED.evidence_passages,remediation_action=EXCLUDED.remediation_action,recommendation=EXCLUDED.recommendation,created_at=EXCLUDED.created_at`,
+       ON CONFLICT (repository_id,revision,kind,policy_artifact_ids,gate_artifact_ids) DO UPDATE SET title=EXCLUDED.title,severity=EXCLUDED.severity,detail=EXCLUDED.detail,confidence=EXCLUDED.confidence,scope=EXCLUDED.scope,evidence_passages=EXCLUDED.evidence_passages,remediation_action=EXCLUDED.remediation_action,recommendation=EXCLUDED.recommendation`,
       [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.severity,item.title,item.detail,JSON.stringify([...item.policyArtifactIds].sort()),JSON.stringify([...item.gateArtifactIds].sort()),item.confidence,JSON.stringify(item.scope),JSON.stringify(item.evidencePassages ?? []),item.remediationAction,item.recommendation,item.reviewStatus,item.reviewedAt ?? null,item.createdAt],
     )
   }
