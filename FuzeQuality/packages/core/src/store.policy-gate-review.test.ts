@@ -6,9 +6,9 @@ describe('policy-gate review lifecycle', () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const }
     await store.savePolicyGateEvaluations([
-      { ...base, id: 'evaluation-c', title: 'Finding C', createdAt: '2026-10-09T00:00:00.000Z' },
-      { ...base, id: 'evaluation-b', title: 'Finding B', createdAt: '2026-10-09T00:00:00.000Z' },
-      { ...base, id: 'evaluation-a', title: 'Finding A', createdAt: '2026-10-08T00:00:00.000Z' },
+      { ...base, id: 'evaluation-c', title: 'Finding C', policyArtifactIds: ['policy-c'], createdAt: '2026-10-09T00:00:00.000Z' },
+      { ...base, id: 'evaluation-b', title: 'Finding B', policyArtifactIds: ['policy-b'], createdAt: '2026-10-09T00:00:00.000Z' },
+      { ...base, id: 'evaluation-a', title: 'Finding A', policyArtifactIds: ['policy-a'], createdAt: '2026-10-08T00:00:00.000Z' },
       { ...base, id: 'other-tenant', tenantId: 'tenant-2', title: 'Other tenant', createdAt: '2026-10-10T00:00:00.000Z' },
     ])
 
@@ -42,6 +42,33 @@ describe('policy-gate review lifecycle', () => {
     await expect(store.reviewPolicyGateEvaluation(evaluation.id, 'tenant-2', { status: 'dismissed', reviewedBy: 'user-2' })).resolves.toBeUndefined()
   })
 
+  it('persists same-title relationships independently by artifact identity', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'guarded-policy' as const, severity: 'low' as const, title: 'Policy is guarded: security.md / Authentication gate', detail: 'A gate matches.', gateArtifactIds: ['gate-auth'], confidence: 0.9, scope: { sourcePaths: [], subjects: ['authentication'] }, remediationAction: 'align-policy-gate' as const, recommendation: 'Keep aligned.', reviewStatus: 'proposed' as const, createdAt: '2026-10-08T00:00:00.000Z' }
+    await store.savePolicyGateEvaluations([
+      { ...base, id: 'evaluation-a', policyArtifactIds: ['policy-a'] },
+      { ...base, id: 'evaluation-b', policyArtifactIds: ['policy-b'] },
+    ])
+
+    const evaluations = await store.policyGateEvaluations('repo-1', 'tenant-1')
+    expect(evaluations).toHaveLength(2)
+    expect(evaluations.map(item => item.policyArtifactIds).sort()).toEqual([['policy-a'], ['policy-b']])
+  })
+
+  it('upserts Postgres relationships by artifact identity instead of title', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+    const evaluation = { id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'guarded-policy' as const, severity: 'low' as const, title: 'Policy is guarded', detail: 'A gate matches.', policyArtifactIds: ['policy-b', 'policy-a'], gateArtifactIds: ['gate-b', 'gate-a'], confidence: 0.9, scope: { sourcePaths: [], subjects: [] }, remediationAction: 'align-policy-gate' as const, recommendation: 'Keep aligned.', reviewStatus: 'proposed' as const, createdAt: '2026-10-08T00:00:00.000Z' }
+
+    await store.savePolicyGateEvaluations([evaluation])
+
+    expect(String(query.mock.calls[0][0])).toContain('ON CONFLICT (repository_id,revision,kind,policy_artifact_ids,gate_artifact_ids)')
+    expect(String(query.mock.calls[0][0])).not.toContain('kind,title')
+    expect(query.mock.calls[0][1][8]).toBe(JSON.stringify(['policy-a', 'policy-b']))
+    expect(query.mock.calls[0][1][9]).toBe(JSON.stringify(['gate-a', 'gate-b']))
+  })
+
   it('atomically rejects a policy/gate re-review with an obsolete decision timestamp', async () => {
     const store = new MemoryCatalogStore()
     const evaluation = { id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, title: 'Missing deployment guard', detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-08T00:00:00.000Z' }
@@ -63,12 +90,12 @@ describe('policy-gate review lifecycle', () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy' as const, severity: 'high' as const, detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'build-gate' as const, recommendation: 'Add a deployment gate', reviewStatus: 'proposed' as const, createdAt: '2026-10-09T00:00:00.000Z' }
     await store.savePolicyGateEvaluations([
-      { ...base, id: 'low', title: 'Low confidence', confidence: 0.69 },
-      { ...base, id: 'minimum', title: 'Minimum confidence', confidence: 0.7 },
-      { ...base, id: 'maximum', title: 'Maximum confidence', confidence: 0.9 },
-      { ...base, id: 'other-subject', title: 'Other subject', confidence: 0.8, scope: { sourcePaths: ['governance/authentication.md'], subjects: ['authentication'] } },
-      { ...base, id: 'other-remediation', title: 'Other remediation', confidence: 0.8, remediationAction: 'disambiguate-policy' },
-      { ...base, id: 'high', title: 'High confidence', confidence: 0.91 },
+      { ...base, id: 'low', title: 'Low confidence', policyArtifactIds: ['policy-low'], confidence: 0.69 },
+      { ...base, id: 'minimum', title: 'Minimum confidence', policyArtifactIds: ['policy-minimum'], confidence: 0.7 },
+      { ...base, id: 'maximum', title: 'Maximum confidence', policyArtifactIds: ['policy-maximum'], confidence: 0.9 },
+      { ...base, id: 'other-subject', title: 'Other subject', policyArtifactIds: ['policy-other-subject'], confidence: 0.8, scope: { sourcePaths: ['governance/authentication.md'], subjects: ['authentication'] } },
+      { ...base, id: 'other-remediation', title: 'Other remediation', policyArtifactIds: ['policy-other-remediation'], confidence: 0.8, remediationAction: 'disambiguate-policy' },
+      { ...base, id: 'high', title: 'High confidence', policyArtifactIds: ['policy-high'], confidence: 0.91 },
       { ...base, id: 'other-tenant', tenantId: 'tenant-2', title: 'Other tenant', confidence: 0.8 },
     ])
 

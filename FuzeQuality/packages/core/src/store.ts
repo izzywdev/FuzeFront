@@ -475,8 +475,17 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]) {
     for (const evaluation of evaluations) {
-      const index = this.policyGateResults.findIndex(item => item.repositoryId === evaluation.repositoryId && item.revision === evaluation.revision && item.kind === evaluation.kind && item.title === evaluation.title)
-      if (index >= 0) this.policyGateResults[index] = { ...evaluation, reviewStatus: this.policyGateResults[index].reviewStatus, reviewedAt: this.policyGateResults[index].reviewedAt, reviewedBy: this.policyGateResults[index].reviewedBy, reviewReason: this.policyGateResults[index].reviewReason }
+      const policyIdentity = JSON.stringify([...evaluation.policyArtifactIds].sort())
+      const gateIdentity = JSON.stringify([...evaluation.gateArtifactIds].sort())
+      const index = this.policyGateResults.findIndex(item =>
+        item.repositoryId === evaluation.repositoryId &&
+        item.tenantId === evaluation.tenantId &&
+        item.revision === evaluation.revision &&
+        item.kind === evaluation.kind &&
+        JSON.stringify([...item.policyArtifactIds].sort()) === policyIdentity &&
+        JSON.stringify([...item.gateArtifactIds].sort()) === gateIdentity
+      )
+      if (index >= 0) this.policyGateResults[index] = { ...evaluation, id: this.policyGateResults[index].id, reviewStatus: this.policyGateResults[index].reviewStatus, reviewedAt: this.policyGateResults[index].reviewedAt, reviewedBy: this.policyGateResults[index].reviewedBy, reviewReason: this.policyGateResults[index].reviewReason }
       else this.policyGateResults.push(evaluation)
     }
   }
@@ -1239,8 +1248,8 @@ export class PostgresCatalogStore implements CatalogStore {
     for (const item of evaluations) await this.pool.query(
       `INSERT INTO fuzequality.policy_gate_evaluations (id,repository_id,tenant_id,revision,kind,severity,title,detail,policy_artifact_ids,gate_artifact_ids,confidence,scope,evidence_passages,remediation_action,recommendation,review_status,reviewed_at,created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-       ON CONFLICT (repository_id,revision,kind,title) DO UPDATE SET severity=EXCLUDED.severity,detail=EXCLUDED.detail,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,confidence=EXCLUDED.confidence,scope=EXCLUDED.scope,evidence_passages=EXCLUDED.evidence_passages,remediation_action=EXCLUDED.remediation_action,recommendation=EXCLUDED.recommendation,created_at=EXCLUDED.created_at`,
-      [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.severity,item.title,item.detail,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),item.confidence,JSON.stringify(item.scope),JSON.stringify(item.evidencePassages ?? []),item.remediationAction,item.recommendation,item.reviewStatus,item.reviewedAt ?? null,item.createdAt],
+       ON CONFLICT (repository_id,revision,kind,policy_artifact_ids,gate_artifact_ids) DO UPDATE SET title=EXCLUDED.title,severity=EXCLUDED.severity,detail=EXCLUDED.detail,confidence=EXCLUDED.confidence,scope=EXCLUDED.scope,evidence_passages=EXCLUDED.evidence_passages,remediation_action=EXCLUDED.remediation_action,recommendation=EXCLUDED.recommendation,created_at=EXCLUDED.created_at`,
+      [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.severity,item.title,item.detail,JSON.stringify([...item.policyArtifactIds].sort()),JSON.stringify([...item.gateArtifactIds].sort()),item.confidence,JSON.stringify(item.scope),JSON.stringify(item.evidencePassages ?? []),item.remediationAction,item.recommendation,item.reviewStatus,item.reviewedAt ?? null,item.createdAt],
     )
   }
 

@@ -62,6 +62,22 @@ describe('policy gate evaluation', () => {
     ])
   })
 
+  it('keeps same-title policy relationships distinct by artifact identity', () => {
+    const results = evaluatePolicyGates(repository, 'abc', [
+      { id: 'policy-service-a', repositoryId: 'repo-1', kind: 'policy', title: 'security.md', sourcePath: 'services/a/security.md', summary: 'Authentication required.', evidence: ['authentication required'] },
+      { id: 'policy-service-b', repositoryId: 'repo-1', kind: 'policy', title: 'security.md', sourcePath: 'services/b/security.md', summary: 'Authentication required.', evidence: ['authentication required'] },
+      { id: 'gate-auth', repositoryId: 'repo-1', kind: 'gate', title: 'Authentication gate', sourcePath: '.github/auth.yml', summary: 'Authentication required check.', evidence: ['authentication check'] },
+    ])
+    const guarded = results.filter(item => item.kind === 'guarded-policy')
+
+    expect(guarded).toHaveLength(2)
+    expect(new Set(guarded.map(item => item.id)).size).toBe(2)
+    expect(guarded.map(item => item.policyArtifactIds)).toEqual([
+      ['policy-service-a'],
+      ['policy-service-b'],
+    ])
+  })
+
   it('flags discretionary policy wording as ambiguous rather than silently gateable', () => {
     const results = evaluatePolicyGates(repository, 'abc', [
       { id: 'policy-quality', repositoryId: 'repo-1', kind: 'policy', title: 'Quality policy', sourcePath: 'governance/quality.md', summary: 'Teams should use reasonable coverage.', evidence: [] },

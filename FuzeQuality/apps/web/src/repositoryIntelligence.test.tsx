@@ -269,6 +269,33 @@ describe('RepositoryIntelligence flow inventory', () => {
     view.unmount()
   })
 
+  it('renders same-title policy relationships as independent review items', async () => {
+    mockEvidenceApis()
+    const secondPolicy = {
+      ...policyArtifact,
+      id: 'policy-auth-service-b',
+      sourcePath: 'services/b/governance/auth.md',
+    }
+    const secondEvaluation = {
+      ...guardedEvaluation,
+      id: 'evaluation-guarded-2',
+      policyArtifactIds: [secondPolicy.id],
+      scope: {
+        ...guardedEvaluation.scope,
+        sourcePaths: [secondPolicy.sourcePath, gateArtifact.sourcePath],
+      },
+    }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([policyArtifact, secondPolicy, gateArtifact])
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([guardedEvaluation, secondEvaluation])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findAllByText(`policy · ${policyArtifact.sourcePath}`)).toHaveLength(2)
+    expect(screen.getAllByText(`policy · ${secondPolicy.sourcePath}`)).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Accept recommendation' })).toHaveLength(4)
+  })
+
   it('keeps completed policy reviews authoritative when a stale page arrives', () => {
     const accepted = { ...governanceEvaluation, reviewStatus: 'accepted' as const }
     const stale = { ...governanceEvaluation, reviewStatus: 'proposed' as const }
