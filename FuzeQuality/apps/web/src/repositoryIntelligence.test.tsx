@@ -1251,6 +1251,28 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('shows reviewers how much repository evidence the LiteLLM prompt omitted', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([
+      {
+        ...candidate,
+        analysis: {
+          provider: 'fuzeinfra-litellm',
+          model: 'quality-analysis',
+          promptVersion: 'flow-v3',
+          schemaVersion: '1.0',
+          inputArtifactCount: 20,
+          promptArtifactCount: 3,
+          promptTruncated: true,
+        },
+      },
+    ])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText('3 of 20 repository artifacts supplied · 17 omitted by prompt budget')).toBeVisible()
+  })
+
   it('blocks an inverted confidence window before querying the API', async () => {
     mockEvidenceApis()
     const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])

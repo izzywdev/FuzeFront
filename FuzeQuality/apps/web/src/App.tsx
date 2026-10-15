@@ -4923,8 +4923,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                       <dt>Prompt evidence</dt>
                                       <dd>
                                         {flow.analysis.promptArtifactCount} of{' '}
-                                        {flow.analysis.inputArtifactCount} artifacts
-                                        {flow.analysis.promptTruncated ? ' · bounded' : ' · complete'}
+                                        {flow.analysis.inputArtifactCount} repository artifacts supplied
+                                        {flow.analysis.promptTruncated
+                                          ? ` · ${Math.max(
+                                              flow.analysis.inputArtifactCount - flow.analysis.promptArtifactCount,
+                                              0
+                                            )} omitted by prompt budget`
+                                          : ' · complete'}
                                       </dd>
                                     </div>
                                   )}

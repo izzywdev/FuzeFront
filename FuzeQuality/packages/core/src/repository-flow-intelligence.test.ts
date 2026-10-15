@@ -215,6 +215,41 @@ describe('repository flow wireframes', () => {
     expect(promptVersion).toBe('fuzequality-repository-flow-v3')
   })
 
+  it('does not trust artifact IDs whose source content was omitted by the prompt budget', async () => {
+    const oversized = Array.from({ length: 20 }, (_, index) => ({
+      ...artifacts[0],
+      id: `docs-${index}`,
+      kind: 'documentation' as const,
+      title: `Documentation ${index} ${'e'.repeat(4_000)}`,
+      sourcePath: `docs/${'e'.repeat(4_000)}.md`,
+      summary: 'e'.repeat(20_000),
+      evidence: Array.from({ length: 8 }, () => 'e'.repeat(20_000)),
+    }))
+    let omittedId = ''
+    let promptedArtifacts: Array<Record<string, unknown>> = []
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      const prompt = JSON.parse(body.messages[1].content)
+      promptedArtifacts = prompt.artifacts
+      const promptedIds = new Set(promptedArtifacts.map(item => item.id))
+      omittedId = oversized.find(item => !promptedIds.has(item.id))!.id
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+        flows: [{
+          title: 'Unseen budget-exhausted source', confidence: 0.9, evidenceArtifactIds: [omittedId],
+          steps: [{ actor: 'User', action: 'uses unseen documentation', expectedOutcome: 'flow completes', targetIds: [omittedId] }],
+        }],
+      }) } }] }))
+    }) as typeof fetch
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl)
+
+    await expect(analyzer.analyze(repository, 'abc', oversized)).resolves.toEqual([])
+    expect(promptedArtifacts.length).toBeLessThan(oversized.length)
+    expect(promptedArtifacts.every(item => Boolean(
+      item.title || item.sourcePath || item.summary || (item.evidence as string[]).length,
+    ))).toBe(true)
+    expect(omittedId).not.toBe('')
+  })
+
   it('aborts a stalled FuzeInfra LiteLLM analysis at its configured deadline', async () => {
     const fetchImpl = ((_url: string | URL | Request, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {

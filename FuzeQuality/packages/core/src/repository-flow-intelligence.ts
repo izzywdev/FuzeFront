@@ -70,8 +70,9 @@ function truncateUtf8(value: string, maxBytes: number): string {
 /**
  * Repository text is untrusted and may include generated documentation or
  * snapshots that are several megabytes long. Keep its aggregate byte size
- * bounded before it is sent to LiteLLM while retaining every selected
- * artifact ID and kind for grounding.
+ * bounded before it is sent to LiteLLM. Only artifacts whose repository
+ * content fits in that budget are retained: an ID without source content is
+ * not evidence and must never become eligible for grounding.
  */
 function promptArtifacts(artifacts: QualityArtifact[]) {
   let remainingBytes = REPOSITORY_FLOW_SOURCE_BUDGET_BYTES
@@ -93,17 +94,30 @@ function promptArtifacts(artifacts: QualityArtifact[]) {
   }
   const selected = balancedAnalysisArtifacts(artifacts)
   if (selected.some(item => item.evidence.length > 8)) sourceTruncated = true
-  const prompt = selected.map(item => ({
-    id: item.id,
-    kind: item.kind,
-    title: consume(item.title),
-    sourcePath: consume(item.sourcePath),
-    summary: consume(item.summary),
-    evidence: item.evidence.slice(0, 8).map(consume).filter(Boolean),
-  }))
+  const prompt: Array<{
+    id: string
+    kind: QualityArtifact['kind']
+    title: string
+    sourcePath: string
+    summary: string
+    evidence: string[]
+  }> = []
+  for (const item of selected) {
+    const bounded = {
+      id: item.id,
+      kind: item.kind,
+      title: consume(item.title),
+      sourcePath: consume(item.sourcePath),
+      summary: consume(item.summary),
+      evidence: item.evidence.slice(0, 8).map(consume).filter(Boolean),
+    }
+    if (bounded.title || bounded.sourcePath || bounded.summary || bounded.evidence.length > 0) {
+      prompt.push(bounded)
+    }
+  }
   return {
     artifacts: prompt,
-    truncated: sourceTruncated || selected.length < artifacts.length,
+    truncated: sourceTruncated || prompt.length < artifacts.length,
   }
 }
 
