@@ -180,6 +180,37 @@ describe('internal execution ingestion compatibility', () => {
     )).resolves.toMatchObject({ kind: 'stress' })
   })
 
+  it('gives explicit performance classification precedence over overlapping integration inventory', async () => {
+    const workflow = {
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      revision: 'run-commit-a',
+      name: 'Integration performance',
+      workflowPath: '.github/workflows/integration-performance.yml',
+    }
+    const common = {
+      repositoryId: workflow.repositoryId,
+      title: 'Integration performance',
+      sourcePath: workflow.workflowPath,
+      summary: 'Scanner-reviewed workflow',
+      evidence: [],
+    }
+
+    await expect(linkExecutionToRevisionArtifacts(
+      workflow,
+      'org-1',
+      vi.fn().mockResolvedValue('catalog-revision-a'),
+      vi.fn().mockResolvedValue([
+        { ...common, id: 'integration-performance', kind: 'integration-test' as const },
+        {
+          ...common,
+          id: 'load-performance',
+          kind: 'load-test' as const,
+          evidence: ['FUZEQUALITY_PERFORMANCE: load'],
+        },
+      ]),
+    )).resolves.toMatchObject({ kind: 'load' })
+  })
+
   it.each([
     ['integration-test', 'integration'],
     ['post-production-test', 'post-production'],

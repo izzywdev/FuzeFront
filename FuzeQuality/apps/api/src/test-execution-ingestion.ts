@@ -1,4 +1,5 @@
 import { normalizeWorkflowPath, testExecutionInputSchema, type QualityArtifact, type ScanResult, type TestExecution } from '@fuzequality/contracts'
+import { preferredWorkflowExecutionKind } from '@fuzequality/contracts/workflow-execution'
 import { linkExecutionArtifacts } from '@fuzequality/core'
 import type { WorkflowExecutionCommand } from '@fuzequality/github-app'
 
@@ -42,21 +43,13 @@ export async function linkExecutionToRevisionArtifacts(
     execution.workflowPath
   )
   const workflowPath = normalizeWorkflowPath(execution.workflowPath)
-  const classifiedArtifact = workflowPath
-    ? artifacts.find(artifact =>
+  const classifiedArtifacts = workflowPath
+    ? artifacts.filter(artifact =>
         ['load-test', 'stress-test', 'post-production-test', 'integration-test'].includes(artifact.kind) &&
         normalizeWorkflowPath(artifact.sourcePath) === workflowPath
       )
-    : undefined
-  const kind = classifiedArtifact?.kind === 'stress-test'
-    ? 'stress' as const
-    : classifiedArtifact?.kind === 'load-test'
-      ? 'load' as const
-      : classifiedArtifact?.kind === 'post-production-test'
-        ? 'post-production' as const
-        : classifiedArtifact?.kind === 'integration-test'
-          ? 'integration' as const
-          : undefined
+    : []
+  const kind = preferredWorkflowExecutionKind(classifiedArtifacts)
   return {
     ...links,
     ...(kind ? { kind } : {}),

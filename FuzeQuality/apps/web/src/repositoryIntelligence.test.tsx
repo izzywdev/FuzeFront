@@ -1683,6 +1683,33 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(within(outcome).getByRole('link', { name: /Open CI run/ })).toHaveAttribute('href', loadExecution.sourceUrl)
   })
 
+  it('explains performance precedence when one workflow overlaps integration inventory', async () => {
+    mockEvidenceApis()
+    const overlappingLoad = {
+      ...loadArtifact,
+      sourcePath: integrationArtifact.sourcePath,
+      execution: {
+        ...loadArtifact.execution!,
+        workflowPath: integrationArtifact.sourcePath,
+      },
+    }
+    const overlappingExecution = {
+      ...loadExecution,
+      workflowPath: integrationArtifact.sourcePath,
+    }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([integrationArtifact, overlappingLoad])
+    vi.mocked(api.latestPerformanceExecutions).mockResolvedValue({ items: [overlappingExecution] })
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText('Shared workflow · recorded outcomes are classified as load evidence before integration evidence.')).toBeVisible()
+    expect(await screen.findByLabelText(`Latest execution for ${overlappingLoad.title}`)).toHaveTextContent('failed · revision-1')
+    expect(screen.getByLabelText(`Latest execution for ${integrationArtifact.title}`)).toHaveTextContent(
+      'No matching integration execution has been ingested',
+    )
+  })
+
   it('loads performance evidence independently of the first mixed execution page', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])

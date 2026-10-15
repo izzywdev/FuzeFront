@@ -51,7 +51,11 @@ import type {
   TestExecution,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
-import { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
+import {
+  artifactWorkflowExecutionKind,
+  executableWorkflowTarget,
+  preferredWorkflowExecutionKind,
+} from '@fuzequality/contracts/workflow-execution'
 import type { ExecutionOutcomeTrend, PolicyGatePerformance } from '@fuzequality/core'
 import {
   api,
@@ -5078,12 +5082,30 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         ? analyzedSourceRevision(repository)
                         : undefined
                       const workflowTarget = executableWorkflowTarget(item)
+                      const sharedWorkflowArtifacts = artifacts.filter(candidate =>
+                        candidate.repositoryId === item.repositoryId &&
+                        candidate.sourcePath === item.sourcePath &&
+                        artifactWorkflowExecutionKind(candidate) !== undefined
+                      )
+                      const sharedWorkflowKinds = new Set(
+                        sharedWorkflowArtifacts.map(candidate => artifactWorkflowExecutionKind(candidate))
+                      )
+                      const preferredExecutionKind = preferredWorkflowExecutionKind(sharedWorkflowArtifacts)
+                      const artifactExecutionKind = artifactWorkflowExecutionKind(item)
+                      const lowerPrioritySharedWorkflow = sharedWorkflowKinds.size > 1 &&
+                        preferredExecutionKind !== undefined &&
+                        artifactExecutionKind !== preferredExecutionKind
                       return (
                       <article className="catalog-row" key={item.id}>
                         <div>
                           <strong>{item.title}</strong>
                           <code>{item.sourcePath}</code>
                           <p>{item.summary}</p>
+                          {lowerPrioritySharedWorkflow && (
+                            <small className="performance-inventory-only">
+                              Shared workflow · recorded outcomes are classified as {preferredExecutionKind} evidence before {artifactExecutionKind} evidence.
+                            </small>
+                          )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
                             performanceEvidenceFailures.includes(item.repositoryId) && (
                               <small className="performance-evidence-warning" role="alert">
