@@ -288,6 +288,13 @@ function flowWireframe(value: unknown, steps: unknown): RepositoryFlowCandidate[
   return { kind: 'sequence', nodes: nodes.length ? nodes : [{ label: 'Flow step', targetIds: [] }] }
 }
 
+/** Preserve decision order when multiple in-memory reviews land in one clock millisecond. */
+function nextReviewTimestamp(previous?: string): string {
+  const now = Date.now()
+  const previousMillis = previous ? Date.parse(previous) : Number.NaN
+  return new Date(Number.isFinite(previousMillis) ? Math.max(now, previousMillis + 1) : now).toISOString()
+}
+
 export class MemoryCatalogStore implements CatalogStore {
   private data = emptyPortfolio()
   private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
@@ -431,10 +438,10 @@ export class MemoryCatalogStore implements CatalogStore {
     if (expectedRevision && (item.revision !== expectedRevision || repository?.lastScanRevision !== expectedRevision)) return undefined
     if (review.expectedReviewedAt !== undefined && (item.reviewedAt ?? null) !== review.expectedReviewedAt) return undefined
     item.status = review.status
-    item.reviewedAt = new Date().toISOString()
+    item.reviewedAt = nextReviewTimestamp(item.reviewedAt)
     item.reviewedBy = review.reviewedBy
     item.reviewReason = review.reason
-    this.flowReviewAudits.unshift({ id: `flow_review_${String(this.flowReviewAudits.length + 1).padStart(12, '0')}_${randomUUID()}`, candidateId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
+    this.flowReviewAudits.unshift({ id: randomUUID(), candidateId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
     return item
   }
 
@@ -481,10 +488,10 @@ export class MemoryCatalogStore implements CatalogStore {
     if (expectedRevision && (item.revision !== expectedRevision || repository?.lastScanRevision !== expectedRevision)) return undefined
     if (review.expectedReviewedAt !== undefined && (item.reviewedAt ?? null) !== review.expectedReviewedAt) return undefined
     item.reviewStatus = review.status
-    item.reviewedAt = new Date().toISOString()
+    item.reviewedAt = nextReviewTimestamp(item.reviewedAt)
     item.reviewedBy = review.reviewedBy
     item.reviewReason = review.reason
-    this.policyGateReviewAudits.unshift({ id: `policy_gate_review_${String(this.policyGateReviewAudits.length + 1).padStart(12, '0')}_${randomUUID()}`, evaluationId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
+    this.policyGateReviewAudits.unshift({ id: randomUUID(), evaluationId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
     return item
   }
 

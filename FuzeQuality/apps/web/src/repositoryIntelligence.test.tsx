@@ -1631,6 +1631,26 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.queryByRole('button', { name: /Run analyzed revision/ })).not.toBeInTheDocument()
   })
 
+  it('keeps nested workflow inventory visible without advertising an impossible dispatch', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([{
+      ...loadArtifact,
+      sourcePath: '.github/workflows/load/nightly.yml',
+      execution: {
+        ...loadArtifact.execution!,
+        workflowPath: '.github/workflows/load/nightly.yml',
+      },
+    }])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(/controlled dispatch requires a scanner-verified workflow/)).toHaveTextContent(
+      'direct YAML child of .github/workflows',
+    )
+    expect(screen.queryByRole('button', { name: /Run analyzed revision/ })).not.toBeInTheDocument()
+  })
+
   it('does not offer dispatch without an immutable analyzed source revision', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])

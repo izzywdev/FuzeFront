@@ -1,21 +1,7 @@
 import type { QualityArtifact, Repository, TestExecution } from '@fuzequality/contracts'
+import { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
 
-const executableTestKinds: QualityArtifact['kind'][] = [
-  'integration-test',
-  'post-production-test',
-  'load-test',
-  'stress-test',
-]
-
-/** Returns only scanner-verified, manually dispatchable test workflows. */
-export function executableWorkflowTarget(artifact: QualityArtifact): string | undefined {
-  if (!executableTestKinds.includes(artifact.kind)) return undefined
-  if (artifact.execution?.provider !== 'github-actions' || artifact.execution.trigger !== 'workflow_dispatch') return undefined
-  if (artifact.execution.requiredInputs?.length) return undefined
-  if (artifact.execution.workflowPath !== artifact.sourcePath) return undefined
-  if (!artifact.sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(artifact.sourcePath)) return undefined
-  return artifact.sourcePath
-}
+export { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
 
 /** Backward-compatible performance-only guard for the original API route. */
 export function performanceWorkflowTarget(artifact: QualityArtifact): string | undefined {

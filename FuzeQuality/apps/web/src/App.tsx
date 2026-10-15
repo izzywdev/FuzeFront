@@ -51,6 +51,7 @@ import type {
   TestExecution,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
+import { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
 import type { ExecutionOutcomeTrend, PolicyGatePerformance } from '@fuzequality/core'
 import {
   api,
@@ -3752,7 +3753,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     const sourceRevision = repository
       ? analyzedSourceRevision(repository)
       : undefined
-    if (!sourceRevision) return
+    if (!sourceRevision || !executableWorkflowTarget(artifact)) return
     if (
       !window.confirm(
         `Dispatch ${artifact.title} from ${repository?.defaultBranch ?? 'the analyzed branch'} at analyzed commit ${sourceRevision}?`
@@ -5076,6 +5077,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       const analyzedRevision = repository
                         ? analyzedSourceRevision(repository)
                         : undefined
+                      const workflowTarget = executableWorkflowTarget(item)
                       return (
                       <article className="catalog-row" key={item.id}>
                         <div>
@@ -5113,8 +5115,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             )
                           )}
                           {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
-                            item.execution?.trigger === 'workflow_dispatch' &&
-                            !item.execution.requiredInputs?.length &&
+                            workflowTarget &&
                             analyzedRevision && (
                               <div className="row-actions">
                                 <button
@@ -5137,6 +5138,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 {item.execution.requiredInputs.join(', ')}.
                               </small>
                             ) : null}
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
+                            item.execution &&
+                            !item.execution.requiredInputs?.length &&
+                            analyzedRevision &&
+                            !workflowTarget && (
+                              <small className="performance-inventory-only">
+                                Inventory only · controlled dispatch requires a scanner-verified workflow that is a direct YAML child of .github/workflows.
+                              </small>
+                            )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
                             !item.execution && (
                               <small className="performance-inventory-only">

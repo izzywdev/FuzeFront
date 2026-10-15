@@ -33,6 +33,7 @@ describe('policy-gate review lifecycle', () => {
       expect.objectContaining({ id: expect.any(String), status: 'dismissed', reviewedBy: 'user-3', reason: 'The replacement control was removed.', createdAt: expect.any(String) }),
       expect.objectContaining({ id: expect.any(String), status: 'accepted', reviewedBy: 'user-1', reason: 'Threshold is already enforced elsewhere.', createdAt: expect.any(String) }),
     ])
+    expect(history.every(item => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id))).toBe(true)
     await expect(store.policyGateReviewHistory(evaluation.id, evaluation.tenantId, {
       after: { createdAt: history[0].createdAt, id: history[0].id },
       limit: 1,

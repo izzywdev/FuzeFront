@@ -184,10 +184,12 @@ describe('repository flow review lifecycle', () => {
       status: 'rejected', reviewedBy: 'reviewer-2', reason: 'The route was removed.',
     })
 
-    await expect(store.repositoryFlowReviewHistory(candidate.id, candidate.tenantId)).resolves.toEqual([
+    const history = await store.repositoryFlowReviewHistory(candidate.id, candidate.tenantId)
+    expect(history).toEqual([
       expect.objectContaining({ id: expect.any(String), status: 'rejected', reviewedBy: 'reviewer-2', reason: 'The route was removed.', createdAt: expect.any(String) }),
       expect.objectContaining({ id: expect.any(String), status: 'confirmed', reviewedBy: 'reviewer-1', reason: 'Evidence is complete.', createdAt: expect.any(String) }),
     ])
+    expect(history.every(item => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id))).toBe(true)
     const [first] = await store.repositoryFlowReviewHistory(candidate.id, candidate.tenantId, { limit: 1 })
     await expect(store.repositoryFlowReviewHistory(candidate.id, candidate.tenantId, {
       after: { createdAt: first.createdAt, id: first.id },

@@ -33,6 +33,11 @@ describe('execution performance', () => {
     expect(executableWorkflowTarget({ ...artifact, kind: 'integration-test' })).toBe('.github/workflows/load.yml')
     expect(executableWorkflowTarget({ ...artifact, kind: 'post-production-test' })).toBe('.github/workflows/load.yml')
     expect(executableWorkflowTarget({ ...artifact, kind: 'test-plan' })).toBeUndefined()
+    expect(executableWorkflowTarget({
+      ...artifact,
+      sourcePath: '.github/workflows/load/test.yml',
+      execution: { ...artifact.execution, workflowPath: '.github/workflows/load/test.yml' },
+    })).toBeUndefined()
   })
 
   it('aggregates only explicit policy-gate execution pairs', () => {
