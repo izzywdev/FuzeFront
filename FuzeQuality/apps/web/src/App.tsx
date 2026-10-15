@@ -82,7 +82,7 @@ import {
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
-import { FlowInspector } from './components/flowInspector'
+import { FlowInspector, flowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
 import { governanceEvidenceSelection } from './governanceEvidence'
@@ -4089,14 +4089,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       selection.selected.map(({ repositoryId, revision }) => `${repositoryId}\u0000${revision}`)
     )
     const evidenceIds = new Map<string, Set<string>>()
+    const loadedArtifactIds = new Set(artifacts.map(artifact => artifact.id))
     flowCandidates.forEach(candidate => {
       if (!selectedRevisions.has(`${candidate.repositoryId}\u0000${candidate.revision}`)) return
       const ids = evidenceIds.get(candidate.repositoryId) ?? new Set<string>()
-      const referencedIds = [
-        ...candidate.evidence,
-        ...candidate.steps.flatMap(step => step.targetIds),
-        ...candidate.wireframe.nodes.flatMap(node => node.targetIds),
-      ]
+      const referencedIds = flowArtifactTargetIds(candidate, loadedArtifactIds)
       referencedIds.forEach(id => ids.add(id))
       evidenceIds.set(candidate.repositoryId, ids)
     })
@@ -4113,7 +4110,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       () => { if (active) setFlowEvidenceArtifacts([]) },
     )
     return () => { active = false }
-  }, [data.repositories, flowCandidates, flowResultsAreCurrent, flowRevisionScope])
+  }, [artifacts, data.repositories, flowCandidates, flowResultsAreCurrent, flowRevisionScope])
   useEffect(() => {
     let active = true
     setExecutionNextCursors({})

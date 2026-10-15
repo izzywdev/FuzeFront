@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { QualityArtifact, RepositoryFlowCandidate } from '@fuzequality/contracts'
 import { FlowInspector } from './flowInspector'
 
@@ -21,6 +21,8 @@ const flow: RepositoryFlowCandidate = {
     inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true,
   },
 }
+
+afterEach(cleanup)
 
 describe('FlowInspector', () => {
   it('renders a dedicated wireframe, interaction detail, evidence, and LiteLLM provenance', () => {
@@ -47,5 +49,21 @@ describe('FlowInspector', () => {
     rerender(<FlowInspector open error="Flow candidate not found" artifacts={[]} onClose={vi.fn()} />)
     expect(screen.getByRole('alert')).toHaveTextContent('Flow candidate not found')
     expect(screen.getByRole('dialog', { name: 'UX flow inspector' })).not.toHaveTextContent('User signs in')
+  })
+
+  it('keeps human-readable evidence passages distinct from artifact references', () => {
+    render(
+      <FlowInspector
+        open
+        flow={{ ...flow, evidence: [artifact.id, '/login'] }}
+        artifacts={[artifact]}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('/login')).toBeVisible()
+    expect(screen.queryByText('Evidence reference unavailable in this catalog snapshot')).not.toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Flow provenance' }))
+      .getByText('apps/web/src/routes/login.tsx')).toBeVisible()
   })
 })

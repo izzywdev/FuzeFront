@@ -237,6 +237,10 @@ function isPostProductionWorkflow(sourcePath: string, source: string): boolean {
     const document = parseYaml(source) as { name?: unknown; env?: Record<string, unknown> } | undefined
     if (document?.env?.FUZEQUALITY_STAGE === 'post-production') return true
     const identity = `${sourcePath} ${typeof document?.name === 'string' ? document.name : ''}`
+    // A deployment is not test evidence merely because its conventional name
+    // contains "post-production". Repositories can opt an actual validation
+    // workflow in explicitly with FUZEQUALITY_STAGE above.
+    if (/\bdeploy(?:ment|ing|ed)?\b/i.test(identity)) return false
     return /\bpost[-_ ]?prod(?:uction)?\b/i.test(identity)
   } catch {
     return false

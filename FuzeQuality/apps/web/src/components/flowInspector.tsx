@@ -2,6 +2,21 @@ import type { QualityArtifact, RepositoryFlowCandidate } from '@fuzequality/cont
 import { AlertTriangle, Network, Sparkles, X } from 'lucide-react'
 import { QualityDetailModal, QualityIconAction } from './primitives'
 
+export function flowArtifactTargetIds(
+  flow: RepositoryFlowCandidate,
+  knownArtifactIds: Iterable<string> = [],
+): string[] {
+  const ids = new Set([
+    ...flow.steps.flatMap(step => step.targetIds),
+    ...flow.wireframe.nodes.flatMap(node => node.targetIds),
+  ])
+  const known = new Set(knownArtifactIds)
+  flow.evidence.forEach(evidence => {
+    if (evidence.startsWith('artifact:') || known.has(evidence)) ids.add(evidence)
+  })
+  return [...ids]
+}
+
 export function FlowInspector({
   open,
   flow,
@@ -20,12 +35,9 @@ export function FlowInspector({
   onClose: () => void
 }) {
   const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
-  const evidenceIds = flow
-    ? [...new Set([
-        ...flow.evidence,
-        ...flow.steps.flatMap(step => step.targetIds),
-        ...flow.wireframe.nodes.flatMap(node => node.targetIds),
-      ])]
+  const evidenceIds = flow ? flowArtifactTargetIds(flow, artifactsById.keys()) : []
+  const evidencePassages = flow
+    ? flow.evidence.filter(evidence => !evidenceIds.includes(evidence))
     : []
 
   return (
@@ -163,6 +175,16 @@ export function FlowInspector({
                 )
               })}
             </ul>
+            {evidencePassages.length > 0 && (
+              <div className="flow-inspector-passages">
+                <strong>Repository evidence passages</strong>
+                <ul>
+                  {evidencePassages.map(passage => (
+                    <li key={passage}><code>{passage}</code></li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </section>
 
           {flow.reviewedAt && (

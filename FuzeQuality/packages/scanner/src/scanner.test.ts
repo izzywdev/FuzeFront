@@ -113,6 +113,7 @@ describe('repository scanner', () => {
     await writeFile(join(root, 'tests', 'checkout.spec.ts'), `import { test } from '@playwright/test'; test('customer completes checkout', async () => {}); test('customer sees an empty basket', async () => {})`)
     await writeFile(join(root, '.github', 'workflows', 'ci.yml'), 'name: CI\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test')
     await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production integration\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
+    await writeFile(join(root, '.github', 'workflows', 'post-production-deploy.yml'), 'name: Post production deployment\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
     await writeFile(join(root, '.github', 'workflows', 'verify-live.yml'), 'name: Verify live journeys\nenv:\n  FUZEQUALITY_STAGE: post-production\n  FUZEQUALITY_EXECUTION: dispatch\non:\n  workflow_dispatch:\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:live')
     await writeFile(join(root, '.github', 'workflows', 'integration.yml'), 'name: Integration tests\njobs:\n  integration:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:integration')
     await writeFile(join(root, '.github', 'workflows', 'verify-system.yml'), 'name: Verify system\nenv:\n  FUZEQUALITY_STAGE: integration\n  FUZEQUALITY_EXECUTION: dispatch\non: [workflow_dispatch]\njobs:\n  integration:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:system')
@@ -206,6 +207,10 @@ describe('repository scanner', () => {
       ['load-test', 'stress-test'].includes(item.kind)
     )).toBe(false)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'post-production-test')).toHaveLength(2)
+    expect(result.qualityArtifacts?.some(item =>
+      item.kind === 'post-production-test' &&
+      item.sourcePath === '.github/workflows/post-production-deploy.yml'
+    )).toBe(false)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'integration-test')).toHaveLength(2)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'story' && item.sourcePath === 'stories/Checkout.stories.tsx')).toHaveLength(2)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'test-plan' && item.sourcePath === 'tests/checkout.spec.ts')).toHaveLength(2)

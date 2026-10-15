@@ -1456,7 +1456,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
   it('loads revision-specific artifacts for historical flow evidence', async () => {
     mockEvidenceApis()
-    const historicalArtifact = { ...storyArtifact, id: 'artifact-story-historical' }
+    const historicalArtifact = { ...storyArtifact, id: 'artifact:repo-1:story-historical' }
     vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [historicalArtifact] })
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([{
       ...candidate,
