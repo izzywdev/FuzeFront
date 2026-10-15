@@ -596,9 +596,14 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async saveTestExecution(execution: TestExecution) {
     const index = this.executions.findIndex(item => item.repositoryId === execution.repositoryId && item.provider === execution.provider && item.externalRunId === execution.externalRunId && item.attempt === execution.attempt)
-    // GitHub webhook delivery is not ordered. A delayed requested or
-    // in-progress event must not erase a terminal result for this attempt.
-    if (index >= 0 && this.executions[index].status !== 'running' && execution.status === 'running') return
+    // Provider deliveries are not ordered. The first terminal outcome for an
+    // exact run attempt is immutable; corrections and reruns must use a new
+    // provider attempt so retained failure evidence cannot be rewritten.
+    if (
+      index >= 0 &&
+      this.executions[index].status !== 'running' &&
+      execution.status !== this.executions[index].status
+    ) return
     if (index >= 0) this.executions[index] = mergeTestExecutionEvidence(this.executions[index], execution)
     else this.executions.push(execution)
     this.executionVersions.push({
@@ -1666,7 +1671,7 @@ export class PostgresCatalogStore implements CatalogStore {
        INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,kind,status,name,workflow_path,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,summary)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,branch=COALESCE(EXCLUDED.branch,fuzequality.test_executions.branch),kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,workflow_path=COALESCE(EXCLUDED.workflow_path,fuzequality.test_executions.workflow_path),source_url=COALESCE(EXCLUDED.source_url,fuzequality.test_executions.source_url),started_at=COALESCE(EXCLUDED.started_at,fuzequality.test_executions.started_at),completed_at=COALESCE(EXCLUDED.completed_at,fuzequality.test_executions.completed_at),policy_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.policy_artifact_ids)>0 THEN EXCLUDED.policy_artifact_ids ELSE fuzequality.test_executions.policy_artifact_ids END,gate_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.gate_artifact_ids)>0 THEN EXCLUDED.gate_artifact_ids ELSE fuzequality.test_executions.gate_artifact_ids END,gate_evaluations=CASE WHEN jsonb_array_length(EXCLUDED.gate_evaluations)>0 THEN EXCLUDED.gate_evaluations WHEN EXCLUDED.status<>'running' THEN (SELECT COALESCE(jsonb_agg(CASE WHEN evaluation->>'status'='running' THEN jsonb_set(evaluation,'{status}',to_jsonb(EXCLUDED.status)) ELSE evaluation END),'[]'::jsonb) FROM jsonb_array_elements(fuzequality.test_executions.gate_evaluations) AS gate(evaluation)) ELSE fuzequality.test_executions.gate_evaluations END,thresholds=CASE WHEN jsonb_array_length(EXCLUDED.thresholds)>0 THEN EXCLUDED.thresholds ELSE fuzequality.test_executions.thresholds END,evidence_links=(SELECT COALESCE(jsonb_agg(link ORDER BY ordinal),'[]'::jsonb) FROM (SELECT DISTINCT ON (link->>'kind',link->>'url') link,ordinal FROM jsonb_array_elements(fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links) WITH ORDINALITY AS evidence(link,ordinal) ORDER BY link->>'kind',link->>'url',ordinal DESC) AS unique_links),summary=CASE WHEN length(COALESCE(EXCLUDED.summary,''))>length(COALESCE(fuzequality.test_executions.summary,'')) THEN EXCLUDED.summary ELSE fuzequality.test_executions.summary END
-       WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'
+       WHERE fuzequality.test_executions.status = 'running' OR fuzequality.test_executions.status = EXCLUDED.status
        RETURNING id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,kind,status,name,workflow_path,
                  started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links
        )

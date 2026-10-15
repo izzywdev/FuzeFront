@@ -461,6 +461,22 @@ describe('test execution evidence', () => {
     ])
   })
 
+  it('does not rewrite a terminal outcome with a conflicting terminal delivery for the same attempt', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: 'terminal-789', attempt: 1, revision: 'abc', kind: 'post-production' as const, name: 'Post-production', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+    await store.saveTestExecution({ id: 'failed-delivery', ...base, status: 'failed', completedAt: '2026-01-01T00:02:00.000Z', summary: 'Production journey failed' })
+    await store.saveTestExecution({ id: 'conflicting-delivery', ...base, status: 'passed', completedAt: '2026-01-01T00:03:00.000Z', summary: 'Conflicting late success' })
+
+    await expect(store.testExecutions('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'failed-delivery',
+        status: 'failed',
+        completedAt: '2026-01-01T00:02:00.000Z',
+        summary: 'Production journey failed',
+      }),
+    ])
+  })
+
   it('guards the Postgres upsert against an out-of-order running delivery', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
@@ -470,7 +486,7 @@ describe('test execution evidence', () => {
 
     expect(query).toHaveBeenCalledOnce()
     const sql = String(query.mock.calls[0][0])
-    expect(sql).toContain("WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'")
+    expect(sql).toContain("WHERE fuzequality.test_executions.status = 'running' OR fuzequality.test_executions.status = EXCLUDED.status")
     expect(sql).toContain('workflow_path')
     expect(sql).toContain('jsonb_array_length(EXCLUDED.thresholds)>0')
     expect(sql).toContain("evaluation->>'status'='running'")

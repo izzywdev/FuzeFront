@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.53.0
+  version: 0.54.0
   license:
     name: UNLICENSED
 servers:
@@ -1752,6 +1752,7 @@ components:
           items: { type: string }
     TestExecution:
       type: object
+      description: The first terminal outcome for a provider run attempt is immutable; reruns use a new attempt.
       required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds, gateEvaluations, thresholds, evidenceLinks]
       properties:
         id: { type: string }

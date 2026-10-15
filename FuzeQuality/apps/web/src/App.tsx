@@ -3341,6 +3341,9 @@ function ExecutionAttemptHistory({ execution }: { execution: TestExecution }) {
     >
       <summary>Attempt history</summary>
       <small>{execution.provider} run {execution.externalRunId}</small>
+      <small>
+        Each attempt retains its first terminal outcome; provider reruns are separate attempts.
+      </small>
       {loading && !attempts.length ? (
         <small>Loading attempts…</small>
       ) : error ? (

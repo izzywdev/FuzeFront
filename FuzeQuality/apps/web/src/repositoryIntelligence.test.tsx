@@ -672,6 +672,9 @@ describe('RepositoryIntelligence flow inventory', () => {
     ))
     expect(await screen.findByText('Attempt 2')).toBeVisible()
     expect(screen.getByText('Attempt 1')).toBeVisible()
+    expect(screen.getByText(
+      'Each attempt retains its first terminal outcome; provider reruns are separate attempts.'
+    )).toBeVisible()
     expect(screen.getByText('Recovered after retained failure evidence.')).toBeVisible()
   })
 
