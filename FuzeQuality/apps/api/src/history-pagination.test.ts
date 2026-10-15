@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeHistoryCursor, encodeHistoryCursor, historyPage } from './history-pagination'
+import { decodeHistoryCursor, decodeUuidHistoryCursor, encodeHistoryCursor, historyPage } from './history-pagination'
 
 describe('history pagination', () => {
   it('round-trips an opaque stable cursor', () => {
@@ -12,6 +12,27 @@ describe('history pagination', () => {
     expect(decodeHistoryCursor(Buffer.from(JSON.stringify({ id: 'flow-1' })).toString('base64url'))).toEqual({
       success: false,
       error: 'History cursor is invalid',
+    })
+  })
+
+  it('rejects non-UUID review-history cursor IDs before PostgreSQL casts them', () => {
+    const cursor = encodeHistoryCursor({
+      createdAt: '2026-10-11T08:00:00.000Z',
+      id: 'flow-review-not-a-uuid',
+    })
+    expect(decodeUuidHistoryCursor(cursor)).toEqual({
+      success: false,
+      error: 'History cursor is invalid',
+    })
+    expect(decodeUuidHistoryCursor(encodeHistoryCursor({
+      createdAt: '2026-10-11T08:00:00.000Z',
+      id: '00000000-0000-4000-8000-000000000002',
+    }))).toEqual({
+      success: true,
+      data: {
+        createdAt: '2026-10-11T08:00:00.000Z',
+        id: '00000000-0000-4000-8000-000000000002',
+      },
     })
   })
 

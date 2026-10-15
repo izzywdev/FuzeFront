@@ -51,7 +51,7 @@ import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewStateConflict } from './policy-gate-review'
-import { decodeHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
+import { decodeHistoryCursor, decodeUuidHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
 import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
 import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
 import { repositoryAnalysisStatusSchema } from './repository-analysis-status'
@@ -619,7 +619,7 @@ app.get('/api/v1/repositories/:id/flow-candidates/:candidateId/history', mayRead
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   const filter = historyPageQuerySchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
-  const cursor = decodeHistoryCursor(filter.data.cursor)
+  const cursor = decodeUuidHistoryCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
   const candidate = (await store.repositoryFlowCandidates(repositoryId, tenantId, { id: candidateId, limit: 1 }))[0]
   if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
@@ -698,7 +698,7 @@ app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/history'
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   const filter = historyPageQuerySchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
-  const cursor = decodeHistoryCursor(filter.data.cursor)
+  const cursor = decodeUuidHistoryCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
   const evaluation = (await store.policyGateEvaluations(repositoryId, tenantId, { id: evaluationId, limit: 1 }))[0]
   if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })

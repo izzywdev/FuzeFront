@@ -1169,7 +1169,10 @@ export class PostgresCatalogStore implements CatalogStore {
                FOR UPDATE
              )
            ))
-           AND ($7::boolean = false OR candidate.reviewed_at IS NOT DISTINCT FROM $8::timestamptz)
+           AND ($7::boolean = false OR
+             date_trunc('milliseconds', candidate.reviewed_at)
+               IS NOT DISTINCT FROM date_trunc('milliseconds', $8::timestamptz)
+           )
          RETURNING candidate.*`,
         [id, tenantId, review.status, review.reviewedBy, review.reason ?? null, expectedRevision ?? null, review.expectedReviewedAt !== undefined, review.expectedReviewedAt ?? null],
       )
@@ -1253,7 +1256,10 @@ export class PostgresCatalogStore implements CatalogStore {
                FOR UPDATE
              )
            ))
-           AND ($7::boolean = false OR evaluation.reviewed_at IS NOT DISTINCT FROM $8::timestamptz)
+           AND ($7::boolean = false OR
+             date_trunc('milliseconds', evaluation.reviewed_at)
+               IS NOT DISTINCT FROM date_trunc('milliseconds', $8::timestamptz)
+           )
          RETURNING evaluation.*`,
         [id, tenantId, review.status, review.reviewedBy, review.reason ?? null, expectedRevision ?? null, review.expectedReviewedAt !== undefined, review.expectedReviewedAt ?? null],
       )

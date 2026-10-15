@@ -551,6 +551,39 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.queryByRole('button', { name: 'Load more UX-flow history' })).not.toBeInTheDocument()
   })
 
+  it('ignores an obsolete governance continuation failure after filters change', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    let rejectContinuation!: (reason: Error) => void
+    const continuation = new Promise<Awaited<ReturnType<typeof api.policyGateEvaluations>>>((_, reject) => {
+      rejectContinuation = reject
+    })
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter = {}) => {
+      if (filter.cursor) return continuation
+      if (filter.reviewStatus === 'accepted') {
+        return { items: [], page: { nextCursor: null, hasMore: false } }
+      }
+      return { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    fireEvent.change(screen.getByLabelText('Review'), {
+      target: { value: 'accepted' },
+    })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(
+      repository.id,
+      { revision: repository.lastScanRevision, reviewStatus: 'accepted' },
+    ))
+    await act(async () => {
+      rejectContinuation(new Error('Obsolete governance page failed'))
+      await continuation.catch(() => undefined)
+    })
+
+    expect(screen.queryByText('Obsolete governance page failed')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Load more policy and gate history' })).not.toBeInTheDocument()
+  })
+
   it('loads bounded artifact context for governance revisions introduced by continuation', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

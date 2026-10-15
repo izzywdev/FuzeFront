@@ -238,7 +238,8 @@ describe('repository flow review lifecycle', () => {
     const [statement, parameters] = query.mock.calls[1]
     expect(String(statement)).toContain('candidate.revision=$6')
     expect(String(statement)).toContain('repository.last_scan_revision=$6')
-    expect(String(statement)).toContain('candidate.reviewed_at IS NOT DISTINCT FROM $8::timestamptz')
+    expect(String(statement)).toContain("date_trunc('milliseconds', candidate.reviewed_at)")
+    expect(String(statement)).toContain("date_trunc('milliseconds', $8::timestamptz)")
     expect(String(statement)).toContain('FOR UPDATE')
     expect(parameters[5]).toBe(candidate.revision)
     expect(parameters.slice(6)).toEqual([false, null])

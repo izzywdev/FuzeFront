@@ -5,6 +5,10 @@ const decodedCursorSchema = z.object({
   id: z.string().trim().min(1).max(500),
 }).strict()
 
+const decodedUuidCursorSchema = decodedCursorSchema.extend({
+  id: z.string().uuid(),
+})
+
 export const historyPageQueryFields = {
   limit: z.coerce.number().int().min(1).transform(value => Math.min(value, 100)).default(50),
   cursor: z.string().trim().min(1).max(2000).optional(),
@@ -16,17 +20,29 @@ export function encodeHistoryCursor(value: { createdAt: string; id: string }) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
 }
 
-export function decodeHistoryCursor(cursor?: string) {
+function decodeCursor(
+  cursor: string | undefined,
+  schema: typeof decodedCursorSchema | typeof decodedUuidCursorSchema,
+) {
   if (!cursor) return { success: true as const, data: undefined }
   try {
     const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))
-    const parsed = decodedCursorSchema.safeParse(value)
+    const parsed = schema.safeParse(value)
     return parsed.success
       ? { success: true as const, data: parsed.data }
       : { success: false as const, error: 'History cursor is invalid' }
   } catch {
     return { success: false as const, error: 'History cursor is invalid' }
   }
+}
+
+export function decodeHistoryCursor(cursor?: string) {
+  return decodeCursor(cursor, decodedCursorSchema)
+}
+
+/** Review audit IDs are PostgreSQL UUIDs and must be validated before casting. */
+export function decodeUuidHistoryCursor(cursor?: string) {
+  return decodeCursor(cursor, decodedUuidCursorSchema)
 }
 
 export function historyPage<T extends { id: string; createdAt: string }>(

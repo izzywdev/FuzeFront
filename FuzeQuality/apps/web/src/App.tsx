@@ -4439,9 +4439,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
       ))
     } catch (cause) {
-      setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more policy and gate history.')
+      if (policyGateHistoryQueryRef.current === selectionQuery) {
+        setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more policy and gate history.')
+      }
     } finally {
-      setLoadingMorePolicyGates(false)
+      if (policyGateHistoryQueryRef.current === selectionQuery) {
+        setLoadingMorePolicyGates(false)
+      }
     }
   }
   const outcomeTrend = useMemo(
