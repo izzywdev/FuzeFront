@@ -24,6 +24,7 @@ const API_BASE = (portalApiBase || import.meta.env.VITE_FUZEQUALITY_API_URL || '
 const REQUEST_TIMEOUT_MS = 15_000
 type TokenProvider = () => string | null | undefined
 let platformToken: TokenProvider | undefined
+let platformTenant: TokenProvider | undefined
 
 function portalToken(): string | null | undefined {
   const context = (window as Window & {
@@ -44,6 +45,7 @@ function portalTenant(): string | null {
   return context?.tenantId
     ?? context?.activeOrganization?.id
     ?? hostWindow.__FRONTFUSE_CONTEXT__?.session?.tenantId
+    ?? platformTenant?.()
     ?? null
 }
 
@@ -52,8 +54,9 @@ function portalTenant(): string | null {
  * A remote must never read the host's storage directly: the host remains the
  * sole owner of multi-account session selection and token refresh.
  */
-export function configurePlatformSecurity(getToken?: TokenProvider) {
+export function configurePlatformSecurity(getToken?: TokenProvider, getTenantId?: TokenProvider) {
   platformToken = getToken
+  platformTenant = getTenantId
 }
 
 export type PlatformSession = Pick<Identity, 'userId' | 'tenantId' | 'roles'>

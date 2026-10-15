@@ -5799,7 +5799,15 @@ function PageHeading({
   )
 }
 
-export function App({ getToken }: { getToken?: () => string | null } = {}) {
+export function App({
+  getToken,
+  getTenantId,
+  onSignOut,
+}: {
+  getToken?: () => string | null
+  getTenantId?: () => string | null
+  onSignOut?: () => void
+} = {}) {
   const [view, setView] = useState<View>('overview')
   const [data, setData] = useState<Portfolio | null>(null)
   const [error, setError] = useState<string>()
@@ -5822,7 +5830,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   }
   // The portal owns the active account vault. A federated remote receives its
   // bearer-token resolver from the host rather than reading portal storage.
-  useEffect(() => configurePlatformSecurity(getToken), [getToken])
+  useEffect(() => configurePlatformSecurity(getToken, getTenantId), [getTenantId, getToken])
   const reload = useCallback(async () => {
     const generation = ++reloadGeneration.current
     setLoading(true)
@@ -5895,6 +5903,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
             )
           })}
         </nav>
+        {onSignOut && <QualityAction className="sidebar-signout" intent="quiet" onClick={onSignOut}><LogOut size={14} /> Sign out</QualityAction>}
         <div className="sidebar-footer">
           <Database size={16} />
           <div>

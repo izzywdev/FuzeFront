@@ -50,6 +50,26 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .sidebar-footer { margin-top: auto; padding: 15px 10px 0; border-top: 1px solid var(--line); display: flex; gap: 9px; align-items: center; color: var(--muted); }
 .sidebar-footer span, .sidebar-footer strong { display: block; font-size: 11px; }
 .sidebar-footer strong { color: #a9c2d5; font-family: 'IBM Plex Mono'; font-weight: 400; }
+.sidebar-signout { width: 100%; margin-top: auto; justify-content: flex-start; }
+.sidebar-signout + .sidebar-footer { margin-top: 10px; }
+
+.standalone-auth-state { min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: var(--space-3); color: var(--text-tertiary); background: var(--bg-primary); }
+.standalone-auth-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); background: radial-gradient(circle at 18% 10%, var(--accent-soft), transparent 38%), var(--bg-primary); }
+.standalone-auth-brand { display: flex; flex-direction: column; justify-content: space-between; gap: var(--space-12); padding: clamp(var(--space-8), 8vw, var(--space-16)); border-right: 1px solid var(--border-color); }
+.standalone-auth-lockup { padding-inline: 0; }
+.standalone-auth-brand h1 { max-width: 760px; margin: var(--space-3) 0; color: var(--text-primary); font: 600 clamp(42px, 7vw, 82px)/.96 var(--font-display); letter-spacing: var(--tracking-display); }
+.standalone-auth-brand p:not(.eyebrow) { max-width: 620px; color: var(--text-secondary); font-size: var(--text-lg); line-height: 1.6; }
+.standalone-auth-panel { display: grid; place-items: center; padding: var(--space-8); }
+.standalone-auth-form { width: min(100%, 420px); display: grid; gap: var(--space-5); padding: var(--space-8); border: 1px solid var(--border-color); background: var(--bg-tertiary); box-shadow: var(--shadow-lg); }
+.standalone-auth-form > svg { color: var(--accent-2); }
+.standalone-auth-form h2 { margin: var(--space-1) 0 0; font: 600 var(--text-2xl) var(--font-display); }
+
+@media (max-width: 760px) {
+  .standalone-auth-shell { grid-template-columns: 1fr; }
+  .standalone-auth-brand { min-height: 38vh; padding: var(--space-7); border-right: 0; border-bottom: 1px solid var(--border-color); }
+  .standalone-auth-brand h1 { font-size: clamp(36px, 11vw, 56px); }
+  .standalone-auth-panel { padding: var(--space-5); }
+}
 
 main { min-width: 0; }
 .topbar { height: 58px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 36px; color: var(--muted); font: 11px 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: .08em; }

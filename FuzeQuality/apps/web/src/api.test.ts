@@ -47,6 +47,21 @@ describe('FuzeQuality portal API identity context', () => {
     expect(headers.get('x-fuzefront-tenant-id')).toBe('personal-tenant-1')
   })
 
+  it('uses the standalone Security session token and canonical tenant without a portal bridge', async () => {
+    configurePlatformSecurity(() => 'standalone-token', () => 'standalone-tenant')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      repositories: [], apiOperations: [], frontendSurfaces: [], testCases: [],
+      requirements: [], expectations: [], coverage: [], findings: [], suggestions: [],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.portfolio()
+
+    const headers = new Headers(fetchMock.mock.calls[0][1].headers)
+    expect(headers.get('authorization')).toBe('Bearer standalone-token')
+    expect(headers.get('x-fuzefront-tenant-id')).toBe('standalone-tenant')
+  })
+
   it('sends the current flow-review timestamp as an optimistic precondition', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), {
       status: 200,

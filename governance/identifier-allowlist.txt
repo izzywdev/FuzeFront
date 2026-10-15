@@ -68,14 +68,16 @@ src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
 # not this registry's to mint. Tracked against FuzeQuality's own adoption.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
 src FuzeQuality/apps/api/src/index.ts:471                   # FuzeQuality-owned test-execution entity
-src FuzeQuality/packages/core/src/store.ts:625              # FuzeQuality-owned repository entity
-src FuzeQuality/packages/core/src/store.ts:659              # FuzeQuality-owned analysis-completed outbox entity
-src FuzeQuality/packages/core/src/store.ts:673              # FuzeQuality-owned repository-inventory outbox entity
-src FuzeQuality/packages/core/src/store.ts:722              # FuzeQuality-owned repository-scan revision entity
-src FuzeQuality/packages/core/src/store.ts:723              # FuzeQuality-owned repository-inventory outbox entity
-src FuzeQuality/packages/core/src/store.ts:740              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:751              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:837              # FuzeQuality-owned admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:925              # FuzeQuality-owned identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:936              # FuzeQuality-owned design-test-link outbox entity
-src FuzeQuality/packages/core/src/store.ts:2302             # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:444              # FuzeQuality-owned repository-flow review audit entity
+src FuzeQuality/packages/core/src/store.ts:503              # FuzeQuality-owned policy-gate review audit entity
+src FuzeQuality/packages/core/src/store.ts:641              # FuzeQuality-owned repository entity
+src FuzeQuality/packages/core/src/store.ts:675              # FuzeQuality-owned analysis-completed outbox entity
+src FuzeQuality/packages/core/src/store.ts:689              # FuzeQuality-owned repository-inventory retry outbox entity
+src FuzeQuality/packages/core/src/store.ts:738              # FuzeQuality-owned repository-scan revision entity
+src FuzeQuality/packages/core/src/store.ts:739              # FuzeQuality-owned repository-inventory outbox entity
+src FuzeQuality/packages/core/src/store.ts:756              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:767              # FuzeQuality-owned expected-test suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:853              # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:941              # FuzeQuality-owned identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:952              # FuzeQuality-owned design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:2318             # FuzeQuality-owned admin-context audit entity
