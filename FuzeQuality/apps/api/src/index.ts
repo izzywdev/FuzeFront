@@ -13,6 +13,7 @@ import {
   type OrganizationQualitySummary,
   type Portfolio,
   type ScanResult,
+  type TestExecution,
   repositoryScanFailureSchema,
 } from '@fuzequality/contracts'
 import {
@@ -35,7 +36,7 @@ import {
   webhookScanCommands,
   webhookWorkflowExecutions,
 } from '@fuzequality/github-app'
-import { dispatchPerformanceWorkflow, dispatchTestWorkflow, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
+import { dispatchPerformanceWorkflow, dispatchTestWorkflow, GitHubArtifactEvidenceError, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { qualityResources } from './platform-permissions'
@@ -1307,8 +1308,11 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
   for (const execution of workflowExecutions) {
     const repository = repositories.find(item => item.id === execution.repositoryId)
     if (!repository?.tenantId) continue
-    let executionWithEvidence = execution
+    let executionWithEvidence: typeof execution & {
+      evidenceCollection?: TestExecution['evidenceCollection']
+    } = execution
     if (execution.status !== 'running' && repository.installationId) {
+      const checkedAt = new Date().toISOString()
       try {
         const discovered = await githubWorkflowArtifactEvidence({
           owner: repository.owner,
@@ -1319,12 +1323,21 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
         executionWithEvidence = {
           ...execution,
           evidenceLinks: mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered),
+          evidenceCollection: { status: 'complete', checkedAt },
         }
-      } catch {
+      } catch (error) {
+        const errorCode = error instanceof GitHubArtifactEvidenceError
+          ? error.code
+          : 'PROVIDER_UNAVAILABLE'
+        executionWithEvidence = {
+          ...execution,
+          evidenceCollection: { status: 'unavailable', checkedAt, errorCode },
+        }
         console.warn(JSON.stringify({
           event: 'github_workflow_artifact_discovery_failed',
           repositoryId: repository.id,
           externalRunId: execution.externalRunId,
+          errorCode,
         }))
       }
     }

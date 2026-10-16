@@ -141,6 +141,18 @@ function workflowArtifactKind(name: string): TestExecutionEvidenceLink['kind'] {
   return 'other'
 }
 
+export type GitHubArtifactEvidenceErrorCode =
+  | 'PROVIDER_TIMEOUT'
+  | 'PROVIDER_UNAVAILABLE'
+  | 'PROVIDER_RESPONSE_INVALID'
+
+export class GitHubArtifactEvidenceError extends Error {
+  constructor(readonly code: GitHubArtifactEvidenceErrorCode, message: string) {
+    super(message)
+    this.name = 'GitHubArtifactEvidenceError'
+  }
+}
+
 /** Discovers durable, browser-accessible evidence uploaded by one completed run. */
 export async function githubWorkflowArtifactEvidence(input: {
   owner: string
@@ -149,33 +161,62 @@ export async function githubWorkflowArtifactEvidence(input: {
   installationId: string
   tokenProvider?: (installationId: string) => Promise<string>
   fetcher?: typeof fetch
+  timeoutMs?: number
 }): Promise<TestExecutionEvidenceLink[]> {
   assertIdentifier(input.owner, 'owner')
   assertIdentifier(input.name, 'repository name')
   if (!/^\d+$/.test(input.runId)) throw new Error('Invalid GitHub Actions run ID')
   if (!/^\d+$/.test(input.installationId)) throw new Error('Invalid GitHub App installation ID')
-  const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
-  const response = await (input.fetcher ?? fetch)(
-    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}/artifacts?per_page=100`,
-    { headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' } },
-  )
-  if (!response.ok) throw new Error(`GitHub workflow artifact discovery failed: ${response.status}`)
-  const body = (await response.json()) as { artifacts?: unknown }
-  if (!Array.isArray(body.artifacts)) throw new Error('GitHub workflow artifact response was invalid')
-  return body.artifacts.flatMap((value): TestExecutionEvidenceLink[] => {
-    if (!value || typeof value !== 'object') return []
-    const artifact = value as { id?: unknown; name?: unknown; expired?: unknown }
-    if (
-      typeof artifact.id !== 'number' || !Number.isSafeInteger(artifact.id) || artifact.id <= 0 ||
-      typeof artifact.name !== 'string' || !artifact.name.trim() || artifact.expired === true
-    ) return []
-    const name = artifact.name.trim().slice(0, 200)
-    return [{
-      kind: workflowArtifactKind(name),
-      name,
-      url: `https://github.com/${input.owner}/${input.name}/actions/runs/${input.runId}/artifacts/${artifact.id}`,
-    }]
-  }).slice(0, 99)
+  const timeoutMs = input.timeoutMs ?? 10_000
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('GitHub workflow artifact discovery timeout must be positive')
+  }
+  const controller = new AbortController()
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort()
+      reject(new GitHubArtifactEvidenceError('PROVIDER_TIMEOUT', `GitHub workflow artifact discovery timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+  const collect = async () => {
+    const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
+    const response = await (input.fetcher ?? fetch)(
+      `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}/artifacts?per_page=100`,
+      {
+        signal: controller.signal,
+        headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
+      },
+    )
+    if (!response.ok) throw new GitHubArtifactEvidenceError('PROVIDER_UNAVAILABLE', `GitHub workflow artifact discovery failed: ${response.status}`)
+    const body = (await response.json()) as { artifacts?: unknown }
+    if (!Array.isArray(body.artifacts)) {
+      throw new GitHubArtifactEvidenceError('PROVIDER_RESPONSE_INVALID', 'GitHub workflow artifact response was invalid')
+    }
+    return body.artifacts.flatMap((value): TestExecutionEvidenceLink[] => {
+      if (!value || typeof value !== 'object') return []
+      const artifact = value as { id?: unknown; name?: unknown; expired?: unknown }
+      if (
+        typeof artifact.id !== 'number' || !Number.isSafeInteger(artifact.id) || artifact.id <= 0 ||
+        typeof artifact.name !== 'string' || !artifact.name.trim() || artifact.expired === true
+      ) return []
+      const name = artifact.name.trim().slice(0, 200)
+      return [{
+        kind: workflowArtifactKind(name),
+        name,
+        url: `https://github.com/${input.owner}/${input.name}/actions/runs/${input.runId}/artifacts/${artifact.id}`,
+      }]
+    }).slice(0, 99)
+  }
+  try {
+    return await Promise.race([collect(), timedOut])
+  } catch (error) {
+    if (error instanceof GitHubArtifactEvidenceError) throw error
+    throw new GitHubArtifactEvidenceError('PROVIDER_UNAVAILABLE', 'GitHub workflow artifact discovery is unavailable')
+  } finally {
+    if (timeout) clearTimeout(timeout)
+    controller.abort()
+  }
 }
 
 /** Dispatches only a scanner-reviewed repository workflow at an immutable analyzed commit. */

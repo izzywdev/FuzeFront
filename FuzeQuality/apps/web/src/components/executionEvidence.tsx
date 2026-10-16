@@ -343,11 +343,29 @@ export function ExecutionEvidenceCoverage({
   const links = execution.evidenceLinks?.length ?? 0
   const gatePairs = execution.gateEvaluations?.length ?? 0
   const missingThresholds = ['load', 'stress'].includes(execution.kind) && !thresholds
+  const collection = execution.evidenceCollection
+  const collectionFailure = collection?.status === 'unavailable'
+    ? collection.errorCode === 'PROVIDER_TIMEOUT'
+      ? 'Provider artifact lookup timed out'
+      : collection.errorCode === 'PROVIDER_RESPONSE_INVALID'
+        ? 'Provider returned an invalid artifact response'
+        : 'Provider artifact lookup was unavailable'
+    : undefined
 
   return (
     <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
       <strong>Evidence coverage</strong>
       <small>{thresholds} thresholds · {links} artifacts · {gatePairs} policy–gate outcomes</small>
+      {collectionFailure && (
+        <span className="status-pill status-failed">
+          {collectionFailure}; zero artifacts is not a verified result
+        </span>
+      )}
+      {collection?.status === 'complete' && !links && (
+        <span className="status-pill status-passed">
+          Provider checked; no durable artifacts reported
+        </span>
+      )}
       {missingThresholds && (
         <span className="status-pill status-running">
           No performance threshold observations ingested

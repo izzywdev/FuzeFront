@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.54.0
+  version: 0.55.0
   license:
     name: UNLICENSED
 servers:
@@ -1732,6 +1732,16 @@ components:
         kind: { type: string, enum: [video, report, trace, screenshot, log, other] }
         name: { type: string, minLength: 1, maxLength: 200 }
         url: { type: string, format: uri, pattern: '^https://', maxLength: 2000 }
+    TestExecutionEvidenceCollection:
+      type: object
+      additionalProperties: false
+      required: [status, checkedAt]
+      properties:
+        status: { type: string, enum: [complete, unavailable] }
+        checkedAt: { type: string, format: date-time }
+        errorCode:
+          type: string
+          enum: [PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, PROVIDER_RESPONSE_INVALID]
     TestExecutionInput:
       type: object
       additionalProperties: false
@@ -1776,6 +1786,7 @@ components:
           maxItems: 100
           default: []
           items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
+        evidenceCollection: { $ref: '#/components/schemas/TestExecutionEvidenceCollection' }
         summary: { type: string, maxLength: 5000 }
     ExecutionEvidenceConflict:
       type: object
@@ -1833,6 +1844,7 @@ components:
         evidenceLinks:
           type: array
           items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
+        evidenceCollection: { $ref: '#/components/schemas/TestExecutionEvidenceCollection' }
         summary: { type: string }
     TestExecutionPage:
       type: object

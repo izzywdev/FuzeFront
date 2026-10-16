@@ -3,6 +3,29 @@ import { testExecutionInputSchema, type ScanResult } from '@fuzequality/contract
 import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, webhookExecutionRecord } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
+  it('requires a safe diagnostic for unavailable evidence collection', () => {
+    const base = {
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'post-production' as const,
+      status: 'passed' as const,
+      name: 'Post-production browser journey',
+    }
+    expect(testExecutionInputSchema.safeParse({
+      ...base,
+      evidenceCollection: { status: 'unavailable', checkedAt: '2026-10-16T08:00:00.000Z' },
+    }).success).toBe(false)
+    expect(testExecutionInputSchema.parse({
+      ...base,
+      evidenceCollection: {
+        status: 'unavailable',
+        checkedAt: '2026-10-16T08:00:00.000Z',
+        errorCode: 'PROVIDER_TIMEOUT',
+      },
+    }).evidenceCollection).toEqual(expect.objectContaining({ errorCode: 'PROVIDER_TIMEOUT' }))
+  })
+
   it('merges provider artifacts without duplicating or overflowing evidence', () => {
     const generic = { kind: 'report' as const, name: 'Run artifacts', url: 'https://github.com/run/42#artifacts' }
     const discovered = Array.from({ length: 101 }, (_, index) => ({

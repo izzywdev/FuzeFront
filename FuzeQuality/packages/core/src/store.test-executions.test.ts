@@ -9,6 +9,21 @@ describe('test execution evidence', () => {
     await expect(store.testExecutions('repo-1', 'org-2')).resolves.toEqual([])
   })
 
+  it('retains provider evidence collection failures with the exact execution attempt', async () => {
+    const store = new MemoryCatalogStore()
+    await store.saveTestExecution({
+      id: 'run-evidence-timeout', repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions',
+      externalRunId: '124', attempt: 1, revision: 'abc', kind: 'post-production', status: 'passed',
+      name: 'post-production browser journey', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [],
+      thresholds: [], evidenceLinks: [],
+      evidenceCollection: { status: 'unavailable', checkedAt: '2026-10-16T08:00:00.000Z', errorCode: 'PROVIDER_TIMEOUT' },
+    })
+
+    await expect(store.testExecutions('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({ evidenceCollection: expect.objectContaining({ errorCode: 'PROVIDER_TIMEOUT' }) }),
+    ])
+  })
+
   it('returns the latest load or stress execution for every reviewed workflow independently of mixed history', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', headRepository: 'acme/app', status: 'passed' as const, name: 'run', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
@@ -480,6 +495,17 @@ describe('test execution evidence', () => {
       expect.objectContaining({
         evidenceLinks: [{ kind: 'report', name: 'Final Playwright report', url }],
       }),
+    ])
+  })
+
+  it('does not downgrade a completed artifact lookup on a transient redelivery failure', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '903', attempt: 1, revision: 'abc', kind: 'post-production' as const, status: 'passed' as const, name: 'Post-production', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+    await store.saveTestExecution({ id: 'first', ...base, evidenceCollection: { status: 'complete', checkedAt: '2026-10-16T08:00:00.000Z' } })
+    await store.saveTestExecution({ id: 'second', ...base, evidenceCollection: { status: 'unavailable', checkedAt: '2026-10-16T08:01:00.000Z', errorCode: 'PROVIDER_TIMEOUT' } })
+
+    await expect(store.testExecutions('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({ evidenceCollection: { status: 'complete', checkedAt: '2026-10-16T08:00:00.000Z' } }),
     ])
   })
 

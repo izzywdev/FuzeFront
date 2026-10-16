@@ -124,6 +124,37 @@ describe('controlled performance workflow dispatch', () => {
 })
 
 describe('GitHub workflow artifact evidence', () => {
+  it('bounds provider collection and returns a safe timeout code', async () => {
+    const fetcher = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+    }))
+
+    const result = githubWorkflowArtifactEvidence({
+      owner: 'izzywdev',
+      name: 'FuzeFront',
+      runId: '4242',
+      installationId: '1234',
+      tokenProvider: async () => 'secret',
+      fetcher,
+      timeoutMs: 5,
+    })
+
+    await expect(result).rejects.toMatchObject({
+      code: 'PROVIDER_TIMEOUT',
+    })
+  })
+
+  it('classifies malformed provider responses without exposing their body', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ unexpected: 'secret body' }), { status: 200 }))
+    await expect(githubWorkflowArtifactEvidence({
+      owner: 'izzywdev', name: 'FuzeFront', runId: '4242', installationId: '1234',
+      tokenProvider: async () => 'secret', fetcher,
+    })).rejects.toMatchObject({
+      code: 'PROVIDER_RESPONSE_INVALID',
+      message: 'GitHub workflow artifact response was invalid',
+    })
+  })
+
   it('classifies active run artifacts and returns browser-accessible links', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ artifacts: [
       { id: 11, name: 'fuzequality-post-prod-playwright-video', expired: false },
@@ -152,7 +183,7 @@ describe('GitHub workflow artifact evidence', () => {
     ])
     expect(fetcher).toHaveBeenCalledWith(
       'https://api.github.com/repos/izzywdev/FuzeFront/actions/runs/4242/artifacts?per_page=100',
-      { headers: expect.objectContaining({ authorization: 'Bearer secret' }) },
+      expect.objectContaining({ headers: expect.objectContaining({ authorization: 'Bearer secret' }), signal: expect.any(AbortSignal) }),
     )
   })
 

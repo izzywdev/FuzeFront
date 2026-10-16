@@ -73,7 +73,7 @@ export function mergeExecutionEvidenceLinks(
  * workflow-name heuristic; all other execution identity remains provider-owned.
  */
 export function webhookExecutionRecord(
-  execution: WorkflowExecutionCommand,
+  execution: WorkflowExecutionCommand & { evidenceCollection?: TestExecution['evidenceCollection'] },
   tenantId: string,
   links: RevisionArtifactLinks,
 ): TestExecution {

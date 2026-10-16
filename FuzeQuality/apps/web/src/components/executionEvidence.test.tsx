@@ -73,6 +73,32 @@ const artifacts = [
 ]
 
 describe('ExecutionThresholdEvidence', () => {
+  it('distinguishes an unavailable provider lookup from a verified empty artifact result', () => {
+    const { rerender, unmount } = render(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      evidenceLinks: [],
+      evidenceCollection: {
+        status: 'unavailable',
+        checkedAt: '2026-10-16T08:00:00.000Z',
+        errorCode: 'PROVIDER_TIMEOUT',
+      },
+    }} />)
+
+    expect(screen.getByText(/artifact lookup timed out/i)).toHaveTextContent('zero artifacts is not a verified result')
+
+    rerender(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      evidenceLinks: [],
+      evidenceCollection: {
+        status: 'complete',
+        checkedAt: '2026-10-16T08:00:00.000Z',
+      },
+    }} />)
+
+    expect(screen.getByText('Provider checked; no durable artifacts reported')).toBeInTheDocument()
+    unmount()
+  })
+
   it('matches a scanner-verified performance workflow only to its current artifact kind', () => {
     const artifact: QualityArtifact = {
       id: 'performance-workflow',

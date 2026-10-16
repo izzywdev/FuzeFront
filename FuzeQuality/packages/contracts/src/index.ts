@@ -610,6 +610,8 @@ export type TestExecution = {
   thresholds: TestExecutionThreshold[]
   /** Durable or provider-hosted evidence produced by this exact run attempt. */
   evidenceLinks: TestExecutionEvidenceLink[]
+  /** Outcome of the provider artifact lookup; absent for producers that do not support discovery. */
+  evidenceCollection?: TestExecutionEvidenceCollection
   summary?: string
 }
 
@@ -623,6 +625,25 @@ export type TestExecutionEvidenceLink = {
   name: string
   url: string
 }
+
+export type TestExecutionEvidenceCollection = {
+  status: 'complete' | 'unavailable'
+  checkedAt: string
+  errorCode?: 'PROVIDER_TIMEOUT' | 'PROVIDER_UNAVAILABLE' | 'PROVIDER_RESPONSE_INVALID'
+}
+
+export const testExecutionEvidenceCollectionSchema = z.object({
+  status: z.enum(['complete', 'unavailable']),
+  checkedAt: z.string().datetime(),
+  errorCode: z.enum(['PROVIDER_TIMEOUT', 'PROVIDER_UNAVAILABLE', 'PROVIDER_RESPONSE_INVALID']).optional(),
+}).strict().superRefine((collection, context) => {
+  if (collection.status === 'complete' && collection.errorCode) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Completed evidence collection cannot include an error code' })
+  }
+  if (collection.status === 'unavailable' && !collection.errorCode) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Unavailable evidence collection requires an error code' })
+  }
+})
 
 const httpsEvidenceUrlSchema = z.string().url().max(2000).refine(
   value => value.startsWith('https://'),
@@ -688,6 +709,7 @@ export const testExecutionInputSchema = z.object({
   gateEvaluations: z.array(testExecutionGateEvaluationSchema).max(100).default([]),
   thresholds: z.array(testExecutionThresholdInputSchema).max(100).default([]),
   evidenceLinks: z.array(testExecutionEvidenceLinkSchema).max(100).default([]),
+  evidenceCollection: testExecutionEvidenceCollectionSchema.optional(),
   summary: z.string().max(5000).optional(),
 }).strict().superRefine((execution, context) => {
   const pairs = new Set<string>()
