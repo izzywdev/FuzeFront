@@ -26,6 +26,12 @@ describe('repository flow wireframes', () => {
         inputArtifactCount: 1,
         promptArtifactCount: 1,
         promptTruncated: false,
+        grounding: {
+          referencedArtifactCount: 1,
+          groundedArtifactCount: 1,
+          rejectedArtifactCount: 0,
+          ungroundedStepCount: 0,
+        },
       },
     })])
   })
@@ -81,6 +87,40 @@ describe('repository flow wireframes', () => {
       expect.objectContaining({
         evidence: ['route-1'],
         steps: [expect.objectContaining({ targetIds: ['route-1'] })],
+        analysis: expect.objectContaining({
+          grounding: {
+            referencedArtifactCount: 2,
+            groundedArtifactCount: 1,
+            rejectedArtifactCount: 1,
+            ungroundedStepCount: 0,
+          },
+        }),
+      }),
+    ])
+  })
+
+  it('retains a review warning when a model step has no grounded repository target', async () => {
+    const fetchImpl = (async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      flows: [{
+        title: 'Partially grounded checkout', confidence: 0.7, evidenceArtifactIds: ['route-1'],
+        steps: [
+          { actor: 'buyer', action: 'opens checkout', expectedOutcome: 'checkout appears', targetIds: ['route-1'] },
+          { actor: 'buyer', action: 'uses invented confirmation', expectedOutcome: 'confirmation appears', targetIds: ['invented-confirmation'] },
+        ],
+      }],
+    }) } }] }))) as typeof fetch
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl)
+
+    await expect(analyzer.analyze(repository, 'abc', artifacts)).resolves.toEqual([
+      expect.objectContaining({
+        analysis: expect.objectContaining({
+          grounding: {
+            referencedArtifactCount: 2,
+            groundedArtifactCount: 1,
+            rejectedArtifactCount: 1,
+            ungroundedStepCount: 1,
+          },
+        }),
       }),
     ])
   })

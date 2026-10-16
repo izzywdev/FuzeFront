@@ -148,22 +148,41 @@ export function FlowInspector({
               </div>
             </div>
             {flow.analysis ? (
-              <dl className="flow-analysis-provenance">
-                <div><dt>Provider</dt><dd>{flow.analysis.provider}</dd></div>
-                <div><dt>Model</dt><dd>{flow.analysis.model}</dd></div>
-                <div><dt>Prompt</dt><dd>{flow.analysis.promptVersion}</dd></div>
-                <div><dt>Schema</dt><dd>{flow.analysis.schemaVersion}</dd></div>
-                {flow.analysis.inputArtifactCount !== undefined &&
-                  flow.analysis.promptArtifactCount !== undefined && (
+              <>
+                <dl className="flow-analysis-provenance">
+                  <div><dt>Provider</dt><dd>{flow.analysis.provider}</dd></div>
+                  <div><dt>Model</dt><dd>{flow.analysis.model}</dd></div>
+                  <div><dt>Prompt</dt><dd>{flow.analysis.promptVersion}</dd></div>
+                  <div><dt>Schema</dt><dd>{flow.analysis.schemaVersion}</dd></div>
+                  {flow.analysis.inputArtifactCount !== undefined &&
+                    flow.analysis.promptArtifactCount !== undefined && (
+                      <div>
+                        <dt>Prompt evidence</dt>
+                        <dd>
+                          {flow.analysis.promptArtifactCount} of {flow.analysis.inputArtifactCount} artifacts
+                          {flow.analysis.promptTruncated ? ' · bounded' : ' · complete'}
+                        </dd>
+                      </div>
+                    )}
+                  {flow.analysis.grounding && (
                     <div>
-                      <dt>Prompt evidence</dt>
+                      <dt>Model grounding</dt>
                       <dd>
-                        {flow.analysis.promptArtifactCount} of {flow.analysis.inputArtifactCount} artifacts
-                        {flow.analysis.promptTruncated ? ' · bounded' : ' · complete'}
+                        {flow.analysis.grounding.groundedArtifactCount} of {flow.analysis.grounding.referencedArtifactCount} artifact references verified
                       </dd>
                     </div>
                   )}
-              </dl>
+                </dl>
+                {flow.analysis.grounding && (
+                  flow.analysis.grounding.rejectedArtifactCount > 0 ||
+                  flow.analysis.grounding.ungroundedStepCount > 0
+                ) && (
+                  <div className="flow-inspector-state form-error" role="alert">
+                    <AlertTriangle size={16} />
+                    Model output included {flow.analysis.grounding.rejectedArtifactCount} unverified artifact reference{flow.analysis.grounding.rejectedArtifactCount === 1 ? '' : 's'} and {flow.analysis.grounding.ungroundedStepCount} step{flow.analysis.grounding.ungroundedStepCount === 1 ? '' : 's'} without grounded targets. Review the remaining evidence before confirming this flow.
+                  </div>
+                )}
+              </>
             ) : (
               <small>Deterministic analysis; no model invocation.</small>
             )}

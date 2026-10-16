@@ -19,6 +19,7 @@ const flow: RepositoryFlowCandidate = {
   analysis: {
     provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0',
     inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true,
+    grounding: { referencedArtifactCount: 1, groundedArtifactCount: 1, rejectedArtifactCount: 0, ungroundedStepCount: 0 },
   },
 }
 
@@ -36,10 +37,32 @@ describe('FlowInspector', () => {
     expect(screen.getByRole('region', { name: 'Flow steps' })).toHaveTextContent('Dashboard opens')
     expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('fuzeinfra-litellm')
     expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('100 of 140 artifacts · bounded')
+    expect(screen.getByRole('region', { name: 'Flow provenance' })).toHaveTextContent('1 of 1 artifact references verified')
     expect(screen.getByTitle('Stable grounded-candidate identity')).toHaveTextContent('flow-1')
     expect(screen.getByText('apps/web/src/routes/login.tsx')).toBeVisible()
     screen.getByRole('button', { name: 'Close flow inspector' }).click()
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('warns reviewers when LiteLLM returned references that repository evidence could not verify', () => {
+    render(
+      <FlowInspector
+        open
+        flow={{
+          ...flow,
+          analysis: {
+            ...flow.analysis!,
+            grounding: { referencedArtifactCount: 3, groundedArtifactCount: 1, rejectedArtifactCount: 2, ungroundedStepCount: 1 },
+          },
+        }}
+        artifacts={[artifact]}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('2 unverified artifact references')
+    expect(screen.getByRole('alert')).toHaveTextContent('1 step without grounded targets')
+    expect(screen.getByRole('alert')).toHaveTextContent('before confirming this flow')
   })
 
   it('shows scoped loading and failure states without leaking a previous flow', () => {

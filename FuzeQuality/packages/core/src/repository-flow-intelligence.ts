@@ -179,6 +179,10 @@ export class LiteLlmRepositoryFlowAnalyzer {
     const allowed = new Set(safeArtifacts.map(item => item.id))
     const now = new Date().toISOString()
     return parsed.flows.flatMap(flow => {
+      const referencedIds = new Set([
+        ...flow.evidenceArtifactIds,
+        ...flow.steps.flatMap(step => step.targetIds),
+      ])
       const explicitEvidence = flow.evidenceArtifactIds.filter(id => allowed.has(id))
       const steps = flow.steps.map(step => ({ ...step, targetIds: step.targetIds.filter(id => allowed.has(id)) }))
       const groundedIds = new Set([...explicitEvidence, ...steps.flatMap(step => step.targetIds)])
@@ -213,6 +217,12 @@ export class LiteLlmRepositoryFlowAnalyzer {
           inputArtifactCount: artifacts.length,
           promptArtifactCount: safeArtifacts.length,
           promptTruncated: prompt.truncated,
+          grounding: {
+            referencedArtifactCount: referencedIds.size,
+            groundedArtifactCount: groundedIds.size,
+            rejectedArtifactCount: [...referencedIds].filter(id => !allowed.has(id)).length,
+            ungroundedStepCount: steps.filter(step => step.targetIds.length === 0).length,
+          },
         },
         createdAt: now,
       }]

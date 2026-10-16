@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.55.0
+  version: 0.56.0
   license:
     name: UNLICENSED
 servers:
@@ -1536,6 +1536,15 @@ components:
         inputArtifactCount: { type: integer, minimum: 0 }
         promptArtifactCount: { type: integer, minimum: 0 }
         promptTruncated: { type: boolean }
+        grounding:
+          type: object
+          additionalProperties: false
+          required: [referencedArtifactCount, groundedArtifactCount, rejectedArtifactCount, ungroundedStepCount]
+          properties:
+            referencedArtifactCount: { type: integer, minimum: 0 }
+            groundedArtifactCount: { type: integer, minimum: 0 }
+            rejectedArtifactCount: { type: integer, minimum: 0 }
+            ungroundedStepCount: { type: integer, minimum: 0 }
     RepositoryFlowReviewHistoryEntry:
       type: object
       additionalProperties: false

@@ -500,6 +500,13 @@ export type RepositoryFlowCandidate = {
     promptArtifactCount?: number
     /** True when artifact selection or source-byte limits omitted input evidence. */
     promptTruncated?: boolean
+    /** Review telemetry for repository artifact references returned by the model. */
+    grounding?: {
+      referencedArtifactCount: number
+      groundedArtifactCount: number
+      rejectedArtifactCount: number
+      ungroundedStepCount: number
+    }
   }
   source: 'deterministic' | 'litellm'
   createdAt: string
