@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NextFunction, Request, Response } from 'express'
+import { fromUuid } from '@izzywdev/fuzefront-identity'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 
 function responseDouble() {
@@ -44,14 +45,15 @@ describe('FQ-69 platform authorization', () => {
 
   it('asks FuzeFront to prove the portal-selected tenant before authorizing', async () => {
     process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const tenantId = '0195a8f2-1234-7abc-8def-0123456789ab'
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId: 'tenant-1' } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const request = {
       header: vi.fn((name: string) => name === 'authorization'
         ? 'Bearer caller-token'
-        : name === 'x-fuzefront-tenant-id' ? 'tenant-1' : undefined),
+        : name === 'x-fuzefront-tenant-id' ? tenantId : undefined),
     } as unknown as Request
     const response = responseDouble()
     const next = vi.fn() as NextFunction
@@ -59,20 +61,45 @@ describe('FQ-69 platform authorization', () => {
     await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
-    expect(fetchMock.mock.calls[0][0].toString()).toBe('https://security.example/api/v1/security/session?tenant=tenant-1')
-    expect(requestIdentity(request)?.tenantId).toBe('tenant-1')
+    expect(fetchMock.mock.calls[0][0].toString()).toBe(`https://security.example/api/v1/security/session?tenant=${tenantId}`)
+    expect(requestIdentity(request)?.tenantId).toBe(tenantId)
+  })
+
+  it('accepts a prefixed portal organization when Security returns its canonical UUID', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const tenantUuid = '0195a8f2-1234-7abc-8def-0123456789ab'
+    const tenantWireId = fromUuid('organization', tenantUuid)
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId: tenantUuid } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = {
+      header: vi.fn((name: string) => name === 'authorization'
+        ? 'Bearer caller-token'
+        : name === 'x-fuzefront-tenant-id' ? tenantWireId : undefined),
+    } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][0].toString()).toBe(
+      `https://security.example/api/v1/security/session?tenant=${tenantWireId}`,
+    )
+    expect(requestIdentity(request)?.tenantId).toBe(tenantUuid)
   })
 
   it('rejects a resolved tenant that does not match the active portal workspace', async () => {
     process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
-      identity: { userId: 'user-1', tenantId: 'different-tenant' },
+      identity: { userId: 'user-1', tenantId: '0195a8f2-1234-7abc-8def-0123456789ab' },
     }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const request = {
       header: vi.fn((name: string) => name === 'authorization'
         ? 'Bearer caller-token'
-        : name === 'x-fuzefront-tenant-id' ? 'selected-tenant' : undefined),
+        : name === 'x-fuzefront-tenant-id' ? '0195a8f2-1234-7abc-8def-0123456789ac' : undefined),
     } as unknown as Request
     const response = responseDouble()
     const next = vi.fn() as NextFunction

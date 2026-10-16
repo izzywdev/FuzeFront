@@ -1,10 +1,15 @@
 import type { NextFunction, Request, Response } from 'express'
 import type { Identity } from '@fuzefront/security-client'
+import { isUuid, parseId, toUuid } from '@izzywdev/fuzefront-identity'
 
 export interface PlatformIdentity extends Pick<Identity, 'userId' | 'tenantId' | 'roles'> {
   tenantId: string
 }
 const identities = new WeakMap<Request, PlatformIdentity>()
+
+function canonicalTenant(value: string): string {
+  return isUuid(value) ? value.toLowerCase() : toUuid(parseId('organization', value))
+}
 
 export function requestIdentity(request: Request) { return identities.get(request) }
 
@@ -47,7 +52,12 @@ export function requirePlatformPermission(resource: string, action: string) {
       // though Security proves membership, do not silently fall back to a
       // token's default tenant if an older or misconfigured Security service
       // ignores the requested tenant selector.
-      if (tenantHint && identity.tenantId !== tenantHint) {
+      // Security returns the storage-shaped UUID after proving membership,
+      // while the portal may carry the equivalent public `org_...` TypeID.
+      // Compare the canonical values so identifier presentation cannot turn a
+      // valid, proven organization session into a context-mismatch failure.
+      const canonicalTenantHint = tenantHint ? canonicalTenant(tenantHint) : null
+      if (canonicalTenantHint && identity.tenantId.toLowerCase() !== canonicalTenantHint) {
         return response.status(409).json({
           error: 'The resolved tenant does not match the active portal workspace',
           code: 'TENANT_CONTEXT_MISMATCH',

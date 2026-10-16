@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceProvisioningGate } from '../WorkspaceProvisioningGate'
@@ -93,6 +93,10 @@ describe('WorkspaceProvisioningGate', () => {
     localStorage.clear()
   })
 
+  beforeEach(() => {
+    vi.spyOn(api.securitySessionAPI, 'resolvePersonalTenant').mockResolvedValue(null)
+  })
+
   it('renders children immediately when a personal org is present', async () => {
     vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
       personalOrg,
@@ -153,6 +157,60 @@ describe('WorkspaceProvisioningGate', () => {
     }, { timeout: 3000 })
     expect(screen.getByRole('status')).toBeInTheDocument()
     expect(screen.queryByText('App content')).not.toBeInTheDocument()
+  })
+
+  it('proves and exposes the canonical personal tenant before mounting the shell', async () => {
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+      platformOrg,
+    ])
+    vi.mocked(api.securitySessionAPI.resolvePersonalTenant).mockResolvedValue(
+      '0195a8f2-1234-7abc-8def-0123456789ab'
+    )
+
+    function PersonalTenantProbe() {
+      const { state } = useAppContext()
+      return <div data-testid="personal-tenant">{state.personalTenantId ?? ''}</div>
+    }
+
+    renderGate(
+      <>
+        <div>App content</div>
+        <PersonalTenantProbe />
+      </>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('personal-tenant')).toHaveTextContent(
+      '0195a8f2-1234-7abc-8def-0123456789ab'
+    )
+    expect(api.securitySessionAPI.resolvePersonalTenant).toHaveBeenCalledOnce()
+  })
+
+  it('does not trust a cached ready flag until a personal tenant is proven', async () => {
+    sessionStorage.setItem('ff.workspaceReady', '1')
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+      platformOrg,
+    ])
+    let finishProof!: (tenantId: string) => void
+    vi.mocked(api.securitySessionAPI.resolvePersonalTenant).mockReturnValue(
+      new Promise(resolve => { finishProof = resolve })
+    )
+
+    renderGate()
+
+    await waitFor(() => {
+      expect(api.securitySessionAPI.resolvePersonalTenant).toHaveBeenCalledOnce()
+    })
+    expect(screen.queryByText('App content')).not.toBeInTheDocument()
+    expect(screen.getByText('Loading your workspace…')).toBeInTheDocument()
+
+    await act(async () => finishProof('0195a8f2-1234-7abc-8def-0123456789ab'))
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
   })
 
   it('unblocks when a real membership arrives on a subsequent poll', async () => {

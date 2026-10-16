@@ -8,6 +8,7 @@ COPY FuzeQuality/package.json FuzeQuality/.npmrc ./
 # builds while keeping the production bundle on the published package APIs.
 COPY design-system /workspace/design-system
 COPY packages/security /workspace/packages/security
+COPY packages/identity /workspace/packages/identity
 COPY packages/onboarding-kit /workspace/packages/onboarding-kit
 RUN npm install --ignore-scripts --no-audit --no-fund
 # The checked-in design system is intentionally consumed from its repository

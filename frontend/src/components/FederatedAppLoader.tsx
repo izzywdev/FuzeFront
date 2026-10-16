@@ -57,9 +57,9 @@ const LoadingSpinner = () => (
 export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   const { apps, loading: appsLoading, getBySlug } = useAppRegistry()
   const { user } = useCurrentUser()
-  const { organizations, activeOrganizationId } = useOrganizations()
+  const { organizations, activeOrganizationId, personalTenantId } = useOrganizations()
   const personalOrganization = organizations.find(item => item.type === 'personal')
-  const tenantId = activeOrganizationId ?? personalOrganization?.id ?? null
+  const tenantId = activeOrganizationId ?? personalTenantId ?? personalOrganization?.id ?? null
   const [FederatedComponent, setFederatedComponent] =
     useState<React.ComponentType<{ getToken?: () => string | null }> | null>(null)
   const [loading, setLoading] = useState(true)

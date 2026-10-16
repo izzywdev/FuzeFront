@@ -145,6 +145,8 @@ interface AppState {
   organizations: Organization[]
   /** The currently active organization id (Plan G will use this for workspace switching). */
   activeOrganizationId: string | null
+  /** Canonical Security tenant backing the first-class Personal context. */
+  personalTenantId: string | null
 }
 
 interface AppAction {
@@ -158,6 +160,7 @@ interface AppAction {
     | 'SET_MENU_ITEMS'
     | 'SET_ORGANIZATIONS'
     | 'SET_ACTIVE_ORGANIZATION'
+    | 'SET_PERSONAL_TENANT'
   payload: any
 }
 
@@ -196,6 +199,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_ACTIVE_ORGANIZATION':
       persistActiveOrganizationId(action.payload)
       return { ...state, activeOrganizationId: action.payload }
+    case 'SET_PERSONAL_TENANT':
+      return { ...state, personalTenantId: action.payload }
     default:
       return state
   }
@@ -213,6 +218,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Hydrate the previously-selected org so a full-page reload keeps billing
     // pointed at the org the user is actually viewing.
     activeOrganizationId: getPersistedActiveOrganizationId(),
+    personalTenantId: null,
   })
 
   return (
@@ -275,6 +281,7 @@ export function useOrganizations() {
     organizations: state.organizations,
     activeOrganizationId: state.activeOrganizationId,
     activeOrganization,
+    personalTenantId: state.personalTenantId,
     setActiveOrganization: (id: string | null) =>
       dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: id }),
   }

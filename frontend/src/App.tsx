@@ -215,7 +215,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     // Federated products need that canonical tenant just as they need an
     // explicitly selected organization.
     const personalOrg = state.organizations.find(o => o.type === 'personal')
-    const tenantId = activeOrg?.id ?? personalOrg?.id ?? null
+    const tenantId = activeOrg?.id ?? state.personalTenantId ?? personalOrg?.id ?? null
     bridge.setContext({
       user: state.user
         ? {
@@ -234,7 +234,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         : null,
       isPlatformMode: true,
     })
-  }, [state.user, state.apps, state.activeApp, state.activeOrganizationId, state.organizations])
+  }, [state.user, state.apps, state.activeApp, state.activeOrganizationId, state.organizations, state.personalTenantId])
 
   if (isLoading) {
     return (
