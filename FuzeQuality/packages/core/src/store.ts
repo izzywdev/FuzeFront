@@ -122,6 +122,23 @@ export function testExecutionOccurredAt(execution: TestExecution) {
   return execution.completedAt ?? execution.startedAt ?? '1970-01-01T00:00:00.000Z'
 }
 
+const testExecutionCreatedAt = new WeakMap<TestExecution, string>()
+
+function withTestExecutionCreatedAt(execution: TestExecution, createdAt: string) {
+  testExecutionCreatedAt.set(execution, createdAt)
+  return execution
+}
+
+/** Immutable ingestion timestamp used only to continue execution history pages. */
+export function testExecutionCursorCreatedAt(execution: TestExecution) {
+  return testExecutionCreatedAt.get(execution) ?? testExecutionOccurredAt(execution)
+}
+
+function testExecutionCursorCreatedAtMillis(execution: TestExecution) {
+  const createdAt = Date.parse(testExecutionCursorCreatedAt(execution))
+  return Number.isFinite(createdAt) ? createdAt : 0
+}
+
 function testExecutionOccurredAtMillis(execution: TestExecution) {
   const occurredAt = Date.parse(testExecutionOccurredAt(execution))
   return Number.isFinite(occurredAt) ? occurredAt : 0
@@ -519,8 +536,8 @@ export class MemoryCatalogStore implements CatalogStore {
     const snapshot = this.executions
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
     const items = filterTestExecutions(snapshot, query, snapshot)
-      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
-      .filter(item => !query.after || testExecutionOccurredAtMillis(item) < after! || (testExecutionOccurredAtMillis(item) === after && item.id < query.after.id))
+      .sort((left, right) => testExecutionCursorCreatedAtMillis(right) - testExecutionCursorCreatedAtMillis(left) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || testExecutionCursorCreatedAtMillis(item) < after! || (testExecutionCursorCreatedAtMillis(item) === after && item.id < query.after.id))
     return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
@@ -625,8 +642,15 @@ export class MemoryCatalogStore implements CatalogStore {
       this.executions[index].status !== 'running' &&
       execution.status !== this.executions[index].status
     ) return
-    if (index >= 0) this.executions[index] = mergeTestExecutionEvidence(this.executions[index], execution)
-    else this.executions.push(execution)
+    if (index >= 0) {
+      const existing = this.executions[index]
+      this.executions[index] = withTestExecutionCreatedAt(
+        mergeTestExecutionEvidence(existing, execution),
+        testExecutionCursorCreatedAt(existing),
+      )
+    } else {
+      this.executions.push(withTestExecutionCreatedAt(execution, new Date().toISOString()))
+    }
     this.executionVersions.push({
       execution: structuredClone(this.executions[index >= 0 ? index : this.executions.length - 1]),
       versionedAt: Date.now(),
@@ -1352,7 +1376,7 @@ export class PostgresCatalogStore implements CatalogStore {
          ))
          AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) >= $11)
          AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $12)
-         AND ($13::timestamptz IS NULL OR (COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz),executions.id) < ($13::timestamptz,$14::text))
+         AND ($13::timestamptz IS NULL OR (executions.created_at,executions.id) < ($13::timestamptz,$14::text))
          AND ($16::text IS NULL OR executions.external_run_id=$16)
          AND ($17::text IS NULL OR COALESCE(executions.policy_artifact_ids,'[]'::jsonb) ? $17 OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
@@ -1395,11 +1419,14 @@ export class PostgresCatalogStore implements CatalogStore {
            WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
          ))
          AND ($23::text IS NULL OR executions.branch=$23)
-       ORDER BY COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) DESC,executions.id DESC
+       ORDER BY executions.created_at DESC,executions.id DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null],
     )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
+    return result.rows.map(row => withTestExecutionCreatedAt(
+      { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined },
+      row.created_at.toISOString(),
+    ))
   }
 
   async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]> {

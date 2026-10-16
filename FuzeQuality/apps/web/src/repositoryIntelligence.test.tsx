@@ -1527,6 +1527,33 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
   })
 
+  it('resolves exact evidence for current flows outside the artifact first page', async () => {
+    mockEvidenceApis()
+    const exactArtifact = { ...storyArtifact, id: 'artifact:repo-1:story-current-exact' }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([])
+    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [exactArtifact] })
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([{
+      ...candidate,
+      revision: repository.lastScanRevision!,
+      evidence: [exactArtifact.id],
+    }])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [exactArtifact.id]))
+    vi.mocked(api.qualityArtifactsByIds).mockClear()
+
+    fireEvent.change(screen.getByLabelText('Analysis revision'), {
+      target: { value: 'current' },
+    })
+    await screen.findByText(candidate.title)
+    fireEvent.click(await screen.findByText('Source evidence'))
+
+    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [exactArtifact.id]))
+    expect(await screen.findByText('story · src/Checkout.stories.tsx')).toBeVisible()
+    expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
+  })
+
   it('renders repository evidence classes supplied to reviewed flow analysis', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([

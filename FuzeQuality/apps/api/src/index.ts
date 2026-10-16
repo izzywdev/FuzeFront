@@ -25,7 +25,7 @@ import {
   performanceWorkflowTarget,
   relayOutboxBatch,
   repositoryCatalogStatus,
-  testExecutionOccurredAt,
+  testExecutionCursorCreatedAt,
   testSuiteDispatchRevision,
 } from '@fuzequality/core'
 import { scanRepository } from '@fuzequality/scanner'
@@ -771,7 +771,7 @@ app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (reque
   })
   const cursorItems = executions.map(execution => ({
     ...execution,
-    createdAt: testExecutionOccurredAt(execution),
+    createdAt: testExecutionCursorCreatedAt(execution),
   }))
   const page = historyPage(cursorItems, limit)
   response.json({
@@ -796,7 +796,7 @@ app.get('/api/v1/repositories/:id/test-executions/attempts', mayReadCatalog, asy
   })
   const cursorItems = attempts.map(execution => ({
     ...execution,
-    createdAt: testExecutionOccurredAt(execution),
+    createdAt: testExecutionCursorCreatedAt(execution),
   }))
   const page = historyPage(cursorItems, limit)
   response.json({

@@ -4075,23 +4075,27 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   ])
   useEffect(() => {
     let active = true
-    if (!flowResultsAreCurrent || flowRevisionScope !== 'all') {
+    if (!flowResultsAreCurrent) {
       setFlowEvidenceArtifacts([])
       setOmittedFlowEvidenceRevisions(0)
       return () => { active = false }
     }
-    const selection = historicalFlowEvidenceSelection(
-      flowCandidates,
-      data.repositories,
-    )
+    const selection = flowRevisionScope === 'all'
+      ? historicalFlowEvidenceSelection(flowCandidates, data.repositories)
+      : { selected: [], omitted: 0 }
     setOmittedFlowEvidenceRevisions(selection.omitted)
+    setFlowEvidenceArtifacts([])
+    const currentRevisions = new Map(
+      data.repositories.map(repository => [repository.id, repository.lastScanRevision])
+    )
     const selectedRevisions = new Set(
       selection.selected.map(({ repositoryId, revision }) => `${repositoryId}\u0000${revision}`)
     )
     const evidenceIds = new Map<string, Set<string>>()
     const loadedArtifactIds = new Set(artifacts.map(artifact => artifact.id))
     flowCandidates.forEach(candidate => {
-      if (!selectedRevisions.has(`${candidate.repositoryId}\u0000${candidate.revision}`)) return
+      const isCurrent = candidate.revision === currentRevisions.get(candidate.repositoryId)
+      if (!isCurrent && !selectedRevisions.has(`${candidate.repositoryId}\u0000${candidate.revision}`)) return
       const ids = evidenceIds.get(candidate.repositoryId) ?? new Set<string>()
       const referencedIds = flowArtifactTargetIds(candidate, loadedArtifactIds)
       referencedIds.forEach(id => ids.add(id))

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { MemoryCatalogStore, PostgresCatalogStore } from './store'
+import { MemoryCatalogStore, PostgresCatalogStore, testExecutionCursorCreatedAt } from './store'
 
 describe('test execution evidence', () => {
   it('keeps execution evidence isolated to the repository tenant', async () => {
@@ -119,8 +119,9 @@ describe('test execution evidence', () => {
       expect.objectContaining({ id: 'run-c' }),
       expect.objectContaining({ id: 'run-b' }),
     ])
+    const firstPage = await store.testExecutions('repo-1', 'org-1', { limit: 2 })
     await expect(store.testExecutions('repo-1', 'org-1', {
-      after: { createdAt: base.completedAt, id: 'run-b' },
+      after: { createdAt: testExecutionCursorCreatedAt(firstPage[1]), id: firstPage[1].id },
       limit: 2,
     })).resolves.toEqual([expect.objectContaining({ id: 'run-a' })])
   })
@@ -138,9 +139,35 @@ describe('test execution evidence', () => {
       expect.objectContaining({ id: 'run-b' }),
       expect.objectContaining({ id: 'run-a' }),
     ])
+    const filtered = await store.testExecutions('repo-1', 'org-1', {
+      until: '2026-01-01T00:01:00.000Z',
+    })
     await expect(store.testExecutions('repo-1', 'org-1', {
-      after: { createdAt: '2026-01-01T00:01:00.000Z', id: 'run-b' },
+      after: { createdAt: testExecutionCursorCreatedAt(filtered[0]), id: filtered[0].id },
+      until: '2026-01-01T00:01:00.000Z',
     })).resolves.toEqual([expect.objectContaining({ id: 'run-a' })])
+  })
+
+  it('does not skip a running execution that completes between immutable history pages', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = new MemoryCatalogStore()
+      const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, revision: 'abc', kind: 'integration' as const, name: 'Integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+      vi.setSystemTime('2026-01-01T00:00:00.000Z')
+      await store.saveTestExecution({ id: 'running', ...base, externalRunId: 'running', attempt: 1, status: 'running', startedAt: '2026-01-01T00:00:00.000Z' })
+      vi.setSystemTime('2026-01-01T00:01:00.000Z')
+      await store.saveTestExecution({ id: 'page-leader', ...base, externalRunId: 'leader', attempt: 1, status: 'passed', completedAt: '2026-01-01T00:01:00.000Z' })
+
+      const firstPage = await store.testExecutions('repo-1', 'org-1', { limit: 1 })
+      const cursor = { createdAt: testExecutionCursorCreatedAt(firstPage[0]), id: firstPage[0].id }
+      await store.saveTestExecution({ id: 'running-update', ...base, externalRunId: 'running', attempt: 1, status: 'passed', startedAt: '2026-01-01T00:00:00.000Z', completedAt: '2026-01-01T00:02:00.000Z' })
+
+      await expect(store.testExecutions('repo-1', 'org-1', { after: cursor, limit: 1 })).resolves.toEqual([
+        expect.objectContaining({ id: 'running', status: 'passed', completedAt: '2026-01-01T00:02:00.000Z' }),
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('pushes execution filters and continuation into the tenant-scoped Postgres query', async () => {
@@ -173,7 +200,8 @@ describe('test execution evidence', () => {
 
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain('WHERE executions.repository_id=$1 AND executions.tenant_id=$2')
-    expect(String(sql)).toContain("COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz),executions.id")
+    expect(String(sql)).toContain('(executions.created_at,executions.id) <')
+    expect(String(sql)).toContain('ORDER BY executions.created_at DESC,executions.id DESC')
     expect(String(sql)).toContain("$8='recovered'")
     expect(String(sql)).toContain('EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9')
     expect(String(sql)).toContain('EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 <= $10')
