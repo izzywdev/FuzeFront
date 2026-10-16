@@ -1409,4 +1409,17 @@ describe('GET /session/workspaces', () => {
       .expect(401)
     expect(listSessionWorkspaces).not.toHaveBeenCalled()
   })
+
+  it('keeps an authenticated workspace lookup retryable when storage is unavailable', async () => {
+    ;(listSessionWorkspaces as jest.Mock).mockRejectedValue(new Error('private SQL connection failure'))
+
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/session/workspaces')
+      .set('Authorization', 'Bearer tok')
+      .expect(503)
+
+    expect(res.body).toEqual({ error: 'Workspace discovery unavailable' })
+    expect(res.text).not.toContain('private SQL')
+    expect(listSessionWorkspaces).toHaveBeenCalledWith('u1')
+  })
 })

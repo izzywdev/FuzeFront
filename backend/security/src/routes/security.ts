@@ -337,7 +337,12 @@ router.get('/session/workspaces', async (req: Request, res: Response) => {
   if (!token) return
   try {
     const { identity } = await getIdentityProvider().getUserInfo(token)
-    const workspaces = await listSessionWorkspaces(identity.userId)
+    let workspaces
+    try {
+      workspaces = await listSessionWorkspaces(identity.userId)
+    } catch {
+      return void res.status(503).json({ error: 'Workspace discovery unavailable' })
+    }
     res.setHeader('Cache-Control', 'no-store')
     res.status(200).json({ workspaces })
   } catch (err) {

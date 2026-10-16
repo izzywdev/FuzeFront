@@ -125,6 +125,37 @@ describe('standalone FuzeFront authentication', () => {
     expect(readStandaloneSession()).toBeNull()
   })
 
+  it('retries a workspace discovery outage without resubmitting credentials', async () => {
+    const fetcher = vi.fn()
+      .mockImplementationOnce(() => response({ status: 'authenticated', token: 'session-token' }))
+      .mockImplementationOnce(() => response({ identity: { tenantId: null } }))
+      .mockImplementationOnce(() => response({ error: 'Workspace discovery unavailable' }, 503))
+      .mockImplementationOnce(() => response({ identity: { tenantId: null } }))
+      .mockImplementationOnce(() => response({
+        workspaces: [{ id: 'personal-org-1', name: 'Personal', type: 'personal' }],
+      }))
+      .mockImplementationOnce(() => response({ identity: { tenantId: 'personal-org-1' } }))
+
+    render(
+      <StandaloneAuthBoundary fetcher={fetcher as typeof fetch}>
+        {session => <p>Authenticated {session.tenantId}</p>}
+      </StandaloneAuthBoundary>,
+    )
+
+    fireEvent.change(await screen.findByLabelText('Email'), { target: { value: 'owner@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in securely' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Workspace discovery unavailable')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry workspace discovery' }))
+
+    expect(await screen.findByText('Authenticated personal-org-1')).toBeVisible()
+    expect(fetcher.mock.calls.filter(
+      ([url, init]) => url === '/api/v1/security/session' && init?.method === 'POST'
+    )).toHaveLength(1)
+    expect(readStandaloneSession()).toEqual({ token: 'session-token', tenantId: 'personal-org-1' })
+  })
+
   it('discovers and proves the only active workspace after Authentik sign-in', async () => {
     const fetcher = vi.fn()
       .mockImplementationOnce(() => response({ status: 'authenticated', token: 'session-token' }))

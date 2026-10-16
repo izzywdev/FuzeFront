@@ -64,7 +64,7 @@ type SessionResult = AuthenticatedSessionResponse | MfaRequiredResponse
 type StandaloneSignInResult = StandaloneSession | StandaloneMfaChallenge | StandaloneWorkspaceSelection
 
 export class StandaloneAuthenticationError extends Error {
-  constructor(message: string, readonly code?: string) {
+  constructor(message: string, readonly code?: string, readonly retryToken?: string) {
     super(message)
     this.name = 'StandaloneAuthenticationError'
   }
@@ -126,7 +126,11 @@ async function availableWorkspaces(token: string, fetcher: typeof fetch): Promis
   if (!response.ok) {
     throw new StandaloneAuthenticationError(
       errorMessage(body, 'Your FuzeFront workspaces could not be loaded.'),
-      response.status === 401 ? 'SESSION_EXPIRED' : 'WORKSPACES_UNAVAILABLE',
+      response.status === 401
+        ? 'SESSION_EXPIRED'
+        : response.status === 503
+          ? 'WORKSPACES_UNAVAILABLE'
+          : 'WORKSPACES_FAILED',
     )
   }
   return Array.isArray(body?.workspaces) ? body.workspaces : []
@@ -146,7 +150,15 @@ async function canonicalSession(
     )
   }
 
-  const workspaces = await availableWorkspaces(token, fetcher)
+  let workspaces: StandaloneWorkspace[]
+  try {
+    workspaces = await availableWorkspaces(token, fetcher)
+  } catch (error) {
+    if (error instanceof StandaloneAuthenticationError && error.code === 'WORKSPACES_UNAVAILABLE') {
+      throw new StandaloneAuthenticationError(error.message, error.code, token)
+    }
+    throw error
+  }
   if (workspaces.length === 1) return canonicalSession(token, fetcher, workspaces[0].id)
   if (workspaces.length > 1) return { status: 'workspace_required', token, workspaces }
   throw new StandaloneAuthenticationError(
@@ -269,6 +281,7 @@ export function StandaloneAuthBoundary({
   const [password, setPassword] = useState('')
   const [mfa, setMfa] = useState<StandaloneMfaChallenge | null>(null)
   const [workspaceSelection, setWorkspaceSelection] = useState<StandaloneWorkspaceSelection | null>(null)
+  const [workspaceRetryToken, setWorkspaceRetryToken] = useState<string>()
   const [factorId, setFactorId] = useState('')
   const [code, setCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -306,6 +319,7 @@ export function StandaloneAuthBoundary({
     setPassword('')
     setMfa(null)
     setWorkspaceSelection(null)
+    setWorkspaceRetryToken(undefined)
     setFactorId('')
     setCode('')
     setError(undefined)
@@ -315,6 +329,7 @@ export function StandaloneAuthBoundary({
     event.preventDefault()
     setSubmitting(true)
     setError(undefined)
+    setWorkspaceRetryToken(undefined)
     try {
       const result = await signInStandalone(email, password, fetcher)
       if ('status' in result && result.status === 'mfa_required') {
@@ -332,11 +347,39 @@ export function StandaloneAuthBoundary({
         setPassword('')
       }
     } catch (value) {
+      if (value instanceof StandaloneAuthenticationError && value.retryToken) {
+        setWorkspaceRetryToken(value.retryToken)
+      }
       setError(value instanceof Error ? value.message : String(value))
     } finally {
       setSubmitting(false)
     }
   }, [email, fetcher, password])
+
+  const retryWorkspaceDiscovery = useCallback(async () => {
+    if (!workspaceRetryToken) return
+    setSubmitting(true)
+    setError(undefined)
+    const retryToken = workspaceRetryToken
+    setWorkspaceRetryToken(undefined)
+    try {
+      const result = await canonicalSession(retryToken, fetcher)
+      if ('status' in result) {
+        setWorkspaceSelection(result)
+      } else {
+        saveStandaloneSession(result)
+        setSession(result)
+      }
+      setWorkspaceRetryToken(undefined)
+    } catch (value) {
+      if (value instanceof StandaloneAuthenticationError && value.retryToken) {
+        setWorkspaceRetryToken(value.retryToken)
+      }
+      setError(value instanceof Error ? value.message : String(value))
+    } finally {
+      setSubmitting(false)
+    }
+  }, [fetcher, workspaceRetryToken])
 
   const chooseFactor = useCallback(async (nextFactorId: string) => {
     if (!mfa) return
@@ -461,6 +504,11 @@ export function StandaloneAuthBoundary({
             </>
           )}
           {error && <p className="form-error" role="alert">{error}</p>}
+          {workspaceRetryToken && !mfa && (
+            <QualityAction type="button" intent="quiet" disabled={submitting} onClick={() => void retryWorkspaceDiscovery()}>
+              <RefreshCw size={14} /> Retry workspace discovery
+            </QualityAction>
+          )}
           <QualityAction type="submit" disabled={submitting || (mfa ? !code : !email || !password)}>
             {submitting ? <RefreshCw className="spin" size={14} /> : <LockKeyhole size={14} />}
             {submitting ? (mfa ? 'Verifying…' : 'Signing in…') : (mfa ? 'Verify and continue' : 'Sign in securely')}
