@@ -12,6 +12,8 @@ export const TOPICS = {
   IDENTITY_ORG_DELETED: 'identity.org.deleted',
   IDENTITY_MEMBERSHIP_ADDED: 'identity.membership.added',
   IDENTITY_MEMBERSHIP_REMOVED: 'identity.membership.removed',
+  IDENTITY_INVITATION_CREATED: 'identity.invitation.created',
+  IDENTITY_INVITATION_ACCEPTED: 'identity.invitation.accepted',
   /**
    * A tenant authorization decision changed. Consumers use this to invalidate
    * derived grants/caches; it intentionally never carries a policy document.
