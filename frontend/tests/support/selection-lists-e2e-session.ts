@@ -49,6 +49,10 @@ import type { ConsoleMessage, Page } from '@playwright/test'
  *    shell. Without a backend, Vite's SPA fallback returns `index.html`; that
  *    is not an organization array and crashes the bridge effect before the
  *    selection-list route can mount.
+ * 7. `POST /v1/traces` — browser telemetry flushes route/API spans to the
+ *    same-origin OTLP endpoint. The static preview has no collector, so the
+ *    harness acknowledges this exact transport instead of hiding its 404 as
+ *    generic console noise.
  *
  * The 4 gated flows' spec files (list-management, translation-workbench,
  * access-control) call this once per test, before navigating; the picker
@@ -112,6 +116,10 @@ export async function mockAuthenticatedSelectionListsSession(page: Page): Promis
         ],
       }),
     })
+  })
+
+  await page.route('**/v1/traces', async route => {
+    await route.fulfill({ status: 200, body: '' })
   })
 
   await stubExternalFonts(page)
