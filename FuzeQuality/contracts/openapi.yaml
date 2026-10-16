@@ -1382,6 +1382,10 @@ components:
       required: [id, repositoryId, kind, title, sourcePath, summary, evidence]
       properties:
         id: { type: string, minLength: 1 }
+        logicalId:
+          type: string
+          minLength: 1
+          description: Stable repository artifact identity shared by its revision-scoped observations.
         repositoryId: { type: string, format: uuid }
         kind:
           type: string

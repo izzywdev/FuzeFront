@@ -440,7 +440,10 @@ export type ScanResult = {
 
 /** Deterministic repository evidence used as input to reviewed quality analysis. */
 export type QualityArtifact = {
+  /** Revision-scoped observation identity. */
   id: string
+  /** Stable repository identity used to aggregate the same artifact across revisions. */
+  logicalId?: string
   repositoryId: string
   kind: 'route' | 'story' | 'documentation' | 'policy' | 'gate' | 'test-plan' | 'integration-test' | 'post-production-test' | 'load-test' | 'stress-test'
   title: string

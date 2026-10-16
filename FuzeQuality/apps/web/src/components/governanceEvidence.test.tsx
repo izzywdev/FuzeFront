@@ -35,7 +35,8 @@ const evaluation: PolicyGateEvaluation = {
 }
 
 const artifacts: QualityArtifact[] = [{
-  id: 'policy-auth',
+  id: 'policy-auth-revision-abc123',
+  logicalId: 'policy-auth',
   repositoryId: evaluation.repositoryId,
   kind: 'policy',
   title: 'Authentication policy',
@@ -84,6 +85,7 @@ describe('PolicyGateEvidence', () => {
           {
             ...artifacts[0],
             id: 'policy-exception',
+            logicalId: 'policy-exception',
             title: 'Emergency authentication exception',
             sourcePath: 'governance/exceptions.md',
           },

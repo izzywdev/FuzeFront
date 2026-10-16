@@ -257,7 +257,10 @@ export function ExecutionGateEvidence({
 }) {
   const gateEvaluations = execution.gateEvaluations ?? []
   if (!gateEvaluations.length) return null
-  const artifactById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
+  const artifactById = new Map(artifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
 
   return (
     <section className="execution-gates" aria-label="Policy gate evidence">

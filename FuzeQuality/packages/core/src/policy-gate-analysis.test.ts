@@ -62,6 +62,29 @@ describe('policy gate evaluation', () => {
     ])
   })
 
+  it('links governance and execution evidence through stable logical artifact identities', () => {
+    const artifacts = [
+      { id: 'policy-observation-rev-2', logicalId: 'policy-auth', repositoryId: 'repo-1', kind: 'policy' as const, title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Authentication required.', evidence: ['authentication required'] },
+      { id: 'gate-observation-rev-2', logicalId: 'gate-auth', repositoryId: 'repo-1', kind: 'gate' as const, title: 'Authentication gate', sourcePath: '.github/workflows/auth.yml', summary: 'Authentication required check.', evidence: ['authentication check'] },
+    ]
+
+    expect(evaluatePolicyGates(repository, 'rev-2', artifacts)).toEqual([
+      expect.objectContaining({
+        policyArtifactIds: ['policy-auth'],
+        gateArtifactIds: ['gate-auth'],
+        evidencePassages: expect.arrayContaining([
+          expect.objectContaining({ artifactId: 'policy-auth' }),
+          expect.objectContaining({ artifactId: 'gate-auth' }),
+        ]),
+      }),
+    ])
+    expect(linkExecutionArtifacts('Authentication', artifacts, '.github/workflows/auth.yml')).toEqual({
+      policyArtifactIds: ['policy-auth'],
+      gateArtifactIds: ['gate-auth'],
+      policyGatePairs: [{ policyArtifactId: 'policy-auth', gateArtifactId: 'gate-auth' }],
+    })
+  })
+
   it('keeps same-title policy relationships distinct by artifact identity', () => {
     const results = evaluatePolicyGates(repository, 'abc', [
       { id: 'policy-service-a', repositoryId: 'repo-1', kind: 'policy', title: 'security.md', sourcePath: 'services/a/security.md', summary: 'Authentication required.', evidence: ['authentication required'] },

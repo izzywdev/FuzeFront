@@ -868,7 +868,10 @@ app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async 
   const artifactIds = [...new Set(items.flatMap(item => [item.policyArtifactId, item.gateArtifactId]))]
   const artifacts = new Map(
     (await store.qualityArtifactsByIds(repositoryId, tenantId, artifactIds))
-      .map(artifact => [artifact.id, artifact]),
+      .flatMap(artifact => [
+        [artifact.id, artifact] as const,
+        ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+      ]),
   )
   response.json(performancePage(items.map(item => {
     const policy = artifacts.get(item.policyArtifactId)

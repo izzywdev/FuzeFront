@@ -4486,7 +4486,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     [artifacts, governanceEvidenceArtifacts, flowEvidenceArtifacts]
   )
   const artifactsById = useMemo(
-    () => new Map(evidenceArtifacts.map(artifact => [artifact.id, artifact])),
+    () => new Map(evidenceArtifacts.flatMap(artifact => [
+      [artifact.id, artifact] as const,
+      ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+    ])),
     [evidenceArtifacts]
   )
   const filteredPolicyGateEvaluations = useMemo(

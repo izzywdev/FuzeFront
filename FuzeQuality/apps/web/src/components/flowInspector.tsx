@@ -34,7 +34,10 @@ export function FlowInspector({
   error?: string
   onClose: () => void
 }) {
-  const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
+  const artifactsById = new Map(artifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
   const evidenceIds = flow ? flowArtifactTargetIds(flow, artifactsById.keys()) : []
   const evidencePassages = flow
     ? flow.evidence.filter(evidence => !evidenceIds.includes(evidence))

@@ -23,7 +23,10 @@ export function PolicyGateEvidence({
   evaluation: PolicyGateEvaluation
   artifacts: QualityArtifact[]
 }) {
-  const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
+  const artifactsById = new Map(artifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
   const evidenceIds = [
     ...(evaluation.policyArtifactIds ?? []),
     ...(evaluation.gateArtifactIds ?? []),

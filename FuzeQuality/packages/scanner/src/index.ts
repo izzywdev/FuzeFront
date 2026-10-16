@@ -32,6 +32,12 @@ const qualityArtifactId = (
   ...identity: string[]
 ) => `artifact:${repositoryId}:${digest(revision, kind, ...identity)}`
 
+const qualityArtifactLogicalId = (
+  repositoryId: string,
+  kind: QualityArtifact['kind'],
+  ...identity: string[]
+) => `artifact:${repositoryId}:${digest(kind, ...identity)}`
+
 const fingerprint = (content: string) => createHash('sha256').update(content).digest('hex')
 
 const normalize = (path: string) => path.split(sep).join('/')
@@ -763,6 +769,7 @@ export async function scanRepository(
   const qualityArtifacts = [
     ...surfaces.filter(surface => surface.routePath).map(surface => ({
       id: qualityArtifactId(repository.id, revision, 'route', surface.sourcePath),
+      logicalId: qualityArtifactLogicalId(repository.id, 'route', surface.sourcePath),
       repositoryId: repository.id,
       kind: 'route' as const,
       title: surface.name,
@@ -772,6 +779,7 @@ export async function scanRepository(
     })),
     ...operations.map(operation => ({
       id: qualityArtifactId(repository.id, revision, 'route', operation.documentPath, operation.method, operation.path),
+      logicalId: qualityArtifactLogicalId(repository.id, 'route', operation.documentPath, operation.method, operation.path),
       repositoryId: repository.id,
       kind: 'route' as const,
       title: `${operation.method.toUpperCase()} ${operation.path}`,
@@ -781,6 +789,7 @@ export async function scanRepository(
     })),
     ...stories.map(story => ({
       id: qualityArtifactId(repository.id, revision, 'story', story.sourcePath, story.id),
+      logicalId: qualityArtifactLogicalId(repository.id, 'story', story.sourcePath, story.id),
       repositoryId: repository.id,
       kind: 'story' as const,
       title: `${story.title} / ${story.name}`,
@@ -790,6 +799,7 @@ export async function scanRepository(
     })),
     ...tests.map(test => ({
       id: qualityArtifactId(repository.id, revision, 'test-plan', test.sourcePath, test.id),
+      logicalId: qualityArtifactLogicalId(repository.id, 'test-plan', test.sourcePath, test.id),
       repositoryId: repository.id,
       kind: 'test-plan' as const,
       title: test.title,
@@ -800,6 +810,7 @@ export async function scanRepository(
     ...discoveredQuality.artifacts.map(item => ({
       ...item,
       id: qualityArtifactId(repository.id, revision, item.kind, item.sourcePath),
+      logicalId: qualityArtifactLogicalId(repository.id, item.kind, item.sourcePath),
     })),
   ]
   for (const diagnostic of diagnostics.filter(item => item.category === 'openapi')) {

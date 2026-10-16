@@ -238,7 +238,10 @@ export function executionPerformance(
   gateOutcome?: TestExecution['status'],
 ): PolicyGatePerformance[] {
   const results = new Map<string, PolicyGatePerformance>()
-  const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
+  const artifactsById = new Map(artifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
   for (const execution of executions) {
     // Rows created before explicit pair evidence existed are only safe to use
     // when there is exactly one possible pair. Never create a Cartesian product.

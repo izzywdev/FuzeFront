@@ -32,12 +32,12 @@ import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
 import { executionOutcomeTrend, executionPerformance, filterTestExecutions, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
 
-export const currentQualityArtifactsSql = `SELECT id, repository_id, kind, title, source_path, summary, evidence, execution_target
+export const currentQualityArtifactsSql = `SELECT id, logical_id, repository_id, kind, title, source_path, summary, evidence, execution_target
        FROM fuzequality.repository_quality_artifacts
        WHERE repository_id=$1
          AND revision=(SELECT last_scan_revision FROM fuzequality.repositories WHERE id=$1)
        ORDER BY kind, source_path, title, id`
-export const revisionQualityArtifactsSql = `SELECT id, repository_id, kind, title, source_path, summary, evidence, execution_target
+export const revisionQualityArtifactsSql = `SELECT id, logical_id, repository_id, kind, title, source_path, summary, evidence, execution_target
        FROM fuzequality.repository_quality_artifacts
        WHERE repository_id=$1 AND revision=$2
        ORDER BY kind, source_path, title, id`
@@ -403,10 +403,10 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[]) {
-    if (!ids.length || !await this.repository(repositoryId, tenantId)) return []
-    const selected = new Set(ids)
+    const repository = await this.repository(repositoryId, tenantId), selected = new Set(ids)
+    if (!ids.length || !repository) return []
     return this.artifacts
-      .filter(item => item.repositoryId === repositoryId && selected.has(item.id))
+      .filter(item => item.repositoryId === repositoryId && (selected.has(item.id) || (selected.has(item.logicalId ?? item.id) && item.revision === repository.lastScanRevision)))
       .map(({ revision: _revision, ...item }) => item)
   }
 
@@ -1148,7 +1148,7 @@ export class PostgresCatalogStore implements CatalogStore {
     if (!await this.repository(repositoryId, tenantId)) return []
     const result = query
       ? await this.pool.query(
-          `SELECT id, repository_id, kind, title, source_path, summary, evidence, execution_target
+          `SELECT id, logical_id, repository_id, kind, title, source_path, summary, evidence, execution_target
            FROM fuzequality.repository_quality_artifacts
            WHERE repository_id=$1
              AND revision=${revision ? '$2' : '(SELECT last_scan_revision FROM fuzequality.repositories WHERE id=$1)'}
@@ -1162,20 +1162,27 @@ export class PostgresCatalogStore implements CatalogStore {
       : revision
         ? await this.pool.query(revisionQualityArtifactsSql, [repositoryId, revision])
         : await this.pool.query(currentQualityArtifactsSql, [repositoryId])
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
+    return result.rows.map(row => ({ id: row.id, logicalId: row.logical_id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
   }
 
   async qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[]): Promise<QualityArtifact[]> {
     if (!ids.length) return []
     const result = await this.pool.query(
-      `SELECT artifact.id,artifact.repository_id,artifact.kind,artifact.title,artifact.source_path,artifact.summary,artifact.evidence,artifact.execution_target
+      `WITH requested(id) AS (SELECT unnest($3::text[]))
+       SELECT DISTINCT ON (requested.id)
+              artifact.id,artifact.logical_id,artifact.repository_id,artifact.kind,artifact.title,artifact.source_path,artifact.summary,artifact.evidence,artifact.execution_target
        FROM fuzequality.repository_quality_artifacts AS artifact
        JOIN fuzequality.repositories AS repository ON repository.id=artifact.repository_id
-       WHERE artifact.repository_id=$1 AND repository.tenant_id=$2 AND artifact.id=ANY($3::text[])
-       ORDER BY artifact.id`,
+       JOIN requested ON artifact.id=requested.id OR artifact.logical_id=requested.id
+       WHERE artifact.repository_id=$1 AND repository.tenant_id=$2
+       ORDER BY requested.id,
+                (artifact.id=requested.id) DESC,
+                (artifact.revision=repository.last_scan_revision) DESC,
+                artifact.discovered_at DESC,
+                artifact.id DESC`,
       [repositoryId, tenantId, ids],
     )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
+    return result.rows.map(row => ({ id: row.id, logicalId: row.logical_id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
   }
 
   async repositoryFlowCandidates(repositoryId: string, tenantId: string, query: RepositoryFlowCandidateQuery = {}): Promise<RepositoryFlowCandidate[]> {
@@ -2166,10 +2173,10 @@ export class PostgresCatalogStore implements CatalogStore {
       for (const item of result.diagnostics) await client.query(`INSERT INTO fuzequality.scan_diagnostics (repository_id,revision,source_path,category,severity,code,message) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [result.repository.id,result.revision,item.sourcePath,item.category,item.severity,item.code,item.message])
       await client.query('DELETE FROM fuzequality.repository_quality_artifacts WHERE repository_id=$1 AND revision=$2', [result.repository.id, result.revision])
       for (const item of result.qualityArtifacts ?? []) await client.query(
-        `INSERT INTO fuzequality.repository_quality_artifacts (id,repository_id,revision,kind,title,source_path,summary,evidence,execution_target)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,execution_target=EXCLUDED.execution_target,discovered_at=now()`,
-        [item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence), item.execution ? JSON.stringify(item.execution) : null],
+        `INSERT INTO fuzequality.repository_quality_artifacts (id,logical_id,repository_id,revision,kind,title,source_path,summary,evidence,execution_target)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (id) DO UPDATE SET logical_id=EXCLUDED.logical_id,revision=EXCLUDED.revision,kind=EXCLUDED.kind,title=EXCLUDED.title,source_path=EXCLUDED.source_path,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,execution_target=EXCLUDED.execution_target,discovered_at=now()`,
+        [item.id, item.logicalId ?? item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence), item.execution ? JSON.stringify(item.execution) : null],
       )
       await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,last_scan_failure=NULL,last_analysis=$5,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails),JSON.stringify({ revision: result.revision, status: 'queued' })])
       await client.query('INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',

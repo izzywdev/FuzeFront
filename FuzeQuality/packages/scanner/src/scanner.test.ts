@@ -223,6 +223,8 @@ describe('repository scanner', () => {
     )
     const originalIds = new Set(result.qualityArtifacts?.map(item => item.id))
     expect(rescanned.qualityArtifacts?.every(item => !originalIds.has(item.id))).toBe(true)
+    const originalLogicalIds = new Set(result.qualityArtifacts?.map(item => item.logicalId))
+    expect(rescanned.qualityArtifacts?.every(item => originalLogicalIds.has(item.logicalId))).toBe(true)
   })
 
   it('keeps repeated test titles as distinct repository evidence', async () => {
