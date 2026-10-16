@@ -44,6 +44,7 @@ export function latestPerformanceExecution(
   artifact: QualityArtifact,
   executions: TestExecution[],
   branch?: string,
+  headRepository?: string,
 ): TestExecution | undefined {
   const executionKind = artifactWorkflowExecutionKind(artifact)
   if (executionKind !== 'load' && executionKind !== 'stress') return undefined
@@ -51,6 +52,7 @@ export function latestPerformanceExecution(
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
       (!branch || execution.branch === branch) &&
+      (!headRepository || execution.provider !== 'github-actions' || execution.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
       execution.kind === executionKind &&
       execution.workflowPath === artifact.sourcePath
     )
@@ -68,12 +70,14 @@ export function latestPostProductionExecution(
   artifact: QualityArtifact,
   executions: TestExecution[],
   branch?: string,
+  headRepository?: string,
 ): TestExecution | undefined {
   if (artifact.kind !== 'post-production-test') return undefined
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
       (!branch || execution.branch === branch) &&
+      (!headRepository || execution.provider !== 'github-actions' || execution.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
       execution.kind === 'post-production' &&
       execution.workflowPath === artifact.sourcePath
     )
@@ -91,12 +95,14 @@ export function latestIntegrationExecution(
   artifact: QualityArtifact,
   executions: TestExecution[],
   branch?: string,
+  headRepository?: string,
 ): TestExecution | undefined {
   if (artifact.kind !== 'integration-test') return undefined
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
       (!branch || execution.branch === branch) &&
+      (!headRepository || execution.provider !== 'github-actions' || execution.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
       execution.kind === 'integration' &&
       execution.workflowPath === artifact.sourcePath
     )
@@ -150,6 +156,7 @@ export function ExecutionEvidenceMetadata({
     execution.externalRunId === undefined &&
     execution.attempt === undefined &&
     execution.branch === undefined &&
+    execution.headRepository === undefined &&
     execution.workflowPath === undefined &&
     !duration
   )
@@ -179,6 +186,12 @@ export function ExecutionEvidenceMetadata({
         <div data-field="source-branch">
           <dt>Source branch</dt>
           <dd><code>{execution.branch}</code></dd>
+        </div>
+      )}
+      {execution.headRepository !== undefined && (
+        <div data-field="head-repository">
+          <dt>Source repository</dt>
+          <dd><code>{execution.headRepository}</code></dd>
         </div>
       )}
       {execution.workflowPath !== undefined && (

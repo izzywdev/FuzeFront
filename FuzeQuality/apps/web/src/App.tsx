@@ -5085,10 +5085,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         candidate => candidate.id === item.repositoryId
                       )
                       const latestExecution = item.kind === 'integration-test'
-                        ? latestIntegrationExecution(item, integrationExecutions, repository?.defaultBranch)
+                        ? latestIntegrationExecution(item, integrationExecutions, repository?.defaultBranch, repository ? `${repository.owner}/${repository.name}` : undefined)
                         : item.kind === 'post-production-test'
-                          ? latestPostProductionExecution(item, postProductionExecutions, repository?.defaultBranch)
-                          : latestPerformanceExecution(item, performanceExecutions, repository?.defaultBranch)
+                          ? latestPostProductionExecution(item, postProductionExecutions, repository?.defaultBranch, repository ? `${repository.owner}/${repository.name}` : undefined)
+                          : latestPerformanceExecution(item, performanceExecutions, repository?.defaultBranch, repository ? `${repository.owner}/${repository.name}` : undefined)
                       const analyzedRevision = repository
                         ? analyzedSourceRevision(repository)
                         : undefined

@@ -187,6 +187,7 @@ export function mergeTestExecutionEvidence(
     ...incoming,
     id: existing.id,
     branch: incoming.branch ?? existing.branch,
+    headRepository: incoming.headRepository ?? existing.headRepository,
     workflowPath: incoming.workflowPath ?? existing.workflowPath,
     sourceUrl: incoming.sourceUrl ?? existing.sourceUrl,
     startedAt: incoming.startedAt ?? existing.startedAt,
@@ -223,9 +224,9 @@ export interface CatalogStore {
   reviewPolicyGateEvaluation(id: string, tenantId: string, review: PolicyGateReview, expectedRevision?: string): Promise<PolicyGateEvaluation | undefined>
   policyGateReviewHistory(evaluationId: string, tenantId: string, query?: ReviewHistoryQuery): Promise<PolicyGateReviewHistoryEntry[]>
   testExecutions(repositoryId: string, tenantId: string, query?: TestExecutionQuery): Promise<TestExecution[]>
-  latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]>
-  latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]>
-  latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]>
+  latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]>
+  latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]>
+  latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]>
   executionOutcomeTrend(repositoryId: string, tenantId: string, query?: ExecutionOutcomeTrendQuery): Promise<ExecutionOutcomeTrend[]>
   policyGatePerformance(repositoryId: string, tenantId: string, query?: PolicyGatePerformanceQuery): Promise<PolicyGatePerformance[]>
   saveTestExecution(execution: TestExecution): Promise<void>
@@ -541,13 +542,14 @@ export class MemoryCatalogStore implements CatalogStore {
     return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
-  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string) {
+  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string) {
     const allowed = new Set(workflowPaths)
     const latest = new Map<string, TestExecution>()
     for (const execution of this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
         item.branch === branch &&
+        (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
         (item.kind === 'load' || item.kind === 'stress') &&
         Boolean(item.workflowPath && allowed.has(item.workflowPath))
       )
@@ -557,13 +559,14 @@ export class MemoryCatalogStore implements CatalogStore {
     return [...latest.values()]
   }
 
-  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string) {
+  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string) {
     const allowed = new Set(workflowPaths)
     const latest = new Map<string, TestExecution>()
     for (const execution of this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
         item.branch === branch &&
+        (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
         item.kind === 'post-production' &&
         Boolean(item.workflowPath && allowed.has(item.workflowPath))
       )
@@ -573,13 +576,14 @@ export class MemoryCatalogStore implements CatalogStore {
     return [...latest.values()]
   }
 
-  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string) {
+  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string) {
     const allowed = new Set(workflowPaths)
     const latest = new Map<string, TestExecution>()
     for (const execution of this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
         item.branch === branch &&
+        (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
         item.kind === 'integration' &&
         Boolean(item.workflowPath && allowed.has(item.workflowPath))
       )
@@ -1424,12 +1428,12 @@ export class PostgresCatalogStore implements CatalogStore {
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null],
     )
     return result.rows.map(row => withTestExecutionCreatedAt(
-      { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined },
+      { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined },
       row.created_at.toISOString(),
     ))
   }
 
-  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]> {
+  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
     if (!workflowPaths.length) return []
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workflow_path) *
@@ -1438,13 +1442,14 @@ export class PostgresCatalogStore implements CatalogStore {
          AND kind IN ('load','stress')
          AND workflow_path=ANY($3::text[])
          AND branch=$4
+         AND (provider<>'github-actions' OR lower(head_repository)=lower($5))
        ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
-      [repositoryId, tenantId, workflowPaths, branch],
+      [repositoryId, tenantId, workflowPaths, branch, headRepository],
     )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
 
-  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]> {
+  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
     if (!workflowPaths.length) return []
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workflow_path) *
@@ -1453,13 +1458,14 @@ export class PostgresCatalogStore implements CatalogStore {
          AND kind='post-production'
          AND workflow_path=ANY($3::text[])
          AND branch=$4
+         AND (provider<>'github-actions' OR lower(head_repository)=lower($5))
        ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
-      [repositoryId, tenantId, workflowPaths, branch],
+      [repositoryId, tenantId, workflowPaths, branch, headRepository],
     )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
 
-  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string): Promise<TestExecution[]> {
+  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
     if (!workflowPaths.length) return []
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workflow_path) *
@@ -1468,10 +1474,11 @@ export class PostgresCatalogStore implements CatalogStore {
          AND kind='integration'
          AND workflow_path=ANY($3::text[])
          AND branch=$4
+         AND (provider<>'github-actions' OR lower(head_repository)=lower($5))
        ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
-      [repositoryId, tenantId, workflowPaths, branch],
+      [repositoryId, tenantId, workflowPaths, branch, headRepository],
     )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
 
   async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}): Promise<ExecutionOutcomeTrend[]> {
@@ -1738,20 +1745,20 @@ export class PostgresCatalogStore implements CatalogStore {
   async saveTestExecution(item: TestExecution): Promise<void> {
     await this.pool.query(
       `WITH upserted AS (
-       INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,kind,status,name,workflow_path,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,summary)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,branch=COALESCE(EXCLUDED.branch,fuzequality.test_executions.branch),kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,workflow_path=COALESCE(EXCLUDED.workflow_path,fuzequality.test_executions.workflow_path),source_url=COALESCE(EXCLUDED.source_url,fuzequality.test_executions.source_url),started_at=COALESCE(EXCLUDED.started_at,fuzequality.test_executions.started_at),completed_at=COALESCE(EXCLUDED.completed_at,fuzequality.test_executions.completed_at),policy_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.policy_artifact_ids)>0 THEN EXCLUDED.policy_artifact_ids ELSE fuzequality.test_executions.policy_artifact_ids END,gate_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.gate_artifact_ids)>0 THEN EXCLUDED.gate_artifact_ids ELSE fuzequality.test_executions.gate_artifact_ids END,gate_evaluations=CASE WHEN jsonb_array_length(EXCLUDED.gate_evaluations)>0 THEN EXCLUDED.gate_evaluations WHEN EXCLUDED.status<>'running' THEN (SELECT COALESCE(jsonb_agg(CASE WHEN evaluation->>'status'='running' THEN jsonb_set(evaluation,'{status}',to_jsonb(EXCLUDED.status)) ELSE evaluation END),'[]'::jsonb) FROM jsonb_array_elements(fuzequality.test_executions.gate_evaluations) AS gate(evaluation)) ELSE fuzequality.test_executions.gate_evaluations END,thresholds=CASE WHEN jsonb_array_length(EXCLUDED.thresholds)>0 THEN EXCLUDED.thresholds ELSE fuzequality.test_executions.thresholds END,evidence_links=(SELECT COALESCE(jsonb_agg(link ORDER BY ordinal),'[]'::jsonb) FROM (SELECT DISTINCT ON (link->>'kind',link->>'url') link,ordinal FROM jsonb_array_elements(fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links) WITH ORDINALITY AS evidence(link,ordinal) ORDER BY link->>'kind',link->>'url',ordinal DESC) AS unique_links),summary=CASE WHEN length(COALESCE(EXCLUDED.summary,''))>length(COALESCE(fuzequality.test_executions.summary,'')) THEN EXCLUDED.summary ELSE fuzequality.test_executions.summary END
+       INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,summary)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,branch=COALESCE(EXCLUDED.branch,fuzequality.test_executions.branch),head_repository=COALESCE(EXCLUDED.head_repository,fuzequality.test_executions.head_repository),kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,workflow_path=COALESCE(EXCLUDED.workflow_path,fuzequality.test_executions.workflow_path),source_url=COALESCE(EXCLUDED.source_url,fuzequality.test_executions.source_url),started_at=COALESCE(EXCLUDED.started_at,fuzequality.test_executions.started_at),completed_at=COALESCE(EXCLUDED.completed_at,fuzequality.test_executions.completed_at),policy_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.policy_artifact_ids)>0 THEN EXCLUDED.policy_artifact_ids ELSE fuzequality.test_executions.policy_artifact_ids END,gate_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.gate_artifact_ids)>0 THEN EXCLUDED.gate_artifact_ids ELSE fuzequality.test_executions.gate_artifact_ids END,gate_evaluations=CASE WHEN jsonb_array_length(EXCLUDED.gate_evaluations)>0 THEN EXCLUDED.gate_evaluations WHEN EXCLUDED.status<>'running' THEN (SELECT COALESCE(jsonb_agg(CASE WHEN evaluation->>'status'='running' THEN jsonb_set(evaluation,'{status}',to_jsonb(EXCLUDED.status)) ELSE evaluation END),'[]'::jsonb) FROM jsonb_array_elements(fuzequality.test_executions.gate_evaluations) AS gate(evaluation)) ELSE fuzequality.test_executions.gate_evaluations END,thresholds=CASE WHEN jsonb_array_length(EXCLUDED.thresholds)>0 THEN EXCLUDED.thresholds ELSE fuzequality.test_executions.thresholds END,evidence_links=(SELECT COALESCE(jsonb_agg(link ORDER BY ordinal),'[]'::jsonb) FROM (SELECT DISTINCT ON (link->>'kind',link->>'url') link,ordinal FROM jsonb_array_elements(fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links) WITH ORDINALITY AS evidence(link,ordinal) ORDER BY link->>'kind',link->>'url',ordinal DESC) AS unique_links),summary=CASE WHEN length(COALESCE(EXCLUDED.summary,''))>length(COALESCE(fuzequality.test_executions.summary,'')) THEN EXCLUDED.summary ELSE fuzequality.test_executions.summary END
        WHERE fuzequality.test_executions.status = 'running' OR fuzequality.test_executions.status = EXCLUDED.status
-       RETURNING id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,kind,status,name,workflow_path,
+       RETURNING id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
                  started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links
        )
        INSERT INTO fuzequality.test_execution_versions
-         (execution_id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,kind,status,name,workflow_path,
+         (execution_id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
           started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links)
-       SELECT id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,kind,status,name,workflow_path,
+       SELECT id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
               started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links
        FROM upserted`,
-      [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.branch ?? null,item.kind,item.status,item.name,item.workflowPath ?? null,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.summary ?? null],
+      [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.branch ?? null,item.headRepository ?? null,item.kind,item.status,item.name,item.workflowPath ?? null,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.summary ?? null],
     )
   }
 

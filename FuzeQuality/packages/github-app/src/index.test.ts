@@ -56,9 +56,10 @@ describe('FuzeQuality GitHub App contract', () => {
   })
 
   it('maps completed workflow runs to execution evidence with branch provenance', () => {
-    expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { id: 101, run_attempt: 2, head_branch: 'main', head_sha: 'a'.repeat(40), name: 'Post-production integration', path: '.github/workflows/post-prod.yml', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({
+    expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { id: 101, run_attempt: 2, head_branch: 'main', head_repository: { full_name: 'izzywdev/FuzeOne' }, head_sha: 'a'.repeat(40), name: 'Post-production integration', path: '.github/workflows/post-prod.yml', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({
       repositoryId: 'repo-1', provider: 'github-actions', externalRunId: '101', attempt: 2, kind: 'post-production', status: 'passed',
       branch: 'main',
+      headRepository: 'izzywdev/FuzeOne',
       workflowPath: '.github/workflows/post-prod.yml',
       evidenceLinks: [{ kind: 'report', name: 'GitHub Actions artifacts', url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101#artifacts' }],
     })])
@@ -79,6 +80,25 @@ describe('FuzeQuality GitHub App contract', () => {
     expect(executions).toEqual([expect.objectContaining({
       externalRunId: '104', branch: 'feature/checkout', revision: 'f'.repeat(40), status: 'failed',
     })])
+  })
+
+  it('retains fork provenance even when the fork branch matches the default branch name', () => {
+    const execution = webhookWorkflowExecutions('workflow_run', {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 105, run_attempt: 1, head_branch: 'main',
+        head_repository: { full_name: 'contributor/FuzeOne' },
+        head_sha: '1'.repeat(40), name: 'Integration suite',
+        path: '.github/workflows/integration.yml', status: 'completed', conclusion: 'success',
+        run_started_at: null, updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }, repositories)[0]
+
+    expect(execution).toMatchObject({
+      branch: 'main',
+      headRepository: 'contributor/FuzeOne',
+    })
   })
 
   it('classifies a generically named run from its workflow file', () => {

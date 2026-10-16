@@ -161,13 +161,40 @@ describe('ExecutionThresholdEvidence', () => {
     expect(latestIntegrationExecution(artifact, [feature, main], 'main')).toBe(main)
   })
 
+  it('keeps same-name fork branches out of reviewed repository evidence', () => {
+    const artifact: QualityArtifact = {
+      id: 'integration-workflow', repositoryId: execution.repositoryId, kind: 'integration-test',
+      title: 'Integration', sourcePath: '.github/workflows/integration.yml', summary: 'Integration tests', evidence: [],
+    }
+    const trusted = {
+      ...execution,
+      provider: 'github-actions' as const,
+      id: 'trusted-run',
+      branch: 'main',
+      headRepository: 'acme/app',
+      kind: 'integration' as const,
+      workflowPath: artifact.sourcePath,
+      completedAt: '2026-10-14T00:00:00.000Z',
+    }
+    const fork = {
+      ...trusted,
+      id: 'fork-run',
+      headRepository: 'contributor/app',
+      completedAt: '2026-10-15T00:00:00.000Z',
+    }
+
+    expect(latestIntegrationExecution(artifact, [fork, trusted], 'main', 'ACME/App')).toBe(trusted)
+  })
+
   it('renders the workflow file with the provider-owned run identity', () => {
-    render(<ExecutionEvidenceMetadata execution={execution} />)
+    render(<ExecutionEvidenceMetadata execution={{ ...execution, headRepository: 'acme/app' }} />)
 
     expect(screen.getByText('.github/workflows/load-test.yml')).toBeInTheDocument()
     expect(screen.getByText('external · load-42')).toBeInTheDocument()
     expect(screen.getByText('Source branch')).toBeInTheDocument()
     expect(screen.getByText('feature/checkout')).toBeInTheDocument()
+    expect(screen.getByText('Source repository')).toBeInTheDocument()
+    expect(screen.getByText('acme/app')).toBeInTheDocument()
     expect(screen.getByText('Suite classification')).toBeInTheDocument()
     expect(screen.getByText('load')).toBeInTheDocument()
   })

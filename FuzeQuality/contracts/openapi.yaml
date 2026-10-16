@@ -1794,6 +1794,11 @@ components:
         attempt: { type: integer, minimum: 1 }
         revision: { type: string }
         branch: { type: string, minLength: 1, maxLength: 500 }
+        headRepository:
+          type: string
+          maxLength: 255
+          pattern: '^[^/\s]+/[^/\s]+$'
+          description: GitHub workflow head repository in owner/name form, used to reject fork evidence.
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string }

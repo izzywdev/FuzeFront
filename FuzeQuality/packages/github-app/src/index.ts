@@ -45,6 +45,8 @@ export type WorkflowExecutionCommand = {
   revision: string
   /** GitHub head branch for this exact workflow run. */
   branch?: string
+  /** GitHub repository that supplied the workflow run's head revision. */
+  headRepository?: string
   kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
   status: 'passed' | 'failed' | 'cancelled' | 'running'
   name: string
@@ -89,6 +91,7 @@ const workflowRunSchema = z.object({
   workflow_run: z.object({
     id: z.number().int().positive(), run_attempt: z.number().int().positive(),
     head_branch: z.string().nullable(), head_sha: z.string().regex(/^[0-9a-f]{40}$/i), name: z.string().min(1),
+    head_repository: z.object({ full_name: z.string().min(3).max(255) }).optional(),
     status: z.enum(['queued', 'in_progress', 'completed']), conclusion: z.enum(['success', 'failure', 'cancelled', 'skipped', 'neutral', 'timed_out', 'action_required']).nullable(),
     path: z.string().trim().min(1).max(1000).optional(),
     html_url: z.string().url().optional(), run_started_at: z.string().datetime().nullable(), updated_at: z.string().datetime(),
@@ -159,6 +162,7 @@ export function webhookWorkflowExecutions(event: string, payload: unknown, repos
     attempt: run.run_attempt,
     revision: run.head_sha,
     branch: run.head_branch ?? undefined,
+    headRepository: run.head_repository?.full_name,
     kind,
     status,
     name: run.name,

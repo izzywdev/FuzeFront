@@ -11,14 +11,16 @@ describe('test execution evidence', () => {
 
   it('returns the latest load or stress execution for every reviewed workflow independently of mixed history', async () => {
     const store = new MemoryCatalogStore()
-    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', status: 'passed' as const, name: 'run', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', headRepository: 'acme/app', status: 'passed' as const, name: 'run', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
     for (let index = 0; index < 60; index++) await store.saveTestExecution({ id: `ci-${index}`, ...base, externalRunId: `ci-${index}`, kind: 'ci', completedAt: `2026-10-13T12:${String(index).padStart(2, '0')}:00.000Z` })
     await store.saveTestExecution({ id: 'load-old', ...base, externalRunId: 'load-old', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-10T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'load-new', ...base, externalRunId: 'load-new', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-11T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'load-feature', ...base, branch: 'feature/faster-load', externalRunId: 'load-feature', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-12T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'stress', ...base, externalRunId: 'stress', kind: 'stress', workflowPath: '.github/workflows/stress.yml', completedAt: '2026-10-09T00:00:00.000Z' })
 
-    await expect(store.latestPerformanceExecutions('repo-1', 'org-1', ['.github/workflows/load.yml', '.github/workflows/stress.yml'], 'main')).resolves.toEqual([
+    await store.saveTestExecution({ id: 'fork-load', ...base, headRepository: 'contributor/app', externalRunId: 'fork-load', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-14T00:00:00.000Z' })
+
+    await expect(store.latestPerformanceExecutions('repo-1', 'org-1', ['.github/workflows/load.yml', '.github/workflows/stress.yml'], 'main', 'acme/app')).resolves.toEqual([
       expect.objectContaining({ id: 'load-new' }),
       expect.objectContaining({ id: 'stress' }),
     ])
@@ -28,24 +30,25 @@ describe('test execution evidence', () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
-    await store.latestPerformanceExecutions('repo-1', 'org-1', ['.github/workflows/load.yml'], 'main')
+    await store.latestPerformanceExecutions('repo-1', 'org-1', ['.github/workflows/load.yml'], 'main', 'acme/app')
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain("kind IN ('load','stress')")
     expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
     expect(String(sql)).toContain('branch=$4')
+    expect(String(sql)).toContain("provider<>'github-actions' OR lower(head_repository)=lower($5)")
     expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
-    expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/load.yml'], 'main'])
+    expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/load.yml'], 'main', 'acme/app'])
   })
 
   it('returns the latest post-production execution for every detected workflow', async () => {
     const store = new MemoryCatalogStore()
-    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', kind: 'post-production' as const, status: 'passed' as const, name: 'post-prod', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', headRepository: 'acme/app', kind: 'post-production' as const, status: 'passed' as const, name: 'post-prod', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
     await store.saveTestExecution({ id: 'old', ...base, externalRunId: 'old', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-10T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'new', ...base, externalRunId: 'new', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-11T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'feature', ...base, branch: 'feature/post-prod', externalRunId: 'feature', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-13T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'other', ...base, externalRunId: 'other', kind: 'ci', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-12T00:00:00.000Z' })
 
-    await expect(store.latestPostProductionExecutions('repo-1', 'org-1', ['.github/workflows/post-prod.yml'], 'main'))
+    await expect(store.latestPostProductionExecutions('repo-1', 'org-1', ['.github/workflows/post-prod.yml'], 'main', 'acme/app'))
       .resolves.toEqual([expect.objectContaining({ id: 'new' })])
   })
 
@@ -53,24 +56,24 @@ describe('test execution evidence', () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
-    await store.latestPostProductionExecutions('repo-1', 'org-1', ['.github/workflows/post-prod.yml'], 'main')
+    await store.latestPostProductionExecutions('repo-1', 'org-1', ['.github/workflows/post-prod.yml'], 'main', 'acme/app')
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain("kind='post-production'")
     expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
     expect(String(sql)).toContain('branch=$4')
     expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
-    expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/post-prod.yml'], 'main'])
+    expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/post-prod.yml'], 'main', 'acme/app'])
   })
 
   it('returns the latest integration execution for every detected workflow', async () => {
     const store = new MemoryCatalogStore()
-    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', kind: 'integration' as const, status: 'passed' as const, name: 'integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', headRepository: 'acme/app', kind: 'integration' as const, status: 'passed' as const, name: 'integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
     await store.saveTestExecution({ id: 'old-integration', ...base, externalRunId: 'old', workflowPath: '.github/workflows/integration.yml', completedAt: '2026-10-10T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'new-integration', ...base, externalRunId: 'new', workflowPath: '.github/workflows/integration.yml', completedAt: '2026-10-11T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'feature-integration', ...base, branch: 'feature/integration', externalRunId: 'feature', workflowPath: '.github/workflows/integration.yml', completedAt: '2026-10-13T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'other-post-prod', ...base, externalRunId: 'other', kind: 'post-production', workflowPath: '.github/workflows/integration.yml', completedAt: '2026-10-12T00:00:00.000Z' })
 
-    await expect(store.latestIntegrationExecutions('repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main'))
+    await expect(store.latestIntegrationExecutions('repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main', 'acme/app'))
       .resolves.toEqual([expect.objectContaining({ id: 'new-integration' })])
   })
 
@@ -78,13 +81,13 @@ describe('test execution evidence', () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
-    await store.latestIntegrationExecutions('repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main')
+    await store.latestIntegrationExecutions('repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main', 'acme/app')
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain("kind='integration'")
     expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
     expect(String(sql)).toContain('branch=$4')
     expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
-    expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main'])
+    expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main', 'acme/app'])
   })
 
   it('updates a run lifecycle in place but preserves reruns without a source URL', async () => {
@@ -527,11 +530,12 @@ describe('test execution evidence', () => {
     expect(sql).toContain("DISTINCT ON (link->>'kind',link->>'url')")
     expect(sql).toContain("length(COALESCE(EXCLUDED.summary,''))")
     expect(sql).toContain('branch=COALESCE(EXCLUDED.branch')
-    expect(sql).toContain('kind,status,name,workflow_path')
-    expect(sql).toContain('kind,status,name,workflow_path,')
+    expect(sql).toContain('head_repository=COALESCE(EXCLUDED.head_repository')
+    expect(sql).toContain('head_repository,kind,status,name,workflow_path')
     expect(query.mock.calls[0][1][7]).toBe('feature/checkout')
-    expect(query.mock.calls[0][1][10]).toBe('CI')
-    expect(query.mock.calls[0][1][11]).toBe('.github/workflows/ci.yml')
+    expect(query.mock.calls[0][1][8]).toBeNull()
+    expect(query.mock.calls[0][1][11]).toBe('CI')
+    expect(query.mock.calls[0][1][12]).toBe('.github/workflows/ci.yml')
   })
 
   it('resolves a source commit to its scanner catalog revision', async () => {

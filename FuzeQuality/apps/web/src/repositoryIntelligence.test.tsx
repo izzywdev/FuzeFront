@@ -197,7 +197,7 @@ const guardedEvaluation: PolicyGateEvaluation = {
 const loadExecution: TestExecution = {
   id: 'execution-load-1', repositoryId: repository.id, tenantId: 'tenant-1',
   provider: 'github-actions', externalRunId: '12345', attempt: 1,
-  revision: 'revision-1', branch: 'main', kind: 'load', status: 'failed', name: 'Load test',
+  revision: 'revision-1', branch: 'main', headRepository: 'fuze/front', kind: 'load', status: 'failed', name: 'Load test',
   workflowPath: loadArtifact.sourcePath,
   sourceUrl: 'https://github.com/fuze/front/actions/runs/12345',
   completedAt: '2026-10-09T12:00:00.000Z',
