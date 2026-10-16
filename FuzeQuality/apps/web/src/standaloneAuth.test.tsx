@@ -49,7 +49,7 @@ describe('standalone FuzeFront authentication', () => {
   })
 
   it('restores a stored session through Security before rendering tenant data', async () => {
-    saveStandaloneSession({ token: 'stored-token', tenantId: 'stale-tenant' })
+    saveStandaloneSession({ token: 'stored-token', tenantId: 'canonical-tenant' })
     const fetcher = vi.fn(() => response({ identity: { tenantId: 'canonical-tenant' } }))
 
     render(
@@ -60,6 +60,9 @@ describe('standalone FuzeFront authentication', () => {
 
     expect(await screen.findByText('Tenant canonical-tenant')).toBeVisible()
     expect(readStandaloneSession()).toEqual({ token: 'stored-token', tenantId: 'canonical-tenant' })
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/security/session?tenant=canonical-tenant', {
+      headers: { authorization: 'Bearer stored-token' },
+    })
   })
 
   it('shows the standalone sign-in surface and persists an authenticated workspace', async () => {
@@ -106,6 +109,7 @@ describe('standalone FuzeFront authentication', () => {
     const fetcher = vi.fn()
       .mockImplementationOnce(() => response({ status: 'authenticated', token: 'session-token' }))
       .mockImplementationOnce(() => response({ identity: { tenantId: null } }))
+      .mockImplementationOnce(() => response({ workspaces: [] }))
 
     render(
       <StandaloneAuthBoundary fetcher={fetcher as typeof fetch}>
@@ -119,6 +123,58 @@ describe('standalone FuzeFront authentication', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('does not have an active personal or organization workspace')
     expect(readStandaloneSession()).toBeNull()
+  })
+
+  it('discovers and proves the only active workspace after Authentik sign-in', async () => {
+    const fetcher = vi.fn()
+      .mockImplementationOnce(() => response({ status: 'authenticated', token: 'session-token' }))
+      .mockImplementationOnce(() => response({ identity: { tenantId: null } }))
+      .mockImplementationOnce(() => response({
+        workspaces: [{ id: 'personal-org-1', name: 'Personal', type: 'personal' }],
+      }))
+      .mockImplementationOnce(() => response({ identity: { tenantId: 'personal-org-1' } }))
+
+    await expect(signInStandalone('owner@example.com', 'secret', fetcher as typeof fetch)).resolves.toEqual({
+      token: 'session-token',
+      tenantId: 'personal-org-1',
+    })
+    expect(fetcher).toHaveBeenNthCalledWith(3, '/api/v1/security/session/workspaces', {
+      headers: { authorization: 'Bearer session-token' },
+    })
+    expect(fetcher).toHaveBeenNthCalledWith(4, '/api/v1/security/session?tenant=personal-org-1', {
+      headers: { authorization: 'Bearer session-token' },
+    })
+  })
+
+  it('requires an explicit scope choice when personal and organization workspaces exist', async () => {
+    const fetcher = vi.fn()
+      .mockImplementationOnce(() => response({ status: 'authenticated', token: 'session-token' }))
+      .mockImplementationOnce(() => response({ identity: { tenantId: null } }))
+      .mockImplementationOnce(() => response({ workspaces: [
+        { id: 'personal-org-1', name: 'Personal workspace', type: 'personal' },
+        { id: 'organization-1', name: 'Acme', type: 'organization' },
+      ] }))
+      .mockImplementationOnce(() => response({ identity: { tenantId: 'organization-1' } }))
+
+    render(
+      <StandaloneAuthBoundary fetcher={fetcher as typeof fetch}>
+        {session => <p>Authenticated {session.tenantId}</p>}
+      </StandaloneAuthBoundary>,
+    )
+
+    fireEvent.change(await screen.findByLabelText('Email'), { target: { value: 'owner@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in securely' }))
+
+    expect(await screen.findByRole('group', { name: 'Available workspaces' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Personal workspace · Personal' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Acme · Organization' }))
+
+    expect(await screen.findByText('Authenticated organization-1')).toBeVisible()
+    expect(readStandaloneSession()).toEqual({ token: 'session-token', tenantId: 'organization-1' })
+    expect(fetcher).toHaveBeenLastCalledWith('/api/v1/security/session?tenant=organization-1', {
+      headers: { authorization: 'Bearer session-token' },
+    })
   })
 
   it('completes the FuzeFront MFA challenge before exposing the tenant session', async () => {

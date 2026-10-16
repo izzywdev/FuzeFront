@@ -1,4 +1,4 @@
-import { canonicalSessionTenant, proveSessionTenant } from '../services/session-tenant'
+import { canonicalSessionTenant, listSessionWorkspaces, proveSessionTenant } from '../services/session-tenant'
 /**
  * The FuzeFront Security API — AuthN surface under `/api/v1/security`.
  *
@@ -325,6 +325,21 @@ router.get('/session', async (req: Request, res: Response) => {
       return void res.status(200).json({ identity: { ...identity, tenantId: verifiedTenant }, user: toApiUser(user) })
     }
     res.status(200).json({ identity, user: toApiUser(user) })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// Active tenant choices for standalone products. Discovery alone is not tenant
+// authority: the chosen id must still pass GET /session?tenant= membership proof.
+router.get('/session/workspaces', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const { identity } = await getIdentityProvider().getUserInfo(token)
+    const workspaces = await listSessionWorkspaces(identity.userId)
+    res.setHeader('Cache-Control', 'no-store')
+    res.status(200).json({ workspaces })
   } catch (err) {
     sendError(res, err)
   }

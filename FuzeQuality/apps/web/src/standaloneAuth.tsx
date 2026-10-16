@@ -6,6 +6,7 @@ import { QualityAction } from './components/primitives'
 const TOKEN_KEY = 'fuzequality.session.token'
 const TENANT_KEY = 'fuzequality.session.tenant'
 const SESSION_ENDPOINT = '/api/v1/security/session'
+const WORKSPACES_ENDPOINT = '/api/v1/security/session/workspaces'
 
 type AuthenticatedSessionResponse = {
   status: 'authenticated'
@@ -33,6 +34,18 @@ type SessionInfoResponse = {
   identity?: { tenantId?: string | null }
 }
 
+export type StandaloneWorkspace = {
+  id: string
+  name: string
+  type: 'personal' | 'organization'
+}
+
+export type StandaloneWorkspaceSelection = {
+  status: 'workspace_required'
+  token: string
+  workspaces: StandaloneWorkspace[]
+}
+
 export type StandaloneSession = {
   token: string
   tenantId: string
@@ -48,7 +61,7 @@ export function portalTokenProvider(hostWindow: Window = window): (() => string 
 }
 
 type SessionResult = AuthenticatedSessionResponse | MfaRequiredResponse
-type StandaloneSignInResult = StandaloneSession | StandaloneMfaChallenge
+type StandaloneSignInResult = StandaloneSession | StandaloneMfaChallenge | StandaloneWorkspaceSelection
 
 export class StandaloneAuthenticationError extends Error {
   constructor(message: string, readonly code?: string) {
@@ -88,8 +101,11 @@ export function clearStandaloneSession(
   storage.removeItem(TENANT_KEY)
 }
 
-async function canonicalSession(token: string, fetcher: typeof fetch): Promise<StandaloneSession> {
-  const response = await fetcher(SESSION_ENDPOINT, {
+async function sessionTenant(token: string, fetcher: typeof fetch, tenantId?: string): Promise<string | null> {
+  const endpoint = tenantId
+    ? `${SESSION_ENDPOINT}?tenant=${encodeURIComponent(tenantId)}`
+    : SESSION_ENDPOINT
+  const response = await fetcher(endpoint, {
     headers: { authorization: `Bearer ${token}` },
   })
   const body = await response.json().catch(() => null) as SessionInfoResponse | null
@@ -99,21 +115,66 @@ async function canonicalSession(token: string, fetcher: typeof fetch): Promise<S
       response.status === 401 ? 'SESSION_EXPIRED' : 'SESSION_UNAVAILABLE',
     )
   }
-  const tenantId = body?.identity?.tenantId
-  if (!tenantId) {
+  return body?.identity?.tenantId ?? null
+}
+
+async function availableWorkspaces(token: string, fetcher: typeof fetch): Promise<StandaloneWorkspace[]> {
+  const response = await fetcher(WORKSPACES_ENDPOINT, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  const body = await response.json().catch(() => null) as { workspaces?: StandaloneWorkspace[] } | null
+  if (!response.ok) {
     throw new StandaloneAuthenticationError(
-      'Your account does not have an active personal or organization workspace.',
+      errorMessage(body, 'Your FuzeFront workspaces could not be loaded.'),
+      response.status === 401 ? 'SESSION_EXPIRED' : 'WORKSPACES_UNAVAILABLE',
+    )
+  }
+  return Array.isArray(body?.workspaces) ? body.workspaces : []
+}
+
+async function canonicalSession(
+  token: string,
+  fetcher: typeof fetch,
+  preferredTenantId?: string,
+): Promise<StandaloneSession | StandaloneWorkspaceSelection> {
+  const tenantId = await sessionTenant(token, fetcher, preferredTenantId)
+  if (tenantId) return { token, tenantId }
+  if (preferredTenantId) {
+    throw new StandaloneAuthenticationError(
+      'Your selected workspace is no longer available.',
       'TENANT_UNRESOLVED',
     )
   }
-  return { token, tenantId }
+
+  const workspaces = await availableWorkspaces(token, fetcher)
+  if (workspaces.length === 1) return canonicalSession(token, fetcher, workspaces[0].id)
+  if (workspaces.length > 1) return { status: 'workspace_required', token, workspaces }
+  throw new StandaloneAuthenticationError(
+    'Your account does not have an active personal or organization workspace.',
+    'TENANT_UNRESOLVED',
+  )
 }
 
 export async function restoreStandaloneSession(
   stored: StandaloneSession,
   fetcher: typeof fetch = fetch,
 ): Promise<StandaloneSession> {
-  return canonicalSession(stored.token, fetcher)
+  const restored = await canonicalSession(stored.token, fetcher, stored.tenantId)
+  if ('status' in restored) throw new StandaloneAuthenticationError('Your selected workspace is no longer available.', 'TENANT_UNRESOLVED')
+  return restored
+}
+
+export async function selectStandaloneWorkspace(
+  selection: StandaloneWorkspaceSelection,
+  tenantId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<StandaloneSession> {
+  if (!selection.workspaces.some(workspace => workspace.id === tenantId)) {
+    throw new StandaloneAuthenticationError('Select an available workspace.', 'TENANT_UNRESOLVED')
+  }
+  const selected = await canonicalSession(selection.token, fetcher, tenantId)
+  if ('status' in selected) throw new StandaloneAuthenticationError('The selected workspace could not be verified.', 'TENANT_UNRESOLVED')
+  return selected
 }
 
 export async function signInStandalone(
@@ -169,7 +230,7 @@ export async function verifyStandaloneMfa(
   factorId: string,
   code: string,
   fetcher: typeof fetch = fetch,
-): Promise<StandaloneSession> {
+): Promise<StandaloneSession | StandaloneWorkspaceSelection> {
   const response = await fetcher('/api/v1/security/mfa/verify', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -207,6 +268,7 @@ export function StandaloneAuthBoundary({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [mfa, setMfa] = useState<StandaloneMfaChallenge | null>(null)
+  const [workspaceSelection, setWorkspaceSelection] = useState<StandaloneWorkspaceSelection | null>(null)
   const [factorId, setFactorId] = useState('')
   const [code, setCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -243,6 +305,7 @@ export function StandaloneAuthBoundary({
     setSession(null)
     setPassword('')
     setMfa(null)
+    setWorkspaceSelection(null)
     setFactorId('')
     setCode('')
     setError(undefined)
@@ -254,11 +317,14 @@ export function StandaloneAuthBoundary({
     setError(undefined)
     try {
       const result = await signInStandalone(email, password, fetcher)
-      if ('status' in result) {
+      if ('status' in result && result.status === 'mfa_required') {
         const selectedFactor = result.factors[0].factorId
         await challengeStandaloneMfa(result.challengeId, selectedFactor, fetcher)
         setMfa(result)
         setFactorId(selectedFactor)
+        setPassword('')
+      } else if ('status' in result) {
+        setWorkspaceSelection(result)
         setPassword('')
       } else {
         saveStandaloneSession(result)
@@ -294,8 +360,12 @@ export function StandaloneAuthBoundary({
     setError(undefined)
     try {
       const authenticated = await verifyStandaloneMfa(mfa.challengeId, factorId, code, fetcher)
-      saveStandaloneSession(authenticated)
-      setSession(authenticated)
+      if ('status' in authenticated) {
+        setWorkspaceSelection(authenticated)
+      } else {
+        saveStandaloneSession(authenticated)
+        setSession(authenticated)
+      }
       setMfa(null)
       setCode('')
     } catch (value) {
@@ -305,11 +375,54 @@ export function StandaloneAuthBoundary({
     }
   }, [code, factorId, fetcher, mfa])
 
+  const chooseWorkspace = useCallback(async (tenantId: string) => {
+    if (!workspaceSelection) return
+    setSubmitting(true)
+    setError(undefined)
+    try {
+      const authenticated = await selectStandaloneWorkspace(workspaceSelection, tenantId, fetcher)
+      saveStandaloneSession(authenticated)
+      setSession(authenticated)
+      setWorkspaceSelection(null)
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value))
+    } finally {
+      setSubmitting(false)
+    }
+  }, [fetcher, workspaceSelection])
+
   const content = useMemo(() => session ? children(session, signOut) : null, [children, session, signOut])
   if (checking) {
     return <main className="standalone-auth-state" aria-label="Restoring FuzeFront session"><RefreshCw className="spin" /> Restoring secure session…</main>
   }
   if (session) return content
+
+  if (workspaceSelection) {
+    return (
+      <main className="standalone-auth-shell">
+        <section className="standalone-auth-brand" aria-labelledby="standalone-workspace-title">
+          <div className="brand standalone-auth-lockup">
+            <div className="brand-symbol" aria-hidden="true"><span /><span /><span /></div>
+            <div><strong>FuzeQuality</strong><small>Evidence control</small></div>
+          </div>
+          <div><p className="eyebrow">FuzeFront secure access</p><h1 id="standalone-workspace-title">Choose your workspace.</h1><p>Personal installations stay private. Organization installations are shared across the organization.</p></div>
+        </section>
+        <section className="standalone-auth-panel">
+          <div className="standalone-auth-form" role="group" aria-label="Available workspaces">
+            <LockKeyhole aria-hidden="true" />
+            <div><p className="eyebrow">Workspace scope</p><h2>Continue to FuzeQuality</h2></div>
+            {workspaceSelection.workspaces.map(workspace => (
+              <QualityAction key={workspace.id} type="button" disabled={submitting} onClick={() => void chooseWorkspace(workspace.id)}>
+                {workspace.name} · {workspace.type === 'personal' ? 'Personal' : 'Organization'}
+              </QualityAction>
+            ))}
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <QualityAction type="button" intent="quiet" disabled={submitting} onClick={() => { setWorkspaceSelection(null); setError(undefined) }}>Back to sign in</QualityAction>
+          </div>
+        </section>
+      </main>
+    )
+  }
 
   const activeFactor = mfa?.factors.find(factor => factor.factorId === factorId)
 
