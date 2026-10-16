@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzefront-design-system"
+version = "1.0.0"
+description = "FuzeFront Design System tokens, theme models, and terminal styling for Python microservices"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+include = ["fuzefront_design_system*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

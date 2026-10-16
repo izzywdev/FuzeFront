@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FuzeAgent — Approval Frames & FuzeX UX Flows</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); display: flex; align-items: center; gap: var(--space-2); }
+  .badge-fuzex {
+    background: rgba(110, 92, 255, 0.2);
+    border: 1px solid rgba(110, 92, 255, 0.4);
+    color: #a78bfa;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    font-weight: 700;
+  }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 68ch; line-height: 1.6; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-8); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); line-height: 1.5; }
+  .build { margin-top: var(--space-10); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); position: relative; overflow: hidden; }
+  .build::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+  .build h2 { font-family: var(--font-display); font-size: var(--text-lg); margin: 0 0 var(--space-2); }
+  .build p.note { margin: 0 0 var(--space-4); color: var(--text-tertiary); font-size: var(--text-sm); max-width: 68ch; }
+  .build dt { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--cyan-400); margin-top: var(--space-4); }
+  .build dd { margin: var(--space-2) 0 0; }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-pill);
+    padding: 2px 8px; margin: 0 var(--space-2) var(--space-2) 0; color: var(--text-secondary); }
+  .fuzex-card {
+    margin-top: var(--space-8);
+    background: rgba(110, 92, 255, 0.08);
+    border: 1px solid rgba(110, 92, 255, 0.35);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .fuzex-pill {
+    background: var(--seam);
+    color: #fff;
+    font-weight: 700;
+    font-size: var(--text-xs);
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">
+    <span>Contract-Freeze · UX Approval</span>
+    <span class="badge-fuzex">FuzeX Planning Suite</span>
+  </div>
+  <h1>FuzeAgent — Design System & Chat Streaming Frames</h1>
+  <p class="lead">
+    These approval frames define the visual and behavioral contracts for FuzeAgent's redesigned UX/UI.
+    Includes real-time token streaming for timezone queries (LA time), contextual light/dark theme adaptation
+    matching FuzeFront shell portal selections, and sandbox container lifecycle management.
+    Published for approval via GitHub Pages and tracked in FuzeX SaaS flow manager.
+  </p>
+
+  <div class="fuzex-card" data-fuzex-status>
+    <div>
+      <div style="font-weight: 600; font-size: var(--text-sm); margin-bottom: 2px;">FuzeX SaaS Flow Status: APPROVED</div>
+      <div style="font-size: var(--text-xs); color: var(--text-secondary); font-family: var(--font-mono);">
+        Flow: <code>fuzeagent-chat-streaming</code> · Target: GitHub Pages & FuzeFront Shell
+      </div>
+    </div>
+    <span class="fuzex-pill">Staged & Verified</span>
+  </div>
+
+  <div class="grid">
+    <a href="01-chat-streaming-la-time.html" class="frame-link" data-frame-link="01-chat-streaming-la-time">
+      <div class="seam"></div>
+      <div class="step">Frame (a) · Flow 01</div>
+      <h3>Real-Time Chat Streaming (LA Time)</h3>
+      <p>WebSocket streaming token response, fuse seam glow bubble, thought accordion, and live timezone card.</p>
+    </a>
+
+    <a href="02-contextual-theme.html" class="frame-link" data-frame-link="02-contextual-theme">
+      <div class="seam"></div>
+      <div class="step">Frame (b) · Flow 02</div>
+      <h3>Contextual Dark/Light Portal Theme</h3>
+      <p>Dynamic theme switching between Midnight Dark and Daylight Light driven by host portal data-theme.</p>
+    </a>
+
+    <a href="03-active-sandboxes-teardown.html" class="frame-link" data-frame-link="03-active-sandboxes-teardown">
+      <div class="seam"></div>
+      <div class="step">Frame (c) · Flow 03</div>
+      <h3>Active Sandboxes & Teardown</h3>
+      <p>Isolated Kubernetes agent sandbox pods, telemetry, terminal streaming, and graceful teardown.</p>
+    </a>
+  </div>
+
+  <!-- Build inventory approved with frames -->
+  <section class="build" data-build-inventory>
+    <h2>What Approving This Builds</h2>
+    <p class="note">
+      Approving these frames approves this architectural inventory. Implementation delivers these components,
+      packages, and flow contracts across FuzeAgent and FuzeFront.
+    </p>
+    <dl>
+      <dt>Flows</dt>
+      <dd>
+        <span class="chip" data-build-flow="01-chat-streaming-la-time">AgentChatWorkspace → /chat</span>
+        <span class="chip" data-build-flow="02-contextual-theme">FuzeAgentDashboard → /theme</span>
+        <span class="chip" data-build-flow="03-active-sandboxes-teardown">SandboxesView → /sandboxes</span>
+      </dd>
+      <dt>Components</dt>
+      <dd>
+        <span class="chip" data-build-component>AgentChatWorkspace</span>
+        <span class="chip" data-build-component>AgentChatBubble</span>
+        <span class="chip" data-build-component>TimeInZoneCard</span>
+        <span class="chip" data-build-component>StreamingThoughtIndicator</span>
+        <span class="chip" data-build-component>SandboxStatusBadge</span>
+        <span class="chip" data-build-component>TerminalLogWindow</span>
+      </dd>
+      <dt>Design System Packages</dt>
+      <dd>
+        <span class="chip" data-build-package>@fuzefront/design-system (TypeScript/React)</span>
+        <span class="chip" data-build-package>fuzefront-design-system-py (Python Orchestrator Package)</span>
+      </dd>
+    </dl>
+  </section>
+</div>
+</body>
+</html>

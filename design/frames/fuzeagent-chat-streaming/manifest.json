@@ -1,0 +1,109 @@
+{
+  "name": "FuzeAgent Chat Streaming & Fuse Seam Design System",
+  "description": "Redesign of FuzeAgent UX/UI in accordance with FuzeFront Design System tokens, inherited components, live streaming chat, and contextual portal dark/light theme switching. Managed and planned via FuzeX SaaS product workflow.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "fuzex": {
+    "project": "fuzeagent",
+    "workflow": "ux-flow-planning-and-approval",
+    "flowStatus": "approved",
+    "fuzexUrl": "https://fuzex.fuzefront.internal/flows/fuzeagent-chat-streaming",
+    "githubPagesUrl": "https://fuzefront.github.io/frames/fuzeagent-chat-streaming/"
+  },
+  "entry": "index.html",
+  "contract": {
+    "openapi": "services/orchestrator/openapi.yaml",
+    "websocket": "GET /api/ws/multi-agent",
+    "components": [
+      "AgentChatWorkspace",
+      "AgentChatBubble",
+      "TimeInZoneCard",
+      "StreamingThoughtIndicator",
+      "SandboxStatusBadge",
+      "TerminalLogWindow"
+    ],
+    "featureFlag": "fuzeagent.chat.streaming-fuse-seam"
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "01-chat-streaming-la-time",
+        "orchestrator": "AgentChatWorkspace",
+        "route": "/chat",
+        "approved": true
+      },
+      {
+        "id": "02-contextual-theme",
+        "orchestrator": "FuzeAgentDashboard",
+        "route": "/theme",
+        "approved": true
+      },
+      {
+        "id": "03-active-sandboxes-teardown",
+        "orchestrator": "SandboxesView",
+        "route": "/sandboxes",
+        "approved": true
+      }
+    ],
+    "components": [
+      "AgentChatWorkspace",
+      "AgentChatBubble",
+      "TimeInZoneCard",
+      "StreamingThoughtIndicator",
+      "SandboxStatusBadge",
+      "TerminalLogWindow"
+    ],
+    "packages": [
+      "@fuzefront/design-system",
+      "fuzefront-design-system-py"
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-chat-streaming-la-time",
+      "file": "01-chat-streaming-la-time.html",
+      "label": "(a) Real-Time Chat Streaming — LA Time",
+      "route": "/chat",
+      "flow": "01-chat-streaming-la-time",
+      "summary": "Demonstrates streaming assistant chat bubble with fuse seam glow, thought accordion, and live timezone card for Los Angeles.",
+      "acceptanceNotes": "WebSocket connection over /api/ws/multi-agent streams token chunks, displaying timezone response with live PDT clock and globe indicator.",
+      "testHooks": [
+        "[data-frame='01-chat-streaming-la-time']",
+        "[data-chat-workspace]",
+        "[data-message-role='user']",
+        "[data-message-role='assistant']",
+        "[data-time-card]",
+        "[data-action='send-prompt']"
+      ]
+    },
+    {
+      "id": "02-contextual-theme",
+      "file": "02-contextual-theme.html",
+      "label": "(b) Contextual Dark & Light Theme",
+      "route": "/theme",
+      "flow": "02-contextual-theme",
+      "summary": "Demonstrates contextual synchronization between FuzeFront portal theme and FuzeAgent inner workspace canvas.",
+      "acceptanceNotes": "Canvas dynamically reacts to data-theme attribute on documentElement and localStorage mutation, switching tokens without page refresh.",
+      "testHooks": [
+        "[data-frame='02-contextual-theme']",
+        "[data-theme-comparison]",
+        "[data-theme-card='dark']",
+        "[data-theme-card='light']"
+      ]
+    },
+    {
+      "id": "03-active-sandboxes-teardown",
+      "file": "03-active-sandboxes-teardown.html",
+      "label": "(c) Active Sandboxes & Session Teardown",
+      "route": "/sandboxes",
+      "flow": "03-active-sandboxes-teardown",
+      "summary": "Lists active Kubernetes sandbox pods and provides graceful termination action.",
+      "acceptanceNotes": "Deleting or terminating session sends HTTP DELETE /api/agents/sandbox/{id} and frees pod and PVC resources cleanly.",
+      "testHooks": [
+        "[data-frame='03-active-sandboxes-teardown']",
+        "[data-sandboxes-panel]",
+        "[data-action='terminate-sandbox']"
+      ]
+    }
+  ],
+  "stamp": "49a785a9cebccfed86d5aa529cb7de48346001e3c9eb7013c90dcebeffa9f9be"
+}
