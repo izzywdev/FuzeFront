@@ -4,6 +4,16 @@ All notable changes to this contract are documented here. This package is
 versioned independently; bump on every interface change (SemVer — the major is
 the contract-stability guarantee consumers may assert on).
 
+## 0.3.1 — legacy-hs256 refuses narrowed `kind` tokens
+
+### Fixed
+
+- `legacy-hs256` verifier accepted `fuze-org-session` / `fuze-workload` /
+  `fuze-delegation` tokens (they share `JWT_SECRET`) and, with a resolver wired,
+  hydrated the holder with a user's full roles and tenant. It now throws
+  `AuthError` `INVALID_AUDIENCE` (401) when the `kind` claim is present, before
+  the resolver runs. Matches `backend/src/middleware/auth.ts` (resolves #1518).
+
 ## 0.3.0 — Subject ABAC attribute write (`setAttributes`)
 
 ### Added

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Org invitations v2 — Invite modal</title>
+<link rel="stylesheet" href="tokens.css" />
+</head>
+<body>
+<div class="shell" data-frame="01-invite-modal">
+  <div class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" aria-hidden="true">▦</div>
+    <div class="avatar">IZ</div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Organization · Northwind</div>
+      <a class="nav-item"><span class="ico">📊</span> Overview</a>
+      <a class="nav-item active" data-nav="members"><span class="ico">👥</span> Members &amp; roles</a>
+      <a class="nav-item"><span class="ico">🧾</span> Billing</a>
+      <a class="nav-item"><span class="ico">⚙️</span> Settings</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Members &amp; roles</h1>
+      <p class="page-sub">The Invite button opens the dialog below. Dimmed behind it: the existing
+        Members &amp; roles list (<code>authz-admin</code>) this feature sits beside.</p>
+      <button class="btn btn-primary" data-action="open-invite" aria-haspopup="dialog">＋ Invite people</button>
+    </main>
+  </div>
+
+  <!-- Invite dialog -->
+  <div class="ffi-scrim">
+    <div class="ffi-modal" role="dialog" aria-modal="true" aria-labelledby="inv-title" data-panel="invite-modal">
+      <div class="ffi-modal__seam"></div>
+      <div class="ffi-modal__head">
+        <div>
+          <h2 class="ffi-modal__title" id="inv-title">Invite to Northwind</h2>
+          <p class="ffi-modal__sub">They get a link by email or WhatsApp. It expires in 7 days.</p>
+        </div>
+        <button class="ffi-modal__close" data-action="close-invite" aria-label="Close">✕</button>
+      </div>
+
+      <div class="ffi-modal__body">
+        <!-- Invitee kind -->
+        <div class="ffi-field">
+          <span class="ffi-label">Who are you inviting?</span>
+          <div class="ffi-seg" role="group" aria-label="Invitee kind" data-field="invitee-kind">
+            <button type="button" class="ffi-seg__opt" data-option="existing" data-selected="false" aria-pressed="false">
+              <span class="ico" aria-hidden="true">👤</span> Existing account-holder</button>
+            <button type="button" class="ffi-seg__opt" data-option="external" data-selected="true" aria-pressed="true">
+              <span class="ico" aria-hidden="true">✉️</span> External person</button>
+          </div>
+          <p class="ffi-hint">External sends a sign-up link. Existing finds someone who already has a FuzeFront account.</p>
+        </div>
+
+        <!-- Channel -->
+        <div class="ffi-field">
+          <span class="ffi-label">Send via</span>
+          <div class="ffi-seg" role="group" aria-label="Channel" data-field="channel">
+            <button type="button" class="ffi-seg__opt" data-option="email" data-selected="true" aria-pressed="true">
+              <span class="ico" aria-hidden="true">✉️</span> Email</button>
+            <button type="button" class="ffi-seg__opt" data-option="whatsapp" data-selected="false" aria-pressed="false">
+              <span class="ico" aria-hidden="true">💬</span> WhatsApp</button>
+          </div>
+        </div>
+
+        <!-- Address: email (channel=email) -->
+        <div class="ffi-field" data-channel-field="email">
+          <label class="ffi-label" for="inv-email">Email address<span class="req">*</span></label>
+          <input class="ffi-input" id="inv-email" type="email" inputmode="email"
+                 placeholder="jordan@acme.com" value="jordan@acme.com" data-input="invite-email" />
+        </div>
+
+        <!-- Address: WhatsApp e164 (channel=whatsapp) — hidden variant shown in States -->
+        <div class="ffi-field" data-channel-field="whatsapp" hidden>
+          <label class="ffi-label" for="inv-phone">WhatsApp number (E.164)<span class="req">*</span></label>
+          <div class="ffi-phone" data-input="invite-phone">
+            <input class="ffi-phone__cc" id="inv-cc" value="+1" aria-label="Country code" />
+            <input class="ffi-input" id="inv-phone" type="tel" inputmode="tel" placeholder="555 010 4477" />
+          </div>
+          <p class="ffi-hint">Full international format, e.g. <code>+15550104477</code>.</p>
+        </div>
+
+        <!-- Role -->
+        <div class="ffi-field">
+          <span class="ffi-label">Role<span class="req">*</span></span>
+          <div class="ffi-roles" role="radiogroup" aria-label="Role" data-field="role">
+            <label class="ffi-role" data-selected="true" data-role-option="admin">
+              <span class="ffi-role__radio" aria-hidden="true"></span>
+              <span><span class="ffi-role__name">Admin</span>
+                <span class="ffi-role__desc">Manage members, roles and settings. Cannot delete the organization.</span></span>
+            </label>
+            <label class="ffi-role" data-selected="false" data-role-option="member">
+              <span class="ffi-role__radio" aria-hidden="true"></span>
+              <span><span class="ffi-role__name">Member</span>
+                <span class="ffi-role__desc">Use the organization's apps. No access to admin settings.</span></span>
+            </label>
+            <label class="ffi-role" data-selected="false" data-role-option="viewer">
+              <span class="ffi-role__radio" aria-hidden="true"></span>
+              <span><span class="ffi-role__name">Viewer</span>
+                <span class="ffi-role__desc">Read-only access. Cannot change anything.</span></span>
+            </label>
+          </div>
+          <p class="ffi-hint">Owner is held by the organization creator and is not assignable from here.</p>
+        </div>
+
+        <!-- Member type -->
+        <div class="ffi-field">
+          <span class="ffi-label">Member type<span class="req">*</span></span>
+          <div class="ffi-seg" role="group" aria-label="Member type" data-field="member-type">
+            <button type="button" class="ffi-seg__opt" data-option="employee" data-selected="true" aria-pressed="true">
+              <span class="ico" aria-hidden="true">🏢</span> Employee</button>
+            <button type="button" class="ffi-seg__opt" data-option="customer" data-selected="false" aria-pressed="false">
+              <span class="ico" aria-hidden="true">🛍️</span> Customer</button>
+          </div>
+          <p class="ffi-hint">Employee = staff of this organization. Customer = an external relationship (tracked separately for billing &amp; access).</p>
+        </div>
+
+        <!-- Review -->
+        <div class="ffi-preview" data-panel="invite-preview" aria-live="polite">
+          <div class="ffi-preview__row"><span class="ffi-preview__k">Invite</span>
+            <span class="ffi-preview__v" data-review="address">jordan@acme.com</span>
+            <span class="ffi-chan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg> email</span></div>
+          <div class="ffi-preview__row"><span class="ffi-preview__k">As</span>
+            <span class="ffi-tag ffi-tag--admin" data-review="role"><span class="ffi-tag__dot"></span>Admin</span>
+            <span class="ffi-tag ffi-tag--employee" data-review="member-type"><span class="ffi-tag__dot"></span>Employee</span></div>
+        </div>
+      </div>
+
+      <div class="ffi-modal__foot">
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" data-action="close-invite">Cancel</button>
+        <button class="btn btn-primary" data-action="send-invite">Send invitation</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption">Frame (a) · <b>Invite modal</b> — invitee kind · channel · role · member type · POST /invitations</span>
+  <span class="links">
+    <a href="index.html" class="btn btn-ghost">Index</a>
+    <a href="02-pending-invitations.html" class="btn btn-ghost">Next: Pending →</a>
+  </span>
+</div>
+</body>
+</html>
