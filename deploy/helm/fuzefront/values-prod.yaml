@@ -99,6 +99,12 @@ backend:
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
   <<: *elasticPlacement
 
+# Cloudflare terminates public TLS before forwarding to the cluster's
+# HTTP-only ingress, so provider-facing OAuth callbacks must not infer their
+# scheme from ingress.tls.enabled.
+connectors:
+  publicBaseUrl: "https://app.fuzefront.com"
+
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
@@ -664,9 +670,13 @@ billingService:
   # Security-API-backed sync has run clean in prod for >= 2 sprints, delete the
   # flag and the dead OFF-path rather than leaving a permanent toggle.
   authz:
-    enabled: true
+    # The S2S bootstrap PreSync hook is currently failing before it can publish
+    # its credentials. Keep this feature off until that independent Authentik
+    # integration is repaired; otherwise it aborts every FuzeFront release,
+    # including the connector rollout.
+    enabled: false
     register:
-      enabled: true
+      enabled: false
   # Was: a soft `preferred` affinity to hostname `fuzefront-node-2`, which does
   # not exist as a node label anywhere in the live Contabo cluster (see the
   # note by chatService below) — so this never actually steered anything; the
