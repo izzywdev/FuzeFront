@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FuzeAgent — 03 Active Sandboxes & Teardown</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+  }
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-6) var(--space-16);
+  }
+  .crumb {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-4);
+  }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  .crumb a:hover { text-decoration: underline; }
+  h1 {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    letter-spacing: var(--tracking-display);
+    margin: 0 0 var(--space-2);
+  }
+  .lead {
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-8);
+    max-width: 68ch;
+  }
+  .panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+  }
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: var(--seam);
+  }
+  .table-header {
+    padding: var(--space-4) var(--space-6);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-tertiary);
+  }
+  .pod-row {
+    padding: var(--space-4) var(--space-6);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pod-row:last-child {
+    border-bottom: none;
+  }
+  .pill {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .pill.running {
+    color: var(--success-color);
+    background: rgba(52, 211, 153, 0.12);
+    border: 1px solid rgba(52, 211, 153, 0.35);
+  }
+  .pill.terminating {
+    color: var(--warning-color);
+    background: rgba(245, 166, 35, 0.12);
+    border: 1px solid rgba(245, 166, 35, 0.35);
+  }
+  .btn-terminate {
+    background: transparent;
+    color: var(--error-color);
+    border: 1px solid rgba(243, 105, 127, 0.35);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .btn-terminate:hover {
+    background: rgba(243, 105, 127, 0.12);
+    border-color: var(--error-color);
+  }
+  .notes {
+    margin-top: var(--space-8);
+    font-size: var(--text-sm);
+    color: var(--text-tertiary);
+  }
+  .notes code {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+  }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="03-active-sandboxes-teardown">
+  <div class="crumb"><a href="index.html">← All FuzeAgent Frames</a> · Flow 03</div>
+  <h1>Active Sandboxes & Teardown Flow</h1>
+  <p class="lead">
+    Monitors isolated Kubernetes sandbox pods executing agent tasks and Claude runner base sessions.
+    Shows the graceful teardown lifecycle ensuring clean cluster resource deallocation.
+  </p>
+
+  <div class="panel" data-sandboxes-panel>
+    <div class="table-header">
+      <div style="font-weight: 600; font-size: var(--text-sm);">Running Sandbox Pods (2 Active)</div>
+      <div style="font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary);">Namespace: fuzeagent</div>
+    </div>
+
+    <div class="pod-row" data-sandbox-id="agent-sbx-python-dev-1">
+      <div>
+        <div style="font-weight: 600; font-size: var(--text-sm);">agent-sbx-python-dev-prod</div>
+        <div style="font-size: var(--text-xs); color: var(--text-secondary); font-family: var(--font-mono);">Session: sess-prod-la-time-8910 · Image: claude-runner-base:latest</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: var(--space-4);">
+        <span class="pill running">● Running</span>
+        <button class="btn-terminate" data-action="terminate-sandbox">Terminate</button>
+      </div>
+    </div>
+
+    <div class="pod-row" data-sandbox-id="agent-sbx-docker-runner-2">
+      <div>
+        <div style="font-weight: 600; font-size: var(--text-sm);">agent-sbx-docker-builder</div>
+        <div style="font-size: var(--text-xs); color: var(--text-secondary); font-family: var(--font-mono);">Session: sess-ci-build-4412 · Image: fuzeagent-builder:v1.2</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: var(--space-4);">
+        <span class="pill terminating">⏳ Terminating</span>
+        <span style="font-size: var(--text-2xs); color: var(--text-tertiary);">Releasing PVC</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="notes">
+    Test hooks: <code>[data-frame='03-active-sandboxes-teardown']</code> · <code>[data-sandboxes-panel]</code> · 
+    <code>[data-action='terminate-sandbox']</code>.
+  </p>
+</div>
+</body>
+</html>
