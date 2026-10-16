@@ -15,6 +15,7 @@ export const qualityArtifactPageQuerySchema = z.object({
 const qualityArtifactIdSchema = z.string().trim().min(1).max(500)
 
 export const qualityArtifactIdsQuerySchema = z.object({
+  revision: z.string().trim().min(1).max(500).optional(),
   id: z.union([
     qualityArtifactIdSchema,
     z.array(qualityArtifactIdSchema).min(1).max(100),

@@ -3947,9 +3947,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       policyGateRevisionScope,
     )
     setOmittedGovernanceEvidenceRevisions(selection.omittedHistoricalRevisions)
-    const batches = selection.requests.flatMap(({ repositoryId, artifactIds }) =>
+    const batches = selection.requests.flatMap(({ repositoryId, revision, artifactIds }) =>
       Array.from({ length: Math.ceil(artifactIds.length / 100) }, (_, index) => ({
         repositoryId,
+        revision,
         artifactIds: artifactIds.slice(index * 100, (index + 1) * 100),
       }))
     )
@@ -3959,7 +3960,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       return () => { active = false }
     }
     void Promise.allSettled(
-      batches.map(batch => api.qualityArtifactsByIds(batch.repositoryId, batch.artifactIds))
+      batches.map(batch => api.qualityArtifactsByIds(batch.repositoryId, batch.artifactIds, batch.revision))
     ).then(results => {
       if (!active) return
       setGovernanceEvidenceArtifacts(results.flatMap(result =>
@@ -4091,20 +4092,25 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     const selectedRevisions = new Set(
       selection.selected.map(({ repositoryId, revision }) => `${repositoryId}\u0000${revision}`)
     )
-    const evidenceIds = new Map<string, Set<string>>()
+    const evidenceIds = new Map<string, { repositoryId: string; revision: string; ids: Set<string> }>()
     const loadedArtifactIds = new Set(artifacts.map(artifact => artifact.id))
     flowCandidates.forEach(candidate => {
       const isCurrent = candidate.revision === currentRevisions.get(candidate.repositoryId)
       if (!isCurrent && !selectedRevisions.has(`${candidate.repositoryId}\u0000${candidate.revision}`)) return
-      const ids = evidenceIds.get(candidate.repositoryId) ?? new Set<string>()
+      const key = `${candidate.repositoryId}\u0000${candidate.revision}`
+      const group = evidenceIds.get(key) ?? {
+        repositoryId: candidate.repositoryId,
+        revision: candidate.revision,
+        ids: new Set<string>(),
+      }
       const referencedIds = flowArtifactTargetIds(candidate, loadedArtifactIds)
-      referencedIds.forEach(id => ids.add(id))
-      evidenceIds.set(candidate.repositoryId, ids)
+      referencedIds.forEach(id => group.ids.add(id))
+      evidenceIds.set(key, group)
     })
-    const requests = [...evidenceIds].flatMap(([repositoryId, ids]) => {
+    const requests = [...evidenceIds.values()].flatMap(({ repositoryId, revision, ids }) => {
       const values = [...ids]
       return Array.from({ length: Math.ceil(values.length / 100) }, (_, index) =>
-        api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100))
+        api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100), revision)
           .then(response => response.items)
           .catch(() => [])
       )
@@ -4480,7 +4486,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   )
   const evidenceArtifacts = useMemo(
     () => [...new Map(
-      [...artifacts, ...governanceEvidenceArtifacts, ...flowEvidenceArtifacts]
+      [...governanceEvidenceArtifacts, ...flowEvidenceArtifacts, ...artifacts]
         .map(artifact => [artifact.id, artifact])
     ).values()],
     [artifacts, governanceEvidenceArtifacts, flowEvidenceArtifacts]

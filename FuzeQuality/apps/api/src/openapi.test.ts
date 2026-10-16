@@ -201,6 +201,11 @@ describe('contract discovery', () => {
       const artifactIds = document.paths[
         '/api/v1/repositories/{repositoryId}/quality-artifacts/by-ids'
       ].get.parameters.find((parameter: { name?: string }) => parameter.name === 'id')
+      const artifactRevision = document.paths[
+        '/api/v1/repositories/{repositoryId}/quality-artifacts/by-ids'
+      ].get.parameters.find((parameter: { name?: string }) => parameter.name === 'revision')
+      expect(artifactRevision).toMatchObject({ in: 'query', schema: { type: 'string', minLength: 1, maxLength: 500 } })
+      expect(artifactRevision.required).not.toBe(true)
       expect(artifactIds).toMatchObject({ required: true, explode: true })
       expect(artifactIds.schema).toMatchObject({
         type: 'array',
@@ -208,6 +213,7 @@ describe('contract discovery', () => {
         maxItems: 100,
         uniqueItems: true,
       })
+      expect(schemas.QualityArtifact.properties.revision).toMatchObject({ type: 'string', minLength: 1 })
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/execution-performance'].get.parameters
           .filter((parameter: { name?: string }) => parameter.name)

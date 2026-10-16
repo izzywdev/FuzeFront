@@ -195,7 +195,10 @@ export async function prepareExecutionEvidence(
     execution.tenantId,
     catalogRevision,
   )
-  const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
+  const artifactsById = new Map(artifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
   const invalidPolicyArtifactIds = explicitPolicyArtifactIds.filter(
     id => artifactsById.get(id)?.kind !== 'policy'
   )
@@ -212,7 +215,29 @@ export async function prepareExecutionEvidence(
     }
   }
 
-  if (hasExplicitReferences) return { ok: true, execution }
+  if (hasExplicitReferences) {
+    const canonicalIdentity = (id: string) => {
+      const artifact = artifactsById.get(id)!
+      return artifact.logicalId ?? artifact.id
+    }
+    const gateEvaluations = [...new Map(execution.gateEvaluations.map(item => {
+      const canonical = {
+        ...item,
+        policyArtifactId: canonicalIdentity(item.policyArtifactId),
+        gateArtifactId: canonicalIdentity(item.gateArtifactId),
+      }
+      return [`${canonical.policyArtifactId}\u0000${canonical.gateArtifactId}`, canonical]
+    })).values()]
+    return {
+      ok: true,
+      execution: {
+        ...execution,
+        policyArtifactIds: [...new Set(explicitPolicyArtifactIds.map(canonicalIdentity))],
+        gateArtifactIds: [...new Set(explicitGateArtifactIds.map(canonicalIdentity))],
+        gateEvaluations,
+      },
+    }
+  }
 
   const links = linkExecutionArtifacts(
     execution.name,

@@ -120,8 +120,9 @@ export const api = {
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
   repositoryScanHistory: (id: string, cursor?: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryPage | import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
   qualityArtifacts,
-  qualityArtifactsByIds: (id: string, artifactIds: string[]) => {
+  qualityArtifactsByIds: (id: string, artifactIds: string[], revision?: string) => {
     const query = new URLSearchParams()
+    if (revision) query.set('revision', revision)
     artifactIds.forEach(artifactId => query.append('id', artifactId))
     return request<{ items: import('@fuzequality/contracts').QualityArtifact[] }>(
       `/api/v1/repositories/${id}/quality-artifacts/by-ids?${query}`

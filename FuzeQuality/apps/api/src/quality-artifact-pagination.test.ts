@@ -53,7 +53,8 @@ describe('quality artifact pagination', () => {
   })
 
   it('bounds and deduplicates exact artifact ID lookups', () => {
-    expect(qualityArtifactIdsQuerySchema.parse({ id: ['artifact-a', 'artifact-a', 'artifact-b'] })).toEqual({
+    expect(qualityArtifactIdsQuerySchema.parse({ revision: 'catalog-a', id: ['artifact-a', 'artifact-a', 'artifact-b'] })).toEqual({
+      revision: 'catalog-a',
       id: ['artifact-a', 'artifact-b'],
     })
     expect(qualityArtifactIdsQuerySchema.safeParse({

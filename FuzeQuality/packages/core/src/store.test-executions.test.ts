@@ -422,13 +422,13 @@ describe('test execution evidence', () => {
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
 
-    await store.qualityArtifactsByIds('repo-1', 'org-1', ['policy-1', 'gate-1'])
+    await store.qualityArtifactsByIds('repo-1', 'org-1', ['policy-1', 'gate-1'], 'catalog-revision')
 
     expect(String(query.mock.calls[0][0])).toContain('repository.tenant_id=$2')
     expect(String(query.mock.calls[0][0])).toContain('artifact.id=requested.id OR artifact.logical_id=requested.id')
     expect(String(query.mock.calls[0][0])).toContain('(artifact.id=requested.id) DESC')
-    expect(String(query.mock.calls[0][0])).toContain('(artifact.revision=repository.last_scan_revision) DESC')
-    expect(query.mock.calls[0][1]).toEqual(['repo-1', 'org-1', ['policy-1', 'gate-1']])
+    expect(String(query.mock.calls[0][0])).toContain('artifact.revision=COALESCE($4::text,repository.last_scan_revision)')
+    expect(query.mock.calls[0][1]).toEqual(['repo-1', 'org-1', ['policy-1', 'gate-1'], 'catalog-revision'])
   })
 
   it('does not erase detailed evidence when a later lifecycle delivery is sparse', async () => {

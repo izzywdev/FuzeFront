@@ -6,6 +6,7 @@ import {
 
 export type GovernanceEvidenceRequest = {
   repositoryId: string
+  revision: string
   artifactIds: string[]
 }
 
@@ -25,7 +26,7 @@ export function governanceEvidenceSelection(
   const currentRevisions = new Map(
     repositories.map(repository => [repository.id, repository.lastScanRevision])
   )
-  const artifactIds = new Map<string, Set<string>>()
+  const artifactIds = new Map<string, GovernanceEvidenceRequest>()
 
   for (const evaluation of evaluations) {
     const isCurrent = evaluation.revision === currentRevisions.get(evaluation.repositoryId)
@@ -34,18 +35,24 @@ export function governanceEvidenceSelection(
       !isCurrent &&
       !selectedHistorical.has(`${evaluation.repositoryId}\u0000${evaluation.revision}`)
     ) continue
-    const ids = artifactIds.get(evaluation.repositoryId) ?? new Set<string>()
+    const key = `${evaluation.repositoryId}\u0000${evaluation.revision}`
+    const request = artifactIds.get(key) ?? {
+      repositoryId: evaluation.repositoryId,
+      revision: evaluation.revision,
+      artifactIds: [],
+    }
+    const ids = new Set(request.artifactIds)
     ;[
       ...evaluation.policyArtifactIds,
       ...evaluation.gateArtifactIds,
       ...(evaluation.evidencePassages ?? []).map(passage => passage.artifactId),
     ].forEach(id => ids.add(id))
-    artifactIds.set(evaluation.repositoryId, ids)
+    artifactIds.set(key, { ...request, artifactIds: [...ids] })
   }
 
   return {
-    requests: [...artifactIds]
-      .map(([repositoryId, ids]) => ({ repositoryId, artifactIds: [...ids].sort() }))
+    requests: [...artifactIds.values()]
+      .map(request => ({ ...request, artifactIds: [...request.artifactIds].sort() }))
       .filter(request => request.artifactIds.length > 0),
     omittedHistoricalRevisions: historical.omitted,
   }

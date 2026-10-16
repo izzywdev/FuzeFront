@@ -593,7 +593,7 @@ app.get('/api/v1/repositories/:id/quality-artifacts/by-ids', mayReadCatalog, asy
   const query = qualityArtifactIdsQuerySchema.safeParse(request.query)
   if (!query.success) return response.status(400).json({ error: query.error.flatten() })
   response.json({
-    items: await store.qualityArtifactsByIds(repositoryId, tenantId, query.data.id),
+    items: await store.qualityArtifactsByIds(repositoryId, tenantId, query.data.id, query.data.revision),
   })
 })
 app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (request, response) => {

@@ -688,6 +688,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
       repository.id,
       expect.arrayContaining([historicalArtifact.id]),
+      'revision-historical',
     )
   })
 
@@ -712,7 +713,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     const evidence = await screen.findByLabelText(`${governanceEvaluation.title} evidence`)
     expect(await within(evidence).findByText(exactArtifact.title)).toBeVisible()
     expect(within(evidence).queryByText(exactArtifact.id)).not.toBeInTheDocument()
-    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [exactArtifact.id])
+    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [exactArtifact.id], 'revision-1')
   })
 
   it('continues immutable execution evidence from an opaque repository cursor', async () => {
@@ -1522,7 +1523,13 @@ describe('RepositoryIntelligence flow inventory', () => {
     await screen.findByText(candidate.title)
     fireEvent.click(screen.getByText('Source evidence'))
 
-    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [historicalArtifact.id]))
+    await waitFor(() =>
+      expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
+        repository.id,
+        [historicalArtifact.id],
+        'historical-revision',
+      )
+    )
     expect(await screen.findByText('story · src/Checkout.stories.tsx')).toBeVisible()
     expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
   })
@@ -1540,7 +1547,13 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     await screen.findByText(candidate.title)
-    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [exactArtifact.id]))
+    await waitFor(() =>
+      expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
+        repository.id,
+        [exactArtifact.id],
+        repository.lastScanRevision,
+      )
+    )
     vi.mocked(api.qualityArtifactsByIds).mockClear()
 
     fireEvent.change(screen.getByLabelText('Analysis revision'), {
@@ -1549,7 +1562,13 @@ describe('RepositoryIntelligence flow inventory', () => {
     await screen.findByText(candidate.title)
     fireEvent.click(await screen.findByText('Source evidence'))
 
-    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [exactArtifact.id]))
+    await waitFor(() =>
+      expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
+        repository.id,
+        [exactArtifact.id],
+        repository.lastScanRevision,
+      )
+    )
     expect(await screen.findByText('story · src/Checkout.stories.tsx')).toBeVisible()
     expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
   })
@@ -1963,7 +1982,13 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
 
     expect(await screen.findByText(governanceEvaluation.title)).toBeVisible()
-    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [historicalArtifact.id]))
+    await waitFor(() =>
+      expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
+        repository.id,
+        [historicalArtifact.id],
+        'historical-revision',
+      )
+    )
     expect(await screen.findByText('Historical authentication policy')).toBeVisible()
     expect(screen.getByText('policy · governance/auth-v1.md')).toBeVisible()
   })

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { PolicyGateEvaluation, QualityArtifact } from '@fuzequality/contracts'
 import { PolicyGateEvidence } from './governanceEvidence'
@@ -37,6 +37,7 @@ const evaluation: PolicyGateEvaluation = {
 const artifacts: QualityArtifact[] = [{
   id: 'policy-auth-revision-abc123',
   logicalId: 'policy-auth',
+  revision: 'abc123',
   repositoryId: evaluation.repositoryId,
   kind: 'policy',
   title: 'Authentication policy',
@@ -59,6 +60,28 @@ describe('PolicyGateEvidence', () => {
     expect(screen.getByText('Build a gate')).toBeInTheDocument()
     expect(screen.getByText('Add a gate.')).toBeInTheDocument()
     expect(screen.getByText(/Proposal only/)).toBeInTheDocument()
+  })
+
+  it('resolves a stable logical ID within the evaluation revision', () => {
+    const view = render(
+      <PolicyGateEvidence
+        evaluation={evaluation}
+        artifacts={[
+          {
+            ...artifacts[0],
+            id: 'policy-auth-current',
+            revision: 'newer-revision',
+            title: 'Current authentication policy',
+            sourcePath: 'governance/current-auth.md',
+          },
+          artifacts[0],
+        ]}
+      />
+    )
+
+    expect(within(view.container).getAllByText('Authentication policy')).toHaveLength(2)
+    expect(within(view.container).queryByText('Current authentication policy')).not.toBeInTheDocument()
+    expect(within(view.container).getByText('policy · governance/auth.md')).toBeInTheDocument()
   })
 
   it('compares contradiction polarity with the resolved policy sources', () => {

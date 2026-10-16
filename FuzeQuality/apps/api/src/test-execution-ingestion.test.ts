@@ -295,6 +295,53 @@ describe('internal execution ingestion compatibility', () => {
     })
   })
 
+  it('accepts observation or logical evidence IDs and persists stable logical identities', async () => {
+    const input = testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'ci',
+      status: 'passed',
+      name: 'CI',
+      policyArtifactIds: ['policy-observation-abc123'],
+      gateArtifactIds: ['gate-release'],
+      gateEvaluations: [{
+        policyArtifactId: 'policy-auth',
+        gateArtifactId: 'gate-observation-abc123',
+        status: 'passed',
+      }],
+    })
+    const shared = {
+      repositoryId: input.repositoryId,
+      revision: 'catalog-abc123',
+      title: 'Evidence',
+      sourcePath: 'governance.md',
+      summary: 'Evidence',
+      evidence: [],
+    }
+
+    await expect(prepareExecutionEvidence(
+      input,
+      vi.fn().mockResolvedValue('catalog-abc123'),
+      vi.fn().mockResolvedValue([
+        { ...shared, id: 'policy-observation-abc123', logicalId: 'policy-auth', kind: 'policy' as const },
+        { ...shared, id: 'gate-observation-abc123', logicalId: 'gate-release', kind: 'gate' as const },
+      ]),
+    )).resolves.toEqual({
+      ok: true,
+      execution: {
+        ...input,
+        policyArtifactIds: ['policy-auth'],
+        gateArtifactIds: ['gate-release'],
+        gateEvaluations: [{
+          policyArtifactId: 'policy-auth',
+          gateArtifactId: 'gate-release',
+          status: 'passed',
+        }],
+      },
+    })
+  })
+
   it('auto-links unclaimed execution evidence from the exact analyzed revision', async () => {
     const input = testExecutionInputSchema.parse({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

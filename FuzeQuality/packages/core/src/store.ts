@@ -32,12 +32,12 @@ import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
 import { executionOutcomeTrend, executionPerformance, filterTestExecutions, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
 
-export const currentQualityArtifactsSql = `SELECT id, logical_id, repository_id, kind, title, source_path, summary, evidence, execution_target
+export const currentQualityArtifactsSql = `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
        FROM fuzequality.repository_quality_artifacts
        WHERE repository_id=$1
          AND revision=(SELECT last_scan_revision FROM fuzequality.repositories WHERE id=$1)
        ORDER BY kind, source_path, title, id`
-export const revisionQualityArtifactsSql = `SELECT id, logical_id, repository_id, kind, title, source_path, summary, evidence, execution_target
+export const revisionQualityArtifactsSql = `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
        FROM fuzequality.repository_quality_artifacts
        WHERE repository_id=$1 AND revision=$2
        ORDER BY kind, source_path, title, id`
@@ -214,7 +214,7 @@ export interface CatalogStore {
   repositoryScanHistory(id: string, tenantId: string, query?: RepositoryScanHistoryQuery): Promise<RepositoryScanHistoryEntry[]>
   catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string): Promise<string | undefined>
   qualityArtifacts(repositoryId: string, tenantId: string, revision?: string, query?: QualityArtifactQuery): Promise<QualityArtifact[]>
-  qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[]): Promise<QualityArtifact[]>
+  qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[], revision?: string): Promise<QualityArtifact[]>
   repositoryFlowCandidates(repositoryId: string, tenantId: string, query?: RepositoryFlowCandidateQuery): Promise<RepositoryFlowCandidate[]>
   saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]): Promise<void>
   reviewRepositoryFlowCandidate(id: string, tenantId: string, review: RepositoryFlowReview, expectedRevision?: string): Promise<RepositoryFlowCandidate | undefined>
@@ -398,16 +398,21 @@ export class MemoryCatalogStore implements CatalogStore {
       .filter(item => item.repositoryId === repositoryId && (!selectedRevision || item.revision === selectedRevision))
       .sort((left, right) => left.id.localeCompare(right.id))
       .filter(item => !query?.afterId || item.id > query.afterId)
-      .map(({ revision: _revision, ...item }) => item)
+      .map(item => ({ ...item }))
     return query?.limit === undefined ? items : items.slice(0, query.limit)
   }
 
-  async qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[]) {
+  async qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[], revision?: string) {
     const repository = await this.repository(repositoryId, tenantId), selected = new Set(ids)
     if (!ids.length || !repository) return []
+    const selectedRevision = revision ?? repository.lastScanRevision
     return this.artifacts
-      .filter(item => item.repositoryId === repositoryId && (selected.has(item.id) || (selected.has(item.logicalId ?? item.id) && item.revision === repository.lastScanRevision)))
-      .map(({ revision: _revision, ...item }) => item)
+      .filter(item =>
+        item.repositoryId === repositoryId &&
+        (!selectedRevision || item.revision === selectedRevision) &&
+        (selected.has(item.id) || selected.has(item.logicalId ?? item.id))
+      )
+      .map(item => ({ ...item }))
   }
 
   async repositoryFlowCandidates(repositoryId: string, tenantId: string, query: RepositoryFlowCandidateQuery = {}) {
@@ -1148,7 +1153,7 @@ export class PostgresCatalogStore implements CatalogStore {
     if (!await this.repository(repositoryId, tenantId)) return []
     const result = query
       ? await this.pool.query(
-          `SELECT id, logical_id, repository_id, kind, title, source_path, summary, evidence, execution_target
+          `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
            FROM fuzequality.repository_quality_artifacts
            WHERE repository_id=$1
              AND revision=${revision ? '$2' : '(SELECT last_scan_revision FROM fuzequality.repositories WHERE id=$1)'}
@@ -1162,27 +1167,27 @@ export class PostgresCatalogStore implements CatalogStore {
       : revision
         ? await this.pool.query(revisionQualityArtifactsSql, [repositoryId, revision])
         : await this.pool.query(currentQualityArtifactsSql, [repositoryId])
-    return result.rows.map(row => ({ id: row.id, logicalId: row.logical_id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
+    return result.rows.map(row => ({ id: row.id, logicalId: row.logical_id, revision: row.revision, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
   }
 
-  async qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[]): Promise<QualityArtifact[]> {
+  async qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[], revision?: string): Promise<QualityArtifact[]> {
     if (!ids.length) return []
     const result = await this.pool.query(
       `WITH requested(id) AS (SELECT unnest($3::text[]))
        SELECT DISTINCT ON (requested.id)
-              artifact.id,artifact.logical_id,artifact.repository_id,artifact.kind,artifact.title,artifact.source_path,artifact.summary,artifact.evidence,artifact.execution_target
+              artifact.id,artifact.logical_id,artifact.repository_id,artifact.revision,artifact.kind,artifact.title,artifact.source_path,artifact.summary,artifact.evidence,artifact.execution_target
        FROM fuzequality.repository_quality_artifacts AS artifact
        JOIN fuzequality.repositories AS repository ON repository.id=artifact.repository_id
        JOIN requested ON artifact.id=requested.id OR artifact.logical_id=requested.id
        WHERE artifact.repository_id=$1 AND repository.tenant_id=$2
+         AND artifact.revision=COALESCE($4::text,repository.last_scan_revision)
        ORDER BY requested.id,
                 (artifact.id=requested.id) DESC,
-                (artifact.revision=repository.last_scan_revision) DESC,
                 artifact.discovered_at DESC,
                 artifact.id DESC`,
-      [repositoryId, tenantId, ids],
+      [repositoryId, tenantId, ids, revision ?? null],
     )
-    return result.rows.map(row => ({ id: row.id, logicalId: row.logical_id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
+    return result.rows.map(row => ({ id: row.id, logicalId: row.logical_id, revision: row.revision, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
   }
 
   async repositoryFlowCandidates(repositoryId: string, tenantId: string, query: RepositoryFlowCandidateQuery = {}): Promise<RepositoryFlowCandidate[]> {

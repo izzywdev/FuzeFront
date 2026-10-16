@@ -444,6 +444,8 @@ export type QualityArtifact = {
   id: string
   /** Stable repository identity used to aggregate the same artifact across revisions. */
   logicalId?: string
+  /** Catalog revision that owns this observation. Present on persisted API records. */
+  revision?: string
   repositoryId: string
   kind: 'route' | 'story' | 'documentation' | 'policy' | 'gate' | 'test-plan' | 'integration-test' | 'post-production-test' | 'load-test' | 'stress-test'
   title: string

@@ -38,12 +38,18 @@ describe('governance evidence selection', () => {
     expect(result).toEqual({
       requests: [{
         repositoryId: 'repo-1',
+        revision: 'current',
         artifactIds: [
           'gate-current',
-          'gate-old-1',
           'passage-current',
-          'passage-old-1',
           'policy-current',
+        ],
+      }, {
+        repositoryId: 'repo-1',
+        revision: 'old-1',
+        artifactIds: [
+          'gate-old-1',
+          'passage-old-1',
           'policy-old-1',
         ],
       }],

@@ -306,6 +306,10 @@ paths:
       tags: [repository-analysis]
       security: [{ platformBearer: [] }]
       parameters:
+        - name: revision
+          in: query
+          description: Restrict logical and observation identifiers to one analyzed catalog revision.
+          schema: { type: string, minLength: 1, maxLength: 500 }
         - name: id
           in: query
           required: true
@@ -1386,6 +1390,10 @@ components:
           type: string
           minLength: 1
           description: Stable repository artifact identity shared by its revision-scoped observations.
+        revision:
+          type: string
+          minLength: 1
+          description: Catalog revision that owns this artifact observation.
         repositoryId: { type: string, format: uuid }
         kind:
           type: string

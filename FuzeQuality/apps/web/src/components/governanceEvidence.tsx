@@ -23,7 +23,10 @@ export function PolicyGateEvidence({
   evaluation: PolicyGateEvaluation
   artifacts: QualityArtifact[]
 }) {
-  const artifactsById = new Map(artifacts.flatMap(artifact => [
+  const revisionArtifacts = artifacts.filter(
+    artifact => !artifact.revision || artifact.revision === evaluation.revision
+  )
+  const artifactsById = new Map(revisionArtifacts.flatMap(artifact => [
     [artifact.id, artifact] as const,
     ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
   ]))
