@@ -81,14 +81,16 @@ const policyGateEvaluations = [{
 const testExecutions = [{
   id: 'execution-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'post-production', status: 'failed', name: 'Production suspension journey',
   provider: 'github-actions', externalRunId: '123', attempt: 2,
+  branch: 'main', headRepository: 'izzywdev/FuzeService',
   workflowPath: '.github/workflows/post-prod.yml',
   sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/123', startedAt: '2026-10-08T11:00:00.000Z', completedAt: '2026-10-08T11:02:00.000Z',
   policyArtifactIds: ['policy-artifact'], gateArtifactIds: ['gate-artifact'], summary: 'Authorization assertion failed.',
   gateEvaluations: [{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', status: 'failed', detail: 'The production authorization assertion failed.' }],
   thresholds: [], evidenceLinks: [],
 }, {
-  id: 'execution-load-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'stress', status: 'failed', name: 'Soak benchmark',
+  id: 'execution-load-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'load', status: 'failed', name: 'Application API load test',
   provider: 'github-actions', externalRunId: '456', attempt: 1, workflowPath: '.github/workflows/load.yml',
+  branch: 'main', headRepository: 'izzywdev/FuzeService',
   sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/456', startedAt: '2026-10-09T11:00:00.000Z', completedAt: '2026-10-09T11:05:00.000Z',
   policyArtifactIds: [], gateArtifactIds: [], summary: 'p95 latency exceeded the release threshold.', gateEvaluations: [], evidenceLinks: [],
   thresholds: [{ metric: 'p95 latency', observed: 640, unit: 'ms', operator: 'lte', target: 500, passed: false }],
@@ -653,6 +655,10 @@ test.describe('FuzeQuality implemented UX flows', () => {
       revision: `historical-revision-${String(index).padStart(2, '0')}`,
       title: `Historical flow ${index}`,
       evidence: [`historical-artifact-${index}`],
+      steps: repositoryFlowCandidates[0].steps.map(step => ({
+        ...step,
+        targetIds: [`historical-artifact-${index}`],
+      })),
       createdAt: new Date(Date.UTC(2026, 9, 10) - index * 86_400_000).toISOString(),
     }))
     await page.route(
@@ -701,7 +707,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     expect(requestedArtifactIds).not.toContain('historical-artifact-21')
     const flowCard = page.getByText('Historical flow 19', { exact: true }).locator('..')
     await flowCard.getByText('Source evidence', { exact: true }).click()
-    await expect(flowCard.getByText('documentation · docs/historical-artifact-19.md')).toBeVisible()
+    await expect(flowCard.getByText('documentation · docs/historical-artifact-19.md', { exact: true })).toBeVisible()
   })
 
   test('loads artifact context for governance revisions introduced by continuation', async ({ page }) => {
