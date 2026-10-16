@@ -53,6 +53,11 @@ import type { ConsoleMessage, Page } from '@playwright/test'
  *    same-origin OTLP endpoint. The static preview has no collector, so the
  *    harness acknowledges this exact transport instead of hiding its 404 as
  *    generic console noise.
+ * 8. `POST /api/organizations/:id/session-token` — once the background
+ *    membership refresh selects the mocked organization, the shell performs
+ *    its normal membership-proved token exchange for organization-scoped
+ *    services. Return a short-lived harness token so the secure path remains
+ *    exercised without a Security backend.
  *
  * The 4 gated flows' spec files (list-management, translation-workbench,
  * access-control) call this once per test, before navigating; the picker
@@ -114,6 +119,19 @@ export async function mockAuthenticatedSelectionListsSession(page: Page): Promis
             user_role: 'admin',
           },
         ],
+      }),
+    })
+  })
+
+  await page.route('**/api/organizations/org_e2e_selection_lists/session-token', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        token: 'e2e-selection-lists-org-token',
+        tokenType: 'Bearer',
+        expiresIn: 900,
+        organizationId: 'org_e2e_selection_lists',
       }),
     })
   })
