@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Button, Caption, Center, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -412,13 +412,15 @@ export const HomePage: React.FC = () => {
                 ))}
               </div>
               <div className="flex flex-col sm:flex-row justify-center gap-4">
-                <Link
+                <Button
+                  as={Link}
                   to="/pricing"
-                  className="btn-primary flex items-center justify-center gap-2"
+                  variant="primary"
+                  withArrow
                   onClick={() => trackEvent('cta_click', { button: 'view_pricing', location: 'pricing_teaser' })}
                 >
-                  See all plans <ArrowRight size={16} />
-                </Link>
+                  See all plans
+                </Button>
                 <Link
                   to="/contact"
                   className="btn-ghost flex items-center justify-center gap-2"

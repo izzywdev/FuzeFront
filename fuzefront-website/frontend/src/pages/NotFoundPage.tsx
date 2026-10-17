@@ -2,6 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowRight, Home, Search } from 'lucide-react'
+import { Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const helpfulLinks = [
@@ -41,13 +42,15 @@ export const NotFoundPage: React.FC = () => {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
-            <Link
+            <Button
+              as={Link}
               to="/"
-              className="btn-primary flex items-center justify-center gap-2"
+              variant="primary"
+              leadingIcon={<Home size={18} />}
               onClick={() => trackEvent('cta_click', { button: '404_home', location: '404_page' })}
             >
-              <Home size={18} /> Back to home
-            </Link>
+              Back to home
+            </Button>
             <Link
               to="/contact"
               className="btn-ghost flex items-center justify-center gap-2"

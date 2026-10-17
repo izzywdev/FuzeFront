@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -378,13 +379,14 @@ export const ProductDetailPage: React.FC = () => {
             Try free for 14 days. No credit card required.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a
+            <Button
               href="https://app.fuzefront.com/signup"
-              className="btn-primary flex items-center justify-center gap-2"
+              variant="primary"
+              withArrow
               onClick={() => trackEvent('cta_click', { button: 'product_detail_start', product: product.slug })}
             >
-              {product.ctaText} <ArrowRight size={16} />
-            </a>
+              {product.ctaText}
+            </Button>
             <Link to="/pricing" className="btn-secondary">
               Compare plans
             </Link>
