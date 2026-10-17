@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container } from '@fuzefront/design-system'
+import { Wrap, Container, Subheading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -163,7 +163,7 @@ function IndustrySection({ industry }: { industry: Industry }) {
             <Icon size={22} className="text-white" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-gray-900 mb-1">{industry.name}</h3>
+            <Subheading as="h3" space="xs">{industry.name}</Subheading>
             <p className="text-sm text-primary-600 font-medium">{industry.tagline}</p>
           </div>
         </div>
