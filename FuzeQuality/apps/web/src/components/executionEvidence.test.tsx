@@ -96,6 +96,25 @@ describe('ExecutionThresholdEvidence', () => {
     }} />)
 
     expect(screen.getByText('Provider checked; no durable artifacts reported')).toBeInTheDocument()
+
+    rerender(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      provider: 'github-actions',
+      evidenceLinks: [{
+        kind: 'report',
+        name: 'GitHub Actions artifacts',
+        url: 'https://github.com/acme/app/actions/runs/42#artifacts',
+      }],
+      evidenceCollection: {
+        status: 'complete',
+        checkedAt: '2026-10-16T08:00:00.000Z',
+      },
+    }} />)
+
+    expect(screen.getByRole('region', { name: 'Execution evidence coverage' })).toHaveTextContent(
+      '2 thresholds · 0 artifacts · 1 policy–gate outcomes'
+    )
+    expect(screen.getByText('Provider checked; no durable artifacts reported')).toBeInTheDocument()
     unmount()
   })
 
