@@ -64,4 +64,16 @@
   --role-data-font: var(--font-mono);   /* IDs, scopes, remote URLs */
   --role-data-size: var(--text-2xs);
   --role-data-weight: var(--weight-medium);
+
+  /* ---- CTA heading (CtaHeading component) ------------------
+     Bold, centered heading inside a page's closing CTA band — replaces
+     the `text-3xl font-heading font-bold text-gray-900 mb-4` block
+     duplicated across IndustriesPage and ProductsPage (ds-fp:b97c04930c08).
+     Fixed at a single size with no `sm`-breakpoint step-up (unlike
+     SectionTitle's responsive pair) — 1.875rem matches the un-prefixed
+     Tailwind `text-3xl` value exactly; no existing scale step lands there. */
+  --role-cta-heading-font: var(--font-display);
+  --role-cta-heading-size: 1.875rem;
+  --role-cta-heading-weight: var(--weight-bold);
+  --role-cta-heading-leading: var(--leading-tight);
 }
