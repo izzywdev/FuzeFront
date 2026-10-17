@@ -723,6 +723,11 @@ export class MemoryCatalogStore implements CatalogStore {
     const repository = this.data.repositories.find(item => item.id === id)
     if (repository?.lastScanRevision !== analysis.revision) return
     const previousStatus = repository.lastAnalysis?.status
+    if (
+      repository.lastAnalysis?.revision === analysis.revision &&
+      previousStatus === 'complete' &&
+      analysis.status !== 'complete'
+    ) return
     if (JSON.stringify(repository.lastAnalysis) === JSON.stringify(analysis)) return
     repository.lastAnalysis = analysis
     if (analysis.status === 'complete' && previousStatus !== 'complete') {
@@ -791,7 +796,7 @@ export class MemoryCatalogStore implements CatalogStore {
       ),
       ...(result.qualityArtifacts ?? []).map(item => ({ ...item, revision: result.revision })),
     ]
-    this.scanHistory.unshift({ repositoryId: result.repository.id, item: { id: randomUUID(), revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
+    this.scanHistory.unshift({ repositoryId: result.repository.id, item: { id: randomUUID(), revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: result.trigger ?? 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
     this.outboxEvents.push({ id: randomUUID(), topic: TOPICS.REPOSITORY_INVENTORY_CHANGED, key: result.repository.id,
       payload: { repositoryId: result.repository.id, revision: result.revision }, attempts: 0, createdAt: new Date().toISOString() })
   }
@@ -2103,6 +2108,11 @@ export class PostgresCatalogStore implements CatalogStore {
            FROM current
            WHERE repository.id=current.id
              AND repository.last_analysis IS DISTINCT FROM $2::jsonb
+             AND NOT (
+               current.last_analysis->>'revision' = $3
+               AND current.last_analysis->>'status' = 'complete'
+               AND $2::jsonb->>'status' <> 'complete'
+             )
            RETURNING current.last_analysis
          )
          SELECT last_analysis FROM updated`,
@@ -2157,7 +2167,7 @@ export class PostgresCatalogStore implements CatalogStore {
          ON CONFLICT (repository_id,source_revision) DO UPDATE SET catalog_revision=EXCLUDED.catalog_revision,scanned_at=EXCLUDED.scanned_at`,
         [result.repository.id, result.scanDetails.sourceRevision, result.revision, result.scannedAt],
       )
-      await client.query(`INSERT INTO fuzequality.scan_runs (repository_id,revision_id,trigger,status,counts,finished_at) VALUES ($1,$2,'manual','complete',$3,now())`, [result.repository.id, revision.rows[0].id, JSON.stringify({ operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length })])
+      await client.query(`INSERT INTO fuzequality.scan_runs (repository_id,revision_id,trigger,status,counts,finished_at) VALUES ($1,$2,$3,'complete',$4,now())`, [result.repository.id, revision.rows[0].id, result.trigger ?? 'manual', JSON.stringify({ operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length })])
       await client.query(
         `UPDATE fuzequality.test_expectations
          SET active=false, updated_at=now()
