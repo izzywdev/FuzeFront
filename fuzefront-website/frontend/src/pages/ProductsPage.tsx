@@ -7,6 +7,7 @@ import {
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
 import { useAnalytics } from '../contexts/AnalyticsContext'
+import { Container } from '@fuzefront/design-system'
 
 interface Product {
   slug: string
@@ -167,7 +168,7 @@ export const ProductsPage: React.FC = () => {
       {/* Hero */}
       <section className="bg-gradient-to-br from-secondary-900 to-secondary-800 pt-28 pb-20 relative overflow-hidden">
         <div className="absolute inset-0 hero-pattern opacity-20" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <Container size="7xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -195,18 +196,18 @@ export const ProductsPage: React.FC = () => {
               </Link>
             </div>
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* Products grid */}
       <section className="py-20 bg-secondary-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {allProducts.map((product) => (
               <ProductCard key={product.slug} product={product} />
             ))}
           </div>
-        </div>
+        </Container>
       </section>
 
       {/* CTA */}
