@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { HeroPatternOverlay } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -267,7 +268,7 @@ export const ProductDetailPage: React.FC = () => {
     <div>
       {/* Hero */}
       <section className={`bg-gradient-to-br ${product.gradient} pt-28 pb-20 relative overflow-hidden`}>
-        <div className="absolute inset-0 hero-pattern opacity-20" />
+        <HeroPatternOverlay opacity={0.2} />
         {/* Scrim: several of the per-product gradients (blue-500, pink-500,
             lime-500, etc.) are bright/saturated enough that white text at
             normal (non-"large") sizes can't reach 4.5:1 against them even at

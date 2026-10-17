@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Container, HeroPatternOverlay } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -146,7 +146,7 @@ export const PricingPage: React.FC = () => {
     <div>
       {/* Hero */}
       <section className="bg-gradient-to-br from-secondary-900 to-secondary-800 pt-28 pb-16 relative overflow-hidden">
-        <div className="absolute inset-0 hero-pattern opacity-20" />
+        <HeroPatternOverlay opacity={0.2} />
         <Container size="4xl" className="relative text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-4">
@@ -327,7 +327,7 @@ export const PricingPage: React.FC = () => {
         ref={ref}
         className="py-20 bg-gradient-to-br from-secondary-900 to-primary-900 relative overflow-hidden"
       >
-        <div className="absolute inset-0 hero-pattern opacity-20" />
+        <HeroPatternOverlay opacity={0.2} />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={inView ? { opacity: 1, y: 0 } : {}}
