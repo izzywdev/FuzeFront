@@ -427,6 +427,8 @@ export type CatalogScanDiagnostic = ScanDiagnostic & {
 export type ScanResult = {
   repository: Repository
   revision: string
+  /** Origin of the scan request retained in repository audit history. */
+  trigger: RepositoryScanHistoryEntry['trigger']
   operations: ApiOperation[]
   surfaces: FrontendSurface[]
   tests: TestCase[]
