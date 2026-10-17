@@ -498,6 +498,20 @@ describe('test execution evidence', () => {
     ])
   })
 
+  it('bounds merged lifecycle evidence to the response contract limit', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: 'bounded-evidence', attempt: 1, revision: 'abc', kind: 'post-production' as const, name: 'Post-production', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [] }
+    const firstDelivery = Array.from({ length: 100 }, (_, index) => ({ kind: 'other' as const, name: `Initial artifact ${index}`, url: `https://evidence.example/initial/${index}` }))
+    const secondDelivery = Array.from({ length: 100 }, (_, index) => ({ kind: 'other' as const, name: `Later artifact ${index}`, url: `https://evidence.example/later/${index}` }))
+
+    await store.saveTestExecution({ id: 'first', ...base, status: 'running', evidenceLinks: firstDelivery })
+    await store.saveTestExecution({ id: 'second', ...base, status: 'passed', evidenceLinks: secondDelivery })
+
+    const [saved] = await store.testExecutions('repo-1', 'org-1')
+    expect(saved.evidenceLinks).toHaveLength(100)
+    expect(new Set(saved.evidenceLinks.map(link => `${link.kind}:${link.url}`)).size).toBe(100)
+  })
+
   it('does not downgrade a completed artifact lookup on a transient redelivery failure', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '903', attempt: 1, revision: 'abc', kind: 'post-production' as const, status: 'passed' as const, name: 'Post-production', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
@@ -556,6 +570,7 @@ describe('test execution evidence', () => {
     expect(sql).toContain('jsonb_array_length(EXCLUDED.thresholds)>0')
     expect(sql).toContain("evaluation->>'status'='running'")
     expect(sql).toContain("DISTINCT ON (link->>'kind',link->>'url')")
+    expect(sql).toContain('ORDER BY ordinal LIMIT 100')
     expect(sql).toContain("length(COALESCE(EXCLUDED.summary,''))")
     expect(sql).toContain('branch=COALESCE(EXCLUDED.branch')
     expect(sql).toContain('head_repository=COALESCE(EXCLUDED.head_repository')
