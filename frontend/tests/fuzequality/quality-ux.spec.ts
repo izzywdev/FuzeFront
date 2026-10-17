@@ -878,7 +878,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
 
-    await expect(page.getByText('Application API load test', { exact: true })).toBeVisible()
+    await expect(page.getByText('Application API load test', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
     await expect(page.getByRole('alert').filter({ hasText: 'Latest execution evidence is temporarily unavailable' })).toBeVisible()
   })
