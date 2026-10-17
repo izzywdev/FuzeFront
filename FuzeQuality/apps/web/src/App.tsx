@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -41,17 +41,25 @@ import type {
   OrganizationQualitySummary,
   QualityArtifact,
   PolicyGateEvaluation,
+  PolicyGateReviewHistoryEntry,
   RepositoryFlowCandidate,
   RepositoryFlowReviewHistoryEntry,
   Repository,
-  RepositoryScanHistoryEntry,
+  RepositoryScanHistoryPage,
   StorybookStory,
   TestExpectation,
   TestExecution,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
 import {
+  artifactWorkflowExecutionKind,
+  executableWorkflowTarget,
+  preferredWorkflowExecutionKind,
+} from '@fuzequality/contracts/workflow-execution'
+import type { ExecutionOutcomeTrend, PolicyGatePerformance } from '@fuzequality/core'
+import {
   api,
+  CatalogApiError,
   configurePlatformSecurity,
   type OrganizationMember,
   type OrganizationRole,
@@ -62,11 +70,23 @@ import { QualityAction, QualityIconAction } from './components/primitives'
 import {
   ExecutionEvidenceMetadata,
   ExecutionEvidenceLinks,
+  ExecutionEvidenceCoverage,
+  ExecutionLinkageEvidence,
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
+  ExecutionSourceLink,
+  durationMsLabel,
+  latestIntegrationExecution,
+  latestPerformanceExecution,
+  latestPostProductionExecution,
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
+import { FlowInspector, flowArtifactTargetIds } from './components/flowInspector'
+import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
+import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
+import { governanceEvidenceSelection } from './governanceEvidence'
+import { applyRepositoryProcessingStatus, repositoryNeedsProcessingPoll, repositoryProcessingTransitionCompleted } from './repositoryProcessing'
 
 export type View =
   | 'overview'
@@ -79,6 +99,13 @@ export type View =
   | 'operations'
   | 'organization'
   | 'administration'
+
+function analyzedSourceRevision(repository: Repository): string | undefined {
+  const details = repository.lastScanDetails
+  if (!repository.lastScanRevision || details?.catalogRevision !== repository.lastScanRevision) return undefined
+  const revision = details.sourceRevision
+  return revision && /^[0-9a-f]{40}$/i.test(revision) ? revision : undefined
+}
 
 const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Portfolio', icon: Activity },
@@ -105,6 +132,7 @@ export const portalMenuItems = navigation
 
 type PortalContextSnapshot = {
   user: { id: string } | null
+  tenantId?: string | null
   activeOrganization?: { id: string } | null
 }
 
@@ -117,6 +145,7 @@ export type FuzeFrontRuntimeBridge = {
     add: (appId: string, items: typeof portalMenuItems) => void
     remove: (appId: string) => void
   }
+  navigate?: (path: string) => void
 }
 
 function runtimeBridge() {
@@ -124,8 +153,9 @@ function runtimeBridge() {
     .__FUZEFRONT__
 }
 
-function portalContextKey(context?: PortalContextSnapshot) {
-  return `${context?.user?.id ?? 'anonymous'}:${context?.activeOrganization?.id ?? 'personal'}`
+export function portalContextKey(context?: PortalContextSnapshot) {
+  const tenant = context?.tenantId ?? context?.activeOrganization?.id ?? 'unresolved'
+  return `${context?.user?.id ?? 'anonymous'}:${tenant}`
 }
 
 /** Refetch tenant-scoped data whenever the host changes account or organization. */
@@ -156,34 +186,47 @@ function usePortalContextKey() {
   return contextKey
 }
 
-function executionOutcomeTrend(executions: TestExecution[]) {
-  const results = new Map<
-    string,
-    {
-      date: string
-      passed: number
-      failed: number
-      cancelled: number
-      running: number
-    }
-  >()
-  for (const execution of executions) {
-    const timestamp = execution.completedAt ?? execution.startedAt
-    if (!timestamp || Number.isNaN(Date.parse(timestamp))) continue
-    const date = timestamp.slice(0, 10)
-    const current = results.get(date) ?? {
-      date,
+function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): ExecutionOutcomeTrend[] {
+  const merged = new Map<string, ExecutionOutcomeTrend>()
+  for (const item of groups.flat()) {
+    const current = merged.get(item.date) ?? {
+      date: item.date,
+      total: 0,
       passed: 0,
       failed: 0,
       cancelled: 0,
       running: 0,
+      passRate: 0,
+      durationSampleCount: 0,
+      averageDurationMs: 0,
+      maximumDurationMs: 0,
+      retryAttemptCount: 0,
+      successfulRetryCount: 0,
+      recoveredRunCount: 0,
     }
-    current[execution.status]++
-    results.set(date, current)
+    const itemDurationSampleCount = item.durationSampleCount ?? 0
+    const itemAverageDurationMs = item.averageDurationMs ?? 0
+    const combinedDurationMs =
+      current.averageDurationMs * current.durationSampleCount +
+      itemAverageDurationMs * itemDurationSampleCount
+    current.passed += item.passed
+    current.failed += item.failed
+    current.cancelled += item.cancelled
+    current.running += item.running
+    current.total += item.total ?? (item.passed + item.failed + item.cancelled + item.running)
+    const terminalOutcomes = current.passed + current.failed + current.cancelled
+    current.passRate = terminalOutcomes ? current.passed / terminalOutcomes : 0
+    current.durationSampleCount += itemDurationSampleCount
+    current.averageDurationMs = current.durationSampleCount
+      ? Math.round(combinedDurationMs / current.durationSampleCount)
+      : 0
+    current.maximumDurationMs = Math.max(current.maximumDurationMs, item.maximumDurationMs ?? 0)
+    current.retryAttemptCount += item.retryAttemptCount ?? 0
+    current.successfulRetryCount += item.successfulRetryCount ?? 0
+    current.recoveredRunCount += item.recoveredRunCount ?? 0
+    merged.set(item.date, current)
   }
-  return [...results.values()].sort((left, right) =>
-    left.date.localeCompare(right.date)
-  )
+  return [...merged.values()].sort((left, right) => left.date.localeCompare(right.date))
 }
 
 function isView(value: unknown): value is View {
@@ -193,7 +236,28 @@ function isView(value: unknown): value is View {
 export function viewFromPathname(pathname: string): View | undefined {
   if (/^\/app\/fuzequality\/?$/.test(pathname)) return 'overview'
   const match = pathname.match(/^\/app\/fuzequality\/([^/?#]+)/)
-  return match && isView(match[1]) ? match[1] : undefined
+  if (match && isView(match[1])) return match[1]
+  if (/^\/?$/.test(pathname)) return 'overview'
+  const standaloneMatch = pathname.match(/^\/([^/?#]+)/)
+  return standaloneMatch && isView(standaloneMatch[1])
+    ? standaloneMatch[1]
+    : undefined
+}
+
+export function pathForView(view: View, embedded: boolean) {
+  const suffix = view === 'overview' ? '' : `/${view}`
+  return embedded ? `/app/fuzequality${suffix}` : suffix || '/'
+}
+
+export function navigatePortalView(
+  view: View,
+  embedded: boolean,
+  bridge: FuzeFrontRuntimeBridge | undefined = runtimeBridge(),
+  history: Pick<History, 'pushState'> = window.history
+) {
+  const path = pathForView(view, embedded)
+  if (embedded && bridge?.navigate) bridge.navigate(path)
+  else history.pushState({}, '', path)
 }
 
 /** Connect host menu events and browser history to the app's active view. */
@@ -817,18 +881,25 @@ function Overview({
   )
 }
 
-function Repositories({
+export function Repositories({
   data,
   reload,
+  updateProcessingStatus,
 }: {
   data: Portfolio
   reload: () => Promise<void>
+  updateProcessingStatus: (status: import('@fuzequality/contracts').RepositoryProcessingStatus) => void
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [pollError, setPollError] = useState('')
+  const [retryingAnalysis, setRetryingAnalysis] = useState<string>()
   const [history, setHistory] = useState<
-    Record<string, RepositoryScanHistoryEntry[]>
+    Record<string, RepositoryScanHistoryPage>
+  >({})
+  const [historyLoading, setHistoryLoading] = useState<
+    Record<string, boolean>
   >({})
   const [form, setForm] = useState({
     owner: 'izzywdev',
@@ -838,6 +909,47 @@ function Repositories({
     installationId: '',
     storybookBaseUrl: '',
   })
+  const processingRepositoryIds = data.repositories
+    .filter(repositoryNeedsProcessingPoll)
+    .map(repository => repository.id)
+    .sort()
+    .join(',')
+  const processingStateKey = data.repositories
+    .filter(repositoryNeedsProcessingPoll)
+    .map(repository => `${repository.id}:${repository.lastScanStatus}:${repository.lastScanRevision ?? ''}:${repository.lastAnalysis?.status ?? ''}`)
+    .sort()
+    .join(',')
+  useEffect(() => {
+    if (!processingRepositoryIds) return
+    let active = true
+    let refreshing = false
+    const refresh = async () => {
+      if (refreshing) return
+      refreshing = true
+      const ids = processingRepositoryIds.split(',')
+      const results = await Promise.allSettled(ids.map(id => api.repositoryProcessingStatus(id)))
+      if (active) {
+        results.forEach(result => {
+          if (result.status === 'fulfilled') updateProcessingStatus(result.value)
+        })
+        setPollError(results.some(result => result.status === 'rejected')
+          ? 'Repository processing status is temporarily unavailable; the scan continues in the background.'
+          : '')
+        if (results.some(result => {
+          if (result.status !== 'fulfilled') return false
+          const repository = data.repositories.find(item => item.id === result.value.id)
+          return repository ? repositoryProcessingTransitionCompleted(repository, result.value) : false
+        })) await reload()
+      }
+      refreshing = false
+    }
+    void refresh()
+    const interval = window.setInterval(() => void refresh(), 3_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [processingRepositoryIds, processingStateKey, reload, updateProcessingStatus])
   async function submit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
@@ -871,17 +983,39 @@ function Repositories({
       setBusy(false)
     }
   }
-  async function loadHistory(id: string) {
-    if (history[id]) return
+  async function retryAnalysis(id: string) {
+    setRetryingAnalysis(id)
+    setError('')
     try {
-      const entries = await api.repositoryScanHistory(id)
-      setHistory(current => ({ ...current, [id]: entries }))
+      updateProcessingStatus(await api.retryRepositoryAnalysis(id))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Reviewed analysis could not be requeued')
+    } finally {
+      setRetryingAnalysis(undefined)
+    }
+  }
+  async function loadHistory(id: string, cursor?: string) {
+    if ((!cursor && history[id]) || historyLoading[id]) return
+    setHistoryLoading(current => ({ ...current, [id]: true }))
+    try {
+      const response = await api.repositoryScanHistory(id, cursor)
+      const page = Array.isArray(response)
+        ? { items: response, page: { nextCursor: null, hasMore: false } }
+        : response
+      setHistory(current => ({
+        ...current,
+        [id]: cursor && current[id]
+          ? { items: [...current[id].items, ...page.items], page: page.page }
+          : page,
+      }))
     } catch (cause) {
       setError(
         cause instanceof Error
           ? cause.message
           : 'Scan history could not be loaded'
       )
+    } finally {
+      setHistoryLoading(current => ({ ...current, [id]: false }))
     }
   }
   return (
@@ -897,6 +1031,7 @@ function Repositories({
         }
       />
       <section className="repo-cards">
+        {pollError && <p className="form-error" role="alert">{pollError}</p>}
         {data.repositories.map(repository => {
           const diagnostics = data.diagnostics.filter(
             item => item.repositoryId === repository.id
@@ -915,6 +1050,16 @@ function Repositories({
               </div>
               <h3>{repository.name}</h3>
               <p>{repository.canonicalUrl}</p>
+              <RepositoryAnalysisStatus
+                analysis={repository.lastAnalysis}
+                onRetry={repository.lastAnalysis?.status === 'failed' ? () => void retryAnalysis(repository.id) : undefined}
+                retrying={retryingAnalysis === repository.id}
+              />
+              {repository.lastScanStatus === 'failed' && repository.lastScanFailure && (
+                <p className="form-error" role="alert">
+                  {repository.lastScanFailure.message}
+                </p>
+              )}
               <dl>
                 <div>
                   <dt>Branch</dt>
@@ -973,32 +1118,58 @@ function Repositories({
                 </summary>
                 <div>
                   {history[repository.id] ? (
-                    history[repository.id].length ? (
-                      history[repository.id].map(entry => (
-                        <article key={`${entry.revision}:${entry.scannedAt}`}>
-                          <span className={`scan-status scan-${entry.status}`}>
-                            {entry.status}
-                          </span>
-                          <code>
-                            {entry.revision.slice(0, 12)} · {entry.branch}
-                          </code>
-                          <strong>
-                            {entry.counts.operations} API ·{' '}
-                            {entry.counts.surfaces} surfaces ·{' '}
-                            {entry.counts.tests} tests
-                          </strong>
-                          <p>
-                            {entry.scannedAt
-                              ? new Date(entry.scannedAt).toLocaleString()
-                              : 'Scan queued'}
-                          </p>
-                        </article>
-                      ))
+                    history[repository.id].items.length ? (
+                      <>
+                        {history[repository.id].items.map(entry => (
+                          <article key={entry.id}>
+                            <span
+                              className={`scan-status scan-${entry.status}`}
+                            >
+                              {entry.status}
+                            </span>
+                            <code>
+                              {entry.revision.slice(0, 12)} · {entry.branch}
+                            </code>
+                            <strong>
+                              {entry.counts.operations} API ·{' '}
+                              {entry.counts.surfaces} surfaces ·{' '}
+                              {entry.counts.tests} tests
+                            </strong>
+                            <p>
+                              {entry.scannedAt
+                                ? new Date(entry.scannedAt).toLocaleString()
+                                : 'Scan queued'}
+                            </p>
+                          </article>
+                        ))}
+                        {history[repository.id].page.hasMore &&
+                          history[repository.id].page.nextCursor && (
+                            <QualityAction
+                              intent="secondary"
+                              disabled={historyLoading[repository.id]}
+                              onClick={() =>
+                                void loadHistory(
+                                  repository.id,
+                                  history[repository.id].page.nextCursor ??
+                                    undefined
+                                )
+                              }
+                            >
+                              {historyLoading[repository.id]
+                                ? 'Loading…'
+                                : 'Load more scan history'}
+                            </QualityAction>
+                          )}
+                      </>
                     ) : (
                       <p>No scan runs recorded yet.</p>
                     )
                   ) : (
-                    <p>Loading scan history…</p>
+                    <p>
+                      {historyLoading[repository.id]
+                        ? 'Loading scan history…'
+                        : 'Scan history is not loaded.'}
+                    </p>
                   )}
                 </div>
               </details>
@@ -1858,6 +2029,11 @@ function Operations({ data }: { data: Portfolio }) {
                     ? new Date(repository.lastScanAt).toLocaleString()
                     : 'not scanned'}
                 </small>
+                {repository.lastScanFailure && (
+                  <p className="form-error" role="alert">
+                    {repository.lastScanFailure.message} ({repository.lastScanFailure.code})
+                  </p>
+                )}
                 {diagnostics.length ? (
                   <p>
                     {diagnostics.length} parser diagnostics:{' '}
@@ -2677,28 +2853,56 @@ function FlowReviewHistory({
   const [history, setHistory] = useState<RepositoryFlowReviewHistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  const historyRequestInFlight = useRef(false)
+  const historyRequest = useRef(0)
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async (cursor?: string) => {
+    if (historyRequestInFlight.current) return
+    const request = ++historyRequest.current
+    historyRequestInFlight.current = true
     setLoading(true)
     setError(undefined)
     try {
-      setHistory(
-        await api.repositoryFlowReviewHistory(flow.repositoryId, flow.id)
+      const page = normalizeHistoryPage(
+        await api.repositoryFlowReviewHistory(flow.repositoryId, flow.id, cursor)
       )
+      if (request !== historyRequest.current) return
+      setHistory(current => cursor
+        ? [...new Map([...current, ...page.items].map(entry => [entry.id, entry])).values()]
+        : page.items)
+      setNextCursor(page.page.nextCursor)
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Unable to load review history'
-      )
+      if (request === historyRequest.current) {
+        setError(
+          cause instanceof Error ? cause.message : 'Unable to load review history'
+        )
+      }
     } finally {
-      setLoading(false)
+      if (request === historyRequest.current) {
+        historyRequestInFlight.current = false
+        setLoading(false)
+      }
     }
-  }
+  }, [flow.id, flow.repositoryId])
+
+  useEffect(() => {
+    historyRequest.current++
+    historyRequestInFlight.current = false
+    setHistory([])
+    setNextCursor(null)
+    setError(undefined)
+    if (detailsRef.current?.open) void loadHistory()
+  }, [flow.id, flow.reviewedAt, loadHistory])
 
   return (
     <details
+      ref={detailsRef}
       className="policy-review-history"
       onToggle={event => {
-        if (event.currentTarget.open) void loadHistory()
+        if (event.currentTarget.open && !history.length && !loading)
+          void loadHistory()
       }}
     >
       <summary>UX flow review history</summary>
@@ -2708,9 +2912,10 @@ function FlowReviewHistory({
       ) : error ? (
         <small className="policy-review-error">{error}</small>
       ) : history.length ? (
-        <ol>
-          {history.map((entry, index) => (
-            <li key={`${entry.createdAt}:${entry.reviewedBy}:${index}`}>
+        <>
+          <ol>
+          {history.map(entry => (
+            <li key={entry.id}>
               <span
                 className={`status-pill severity-${entry.status === 'confirmed' ? 'low' : 'medium'}`}
               >
@@ -2723,7 +2928,17 @@ function FlowReviewHistory({
               {entry.reason && <p>{entry.reason}</p>}
             </li>
           ))}
-        </ol>
+          </ol>
+          {nextCursor && (
+            <QualityAction
+              intent="quiet"
+              disabled={loading}
+              onClick={() => void loadHistory(nextCursor)}
+            >
+              <ChevronRight size={14} /> Load more UX flow decisions
+            </QualityAction>
+          )}
+        </>
       ) : (
         <small>No review decisions recorded.</small>
       )}
@@ -2731,11 +2946,13 @@ function FlowReviewHistory({
   )
 }
 
-function FlowReviewControls({
+export function FlowReviewControls({
   flow,
+  currentRevision,
   onReview,
 }: {
   flow: RepositoryFlowCandidate
+  currentRevision?: string
   onReview: (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -2745,6 +2962,16 @@ function FlowReviewControls({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const [stale, setStale] = useState(false)
+  const isCurrentRevision = Boolean(
+    currentRevision && flow.revision === currentRevision
+  )
+  const isReviewable = isCurrentRevision && !stale
+
+  useEffect(() => {
+    setStale(false)
+    setError(undefined)
+  }, [flow.id, flow.revision, flow.reviewedAt])
 
   const submit = async (status: 'confirmed' | 'rejected') => {
     setBusy(true)
@@ -2753,6 +2980,12 @@ function FlowReviewControls({
       await onReview(flow, status, reason.trim() || undefined)
       setReason('')
     } catch (cause) {
+      if (
+        cause instanceof CatalogApiError &&
+        ['STALE_FLOW_CANDIDATE', 'STALE_FLOW_REVIEW'].includes(cause.code ?? '')
+      ) {
+        setStale(true)
+      }
       setError(cause instanceof Error ? cause.message : 'Unable to save review')
     } finally {
       setBusy(false)
@@ -2771,39 +3004,50 @@ function FlowReviewControls({
           {flow.reviewReason && <p>{flow.reviewReason}</p>}
         </div>
       )}
-      {flow.status === 'proposed' && (
-        <div className="flow-review-controls">
-          <label>
-            Optional review rationale
-            <input
-              value={reason}
-              onChange={event => setReason(event.target.value)}
-              placeholder="Why is this flow accurate or unsuitable?"
-            />
-          </label>
-          <div className="row-actions">
-            <QualityAction
-              intent="secondary"
-              disabled={busy}
-              onClick={() => void submit('confirmed')}
-            >
-              <Check size={14} /> Confirm
-            </QualityAction>
-            <QualityAction
-              intent="danger"
-              disabled={busy}
-              onClick={() => void submit('rejected')}
-            >
-              <X size={14} /> Reject
-            </QualityAction>
-          </div>
-          {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          )}
+      <div className="flow-review-controls">
+        {flow.status !== 'proposed' && (
+          <p className="performance-inventory-only" role="status">
+            This decision can be revised. Every saved decision remains in the
+            immutable review history.
+          </p>
+        )}
+        {!isCurrentRevision && (
+          <p className="form-error" role="status">
+            Historical proposal — review is locked until repository analysis
+            produces a candidate for the current revision.
+          </p>
+        )}
+        <label>
+          Optional review rationale
+          <input
+            value={reason}
+            disabled={!isReviewable || busy}
+            onChange={event => setReason(event.target.value)}
+            placeholder="Why is this flow accurate or unsuitable?"
+          />
+        </label>
+        <div className="row-actions">
+          <QualityAction
+            intent="secondary"
+            disabled={busy || !isReviewable}
+            onClick={() => void submit('confirmed')}
+          >
+            <Check size={14} /> Confirm
+          </QualityAction>
+          <QualityAction
+            intent="danger"
+            disabled={busy || !isReviewable}
+            onClick={() => void submit('rejected')}
+          >
+            <X size={14} /> Reject
+          </QualityAction>
         </div>
-      )}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
       <FlowReviewHistory flow={flow} />
     </>
   )
@@ -2814,41 +3058,63 @@ function PolicyGateReviewHistory({
 }: {
   evaluation: PolicyGateEvaluation
 }) {
-  const [history, setHistory] = useState<
-    Array<{
-      status: 'accepted' | 'dismissed'
-      reviewedBy: string
-      reason?: string
-      createdAt: string
-    }>
-  >([])
+  const [history, setHistory] = useState<PolicyGateReviewHistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  const historyRequestInFlight = useRef(false)
+  const historyRequest = useRef(0)
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async (cursor?: string) => {
+    if (historyRequestInFlight.current) return
+    const request = ++historyRequest.current
+    historyRequestInFlight.current = true
     setLoading(true)
     setError(undefined)
     try {
-      setHistory(
+      const page = normalizeHistoryPage(
         await api.policyGateReviewHistory(
           evaluation.repositoryId,
-          evaluation.id
+          evaluation.id,
+          cursor
         )
       )
+      if (request !== historyRequest.current) return
+      setHistory(current => cursor
+        ? [...new Map([...current, ...page.items].map(entry => [entry.id, entry])).values()]
+        : page.items)
+      setNextCursor(page.page.nextCursor)
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Unable to load review history'
-      )
+      if (request === historyRequest.current) {
+        setError(
+          cause instanceof Error ? cause.message : 'Unable to load review history'
+        )
+      }
     } finally {
-      setLoading(false)
+      if (request === historyRequest.current) {
+        historyRequestInFlight.current = false
+        setLoading(false)
+      }
     }
-  }
+  }, [evaluation.id, evaluation.repositoryId])
+
+  useEffect(() => {
+    historyRequest.current++
+    historyRequestInFlight.current = false
+    setHistory([])
+    setNextCursor(null)
+    setError(undefined)
+    if (detailsRef.current?.open) void loadHistory()
+  }, [evaluation.id, evaluation.reviewedAt, loadHistory])
 
   return (
     <details
+      ref={detailsRef}
       className="policy-review-history"
       onToggle={event => {
-        if (event.currentTarget.open) void loadHistory()
+        if (event.currentTarget.open && !history.length && !loading)
+          void loadHistory()
       }}
     >
       <summary>Review history</summary>
@@ -2857,9 +3123,10 @@ function PolicyGateReviewHistory({
       ) : error ? (
         <small className="policy-review-error">{error}</small>
       ) : history.length ? (
-        <ol>
-          {history.map((entry, index) => (
-            <li key={`${entry.createdAt}:${entry.reviewedBy}:${index}`}>
+        <>
+          <ol>
+          {history.map(entry => (
+            <li key={entry.id}>
               <span
                 className={`status-pill severity-${entry.status === 'accepted' ? 'low' : 'medium'}`}
               >
@@ -2872,11 +3139,121 @@ function PolicyGateReviewHistory({
               {entry.reason && <p>{entry.reason}</p>}
             </li>
           ))}
-        </ol>
+          </ol>
+          {nextCursor && (
+            <QualityAction
+              intent="quiet"
+              disabled={loading}
+              onClick={() => void loadHistory(nextCursor)}
+            >
+              <ChevronRight size={14} /> Load more governance decisions
+            </QualityAction>
+          )}
+        </>
       ) : (
         <small>No review decisions recorded.</small>
       )}
     </details>
+  )
+}
+
+export function PolicyGateReviewControls({
+  evaluation,
+  currentRevision,
+  onReview,
+}: {
+  evaluation: PolicyGateEvaluation
+  currentRevision?: string
+  onReview: (
+    evaluation: PolicyGateEvaluation,
+    status: 'accepted' | 'dismissed',
+    reason?: string
+  ) => Promise<void>
+}) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  const [stale, setStale] = useState(false)
+  const isCurrentRevision = Boolean(
+    currentRevision && evaluation.revision === currentRevision
+  )
+  const isReviewable = isCurrentRevision && !stale
+
+  useEffect(() => {
+    setStale(false)
+    setError(undefined)
+  }, [evaluation.id, evaluation.revision, evaluation.reviewedAt])
+
+  const submit = async (status: 'accepted' | 'dismissed') => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await onReview(evaluation, status, reason.trim() || undefined)
+      setReason('')
+    } catch (cause) {
+      if (
+        cause instanceof CatalogApiError &&
+        ['STALE_POLICY_GATE_EVALUATION', 'STALE_POLICY_GATE_REVIEW'].includes(cause.code ?? '')
+      ) {
+        setStale(true)
+      }
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Unable to save the governance review'
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="flow-review-controls">
+          {evaluation.reviewStatus !== 'proposed' && (
+            <p className="flow-review-guidance" role="status">
+              This governance decision can be revised. Every saved decision remains in the immutable review history.
+            </p>
+          )}
+          {!isCurrentRevision && (
+            <p className="form-error" role="status">
+              Historical governance finding — review is locked until repository
+              analysis produces a finding for the current revision.
+            </p>
+          )}
+          <label>
+            Optional governance rationale
+            <input
+              value={reason}
+              disabled={!isReviewable || busy}
+              onChange={event => setReason(event.target.value)}
+              placeholder="Why should this recommendation be accepted or dismissed?"
+            />
+          </label>
+          <div className="row-actions">
+            <QualityAction
+              intent="secondary"
+              disabled={busy || !isReviewable}
+              onClick={() => void submit('accepted')}
+            >
+              <Check size={14} /> Accept recommendation
+            </QualityAction>
+            <QualityAction
+              intent="danger"
+              disabled={busy || !isReviewable}
+              onClick={() => void submit('dismissed')}
+            >
+              <X size={14} /> Dismiss
+            </QualityAction>
+          </div>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      <PolicyGateReviewHistory evaluation={evaluation} />
+    </>
   )
 }
 
@@ -2885,6 +3262,207 @@ type FlowInventorySelection = {
   source: RepositoryFlowCandidate['source'] | ''
   status: RepositoryFlowCandidate['status'] | ''
   revisionScope: FlowRevisionScope
+  model: string
+  promptVersion: string
+  schemaVersion: string
+  minimumConfidencePercent: string
+  maximumConfidencePercent: string
+}
+
+type PolicyGateInventorySelection = {
+  kind: PolicyGateEvaluation['kind'] | ''
+  remediationAction: PolicyGateEvaluation['remediationAction'] | ''
+  severity: PolicyGateEvaluation['severity'] | ''
+  reviewStatus: PolicyGateEvaluation['reviewStatus'] | ''
+  revisionScope: FlowRevisionScope
+  subject: string
+  minimumConfidencePercent: string
+  maximumConfidencePercent: string
+}
+
+type HistoryPage<T> = { items: T[]; page: { nextCursor: string | null; hasMore: boolean } }
+
+/** Keep optional evidence endpoints from taking down the inventory on malformed data. */
+export function normalizeItemList<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value.filter((item): item is T => item != null)
+  if (
+    value &&
+    typeof value === 'object' &&
+    Array.isArray((value as { items?: unknown }).items)
+  ) {
+    return (value as { items: T[] }).items.filter((item): item is T => item != null)
+  }
+  return []
+}
+
+export function normalizeHistoryPage<T>(value: T[] | HistoryPage<T>): HistoryPage<T> {
+  return Array.isArray(value)
+    ? { items: value, page: { nextCursor: null, hasMore: false } }
+    : value
+}
+
+function hasRetainedFailureBefore(
+  execution: TestExecution,
+  history: TestExecution[],
+) {
+  return execution.attempt > 1 && execution.status === 'passed' && history.some(previous =>
+    previous.repositoryId === execution.repositoryId &&
+    previous.provider === execution.provider &&
+    previous.externalRunId === execution.externalRunId &&
+    previous.attempt < execution.attempt &&
+    previous.status === 'failed'
+  )
+}
+
+function ExecutionAttemptHistory({ execution }: { execution: TestExecution }) {
+  const [attempts, setAttempts] = useState<TestExecution[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+  const requestInFlight = useRef(false)
+  const requestVersion = useRef(0)
+
+  const loadAttempts = useCallback(async (cursor?: string) => {
+    if (requestInFlight.current) return
+    const request = ++requestVersion.current
+    requestInFlight.current = true
+    setLoading(true)
+    setError(undefined)
+    try {
+      const page = normalizeHistoryPage(await api.testExecutionAttempts(
+        execution.repositoryId,
+        execution.provider,
+        execution.externalRunId,
+        cursor,
+      ))
+      if (request !== requestVersion.current) return
+      setAttempts(current => cursor
+        ? [...new Map([...current, ...page.items].map(item => [item.id, item])).values()]
+        : page.items)
+      setNextCursor(page.page.nextCursor)
+    } catch (cause) {
+      if (request === requestVersion.current) {
+        setError(cause instanceof Error ? cause.message : 'Unable to load attempt history')
+      }
+    } finally {
+      if (request === requestVersion.current) {
+        requestInFlight.current = false
+        setLoading(false)
+      }
+    }
+  }, [execution.externalRunId, execution.provider, execution.repositoryId])
+
+  useEffect(() => {
+    requestVersion.current++
+    requestInFlight.current = false
+    setAttempts([])
+    setNextCursor(null)
+    setError(undefined)
+  }, [execution.externalRunId, execution.provider, execution.repositoryId])
+
+  return (
+    <details
+      className="policy-review-history"
+      onToggle={event => {
+        if (event.currentTarget.open && !attempts.length && !loading) void loadAttempts()
+      }}
+    >
+      <summary>Attempt history</summary>
+      <small>{execution.provider} run {execution.externalRunId}</small>
+      <small>
+        Each attempt retains its first terminal outcome; provider reruns are separate attempts.
+      </small>
+      {loading && !attempts.length ? (
+        <small>Loading attempts…</small>
+      ) : error ? (
+        <small className="policy-review-error">{error}</small>
+      ) : attempts.length ? (
+        <>
+          <ol>
+            {attempts.map(attempt => (
+              <li key={attempt.id}>
+                <span className={`status-pill status-${attempt.status}`}>
+                  {attempt.status}
+                </span>
+                <strong>Attempt {attempt.attempt}</strong>
+                <time dateTime={attempt.completedAt ?? attempt.startedAt}>
+                  {attempt.completedAt || attempt.startedAt
+                    ? new Date(attempt.completedAt ?? attempt.startedAt ?? '').toLocaleString()
+                    : 'Time unavailable'}
+                </time>
+                {hasRetainedFailureBefore(attempt, attempts) && (
+                  <p>Recovered after retained failure evidence.</p>
+                )}
+              </li>
+            ))}
+          </ol>
+          {nextCursor && (
+            <QualityAction
+              intent="quiet"
+              disabled={loading}
+              onClick={() => void loadAttempts(nextCursor)}
+            >
+              <ChevronRight size={14} /> Load more attempts
+            </QualityAction>
+          )}
+        </>
+      ) : (
+        <small>No attempt evidence retained for this provider run.</small>
+      )}
+    </details>
+  )
+}
+
+export function policyGateEvaluationMatchesInventory(
+  evaluation: PolicyGateEvaluation,
+  repositories: Repository[],
+  selection: PolicyGateInventorySelection
+) {
+  const normalizedSubject = selection.subject.toLowerCase()
+  if (selection.kind && evaluation.kind !== selection.kind) return false
+  if (selection.remediationAction && evaluation.remediationAction !== selection.remediationAction) return false
+  if (selection.severity && evaluation.severity !== selection.severity)
+    return false
+  if (
+    selection.reviewStatus &&
+    evaluation.reviewStatus !== selection.reviewStatus
+  )
+    return false
+  if (
+    normalizedSubject &&
+    !evaluation.scope.subjects.some(subject =>
+      subject.toLowerCase() === normalizedSubject
+    )
+  )
+    return false
+  if (selection.minimumConfidencePercent !== '' && evaluation.confidence < Number(selection.minimumConfidencePercent) / 100) return false
+  if (selection.maximumConfidencePercent !== '' && evaluation.confidence > Number(selection.maximumConfidencePercent) / 100) return false
+  if (selection.revisionScope === 'current') {
+    const repository = repositories.find(
+      item => item.id === evaluation.repositoryId
+    )
+    return Boolean(
+      repository?.lastScanRevision &&
+        evaluation.revision === repository.lastScanRevision
+    )
+  }
+  return true
+}
+
+export function mergePolicyGateContinuation(
+  current: PolicyGateEvaluation[],
+  continued: PolicyGateEvaluation[],
+  visibleAtRequestStart: ReadonlySet<string>,
+) {
+  const merged = new Map(current.map(evaluation => [evaluation.id, evaluation]))
+  for (const evaluation of continued) {
+    if (merged.has(evaluation.id)) continue
+    // A row visible when pagination started but absent now was reviewed out of
+    // the active filter. Do not resurrect its stale pre-review representation.
+    if (visibleAtRequestStart.has(evaluation.id)) continue
+    merged.set(evaluation.id, evaluation)
+  }
+  return [...merged.values()]
 }
 
 export function flowCandidateMatchesInventory(
@@ -2896,6 +3474,19 @@ export function flowCandidateMatchesInventory(
     return false
   if (selection.source && flow.source !== selection.source) return false
   if (selection.status && flow.status !== selection.status) return false
+  if (selection.model && flow.analysis?.model !== selection.model) return false
+  if (
+    selection.promptVersion &&
+    flow.analysis?.promptVersion !== selection.promptVersion
+  )
+    return false
+  if (
+    selection.schemaVersion &&
+    flow.analysis?.schemaVersion !== selection.schemaVersion
+  )
+    return false
+  if (selection.minimumConfidencePercent !== '' && flow.confidence < Number(selection.minimumConfidencePercent) / 100) return false
+  if (selection.maximumConfidencePercent !== '' && flow.confidence > Number(selection.maximumConfidencePercent) / 100) return false
   if (selection.revisionScope === 'current') {
     const repository = repositories.find(item => item.id === flow.repositoryId)
     return Boolean(
@@ -2908,28 +3499,72 @@ export function flowCandidateMatchesInventory(
 
 export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
+  const [artifactNextCursors, setArtifactNextCursors] = useState<Record<string, string>>({})
+  const [loadingMoreArtifacts, setLoadingMoreArtifacts] = useState(false)
+  const [artifactPaginationError, setArtifactPaginationError] = useState<string>()
+  const [repositoryArtifactFailures, setRepositoryArtifactFailures] = useState<string[]>([])
+  const [repositoryGovernanceFailures, setRepositoryGovernanceFailures] = useState<string[]>([])
+  const [repositoryFlowFailures, setRepositoryFlowFailures] = useState<string[]>([])
+  const [governanceEvidenceFailures, setGovernanceEvidenceFailures] = useState<string[]>([])
+  const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
+  const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
+  const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
+  const [omittedFlowEvidenceRevisions, setOmittedFlowEvidenceRevisions] = useState(0)
   const [flowCandidates, setFlowCandidates] = useState<
     RepositoryFlowCandidate[]
   >([])
+  const [flowNextCursors, setFlowNextCursors] = useState<Record<string, string>>({})
+  const [loadingMoreFlows, setLoadingMoreFlows] = useState(false)
   const [flowRepositoryId, setFlowRepositoryId] = useState('')
   const [flowSource, setFlowSource] = useState<RepositoryFlowCandidate['source'] | ''>('')
   const [flowStatus, setFlowStatus] = useState<RepositoryFlowCandidate['status'] | ''>('')
   const [flowRevisionScope, setFlowRevisionScope] = useState<FlowRevisionScope>('all')
+  const [flowModel, setFlowModel] = useState('')
+  const [flowPromptVersion, setFlowPromptVersion] = useState('')
+  const [flowSchemaVersion, setFlowSchemaVersion] = useState('')
+  const [flowMinimumConfidencePercent, setFlowMinimumConfidencePercent] = useState('')
+  const [flowMaximumConfidencePercent, setFlowMaximumConfidencePercent] = useState('')
+  const invalidFlowConfidenceRange = Boolean(
+    flowMinimumConfidencePercent !== '' &&
+    flowMaximumConfidencePercent !== '' &&
+    Number(flowMinimumConfidencePercent) > Number(flowMaximumConfidencePercent)
+  )
+  const [flowInspectorOpen, setFlowInspectorOpen] = useState(false)
+  const [inspectedFlow, setInspectedFlow] = useState<RepositoryFlowCandidate>()
+  const [flowInspectorLoading, setFlowInspectorLoading] = useState(false)
+  const [flowInspectorError, setFlowInspectorError] = useState<string>()
+  const flowInspectorRequest = useRef(0)
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
   >([])
+  const policyGateEvaluationsRef = useRef(policyGateEvaluations)
+  policyGateEvaluationsRef.current = policyGateEvaluations
+  const [policyGateNextCursors, setPolicyGateNextCursors] = useState<Record<string, string>>({})
+  const [loadingMorePolicyGates, setLoadingMorePolicyGates] = useState(false)
+  const [historyPaginationError, setHistoryPaginationError] = useState<string>()
   const [executions, setExecutions] = useState<TestExecution[]>([])
+  const [executionTrends, setExecutionTrends] = useState<ExecutionOutcomeTrend[][]>([])
+  const [executionTrendNextCursors, setExecutionTrendNextCursors] = useState<Record<string, string>>({})
+  const [loadingMoreExecutionTrend, setLoadingMoreExecutionTrend] = useState(false)
+  const [executionTrendPaginationError, setExecutionTrendPaginationError] = useState<string>()
+  const [executionNextCursors, setExecutionNextCursors] = useState<Record<string, string>>({})
+  const [loadingMoreExecutions, setLoadingMoreExecutions] = useState(false)
+  const [executionPaginationError, setExecutionPaginationError] = useState<string>()
+  const [executionHistoryFailures, setExecutionHistoryFailures] = useState<string[]>([])
+  const [executionTrendFailures, setExecutionTrendFailures] = useState<string[]>([])
+  const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
+  const [performanceEvidenceFailures, setPerformanceEvidenceFailures] = useState<string[]>([])
+  const [integrationExecutions, setIntegrationExecutions] = useState<TestExecution[]>([])
+  const [integrationEvidenceFailures, setIntegrationEvidenceFailures] = useState<string[]>([])
+  const [postProductionExecutions, setPostProductionExecutions] = useState<TestExecution[]>([])
+  const [postProductionEvidenceFailures, setPostProductionEvidenceFailures] = useState<string[]>([])
   const [executionPerformance, setExecutionPerformance] = useState<
-    Array<{
-      policyArtifactId: string
-      gateArtifactId: string
-      passed: number
-      failed: number
-      cancelled: number
-      running: number
-      latestCompletedAt?: string
-    }>
+    PolicyGatePerformance[]
   >([])
+  const [performanceNextCursors, setPerformanceNextCursors] = useState<Record<string, string>>({})
+  const [loadingMorePerformance, setLoadingMorePerformance] = useState(false)
+  const [performancePaginationError, setPerformancePaginationError] = useState<string>()
+  const [executionPerformanceFailures, setExecutionPerformanceFailures] = useState<string[]>([])
   const [executionRepositoryId, setExecutionRepositoryId] = useState('')
   const [executionKind, setExecutionKind] = useState<
     TestExecution['kind'] | ''
@@ -2937,6 +3572,30 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionStatus, setExecutionStatus] = useState<
     TestExecution['status'] | ''
   >('')
+  const [executionProvider, setExecutionProvider] = useState<
+    TestExecution['provider'] | ''
+  >('')
+  const [executionEvidenceKind, setExecutionEvidenceKind] = useState<
+    TestExecution['evidenceLinks'][number]['kind'] | ''
+  >('')
+  const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
+    'passed' | 'failed' | ''
+  >('')
+  const [executionGateOutcome, setExecutionGateOutcome] = useState<
+    TestExecution['status'] | ''
+  >('')
+  const [executionExternalRunId, setExecutionExternalRunId] = useState('')
+  const [executionName, setExecutionName] = useState('')
+  const [executionPolicyArtifactId, setExecutionPolicyArtifactId] = useState('')
+  const [executionGateArtifactId, setExecutionGateArtifactId] = useState('')
+  const [executionAttemptScope, setExecutionAttemptScope] = useState<
+    'initial' | 'retry' | 'recovered' | ''
+  >('')
+  const [executionBranch, setExecutionBranch] = useState('')
+  const [executionRevision, setExecutionRevision] = useState('')
+  const [executionWorkflowPath, setExecutionWorkflowPath] = useState('')
+  const [executionMinimumDurationSeconds, setExecutionMinimumDurationSeconds] = useState('')
+  const [executionMaximumDurationSeconds, setExecutionMaximumDurationSeconds] = useState('')
   const [executionFrom, setExecutionFrom] = useState('')
   const [executionUntil, setExecutionUntil] = useState('')
   const invalidExecutionRange = Boolean(
@@ -2944,16 +3603,57 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     executionUntil &&
     Date.parse(executionFrom) > Date.parse(executionUntil)
   )
+  const invalidExecutionDurationRange = Boolean(
+    executionMinimumDurationSeconds !== '' &&
+    executionMaximumDurationSeconds !== '' &&
+    Number(executionMinimumDurationSeconds) > Number(executionMaximumDurationSeconds)
+  )
   const [policyGateKind, setPolicyGateKind] = useState<
     PolicyGateEvaluation['kind'] | ''
   >('')
   const [policyGateSeverity, setPolicyGateSeverity] = useState<
     PolicyGateEvaluation['severity'] | ''
   >('')
+  const [policyGateRemediationAction, setPolicyGateRemediationAction] = useState<
+    PolicyGateEvaluation['remediationAction'] | ''
+  >('')
   const [policyGateReviewStatus, setPolicyGateReviewStatus] = useState<
     PolicyGateEvaluation['reviewStatus'] | ''
   >('')
+  const [policyGateRevisionScope, setPolicyGateRevisionScope] =
+    useState<FlowRevisionScope>('current')
+  const [policyGateSubject, setPolicyGateSubject] = useState('')
+  const [policyGateMinimumConfidencePercent, setPolicyGateMinimumConfidencePercent] = useState('')
+  const [policyGateMaximumConfidencePercent, setPolicyGateMaximumConfidencePercent] = useState('')
+  const invalidPolicyGateConfidenceRange = Boolean(
+    policyGateMinimumConfidencePercent !== '' &&
+    policyGateMaximumConfidencePercent !== '' &&
+    Number(policyGateMinimumConfidencePercent) > Number(policyGateMaximumConfidencePercent)
+  )
+  const policyGateSelection: PolicyGateInventorySelection = {
+    kind: policyGateKind,
+    remediationAction: policyGateRemediationAction,
+    severity: policyGateSeverity,
+    reviewStatus: policyGateReviewStatus,
+    revisionScope: policyGateRevisionScope,
+    subject: policyGateSubject.trim(),
+    minimumConfidencePercent: policyGateMinimumConfidencePercent,
+    maximumConfidencePercent: policyGateMaximumConfidencePercent,
+  }
+  const policyGateSelectionRef = useRef(policyGateSelection)
+  policyGateSelectionRef.current = policyGateSelection
+  const policyGateHistoryQuery = JSON.stringify([
+    data.repositories.map(repository => [repository.id, repository.lastScanRevision ?? '']),
+    policyGateSelection,
+  ])
+  const policyGateHistoryQueryRef = useRef(policyGateHistoryQuery)
+  policyGateHistoryQueryRef.current = policyGateHistoryQuery
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
+  const [performanceDispatch, setPerformanceDispatch] = useState<{
+    artifactId: string
+    state: 'success' | 'error'
+    message: string
+  }>()
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
   const [loadingFlows, setLoadingFlows] = useState(true)
   const [loadedFlowQuery, setLoadedFlowQuery] = useState('')
@@ -2962,6 +3662,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     source: flowSource,
     status: flowStatus,
     revisionScope: flowRevisionScope,
+    model: flowModel.trim(),
+    promptVersion: flowPromptVersion.trim(),
+    schemaVersion: flowSchemaVersion.trim(),
+    minimumConfidencePercent: flowMinimumConfidencePercent,
+    maximumConfidencePercent: flowMaximumConfidencePercent,
   }
   const flowSelectionRef = useRef(flowSelection)
   flowSelectionRef.current = flowSelection
@@ -2974,9 +3679,42 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowSource,
     flowStatus,
     flowRevisionScope,
+    flowModel.trim(),
+    flowPromptVersion.trim(),
+    flowSchemaVersion.trim(),
+    flowMinimumConfidencePercent,
+    flowMaximumConfidencePercent,
   ])
+  const flowQueryRef = useRef(flowQuery)
+  flowQueryRef.current = flowQuery
   const flowResultsAreCurrent =
     !loadingFlows && loadedFlowQuery === flowQuery
+  const inspectFlow = async (flow: RepositoryFlowCandidate) => {
+    const request = ++flowInspectorRequest.current
+    setFlowInspectorOpen(true)
+    setInspectedFlow(undefined)
+    setFlowInspectorError(undefined)
+    setFlowInspectorLoading(true)
+    try {
+      const detail = await api.repositoryFlowCandidate(flow.repositoryId, flow.id)
+      if (request === flowInspectorRequest.current) setInspectedFlow(detail)
+    } catch (cause) {
+      if (request === flowInspectorRequest.current) {
+        setFlowInspectorError(
+          cause instanceof Error ? cause.message : 'Unable to load UX flow detail'
+        )
+      }
+    } finally {
+      if (request === flowInspectorRequest.current) setFlowInspectorLoading(false)
+    }
+  }
+  const closeFlowInspector = () => {
+    flowInspectorRequest.current++
+    setFlowInspectorOpen(false)
+    setInspectedFlow(undefined)
+    setFlowInspectorError(undefined)
+    setFlowInspectorLoading(false)
+  }
   const reviewFlow = async (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -2986,7 +3724,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       flow.repositoryId,
       flow.id,
       status,
-      reason
+      reason,
+      flow.reviewedAt ?? null
     )
     setFlowCandidates(current =>
       flowCandidateMatchesInventory(
@@ -2997,36 +3736,65 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         ? current.map(item => (item.id === reviewed.id ? reviewed : item))
         : current.filter(item => item.id !== reviewed.id)
     )
+    setInspectedFlow(current => current?.id === reviewed.id ? reviewed : current)
   }
   const reviewPolicyGate = async (
     evaluation: PolicyGateEvaluation,
-    status: 'accepted' | 'dismissed'
+    status: 'accepted' | 'dismissed',
+    reason?: string
   ) => {
-    const reason = window
-      .prompt(
-        `Optional rationale for ${status === 'accepted' ? 'accepting' : 'dismissing'} this recommendation:`
-      )
-      ?.trim()
     const reviewed = await api.reviewPolicyGateEvaluation(
       evaluation.repositoryId,
       evaluation.id,
       status,
-      reason || undefined
+      reason,
+      evaluation.reviewedAt ?? null
     )
     setPolicyGateEvaluations(current =>
-      current.map(item => (item.id === reviewed.id ? reviewed : item))
+      policyGateEvaluationMatchesInventory(
+        reviewed,
+        data.repositories,
+        policyGateSelectionRef.current
+      )
+        ? current.map(item => (item.id === reviewed.id ? reviewed : item))
+        : current.filter(item => item.id !== reviewed.id)
     )
   }
-  const runPerformanceTest = async (artifact: QualityArtifact) => {
+  const runTestSuite = async (artifact: QualityArtifact) => {
+    const repository = data.repositories.find(
+      candidate => candidate.id === artifact.repositoryId
+    )
+    const sourceRevision = repository
+      ? analyzedSourceRevision(repository)
+      : undefined
+    if (!sourceRevision || !executableWorkflowTarget(artifact)) return
     if (
       !window.confirm(
-        `Dispatch ${artifact.title} on the repository default branch?`
+        `Dispatch ${artifact.title} from ${repository?.defaultBranch ?? 'the analyzed branch'} at analyzed commit ${sourceRevision}?`
       )
     )
       return
     setDispatchingArtifact(artifact.id)
+    setPerformanceDispatch(undefined)
     try {
-      await api.runPerformanceTest(artifact.repositoryId, artifact.id)
+      const receipt = await api.runTestSuite(
+        artifact.repositoryId,
+        artifact.id
+      )
+      setPerformanceDispatch({
+        artifactId: artifact.id,
+        state: 'success',
+        message: `Dispatched ${receipt.workflowPath} from ${receipt.ref} at analyzed commit ${receipt.sourceRevision}. GitHub Actions will report the run as execution evidence.`,
+      })
+    } catch (error) {
+      setPerformanceDispatch({
+        artifactId: artifact.id,
+        state: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to dispatch the test workflow.',
+      })
     } finally {
       setDispatchingArtifact(undefined)
     }
@@ -3037,29 +3805,120 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       Object.entries({
         kind: executionKind,
         status: executionStatus,
+        provider: executionProvider,
+        evidenceKind: executionEvidenceKind,
+        thresholdOutcome: executionThresholdOutcome,
+        gateOutcome: executionGateOutcome,
+        externalRunId: executionExternalRunId.trim(),
+        name: executionName.trim(),
+        policyArtifactId: executionPolicyArtifactId,
+        gateArtifactId: executionGateArtifactId,
+        attemptScope: executionAttemptScope,
+        branch: executionBranch.trim(),
+        revision: executionRevision.trim(),
+        workflowPath: executionWorkflowPath.trim(),
+        minimumDurationMs: executionMinimumDurationSeconds
+          ? String(Math.round(Number(executionMinimumDurationSeconds) * 1000))
+          : '',
+        maximumDurationMs: executionMaximumDurationSeconds
+          ? String(Math.round(Number(executionMaximumDurationSeconds) * 1000))
+          : '',
         from: iso(executionFrom),
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  const executionTrendQuery = JSON.stringify([
+    data.repositories.map(repository => repository.id),
+    executionRepositoryId,
+    executionFilter,
+    invalidExecutionRange,
+    invalidExecutionDurationRange,
+  ])
+  const executionTrendQueryRef = useRef(executionTrendQuery)
+  executionTrendQueryRef.current = executionTrendQuery
+  const artifactQuery = JSON.stringify(data.repositories.map(repository => [
+    repository.id,
+    repository.lastScanRevision ?? '',
+  ]))
+  const artifactQueryRef = useRef(artifactQuery)
+  artifactQueryRef.current = artifactQuery
   useEffect(() => {
     let active = true
+    setArtifactNextCursors({})
+    setArtifactPaginationError(undefined)
+    setRepositoryArtifactFailures([])
+    setRepositoryGovernanceFailures([])
+    setLoadingMoreArtifacts(false)
+    setPolicyGateNextCursors({})
+    setHistoryPaginationError(undefined)
     void Promise.all(
-      data.repositories.map(async repository => ({
-        artifacts: await api.qualityArtifacts(repository.id),
-        evaluations: await api.policyGateEvaluations(repository.id),
-      }))
+      data.repositories.map(async repository => {
+        const [repositoryArtifactsResult, evaluationResult] = await Promise.allSettled([
+          api.qualityArtifacts(repository.id),
+          invalidPolicyGateConfidenceRange ||
+          (policyGateRevisionScope === 'current' && !repository.lastScanRevision)
+            ? []
+            : api.policyGateEvaluations(
+                repository.id,
+                Object.fromEntries(
+                  Object.entries({
+                    kind: policyGateKind,
+                    remediationAction: policyGateRemediationAction,
+                    severity: policyGateSeverity,
+                    reviewStatus: policyGateReviewStatus,
+                    revision:
+                      policyGateRevisionScope === 'current'
+                        ? repository.lastScanRevision ?? ''
+                        : '',
+                    subject: policyGateSubject.trim(),
+                    minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
+                    maxConfidence: policyGateMaximumConfidencePercent === '' ? '' : String(Number(policyGateMaximumConfidencePercent) / 100),
+                  }).filter(([, value]) => Boolean(value))
+                )
+              ),
+        ])
+        const repositoryArtifacts = repositoryArtifactsResult.status === 'fulfilled'
+          ? normalizeHistoryPage(repositoryArtifactsResult.value)
+          : { items: [] as QualityArtifact[], page: { nextCursor: null, hasMore: false } }
+        const evaluations = evaluationResult.status === 'fulfilled'
+          ? normalizeHistoryPage(evaluationResult.value)
+          : { items: [] as PolicyGateEvaluation[], page: { nextCursor: null, hasMore: false } }
+        return {
+          artifacts: repositoryArtifacts.items,
+          artifactNextCursor: repositoryArtifacts.page.nextCursor,
+          evaluations: evaluations.items,
+          nextCursor: evaluations.page.nextCursor,
+          repositoryId: repository.id,
+          artifactsFailed: repositoryArtifactsResult.status === 'rejected',
+          governanceFailed: evaluationResult.status === 'rejected',
+        }
+      })
     )
       .then(groups => {
         if (active) {
           setArtifacts(groups.flatMap(group => group.artifacts))
+          setArtifactNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.artifactNextCursor
+              ? [[group.repositoryId, group.artifactNextCursor]]
+              : [])
+          ))
           setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
+          setPolicyGateNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.nextCursor ? [[group.repositoryId, group.nextCursor]] : [])
+          ))
+          setRepositoryArtifactFailures(groups.filter(group => group.artifactsFailed).map(group => group.repositoryId))
+          setRepositoryGovernanceFailures(groups.filter(group => group.governanceFailed).map(group => group.repositoryId))
         }
       })
       .catch(() => {
         if (active) {
           setArtifacts([])
+          setArtifactNextCursors({})
           setPolicyGateEvaluations([])
+          setPolicyGateNextCursors({})
+          setRepositoryArtifactFailures(data.repositories.map(repository => repository.id))
+          setRepositoryGovernanceFailures(data.repositories.map(repository => repository.id))
         }
       })
       .finally(() => {
@@ -3068,16 +3927,98 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     return () => {
       active = false
     }
-  }, [data.repositories])
+  }, [
+    data.repositories,
+    policyGateKind,
+    policyGateRemediationAction,
+    policyGateRevisionScope,
+    policyGateReviewStatus,
+    policyGateSeverity,
+    policyGateSubject,
+    policyGateMinimumConfidencePercent,
+    policyGateMaximumConfidencePercent,
+    invalidPolicyGateConfidenceRange,
+  ])
+  useEffect(() => {
+    let active = true
+    const selection = governanceEvidenceSelection(
+      policyGateEvaluations,
+      data.repositories,
+      policyGateRevisionScope,
+    )
+    setOmittedGovernanceEvidenceRevisions(selection.omittedHistoricalRevisions)
+    const batches = selection.requests.flatMap(({ repositoryId, revision, artifactIds }) =>
+      Array.from({ length: Math.ceil(artifactIds.length / 100) }, (_, index) => ({
+        repositoryId,
+        revision,
+        artifactIds: artifactIds.slice(index * 100, (index + 1) * 100),
+      }))
+    )
+    if (!batches.length) {
+      setGovernanceEvidenceArtifacts([])
+      setGovernanceEvidenceFailures([])
+      return () => { active = false }
+    }
+    void Promise.allSettled(
+      batches.map(batch => api.qualityArtifactsByIds(batch.repositoryId, batch.artifactIds, batch.revision))
+    ).then(results => {
+      if (!active) return
+      setGovernanceEvidenceArtifacts(results.flatMap(result =>
+        result.status === 'fulfilled' ? result.value.items : []
+      ))
+      setGovernanceEvidenceFailures([...new Set(results.flatMap((result, index) =>
+        result.status === 'rejected' ? [batches[index].repositoryId] : []
+      ))])
+    })
+    return () => { active = false }
+  }, [data.repositories, policyGateEvaluations, policyGateRevisionScope])
+  const loadMoreArtifacts = async () => {
+    const cursors = Object.entries(artifactNextCursors)
+    if (!cursors.length) return
+    const query = artifactQueryRef.current
+    setLoadingMoreArtifacts(true)
+    setArtifactPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+        repositoryId,
+        page: normalizeHistoryPage(await api.qualityArtifacts(repositoryId, undefined, cursor)),
+      })))
+      if (artifactQueryRef.current !== query) return
+      setArtifacts(current => [...new Map(
+        [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
+      ).values()])
+      setArtifactNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor
+          ? [[group.repositoryId, group.page.page.nextCursor]]
+          : [])
+      ))
+    } catch (cause) {
+      if (artifactQueryRef.current === query) {
+        setArtifactPaginationError(cause instanceof Error ? cause.message : 'Unable to load more repository evidence.')
+      }
+    } finally {
+      if (artifactQueryRef.current === query) setLoadingMoreArtifacts(false)
+    }
+  }
   useEffect(() => {
     let active = true
     setLoadingFlows(true)
-    void Promise.all(
+    setLoadingMoreFlows(false)
+    setFlowNextCursors({})
+    setRepositoryFlowFailures([])
+    setHistoryPaginationError(undefined)
+    if (invalidFlowConfidenceRange) {
+      setFlowCandidates([])
+      setLoadedFlowQuery(flowQuery)
+      setLoadingFlows(false)
+      return () => { active = false }
+    }
+    void Promise.allSettled(
       data.repositories.map(repository =>
         flowRepositoryId && flowRepositoryId !== repository.id
-          ? Promise.resolve([])
+          ? Promise.resolve({ repositoryId: repository.id, page: { items: [] as RepositoryFlowCandidate[], page: { nextCursor: null, hasMore: false } } })
           : flowRevisionScope === 'current' && !repository.lastScanRevision
-            ? Promise.resolve([])
+            ? Promise.resolve({ repositoryId: repository.id, page: { items: [] as RepositoryFlowCandidate[], page: { nextCursor: null, hasMore: false } } })
             : api.repositoryFlowCandidates(
                 repository.id,
                 Object.fromEntries(
@@ -3088,16 +4029,27 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       flowRevisionScope === 'current'
                         ? repository.lastScanRevision ?? ''
                         : '',
+                    model: flowModel.trim(),
+                    promptVersion: flowPromptVersion.trim(),
+                    schemaVersion: flowSchemaVersion.trim(),
+                    minConfidence: flowMinimumConfidencePercent === '' ? '' : String(Number(flowMinimumConfidencePercent) / 100),
+                    maxConfidence: flowMaximumConfidencePercent === '' ? '' : String(Number(flowMaximumConfidencePercent) / 100),
                   }).filter(([, value]) => Boolean(value))
                 )
-              )
+              ).then(response => ({ repositoryId: repository.id, page: normalizeHistoryPage(response) }))
       )
     )
-      .then(groups => {
-        if (active) setFlowCandidates(groups.flat())
-      })
-      .catch(() => {
-        if (active) setFlowCandidates([])
+      .then(results => {
+        if (active) {
+          const groups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
+          setFlowCandidates(groups.flatMap(group => group.page.items))
+          setFlowNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
+          ))
+          setRepositoryFlowFailures(results.flatMap((result, index) =>
+            result.status === 'rejected' ? [data.repositories[index].id] : []
+          ))
+        }
       })
       .finally(() => {
         if (active) {
@@ -3115,38 +4067,198 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowRevisionScope,
     flowSource,
     flowStatus,
+    flowModel,
+    flowPromptVersion,
+    flowSchemaVersion,
+    flowMinimumConfidencePercent,
+    flowMaximumConfidencePercent,
+    invalidFlowConfidenceRange,
   ])
   useEffect(() => {
     let active = true
-    if (invalidExecutionRange) {
+    if (!flowResultsAreCurrent) {
+      setFlowEvidenceArtifacts([])
+      setOmittedFlowEvidenceRevisions(0)
+      return () => { active = false }
+    }
+    const selection = flowRevisionScope === 'all'
+      ? historicalFlowEvidenceSelection(flowCandidates, data.repositories)
+      : { selected: [], omitted: 0 }
+    setOmittedFlowEvidenceRevisions(selection.omitted)
+    setFlowEvidenceArtifacts([])
+    const currentRevisions = new Map(
+      data.repositories.map(repository => [repository.id, repository.lastScanRevision])
+    )
+    const selectedRevisions = new Set(
+      selection.selected.map(({ repositoryId, revision }) => `${repositoryId}\u0000${revision}`)
+    )
+    const evidenceIds = new Map<string, { repositoryId: string; revision: string; ids: Set<string> }>()
+    const loadedArtifactIds = new Set(artifacts.map(artifact => artifact.id))
+    flowCandidates.forEach(candidate => {
+      const isCurrent = candidate.revision === currentRevisions.get(candidate.repositoryId)
+      if (!isCurrent && !selectedRevisions.has(`${candidate.repositoryId}\u0000${candidate.revision}`)) return
+      const key = `${candidate.repositoryId}\u0000${candidate.revision}`
+      const group = evidenceIds.get(key) ?? {
+        repositoryId: candidate.repositoryId,
+        revision: candidate.revision,
+        ids: new Set<string>(),
+      }
+      const referencedIds = flowArtifactTargetIds(candidate, loadedArtifactIds)
+      referencedIds.forEach(id => group.ids.add(id))
+      evidenceIds.set(key, group)
+    })
+    const requests = [...evidenceIds.values()].flatMap(({ repositoryId, revision, ids }) => {
+      const values = [...ids]
+      return Array.from({ length: Math.ceil(values.length / 100) }, (_, index) =>
+        api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100), revision)
+          .then(response => response.items)
+          .catch(() => [])
+      )
+    })
+    void Promise.all(requests).then(
+      groups => { if (active) setFlowEvidenceArtifacts(groups.flat()) },
+      () => { if (active) setFlowEvidenceArtifacts([]) },
+    )
+    return () => { active = false }
+  }, [artifacts, data.repositories, flowCandidates, flowResultsAreCurrent, flowRevisionScope])
+  useEffect(() => {
+    let active = true
+    setExecutionNextCursors({})
+    setExecutionPaginationError(undefined)
+    setLoadingMoreExecutions(false)
+    setExecutionTrendNextCursors({})
+    setExecutionTrendPaginationError(undefined)
+    setLoadingMoreExecutionTrend(false)
+    setPerformanceNextCursors({})
+    setPerformancePaginationError(undefined)
+    setExecutionHistoryFailures([])
+    setExecutionTrendFailures([])
+    setExecutionPerformanceFailures([])
+    if (invalidExecutionRange || invalidExecutionDurationRange) {
       setExecutions([])
+      setPerformanceExecutions([])
+      setPerformanceEvidenceFailures([])
+      setIntegrationExecutions([])
+      setIntegrationEvidenceFailures([])
+      setPostProductionExecutions([])
+      setPostProductionEvidenceFailures([])
       setExecutionPerformance([])
+      setExecutionTrends([])
       return () => {
         active = false
       }
     }
     void Promise.all(
-      data.repositories.map(async repository => ({
-        executions:
-          executionRepositoryId && executionRepositoryId !== repository.id
-            ? []
-            : await api.testExecutions(repository.id, executionFilter),
-        performance:
-          executionRepositoryId && executionRepositoryId !== repository.id
-            ? []
-            : await api.executionPerformance(repository.id, executionFilter),
-      }))
+      data.repositories.map(async repository => {
+        if (executionRepositoryId && executionRepositoryId !== repository.id) {
+          return {
+            repositoryId: repository.id,
+            executions: { items: [] as TestExecution[], page: { nextCursor: null, hasMore: false } },
+            performance: { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } },
+            trend: { items: [] as ExecutionOutcomeTrend[], page: { nextCursor: null, hasMore: false } },
+            performanceExecutions: [] as TestExecution[],
+            integrationExecutions: [] as TestExecution[],
+            postProductionExecutions: [] as TestExecution[],
+            executionFailed: false,
+            performanceExecutionsFailed: false,
+            integrationExecutionsFailed: false,
+            postProductionExecutionsFailed: false,
+            performanceFailed: false,
+            trendFailed: false,
+          }
+        }
+        const [executionResult, performanceResult, trendResult, performanceExecutionsResult, integrationExecutionsResult, postProductionExecutionsResult] = await Promise.allSettled([
+          api.testExecutions(repository.id, executionFilter),
+          api.executionPerformance(repository.id, executionFilter),
+          api.executionTrend(repository.id, executionFilter),
+          api.latestPerformanceExecutions(repository.id),
+          api.latestIntegrationExecutions(repository.id),
+          api.latestPostProductionExecutions(repository.id),
+        ])
+        return {
+          repositoryId: repository.id,
+          executions: executionResult.status === 'fulfilled'
+            ? normalizeHistoryPage(executionResult.value)
+            : { items: [] as TestExecution[], page: { nextCursor: null, hasMore: false } },
+          performance: performanceResult.status === 'fulfilled'
+            ? normalizeHistoryPage(performanceResult.value)
+            : { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } },
+          trend: trendResult.status === 'fulfilled'
+            ? normalizeHistoryPage(trendResult.value)
+            : { items: [] as ExecutionOutcomeTrend[], page: { nextCursor: null, hasMore: false } },
+          performanceExecutions: performanceExecutionsResult.status === 'fulfilled'
+            ? normalizeItemList<TestExecution>(performanceExecutionsResult.value)
+            : [],
+          integrationExecutions: integrationExecutionsResult.status === 'fulfilled'
+            ? normalizeItemList<TestExecution>(integrationExecutionsResult.value)
+            : [],
+          postProductionExecutions: postProductionExecutionsResult.status === 'fulfilled'
+            ? normalizeItemList<TestExecution>(postProductionExecutionsResult.value)
+            : [],
+          executionFailed: executionResult.status === 'rejected',
+          performanceExecutionsFailed: performanceExecutionsResult.status === 'rejected',
+          integrationExecutionsFailed: integrationExecutionsResult.status === 'rejected',
+          postProductionExecutionsFailed: postProductionExecutionsResult.status === 'rejected',
+          performanceFailed: performanceResult.status === 'rejected',
+          trendFailed: trendResult.status === 'rejected',
+        }
+      })
     )
       .then(groups => {
         if (active) {
-          setExecutions(groups.flatMap(group => group.executions))
-          setExecutionPerformance(groups.flatMap(group => group.performance))
+          const loadedExecutions = groups.flatMap(group => group.executions.items)
+          setExecutions(loadedExecutions)
+          setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions))
+          setPerformanceEvidenceFailures(groups
+            .filter(group => group.performanceExecutionsFailed)
+            .map(group => group.repositoryId))
+          setIntegrationExecutions(groups.flatMap(group => group.integrationExecutions))
+          setIntegrationEvidenceFailures(groups
+            .filter(group => group.integrationExecutionsFailed)
+            .map(group => group.repositoryId))
+          setPostProductionExecutions(groups.flatMap(group => group.postProductionExecutions))
+          setPostProductionEvidenceFailures(groups
+            .filter(group => group.postProductionExecutionsFailed)
+            .map(group => group.repositoryId))
+          setExecutionNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.executions.page.nextCursor
+              ? [[group.repositoryId, group.executions.page.nextCursor]]
+              : [])
+          ))
+          setExecutionPerformance(groups.flatMap(group => group.performance.items))
+          setExecutionTrends(groups.map(group => group.trend.items))
+          setExecutionTrendNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.trend.page.nextCursor
+              ? [[group.repositoryId, group.trend.page.nextCursor]]
+              : [])
+          ))
+          setPerformanceNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.performance.page.nextCursor
+              ? [[group.repositoryId, group.performance.page.nextCursor]]
+              : [])
+          ))
+          setExecutionHistoryFailures(groups.filter(group => group.executionFailed).map(group => group.repositoryId))
+          setExecutionPerformanceFailures(groups.filter(group => group.performanceFailed).map(group => group.repositoryId))
+          setExecutionTrendFailures(groups.filter(group => group.trendFailed).map(group => group.repositoryId))
         }
       })
       .catch(() => {
         if (active) {
           setExecutions([])
+          setPerformanceExecutions([])
+          setPerformanceEvidenceFailures(data.repositories.map(repository => repository.id))
+          setIntegrationExecutions([])
+          setIntegrationEvidenceFailures(data.repositories.map(repository => repository.id))
+          setPostProductionExecutions([])
+          setPostProductionEvidenceFailures(data.repositories.map(repository => repository.id))
+          setExecutionNextCursors({})
           setExecutionPerformance([])
+          setExecutionTrends([])
+          setExecutionTrendNextCursors({})
+          setPerformanceNextCursors({})
+          setExecutionHistoryFailures(data.repositories.map(repository => repository.id))
+          setExecutionPerformanceFailures(data.repositories.map(repository => repository.id))
+          setExecutionTrendFailures(data.repositories.map(repository => repository.id))
         }
       })
     return () => {
@@ -3157,10 +4269,234 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     executionFilter,
     executionRepositoryId,
     invalidExecutionRange,
+    invalidExecutionDurationRange,
   ])
+  const loadMoreExecutionTrend = async () => {
+    const cursors = Object.entries(executionTrendNextCursors)
+    if (!cursors.length) return
+    const query = executionTrendQueryRef.current
+    setLoadingMoreExecutionTrend(true)
+    setExecutionTrendPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+        repositoryId,
+        page: normalizeHistoryPage(await api.executionTrend(repositoryId, {
+          ...executionFilter,
+          cursor,
+        })),
+      })))
+      if (executionTrendQueryRef.current !== query) return
+      setExecutionTrends(current => [...current, ...groups.map(group => group.page.items)])
+      setExecutionTrendNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor
+          ? [[group.repositoryId, group.page.page.nextCursor]]
+          : [])
+      ))
+    } catch (cause) {
+      if (executionTrendQueryRef.current === query) {
+        setExecutionTrendPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution trend history.')
+      }
+    } finally {
+      if (executionTrendQueryRef.current === query) setLoadingMoreExecutionTrend(false)
+    }
+  }
+  const loadMoreExecutions = async () => {
+    const cursors = Object.entries(executionNextCursors)
+    if (!cursors.length) return
+    const query = executionTrendQueryRef.current
+    setLoadingMoreExecutions(true)
+    setExecutionPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+        repositoryId,
+        page: normalizeHistoryPage(await api.testExecutions(repositoryId, {
+          ...executionFilter,
+          cursor,
+        })),
+      })))
+      if (executionTrendQueryRef.current !== query) return
+      const continuedExecutions = groups.flatMap(group => group.page.items)
+      setExecutions(current => [...new Map(
+        [...current, ...continuedExecutions].map(item => [item.id, item])
+      ).values()])
+      setPerformanceExecutions(current => [...new Map(
+        [
+          ...current,
+          ...continuedExecutions.filter(execution => execution.kind === 'load' || execution.kind === 'stress'),
+        ].map(item => [item.id, item])
+      ).values()])
+      setExecutionNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor
+          ? [[group.repositoryId, group.page.page.nextCursor]]
+          : [])
+      ))
+    } catch (cause) {
+      if (executionTrendQueryRef.current === query) {
+        setExecutionPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution evidence.')
+      }
+    } finally {
+      if (executionTrendQueryRef.current === query) setLoadingMoreExecutions(false)
+    }
+  }
+  const loadMorePerformance = async () => {
+    const cursors = Object.entries(performanceNextCursors)
+    if (!cursors.length) return
+    const query = executionTrendQueryRef.current
+    setLoadingMorePerformance(true)
+    setPerformancePaginationError(undefined)
+    try {
+      const results = await Promise.allSettled(cursors.map(async ([repositoryId, cursor]) => ({
+        repositoryId,
+        page: normalizeHistoryPage(await api.executionPerformance(repositoryId, {
+          ...executionFilter,
+          cursor,
+        })),
+      })))
+      if (executionTrendQueryRef.current !== query) return
+      const groups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
+      const failedRepositoryIds = results.flatMap((result, index) =>
+        result.status === 'rejected' ? [cursors[index][0]] : []
+      )
+      setExecutionPerformance(current => [...new Map(
+        [...current, ...groups.flatMap(group => group.page.items)].map(item => [
+          `${item.repositoryId}:${item.policyArtifactId}:${item.gateArtifactId}`,
+          item,
+        ])
+      ).values()])
+      setPerformanceNextCursors(current => {
+        const next = { ...current }
+        groups.forEach(group => {
+          if (group.page.page.nextCursor) next[group.repositoryId] = group.page.page.nextCursor
+          else delete next[group.repositoryId]
+        })
+        return next
+      })
+      if (failedRepositoryIds.length) {
+        setPerformancePaginationError(`Unable to load more policy-gate performance for ${failedRepositoryIds.length} ${failedRepositoryIds.length === 1 ? 'repository' : 'repositories'}. Successful evidence remains visible.`)
+      }
+    } catch (cause) {
+      if (executionTrendQueryRef.current === query) {
+        setPerformancePaginationError(cause instanceof Error ? cause.message : 'Unable to load more policy-gate performance.')
+      }
+    } finally {
+      if (executionTrendQueryRef.current === query) setLoadingMorePerformance(false)
+    }
+  }
+  const loadMoreFlows = async () => {
+    const cursors = Object.entries(flowNextCursors)
+    if (!cursors.length) return
+    const query = flowQueryRef.current
+    setLoadingMoreFlows(true)
+    setHistoryPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => {
+        const repository = data.repositories.find(item => item.id === repositoryId)
+        const page = normalizeHistoryPage(await api.repositoryFlowCandidates(
+          repositoryId,
+          Object.fromEntries(Object.entries({
+            source: flowSource,
+            status: flowStatus,
+            revision: flowRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
+            model: flowModel.trim(),
+            promptVersion: flowPromptVersion.trim(),
+            schemaVersion: flowSchemaVersion.trim(),
+            minConfidence: flowMinimumConfidencePercent === '' ? '' : String(Number(flowMinimumConfidencePercent) / 100),
+            maxConfidence: flowMaximumConfidencePercent === '' ? '' : String(Number(flowMaximumConfidencePercent) / 100),
+            cursor,
+          }).filter(([, value]) => Boolean(value)))
+        ))
+        return { repositoryId, page }
+      }))
+      if (flowQueryRef.current !== query) return
+      setFlowCandidates(current => [...new Map(
+        [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
+      ).values()])
+      setFlowNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
+      ))
+    } catch (cause) {
+      if (flowQueryRef.current === query) {
+        setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more UX-flow history.')
+      }
+    } finally {
+      if (flowQueryRef.current === query) setLoadingMoreFlows(false)
+    }
+  }
+  const loadMorePolicyGates = async () => {
+    const cursors = Object.entries(policyGateNextCursors)
+    if (!cursors.length) return
+    const selectionQuery = policyGateHistoryQueryRef.current
+    const visibleAtRequestStart = new Set(
+      policyGateEvaluationsRef.current.map(evaluation => evaluation.id)
+    )
+    setLoadingMorePolicyGates(true)
+    setHistoryPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => {
+        const repository = data.repositories.find(item => item.id === repositoryId)
+        const page = normalizeHistoryPage(await api.policyGateEvaluations(
+          repositoryId,
+          Object.fromEntries(Object.entries({
+            kind: policyGateKind,
+            remediationAction: policyGateRemediationAction,
+            severity: policyGateSeverity,
+            reviewStatus: policyGateReviewStatus,
+            revision: policyGateRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
+            subject: policyGateSubject.trim(),
+            minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
+            maxConfidence: policyGateMaximumConfidencePercent === '' ? '' : String(Number(policyGateMaximumConfidencePercent) / 100),
+            cursor,
+          }).filter(([, value]) => Boolean(value)))
+        ))
+        return { repositoryId, page }
+      }))
+      if (policyGateHistoryQueryRef.current !== selectionQuery) return
+      const continuedEvaluations = groups.flatMap(group => group.page.items)
+      setPolicyGateEvaluations(current => mergePolicyGateContinuation(
+        current,
+        continuedEvaluations,
+        visibleAtRequestStart,
+      ))
+      setPolicyGateNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
+      ))
+    } catch (cause) {
+      if (policyGateHistoryQueryRef.current === selectionQuery) {
+        setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more policy and gate history.')
+      }
+    } finally {
+      if (policyGateHistoryQueryRef.current === selectionQuery) {
+        setLoadingMorePolicyGates(false)
+      }
+    }
+  }
   const outcomeTrend = useMemo(
-    () => executionOutcomeTrend(executions),
-    [executions]
+    () => mergeExecutionOutcomeTrends(executionTrends),
+    [executionTrends]
+  )
+  const repositoryLabels = useMemo(
+    () =>
+      new Map(
+        data.repositories.map(repository => [
+          repository.id,
+          `${repository.owner}/${repository.name}`,
+        ])
+      ),
+    [data.repositories]
+  )
+  const evidenceArtifacts = useMemo(
+    () => [...new Map(
+      [...governanceEvidenceArtifacts, ...flowEvidenceArtifacts, ...artifacts]
+        .map(artifact => [artifact.id, artifact])
+    ).values()],
+    [artifacts, governanceEvidenceArtifacts, flowEvidenceArtifacts]
+  )
+  const artifactsById = useMemo(
+    () => new Map(evidenceArtifacts.flatMap(artifact => [
+      [artifact.id, artifact] as const,
+      ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+    ])),
+    [evidenceArtifacts]
   )
   const filteredPolicyGateEvaluations = useMemo(
     () =>
@@ -3183,6 +4519,31 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       'route',
       'UX flows',
       'Routes and API transitions discovered from repository analysis',
+    ],
+    [
+      'story',
+      'Storybook states',
+      'Component states and interaction stories supplied to reviewed flow analysis',
+    ],
+    [
+      'documentation',
+      'Repository documentation',
+      'Journey, policy, release, and testing context discovered in source',
+    ],
+    [
+      'test-plan',
+      'Existing test plans',
+      'Repository test cases available for flow and coverage analysis',
+    ],
+    [
+      'integration-test',
+      'Integration tests',
+      'Integration workflows detected by repository analysis',
+    ],
+    [
+      'post-production-test',
+      'Post-production tests',
+      'Production validation workflows detected by repository analysis',
     ],
     [
       'policy',
@@ -3212,6 +4573,38 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         title="Quality intelligence"
         detail="Deterministic repository evidence is stored by revision. LiteLLM proposals remain reviewable suggestions before they affect flows or policy governance."
       />
+      <FlowInspector
+        open={flowInspectorOpen}
+        flow={inspectedFlow}
+        repositoryLabel={inspectedFlow
+          ? repositoryLabels.get(inspectedFlow.repositoryId)
+          : undefined}
+        artifacts={evidenceArtifacts}
+        loading={flowInspectorLoading}
+        error={flowInspectorError}
+        onClose={closeFlowInspector}
+      />
+      {data.diagnostics.filter(item => item.category === 'repository').length > 0 && (
+        <details className="scan-diagnostics" open>
+          <summary>
+            <AlertTriangle size={14} /> Repository analysis diagnostics
+          </summary>
+          <div>
+            {data.diagnostics
+              .filter(item => item.category === 'repository')
+              .map(item => (
+                <article key={`${item.repositoryId}:${item.revision}:${item.sourcePath}:${item.code}`}>
+                  <span className={`diagnostic-severity diagnostic-${item.severity}`}>
+                    {item.severity}
+                  </span>
+                  <code>{repositoryLabels.get(item.repositoryId) ?? item.repositoryId} · {item.sourcePath}</code>
+                  <strong>{item.code}</strong>
+                  <p>{item.message}</p>
+                </article>
+              ))}
+          </div>
+        </details>
+      )}
       {loadingArtifacts ? (
         <div className="loading-screen">
           <RefreshCw className="spin" />
@@ -3225,17 +4618,58 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             source={flowSource}
             status={flowStatus}
             revisionScope={flowRevisionScope}
+            model={flowModel}
+            promptVersion={flowPromptVersion}
+            schemaVersion={flowSchemaVersion}
+            minimumConfidencePercent={flowMinimumConfidencePercent}
+            maximumConfidencePercent={flowMaximumConfidencePercent}
+            invalidConfidenceRange={invalidFlowConfidenceRange}
             onRepositoryIdChange={setFlowRepositoryId}
             onSourceChange={setFlowSource}
             onStatusChange={setFlowStatus}
             onRevisionScopeChange={setFlowRevisionScope}
+            onModelChange={setFlowModel}
+            onPromptVersionChange={setFlowPromptVersion}
+            onSchemaVersionChange={setFlowSchemaVersion}
+            onMinimumConfidencePercentChange={setFlowMinimumConfidencePercent}
+            onMaximumConfidencePercentChange={setFlowMaximumConfidencePercent}
           />
+          {invalidFlowConfidenceRange && (
+            <p className="form-error" role="alert">
+              Maximum confidence must be greater than or equal to minimum confidence.
+            </p>
+          )}
+          {Object.keys(artifactNextCursors).length > 0 && (
+            <QualityAction
+              intent="quiet"
+              onClick={() => void loadMoreArtifacts()}
+              disabled={loadingMoreArtifacts}
+            >
+              {loadingMoreArtifacts ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+              Load more repository evidence
+            </QualityAction>
+          )}
+          {artifactPaginationError && (
+            <p className="form-error" role="alert">{artifactPaginationError}</p>
+          )}
+          {(repositoryArtifactFailures.length > 0 ||
+            repositoryGovernanceFailures.length > 0 ||
+            repositoryFlowFailures.length > 0) && (
+            <p className="form-error" role="alert">
+              Some repository intelligence is temporarily unavailable. Evidence from successful repositories remains visible.
+            </p>
+          )}
+          {governanceEvidenceFailures.length > 0 && (
+            <p className="form-error" role="alert">
+              Some exact policy and gate evidence could not be loaded. Evidence from successful repositories remains visible.
+            </p>
+          )}
           <div
             className="catalog-filters"
             aria-label="Policy and gate finding filters"
           >
             <label>
-              Anomaly
+              Relationship or anomaly
               <select
                 value={policyGateKind}
                 onChange={event =>
@@ -3244,8 +4678,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   )
                 }
               >
-                <option value="">All anomalies</option>
+                <option value="">All relationships and anomalies</option>
                 {[
+                  'guarded-policy',
                   'unguarded-policy',
                   'guard-without-policy',
                   'contradictory-policy',
@@ -3255,6 +4690,23 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     {kind}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label>
+              Proposed remediation
+              <select
+                value={policyGateRemediationAction}
+                onChange={event =>
+                  setPolicyGateRemediationAction(
+                    event.target.value as PolicyGateEvaluation['remediationAction'] | ''
+                  )
+                }
+              >
+                <option value="">All remediation actions</option>
+                <option value="build-gate">Build a gate</option>
+                <option value="build-policy">Build a policy</option>
+                <option value="disambiguate-policy">Disambiguate policy</option>
+                <option value="align-policy-gate">Align policy and gate</option>
               </select>
             </label>
             <label>
@@ -3294,7 +4746,98 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 ))}
               </select>
             </label>
+            <label>
+              Governance revision
+              <select
+                value={policyGateRevisionScope}
+                onChange={event =>
+                  setPolicyGateRevisionScope(
+                    event.target.value as FlowRevisionScope
+                  )
+                }
+              >
+                <option value="current">Current analysis</option>
+                <option value="all">All revisions</option>
+              </select>
+            </label>
+            <label>
+              Governance subject
+              <input
+                value={policyGateSubject}
+                maxLength={200}
+                placeholder="authentication"
+                onChange={event => setPolicyGateSubject(event.target.value)}
+              />
+            </label>
+            <label>
+              Minimum governance confidence (%)
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={policyGateMinimumConfidencePercent}
+                placeholder="Any"
+                onChange={event => setPolicyGateMinimumConfidencePercent(event.target.value)}
+              />
+            </label>
+            <label>
+              Maximum governance confidence (%)
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={policyGateMaximumConfidencePercent}
+                placeholder="Any"
+                aria-invalid={invalidPolicyGateConfidenceRange}
+                onChange={event => setPolicyGateMaximumConfidencePercent(event.target.value)}
+              />
+            </label>
           </div>
+          {invalidPolicyGateConfidenceRange && (
+            <p className="form-error" role="alert">
+              Maximum governance confidence must be greater than or equal to minimum governance confidence.
+            </p>
+          )}
+          {(Object.keys(flowNextCursors).length > 0 ||
+            Object.keys(policyGateNextCursors).length > 0) && (
+            <div className="row-actions" aria-label="Analysis history pagination">
+              {Object.keys(flowNextCursors).length > 0 && (
+                <QualityAction
+                  intent="quiet"
+                  disabled={loadingMoreFlows}
+                  onClick={() => void loadMoreFlows()}
+                >
+                  {loadingMoreFlows ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+                  Load more UX-flow history
+                </QualityAction>
+              )}
+              {Object.keys(policyGateNextCursors).length > 0 && (
+                <QualityAction
+                  intent="quiet"
+                  disabled={loadingMorePolicyGates}
+                  onClick={() => void loadMorePolicyGates()}
+                >
+                  {loadingMorePolicyGates ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+                  Load more policy and gate history
+                </QualityAction>
+              )}
+            </div>
+          )}
+          {historyPaginationError && (
+            <p className="performance-evidence-warning" role="alert">
+              {historyPaginationError}
+            </p>
+          )}
+          {omittedGovernanceEvidenceRevisions > 0 && (
+            <p className="performance-inventory-only" role="status">
+              Historical policy and gate evidence is expanded for the {MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS} newest revisions.{' '}
+              {omittedGovernanceEvidenceRevisions}{' '}
+              {omittedGovernanceEvidenceRevisions === 1 ? 'older revision remains' : 'older revisions remain'}{' '}
+              visible with stored evidence passages without an unbounded repository request fan-out.
+            </p>
+          )}
           <div className="catalog-grid">
             {groups.map(([kind, title, detail]) => {
               const items = artifacts.filter(item => item.kind === kind)
@@ -3349,11 +4892,22 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         <span>Loading UX flows…</span>
                       </div>
                     )}
+                    {kind === 'route' && omittedFlowEvidenceRevisions > 0 && (
+                      <p className="performance-inventory-only" role="status">
+                        Historical evidence is prefetched for the {MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS} newest revisions.{' '}
+                        {omittedFlowEvidenceRevisions}{' '}
+                        {omittedFlowEvidenceRevisions === 1 ? 'older revision remains' : 'older revisions remain'}{' '}
+                        visible with stored evidence identifiers and can be inspected without an unbounded repository request fan-out.
+                      </p>
+                    )}
                     {kind === 'route' &&
                       visibleFlowCandidates.map(flow => (
                         <article className="catalog-row" key={flow.id}>
                           <div>
                             <strong>{flow.title}</strong>
+                            <small className="flow-repository-label">
+                              Repository {repositoryLabels.get(flow.repositoryId) ?? flow.repositoryId}
+                            </small>
                             <div className="flow-origin-line">
                               <span
                                 className={`flow-origin-badge flow-origin-${flow.source}`}
@@ -3388,6 +4942,22 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <dt>Schema</dt>
                                   <dd>{flow.analysis.schemaVersion}</dd>
                                 </div>
+                                {flow.analysis.inputArtifactCount !== undefined &&
+                                  flow.analysis.promptArtifactCount !== undefined && (
+                                    <div>
+                                      <dt>Prompt evidence</dt>
+                                      <dd>
+                                        {flow.analysis.promptArtifactCount} of{' '}
+                                        {flow.analysis.inputArtifactCount} repository artifacts supplied
+                                        {flow.analysis.promptTruncated
+                                          ? ` · ${Math.max(
+                                              flow.analysis.inputArtifactCount - flow.analysis.promptArtifactCount,
+                                              0
+                                            )} omitted by prompt budget`
+                                          : ' · complete'}
+                                      </dd>
+                                    </div>
+                                  )}
                               </dl>
                             ) : flow.source === 'litellm' ? (
                               <small className="flow-provenance-missing">
@@ -3396,6 +4966,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </small>
                             ) : null}
                             <p>{flow.steps[0]?.action}</p>
+                            <QualityAction
+                              intent="quiet"
+                              onClick={() => void inspectFlow(flow)}
+                            >
+                              <Eye size={14} /> Inspect flow and wireframe
+                            </QualityAction>
                             <ol
                               className="flow-wireframe"
                               aria-label={`${flow.title} wireframe`}
@@ -3413,11 +4989,28 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               <summary>Source evidence</summary>
                               <small>Revision {flow.revision}</small>
                               <ul>
-                                {flow.evidence.map(evidence => (
-                                  <li key={evidence}>
-                                    <code>{evidence}</code>
-                                  </li>
-                                ))}
+                                {[
+                                  ...new Set([
+                                    ...flow.evidence,
+                                    ...flow.steps.flatMap(
+                                      step => step.targetIds
+                                    ),
+                                  ]),
+                                ].map(evidence => {
+                                  const artifact = artifactsById.get(evidence)
+                                  return (
+                                    <li key={evidence}>
+                                      <code>
+                                        {artifact
+                                          ? `${artifact.kind} · ${artifact.sourcePath}`
+                                          : evidence}
+                                      </code>
+                                      {artifact && (
+                                        <span>Artifact: {artifact.title}</span>
+                                      )}
+                                    </li>
+                                  )
+                                })}
                               </ul>
                               <ol>
                                 {flow.steps.map((step, index) => (
@@ -3425,9 +5018,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                     <strong>{step.actor}</strong> —{' '}
                                     {step.action} → {step.expectedOutcome}
                                     {step.targetIds.length ? (
-                                      <small>
+                                      <small
+                                        aria-label={`${step.action} targets`}
+                                      >
                                         {' '}
-                                        ({step.targetIds.join(', ')})
+                                        ({step.targetIds
+                                          .map(targetId => {
+                                            const artifact =
+                                              artifactsById.get(targetId)
+                                            return artifact
+                                              ? `${artifact.kind} · ${artifact.sourcePath} · ${artifact.title}`
+                                              : targetId
+                                          })
+                                          .join(', ')})
                                       </small>
                                     ) : null}
                                   </li>
@@ -3436,6 +5039,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             </details>
                             <FlowReviewControls
                               flow={flow}
+                              currentRevision={
+                                data.repositories.find(
+                                  repository => repository.id === flow.repositoryId
+                                )?.lastScanRevision
+                              }
                               onReview={reviewFlow}
                             />
                           </div>
@@ -3457,80 +5065,239 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 {evaluation.reviewStatus}
                               </code>
                               <p>{evaluation.detail}</p>
-                              <small>
-                                {evaluation.recommendation}
-                                {evaluation.reviewedAt
-                                  ? ` · Reviewed ${new Date(evaluation.reviewedAt).toLocaleString()}${evaluation.reviewedBy ? ` by ${evaluation.reviewedBy}` : ''}`
-                                  : ''}
-                                {evaluation.reviewReason
-                                  ? ` · ${evaluation.reviewReason}`
-                                  : ''}
-                              </small>
+                              {evaluation.reviewedAt && (
+                                <small>
+                                  Reviewed {new Date(evaluation.reviewedAt).toLocaleString()}
+                                  {evaluation.reviewedBy ? ` by ${evaluation.reviewedBy}` : ''}
+                                  {evaluation.reviewReason ? ` · ${evaluation.reviewReason}` : ''}
+                                </small>
+                              )}
                               <PolicyGateEvidence
                                 evaluation={evaluation}
-                                artifacts={artifacts}
+                                artifacts={evidenceArtifacts}
                               />
-                              {evaluation.reviewStatus === 'proposed' && (
-                                <div className="row-actions">
-                                  <button
-                                    className="secondary-button"
-                                    onClick={() =>
-                                      void reviewPolicyGate(
-                                        evaluation,
-                                        'accepted'
-                                      )
-                                    }
-                                  >
-                                    <Check size={14} /> Accept recommendation
-                                  </button>
-                                  <button
-                                    className="secondary-button"
-                                    onClick={() =>
-                                      void reviewPolicyGate(
-                                        evaluation,
-                                        'dismissed'
-                                      )
-                                    }
-                                  >
-                                    <X size={14} /> Dismiss
-                                  </button>
-                                </div>
-                              )}
-                              <PolicyGateReviewHistory
+                              <PolicyGateReviewControls
                                 evaluation={evaluation}
+                                currentRevision={
+                                  data.repositories.find(
+                                    repository =>
+                                      repository.id === evaluation.repositoryId
+                                  )?.lastScanRevision
+                                }
+                                onReview={reviewPolicyGate}
                               />
                             </div>
                           </article>
                         ))}
-                    {items.slice(0, 12).map(item => (
+                    {items.map(item => {
+                      const repository = data.repositories.find(
+                        candidate => candidate.id === item.repositoryId
+                      )
+                      const latestExecution = item.kind === 'integration-test'
+                        ? latestIntegrationExecution(item, integrationExecutions, repository?.defaultBranch, repository ? `${repository.owner}/${repository.name}` : undefined)
+                        : item.kind === 'post-production-test'
+                          ? latestPostProductionExecution(item, postProductionExecutions, repository?.defaultBranch, repository ? `${repository.owner}/${repository.name}` : undefined)
+                          : latestPerformanceExecution(item, performanceExecutions, repository?.defaultBranch, repository ? `${repository.owner}/${repository.name}` : undefined)
+                      const analyzedRevision = repository
+                        ? analyzedSourceRevision(repository)
+                        : undefined
+                      const workflowTarget = executableWorkflowTarget(item)
+                      const sharedWorkflowArtifacts = artifacts.filter(candidate =>
+                        candidate.repositoryId === item.repositoryId &&
+                        candidate.sourcePath === item.sourcePath &&
+                        artifactWorkflowExecutionKind(candidate) !== undefined
+                      )
+                      const sharedWorkflowKinds = new Set(
+                        sharedWorkflowArtifacts.map(candidate => artifactWorkflowExecutionKind(candidate))
+                      )
+                      const preferredExecutionKind = preferredWorkflowExecutionKind(sharedWorkflowArtifacts)
+                      const artifactExecutionKind = artifactWorkflowExecutionKind(item)
+                      const lowerPrioritySharedWorkflow = sharedWorkflowKinds.size > 1 &&
+                        preferredExecutionKind !== undefined &&
+                        artifactExecutionKind !== preferredExecutionKind
+                      return (
                       <article className="catalog-row" key={item.id}>
                         <div>
                           <strong>{item.title}</strong>
                           <code>{item.sourcePath}</code>
                           <p>{item.summary}</p>
-                          {item.evidence.length > 0 && (
-                            <small>{item.evidence[0]}</small>
+                          {lowerPrioritySharedWorkflow && (
+                            <small className="performance-inventory-only">
+                              Shared workflow · recorded outcomes are classified as {preferredExecutionKind} evidence before {artifactExecutionKind} evidence.
+                            </small>
                           )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
-                            item.sourcePath.startsWith(
-                              '.github/workflows/'
-                            ) && (
+                            performanceEvidenceFailures.includes(item.repositoryId) && (
+                              <small className="performance-evidence-warning" role="alert">
+                                Latest execution evidence is temporarily unavailable. The discovered test definition remains available.
+                              </small>
+                            )}
+                          {item.kind === 'post-production-test' &&
+                            postProductionEvidenceFailures.includes(item.repositoryId) && (
+                              <small className="performance-evidence-warning" role="alert">
+                                Latest post-production outcome is temporarily unavailable. The detected workflow remains available.
+                              </small>
+                            )}
+                          {item.kind === 'integration-test' &&
+                            integrationEvidenceFailures.includes(item.repositoryId) && (
+                              <small className="performance-evidence-warning" role="alert">
+                                Latest integration outcome is temporarily unavailable. The detected workflow remains available.
+                              </small>
+                            )}
+                          {item.evidence.length > 0 && (
+                            item.kind === 'test-plan' ? (
+                              <small
+                                className="test-plan-identity"
+                                aria-label={`Evidence identity ${item.id}`}
+                              >
+                                Evidence ID <code>{item.evidence[0]}</code>
+                              </small>
+                            ) : (
+                              <small>{item.evidence[0]}</small>
+                            )
+                          )}
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
+                            workflowTarget &&
+                            analyzedRevision && (
                               <div className="row-actions">
                                 <button
                                   className="secondary-button"
                                   disabled={dispatchingArtifact === item.id}
-                                  onClick={() => void runPerformanceTest(item)}
+                                  onClick={() => void runTestSuite(item)}
                                 >
                                   <Activity size={14} />{' '}
                                   {dispatchingArtifact === item.id
                                     ? 'Dispatching…'
-                                    : 'Run on default branch'}
+                                    : `Run analyzed revision ${analyzedRevision.slice(0, 12)}`}
                                 </button>
                               </div>
                             )}
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
+                            item.execution?.requiredInputs?.length ? (
+                              <small className="performance-inventory-only">
+                                Inventory only · required workflow inputs need
+                                repository defaults before controlled dispatch:{' '}
+                                {item.execution.requiredInputs.join(', ')}.
+                              </small>
+                            ) : null}
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
+                            item.execution &&
+                            !item.execution.requiredInputs?.length &&
+                            analyzedRevision &&
+                            !workflowTarget && (
+                              <small className="performance-inventory-only">
+                                Inventory only · controlled dispatch requires a scanner-verified workflow that is a direct YAML child of .github/workflows.
+                              </small>
+                            )}
+                          {['load-test', 'stress-test'].includes(item.kind) &&
+                            !item.execution && (
+                              <small className="performance-inventory-only">
+                                Inventory only · a repository-owned
+                                workflow_dispatch workflow must declare the
+                                reviewed FUZEQUALITY_PERFORMANCE environment
+                                marker as load or stress to enable a controlled
+                                run.
+                              </small>
+                            )}
+                          {['integration-test', 'post-production-test'].includes(item.kind) &&
+                            !item.execution && (
+                              <small className="performance-inventory-only">
+                                Inventory only · add a repository-owned workflow_dispatch trigger plus explicit FUZEQUALITY_STAGE and FUZEQUALITY_EXECUTION: dispatch markers to enable a controlled run.
+                              </small>
+                            )}
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
+                            item.execution &&
+                            !item.execution.requiredInputs?.length &&
+                            !analyzedRevision && (
+                              <small className="performance-inventory-only">
+                                Inventory only · run repository analysis at an
+                                exact commit before dispatching this workflow.
+                              </small>
+                            )}
+                          {['load-test', 'stress-test'].includes(item.kind) && item.execution && (
+                            <section
+                              className="performance-latest-execution"
+                              aria-label={`Latest execution for ${item.title}`}
+                            >
+                              <strong>Latest recorded outcome</strong>
+                              {latestExecution ? (
+                                <>
+                                  <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
+                                  <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
+                                  <ExecutionEvidenceMetadata execution={latestExecution} />
+                                  <ExecutionEvidenceCoverage execution={latestExecution} />
+                                  <ExecutionLinkageEvidence execution={latestExecution} />
+                                  <ExecutionThresholdEvidence execution={latestExecution} />
+                                  <ExecutionEvidenceLinks execution={latestExecution} />
+                                  <ExecutionSourceLink execution={latestExecution} />
+                                </>
+                              ) : (
+                                <small>No matching execution has been ingested for this workflow yet.</small>
+                              )}
+                            </section>
+                          )}
+                          {item.kind === 'post-production-test' && (
+                            <section
+                              className="performance-latest-execution"
+                              aria-label={`Latest execution for ${item.title}`}
+                            >
+                              <strong>Latest recorded post-production outcome</strong>
+                              {latestExecution ? (
+                                <>
+                                  <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
+                                  <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
+                                  <ExecutionEvidenceMetadata execution={latestExecution} />
+                                  <ExecutionEvidenceCoverage execution={latestExecution} />
+                                  <ExecutionLinkageEvidence execution={latestExecution} />
+                                  <ExecutionEvidenceLinks execution={latestExecution} />
+                                  <ExecutionSourceLink execution={latestExecution} />
+                                </>
+                              ) : (
+                                <small>No matching post-production execution has been ingested for this workflow yet.</small>
+                              )}
+                            </section>
+                          )}
+                          {item.kind === 'integration-test' && (
+                            <section
+                              className="performance-latest-execution"
+                              aria-label={`Latest execution for ${item.title}`}
+                            >
+                              <strong>Latest recorded integration outcome</strong>
+                              {latestExecution ? (
+                                <>
+                                  <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
+                                  <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
+                                  <ExecutionEvidenceMetadata execution={latestExecution} />
+                                  <ExecutionEvidenceCoverage execution={latestExecution} />
+                                  <ExecutionLinkageEvidence execution={latestExecution} />
+                                  <ExecutionEvidenceLinks execution={latestExecution} />
+                                  <ExecutionSourceLink execution={latestExecution} />
+                                </>
+                              ) : (
+                                <small>No matching integration execution has been ingested for this workflow yet.</small>
+                              )}
+                            </section>
+                          )}
+                          {performanceDispatch?.artifactId === item.id && (
+                            <p
+                              className={
+                                performanceDispatch.state === 'error'
+                                  ? 'form-error'
+                                  : 'performance-dispatch-success'
+                              }
+                              role={
+                                performanceDispatch.state === 'error'
+                                  ? 'alert'
+                                  : 'status'
+                              }
+                            >
+                              {performanceDispatch.message}
+                            </p>
+                          )}
                         </div>
                       </article>
-                    ))}
+                      )
+                    })}
                     {items.length === 0 &&
                       !(kind === 'route' &&
                         (!flowResultsAreCurrent ||
@@ -3620,6 +5387,155 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </select>
             </label>
             <label>
+              Ingestion provider
+              <select
+                value={executionProvider}
+                onChange={event =>
+                  setExecutionProvider(
+                    event.target.value as TestExecution['provider'] | ''
+                  )
+                }
+              >
+                <option value="">All providers</option>
+                <option value="github-actions">GitHub Actions</option>
+                <option value="external">External ingestion</option>
+              </select>
+            </label>
+            <label>
+              Evidence attachment
+              <select
+                value={executionEvidenceKind}
+                onChange={event =>
+                  setExecutionEvidenceKind(
+                    event.target.value as TestExecution['evidenceLinks'][number]['kind'] | ''
+                  )
+                }
+              >
+                <option value="">All attachments</option>
+                <option value="video">Video</option>
+                <option value="report">Report</option>
+                <option value="trace">Trace</option>
+                <option value="screenshot">Screenshot</option>
+                <option value="log">Log</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              Threshold evidence
+              <select
+                value={executionThresholdOutcome}
+                onChange={event =>
+                  setExecutionThresholdOutcome(event.target.value as 'passed' | 'failed' | '')
+                }
+              >
+                <option value="">All threshold states</option>
+                <option value="failed">Breached thresholds</option>
+                <option value="passed">Satisfied thresholds</option>
+              </select>
+            </label>
+            <label>
+              Gate outcome
+              <select
+                value={executionGateOutcome}
+                onChange={event =>
+                  setExecutionGateOutcome(event.target.value as TestExecution['status'] | '')
+                }
+              >
+                <option value="">All gate outcomes</option>
+                <option value="passed">Passed gates</option>
+                <option value="failed">Failed gates</option>
+                <option value="cancelled">Cancelled gates</option>
+                <option value="running">Running gates</option>
+              </select>
+            </label>
+            <label>
+              Attempt
+              <select
+                value={executionAttemptScope}
+                onChange={event => setExecutionAttemptScope(
+                  event.target.value as 'initial' | 'retry' | 'recovered' | ''
+                )}
+              >
+                <option value="">All attempts</option>
+                <option value="initial">Initial attempts</option>
+                <option value="retry">Retries only</option>
+                <option value="recovered">Recovered after failure</option>
+              </select>
+            </label>
+            <label>
+              Provider run ID
+              <input
+                type="text"
+                value={executionExternalRunId}
+                maxLength={500}
+                placeholder="Exact provider run ID"
+                onChange={event => setExecutionExternalRunId(event.target.value)}
+              />
+            </label>
+            <label>
+              Suite name
+              <input
+                type="text"
+                value={executionName}
+                maxLength={500}
+                placeholder="Exact suite name"
+                onChange={event => setExecutionName(event.target.value)}
+              />
+            </label>
+            <label>
+              Source branch
+              <input
+                type="text"
+                value={executionBranch}
+                maxLength={500}
+                placeholder="main or feature/checkout"
+                onChange={event => setExecutionBranch(event.target.value)}
+              />
+            </label>
+            <label>
+              Source revision
+              <input
+                type="text"
+                value={executionRevision}
+                maxLength={200}
+                placeholder="Exact commit SHA"
+                onChange={event => setExecutionRevision(event.target.value)}
+              />
+            </label>
+            <label>
+              Workflow file
+              <input
+                type="text"
+                value={executionWorkflowPath}
+                maxLength={1000}
+                placeholder=".github/workflows/load.yml"
+                onChange={event => setExecutionWorkflowPath(event.target.value)}
+              />
+            </label>
+            <label>
+              Minimum duration (seconds)
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={executionMinimumDurationSeconds}
+                placeholder="Any duration"
+                onChange={event => setExecutionMinimumDurationSeconds(event.target.value)}
+              />
+            </label>
+            <label>
+              Maximum duration (seconds)
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={executionMaximumDurationSeconds}
+                placeholder="Any duration"
+                aria-invalid={invalidExecutionDurationRange}
+                onChange={event => setExecutionMaximumDurationSeconds(event.target.value)}
+              />
+            </label>
+            <label>
               From
               <input
                 type="datetime-local"
@@ -3647,6 +5563,35 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </button>
             )}
           </div>
+          {executionPolicyArtifactId && executionGateArtifactId && (
+            <div className="performance-inventory-only" role="status">
+              Showing execution evidence for policy <code>{executionPolicyArtifactId}</code> and gate{' '}
+              <code>{executionGateArtifactId}</code>.{' '}
+              <QualityAction
+                intent="quiet"
+                onClick={() => {
+                  setExecutionPolicyArtifactId('')
+                  setExecutionGateArtifactId('')
+                }}
+              >
+                Clear policy-gate focus
+              </QualityAction>
+            </div>
+          )}
+          {invalidExecutionDurationRange && (
+            <p className="form-error" role="alert">
+              Maximum duration must be greater than or equal to minimum duration.
+            </p>
+          )}
+          {executionTrendFailures.length > 0 && (
+            <p className="form-error" role="alert">
+              Execution outcome trend is temporarily unavailable for {executionTrendFailures.length}{' '}
+              {executionTrendFailures.length === 1 ? 'repository' : 'repositories'}. Loaded execution evidence remains visible.
+            </p>
+          )}
+          <p className="performance-inventory-only">
+            Outcome-trend continuation retains the execution lifecycle state captured when this view loaded.
+          </p>
           <div className="execution-trend" aria-label="Execution outcome trend">
             {outcomeTrend.map(day => (
               <div key={day.date}>
@@ -3655,14 +5600,44 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <span>{day.failed} failed</span>
                 <span>{day.cancelled} cancelled</span>
                 <span>{day.running} running</span>
+                <span>
+                  {day.total} total · {Math.round(day.passRate * 100)}% passed among terminal outcomes
+                </span>
+                <span>
+                  {day.durationSampleCount > 0
+                    ? `${durationMsLabel(day.averageDurationMs)} average · ${durationMsLabel(day.maximumDurationMs)} slowest · ${day.durationSampleCount} timed`
+                    : 'No completed timing samples'}
+                </span>
+                <span>
+                  {day.retryAttemptCount} retries · {day.successfulRetryCount} passed retries · {day.recoveredRunCount} recovered after failure
+                </span>
               </div>
             ))}
             {!outcomeTrend.length && (
               <span>No timestamped outcomes for this filter.</span>
             )}
           </div>
+          {Object.keys(executionTrendNextCursors).length > 0 && (
+            <QualityAction
+              intent="quiet"
+              onClick={() => void loadMoreExecutionTrend()}
+              disabled={loadingMoreExecutionTrend}
+            >
+              {loadingMoreExecutionTrend ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+              Load more outcome trend
+            </QualityAction>
+          )}
+          {executionTrendPaginationError && (
+            <p className="form-error" role="alert">{executionTrendPaginationError}</p>
+          )}
+          {executionHistoryFailures.length > 0 && (
+            <p className="form-error" role="alert">
+              Execution history is temporarily unavailable for {executionHistoryFailures.length}{' '}
+              {executionHistoryFailures.length === 1 ? 'repository' : 'repositories'}. Available trend and policy-gate evidence remains visible.
+            </p>
+          )}
           <div className="catalog-list">
-            {executions.slice(0, 25).map(execution => (
+            {executions.map(execution => (
               <article className="catalog-row" key={execution.id}>
                 <div>
                   <strong>{execution.name}</strong>
@@ -3681,19 +5656,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         : ''}
                   </small>
                   <ExecutionEvidenceMetadata execution={execution} />
+                  <ExecutionEvidenceCoverage execution={execution} />
+                  <ExecutionLinkageEvidence execution={execution} />
                   <ExecutionEvidenceLinks execution={execution} />
-                  <ExecutionGateEvidence execution={execution} />
+                  <ExecutionGateEvidence
+                    execution={execution}
+                    artifacts={evidenceArtifacts}
+                  />
                   <ExecutionThresholdEvidence execution={execution} />
-                  {execution.sourceUrl && (
-                    <a
-                      className="execution-source"
-                      href={execution.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open CI run <ExternalLink size={13} />
-                    </a>
-                  )}
+                  <ExecutionSourceLink execution={execution} />
+                  <ExecutionAttemptHistory execution={execution} />
                 </div>
               </article>
             ))}
@@ -3707,6 +5679,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 </span>
               </div>
             )}
+            {executionNextCursors && Object.keys(executionNextCursors).length > 0 && (
+              <QualityAction
+                intent="quiet"
+                onClick={() => void loadMoreExecutions()}
+                disabled={loadingMoreExecutions}
+              >
+                {loadingMoreExecutions ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+                Load more execution evidence
+              </QualityAction>
+            )}
+            {executionPaginationError && (
+              <p className="form-error" role="alert">{executionPaginationError}</p>
+            )}
           </div>
         </section>
       )}
@@ -3718,29 +5703,66 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               <h2>Observed outcomes</h2>
               <p>
                 Only explicitly linked execution evidence is included; an absent
-                pair is never treated as passing.
+                pair is never treated as passing. Continuation pages retain the
+                execution state captured when this view loaded.
               </p>
             </div>
           </header>
           <div className="catalog-list">
+            {executionPerformanceFailures.length > 0 && (
+              <p className="form-error" role="alert">
+                Policy-gate performance is temporarily unavailable for {executionPerformanceFailures.length}{' '}
+                {executionPerformanceFailures.length === 1 ? 'repository' : 'repositories'}. Available execution evidence remains visible.
+              </p>
+            )}
             {executionPerformance.map(pair => (
               <article
                 className="catalog-row"
-                key={`${pair.policyArtifactId}:${pair.gateArtifactId}`}
+                key={`${pair.repositoryId}:${pair.policyArtifactId}:${pair.gateArtifactId}`}
               >
                 <div>
+                  <small aria-label="Evidence repository">
+                    {repositoryLabels.get(pair.repositoryId) ?? pair.repositoryId}
+                  </small>
                   <strong>
-                    {pair.policyArtifactId} → {pair.gateArtifactId}
+                    {pair.policyTitle ?? pair.policyArtifactId} →{' '}
+                    {pair.gateTitle ?? pair.gateArtifactId}
                   </strong>
                   <code>
                     {pair.passed} passed · {pair.failed} failed ·{' '}
                     {pair.cancelled} cancelled · {pair.running} running
                   </code>
                   <small>
+                    {pair.total} observations · {Math.round(pair.passRate * 100)}% passed among terminal outcomes
+                  </small>
+                  <small>
                     {pair.latestCompletedAt
                       ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}`
                       : 'No completed run yet'}
                   </small>
+                  {(pair.revisionCount ?? pair.revisions?.length ?? 0) > 0 ? (
+                    <small title={pair.revisions?.join(', ') ?? pair.latestRevision}>
+                      {(pair.revisionCount ?? pair.revisions?.length) === 1
+                        ? `Source revision ${(pair.latestRevision ?? pair.revisions?.[0] ?? '').slice(0, 12)}`
+                        : `Observed across ${pair.revisionCount ?? pair.revisions?.length} source revisions`}
+                    </small>
+                  ) : null}
+                  {(pair.policySourcePath || pair.gateSourcePath) && (
+                    <small>
+                      {pair.policySourcePath ?? pair.policyArtifactId} →{' '}
+                      {pair.gateSourcePath ?? pair.gateArtifactId}
+                    </small>
+                  )}
+                  <QualityAction
+                    intent="quiet"
+                    onClick={() => {
+                      setExecutionRepositoryId(pair.repositoryId)
+                      setExecutionPolicyArtifactId(pair.policyArtifactId)
+                      setExecutionGateArtifactId(pair.gateArtifactId)
+                    }}
+                  >
+                    Inspect execution evidence
+                  </QualityAction>
                 </div>
               </article>
             ))}
@@ -3753,6 +5775,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   matches a policy-backed gate.
                 </span>
               </div>
+            )}
+            {Object.keys(performanceNextCursors).length > 0 && (
+              <QualityAction
+                intent="quiet"
+                onClick={() => void loadMorePerformance()}
+                disabled={loadingMorePerformance}
+              >
+                {loadingMorePerformance ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+                Load more policy-gate performance
+              </QualityAction>
+            )}
+            {performancePaginationError && (
+              <p className="form-error" role="alert">{performancePaginationError}</p>
             )}
           </div>
         </section>
@@ -3784,40 +5819,67 @@ function PageHeading({
   )
 }
 
-export function App({ getToken }: { getToken?: () => string | null } = {}) {
+export function App({
+  getToken,
+  getTenantId,
+  onSignOut,
+}: {
+  getToken?: () => string | null
+  getTenantId?: () => string | null
+  onSignOut?: () => void
+} = {}) {
   const [view, setView] = useState<View>('overview')
   const [data, setData] = useState<Portfolio | null>(null)
   const [error, setError] = useState<string>()
   const [organizations, setOrganizations] =
     useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
+  const reloadGeneration = useRef(0)
   const portalContext = usePortalContextKey()
+  const embedded = Boolean(runtimeBridge()?.menu)
+  const updateProcessingStatus = useCallback((status: import('@fuzequality/contracts').RepositoryProcessingStatus) => {
+    setData(current => current ? {
+      ...current,
+      repositories: current.repositories.map(repository => applyRepositoryProcessingStatus(repository, status)),
+    } : current)
+  }, [])
   usePortalMenu(setView)
+  const navigateToView = (nextView: View) => {
+    navigatePortalView(nextView, embedded)
+    setView(nextView)
+  }
   // The portal owns the active account vault. A federated remote receives its
   // bearer-token resolver from the host rather than reading portal storage.
-  useEffect(() => configurePlatformSecurity(getToken), [getToken])
-  async function reload() {
+  useEffect(() => configurePlatformSecurity(getToken, getTenantId), [getTenantId, getToken])
+  const reload = useCallback(async () => {
+    const generation = ++reloadGeneration.current
     setLoading(true)
     setData(null)
     setOrganizations(undefined)
     setError(undefined)
     try {
-      setData(await api.portfolio())
+      const portfolio = await api.portfolio()
+      if (generation !== reloadGeneration.current) return
+      setData(portfolio)
       setError(undefined)
       try {
-        setOrganizations(await api.platformOrganizations())
+        const availableOrganizations = await api.platformOrganizations()
+        if (generation === reloadGeneration.current)
+          setOrganizations(availableOrganizations)
       } catch {
-        setOrganizations(undefined)
+        if (generation === reloadGeneration.current)
+          setOrganizations(undefined)
       }
     } catch (value) {
-      setError(value instanceof Error ? value.message : String(value))
+      if (generation === reloadGeneration.current)
+        setError(value instanceof Error ? value.message : String(value))
     } finally {
-      setLoading(false)
+      if (generation === reloadGeneration.current) setLoading(false)
     }
-  }
+  }, [])
   useEffect(() => {
     void reload()
-  }, [portalContext])
+  }, [portalContext, reload])
   const visibleNavigation = useMemo(
     () =>
       navigation.filter(item => item.id !== 'administration' || organizations),
@@ -3828,8 +5890,8 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
     [view, visibleNavigation]
   )
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${embedded ? ' portal-embedded' : ''}`}>
+      {!embedded && <aside className="sidebar">
         <div className="brand">
           <div className="brand-symbol">
             <span />
@@ -3852,7 +5914,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
               <button
                 key={item.id}
                 className={view === item.id ? 'active' : ''}
-                onClick={() => setView(item.id)}
+                onClick={() => navigateToView(item.id)}
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
@@ -3861,6 +5923,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
             )
           })}
         </nav>
+        {onSignOut && <QualityAction className="sidebar-signout" intent="quiet" onClick={onSignOut}><LogOut size={14} /> Sign out</QualityAction>}
         <div className="sidebar-footer">
           <Database size={16} />
           <div>
@@ -3868,9 +5931,9 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
             <strong>{data ? 'live / v1' : 'connecting'}</strong>
           </div>
         </div>
-      </aside>
+      </aside>}
       <main>
-        <div className="topbar">
+        {!embedded && <div className="topbar">
           <span>{active?.label}</span>
           <div>
             <span className="live-dot" /> default branches{' '}
@@ -3882,29 +5945,34 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
               <RefreshCw size={15} className={loading ? 'spin' : ''} />
             </button>
           </div>
-        </div>
+        </div>}
         <div className="content">
           {error && (
-            <div className="error-banner">
+            <div className="error-banner" role="alert">
               <AlertTriangle />{' '}
               <div>
                 <strong>Catalog API unavailable</strong>
                 <span>{error}</span>
               </div>
+              <QualityAction intent="secondary" onClick={() => void reload()}>
+                Retry
+              </QualityAction>
             </div>
           )}
           {!data ? (
-            <div className="loading-screen">
-              <RefreshCw className="spin" />
-              <span>Loading evidence graph…</span>
-            </div>
+            loading ? (
+              <div className="loading-screen">
+                <RefreshCw className="spin" />
+                <span>Loading evidence graph…</span>
+              </div>
+            ) : null
           ) : (
             <>
               {view === 'overview' && (
-                <Overview data={data} onNavigate={setView} />
+                <Overview data={data} onNavigate={navigateToView} />
               )}
               {view === 'repositories' && (
-                <Repositories data={data} reload={reload} />
+                <Repositories data={data} reload={reload} updateProcessingStatus={updateProcessingStatus} />
               )}
               {view === 'api' && <ApiCatalogPage data={data} />}
               {view === 'frontend' && (

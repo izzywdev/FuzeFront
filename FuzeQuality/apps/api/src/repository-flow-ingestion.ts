@@ -6,7 +6,57 @@ const analysisSchema = z.object({
   model: z.string().trim().min(1).max(200),
   promptVersion: z.string().trim().min(1).max(100),
   schemaVersion: z.string().trim().min(1).max(100),
-}).strict()
+  inputArtifactCount: z.number().int().nonnegative().optional(),
+  promptArtifactCount: z.number().int().nonnegative().optional(),
+  promptTruncated: z.boolean().optional(),
+  grounding: z.object({
+    referencedArtifactCount: z.number().int().nonnegative(),
+    groundedArtifactCount: z.number().int().nonnegative(),
+    rejectedArtifactCount: z.number().int().nonnegative(),
+    ungroundedStepCount: z.number().int().nonnegative(),
+  }).strict().optional(),
+}).strict().superRefine((analysis, context) => {
+  const hasInputCount = analysis.inputArtifactCount !== undefined
+  const hasPromptCount = analysis.promptArtifactCount !== undefined
+  if (hasInputCount !== hasPromptCount) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['promptArtifactCount'],
+      message: 'Prompt and input artifact counts must be supplied together',
+    })
+  }
+  if (
+    analysis.inputArtifactCount !== undefined &&
+    analysis.promptArtifactCount !== undefined &&
+    analysis.promptArtifactCount > analysis.inputArtifactCount
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['promptArtifactCount'],
+      message: 'Prompt artifact count cannot exceed repository input',
+    })
+  }
+  if (
+    analysis.promptTruncated === false &&
+    analysis.inputArtifactCount !== analysis.promptArtifactCount
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['promptTruncated'],
+      message: 'Complete prompt provenance requires equal artifact counts',
+    })
+  }
+  if (
+    analysis.grounding &&
+    analysis.grounding.groundedArtifactCount + analysis.grounding.rejectedArtifactCount !== analysis.grounding.referencedArtifactCount
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['grounding', 'referencedArtifactCount'],
+      message: 'Referenced artifact count must equal grounded plus rejected references',
+    })
+  }
+})
 
 const stepSchema = z.object({
   actor: z.string().trim().min(1).max(500),
@@ -44,6 +94,18 @@ const repositoryFlowCandidateSchema = z.object({
   }
   if (candidate.source === 'litellm' && candidate.evidence.length === 0 && candidate.steps.every(step => step.targetIds.length === 0)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['evidence'], message: 'LiteLLM candidates require grounded evidence or target IDs' })
+  }
+  if (candidate.analysis?.grounding) {
+    const groundedIds = new Set([
+      ...candidate.evidence,
+      ...candidate.steps.flatMap(step => step.targetIds),
+    ])
+    if (candidate.analysis.grounding.groundedArtifactCount !== groundedIds.size) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['analysis', 'grounding', 'groundedArtifactCount'], message: 'Grounded artifact count must match persisted candidate references' })
+    }
+    if (candidate.analysis.grounding.ungroundedStepCount !== candidate.steps.filter(step => step.targetIds.length === 0).length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['analysis', 'grounding', 'ungroundedStepCount'], message: 'Ungrounded step count must match persisted candidate steps' })
+    }
   }
 })
 

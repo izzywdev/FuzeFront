@@ -1,12 +1,19 @@
 import { z } from 'zod'
 import type { PolicyGateEvaluation, Repository } from '@fuzequality/contracts'
 
+const policyGateEvidencePassageSchema = z.object({
+  artifactId: z.string().trim().min(1).max(500),
+  sourcePath: z.string().trim().min(1).max(1000),
+  text: z.string().trim().min(1).max(2000),
+  signal: z.enum(['policy', 'gate', 'obligation', 'prohibition', 'ambiguous']),
+}).strict()
+
 const policyGateEvaluationSchema = z.object({
   id: z.string().trim().min(1).max(200),
   repositoryId: z.string().uuid(),
   tenantId: z.string().trim().min(1).max(200),
   revision: z.string().trim().min(1).max(500),
-  kind: z.enum(['unguarded-policy', 'guard-without-policy', 'contradictory-policy', 'ambiguous-policy']),
+  kind: z.enum(['guarded-policy', 'unguarded-policy', 'guard-without-policy', 'contradictory-policy', 'ambiguous-policy']),
   severity: z.enum(['high', 'medium', 'low']),
   title: z.string().trim().min(1).max(500),
   detail: z.string().trim().min(1).max(5000),
@@ -17,10 +24,24 @@ const policyGateEvaluationSchema = z.object({
     sourcePaths: z.array(z.string().trim().min(1).max(1000)).min(1).max(100),
     subjects: z.array(z.string().trim().min(1).max(200)).max(100),
   }).strict(),
+  evidencePassages: z.array(policyGateEvidencePassageSchema).max(100).default([]),
+  remediationAction: z.enum(['build-gate', 'build-policy', 'disambiguate-policy', 'align-policy-gate']),
   recommendation: z.string().trim().min(1).max(5000),
   reviewStatus: z.literal('proposed'),
   createdAt: z.string().datetime(),
-}).strict()
+}).strict().superRefine((evaluation, context) => {
+  const artifactIds = new Set([
+    ...evaluation.policyArtifactIds,
+    ...evaluation.gateArtifactIds,
+  ])
+  for (const [index, passage] of evaluation.evidencePassages.entries()) {
+    if (!artifactIds.has(passage.artifactId)) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Evidence passage must reference a policy or gate artifact in this evaluation',
+      path: ['evidencePassages', index, 'artifactId'],
+    })
+  }
+})
 
 export const policyGateEvaluationIngestionSchema = z.object({
   evaluations: z.array(policyGateEvaluationSchema).max(200),

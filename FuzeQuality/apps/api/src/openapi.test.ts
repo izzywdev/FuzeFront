@@ -102,8 +102,194 @@ describe('contract discovery', () => {
       )
       expect(schemas.TestExecution.required).toContain('evidenceLinks')
       expect(schemas.TestExecutionEvidenceLink.properties.url.pattern).toBe('^https://')
+      expect(schemas.TestExecutionInput.properties.sourceUrl.pattern).toBe('^https://')
+      expect(schemas.TestExecution.properties.sourceUrl.pattern).toBe('^https://')
+      expect(schemas.PerformanceDispatch.required).toContain('sourceRevision')
+      expect(schemas.PerformanceDispatch.properties.sourceRevision.pattern).toBe(
+        '^[0-9a-fA-F]{40}$'
+      )
+      expect(schemas.TestExecutionInput.properties.workflowPath.maxLength).toBe(1000)
+      expect(schemas.TestExecutionInput.properties.branch.maxLength).toBe(500)
+      expect(schemas.TestExecution.properties.branch.maxLength).toBe(500)
+      expect(schemas.TestExecution.properties.workflowPath.type).toBe('string')
+      expect(
+        document.paths['/api/v1/internal/test-executions'].post.responses['422'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/ExecutionEvidenceConflict')
+      expect(schemas.ExecutionEvidenceConflict.properties.code.enum).toEqual([
+        'EXECUTION_EVIDENCE_REVISION_UNANALYZED',
+        'EXECUTION_EVIDENCE_REFERENCE_INVALID',
+      ])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
+          .map((parameter: { $ref?: string }) => parameter.$ref)
+      ).toContain('#/components/parameters/ExecutionWorkflowPath')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
+          .map((parameter: { $ref?: string }) => parameter.$ref)
+      ).toContain('#/components/parameters/ExecutionExternalRunId')
+      expect(document.components.parameters.ExecutionExternalRunId.schema.maxLength).toBe(500)
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions/attempts'].get.parameters
+          .map((parameter: { $ref?: string }) => parameter.$ref)
+      ).toEqual([
+        '#/components/parameters/ExecutionProvider',
+        '#/components/parameters/ExecutionExternalRunId',
+        undefined,
+        undefined,
+      ])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions/attempts'].get.responses['200'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/TestExecutionPage')
+      expect(document.components.parameters.ExecutionName).toMatchObject({
+        name: 'name',
+        in: 'query',
+        schema: { type: 'string', minLength: 1, maxLength: 500 },
+      })
+      for (const path of [
+        '/api/v1/repositories/{repositoryId}/execution-performance',
+        '/api/v1/repositories/{repositoryId}/execution-trend',
+        '/api/v1/repositories/{repositoryId}/test-executions',
+      ]) {
+        const parameterRefs = document.paths[path].get.parameters.map((parameter: { $ref?: string }) => parameter.$ref)
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionExternalRunId')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionName')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceKind')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionThresholdOutcome')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionGateOutcome')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionPolicyArtifactId')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionGateArtifactId')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionBranch')
+      }
+      expect(document.components.parameters.ExecutionPolicyArtifactId.schema.maxLength).toBe(500)
+      expect(document.components.parameters.ExecutionGateArtifactId.schema.maxLength).toBe(500)
+      expect(document.components.parameters.ExecutionBranch).toMatchObject({
+        name: 'branch',
+        in: 'query',
+        schema: { type: 'string', minLength: 1, maxLength: 500 },
+      })
+      expect(document.components.parameters.ExecutionEvidenceKind.schema.enum).toEqual([
+        'video', 'report', 'trace', 'screenshot', 'log', 'other',
+      ])
+      expect(document.components.parameters.ExecutionThresholdOutcome.schema.enum).toEqual([
+        'passed', 'failed',
+      ])
+      expect(document.components.parameters.ExecutionGateOutcome).toMatchObject({
+        name: 'gateOutcome',
+        in: 'query',
+        schema: { $ref: '#/components/schemas/ExecutionStatus' },
+      })
+      expect(document.components.parameters.ExecutionWorkflowPath.schema.maxLength).toBe(1000)
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
+          .filter((parameter: { name?: string }) => parameter.name)
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      expect(schemas.TestExecutionPage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/quality-artifacts'].get.parameters
+          .find((parameter: { name?: string }) => parameter.name === 'cursor').description
+      ).toContain("first page's analyzed revision")
+      const artifactIds = document.paths[
+        '/api/v1/repositories/{repositoryId}/quality-artifacts/by-ids'
+      ].get.parameters.find((parameter: { name?: string }) => parameter.name === 'id')
+      const artifactRevision = document.paths[
+        '/api/v1/repositories/{repositoryId}/quality-artifacts/by-ids'
+      ].get.parameters.find((parameter: { name?: string }) => parameter.name === 'revision')
+      expect(artifactRevision).toMatchObject({ in: 'query', schema: { type: 'string', minLength: 1, maxLength: 500 } })
+      expect(artifactRevision.required).not.toBe(true)
+      expect(artifactIds).toMatchObject({ required: true, explode: true })
+      expect(artifactIds.schema).toMatchObject({
+        type: 'array',
+        minItems: 1,
+        maxItems: 100,
+        uniqueItems: true,
+      })
+      expect(schemas.QualityArtifact.properties.revision).toMatchObject({ type: 'string', minLength: 1 })
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/execution-performance'].get.parameters
+          .filter((parameter: { name?: string }) => parameter.name)
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/execution-performance'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      expect(schemas.PolicyGatePerformance.properties.revisionCount.minimum).toBe(0)
+      expect(schemas.PolicyGatePerformance.properties.latestRevision.type).toBe('string')
+      expect(schemas.PolicyGatePerformance.required).toEqual(
+        ['repositoryId', 'policyArtifactId', 'gateArtifactId', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate']
+      )
+      expect(schemas.PolicyGatePerformance.properties.passRate).toMatchObject({
+        type: 'number', format: 'double', minimum: 0, maximum: 1,
+      })
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/execution-trend'].get.parameters
+          .filter((parameter: { name?: string }) => parameter.name)
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/execution-trend'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      expect(schemas.ExecutionOutcomeTrend.required).toEqual(
+        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount']
+      )
+      expect(schemas.ExecutionOutcomeTrend.properties.passRate).toMatchObject({
+        type: 'number', format: 'double', minimum: 0, maximum: 1,
+      })
+      expect(schemas.ExecutionOutcomeTrend.properties.averageDurationMs).toMatchObject({
+        type: 'integer', minimum: 0,
+      })
+      expect(schemas.ExecutionOutcomeTrend.properties.maximumDurationMs).toMatchObject({
+        type: 'integer', minimum: 0,
+      })
+      expect(schemas.ExecutionOutcomeTrend.properties.successfulRetryCount).toMatchObject({
+        type: 'integer', minimum: 0,
+      })
+      expect(schemas.ExecutionOutcomeTrend.properties.recoveredRunCount).toMatchObject({
+        type: 'integer', minimum: 0,
+      })
+      expect(document.components.parameters.ExecutionAttemptScope).toMatchObject({
+        name: 'attemptScope',
+        in: 'query',
+        schema: { type: 'string', enum: ['initial', 'retry', 'recovered'] },
+      })
+      expect(document.components.parameters.ExecutionMinimumDurationMs).toMatchObject({
+        name: 'minimumDurationMs',
+        in: 'query',
+        schema: { type: 'integer', minimum: 0, maximum: 2147483647 },
+      })
+      expect(document.components.parameters.ExecutionMaximumDurationMs).toMatchObject({
+        name: 'maximumDurationMs',
+        in: 'query',
+        schema: { type: 'integer', minimum: 0, maximum: 2147483647 },
+      })
       expect(schemas.PolicyGateEvaluation.required).toEqual(
-        expect.arrayContaining(['confidence', 'scope'])
+        expect.arrayContaining(['confidence', 'scope', 'remediationAction'])
+      )
+      expect(schemas.PolicyGateRemediationAction.enum).toEqual([
+        'build-gate',
+        'build-policy',
+        'disambiguate-policy',
+        'align-policy-gate',
+      ])
+      expect(schemas.PolicyGateEvaluationInput.required).toContain('remediationAction')
+      expect(schemas.PolicyGateEvaluationInput.properties.evidencePassages.items.$ref).toBe(
+        '#/components/schemas/PolicyGateEvidencePassage'
+      )
+      expect(schemas.PolicyGateEvidencePassage.required).toEqual(
+        ['artifactId', 'sourcePath', 'text', 'signal']
       )
       const ingestionSchema = schemas.PolicyGateEvaluationInput
       expect(
@@ -120,7 +306,133 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
-      ).toEqual(['source', 'status', 'revision'])
+      ).toEqual([
+        'source',
+        'status',
+        'revision',
+        'model',
+        'promptVersion',
+        'schemaVersion',
+        'minConfidence',
+        'maxConfidence',
+        'limit',
+        'cursor',
+      ])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({
+        type: 'object',
+        required: ['items', 'page'],
+      })
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}'].get.responses['200'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/RepositoryFlowCandidate')
+      expect(document.components.parameters.CandidateId.schema.maxLength).toBe(500)
+      for (const path of [
+        '/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/history',
+        '/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/history',
+      ]) {
+        expect(
+          document.paths[path].get.parameters.map((parameter: { name: string }) => parameter.name)
+        ).toEqual(['limit', 'cursor'])
+        expect(
+          document.paths[path].get.responses['200'].content['application/json'].schema
+        ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      }
+      expect(schemas.RepositoryFlowReviewHistoryEntry.required).toContain('id')
+      expect(schemas.PolicyGateReviewHistoryEntry.required).toContain('id')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['409'].content[
+          'application/json'
+        ].schema.oneOf
+      ).toEqual([
+        { $ref: '#/components/schemas/StaleFlowCandidateError' },
+        { $ref: '#/components/schemas/StaleFlowReviewError' },
+      ])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.requestBody.content[
+          'application/json'
+        ].schema.properties.expectedReviewedAt
+      ).toMatchObject({ type: 'string', format: 'date-time', nullable: true })
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['409'].content[
+          'application/json'
+        ].schema.oneOf
+      ).toEqual([
+        { $ref: '#/components/schemas/StalePolicyGateEvaluationError' },
+        { $ref: '#/components/schemas/StalePolicyGateReviewError' },
+      ])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.requestBody.content[
+          'application/json'
+        ].schema.properties.expectedReviewedAt
+      ).toMatchObject({ type: 'string', format: 'date-time', nullable: true })
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters.map(
+          (parameter: { name: string }) => parameter.name
+        )
+      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({
+        type: 'object',
+        required: ['items', 'page'],
+      })
+      expect(schemas.RepositoryFlowCandidatePage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
+      expect(schemas.PolicyGateEvaluationPage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
+      expect(schemas.HistoryCursorPage.required).toEqual(['nextCursor', 'hasMore'])
+      expect(schemas.HistoryCursorPage.properties.nextCursor.nullable).toBe(true)
+      expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.responses
+      ).toHaveProperty('400')
+      expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/scan-failure'].post.requestBody.content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/RepositoryScanFailure')
+      expect(schemas.RepositoryScanFailure).toMatchObject({
+        additionalProperties: false,
+        required: ['code', 'message', 'observedBytes', 'maxBytes', 'failedAt'],
+      })
+      expect(schemas.RepositoryScanFailure.properties.code.enum).toEqual(['SCAN_TRANSPORT_LIMIT_EXCEEDED'])
+      expect(schemas.RepositoryProcessingStatus.properties.lastScanFailure.$ref).toBe(
+        '#/components/schemas/RepositoryScanFailure'
+      )
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/analysis-retries'].post.responses['409'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/ApiError')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
+      ).toContain('immutable analyzed commit')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.responses
+      ).toHaveProperty('409')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/execute'].post.summary
+      ).toContain('integration, post-production, load, or stress')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/execute'].post.responses['202'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/TestSuiteDispatch')
+      expect(schemas.TestSuiteDispatch.required).toContain('artifactKind')
     })
   })
 

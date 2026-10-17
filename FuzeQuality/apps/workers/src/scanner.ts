@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises'
 import { TOPICS, scanRequestedSchema, type Repository, type ScanResult } from '@fuzequality/contracts'
-import { scanRepository } from '@fuzequality/scanner'
+import { ScanTransportLimitError, scanRepository } from '@fuzequality/scanner'
 import { apiRequest, runConsumer } from './runtime'
 import { checkoutRepository } from './github'
 
@@ -35,14 +35,29 @@ await runConsumer(
         })
       }, 3_000)
       try {
-        const result = await scanRepository(repository, root, {
-          onProgress: heartbeat,
-          sourceRevision: command.commitSha,
-        })
-        await apiRequest<ScanResult>('/api/v1/internal/scans/results', {
-          method: 'POST',
-          body: JSON.stringify(result),
-        })
+        try {
+          const result = await scanRepository(repository, root, {
+            onProgress: heartbeat,
+            sourceRevision: command.commitSha,
+          })
+          await apiRequest<ScanResult>('/api/v1/internal/scans/results', {
+            method: 'POST',
+            body: JSON.stringify(result),
+          })
+        } catch (error) {
+          if (!(error instanceof ScanTransportLimitError)) throw error
+          await apiRequest(`/api/v1/internal/repositories/${repository.id}/scan-failure`, {
+            method: 'POST',
+            body: JSON.stringify({
+              code: error.code,
+              message: 'Repository inventory exceeds the safe ingestion limit. Narrow the repository include globs and retry.',
+              sourceRevision: command.commitSha,
+              observedBytes: error.observedBytes,
+              maxBytes: error.maxBytes,
+              failedAt: new Date().toISOString(),
+            }),
+          })
+        }
       } finally {
         clearInterval(heartbeatTimer)
       }

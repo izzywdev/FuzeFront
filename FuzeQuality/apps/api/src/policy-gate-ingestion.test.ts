@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PolicyGateEvaluation } from '@fuzequality/contracts'
+import { evaluatePolicyGates } from '@fuzequality/core'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 
 const evaluation: PolicyGateEvaluation = {
@@ -15,6 +16,8 @@ const evaluation: PolicyGateEvaluation = {
   gateArtifactIds: [],
   confidence: 0.75,
   scope: { sourcePaths: ['governance/auth.md'], subjects: ['authentication'] },
+  evidencePassages: [{ artifactId: 'policy-auth', sourcePath: 'governance/auth.md', text: 'Authentication is required.', signal: 'obligation' }],
+  remediationAction: 'build-gate',
   recommendation: 'Add an authentication gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T08:00:00.000Z',
@@ -25,6 +28,10 @@ describe('policy gate evaluation ingestion', () => {
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [evaluation] }).success).toBe(true)
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{ ...evaluation, confidence: 2 }] }).success).toBe(false)
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{ ...evaluation, scope: { sourcePaths: [], subjects: [] } }] }).success).toBe(false)
+    expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{
+      ...evaluation,
+      evidencePassages: [{ ...evaluation.evidencePassages![0], artifactId: 'unrelated-artifact' }],
+    }] }).success).toBe(false)
   })
 
   it('binds evaluation evidence to the repository tenant', async () => {
@@ -37,5 +44,34 @@ describe('policy gate evaluation ingestion', () => {
       evaluationId: evaluation.id,
       repositoryId: evaluation.repositoryId,
     })
+  })
+
+  it('accepts generated evaluations when repository evidence exceeds the passage limit', () => {
+    const generated = evaluatePolicyGates({
+      id: evaluation.repositoryId,
+      tenantId: evaluation.tenantId,
+      owner: 'fuze',
+      name: 'FuzeFront',
+      canonicalUrl: 'https://github.com/fuze/front',
+      defaultBranch: 'main',
+      kind: 'application',
+      includeGlobs: [],
+      excludeGlobs: [],
+      jiraProjects: [],
+      jiraBindings: [],
+      enabled: true,
+      lastScanStatus: 'complete',
+    }, evaluation.revision, [{
+      id: 'policy-long',
+      repositoryId: evaluation.repositoryId,
+      kind: 'policy',
+      title: 'Authentication policy',
+      sourcePath: 'governance/auth.md',
+      summary: 'Authentication must be verified.',
+      evidence: [`Authentication must be verified. ${'repository evidence '.repeat(200)}`],
+    }])
+
+    expect(generated[0]?.evidencePassages?.[0]?.text).toHaveLength(2000)
+    expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: generated }).success).toBe(true)
   })
 })

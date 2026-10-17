@@ -1,9 +1,8 @@
 import React, { useState, useEffect, Suspense } from 'react'
 import type { App } from '@fuzefront/app-registry-client'
-import { useCurrentUser } from '../lib/shared'
+import { useCurrentUser, useOrganizations } from '../lib/shared'
 import { getActiveAuthToken } from '../lib/accounts'
 import { useAppRegistry } from '../platform/appRegistry'
-import { usePortalContext } from '@fuzefront/portal-branding-ui'
 import { Button } from '@fuzefront/design-system'
 import {
   loadFederatedAppFromManifest,
@@ -58,12 +57,9 @@ const LoadingSpinner = () => (
 export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   const { apps, loading: appsLoading, getBySlug } = useAppRegistry()
   const { user } = useCurrentUser()
-  // White-label portal branding (FF-EPIC-13/FF-EPIC-10): resolves to the real
-  // portal id once Layout.tsx's multi-tenant-portals flag is on and boot has
-  // resolved; otherwise (flag off, still loading, or errored) this stays null
-  // and the session context below falls back to 'default-tenant' exactly as
-  // before.
-  const { status: portalStatus, context: portal } = usePortalContext()
+  const { organizations, activeOrganizationId, personalTenantId } = useOrganizations()
+  const personalOrganization = organizations.find(item => item.type === 'personal')
+  const tenantId = activeOrganizationId ?? personalTenantId ?? personalOrganization?.id ?? null
   const [FederatedComponent, setFederatedComponent] =
     useState<React.ComponentType<{ getToken?: () => string | null }> | null>(null)
   const [loading, setLoading] = useState(true)
@@ -82,7 +78,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
           ? {
               id: 'current-session',
               userId: user.id,
-              tenantId: portalStatus === 'ready' && portal ? portal.id : 'default-tenant',
+              tenantId,
               expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             }
           : null,
@@ -96,7 +92,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
         getAccessToken: getActiveAuthToken,
       }
     }
-  }, [user, app, apps, portalStatus, portal])
+  }, [user, app, apps, tenantId])
 
   useEffect(() => {
     let mounted = true

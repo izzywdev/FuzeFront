@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.10.1
+  version: 0.10.2
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -286,6 +286,31 @@ paths:
           $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Singleton code-exchange action.
+  /v1/security/session/workspaces:
+    get:
+      tags: [session]
+      summary: List active workspaces available to the current session
+      operationId: listSessionWorkspaces
+      description: >-
+        Returns canonical personal and organization workspace choices backed by
+        the caller's direct active memberships. Discovery is available before a
+        tenant is selected; callers must still prove the chosen workspace with
+        GET /session?tenant= before using tenant-scoped APIs.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active workspace choices for the current identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionWorkspaceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+      x-pagination: exempt
+      x-pagination-reason: A user has a bounded direct-membership workspace set.
   # ─────────────────────── AuthN: self-service password reset ────────────────
   /v1/security/session/password/reset-request:
     post:
@@ -2609,6 +2634,30 @@ components:
         user:
           $ref: '#/components/schemas/User'
       required: [identity, user]
+    SessionWorkspace:
+      type: object
+      additionalProperties: false
+      description: A canonical active workspace the session identity may select.
+      required: [id, name, type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [personal, organization]
+    SessionWorkspaceList:
+      type: object
+      additionalProperties: false
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionWorkspace'
     EmailAvailability:
       type: object
       description: >-

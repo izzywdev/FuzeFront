@@ -12,17 +12,22 @@ import {
   testImplementationRequestSchema,
   type OrganizationQualitySummary,
   type Portfolio,
+  type ScanResult,
+  type TestExecution,
+  repositoryScanFailureSchema,
 } from '@fuzequality/contracts'
 import {
   apiCoverageCatalog,
   coverageSummary,
   createCatalogStore,
   createEventBus,
-  linkExecutionArtifacts,
-  executionPerformance,
-  filterTestExecutions,
+  executableWorkflowTarget,
+  performanceDispatchRevision,
+  performanceWorkflowTarget,
   relayOutboxBatch,
   repositoryCatalogStatus,
+  testExecutionCursorCreatedAt,
+  testSuiteDispatchRevision,
 } from '@fuzequality/core'
 import { scanRepository } from '@fuzequality/scanner'
 import {
@@ -31,17 +36,32 @@ import {
   webhookScanCommands,
   webhookWorkflowExecutions,
 } from '@fuzequality/github-app'
-import { dispatchPerformanceWorkflow, githubInstallationToken } from '../../workers/src/github'
+import { dispatchPerformanceWorkflow, dispatchTestWorkflow, GitHubArtifactEvidenceError, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
-import { executionFilterSchema } from './execution-filter'
-import { executionRecord } from './test-execution-ingestion'
+import { executionAttemptHistoryFilterSchema, executionPerformanceFilterSchema, executionPageFilterSchema } from './execution-filter'
+import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
+import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
+import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
-import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
+import { repositoryFlowFilterSchema } from './repository-flow-filter'
+import { repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
+import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
+import { policyGateFilterSchema } from './policy-gate-filter'
+import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewStateConflict } from './policy-gate-review'
+import { decodeHistoryCursor, decodeUuidHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
+import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
+import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
+import { repositoryAnalysisStatusSchema } from './repository-analysis-status'
+import { reviewedPerformanceWorkflowPaths } from './latest-performance-executions'
+import { reviewedIntegrationWorkflowPaths } from './latest-integration-executions'
+import { reviewedPostProductionWorkflowPaths } from './latest-post-production-executions'
+import { repositoryProcessingStatus } from './repository-processing-status'
+import { dispatchWebhookScans } from './webhook-scan-dispatch'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -72,6 +92,19 @@ const maySyncRequirements: express.RequestHandler = (request, response, next) =>
 }
 const mayCreateTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'create')
 const mayReadTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'read')
+
+async function saveScanWithExecutionReconciliation(result: ScanResult) {
+  await store.saveScan(result)
+  const tenantId = result.repository.tenantId
+  if (!tenantId) return
+  await reconcileExecutionEvidenceForScan(
+    result,
+    tenantId,
+    (repositoryId, executionTenantId, revision) =>
+      store.testExecutions(repositoryId, executionTenantId, { revision }),
+    execution => store.saveTestExecution(execution),
+  )
+}
 const mayRunExecution = requirePlatformPermission(qualityResources.execution, 'run')
 const mayReadOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'read')
 const mayManageOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'manage')
@@ -87,8 +120,13 @@ const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
 const repositoryFlowReviewSchema = z.object({
   status: z.enum(['confirmed', 'rejected']),
   reason: z.string().trim().min(3).max(2000).optional(),
+  expectedReviewedAt: z.string().datetime().nullable().optional(),
 }).strict()
-const policyGateReviewSchema = z.object({ status: z.enum(['accepted', 'dismissed']), reason: z.string().trim().min(3).max(2000).optional() }).strict()
+const policyGateReviewSchema = z.object({
+  status: z.enum(['accepted', 'dismissed']),
+  reason: z.string().trim().min(3).max(2000).optional(),
+  expectedReviewedAt: z.string().datetime().nullable().optional(),
+}).strict()
 const intelligenceFailureSchema = z.object({
   sourceType: z.literal('jira'),
   sourceKey: z.string().trim().min(1).max(200),
@@ -116,7 +154,11 @@ const identityLifecycleEventSchema = z.discriminatedUnion('type', [
     type: z.literal('user.upsert'), userId: z.string().uuid(), email: z.string().email(),
     firstName: z.string().optional(), lastName: z.string().optional(),
   }).strict(),
-  z.object({ type: z.literal('user.deleted'), userId: z.string().uuid() }).strict(),
+  z.object({
+    type: z.literal('user.deleted'),
+    userId: z.string().uuid(),
+    cascade: z.enum(['soft', 'hard']).default('soft'),
+  }).strict(),
   z.object({
     type: z.literal('membership.changed'), organizationId: z.string().uuid(), userId: z.string().uuid(),
     role: z.string().min(1), active: z.boolean(),
@@ -229,9 +271,9 @@ app.use((request, response, next) => {
 // probe never depends on the catalog store being reachable.
 //
 // /health/live and /health/ready below predate it and are what the chart's
-// kubelet probes use; they are left exactly as they were. /health is the
-// platform-wide convention every Fuze service answers, and additionally reports
-// whether this build shipped with its own contract.
+// kubelet probes use. /health is the platform-wide convention every Fuze service
+// answers, and additionally reports whether this build shipped with its own
+// contract.
 const openapi = createOpenApiSurface()
 if (!openapi.available) {
   // Not fatal — /health reports it and the spec routes answer 503 — but it must
@@ -244,9 +286,11 @@ app.get('/health/live', (_request, response) => response.json({ status: 'ok' }))
 app.get('/health/ready', async (_request, response) => {
   // A listening process is not ready if its catalog store is unavailable.
   // The bootstrap init container owns schema/topic creation; this probe proves
-  // the API can subsequently query its provisioned PostgreSQL database.
+  // the API can subsequently query its provisioned PostgreSQL database. Keep
+  // this constant-time: readiness is also exposed through the standalone origin
+  // and must never materialize the full catalog in response to a public probe.
   try {
-    await store.portfolio()
+    await store.checkReadiness()
     response.json({ status: 'ready' })
   } catch (error) {
     console.error('FuzeQuality readiness database check failed', error)
@@ -357,11 +401,31 @@ app.get('/api/v1/internal/repositories/:id', async (request, response) => {
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repository)
 })
-app.get('/api/v1/internal/repositories/:id/quality-artifacts', async (request, response) => {
+app.post('/api/v1/internal/repositories/:id/analysis-status', async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const parsed = repositoryAnalysisStatusSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
   const repository = await store.repository(repositoryId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.qualityArtifacts(repositoryId, repository.tenantId ?? 'legacy'))
+  await store.setRepositoryAnalysis(repositoryId, parsed.data)
+  response.status(202).json({ accepted: true })
+})
+app.post('/api/v1/internal/repositories/:id/scan-failure', async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const parsed = repositoryScanFailureSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const repository = await store.repository(repositoryId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  await store.setRepositoryScanFailure(repositoryId, parsed.data)
+  response.status(202).json({ accepted: true })
+})
+app.get('/api/v1/internal/repositories/:id/quality-artifacts', async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const query = z.object({ revision: z.string().trim().min(1).max(500).optional() }).strict().safeParse(request.query)
+  if (!query.success) return response.status(400).json({ error: query.error.flatten() })
+  const repository = await store.repository(repositoryId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.qualityArtifacts(repositoryId, repository.tenantId ?? 'legacy', query.data.revision))
 })
 app.post('/api/v1/internal/repository-flow-candidates', async (request, response) => {
   const parsed = repositoryFlowCandidateIngestionSchema.safeParse(request.body)
@@ -375,7 +439,24 @@ app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (requ
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const repository = await store.repository(repositoryId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy'))
+  const filter = policyGateFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const limit = filter.data.limit
+  const evaluations = await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy', {
+    kind: filter.data.kind,
+    remediationAction: filter.data.remediationAction,
+    severity: filter.data.severity,
+    reviewStatus: filter.data.reviewStatus,
+    revision: filter.data.revision,
+    subject: filter.data.subject,
+    minConfidence: filter.data.minConfidence,
+    maxConfidence: filter.data.maxConfidence,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  response.json(historyPage(evaluations, limit))
 })
 app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) => {
   const parsed = policyGateEvaluationIngestionSchema.safeParse(request.body)
@@ -386,11 +467,21 @@ app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) =
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/test-executions', async (request, response) => {
-  const execution = testExecutionInputSchema.parse(request.body)
+  const parsed = testExecutionInputSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const execution = parsed.data
   const repository = await store.repository(execution.repositoryId, execution.tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const evidence = await prepareExecutionEvidence(
+    execution,
+    (repositoryId, tenantId, sourceRevision) =>
+      store.catalogRevisionForSource(repositoryId, tenantId, sourceRevision),
+    (repositoryId, tenantId, revision) =>
+      store.qualityArtifacts(repositoryId, tenantId, revision),
+  )
+  if (!evidence.ok) return response.status(422).json(evidence)
   const id = randomUUID()
-  await store.saveTestExecution(executionRecord(execution, id))
+  await store.saveTestExecution(executionRecord(evidence.execution, id))
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {
@@ -417,8 +508,8 @@ app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {
       break
     case 'user.deleted':
       changed = await store.projectIdentityLifecycle(
-        { type: event.type, principalId: event.userId },
-        { topic: TOPICS.PRINCIPAL_DELETED, payload: { userId: event.userId }, key: event.userId },
+        { type: event.type, principalId: event.userId, cascade: event.cascade },
+        { topic: TOPICS.PRINCIPAL_DELETED, payload: { userId: event.userId, cascade: event.cascade }, key: event.userId },
       )
       break
     case 'membership.changed':
@@ -465,13 +556,46 @@ app.get('/api/v1/repositories/:id/scan-history', mayReadRepositories, async (req
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.repositoryScanHistory(repositoryId, tenantId))
+  const query = scanHistoryPageQuerySchema.safeParse(request.query)
+  if (!query.success) return response.status(400).json({ error: query.error.flatten() })
+  const cursor = decodeScanHistoryCursor(query.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const history = await store.repositoryScanHistory(repositoryId, tenantId, {
+    after: cursor.data,
+    limit: query.data.limit + 1,
+  })
+  response.json(scanHistoryPage(history, query.data.limit))
 })
 app.get('/api/v1/repositories/:id/quality-artifacts', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const query = qualityArtifactPageQuerySchema.safeParse(request.query)
+  if (!query.success) return response.status(400).json({ error: query.error.flatten() })
+  const cursor = decodeQualityArtifactCursor(query.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const resolvedRevision = resolveQualityArtifactRevision(
+    query.data.revision,
+    cursor.data?.revision,
+    repository.lastScanRevision,
+  )
+  if (!resolvedRevision.success) return response.status(400).json({ error: resolvedRevision.error })
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, resolvedRevision.data, {
+    afterId: cursor.data?.id,
+    limit: query.data.limit + 1,
+  })
+  response.json(qualityArtifactPage(artifacts, query.data.limit, resolvedRevision.data))
+})
+app.get('/api/v1/repositories/:id/quality-artifacts/by-ids', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.qualityArtifacts(repositoryId, tenantId))
+  const query = qualityArtifactIdsQuerySchema.safeParse(request.query)
+  if (!query.success) return response.status(400).json({ error: query.error.flatten() })
+  response.json({
+    items: await store.qualityArtifactsByIds(repositoryId, tenantId, query.data.id, query.data.revision),
+  })
 })
 app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
@@ -479,16 +603,43 @@ app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (reque
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   const filter = repositoryFlowFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
-  response.json(filterRepositoryFlowCandidates(await store.repositoryFlowCandidates(repositoryId, tenantId), filter.data))
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const { limit, cursor: _cursor, ...query } = filter.data
+  const candidates = await store.repositoryFlowCandidates(repositoryId, tenantId, {
+    ...query,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  response.json(historyPage(candidates, limit))
+})
+app.get('/api/v1/repositories/:id/flow-candidates/:candidateId', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
+  const tenantId = requestIdentity(request)!.tenantId
+  const result = await repositoryFlowDetail(repositoryId, tenantId, candidateId, {
+    repository: (id, tenant) => store.repository(id, tenant),
+    candidates: (id, tenant, query) => store.repositoryFlowCandidates(id, tenant, query),
+  })
+  if (result.status === 404) return response.status(404).json({ error: result.error })
+  response.json(result.candidate)
 })
 app.get('/api/v1/repositories/:id/flow-candidates/:candidateId/history', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const candidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+  const filter = historyPageQuerySchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeUuidHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const candidate = (await store.repositoryFlowCandidates(repositoryId, tenantId, { id: candidateId, limit: 1 }))[0]
   if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
-  response.json(await store.repositoryFlowReviewHistory(candidateId, tenantId))
+  const history = await store.repositoryFlowReviewHistory(candidateId, tenantId, {
+    after: cursor.data,
+    limit: filter.data.limit + 1,
+  })
+  response.json(historyPage(history, filter.data.limit))
 })
 app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayReviewSuggestions, async (request, response) => {
   const parsed = repositoryFlowReviewSchema.safeParse(request.body)
@@ -496,31 +647,78 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const existingCandidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const existingCandidate = await repositoryFlowCandidateById(
+    repositoryId,
+    tenantId,
+    candidateId,
+    (id, tenant, query) => store.repositoryFlowCandidates(id, tenant, query),
+  )
   if (!existingCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
+  const conflict = repositoryFlowReviewConflict(repository, existingCandidate)
+  if (conflict) return response.status(409).json(conflict)
   const candidate = await store.reviewRepositoryFlowCandidate(candidateId, tenantId, {
     status: parsed.data.status,
     reviewedBy: requestIdentity(request)!.userId,
     reason: parsed.data.reason,
-  })
-  if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
+    expectedReviewedAt: parsed.data.expectedReviewedAt,
+  }, existingCandidate.revision)
+  if (!candidate) {
+    const latestRepository = await store.repository(repositoryId, tenantId)
+    const latestCandidate = await repositoryFlowCandidateById(
+      repositoryId,
+      tenantId,
+      candidateId,
+      (id, tenant, query) => store.repositoryFlowCandidates(id, tenant, query),
+    )
+    if (!latestRepository || !latestCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
+    const reviewConflict = repositoryFlowReviewStateConflict(
+      latestCandidate,
+      parsed.data.expectedReviewedAt,
+    )
+    if (reviewConflict) return response.status(409).json(reviewConflict)
+    return response.status(409).json(repositoryFlowReviewConflict(latestRepository, latestCandidate) ?? {
+      error: 'The UX-flow candidate changed while it was being reviewed. Refresh before deciding.',
+      code: 'STALE_FLOW_CANDIDATE',
+      candidateRevision: latestCandidate.revision,
+      currentRevision: latestRepository.lastScanRevision,
+    })
+  }
   response.json(candidate)
 })
 app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.policyGateEvaluations(repositoryId, tenantId))
+  const filter = policyGateFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const { limit, cursor: _cursor, ...query } = filter.data
+  const evaluations = await store.policyGateEvaluations(repositoryId, tenantId, {
+    ...query,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  response.json(historyPage(evaluations, limit))
 })
 app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/history', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const evaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+  const filter = historyPageQuerySchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeUuidHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const evaluation = (await store.policyGateEvaluations(repositoryId, tenantId, { id: evaluationId, limit: 1 }))[0]
   if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
-  response.json(await store.policyGateReviewHistory(evaluationId, tenantId))
+  const history = await store.policyGateReviewHistory(evaluationId, tenantId, {
+    after: cursor.data,
+    limit: filter.data.limit + 1,
+  })
+  response.json(historyPage(history, filter.data.limit))
 })
 app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review', mayReviewSuggestions, async (request, response) => {
   const parsed = policyGateReviewSchema.safeParse(request.body)
@@ -528,28 +726,191 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const existingEvaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const existingEvaluation = await policyGateEvaluationForReview(store, repositoryId, tenantId, evaluationId)
   if (!existingEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
-  const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, { status: parsed.data.status, reviewedBy: requestIdentity(request)!.userId, reason: parsed.data.reason })
-  if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+  const conflict = policyGateReviewConflict(repository, existingEvaluation)
+  if (conflict) return response.status(409).json(conflict)
+  const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, {
+    status: parsed.data.status,
+    reviewedBy: requestIdentity(request)!.userId,
+    reason: parsed.data.reason,
+    expectedReviewedAt: parsed.data.expectedReviewedAt,
+  }, existingEvaluation.revision)
+  if (!evaluation) {
+    const latestRepository = await store.repository(repositoryId, tenantId)
+    const latestEvaluation = await policyGateEvaluationForReview(store, repositoryId, tenantId, evaluationId)
+    if (!latestRepository || !latestEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+    const reviewConflict = policyGateReviewStateConflict(
+      latestEvaluation,
+      parsed.data.expectedReviewedAt,
+    )
+    if (reviewConflict) return response.status(409).json(reviewConflict)
+    return response.status(409).json(policyGateReviewConflict(latestRepository, latestEvaluation) ?? {
+      error: 'The policy-gate evaluation changed while it was being reviewed. Refresh before deciding.',
+      code: 'STALE_POLICY_GATE_EVALUATION',
+      evaluationRevision: latestEvaluation.revision,
+      currentRevision: latestRepository.lastScanRevision,
+    })
+  }
   response.json(evaluation)
 })
 app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const filter = executionFilterSchema.safeParse(request.query)
+  const filter = executionPageFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
-  response.json(filterTestExecutions(await store.testExecutions(repositoryId, tenantId), filter.data))
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const limit = filter.data.limit
+  const executions = await store.testExecutions(repositoryId, tenantId, {
+    ...filter.data,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  const cursorItems = executions.map(execution => ({
+    ...execution,
+    createdAt: testExecutionCursorCreatedAt(execution),
+  }))
+  const page = historyPage(cursorItems, limit)
+  response.json({
+    items: page.items.map(({ createdAt: _createdAt, ...execution }) => execution),
+    page: page.page,
+  })
+})
+app.get('/api/v1/repositories/:id/test-executions/attempts', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const filter = executionAttemptHistoryFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const { provider, externalRunId, limit } = filter.data
+  const attempts = await store.testExecutions(repositoryId, tenantId, {
+    provider,
+    externalRunId,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  const cursorItems = attempts.map(execution => ({
+    ...execution,
+    createdAt: testExecutionCursorCreatedAt(execution),
+  }))
+  const page = historyPage(cursorItems, limit)
+  response.json({
+    items: page.items.map(({ createdAt: _createdAt, ...execution }) => execution),
+    page: page.page,
+  })
+})
+app.get('/api/v1/repositories/:id/performance-test-executions/latest', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
+  const workflowPaths = reviewedPerformanceWorkflowPaths(artifacts)
+  response.json({ items: await store.latestPerformanceExecutions(repositoryId, tenantId, workflowPaths, repository.defaultBranch, `${repository.owner}/${repository.name}`) })
+})
+app.get('/api/v1/repositories/:id/integration-test-executions/latest', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
+  const workflowPaths = reviewedIntegrationWorkflowPaths(artifacts)
+  response.json({ items: await store.latestIntegrationExecutions(repositoryId, tenantId, workflowPaths, repository.defaultBranch, `${repository.owner}/${repository.name}`) })
+})
+app.get('/api/v1/repositories/:id/post-production-test-executions/latest', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
+  const workflowPaths = reviewedPostProductionWorkflowPaths(artifacts)
+  response.json({ items: await store.latestPostProductionExecutions(repositoryId, tenantId, workflowPaths, repository.defaultBranch, `${repository.owner}/${repository.name}`) })
+})
+app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const filter = executionPageFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeExecutionTrendCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const { cursor: _cursor, limit, ...query } = filter.data
+  const snapshotAt = cursor.data?.snapshotAt ?? new Date().toISOString()
+  const items = await store.executionOutcomeTrend(repositoryId, tenantId, {
+    ...query,
+    beforeDate: cursor.data?.date,
+    snapshotAt,
+    limit: limit + 1,
+  })
+  response.json(executionTrendPage(items, limit, snapshotAt))
 })
 app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const filter = executionFilterSchema.safeParse(request.query)
+  const filter = executionPerformanceFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
-  response.json(executionPerformance(filterTestExecutions(await store.testExecutions(repositoryId, tenantId), filter.data)))
+  const cursor = decodePerformanceCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const { cursor: _cursor, limit, ...query } = filter.data
+  const snapshotAt = cursor.data?.snapshotAt ?? new Date().toISOString()
+  const items = await store.policyGatePerformance(repositoryId, tenantId, {
+    ...query,
+    snapshotAt,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  const artifactIds = [...new Set(items.flatMap(item => [item.policyArtifactId, item.gateArtifactId]))]
+  const artifacts = new Map(
+    (await store.qualityArtifactsByIds(repositoryId, tenantId, artifactIds))
+      .flatMap(artifact => [
+        [artifact.id, artifact] as const,
+        ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+      ]),
+  )
+  response.json(performancePage(items.map(item => {
+    const policy = artifacts.get(item.policyArtifactId)
+    const gate = artifacts.get(item.gateArtifactId)
+    return {
+      ...item,
+      ...(policy?.kind === 'policy' ? { policyTitle: policy.title, policySourcePath: policy.sourcePath } : {}),
+      ...(gate?.kind === 'gate' ? { gateTitle: gate.title, gateSourcePath: gate.sourcePath } : {}),
+    }
+  }), limit, undefined, snapshotAt))
+})
+app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecution, async (request, response) => {
+  const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifact = (await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)).find(item => item.id === parsed.data.artifactId)
+  const workflowPath = artifact ? executableWorkflowTarget(artifact) : undefined
+  if (!artifact || !['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(artifact.kind)) {
+    return response.status(404).json({ error: 'Executable test suite not found' })
+  }
+  if (artifact.execution?.requiredInputs?.length) return response.status(422).json({
+    error: `Workflow requires repository defaults for: ${artifact.execution.requiredInputs.join(', ')}`,
+    code: 'TEST_WORKFLOW_INPUTS_REQUIRED',
+    requiredInputs: artifact.execution.requiredInputs,
+  })
+  if (!workflowPath) return response.status(422).json({ error: 'Test definition is not a scanner-verified workflow_dispatch workflow', code: 'TEST_WORKFLOW_NOT_DISPATCHABLE' })
+  const sourceRevision = testSuiteDispatchRevision(repository)
+  if (!sourceRevision) return response.status(409).json({ error: 'An exact analyzed source revision is required before dispatch', code: 'ANALYSIS_SOURCE_REVISION_REQUIRED' })
+  if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
+  try {
+    const receipt = await dispatchTestWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath })
+    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, artifactKind: artifact.kind, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision })
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'TEST_DISPATCH_FAILED' })
+  }
 })
 app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRunExecution, async (request, response) => {
   const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
@@ -558,12 +919,21 @@ app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRu
   const tenantId = requestIdentity(request)!.tenantId
   const repository = await store.repository(repositoryId, tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  const artifact = (await store.qualityArtifacts(repositoryId, tenantId)).find(item => item.id === parsed.data.artifactId)
-  if (!artifact || !['load-test', 'stress-test'].includes(artifact.kind)) return response.status(404).json({ error: 'Dispatchable performance test not found' })
+  const artifact = (await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)).find(item => item.id === parsed.data.artifactId)
+  if (!artifact || !['load-test', 'stress-test'].includes(artifact.kind)) return response.status(404).json({ error: 'Performance test not found' })
+  if (artifact.execution?.requiredInputs?.length) return response.status(422).json({
+    error: `Workflow requires repository defaults for: ${artifact.execution.requiredInputs.join(', ')}`,
+    code: 'PERFORMANCE_WORKFLOW_INPUTS_REQUIRED',
+    requiredInputs: artifact.execution.requiredInputs,
+  })
+  const workflowPath = performanceWorkflowTarget(artifact)
+  if (!workflowPath) return response.status(422).json({ error: 'Performance definition is not a scanner-verified workflow_dispatch workflow', code: 'PERFORMANCE_WORKFLOW_NOT_DISPATCHABLE' })
+  const sourceRevision = performanceDispatchRevision(repository)
+  if (!sourceRevision) return response.status(409).json({ error: 'An exact analyzed source revision is required before dispatch', code: 'ANALYSIS_SOURCE_REVISION_REQUIRED' })
   if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
   try {
-    await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, defaultBranch: repository.defaultBranch, installationId: repository.installationId, workflowPath: artifact.sourcePath })
-    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath: artifact.sourcePath, ref: repository.defaultBranch })
+    const receipt = await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath })
+    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision })
   } catch (error) {
     response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'PERFORMANCE_DISPATCH_FAILED' })
   }
@@ -633,7 +1003,7 @@ app.post('/api/v1/repositories/:id/scans', mayScanRepositories, async (request, 
     await store.setRepositoryStatus(repository.id, 'running')
     try {
       const result = await scanRepository(repository, localPath)
-      await store.saveScan(result)
+      await saveScanWithExecutionReconciliation(result)
       return response.status(202).json({ status: 'complete', revision: result.revision })
     } catch (error) {
       await store.setRepositoryStatus(repository.id, 'failed')
@@ -662,6 +1032,20 @@ app.post('/api/v1/repositories/:id/scans', mayScanRepositories, async (request, 
     const result = publicAccessError(error)
     response.status(result.status).json(result.body)
   }
+})
+app.get('/api/v1/repositories/:id/processing-status', mayReadRepositories, async (request, response) => {
+  const tenantId = requestIdentity(request)!.tenantId
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  response.json(repositoryProcessingStatus(repository))
+})
+app.post('/api/v1/repositories/:id/analysis-retries', mayScanRepositories, async (request, response) => {
+  const tenantId = requestIdentity(request)!.tenantId
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.queueRepositoryAnalysis(repositoryId, tenantId)
+  if (!repository) return response.status(409).json({ error: 'Only a failed current-revision analysis can be retried', code: 'ANALYSIS_NOT_RETRYABLE' })
+  response.status(202).json(repositoryProcessingStatus(repository))
 })
 app.patch('/api/v1/repositories/:id/administration', mayManageRepositoryAdministration, async (request, response) => {
   const parsed = repositoryAdministrationSchema.safeParse(request.body)
@@ -860,12 +1244,7 @@ app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
 )
 
 app.post('/api/v1/internal/scans/results', async (request, response) => {
-  await store.saveScan(request.body)
-  await events.publish(
-    TOPICS.REPOSITORY_INVENTORY_CHANGED,
-    { repositoryId: request.body.repository.id, revision: request.body.revision },
-    request.body.repository.id
-  )
+  await saveScanWithExecutionReconciliation(request.body)
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/intelligence/results', async (request, response) => {
@@ -929,32 +1308,51 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
   for (const execution of workflowExecutions) {
     const repository = repositories.find(item => item.id === execution.repositoryId)
     if (!repository?.tenantId) continue
-    const links = linkExecutionArtifacts(execution.name, await store.qualityArtifacts(repository.id, repository.tenantId))
-    const gateEvaluations = links.policyArtifactIds.length === 1 && links.gateArtifactIds.length === 1
-      ? [{ policyArtifactId: links.policyArtifactIds[0], gateArtifactId: links.gateArtifactIds[0], status: execution.status }]
-      : []
-    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, thresholds: [], gateEvaluations, ...links, ...execution })
-  }
-  for (const command of commands) {
-    let commitSha = command.commitSha
-    if (!commitSha) {
-      const repository = repositories.find(item => item.id === command.repositoryId)
-      if (!repository?.installationId) continue
-      const access = await repositoryAccess.verify({
-        owner: repository.owner,
-        name: repository.name,
-        defaultBranch: repository.defaultBranch,
-        installationId: repository.installationId,
-      })
-      commitSha = access.commitSha
+    let executionWithEvidence: typeof execution & {
+      evidenceCollection?: TestExecution['evidenceCollection']
+    } = execution
+    if (execution.status !== 'running' && repository.installationId) {
+      const checkedAt = new Date().toISOString()
+      try {
+        const discovered = await githubWorkflowArtifactEvidence({
+          owner: repository.owner,
+          name: repository.name,
+          runId: execution.externalRunId,
+          installationId: repository.installationId,
+        })
+        executionWithEvidence = {
+          ...execution,
+          evidenceLinks: mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered),
+          evidenceCollection: { status: 'complete', checkedAt },
+        }
+      } catch (error) {
+        const errorCode = error instanceof GitHubArtifactEvidenceError
+          ? error.code
+          : 'PROVIDER_UNAVAILABLE'
+        executionWithEvidence = {
+          ...execution,
+          evidenceCollection: { status: 'unavailable', checkedAt, errorCode },
+        }
+        console.warn(JSON.stringify({
+          event: 'github_workflow_artifact_discovery_failed',
+          repositoryId: repository.id,
+          externalRunId: execution.externalRunId,
+          errorCode,
+        }))
+      }
     }
-    await events.publish(
-      TOPICS.REPOSITORY_SCAN_REQUESTED,
-      { ...command, commitSha },
-      command.repositoryId
+    const links = await linkExecutionToRevisionArtifacts(
+      executionWithEvidence,
+      repository.tenantId,
+      (repositoryId, tenantId, sourceRevision) =>
+        store.catalogRevisionForSource(repositoryId, tenantId, sourceRevision),
+      (repositoryId, tenantId, revision) =>
+        store.qualityArtifacts(repositoryId, tenantId, revision)
     )
+    await store.saveTestExecution(webhookExecutionRecord(executionWithEvidence, repository.tenantId, links))
   }
-  response.status(202).json({ accepted: true, delivery: headers.data.delivery, queued: commands.length, executions: workflowExecutions.length })
+  const queued = await dispatchWebhookScans(commands, repositories, { store, repositoryAccess, events })
+  response.status(202).json({ accepted: true, delivery: headers.data.delivery, queued, executions: workflowExecutions.length })
 })
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
