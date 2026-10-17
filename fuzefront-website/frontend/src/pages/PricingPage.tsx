@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Container, Stack } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -206,7 +206,7 @@ export const PricingPage: React.FC = () => {
                   )}
 
                   <div className="p-6">
-                    <div className="flex items-center gap-3 mb-4">
+                    <Stack gap="sm" mb="md">
                       <div className={`w-10 h-10 rounded-xl ${plan.popular ? 'bg-primary-100' : 'bg-secondary-100'} flex items-center justify-center`}>
                         <Icon size={18} className={plan.popular ? 'text-primary-600' : 'text-secondary-600'} />
                       </div>
@@ -214,7 +214,7 @@ export const PricingPage: React.FC = () => {
                         <h3 className="font-bold text-gray-900">{plan.name}</h3>
                         <p className="text-xs text-gray-600">{plan.members}</p>
                       </div>
-                    </div>
+                    </Stack>
 
                     <p className="text-sm text-gray-600 mb-5 leading-relaxed">{plan.description}</p>
 
