@@ -77,6 +77,31 @@ describe('repository analysis lifecycle storage', () => {
     })])
   })
 
+  it('does not regress a completed current-revision analysis on replay', async () => {
+    const complete = {
+      revision: 'catalog-revision',
+      status: 'complete' as const,
+      counts: { deterministic: 2, evaluations: 3, proposed: 1 },
+    }
+    const store = new MemoryCatalogStore(seed({ ...repository, lastAnalysis: complete }))
+
+    await store.setRepositoryAnalysis('repo-1', {
+      revision: 'catalog-revision',
+      status: 'running',
+      startedAt: '2026-10-17T20:00:00.000Z',
+    })
+    await store.setRepositoryAnalysis('repo-1', {
+      revision: 'catalog-revision',
+      status: 'failed',
+      errorCode: 'INTELLIGENCE_UNAVAILABLE',
+      finishedAt: '2026-10-17T20:01:00.000Z',
+    })
+
+    expect((await store.repository('repo-1'))?.lastAnalysis).toEqual(complete)
+    const bus = new InProcessEventBus()
+    await expect(relayOutboxBatch(store, bus)).resolves.toBe(0)
+  })
+
   it('rolls back Postgres analysis completion when its projection event cannot be enqueued', async () => {
     const query = vi.fn().mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT last_analysis FROM updated')) {
@@ -123,6 +148,7 @@ describe('repository analysis lifecycle storage', () => {
     const store = new MemoryCatalogStore(seed({ ...repository, lastScanStatus: 'running', lastAnalysis: undefined }))
     const scan: ScanResult = {
       repository, revision: 'new-catalog-revision', scannedAt: '2026-10-13T10:00:00.000Z',
+      trigger: 'push',
       operations: [], surfaces: [], tests: [], expectations: [], findings: [], diagnostics: [], qualityArtifacts: [],
       scanDetails: {
         catalogRevision: 'new-catalog-revision', scannerVersion: 'v1', configVersion: 'v1', partial: false, candidates: [],
@@ -140,6 +166,30 @@ describe('repository analysis lifecycle storage', () => {
     expect((await store.repository('repo-1', 'tenant-1'))?.lastAnalysis).toEqual({
       revision: 'new-catalog-revision', status: 'queued',
     })
+    await expect(store.repositoryScanHistory('repo-1', 'tenant-1')).resolves.toEqual([
+      expect.objectContaining({ trigger: 'push' }),
+    ])
+  })
+
+  it('guards completed Postgres analysis from non-terminal replay states', async () => {
+    const query = vi.fn().mockResolvedValue({ rowCount: 0, rows: [] })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = {
+      connect: vi.fn().mockResolvedValue({ query, release }),
+    }
+
+    await store.setRepositoryAnalysis('repo-1', {
+      revision: 'catalog-revision',
+      status: 'running',
+      startedAt: '2026-10-17T20:00:00.000Z',
+    })
+
+    const update = query.mock.calls.find(([sql]) => String(sql).includes('UPDATE fuzequality.repositories repository'))
+    expect(String(update?.[0])).toContain("current.last_analysis->>'status' = 'complete'")
+    expect(String(update?.[0])).toContain("$2::jsonb->>'status' <> 'complete'")
+    expect(query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO fuzequality.outbox_events'), expect.anything())
+    expect(release).toHaveBeenCalledOnce()
   })
 
   it('rolls back a Postgres retry if the analysis event cannot be enqueued', async () => {
