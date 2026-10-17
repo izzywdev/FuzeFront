@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Building, Rocket, RefreshCw, Code, ArrowRight } from 'lucide-react'
-import { Center } from '@fuzefront/design-system'
+import { BlockHeading, Center } from '@fuzefront/design-system'
 
 const solutions = [
   {
@@ -77,9 +77,9 @@ export const SolutionsPage: React.FC = () => {
                     <Icon size={32} className="text-white" />
                   </div>
                   
-                  <h3 className="text-2xl font-bold text-gray-900 mb-4">
+                  <BlockHeading as="h3">
                     {solution.name}
-                  </h3>
+                  </BlockHeading>
                   
                   <p className="text-gray-600 mb-6">
                     {solution.description}

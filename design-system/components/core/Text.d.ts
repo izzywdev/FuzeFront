@@ -15,10 +15,11 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   tone?: "primary" | "secondary" | "muted" | "danger";
   /**
    * Step of the DS type scale. `inherit` (default) reads the surrounding
-   * layout's font size, unchanged from before `size` existed.
+   * layout's font size, unchanged from before `size` existed. `2xl` is the
+   * step `BlockHeading` builds on.
    * @default "inherit"
    */
-  size?: "inherit" | "xs" | "sm" | "base" | "md";
+  size?: "inherit" | "xs" | "sm" | "base" | "md" | "2xl";
   /**
    * Step of the DS spacing scale applied as `margin-block-end` (a logical
    * property, so it mirrors under RTL). `none` (default) keeps the original
