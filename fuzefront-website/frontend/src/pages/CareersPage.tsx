@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, Stack } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -182,12 +182,12 @@ export const CareersPage: React.FC = () => {
                         <h3 className="text-xl font-bold text-gray-900">{position.title}</h3>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-sm text-gray-600">
                           <span>{position.department}</span>
-                          <span className="flex items-center gap-1">
+                          <Stack gap="xs">
                             <MapPin size={13} /> {position.location}
-                          </span>
-                          <span className="flex items-center gap-1">
+                          </Stack>
+                          <Stack gap="xs">
                             <Clock size={13} /> {position.type}
-                          </span>
+                          </Stack>
                         </div>
                       </div>
                     </div>
