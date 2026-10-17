@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { ResponsiveGrid } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -201,11 +202,11 @@ export const ProductsPage: React.FC = () => {
       {/* Products grid */}
       <section className="py-20 bg-secondary-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <ResponsiveGrid columns={3} gap="lg">
             {allProducts.map((product) => (
               <ProductCard key={product.slug} product={product} />
             ))}
-          </div>
+          </ResponsiveGrid>
         </div>
       </section>
 
