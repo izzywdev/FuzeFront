@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, SectionIcon } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -437,7 +437,9 @@ export const HomePage: React.FC = () => {
         <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
-              <Users size={32} className="text-primary-500 mx-auto mb-4" />
+              <SectionIcon tone="accent" gap="md">
+                <Users size={32} />
+              </SectionIcon>
               <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-3">
                 Stay in the loop
               </h2>

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Container, SectionIcon } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -334,7 +334,9 @@ export const PricingPage: React.FC = () => {
           transition={{ duration: 0.6 }}
           className="relative max-w-3xl mx-auto px-4 text-center"
         >
-          <Crown size={40} className="text-primary-400 mx-auto mb-6" />
+          <SectionIcon tone="accent">
+            <Crown size={40} />
+          </SectionIcon>
           <h2 className="text-3xl sm:text-4xl font-heading font-bold text-white mb-4">
             Need something custom?
           </h2>
