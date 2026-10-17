@@ -1,14 +1,17 @@
 // lists.ts — SelectionList CRUD routes (S4 — FFRNT-187).
 //
 // All routes require a valid JWT (authMiddleware upstream).
-// All DB queries are scoped to req.orgId — never cross-org.
+// All WRITE queries are scoped to req.orgId — never cross-org. READ queries are scoped to req.orgId plus, when
+// the release flag `fuzefront.selection-lists.shared-lists` is ON, the common (`platform`) lists
+// (services/sharedReads.ts); who may read what is decided by middleware/listAccess.ts, not by this scope.
 //
 // Authorization (middleware/authz.ts; matrix: docs/planning/selection-lists-permit-actions.md):
 //   - tenant-level routes use the keyless SelectionListCatalog resource:
 //     GET / -> `list`, POST / -> `create`. GET / additionally filters every
 //     returned list through the per-list SelectionList `read` action.
-//   - every :listId route carries requireAuthzCheck('SelectionList', <action>)
-//     keyed on the list id.
+//   - every :listId route carries a SelectionList guard keyed on the list id: requireListRead (the shared-read
+//     operations) / requireListMutation (every mutation) from middleware/listAccess.ts, which delegate to the
+//     4.0.0 requireAuthzCheck unchanged while the shared-lists flag is OFF and for lists of the caller's org.
 //
 // Pagination: cursor-based (opaque base64url JSON cursor), newest-first.
 //   DEFAULT_PAGE_SIZE = 50, MAX_PAGE_SIZE = 200.
@@ -36,6 +39,8 @@ import { enforceListQuota, sendQuotaExceeded } from '../middleware/quota';
 import {
   lockQuotaScope,
   checkListQuota,
+  checkListQuotaAcross,
+  checkActiveListQuotaAcross,
   checkActiveListQuota,
   checkLocaleQuota,
   isUserPrincipal,
@@ -44,7 +49,23 @@ import {
 import { revokeInstanceGrants, type InstanceGrant } from '../services/authority';
 import { getGrantToken } from '../lib/machineIdentity';
 import { grantCleanupFailedTotal } from '../lib/metrics';
-import { requireAuthzCheck, requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled, bearer } from '../middleware/authz';
+import { requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled, bearer } from '../middleware/authz';
+import {
+  assertMayPurgeLocked,
+  assertPlatformWritable,
+  replyPlatformSuspended,
+  catalogAllowed,
+  PLATFORM_PURGE_DENIED_BODY,
+  PlatformPurgeDenied,
+  requireListMutation,
+  requireListRead,
+  requireManageAccessWhenVisibilityGiven,
+  requirePublishForPlatformList,
+  requirePublishWhenBodyIsPlatform,
+} from '../middleware/listAccess';
+import { sameUser, canonicalOrgId, isVisibility, orgForms, orgIs, orgRenderings, writeOrgs, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
+import { editableIds, getReadScope, notOutrankedByRendering, readableByOrg } from '../services/sharedReads';
+import { formatList, LIST_COLUMNS, singleCtx, type ListRow } from './listShape';
 import { lockOrgOutbox, wireUserId } from '../events/outbox';
 import { refreshListUserModified } from '../seed/content';
 import {
@@ -53,6 +74,7 @@ import {
   emitListChanged,
   emitListCreated,
   emitListDeleted,
+  emitVisibilityChanged,
   readList,
 } from '../events/emitters';
 
@@ -144,106 +166,51 @@ function hashText(text: string): string {
   return hash.toString(16);
 }
 
-// ─── Row formatters ───────────────────────────────────────────────────────────
+// ─── GET / — list all selection lists ────────────────────────────────────────
 
-interface ListRow {
-  id: string;
-  organization_id: string;
-  key: string;
-  source_locale: string;
-  status: string;
-  created_by: string;
-  created_at: Date | string;
-  updated_at: Date | string;
-  seed_source?: string | null;
-  seed_key?: string | null;
-  seed_version?: number | string | null;
-  seed_user_modified?: boolean | null;
-  name: string | null;
-  description: string | null;
-  resolved_locale: string | null;
-  is_machine: boolean | null;
-  item_count?: number | string | null;
+/** `filterReadable` in chunks of the Security API's bulk-check ceiling. */
+async function filterReadableChunked<T extends { id: string }>(req: Request, rows: T[]): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < rows.length; i += 200) out.push(...(await filterReadable(req, rows.slice(i, i + 200))));
+  return out;
 }
 
 /**
- * openapi `SeedProvenance`: `null` for a user-authored row (seed_source IS NULL), else where the
- * row came from. Read-only; the columns are written only by the seed algorithm and by the
- * user-edit paths (`refreshListUserModified`).
+ * Keys of `platform` lists that the caller's organization SHADOWS: it has its own ACTIVE list with that key
+ * (normally its fork) that the caller can read — through an instance role, or through `org` visibility given
+ * `read_shared`. A private fork shadows only for the people who can read it (design record D8).
+ * Computed up front (not per page) so a page walk is deterministic: the same platform row is dropped on
+ * every page.
  */
-function formatSeed(row: ListRow) {
-  if (row.seed_source === null || row.seed_source === undefined) return null;
-  return {
-    source: row.seed_source,
-    pack_key: row.seed_key as string,
-    pack_version: Number(row.seed_version),
-    user_modified: Boolean(row.seed_user_modified),
-  };
-}
-
-function formatList(row: ListRow) {
-  return {
-    id: row.id,
-    organization_id: row.organization_id,
-    key: row.key,
-    source_locale: row.source_locale,
-    status: row.status,
-    name: row.name ?? '',
-    description: row.description ?? null,
-    resolved_locale: row.resolved_locale ?? row.source_locale,
-    is_machine: row.is_machine ?? false,
-    item_count: row.item_count !== undefined && row.item_count !== null
-      ? Number(row.item_count)
-      : undefined,
-    created_by: row.created_by,
-    seed: formatSeed(row),
-    created_at: row.created_at instanceof Date
-      ? row.created_at.toISOString()
-      : row.created_at,
-    updated_at: row.updated_at instanceof Date
-      ? row.updated_at.toISOString()
-      : row.updated_at,
-  };
-}
-
-// ─── DB helper: fetch single list with locale resolution ─────────────────────
-
-async function fetchList(
-  listId: string,
+async function shadowedPlatformKeys(
+  req: Request,
   orgId: string,
-  localeChain: string[],
-): Promise<ListRow | null> {
-  const localeParams = localeChain.map(() => '?').join(', ');
-  const result = await db.raw<{ rows: ListRow[] }>(
+  platformOrg: string,
+  keyFilter: string | undefined,
+): Promise<string[]> {
+  const res = await db.raw<{ rows: Array<{ id: string; organization_id: string; key: string; visibility: string }> }>(
     `
-    SELECT
-      sl.id,
-      sl.organization_id,
-      sl.key,
-      sl.source_locale,
-      sl.status,
-      sl.created_by,
-      sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
-      sl.created_at,
-      sl.updated_at,
-      COALESCE(${localeChain.map(() => 't?.name').join(', t')}) AS name,
-      COALESCE(${localeChain.map(() => 't?.description').join(', t')}) AS description,
-      COALESCE(${localeChain.map(() => 't?.locale').join(', t')}) AS resolved_locale,
-      COALESCE(${localeChain.map(() => 't?.is_machine').join(', t')}) AS is_machine,
-      (
-        SELECT COUNT(*) FROM selection_list_items
-        WHERE list_id = sl.id AND status = 'active'
-      ) AS item_count
-    FROM selection_lists sl
-    ${localeChain.map((_, i) => `LEFT JOIN selection_list_translations t${i} ON t${i}.list_id = sl.id AND t${i}.locale = ?`).join('\n      ')}
-    WHERE sl.id = ? AND sl.organization_id = ?
+    SELECT o.id, o.organization_id, o.key, o.visibility
+      FROM selection_lists o
+     WHERE o.organization_id = ANY(?)
+       AND o.status = 'active'
+       AND o.visibility <> 'platform'
+       ${keyFilter ? 'AND o.key = ?' : ''}
+       AND EXISTS (
+         SELECT 1 FROM selection_lists p
+          WHERE p.visibility = 'platform' AND p.status = 'active' AND p.key = o.key AND p.organization_id = ANY(?)
+       )
     `,
-    [...localeChain, listId, orgId],
+    [orgRenderings(orgId), ...(keyFilter ? [keyFilter] : []), orgForms(platformOrg)],
   );
-  return result.rows[0] ?? null;
+  const candidates = res.rows ?? [];
+  if (candidates.length === 0) return [];
+  const viaShared = candidates.some((c) => c.visibility === 'org') && (await catalogAllowed(req, 'read_shared'));
+  const sharedReadable = new Set(candidates.filter((c) => c.visibility === 'org' && viaShared).map((c) => c.id));
+  const rest = candidates.filter((c) => !sharedReadable.has(c.id));
+  const instanceReadable = rest.length > 0 ? new Set((await filterReadableChunked(req, rest)).map((c) => c.id)) : new Set<string>();
+  return [...new Set(candidates.filter((c) => sharedReadable.has(c.id) || instanceReadable.has(c.id)).map((c) => c.key))];
 }
-
-// ─── GET / — list all selection lists ────────────────────────────────────────
 
 router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response): Promise<void> => {
   // Feature flag gate
@@ -284,6 +251,30 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
     return;
   }
 
+  // 4.1.0 query parameters. With the shared-lists flag OFF they are accepted and IGNORED (the 4.0.0
+  // result set, exactly); with it ON they are validated.
+  const shared = await sharedListsOn(req);
+  let includeShared = false;
+  let visibilityFilter: string | undefined;
+  if (shared) {
+    const rawShared = req.query.include_shared;
+    if (rawShared !== undefined) {
+      if (rawShared !== 'true' && rawShared !== 'false') {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: 'include_shared must be true or false.' });
+        return;
+      }
+      includeShared = rawShared === 'true';
+    }
+    const rawVisibility = req.query.visibility;
+    if (rawVisibility !== undefined) {
+      if (!isVisibility(rawVisibility)) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: 'visibility must be one of: private, org, platform.' });
+        return;
+      }
+      visibilityFilter = rawVisibility;
+    }
+  }
+
   // Decode cursor if supplied
   let cursor: ListCursor | null = null;
   if (rawCursor) {
@@ -307,61 +298,95 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
   if (queryLocale && SUPPORTED_LOCALES.has(queryLocale)) requestedLocales.push(queryLocale);
   const al = parseAcceptLanguage(acceptLang);
   if (al && !requestedLocales.includes(al)) requestedLocales.push(al);
-  if (!requestedLocales.includes('en')) requestedLocales.push('en');
-
-  // Build parameterized WHERE clauses
-  const whereClause: string[] = ['sl.organization_id = ?'];
-  const params: (string | number | boolean | null | Date)[] = [req.orgId as string];
-
-  if (statusFilter !== 'all') {
-    whereClause.push('sl.status = ?');
-    params.push(statusFilter);
-  }
-
-  if (keyFilter) {
-    whereClause.push('sl.key = ?');
-    params.push(keyFilter);
-  }
-
-  if (cursor) {
-    whereClause.push('(sl.created_at < ? OR (sl.created_at = ? AND sl.id < ?))');
-    params.push(cursor.createdAt, cursor.createdAt, cursor.id);
-  }
-
-  // Build translation JOINs - one per requested locale
-  const joinClauses = requestedLocales.map(
-    (_, i) => `LEFT JOIN selection_list_translations t${i} ON t${i}.list_id = sl.id AND t${i}.locale = ?`,
-  );
-  const joinParams = requestedLocales;
-
-  // COALESCE across translation rows for name, description, resolved_locale, is_machine
-  const nameCoalesce = requestedLocales.length > 0
-    ? `COALESCE(${requestedLocales.map((_, i) => `t${i}.name`).join(', ')})`
-    : 'NULL';
-  const descCoalesce = requestedLocales.length > 0
-    ? `COALESCE(${requestedLocales.map((_, i) => `t${i}.description`).join(', ')})`
-    : 'NULL';
-  const localeCoalesce = requestedLocales.length > 0
-    ? `COALESCE(${requestedLocales.map((_, i) => `t${i}.locale`).join(', ')})`
-    : 'NULL';
-  const machineCoalesce = requestedLocales.length > 0
-    ? `COALESCE(${requestedLocales.map((_, i) => `t${i}.is_machine`).join(', ')})`
-    : 'NULL';
+  // Chain slots: the requested locales, then the ROW's own source_locale (per-row, so a list whose source is
+  // not 'en' - e.g. a 'de' common list read by an en-only caller with no Accept-Language - still resolves
+  // its name/description instead of an empty string), then the last-resort 'en'. `null` marks the
+  // per-row source slot.
+  const chain: Array<string | null> = [...requestedLocales, null];
+  if (!requestedLocales.includes('en')) chain.push('en');
 
   try {
+    // The platform organization (common lists) only matters for include_shared; unresolved => fail closed
+    // (the scope falls back to the caller's own organization).
+    // The org's own rows match every rendering of its id whenever the feature is on (and the platform org
+    // resolves), including the default listing; the common lists are added only for include_shared.
+    const platformOrg = shared ? (await getReadScope(req)).platformOrg : null;
+
+    // Build parameterized WHERE clauses (the scope first, then the filters; the cursor is page-only)
+    const scope = readableByOrg('sl', req.orgId as string, { shared, platformOrg, includePlatform: includeShared });
+    const whereClause: string[] = [scope.sql];
+    const params: (string | number | boolean | null | Date | string[])[] = [...scope.params] as never[];
+
+    // Shared lists ON merges the renderings of the caller's org (and of the platform org): when the same key exists
+    // under several of them, exactly ONE row per key is effective (sharedReads.renderingWinnerOrder). Applies to every
+    // listing, so `key=` returns at most one row and a picker never sees two lists for one key.
+    if (shared) {
+      const own = notOutrankedByRendering('sl', orgRenderings(req.orgId as string), req.orgId as string);
+      whereClause.push(own.sql);
+      params.push(...own.params);
+      // The common-list group is the platform org's renderings. When the caller IS the platform org the two groups are
+      // the SAME set of rows: a second predicate (a different claim, so a different winner) would be ANDed with the
+      // first and reject both rows of a duplicated key. One scope, one winner rule: the caller's claim decides.
+      if (includeShared && platformOrg && !sameOrg(req.orgId, platformOrg)) {
+        const common = notOutrankedByRendering('sl', orgForms(platformOrg), platformOrg);
+        whereClause.push(common.sql);
+        params.push(...common.params);
+      }
+    }
+
+    if (statusFilter !== 'all') {
+      whereClause.push('sl.status = ?');
+      params.push(statusFilter);
+    }
+
+    if (keyFilter) {
+      whereClause.push('sl.key = ?');
+      params.push(keyFilter);
+    }
+
+    if (shared && visibilityFilter) {
+      whereClause.push('sl.visibility = ?');
+      params.push(visibilityFilter);
+    }
+
+    // Shadowing: a common list the caller's organization has its own readable active list for is omitted,
+    // unless a `visibility` filter turns it off (an administrator's view of the list behind the fork).
+    if (shared && includeShared && platformOrg && !visibilityFilter) {
+      const shadowed = await shadowedPlatformKeys(req, req.orgId as string, platformOrg, keyFilter);
+      if (shadowed.length > 0) {
+        whereClause.push(`NOT (sl.visibility = 'platform' AND NOT (sl.organization_id = ANY(?)) AND sl.key = ANY(?))`);
+        params.push(orgRenderings(req.orgId as string), shadowed);
+      }
+    }
+
+    const countWhere = [...whereClause];
+    const countParams = [...params];
+
+    if (cursor) {
+      whereClause.push('(sl.created_at < ? OR (sl.created_at = ? AND sl.id < ?))');
+      params.push(cursor.createdAt, cursor.createdAt, cursor.id);
+    }
+
+    // Build translation JOINs - one per requested locale
+    const joinClauses = chain.map((slot, i) =>
+      slot === null
+        ? `LEFT JOIN selection_list_translations t${i} ON t${i}.list_id = sl.id AND t${i}.locale = sl.source_locale`
+        : `LEFT JOIN selection_list_translations t${i} ON t${i}.list_id = sl.id AND t${i}.locale = ?`,
+    );
+    const joinParams = chain.filter((slot): slot is string => slot !== null);
+
+    // COALESCE across translation rows for name, description, resolved_locale, is_machine
+    const coalesceOf = (col: string): string => `COALESCE(${chain.map((_, i) => `t${i}.${col}`).join(', ')})`;
+    const nameCoalesce = coalesceOf('name');
+    const descCoalesce = coalesceOf('description');
+    const localeCoalesce = coalesceOf('locale');
+    const machineCoalesce = coalesceOf('is_machine');
+
     const allParams = [...joinParams, ...params];
     const result = await db.raw<{ rows: ListRow[] }>(
       `
       SELECT
-        sl.id,
-        sl.organization_id,
-        sl.key,
-        sl.source_locale,
-        sl.status,
-        sl.created_by,
-        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
-        sl.created_at,
-        sl.updated_at,
+        ${LIST_COLUMNS}
         ${nameCoalesce} AS name,
         ${descCoalesce} AS description,
         ${localeCoalesce} AS resolved_locale,
@@ -382,10 +407,26 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
     const rows = result.rows;
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
-    // Instance-level read filter: a list the caller has no grant on is absent
-    // from the page, never a 403. The cursor still follows the DB order, so a
-    // page may be shorter than `limit` but the walk stays gap- and dupe-free.
-    const items = await filterReadable(req, pageRows);
+
+    // Which rows of the page the caller may see. A list the caller may not read is absent from the page,
+    // never a 403. The cursor still follows the DB order, so a page may be shorter than `limit` but the
+    // walk stays gap- and dupe-free.
+    let items: ListRow[];
+    if (shared && includeShared && (await isAuthzEnabled(req))) {
+      // include_shared: admit a row by the shared read (data predicate + `read_shared`, one memoised
+      // catalog decision per request) OR by an instance role (bulk). A row of another organization can only
+      // ever be admitted by the shared read: instance roles live in the owning tenant.
+      const sharedRows = pageRows.filter((r) => sharedPredicate(r, req.orgId as string, platformOrg));
+      const sharedOk = sharedRows.length > 0 && (await catalogAllowed(req, 'read_shared'));
+      const admitted = new Set<string>(sharedOk ? sharedRows.map((r) => r.id) : []);
+      const needInstance = pageRows.filter((r) => !admitted.has(r.id) && sameOrg(r.organization_id, req.orgId));
+      for (const r of needInstance.length > 0 ? await filterReadable(req, needInstance) : []) admitted.add(r.id);
+      items = pageRows.filter((r) => admitted.has(r.id));
+    } else if (shared && includeShared) {
+      items = pageRows; // authz not enforced (non-production dev switch): like filterReadable, everything passes
+    } else {
+      items = await filterReadable(req, pageRows);
+    }
 
     let nextCursor: string | null = null;
     if (hasMore && pageRows.length > 0) {
@@ -403,15 +444,9 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
       `
       SELECT COUNT(*) AS total
       FROM selection_lists sl
-      WHERE sl.organization_id = ?
-      ${statusFilter !== 'all' ? 'AND sl.status = ?' : ''}
-      ${keyFilter ? 'AND sl.key = ?' : ''}
+      WHERE ${countWhere.join(' AND ')}
       `,
-      [
-        req.orgId,
-        ...(statusFilter !== 'all' ? [statusFilter] : []),
-        ...(keyFilter ? [keyFilter] : []),
-      ],
+      countParams,
     );
     const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
 
@@ -420,8 +455,11 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
     // lists exist, so it is omitted (the field is optional in the contract).
     const authzEnforced = await isAuthzEnabled(req);
 
+    // `editable`: one bulk `translate` check over the page (ON only).
+    const editable = shared ? await editableIds(req, items) : undefined;
+
     res.status(200).json({
-      items: items.map(formatList),
+      items: items.map((r) => formatList(r, { shared, editable: editable ? editable.has(r.id) : undefined, callerOrgId: req.orgId })),
       page: authzEnforced ? { nextCursor, hasMore } : { nextCursor, hasMore, total },
     });
   } catch (err) {
@@ -435,7 +473,7 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
 
 // ─── POST / — create a selection list ────────────────────────────────────────
 
-router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireCatalogCheck('create'), requirePublishWhenBodyIsPlatform(), enforceListQuota, async (req: Request, res: Response): Promise<void> => {
   // Flag already checked by enforceListQuota middleware
 
   if (!req.orgId) {
@@ -443,10 +481,10 @@ router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Re
     return;
   }
 
-  const { key, name, description, source_locale } = req.body ?? {};
+  const { key, name, description, source_locale, visibility: rawVisibility } = req.body ?? {};
 
   // Validate required fields and reject unknown props
-  const allowedProps = new Set(['key', 'name', 'description', 'source_locale']);
+  const allowedProps = new Set(['key', 'name', 'description', 'source_locale', 'visibility']);
   const unknownProps = Object.keys(req.body ?? {}).filter((k) => !allowedProps.has(k));
   if (unknownProps.length > 0) {
     res.status(400).json({
@@ -489,6 +527,34 @@ router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Re
     return;
   }
 
+  // visibility (4.1.0): defaults to private. While the shared-lists flag is OFF only `private` is
+  // acceptable (a non-private list cannot exist before the feature is released); ON: the enum.
+  // `platform` additionally passed requirePublishWhenBodyIsPlatform (platform operator, platform tenant).
+  const shared = await sharedListsOn(req);
+  const visibility = rawVisibility === undefined ? 'private' : rawVisibility;
+  if (!isVisibility(visibility)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'visibility must be one of: private, org, platform.' });
+    return;
+  }
+  if (visibility !== 'private' && !shared) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `visibility '${visibility}' is not available.` });
+    return;
+  }
+
+  // A COMMON list is owned by the platform organization under ITS configured id, whatever rendering of that
+  // org the operator's token presents: stored under the configured TypeID, so the (organization_id, key)
+  // uniqueness holds across renderings (plus an explicit all-renderings check below). requirePublish... has
+  // already established the caller is acting in the platform org.
+  let ownerOrg = req.orgId as string;
+  if (visibility === 'platform') {
+    const platformOrg = await resolvePlatformOrgId();
+    if (!platformOrg) {
+      res.status(403).json({ code: 'FORBIDDEN', message: 'Only a platform operator may publish a common list.' });
+      return;
+    }
+    ownerOrg = platformOrg;
+  }
+
   // Mint the id — never accept one from the client (governance/identifier-standard.md §1)
   const id = mintId('selectionList');
 
@@ -500,17 +566,39 @@ router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Re
       // the seed algorithm takes them in that order too, so taking the quota lock first here
       // could deadlock against a concurrent seed of the same org.
       await lockOrgOutbox(trx, req.orgId as string);
+      // Creating a COMMON list into a platform org whose writes are suspended: re-checked fresh under the lock a
+      // deactivation also takes (see assertPlatformWritable) - nothing written yet, so the throw rolls back clean.
+      if (visibility === 'platform') await assertPlatformWritable(trx, null, { ownerOrg });
       // Exact quota enforcement: serialise creates for this org, re-check the
       // ceiling under the lock, then insert (see quota.service.ts header).
-      await lockQuotaScope(trx, `org_lists:${req.orgId}`);
-      await checkListQuota(req.orgId as string, trx, req.userId);
+      // Shared lists ON: the org is ONE org whatever rendering the token carries - lists are counted and quota
+      // overrides loaded across every rendering, under one lock (canonical id). OFF: the 4.0.0 exact scope.
+      const quotaOrgs = await writeOrgs(req);
+      if (quotaOrgs) {
+        await lockQuotaScope(trx, `org_lists:${canonicalOrgId(req.orgId as string) ?? req.orgId}`);
+        await checkListQuotaAcross(quotaOrgs, trx, req.userId);
+      } else {
+        await lockQuotaScope(trx, `org_lists:${req.orgId}`);
+        await checkListQuota(req.orgId as string, trx, req.userId);
+      }
+
+      // Shared lists ON: (organization_id, key) is unique per ORG, not per rendering of its id. The DB
+      // constraint is exact on the stored text, so a bare-UUID claim and an `org_...` claim of the same org
+      // could each create the same key; check every rendering of the owning org (any visibility, any status),
+      // under the canonical org lock taken above. OFF: nothing extra (the 4.0.0 exact constraint only).
+      if (shared) {
+        const taken = await trx.raw(`SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ?`, [orgRenderings(ownerOrg), key.trim()]);
+        if ((taken as { rows?: unknown[] }).rows?.length) {
+          throw Object.assign(new Error('list key taken'), { code: '23505' });
+        }
+      }
 
       await trx.raw(
         `
-        INSERT INTO selection_lists (id, organization_id, key, source_locale, status, created_by)
-        VALUES (?, ?, ?, ?, 'active', ?)
+        INSERT INTO selection_lists (id, organization_id, key, source_locale, status, created_by, visibility)
+        VALUES (?, ?, ?, ?, 'active', ?, ?)
         `,
-        [id, req.orgId, key.trim(), locale, req.userId ?? ''],
+        [id, ownerOrg, key.trim(), locale, req.userId ?? '', visibility],
       );
 
       await trx.raw(
@@ -550,15 +638,7 @@ router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Re
     const listResult = await db.raw<{ rows: ListRow[] }>(
       `
       SELECT
-        sl.id,
-        sl.organization_id,
-        sl.key,
-        sl.source_locale,
-        sl.status,
-        sl.created_by,
-        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
-        sl.created_at,
-        sl.updated_at,
+        ${LIST_COLUMNS}
         t.name,
         t.description,
         t.locale AS resolved_locale,
@@ -577,8 +657,10 @@ router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Re
       return;
     }
 
-    res.status(201).json(formatList(row));
+    // The creator was just made list-owner, so the list is editable for them.
+    res.status(201).json(formatList(row, await singleCtx(req, row, true)));
   } catch (err: unknown) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
       return;
@@ -598,7 +680,7 @@ router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Re
 
 // ─── GET /:listId — fetch a single list ──────────────────────────────────────
 
-router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:listId', requireListRead(), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -613,10 +695,15 @@ router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: R
   const queryLocale = req.query.locale as string | undefined;
   const acceptLang = req.headers['accept-language'] as string | undefined;
 
+  // READ scope: the caller's organization, plus (shared-lists flag ON) the common lists. The guard above
+  // already decided WHETHER the caller may read this list; the scope keeps another org's row unreachable.
+  const readScope = await getReadScope(req);
+  const readable = readableByOrg('', req.orgId, readScope);
+
   // We need the source_locale to build the chain — do a quick fetch first
   const slResult = await db.raw<{ rows: [{ source_locale: string }] }>(
-    `SELECT source_locale FROM selection_lists WHERE id = ? AND organization_id = ?`,
-    [listId, req.orgId],
+    `SELECT source_locale FROM selection_lists WHERE id = ? AND ${readable.sql}`,
+    [listId, ...readable.params],
   );
   if (!slResult.rows[0]) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
@@ -635,19 +722,12 @@ router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: R
   const localeCoalesce = `COALESCE(${localeChain.map((_, i) => `t${i}.locale`).join(', ')})`;
   const machineCoalesce = `COALESCE(${localeChain.map((_, i) => `t${i}.is_machine`).join(', ')})`;
 
+  const readableSl = readableByOrg('sl', req.orgId, readScope);
   try {
     const result = await db.raw<{ rows: ListRow[] }>(
       `
       SELECT
-        sl.id,
-        sl.organization_id,
-        sl.key,
-        sl.source_locale,
-        sl.status,
-        sl.created_by,
-        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
-        sl.created_at,
-        sl.updated_at,
+        ${LIST_COLUMNS}
         ${nameCoalesce} AS name,
         ${descCoalesce} AS description,
         ${localeCoalesce} AS resolved_locale,
@@ -658,9 +738,9 @@ router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: R
         ) AS item_count
       FROM selection_lists sl
       ${joinClauses.join('\n      ')}
-      WHERE sl.id = ? AND sl.organization_id = ?
+      WHERE sl.id = ? AND ${readableSl.sql}
       `,
-      [...localeChain, listId, req.orgId],
+      [...localeChain, listId, ...readableSl.params],
     );
 
     const row = result.rows[0];
@@ -669,7 +749,7 @@ router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: R
       return;
     }
 
-    res.status(200).json(formatList(row));
+    res.status(200).json(formatList(row, await singleCtx(req, row)));
   } catch (err) {
     getLog(req).error(
       { err, op: 'lists GET /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
@@ -693,7 +773,11 @@ const requireArchiveAuthzOnStatusChange = requireAuthzCheckWhen(
   'delete',
 );
 
-router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireArchiveAuthzOnStatusChange, async (req: Request, res: Response): Promise<void> => {
+// 4.1.0: a body carrying `visibility` is an ACCESS decision (who may read the list without a grant), so it
+// additionally needs `manage_access` (list-owner), and promoting to `platform` additionally needs
+// `publish_platform` in the platform tenant. Both only when the shared-lists flag is ON; stacked after the
+// base checks, so they can only tighten.
+router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnStatusChange, requireManageAccessWhenVisibilityGiven(), requirePublishWhenBodyIsPlatform(), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -708,7 +792,7 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
   const body = req.body ?? {};
 
   // Validate: reject unknown properties
-  const allowedProps = new Set(['key', 'source_locale', 'status', 'name', 'description']);
+  const allowedProps = new Set(['key', 'source_locale', 'status', 'name', 'description', 'visibility']);
   const unknownProps = Object.keys(body).filter((k) => !allowedProps.has(k));
   if (unknownProps.length > 0) {
     res.status(400).json({
@@ -758,34 +842,95 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'name must be ≤ 200 characters.' });
     return;
   }
+  // visibility (4.1.0). Flag OFF: only `private` is acceptable (a no-op); anything else is a 400, exactly
+  // like any value the 4.0.0 contract does not know. Flag ON: the enum; the transition rules run in the
+  // transaction below (they need the stored row).
+  const shared = await sharedListsOn(req);
+  if (body.visibility !== undefined) {
+    if (!isVisibility(body.visibility)) {
+      res.status(400).json({ code: 'VALIDATION_ERROR', message: 'visibility must be one of: private, org, platform.' });
+      return;
+    }
+    if (!shared && body.visibility !== 'private') {
+      res.status(400).json({ code: 'VALIDATION_ERROR', message: `visibility '${body.visibility}' is not available.` });
+      return;
+    }
+  }
+  const wantsVisibility: string | undefined = shared ? body.visibility : undefined;
 
   try {
-    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
+    let previousVisibility: string | null = null;
+    let commonKeyTaken = false;
+    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok' | 'visibility-locked' | 'not-platform-owned' | 'key-taken'> => {
       // Lock order is ALWAYS org outbox lock -> list row (emitters/outbox.ts), so a
       // concurrent item create / purge / access write on this org cannot deadlock.
       await lockOrgOutbox(trx, req.orgId as string);
+      const writeScope = await writeOrgs(req);
+      const patchScope = orgIs('organization_id', req.orgId as string, writeScope);
 
       // Fetch the existing list row (scoped to org) inside the transaction; it is
       // also the `before` state the event diff is taken against.
-      const existing = await trx.raw<{ rows: Array<{ id: string; source_locale: string; status: string; key: string; created_by?: string }> }>(
-        `SELECT id, source_locale, status, key, created_by FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
-        [listId, req.orgId],
+      const existing = await trx.raw<{ rows: Array<{ id: string; source_locale: string; status: string; key: string; created_by?: string; organization_id?: string; visibility?: string | null }> }>(
+        `SELECT id, source_locale, status, key, created_by, organization_id, visibility FROM selection_lists WHERE id = ? AND ${patchScope.sql} FOR NO KEY UPDATE`,
+        [listId, ...patchScope.params],
       );
       if (!existing.rows[0]) return 'not-found';
       const current = existing.rows[0];
+      // Re-check the suspension of the row's OWNER fresh, under the lock a deactivation also takes; promoting INTO a
+      // suspended platform org is refused too. Nothing is written yet: the throw rolls back with no event queued.
+      await assertPlatformWritable(trx, listId, wantsVisibility === 'platform' ? { ownerOrg: current.organization_id } : {});
       const before = await readList(trx, listId);
+
+      // Visibility transitions (design record D10). `platform` is one-way: a common list is never demoted
+      // (it would turn every tenant's stored ids into `missing`; archive it instead). Promoting needs a list
+      // owned by the platform organization (a tenant cannot donate a list to every tenant).
+      const currentVisibility = isVisibility(current.visibility) ? current.visibility : 'private';
+      const visibilityChanging = wantsVisibility !== undefined && wantsVisibility !== currentVisibility;
+      if (visibilityChanging) {
+        if (currentVisibility === 'platform') return 'visibility-locked';
+        if (wantsVisibility === 'platform') {
+          const platformOrg = await resolvePlatformOrgId(trx);
+          if (!platformOrg || !sameOrg(current.organization_id, platformOrg)) return 'not-platform-owned';
+        }
+        previousVisibility = currentVisibility;
+      }
+      // Keys are unique per ORG across EVERY rendering of its id (a list may have been stored under either),
+      // not just per stored text: checked on every rename and on a promotion while shared lists are ON. A
+      // common list is also checked against the platform org's configured id. OFF: the exact 4.0.0 constraint.
+      const newKey = body.key !== undefined ? body.key.trim() : current.key;
+      const promoting = visibilityChanging && wantsVisibility === 'platform';
+      let keyTakenByCommon = false;
+      if (shared && (promoting || newKey !== current.key)) {
+        const owners = new Set<string>(orgRenderings(current.organization_id as string));
+        if (promoting || currentVisibility === 'platform') {
+          const platformOrg = await resolvePlatformOrgId(trx);
+          if (platformOrg) for (const o of orgRenderings(platformOrg)) owners.add(o);
+          keyTakenByCommon = true;
+        }
+        const dup = await trx.raw(
+          `SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ? AND id <> ?`,
+          [[...owners], newKey, listId],
+        );
+        if ((dup as { rows?: unknown[] }).rows?.length) {
+          commonKeyTaken = keyTakenByCommon;
+          return 'key-taken';
+        }
+      }
 
       // Un-archiving raises the ACTIVE count without any create, so it is subject
       // to the same ceilings (review M-4): org_lists, and user_lists for a list a
       // user authored (system / deleted-user authors are not users). Exact: under
       // the same advisory lock the create handler takes.
       if (body.status === 'active' && current.status === 'archived') {
-        await lockQuotaScope(trx, `org_lists:${req.orgId}`);
-        await checkActiveListQuota(
-          req.orgId as string,
-          current.created_by && isUserPrincipal(current.created_by) ? current.created_by : undefined,
-          trx,
-        );
+        const creator = current.created_by && isUserPrincipal(current.created_by) ? current.created_by : undefined;
+        if (writeScope) {
+          // shared lists ON: one org, every rendering (a common list lives under the platform org's configured id)
+          await lockQuotaScope(trx, `org_lists:${canonicalOrgId(req.orgId as string) ?? req.orgId}`);
+          await checkActiveListQuotaAcross(writeScope, creator, trx);
+        } else {
+          await lockQuotaScope(trx, `org_lists:${req.orgId}`);
+          await checkActiveListQuota(req.orgId as string, creator, trx);
+        }
       }
 
       // Update the list row — always bump updated_at (plus any changed scalars)
@@ -793,6 +938,7 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
       if (body.key !== undefined) listUpdates.key = body.key.trim();
       if (body.source_locale !== undefined) listUpdates.source_locale = body.source_locale;
       if (body.status !== undefined) listUpdates.status = body.status;
+      if (visibilityChanging) listUpdates.visibility = wantsVisibility as string;
 
       const setClause = Object.keys(listUpdates)
         .map((k) => `${k} = ?`)
@@ -811,7 +957,7 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
         if (newName) {
           // Writing a locale the list does not have yet adds one (list_locales).
           await lockQuotaScope(trx, `list_locales:${listId}`);
-          await checkLocaleQuota(listId, req.orgId as string, targetLocale, trx);
+          await checkLocaleQuota(listId, writeScope ?? (req.orgId as string), targetLocale, trx);
           await trx.raw(
             `
             INSERT INTO selection_list_translations (list_id, locale, name, description, source_hash, is_machine)
@@ -848,11 +994,33 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
       await refreshListUserModified(trx, listId);
 
       // Outbox, same transaction: list.updated (what changed) and/or list.archived.
-      await emitListChanged(trx, eventContextFromRequest(req), listId, before);
+      const ctx = eventContextFromRequest(req);
+      await emitListChanged(trx, ctx, listId, before);
+      // A visibility change is its own event (its own listRevision), after any list.updated for the other fields.
+      if (visibilityChanging) await emitVisibilityChanged(trx, ctx, listId, previousVisibility as string);
       return 'ok';
     });
     if (outcome === 'not-found') {
       res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
+      return;
+    }
+    if (outcome === 'visibility-locked') {
+      res.status(409).json({
+        code: 'CONFLICT',
+        reason: 'visibility_locked',
+        message: 'A common (platform) list can never be given another visibility; archive it instead.',
+      });
+      return;
+    }
+    if (outcome === 'key-taken') {
+      res.status(409).json({
+        code: 'CONFLICT',
+        message: commonKeyTaken ? 'A common list with that key already exists.' : 'A list with that key already exists.',
+      });
+      return;
+    }
+    if (outcome === 'not-platform-owned') {
+      res.status(403).json({ code: 'FORBIDDEN', message: 'Only a list owned by the platform organization can be made a common list.' });
       return;
     }
 
@@ -860,15 +1028,7 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
     const updatedResult = await db.raw<{ rows: ListRow[] }>(
       `
       SELECT
-        sl.id,
-        sl.organization_id,
-        sl.key,
-        sl.source_locale,
-        sl.status,
-        sl.created_by,
-        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
-        sl.created_at,
-        sl.updated_at,
+        ${LIST_COLUMNS}
         t.name,
         t.description,
         t.locale AS resolved_locale,
@@ -884,8 +1044,9 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
       [listId],
     );
 
-    res.status(200).json(formatList(updatedResult.rows[0]));
+    res.status(200).json(formatList(updatedResult.rows[0], await singleCtx(req, updatedResult.rows[0], true)));
   } catch (err: unknown) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
       return;
@@ -893,6 +1054,10 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
     const pg = err as { code?: string };
     if (pg?.code === '23505') {
       res.status(409).json({ code: 'CONFLICT', message: 'A list with that key already exists.' });
+      return;
+    }
+    if (pg?.code === '23514') {
+      res.status(409).json({ code: 'CONFLICT', message: 'The change violates a list constraint.' });
       return;
     }
     getLog(req).error(
@@ -934,7 +1099,7 @@ async function cleanupPurgedGrants(req: Request, listId: string, grants: Instanc
   }
   try {
     const actor = req.userId;
-    const ordered = [...grants].sort((x, y) => Number(x.user_id === actor) - Number(y.user_id === actor));
+    const ordered = [...grants].sort((x, y) => Number(sameUser(x.user_id, actor)) - Number(sameUser(y.user_id, actor)));
     const { revoked, failed } = await revokeInstanceGrants({
       orgId: req.orgId as string,
       listId,
@@ -954,7 +1119,9 @@ async function cleanupPurgedGrants(req: Request, listId: string, grants: Instanc
   }
 }
 
-router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (req: Request, res: Response): Promise<void> => {
+// Purging a COMMON list turns stored ids in every tenant into `missing`: besides `delete` (owner) it needs
+// `publish_platform` in the platform tenant (flag ON, platform list, ?purge=true).
+router.delete('/:listId', requireListMutation('delete'), requirePublishForPlatformList((req) => req.query.purge === 'true'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -976,14 +1143,20 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
     // Lock order: org outbox lock -> list row (see events/outbox.ts).
     const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
       await lockOrgOutbox(trx, req.orgId as string);
-      const existing = await trx.raw<{ rows: [{ id: string }] }>(
-        `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
-        [listId, req.orgId],
+      const rowScope = orgIs('organization_id', req.orgId as string, await writeOrgs(req));
+      const existing = await trx.raw<{ rows: [{ id: string; visibility: string | null }] }>(
+        `SELECT id, visibility FROM selection_lists WHERE id = ? AND ${rowScope.sql} FOR NO KEY UPDATE`,
+        [listId, ...rowScope.params],
       );
       if (!existing.rows[0]) return 'not-found';
+      // archive AND purge of a common list: its owner's suspension re-checked fresh under the org lock
+      await assertPlatformWritable(trx, listId);
 
       const ctx = eventContextFromRequest(req);
       if (purge) {
+        // The pre-transaction guard decided from an earlier read: re-check the LOCKED row (it may have been
+        // promoted to a common list since).
+        await assertMayPurgeLocked(req, existing.rows[0]?.visibility);
         // list.deleted tombstone FIRST: it reads the key and bumps the revision,
         // which needs the row. No per-item/translation/access events: it implies them.
         await emitListDeleted(trx, ctx, listId);
@@ -1007,7 +1180,7 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
         // ones are remembered so the Security API assignments can be revoked
         // once this transaction has committed (review L-5).
         const liveGrants = await trx.raw<{ rows?: InstanceGrant[] }>(
-          `SELECT user_id, role FROM selection_list_access WHERE list_id = ? AND revoked_at IS NULL`,
+          `SELECT user_id, role, org_id FROM selection_list_access WHERE list_id = ? AND revoked_at IS NULL`,
           [listId],
         );
         purgedGrants = liveGrants?.rows ?? [];
@@ -1045,15 +1218,7 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
       const result = await db.raw<{ rows: ListRow[] }>(
         `
         SELECT
-          sl.id,
-          sl.organization_id,
-          sl.key,
-          sl.source_locale,
-          sl.status,
-          sl.created_by,
-          sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
-          sl.created_at,
-          sl.updated_at,
+          ${LIST_COLUMNS}
           t.name,
           t.description,
           t.locale AS resolved_locale,
@@ -1068,9 +1233,14 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
         `,
         [listId],
       );
-      res.status(200).json(formatList(result.rows[0]));
+      res.status(200).json(formatList(result.rows[0], await singleCtx(req, result.rows[0], true)));
     }
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
+    if (err instanceof PlatformPurgeDenied) {
+      res.status(403).json(PLATFORM_PURGE_DENIED_BODY);
+      return;
+    }
     getLog(req).error(
       { err, op: 'lists DELETE /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
       'lists DELETE /:listId error failed',
@@ -1081,7 +1251,7 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
 
 // ─── POST /:listId/archive — explicit archive ─────────────────────────────────
 
-router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), async (req: Request, res: Response): Promise<void> => {
+router.post('/:listId/archive', requireListMutation('delete'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -1097,11 +1267,13 @@ router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), as
   try {
     const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
       await lockOrgOutbox(trx, req.orgId as string);
+      const rowScope = orgIs('organization_id', req.orgId as string, await writeOrgs(req));
       const existing = await trx.raw<{ rows: [{ id: string }] }>(
-        `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
-        [listId, req.orgId],
+        `SELECT id FROM selection_lists WHERE id = ? AND ${rowScope.sql} FOR NO KEY UPDATE`,
+        [listId, ...rowScope.params],
       );
       if (!existing.rows[0]) return 'not-found';
+      await assertPlatformWritable(trx, listId);
 
       const before = await readList(trx, listId);
       await trx.raw(`UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`, [listId]);
@@ -1117,15 +1289,7 @@ router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), as
     const result = await db.raw<{ rows: ListRow[] }>(
       `
       SELECT
-        sl.id,
-        sl.organization_id,
-        sl.key,
-        sl.source_locale,
-        sl.status,
-        sl.created_by,
-        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
-        sl.created_at,
-        sl.updated_at,
+        ${LIST_COLUMNS}
         t.name,
         t.description,
         t.locale AS resolved_locale,
@@ -1141,8 +1305,9 @@ router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), as
       [listId],
     );
 
-    res.status(200).json(formatList(result.rows[0]));
+    res.status(200).json(formatList(result.rows[0], await singleCtx(req, result.rows[0], true)));
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     getLog(req).error(
       { err, op: 'lists POST /:listId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },
       'lists POST /:listId/archive error failed',

@@ -140,7 +140,8 @@ dbDescribe('identity.org.updated consumer (real Postgres, real TypedConsumer)', 
   });
 
   it('an infrastructure fault throws (so kafkajs retries); it is not dead-lettered', async () => {
-    const broken = { raw: async () => { throw new Error('Connection terminated'); } } as unknown as Knex;
+    const fault = () => { throw new Error('Connection terminated'); };
+    const broken = Object.assign(fault, { raw: async () => fault() }) as unknown as Knex; // every access, query builder or raw, fails
     await expect(
       handleOrgUpdated(env('identity.org.updated', U1, '2026-10-04T00:00:00.000Z') as never, { db: broken }),
     ).rejects.toThrow('Connection terminated');

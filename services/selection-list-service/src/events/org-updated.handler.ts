@@ -25,6 +25,7 @@ import { FuzeEvent, IdentityOrgUpdatedPayloadV1 } from '@fuzefront/shared/kafka'
 import { db as defaultDb } from '../db';
 import { logger, timed } from '../lib/logger';
 import { upsertOrgProjection } from './orgProjection';
+import { handlePlatformSnapshot, resumeIfReactivated } from './platformGuard';
 
 export interface OrgUpdatedDeps {
   db: Knex;
@@ -39,12 +40,17 @@ export async function handleOrgUpdated(
   const log = logger.child({ reqId: event.correlationId, component: 'org-updated' });
   log.info({ organizationId, type, isActive }, 'identity.org.updated received');
 
+  // The platform organization: a deactivation SUSPENDS its writes, a retype is refused (platformGuard.ts).
+  const ctx = { topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt };
+  if (await handlePlatformSnapshot(deps.db, { organizationId, type, isActive }, ctx, log)) return { organizationId };
+
   const wire = await timed(
     log,
     'db.upsert-org-projection',
     () => upsertOrgProjection(deps.db, { organizationId, type, isActive, name, occurredAt: event.occurredAt }),
     { organizationId },
   );
+  await resumeIfReactivated(deps.db, { organizationId, type, isActive }, ctx, log);
   log.info({ organizationId: wire, type, isActive }, 'org projection refreshed from identity.org.updated');
   return { organizationId: wire };
 }

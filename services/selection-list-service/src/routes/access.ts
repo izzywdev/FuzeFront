@@ -48,12 +48,16 @@
 //   - Cursor: opaque base64url encoding of the last user_id in the page.
 //   - Deterministic order: user_id ASC (stable under concurrent writes).
 
+import type { Knex } from 'knex';
 import { Request, Response } from 'express';
 import { createRouter } from '../lib/http';
 import { parseLimitParam, registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
-import { requireAuthzCheck, getAuthzClient, bearer } from '../middleware/authz';
+import { getAuthzClient, bearer } from '../middleware/authz';
+import { assertPlatformWritable, replyPlatformSuspended, requireListMutation } from '../middleware/listAccess';
+import { canonicalUserId, userScope, writeOrgs } from '../lib/sharedLists';
+import { PermitKeyError, permitSubjectKey, permitTenantKey } from '../lib/permitKeys';
 import { authMiddleware } from '../middleware/auth';
 import { lockOrgOutbox } from '../events/outbox';
 import { eventContextFromRequest, emitAccessGranted, emitAccessRevoked } from '../events/emitters';
@@ -113,20 +117,28 @@ function iso(v: Date | string): string {
   return v instanceof Date ? v.toISOString() : new Date(v).toISOString();
 }
 
+/**
+ * The mirror records the key the Security API was sent (the bare UUID, see lib/permitKeys.ts), but the contract
+ * names users by their `usr_...` TypeID: render both user fields in the wire form (legacy rows already holding a
+ * TypeID, and `system:*` principals, are left as they are).
+ */
 function formatGrant(r: AccessRow) {
+  const wire = (id: string): string => canonicalUserId(id) ?? id;
   return {
     list_id: r.list_id,
-    user_id: r.user_id,
+    user_id: wire(r.user_id),
     role: r.role,
-    granted_by: r.granted_by,
+    granted_by: wire(r.granted_by),
     granted_at: iso(r.granted_at),
     updated_at: iso(r.updated_at),
   };
 }
 
 /** True iff the list exists in the caller's organization (org-scoped, never cross-org). */
-async function listExistsInOrg(listId: string, orgId: string): Promise<boolean> {
-  const row = await db('selection_lists').where({ id: listId, organization_id: orgId }).first('id');
+async function listExistsInOrg(listId: string, orgId: string, orgs: string[] | null): Promise<boolean> {
+  const row = orgs
+    ? await db('selection_lists').where({ id: listId }).whereIn('organization_id', orgs).first('id')
+    : await db('selection_lists').where({ id: listId, organization_id: orgId }).first('id');
   return Boolean(row);
 }
 
@@ -137,7 +149,7 @@ async function listExistsInOrg(listId: string, orgId: string): Promise<boolean> 
 router.get(
   '/:listId/access',
   authMiddleware,
-  requireAuthzCheck('SelectionList', 'manage_access'),
+  requireListMutation('manage_access', { forkable: false }),
   async (req: Request, res: Response): Promise<void> => {
     const { listId } = req.params;
     const orgId = req.orgId as string;
@@ -149,7 +161,7 @@ router.get(
     const afterUserId = cursorParam ? decodeCursor(cursorParam) : undefined;
 
     try {
-      if (!(await listExistsInOrg(listId, orgId))) {
+      if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
         return;
       }
@@ -197,6 +209,22 @@ router.get(
 // PUT /:listId/access/:userId  — grant or change a role
 // ---------------------------------------------------------------------------
 
+/**
+ * The live grant of a user on a list, found under any of `userForms` (one entry = the exact 4.0.0 lookup).
+ * Returns the role, the tenant it was made in and the subject it is recorded under.
+ */
+async function existingGrant(
+  trx: Knex.Transaction,
+  listId: string,
+  userForms: string[],
+): Promise<{ role: string; org_id: string | null; user_id: string } | undefined> {
+  const q =
+    userForms.length === 1
+      ? trx('selection_list_access').where({ list_id: listId, user_id: userForms[0] })
+      : trx('selection_list_access').where({ list_id: listId }).whereIn('user_id', userForms);
+  return (await q.whereNull('revoked_at').first('role', 'org_id', 'user_id')) as never;
+}
+
 class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -209,7 +237,7 @@ class HttpError extends Error {
 router.put(
   '/:listId/access/:userId',
   authMiddleware,
-  requireAuthzCheck('SelectionList', 'manage_access'),
+  requireListMutation('manage_access', { forkable: false }),
   async (req: Request, res: Response): Promise<void> => {
     const { listId, userId } = req.params;
     const orgId = req.orgId as string;
@@ -250,9 +278,21 @@ router.put(
     // Authority-write bookkeeping for compensation (see header).
     const writes: AuthorityWrites = { revokeAttempted: false, grantAttempted: false };
     let prior: string | null = null;
+    // The tenant this user's grant on this list lives in: where an existing grant was made (the mirror's org_id),
+    // else the caller's. Role changes revoke/re-grant/compensate THERE, so a grant is never split across two
+    // renderings of the org id.
+    let grantTenant = orgId;
+    // The target user as the mirror / Security API know them. The path carries the `usr_` TypeID, but a grant made
+    // through a bare-UUID token is stored (and was sent to the Security API) under the UUID: with shared lists ON an
+    // existing grant is found under any rendering and every later write for it uses ITS subject, so a user is
+    // never split into two grants, and the last-owner guard never counts the target as "another owner".
+    let subject = userId;
+    const userForms = await userScope(req, userId);
 
     try {
-      if (!(await listExistsInOrg(listId, orgId))) {
+      // A NEW grant is keyed (and recorded in the mirror) by the key the Security API is sent: the bare UUID.
+      subject = permitSubjectKey(userId);
+      if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
         return;
       }
@@ -280,15 +320,23 @@ router.put(
         // Lock order is ALWAYS org outbox lock first (events/outbox.ts): a list
         // purge in the same org deletes these access rows while holding it.
         await lockOrgOutbox(trx, orgId);
+        // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes. Nothing has been
+        // written (mirror or Security API) yet, so the refusal needs no compensation.
+        await assertPlatformWritable(trx, listId);
         // Serialise every access mutation on this list (guard + writes).
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
-        const existing = await trx('selection_list_access')
-          .where({ list_id: listId, user_id: userId })
-          .whereNull('revoked_at')
-          .first('role');
+        const existing = await existingGrant(trx, listId, userForms);
 
         prior = existing ? (existing['role'] as string) : null;
+        if (existing?.['org_id']) grantTenant = existing['org_id'] as string;
+        if (existing?.['user_id']) subject = existing['user_id'] as string;
+        else {
+          // No live grant: a previously REVOKED row of this user (under any rendering) is re-activated in place,
+          // rather than leaving a second row for the same user next to it.
+          const revoked = await trx('selection_list_access').where({ list_id: listId }).whereIn('user_id', userForms).first('user_id');
+          if (revoked?.['user_id']) subject = revoked['user_id'] as string;
+        }
 
         // Last-owner guard: demoting the only list-owner is refused. Decided by
         // the AUTHORITY (review M-2): another mirror owner must be confirmed by
@@ -298,7 +346,7 @@ router.put(
             executor: trx,
             listId,
             orgId,
-            excludeUserIds: [userId],
+            excludeUserIds: userForms,
             token,
             log: getLog(req),
           });
@@ -311,15 +359,15 @@ router.put(
         }
 
         const assignment = {
-          subject: userId,
-          tenant: orgId,
+          subject,
+          tenant: grantTenant,
           role,
           resource: { type: 'SelectionList', key: listId },
         };
         // An owner demoting themselves must retain manage_access until the
         // final revoke. The replacement is strictly weaker than list-owner;
         // a failed revoke retains existing authority rather than adding any.
-        const selfDemotion = userId === actorId && existing?.['role'] === 'list-owner' && role !== 'list-owner';
+        const selfDemotion = userForms.includes(actorId) && existing?.['role'] === 'list-owner' && role !== 'list-owner';
         if (selfDemotion) {
           writes.grantAttempted = true;
           await getAuthzClient().grant(assignment, callerToken);
@@ -330,8 +378,8 @@ router.put(
           writes.revokeAttempted = true;
           await getAuthzClient().revoke(
             {
-              subject: userId,
-              tenant: orgId,
+              subject,
+              tenant: grantTenant,
               role: existing['role'],
               resource: { type: 'SelectionList', key: listId },
             },
@@ -365,7 +413,7 @@ router.put(
             updated_at = now(),
             revoked_at = NULL
           `,
-          [listId, userId, role, actorId, orgId],
+          [listId, subject, role, actorId, permitTenantKey(grantTenant)],
         );
 
         // Outbox, same transaction: access.granted (previousRole null for a new
@@ -380,14 +428,19 @@ router.put(
         }
 
         return (await trx('selection_list_access')
-          .where({ list_id: listId, user_id: userId })
+          .where({ list_id: listId, user_id: subject })
           .first('list_id', 'user_id', 'role', 'granted_by', 'granted_at', 'updated_at')) as AccessRow;
       });
 
       res.status(200).json(formatGrant(row));
     } catch (err) {
+      if (replyPlatformSuspended(err, res)) return;
       if (err instanceof HttpError) {
         res.status(err.status).json(err.body);
+        return;
+      }
+      if (err instanceof PermitKeyError) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: err.message });
         return;
       }
       // The mirror rolled back with the transaction; the Security API did not.
@@ -395,8 +448,8 @@ router.put(
       if (writes.revokeAttempted || writes.grantAttempted) {
         await restoreAuthority({
           op: 'put',
-          subject: userId,
-          tenant: orgId,
+          subject,
+          tenant: grantTenant,
           listId,
           prior,
           target: role,
@@ -421,7 +474,7 @@ router.put(
 router.delete(
   '/:listId/access/:userId',
   authMiddleware,
-  requireAuthzCheck('SelectionList', 'manage_access'),
+  requireListMutation('manage_access', { forkable: false }),
   async (req: Request, res: Response): Promise<void> => {
     const { listId, userId } = req.params;
     const orgId = req.orgId as string;
@@ -437,9 +490,12 @@ router.delete(
     // Authority-write bookkeeping for compensation (see file header).
     const writes: AuthorityWrites = { revokeAttempted: false, grantAttempted: false };
     let prior: string | null = null;
+    let grantTenant = orgId; // where the grant being removed was made (see PUT)
+    let subject = userId; // the grant's subject as recorded (see PUT)
+    const userForms = await userScope(req, userId);
 
     try {
-      if (!(await listExistsInOrg(listId, orgId))) {
+      if (!(await listExistsInOrg(listId, orgId, await writeOrgs(req)))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
         return;
       }
@@ -451,17 +507,19 @@ router.delete(
         // Org outbox lock first (see PUT above), then serialise every access
         // mutation on this list (guard + writes).
         await lockOrgOutbox(trx, orgId);
+        // The list's OWNER re-checked for suspension FRESH, under the lock a deactivation also takes. Nothing has been
+        // written (mirror or Security API) yet, so the refusal needs no compensation.
+        await assertPlatformWritable(trx, listId);
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
         // Fetch current grant for last-owner guard and idempotency.
-        const existing = await trx('selection_list_access')
-          .where({ list_id: listId, user_id: userId })
-          .whereNull('revoked_at')
-          .first('role');
+        const existing = await existingGrant(trx, listId, userForms);
 
         // Idempotent: no active grant → nothing to do (204).
         if (!existing) return;
         prior = existing['role'] as string;
+        if (existing['org_id']) grantTenant = existing['org_id'] as string;
+        if (existing['user_id']) subject = existing['user_id'] as string;
 
         // Last-owner guard, decided by the AUTHORITY (review M-2): another
         // mirror owner must be confirmed by the Security API.
@@ -470,7 +528,7 @@ router.delete(
             executor: trx,
             listId,
             orgId,
-            excludeUserIds: [userId],
+            excludeUserIds: userForms,
             token,
             log: getLog(req),
           });
@@ -489,8 +547,8 @@ router.delete(
         writes.revokeAttempted = true;
         await getAuthzClient().revoke(
           {
-            subject: userId,
-            tenant: orgId,
+            subject,
+            tenant: grantTenant,
             role: existing['role'],
             resource: { type: 'SelectionList', key: listId },
           },
@@ -498,7 +556,7 @@ router.delete(
         );
 
         await trx('selection_list_access')
-          .where({ list_id: listId, user_id: userId })
+          .where({ list_id: listId, user_id: subject })
           .update({ revoked_at: trx.fn.now(), updated_at: trx.fn.now() });
 
         // Outbox, same transaction: access.revoked (an idempotent no-op returned above).
@@ -510,8 +568,13 @@ router.delete(
 
       res.status(204).send();
     } catch (err) {
+      if (replyPlatformSuspended(err, res)) return;
       if (err instanceof HttpError) {
         res.status(err.status).json(err.body);
+        return;
+      }
+      if (err instanceof PermitKeyError) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: err.message });
         return;
       }
       // The mirror rolled back with the transaction (a later step, e.g. the
@@ -520,8 +583,8 @@ router.delete(
       if (writes.revokeAttempted) {
         await restoreAuthority({
           op: 'delete',
-          subject: userId,
-          tenant: orgId,
+          subject,
+          tenant: grantTenant,
           listId,
           prior,
           target: null,

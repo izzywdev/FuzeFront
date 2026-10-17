@@ -3,6 +3,7 @@ import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { db } from '../db';
 import { logger, timed } from '../lib/logger';
 import { markOrgProjectionDeleted } from './orgProjection';
+import { isProtectedPlatformOrg, recordPlatformDeactivation } from './platformGuard';
 
 /**
  * The stored `organization_id` is TEXT and is whatever the caller's token
@@ -59,6 +60,16 @@ export async function handleOrgDeleted(
   // The event's correlationId is this thread's reqId so one event is one grep.
   const log = logger.child({ reqId: event.correlationId, component: 'org-deleted' });
   log.info({ organizationId, cascade }, 'identity.org.deleted received');
+
+  // The platform organization owns every common list: nothing is deleted, archived or tombstoned for it, whatever the
+  // envelope says (platformGuard.ts). Its deactivation SUSPENDS platform writes instead (fail closed: publish_platform,
+  // platform list/item changes, purge, seeding) while every tenant keeps READING the common lists; reactivation
+  // (identity.org.updated {isActive:true}) resumes. The message is acknowledged (a normal return) so the consumer does
+  // not loop on it. Flag-independent.
+  if (await isProtectedPlatformOrg(db, organizationId)) {
+    await recordPlatformDeactivation(db, organizationId, { topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt }, log, { cascade });
+    return;
+  }
 
   // Tombstone the projection FIRST (infra faults throw -> the message is retried).
   await timed(log, 'db.tombstone-org-projection', () => markOrgProjectionDeleted(db, organizationId), { organizationId });

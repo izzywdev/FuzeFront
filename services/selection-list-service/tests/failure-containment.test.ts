@@ -42,6 +42,7 @@ jest.mock('../src/db', () => {
 
 import { createApp } from '../src/app';
 import { setFlagClient } from '../src/flags';
+import { allFlagsExceptShared } from './helpers/flagClient';
 import { db } from '../src/db';
 import { createRouter, asyncHandler, errorHandler, installProcessHandlers } from '../src/lib/http';
 import { logger } from '../src/lib/logger';
@@ -61,7 +62,7 @@ beforeAll(() => {
 beforeEach(() => {
   // Release flag ON so requests reach the handlers (authz stays pass-through:
   // non-production, env var unset).
-  setFlagClient({ getBooleanValue: async () => true });
+  setFlagClient({ getBooleanValue: allFlagsExceptShared });
 });
 afterEach(() => setFlagClient(null));
 

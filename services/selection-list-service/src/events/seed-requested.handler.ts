@@ -25,6 +25,7 @@ import type { Knex } from 'knex';
 import type { z } from 'zod';
 import { FuzeEvent, selectionListsSeedRequestedSchemaV1, slOrganizationIdV1, SelectionListsSeedRequestedPayloadV1, TOPICS } from '@fuzefront/shared/kafka';
 import { db as defaultDb } from '../db';
+import { isSharedListsEnabled } from '../flags';
 import { logger, timed } from '../lib/logger';
 import {
   applySeedRequest,
@@ -191,10 +192,13 @@ export async function handleSeedRequested(
     const attestedSubject = (verdict as { ok: true; subject: string }).subject;
 
     // 5. Apply (allowlist + subject binding + org + ledger + quota inside the library).
+    // Seed-list `visibility` (`org` | `private`; the schema refuses `platform`) is honoured only while the
+    // shared-lists release flag is ON for this org (read per message; fail-safe OFF => seeded private).
+    const honorVisibility = await isSharedListsEnabled({ organizationId });
     const result = await timed(
       log,
       'seed.apply',
-      () => applySeedRequest(deps.db, { ...base, attestedSubject, internalErrors: last ? 'record' : 'throw' }),
+      () => applySeedRequest(deps.db, { ...base, attestedSubject, honorVisibility, internalErrors: last ? 'record' : 'throw' }),
       { requestId: p.requestId, organizationId, source: p.source.app, attempt },
     );
     deps.budget.clear(budgetKey);
