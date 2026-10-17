@@ -310,6 +310,15 @@ mcp:
   ingress:
     enabled: true
 
+# MCP gateway for the config-service (configService.enabled is true below).
+# Same pinned gateway image as `mcp` above. Secret reveal is NOT exposed.
+configMcp:
+  enabled: true
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    tag: "1abe510f5981"
+    pullPolicy: IfNotPresent
+
 # FuzeFront's per-product A2A pod (owner decision: one pod per product, not a
 # tenant row on the shared izzywdev/FuzeAgent `a2a-shared` server — see
 # docs/a2a/README.md and FuzeAgent's docs/a2a/per-product-pod.md, transcribed
