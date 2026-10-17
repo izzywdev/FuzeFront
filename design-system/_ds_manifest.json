@@ -58,6 +58,10 @@
       "sourcePath": "components/core/Text.jsx"
     },
     {
+      "name": "TextLink",
+      "sourcePath": "components/core/TextLink.jsx"
+    },
+    {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
     },
