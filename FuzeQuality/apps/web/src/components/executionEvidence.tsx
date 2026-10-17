@@ -340,7 +340,7 @@ export function ExecutionEvidenceCoverage({
   execution: TestExecution
 }) {
   const thresholds = execution.thresholds?.length ?? 0
-  const links = execution.evidenceLinks?.length ?? 0
+  const links = (execution.evidenceLinks ?? []).filter(link => !(execution.provider === 'github-actions' && link.kind === 'report' && link.name === 'GitHub Actions artifacts' && link.url.endsWith('#artifacts'))).length
   const gatePairs = execution.gateEvaluations?.length ?? 0
   const missingThresholds = ['load', 'stress'].includes(execution.kind) && !thresholds
   const collection = execution.evidenceCollection
