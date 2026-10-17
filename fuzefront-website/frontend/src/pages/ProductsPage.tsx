@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -222,9 +223,9 @@ export const ProductsPage: React.FC = () => {
             <Link to="/contact" className="btn-primary">
               Talk to sales
             </Link>
-            <Link to="/pricing" className="btn-secondary">
+            <Button as={Link} to="/pricing" variant="outline">
               Compare plans
-            </Link>
+            </Button>
           </div>
         </div>
       </section>
