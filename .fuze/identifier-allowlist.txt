@@ -30,12 +30,12 @@
 # explicit so a source move requires deliberate review rather than silently
 # broadening the exception.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality test-implementation entity
-src FuzeQuality/apps/api/src/index.ts:426                   # FuzeQuality test-execution entity
+src FuzeQuality/apps/api/src/index.ts:430                   # FuzeQuality test-execution entity
 src FuzeQuality/packages/core/src/store.ts:532              # FuzeQuality repository entity
 src FuzeQuality/packages/core/src/store.ts:601              # FuzeQuality repository-scan revision entity
 src FuzeQuality/packages/core/src/store.ts:617              # FuzeQuality suggestion-decision entity
 src FuzeQuality/packages/core/src/store.ts:628              # FuzeQuality suggestion-decision entity
 src FuzeQuality/packages/core/src/store.ts:714              # FuzeQuality admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:788              # FuzeQuality identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:799              # FuzeQuality design-test-link outbox entity
-src FuzeQuality/packages/core/src/store.ts:1805             # FuzeQuality admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:802              # FuzeQuality identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:813              # FuzeQuality design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:1834             # FuzeQuality admin-context audit entity
