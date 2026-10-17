@@ -643,7 +643,11 @@ async function scanFrontend(
 export async function scanRepository(
   repository: Repository,
   rootPath: string,
-  options: { onProgress?: () => Promise<void>; sourceRevision?: string } = {}
+  options: {
+    onProgress?: () => Promise<void>
+    sourceRevision?: string
+    trigger?: ScanResult['trigger']
+  } = {}
 ): Promise<ScanResult> {
   const root = safeRoot(rootPath)
   const onProgress = options.onProgress ?? (async () => {})
@@ -852,6 +856,7 @@ export async function scanRepository(
   const result: Omit<ScanResult, 'qualityArtifacts'> = {
     repository,
     revision,
+    trigger: options.trigger ?? 'manual',
     operations,
     surfaces,
     tests,
