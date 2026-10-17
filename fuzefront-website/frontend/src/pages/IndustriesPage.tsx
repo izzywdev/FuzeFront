@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container } from '@fuzefront/design-system'
+import { Wrap, Container, Lede } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -210,9 +210,9 @@ export const IndustriesPage: React.FC = () => {
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-4">
               Built for every industry
             </h1>
-            <p className="text-lg text-secondary-300 max-w-2xl mx-auto mb-8">
+            <Lede>
               FuzeOne adapts to the compliance, security, and operational requirements of your vertical — not the other way around.
-            </p>
+            </Lede>
             <div className="flex flex-wrap justify-center gap-3">
               {industries.map((industry) => (
                 <a

@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { Lede } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -176,9 +177,9 @@ export const ProductsPage: React.FC = () => {
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-4">
               The complete Fuze family
             </h1>
-            <p className="text-lg text-secondary-300 max-w-2xl mx-auto mb-8">
+            <Lede>
               10 products that work standalone and compose seamlessly. Auth, AI, social, finance, security, analytics — everything your business needs.
-            </p>
+            </Lede>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
               <a
                 href="https://app.fuzefront.com/signup"
