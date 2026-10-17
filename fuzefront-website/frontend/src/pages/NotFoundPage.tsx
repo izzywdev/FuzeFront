@@ -2,6 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowRight, Home, Search } from 'lucide-react'
+import { InverseHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const helpfulLinks = [
@@ -32,9 +33,9 @@ export const NotFoundPage: React.FC = () => {
           <div className="text-7xl sm:text-8xl font-heading font-extrabold gradient-text mb-4">
             404
           </div>
-          <h1 className="text-2xl sm:text-3xl font-heading font-bold text-white mb-4">
+          <InverseHeading as="h1" size="md">
             This page doesn't exist
-          </h1>
+          </InverseHeading>
           <p className="text-secondary-300 max-w-md mx-auto mb-10">
             The page you're looking for may have been moved, renamed, or never existed.
             Let's get you back on track.
