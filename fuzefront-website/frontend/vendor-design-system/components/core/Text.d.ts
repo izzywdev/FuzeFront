@@ -22,10 +22,11 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   /**
    * Step of the DS spacing scale applied as `margin-block-end` (a logical
    * property, so it mirrors under RTL). `none` (default) keeps the original
-   * zero-margin behavior.
+   * zero-margin behavior. `lg`/`xl` cover the wider `mb-6`/`mb-8` gap used
+   * under a centered CTA/section heading.
    * @default "none"
    */
-  spacing?: "none" | "sm" | "md";
+  spacing?: "none" | "sm" | "md" | "lg" | "xl";
   children?: React.ReactNode;
 }
 
