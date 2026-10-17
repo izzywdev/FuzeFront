@@ -54,6 +54,10 @@
       "sourcePath": "components/core/IconTile.jsx"
     },
     {
+      "name": "SubHeading",
+      "sourcePath": "components/core/SubHeading.jsx"
+    },
+    {
       "name": "Text",
       "sourcePath": "components/core/Text.jsx"
     },

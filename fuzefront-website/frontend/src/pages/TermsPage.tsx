@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { FileText } from 'lucide-react'
-import { IconTile } from '@fuzefront/design-system'
+import { IconTile, SubHeading } from '@fuzefront/design-system'
 
 export const TermsPage: React.FC = () => {
   return (
@@ -66,19 +66,19 @@ export const TermsPage: React.FC = () => {
 
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-4">4. Payment and Billing</h2>
-            <h3 className="text-base font-semibold text-gray-800 mb-2">4.1 Subscription Fees</h3>
+            <SubHeading>4.1 Subscription Fees</SubHeading>
             <p>
               Paid plans are billed in advance on a monthly or annual basis. All fees are non-refundable except as expressly set forth in these Terms or required by applicable law.
             </p>
-            <h3 className="text-base font-semibold text-gray-800 mb-2 mt-4">4.2 Price Changes</h3>
+            <SubHeading space="md">4.2 Price Changes</SubHeading>
             <p>
               We may change prices for our Services upon 30 days' written notice. Your continued use of the Services after a price change constitutes acceptance of the new pricing.
             </p>
-            <h3 className="text-base font-semibold text-gray-800 mb-2 mt-4">4.3 Taxes</h3>
+            <SubHeading space="md">4.3 Taxes</SubHeading>
             <p>
               You are responsible for all applicable taxes associated with your use of our Services, except for taxes on FuzeOne's income.
             </p>
-            <h3 className="text-base font-semibold text-gray-800 mb-2 mt-4">4.4 Payment Processing</h3>
+            <SubHeading space="md">4.4 Payment Processing</SubHeading>
             <p>
               Payments are processed by Stripe, Inc. By providing payment information, you authorize us to charge your payment method for all fees. All payment data is governed by Stripe's privacy policy.
             </p>
@@ -86,15 +86,15 @@ export const TermsPage: React.FC = () => {
 
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-4">5. Intellectual Property</h2>
-            <h3 className="text-base font-semibold text-gray-800 mb-2">5.1 FuzeOne IP</h3>
+            <SubHeading>5.1 FuzeOne IP</SubHeading>
             <p>
               FuzeOne and its licensors retain all right, title, and interest in and to the Services, including all intellectual property rights therein. These Terms do not grant you any ownership rights in the Services.
             </p>
-            <h3 className="text-base font-semibold text-gray-800 mb-2 mt-4">5.2 Your Content</h3>
+            <SubHeading space="md">5.2 Your Content</SubHeading>
             <p>
               You retain all rights in and to the data, content, and materials you submit to our Services ("Customer Data"). You grant FuzeOne a non-exclusive, worldwide license to use, process, and store Customer Data solely to provide and improve the Services.
             </p>
-            <h3 className="text-base font-semibold text-gray-800 mb-2 mt-4">5.3 Feedback</h3>
+            <SubHeading space="md">5.3 Feedback</SubHeading>
             <p>
               Any feedback, suggestions, or ideas you provide to FuzeOne may be used by us without restriction or compensation to you.
             </p>
@@ -154,15 +154,15 @@ export const TermsPage: React.FC = () => {
 
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-4">11. Termination</h2>
-            <h3 className="text-base font-semibold text-gray-800 mb-2">11.1 Termination by You</h3>
+            <SubHeading>11.1 Termination by You</SubHeading>
             <p>
               You may cancel your account at any time through the account settings page. Cancellation takes effect at the end of your current billing period.
             </p>
-            <h3 className="text-base font-semibold text-gray-800 mb-2 mt-4">11.2 Termination by FuzeOne</h3>
+            <SubHeading space="md">11.2 Termination by FuzeOne</SubHeading>
             <p>
               We may suspend or terminate your access to the Services immediately, with or without notice, if: (a) you breach these Terms; (b) we are required to do so by law; or (c) you fail to pay fees when due.
             </p>
-            <h3 className="text-base font-semibold text-gray-800 mb-2 mt-4">11.3 Effect of Termination</h3>
+            <SubHeading space="md">11.3 Effect of Termination</SubHeading>
             <p>
               Upon termination, your right to use the Services immediately ceases. Sections that by their nature should survive termination will survive, including Sections 5, 6, 8, 9, 10, and 13.
             </p>
