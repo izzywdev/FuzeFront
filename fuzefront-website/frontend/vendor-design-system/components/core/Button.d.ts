@@ -8,8 +8,14 @@ import * as React from "react";
  * open-in-new-tab, keyboard link semantics) instead of a `<button>`.
  */
 type ButtonSharedProps = {
-  /** Visual style. `primary` = accent fill with the fuse glow; `danger` = error fill. */
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  /**
+   * Visual style. `primary` = accent fill with the fuse glow; `danger` =
+   * error fill. `ghost-inverse` is `ghost`'s treatment for a dark/brand
+   * surface that isn't driven by `data-theme` (a hero band, a gradient
+   * section) — white outline/text, filled-white on hover — so it stays
+   * legible regardless of the active theme.
+   */
+  variant?: "primary" | "secondary" | "ghost" | "ghost-inverse" | "danger";
   size?: "sm" | "md" | "lg";
   /** Append a trailing arrow glyph (used on "Launch app", "Continue"). */
   withArrow?: boolean;
