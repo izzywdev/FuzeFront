@@ -305,7 +305,7 @@ mcp:
   replicas: 1
   image:
     repository: ghcr.io/izzywdev/fuze-mcp-gateway
-    tag: "1abe510f5981"
+    tag: "a92e0409802b"
     pullPolicy: IfNotPresent
   ingress:
     enabled: true
