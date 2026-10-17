@@ -142,7 +142,7 @@ describe('internal execution ingestion compatibility', () => {
         includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true,
         lastScanStatus: 'complete',
       },
-      revision: 'catalog-1', scannedAt: '2026-10-14T10:00:00.000Z',
+      revision: 'catalog-1', trigger: 'push', scannedAt: '2026-10-14T10:00:00.000Z',
       operations: [], surfaces: [], tests: [], expectations: [], findings: [], diagnostics: [],
       scanDetails: {
         sourceRevision: 'a'.repeat(40), catalogRevision: 'catalog-1', scannerVersion: 'v1',
