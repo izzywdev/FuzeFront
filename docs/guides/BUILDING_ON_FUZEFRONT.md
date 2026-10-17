@@ -114,6 +114,13 @@ loads the remote on demand using `@originjs/vite-plugin-federation`. React /
 React-DOM are shared singletons for performance, so keep your React major in step
 with the host.
 
+**Not building a Module-Federation remote?** `integrationType: 'web-component'`
+mounts a framework-agnostic custom element instead, with no shared-React
+constraint — see [`WEB_COMPONENT_INTEGRATION.md`](WEB_COMPONENT_INTEGRATION.md)
+for the minimal manifest, the exact custom-element/bundle contract the shell
+expects, a runnable example, and how it trades off against `iframe` and Module
+Federation.
+
 > **This `POST /api/apps/register` flow has no `slug` field** — it is a separate,
 > older registration path (`backend/src/routes/apps.ts`) from the manifest-based
 > app registry (`registration/manifest.json` + `@fuzefront/onboarding-kit`) that
@@ -376,6 +383,8 @@ rather than one-off styling.
 
 - Operational deployment runbook: `docs/deployment/CONTABO_DEPLOYMENT.md`
 - Module Federation deep-dive: `docs/guides/MODULE_FEDERATION_GUIDE.md`
+- Web Component integration (minimal example, custom-element contract,
+  trade-offs vs. iframe/MF): `docs/guides/WEB_COMPONENT_INTEGRATION.md`
 - Developer guide: `docs/guides/DEVELOPER_GUIDE.md`
 - Consuming durable, typed settings from config-service (not the feature-flag
   system): `docs/guides/CONFIG_SERVICE_INTEGRATION_GUIDE.md`
