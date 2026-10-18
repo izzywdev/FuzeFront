@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, Button } from '@fuzefront/design-system'
 import { AuthCard } from './AuthCard'
 import { ResendCooldownButton } from './ResendCooldownButton'
 import { VerifyStatusPanel, type VerifyStatus } from './VerifyStatusPanel'
@@ -22,7 +22,7 @@ export interface EmailVerificationFlowProps {
   onContinue?: () => void
   /** Check-inbox "Continue to FuzeFront" link target. Omit to hide it. */
   continueHref?: string
-  /** Landing: is the visitor signed in? Only then can a new link be requested. Default false. */
+  /** Is the visitor signed in? Resend (check-inbox and landing) needs the session; signed-out shows "Sign in to get a new link". Default false. */
   canResend?: boolean
   /** Landing: where "Sign in to get a new link" goes. */
   signInForLinkHref?: string
@@ -56,6 +56,8 @@ function CheckInbox({
   transport,
   email,
   continueHref,
+  canResend = false,
+  signInForLinkHref = '/login?next=/signup/verify',
   cooldownSeconds,
   labels: overrides,
 }: EmailVerificationFlowProps) {
@@ -88,7 +90,13 @@ function CheckInbox({
         )}
         <p className="fzf-vr-sub">{labels.checkInboxHint}</p>
         <div className="fzf-vr-actions">
-          <ResendCooldownButton onResend={resend} cooldownSeconds={cooldownSeconds} labels={overrides} />
+          {canResend ? (
+            <ResendCooldownButton onResend={resend} cooldownSeconds={cooldownSeconds} labels={overrides} />
+          ) : (
+            <Button variant="secondary" data-action="sign-in-for-link" href={signInForLinkHref}>
+              {labels.signInForNewLink}
+            </Button>
+          )}
         </div>
         <NoticeAlert notice={notice} />
         {continueHref && (

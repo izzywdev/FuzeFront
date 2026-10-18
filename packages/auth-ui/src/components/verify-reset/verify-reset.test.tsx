@@ -171,7 +171,7 @@ describe('EmailVerificationFlow — check inbox', () => {
     try {
       const transport = makeTransport()
       const { container } = render(
-        <EmailVerificationFlow transport={transport} view="check-inbox" email="ada@lovelace.io" cooldownSeconds={2} />,
+        <EmailVerificationFlow transport={transport} view="check-inbox" email="ada@lovelace.io" cooldownSeconds={2} canResend />,
       )
       expect(container.querySelector('[data-frame="03-check-inbox"]')).toBeInTheDocument()
       expect(container.querySelector('[data-value="email"]')).toHaveTextContent('ada@lovelace.io')
@@ -198,7 +198,7 @@ describe('EmailVerificationFlow — check inbox', () => {
         startEmailVerification: vi.fn().mockRejectedValue(httpErr(429, 'RATE_LIMITED')),
       })
       const { container } = render(
-        <EmailVerificationFlow transport={transport} view="check-inbox" email="a@b.co" cooldownSeconds={1} />,
+        <EmailVerificationFlow transport={transport} view="check-inbox" email="a@b.co" cooldownSeconds={1} canResend />,
       )
       await act(async () => {
         vi.advanceTimersByTime(1000)
@@ -218,7 +218,7 @@ describe('EmailVerificationFlow — check inbox', () => {
     try {
       const transport = makeTransport({ startEmailVerification: vi.fn().mockRejectedValue(new Error('x')) })
       const { container } = render(
-        <EmailVerificationFlow transport={transport} view="check-inbox" email="a@b.co" cooldownSeconds={1} />,
+        <EmailVerificationFlow transport={transport} view="check-inbox" email="a@b.co" cooldownSeconds={1} canResend />,
       )
       await act(async () => {
         vi.advanceTimersByTime(1000)
@@ -465,6 +465,17 @@ describe('PasswordResetFlow — confirm', () => {
     expect(await screen.findByText(/does not meet the password policy/i)).toBeInTheDocument()
     expect(container.querySelector('[data-step="confirm-expired"]')).not.toBeInTheDocument()
     expect(container.querySelector('[data-form="reset-confirm"]')).toBeInTheDocument()
+  })
+
+  it('check-inbox signed out: offers sign-in, no resend button', () => {
+    const transport = makeTransport()
+    const { container } = render(<EmailVerificationFlow transport={transport} view="check-inbox" email="a@b.co" />)
+    expect(container.querySelector('[data-action="resend"]')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /sign in to get a new link/i })).toHaveAttribute(
+      'href',
+      '/login?next=/signup/verify',
+    )
+    expect(transport.startEmailVerification).not.toHaveBeenCalled()
   })
 
   it('check-inbox has no edit-address action and offers Continue to the app', () => {

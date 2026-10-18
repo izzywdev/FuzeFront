@@ -4,6 +4,7 @@ import type { VerifyResetTransport } from '@fuzefront/auth-ui'
 import { authAPI } from '../services/api'
 import { useCurrentUser } from '../lib/shared'
 import { takeSingleUseParam } from '../lib/singleUseParams'
+import { beginAddAccount, canAddAccount, getActiveAuthToken } from '../lib/accounts'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 
 /**
@@ -23,6 +24,23 @@ const transport: VerifyResetTransport = {
   confirmEmailVerification: req => authAPI.confirmEmailVerification(req),
   requestPasswordReset: email => authAPI.requestPasswordReset(email),
   confirmPasswordReset: req => authAPI.confirmPasswordReset(req),
+}
+
+/**
+ * "Back to sign in" from /reset. If ANOTHER account is signed in in this tab,
+ * a plain /login reload would find that session and bounce to /dashboard — so the
+ * user would never reach a sign-in form for the account they just reset. Route
+ * through the repo's add-account (provisional-session) flow so the shell boots
+ * unauthenticated in this tab only; other accounts keep their sessions.
+ */
+function goToSignIn() {
+  if (getActiveAuthToken() && canAddAccount()) beginAddAccount()
+  window.location.href = '/login'
+}
+
+/** Only the fuzepicker mention deep link survives the verification detour (same allowlist as LoginPage). */
+function safeNext(raw: string | null): string | undefined {
+  return raw && raw.startsWith('/fuzepicker/mentions') && !raw.startsWith('//') ? raw : undefined
 }
 
 function PageChrome({ children }: { children: ReactNode }) {
@@ -50,16 +68,19 @@ function PageChrome({ children }: { children: ReactNode }) {
 }
 
 export function VerifyCheckInboxPage() {
-  const { user } = useCurrentUser()
+  const { user, isAuthenticated } = useCurrentUser()
   // Display only: prefer the session's own address over the (spoofable) query.
-  const email = user?.email ?? new URLSearchParams(window.location.search).get('email') ?? undefined
+  const params = new URLSearchParams(window.location.search)
+  const email = user?.email ?? params.get('email') ?? undefined
+  const next = safeNext(params.get('next')) ?? '/dashboard'
   return (
     <PageChrome>
       <EmailVerificationFlow
         view="check-inbox"
         transport={transport}
         email={email}
-        continueHref="/dashboard"
+        continueHref={next}
+        canResend={isAuthenticated}
       />
     </PageChrome>
   )
@@ -89,7 +110,12 @@ export function ResetPage() {
   const token = takeSingleUseParam('token')
   return (
     <PageChrome>
-      <PasswordResetFlow transport={transport} token={token} signInHref="/login" />
+      <PasswordResetFlow
+        transport={transport}
+        token={token}
+        signInHref="/login"
+        onBackToSignIn={goToSignIn}
+      />
     </PageChrome>
   )
 }

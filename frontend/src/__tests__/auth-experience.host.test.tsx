@@ -46,10 +46,15 @@ describe('single-use token capture (Referer / telemetry leak)', () => {
     expect(takeSingleUseParam('token')).toBe('sekret') // stable across re-renders
   })
 
-  it('flag OFF: leaves the URL alone', () => {
-    window.history.replaceState({}, '', '/reset?token=sekret')
-    captureSingleUseParams()
-    expect(window.location.search).toBe('?token=sekret')
+  it('scrubs the token whatever the flag says (security property, not a UI feature)', () => {
+    for (const flag of [false, undefined]) {
+      setFlag(flag)
+      window.history.replaceState({}, '', '/reset?token=sekret')
+      captureSingleUseParams()
+      expect(window.location.search).toBe('')
+      expect(takeSingleUseParam('token')).toBe('sekret')
+      _resetSingleUseParams()
+    }
   })
 
   it('ignores other paths', () => {
@@ -129,6 +134,7 @@ describe('AuthExperiencePages', () => {
     expect(container.querySelector('[data-value="email"]')).toHaveTextContent('session@x.io')
     expect(screen.queryByText(/go back and edit/i)).toBeNull()
     expect(container.querySelector('[data-action="continue"]')).toHaveAttribute('href', '/dashboard')
+    expect(container.querySelector('[data-action="sign-in-for-link"]')).toBeNull()
     await act(async () => {
       vi.advanceTimersByTime(61_000)
     })
@@ -136,6 +142,54 @@ describe('AuthExperiencePages', () => {
       fireEvent.click(container.querySelector('[data-action="resend"]')!)
     })
     expect(start).toHaveBeenCalledWith()
+  })
+
+  it('check-inbox honours an allowlisted next= for Continue, ignores anything else; signed-out gets sign-in not resend', async () => {
+    vi.mocked(sharedMock.useCurrentUser).mockReturnValue({ user: null, isAuthenticated: false } as any)
+    window.history.replaceState({}, '', '/signup/verify?email=a%40b.co&next=%2Ffuzepicker%2Fmentions%2F9')
+    const { VerifyCheckInboxPage } = await import('../pages/AuthExperiencePages')
+    const first = render(<VerifyCheckInboxPage />)
+    expect(first.container.querySelector('[data-action="continue"]')).toHaveAttribute('href', '/fuzepicker/mentions/9')
+    expect(first.container.querySelector('[data-action="resend"]')).toBeNull()
+    expect(first.container.querySelector('[data-action="sign-in-for-link"]')).not.toBeNull()
+    first.unmount()
+    window.history.replaceState({}, '', '/signup/verify?next=https%3A%2F%2Fevil.example')
+    const second = render(<VerifyCheckInboxPage />)
+    expect(second.container.querySelector('[data-action="continue"]')).toHaveAttribute('href', '/dashboard')
+  })
+
+  it('reset "Back to sign in": with another account signed in, enters add-account mode first', async () => {
+    window.history.replaceState({}, '', '/reset')
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+    const accounts = await import('../lib/accounts')
+    accounts.rememberAccount({ id: 'acct-a', email: 'a@x.io', firstName: 'A', lastName: 'A' } as any, { token: 'tok-a' })
+    expect(accounts.getActiveAuthToken()).toBe('tok-a')
+    expect(accounts.isAddingAccount()).toBe(false)
+    const { ResetPage } = await import('../pages/AuthExperiencePages')
+    const { container } = render(<ResetPage />)
+    const loc = window.location
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: { ...loc, href: '' } })
+    fireEvent.click(container.querySelector('.fzf-vr-foot a')!)
+    expect(accounts.isAddingAccount()).toBe(true)
+    expect(accounts.getActiveAuthToken()).toBeNull() // the shell would now boot to the sign-in form
+    expect(window.location.href).toBe('/login')
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: loc })
+  })
+
+  it('reset "Back to sign in" with no session is a plain /login (no add-account mode)', async () => {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+    window.history.replaceState({}, '', '/reset')
+    const accounts = await import('../lib/accounts')
+    const { ResetPage } = await import('../pages/AuthExperiencePages')
+    const { container } = render(<ResetPage />)
+    const loc = window.location
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: { ...loc, href: '' } })
+    fireEvent.click(container.querySelector('.fzf-vr-foot a')!)
+    expect(accounts.isAddingAccount()).toBe(false)
+    expect(window.location.href).toBe('/login')
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: loc })
   })
 
   it('landing signed-out + expired token: offers sign-in with a return path, no anonymous resend', async () => {

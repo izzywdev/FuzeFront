@@ -54,7 +54,7 @@ describe('vanilla mount()', () => {
 
     await new Promise((r) => setTimeout(r, 0))
     expect(transport.login).toHaveBeenCalledWith({ email: 'a@b.com', password: 'hunter2' })
-    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED)
+    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED, { mode: 'signin', email: 'a@b.com' })
   })
 
   it('defaults social to OFF even when startSocial is provided', async () => {

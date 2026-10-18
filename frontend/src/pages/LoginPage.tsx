@@ -237,7 +237,15 @@ function LoginPage() {
       if (methods.verification?.email) {
         const status = await authAPI.getVerificationStatus()
         if (!status.emailVerified) {
-          window.location.href = `/signup/verify?email=${encodeURIComponent(email)}`
+          // Carry the saved deep link (fuzepicker mention) THROUGH the verification
+          // detour as an allowlisted `next=`, and clear the stash so it can't
+          // hijack a later, unrelated sign-in.
+          const saved = window.sessionStorage.getItem('fuzepicker:return-path')
+          window.sessionStorage.removeItem('fuzepicker:return-path')
+          const next = saved?.startsWith('/fuzepicker/mentions')
+            ? `&next=${encodeURIComponent(saved)}`
+            : ''
+          window.location.href = `/signup/verify?email=${encodeURIComponent(email)}${next}`
           return
         }
       }

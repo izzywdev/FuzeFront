@@ -38,15 +38,23 @@ const json = (route: Route, status: number, body?: unknown) =>
   })
 
 /** Unauthenticated boot: the session probe answers 401, flag forced ON/OFF pre-auth. */
-async function boot(page: Page, flag: boolean) {
+async function boot(page: Page, flag: boolean, signedIn = false) {
   await page.addInitScript(on => {
     const w = window as unknown as { __FF_AUTH_EXPERIENCE__?: boolean }
     w.__FF_AUTH_EXPERIENCE__ = on
   }, flag)
+  if (signedIn) {
+    // A bare legacy `authToken` is migrated into the account vault on boot.
+    await page.addInitScript(() => localStorage.setItem('authToken', 'tok_session'))
+  }
   await page.route(`${SEC}/session`, route =>
-    route.request().method() === 'GET'
-      ? json(route, 401, { error: 'no token', code: 'NO_TOKEN' })
-      : route.fallback(),
+    route.request().method() !== 'GET'
+      ? route.fallback()
+      : signedIn
+        ? json(route, 200, {
+            user: { id: 'u1', email: 'ada@lovelace.io', firstName: 'Ada', lastName: 'L', roles: [] },
+          })
+        : json(route, 401, { error: 'no token', code: 'NO_TOKEN' }),
   )
   await page.route(`${SEC}/methods`, route =>
     json(route, 200, {
@@ -62,7 +70,7 @@ async function boot(page: Page, flag: boolean) {
 // verify-email · 03-check-inbox  (/signup/verify)
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('verify-email — check inbox (frame 03-check-inbox)', () => {
-  test.beforeEach(async ({ page }) => boot(page, true))
+  test.beforeEach(async ({ page }) => boot(page, true, true))
 
   test('shows the target email and a disabled resend button during cooldown', async ({ page }) => {
     await page.goto('/signup/verify?email=ada%40lovelace.io', { waitUntil: 'domcontentloaded' })
@@ -126,6 +134,16 @@ test.describe('verify-email — check inbox (frame 03-check-inbox)', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // verify-email · 04-verify-landing  (/verify/email?token=…)
 // ─────────────────────────────────────────────────────────────────────────────
+test.describe('verify-email — check inbox, signed out', () => {
+  test('no resend button, a sign-in link instead (resend needs the session)', async ({ page }) => {
+    await boot(page, true, false)
+    await page.goto('/signup/verify?email=ada%40lovelace.io', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-frame='03-check-inbox']")).toBeVisible()
+    await expect(page.locator("[data-action='resend']")).toHaveCount(0)
+    await expect(page.locator("[data-action='sign-in-for-link']")).toBeVisible()
+  })
+})
+
 test.describe('verify-email — link landing (frame 04-verify-landing)', () => {
   test.beforeEach(async ({ page }) => boot(page, true))
 

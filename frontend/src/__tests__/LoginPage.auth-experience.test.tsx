@@ -100,6 +100,21 @@ describe('LoginPage — fuzefront.auth.experience', () => {
       )
     })
 
+    it('carries a saved fuzepicker deep link through the verification detour and clears the stash', async () => {
+      setLocation('/signup')
+      window.sessionStorage.setItem('fuzepicker:return-path', '/fuzepicker/mentions/42')
+      vi.spyOn(authAPI, 'signup').mockResolvedValue({ token: 't', sessionId: 's', user: { id: 'u1' } } as any)
+      vi.spyOn(authAPI, 'getVerificationStatus').mockResolvedValue({ emailVerified: false, phoneVerified: false })
+      render(<LoginPage />)
+      await signUp()
+      await waitFor(() =>
+        expect(window.location.href).toBe(
+          '/signup/verify?email=ada%40lovelace.io&next=%2Ffuzepicker%2Fmentions%2F42'
+        )
+      )
+      expect(window.sessionStorage.getItem('fuzepicker:return-path')).toBeNull()
+    })
+
     it('goes to the app when the email is already verified', async () => {
       setLocation('/signup')
       vi.spyOn(authAPI, 'signup').mockResolvedValue({ token: 't', sessionId: 's', user: { id: 'u1' } } as any)

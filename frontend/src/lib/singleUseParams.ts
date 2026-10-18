@@ -1,9 +1,8 @@
-import { isAuthExperienceEnabled } from '@fuzefront/auth-ui'
-
 /**
  * Single-use secrets in the address bar (the emailed `?token=` on /verify/email
  * and /reset) must never leave the browser in a `Referer` header or telemetry
- * URL. `captureSingleUseParams()` runs BEFORE any API call or telemetry init
+ * URL. Scrubbing a credential is a security property, not a UI feature, so it
+ * runs REGARDLESS of the `fuzefront.auth.experience` flag. `captureSingleUseParams()` runs BEFORE any API call or telemetry init
  * (first import in main.tsx): it moves the token into memory and rewrites the URL
  * with `history.replaceState` so every later request already sees a clean URL.
  */
@@ -13,7 +12,7 @@ const SECRET_PARAMS = ['token']
 const memory = new Map<string, string>()
 
 export function captureSingleUseParams(): void {
-  if (typeof window === 'undefined' || !isAuthExperienceEnabled()) return
+  if (typeof window === 'undefined') return
   if (!SECRET_PATHS.has(window.location.pathname)) return
   const url = new URL(window.location.href)
   let changed = false

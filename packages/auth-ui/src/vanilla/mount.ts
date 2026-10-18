@@ -6,6 +6,7 @@
  * `window.FuzeFrontAuthUI.mount(container, opts)`.
  */
 import type {
+  AuthenticatedMeta,
   AuthTransport,
   AuthMethods,
   AuthLabels,
@@ -35,7 +36,7 @@ export interface VanillaMountOptions {
   variant?: AuthPanelVariant
   mode?: AuthPanelMode
   transport: AuthTransport
-  onAuthenticated: (session: AuthenticatedSession) => void
+  onAuthenticated: (session: AuthenticatedSession, meta?: AuthenticatedMeta) => void
   onMfaRequired?: (challenge: MfaRequiredChallenge) => void
   /** Unlike the React `AuthPanel`, defaults OFF here — an explicit opt-in for
    * non-React hosts that may not want the Google button rendered at all. */
@@ -234,7 +235,7 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
           firstName: firstNameField.input.value || undefined,
           lastName: lastNameField.input.value || undefined,
         })
-        opts.onAuthenticated(session)
+        opts.onAuthenticated(session, { mode: 'signup', email: emailField.input.value })
         return
       }
       const result = await opts.transport.login({
@@ -246,7 +247,7 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
         opts.onMfaRequired?.(result)
         return
       }
-      opts.onAuthenticated(result)
+      opts.onAuthenticated(result, { mode: 'signin', email: emailField.input.value })
     } catch (err) {
       const message = err instanceof Error ? err.message : undefined
       setAlert('error', message || labels.genericError)
