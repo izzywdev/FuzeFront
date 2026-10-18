@@ -145,7 +145,7 @@ class AltIdentityProvider implements IdentityProvider {
     return { emailVerified: true, phoneVerified: false }
   }
   async startPhoneVerification(): Promise<void> {}
-  async confirmPhoneVerification(): Promise<VerificationStatus> {
+  async confirmPhoneVerification(_t?: string): Promise<VerificationStatus> {
     return { emailVerified: false, phoneVerified: true }
   }
   async getVerificationStatus(t: string): Promise<VerificationStatus> {

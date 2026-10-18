@@ -910,9 +910,12 @@ router.post('/verify/phone/start', async (req: Request, res: Response) => {
 })
 
 router.post('/verify/phone/confirm', async (req: Request, res: Response) => {
+  // Session-bound: the number is verified for the CALLER's account only.
+  const token = requireBearer(req, res)
+  if (!token) return
   try {
     if (!req.body?.phone || !req.body?.code) throw new InvalidInputError('phone and code are required')
-    const status = await getIdentityProvider().confirmPhoneVerification(req.body.phone, req.body.code)
+    const status = await getIdentityProvider().confirmPhoneVerification(token, req.body.phone, req.body.code)
     res.status(200).json(status)
   } catch (err) {
     sendError(res, err)
