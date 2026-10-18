@@ -149,7 +149,7 @@ async function listExistsInOrg(listId: string, orgId: string, orgs: string[] | n
 router.get(
   '/:listId/access',
   authMiddleware,
-  requireListMutation('manage_access', { forkable: false }),
+  requireListMutation('manage_access', { forkable: false, readOnly: true }),
   async (req: Request, res: Response): Promise<void> => {
     const { listId } = req.params;
     const orgId = req.orgId as string;
@@ -338,6 +338,12 @@ router.put(
           if (revoked?.['user_id']) subject = revoked['user_id'] as string;
         }
 
+        // EVERY Permit key this operation will use (the grant's tenant and subject - possibly a LEGACY mirror row's
+        // org_id / user_id) is validated and computed HERE, before any Security API call: a malformed key fails with
+        // nothing written, never after revoke/grant landed (which would split the authority from the mirror).
+        const mirrorTenantKey = permitTenantKey(grantTenant);
+        permitSubjectKey(subject);
+
         // Last-owner guard: demoting the only list-owner is refused. Decided by
         // the AUTHORITY (review M-2): another mirror owner must be confirmed by
         // the Security API, not merely counted.
@@ -413,7 +419,7 @@ router.put(
             updated_at = now(),
             revoked_at = NULL
           `,
-          [listId, subject, role, actorId, permitTenantKey(grantTenant)],
+          [listId, subject, role, actorId, mirrorTenantKey],
         );
 
         // Outbox, same transaction: access.granted (previousRole null for a new
@@ -439,12 +445,10 @@ router.put(
         res.status(err.status).json(err.body);
         return;
       }
-      if (err instanceof PermitKeyError) {
-        res.status(400).json({ code: 'VALIDATION_ERROR', message: err.message });
-        return;
-      }
       // The mirror rolled back with the transaction; the Security API did not.
-      // Put the authority back to the user's prior role (never throws).
+      // Put the authority back to the user's prior role (never throws). This runs BEFORE the PermitKeyError answer
+      // (defence in depth: keys are validated up front, but whatever raises after a Security API write landed must
+      // still compensate).
       if (writes.revokeAttempted || writes.grantAttempted) {
         await restoreAuthority({
           op: 'put',
@@ -457,6 +461,10 @@ router.put(
           token,
           log: getLog(req),
         });
+      }
+      if (err instanceof PermitKeyError) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: err.message });
+        return;
       }
       getLog(req).error(
       { err, op: 'access.PUT error', userId: req.userId, orgId: req.orgId, params: req.params },
@@ -521,6 +529,11 @@ router.delete(
         if (existing['org_id']) grantTenant = existing['org_id'] as string;
         if (existing['user_id']) subject = existing['user_id'] as string;
 
+        // Validate every Permit key before any Security API call (see PUT): a malformed legacy mirror key fails with
+        // nothing written.
+        permitTenantKey(grantTenant);
+        permitSubjectKey(subject);
+
         // Last-owner guard, decided by the AUTHORITY (review M-2): another
         // mirror owner must be confirmed by the Security API.
         if (existing['role'] === 'list-owner') {
@@ -573,13 +586,9 @@ router.delete(
         res.status(err.status).json(err.body);
         return;
       }
-      if (err instanceof PermitKeyError) {
-        res.status(400).json({ code: 'VALIDATION_ERROR', message: err.message });
-        return;
-      }
       // The mirror rolled back with the transaction (a later step, e.g. the
       // outbox write, can fail after the revoke landed); the Security API did
-      // not. Restore the user's role there (never throws).
+      // not. Restore the user's role there (never throws). Before the PermitKeyError answer: see PUT.
       if (writes.revokeAttempted) {
         await restoreAuthority({
           op: 'delete',
@@ -592,6 +601,10 @@ router.delete(
           token,
           log: getLog(req),
         });
+      }
+      if (err instanceof PermitKeyError) {
+        res.status(400).json({ code: 'VALIDATION_ERROR', message: err.message });
+        return;
       }
       getLog(req).error(
       { err, op: 'access.DELETE error', userId: req.userId, orgId: req.orgId, params: req.params },

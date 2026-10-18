@@ -170,6 +170,12 @@ export function requireListRead(): RequestHandler {
 export interface MutationOptions {
   /** `false` for access management: a readable common list answers 403, never `fork_required`. */
   forkable?: boolean;
+  /**
+   * The route only READS (e.g. `GET /:listId/access`, guarded by the `manage_access` action): the platform-org
+   * SUSPENSION gate does not apply to it - suspension fails WRITES closed, reads stay available. Authorization is
+   * unchanged. Mutating routes never set this.
+   */
+  readOnly?: boolean;
 }
 
 /** Replaces `requireAuthzCheck('SelectionList', action)` on every per-list mutation. */
@@ -184,7 +190,7 @@ export function requireListMutation(action: string, opts: MutationOptions = {}):
     // is only looked up when some org is suspended. This request-level check is the fast path: every mutating
     // transaction re-checks under the org lock (`assertPlatformWritable`), which is what closes the race.
     // 4.0.0 behaviour is otherwise untouched.
-    if (req.orgId) {
+    if (req.orgId && !opts.readOnly) {
       try {
         if ((await suspendedOrgsFor(req)).length > 0) {
           const suspendedRow = await lookupList(req, req.params['listId']);
