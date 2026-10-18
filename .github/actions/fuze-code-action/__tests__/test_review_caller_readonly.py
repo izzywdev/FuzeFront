@@ -184,29 +184,58 @@ _REF = re.compile(r"\b(inputs|steps)\.([\w.-]+)")
 _OTHER_VALUES = {"inputs": ("", "x", "true", "false"), "steps": ("", "1", "true", "false", "success", "failure")}
 
 
+def _walk(node, env, cond):
+    """Evaluate a parsed rung condition by walking a WHITELIST of AST nodes; no eval()."""
+    import ast
+    if isinstance(node, ast.Expression):
+        return _walk(node.body, env, cond)
+    if isinstance(node, ast.BoolOp):
+        vals = (_walk(v, env, cond) for v in node.values)
+        return all(vals) if isinstance(node.op, ast.And) else any(vals)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not _walk(node.operand, env, cond)
+    if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], (ast.Eq, ast.NotEq)):
+        eq = _walk(node.left, env, cond) == _walk(node.comparators[0], env, cond)
+        return eq if isinstance(node.ops[0], ast.Eq) else not eq
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, bool)):
+        return node.value
+    if isinstance(node, ast.Name) and node.id in env:
+        return env[node.id]
+    raise AssertionError(f"unsupported expression in rung condition: {cond!r}")
+
+
 def true_assignments(cond):
     """Assignments (review-only='true' fixed) under which a GitHub `if:` is truthy.
 
     Supports only what the action's rung conditions use: `inputs.*` / `steps.*` refs,
     string literals, ==, !=, &&, ||, parentheses and always(). Anything else raises, so a
-    new construct fails the test instead of being read as 'never true'."""
+    new construct fails the test instead of being read as 'never true'. The condition is
+    parsed with `ast` and evaluated by a whitelist walker, never by eval()."""
+    import ast
     import itertools
-    expr = re.sub(r"\btrue\b(?!')", "True", re.sub(r"\bfalse\b(?!')", "False", " ".join(cond.split()))).replace("always()", "True")
-    leftover = _REF.sub("", expr)
-    if re.search(r"[A-Za-z_]\w*\s*\(|!(?!=)|\$\{\{", leftover.replace("True", "").replace("False", "")):
+    expr = re.sub(r"\btrue\b(?!')", "True", re.sub(r"\bfalse\b(?!')", "False", " ".join(cond.split())))
+    expr = expr.replace("always()", "True")
+    if re.search(r"[A-Za-z_]\w*\s*\(|!(?!=)|\$\{\{", _REF.sub("", expr).replace("True", "").replace("False", "")):
         raise AssertionError(f"unsupported expression in rung condition: {cond!r}")
-    refs = sorted({m.group(0) for m in _REF.finditer(expr)} - {"inputs.review-only"})
-    py = expr.replace("&&", " and ").replace("||", " or ")
-    py = _REF.sub(lambda m: f"V[{m.group(0)!r}]", py)
-    out = []
+    names = {}
+    def _name(m):
+        return names.setdefault(m.group(0), f"_r{len(names)}")
+    py = _REF.sub(_name, expr).replace("&&", " and ").replace("||", " or ")
+    try:
+        tree = ast.parse(py, mode="eval")
+    except SyntaxError as exc:
+        raise AssertionError(f"unparseable rung condition: {cond!r}") from exc
+    refs = sorted(set(names) - {"inputs.review-only"})
     # Candidate values = the usual ones PLUS every literal the condition itself compares
     # against, so a gate on a value nobody listed (e.g. code == '2') cannot hide.
     literals = tuple(sorted(set(re.findall(r"'([^']*)'", expr))))
     pools = [tuple(dict.fromkeys(_OTHER_VALUES[r.split(".")[0]] + literals)) for r in refs]
+    out = []
     for combo in itertools.product(*pools):
         V = dict(zip(refs, combo))
         V["inputs.review-only"] = "true"
-        if eval(py, {"__builtins__": {}}, {"V": V}):  # noqa: S307 - constrained, test-only
+        env = {names[k]: v for k, v in V.items() if k in names}
+        if _walk(tree, env, cond):
             out.append(V)
     return out
 
