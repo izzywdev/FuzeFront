@@ -164,7 +164,7 @@ export class FakeDb {
     },
   })
   private raw(sql: string, params: any[]) {
-    if (/UPDATE organization_invitations/.test(sql) && /SET status = 'accepted'/.test(sql)) {
+    if (/UPDATE organization_invitations/.test(sql) && /SET status\s*=\s*'accepted'/.test(sql)) {
       const row = this.tables.organization_invitations.find(
         r => r.id === params[0] && r.status === 'pending' && cmp(r.expires_at, new Date()) > 0
       )
