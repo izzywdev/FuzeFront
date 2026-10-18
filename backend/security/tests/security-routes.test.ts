@@ -1208,16 +1208,40 @@ describe('contact verification', () => {
     // @fuzequality api confirmPhoneVerification
     const res = await request(makeApp(fakeProvider()))
       .post('/api/v1/security/verify/phone/confirm')
+      .set('Authorization', 'Bearer tok')
       .send({ phone: '+1555', code: '123456' })
       .expect(200)
     expect(res.type).toMatch(/json/)
     expect(res.body).toEqual({ emailVerified: false, phoneVerified: true, phone: '+1555' })
   })
 
+  it('returns 401 application/json when confirming phone verification without authentication', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/verify/phone/confirm')
+      .send({ phone: '+1555', code: '123456' })
+      .expect(401)
+    expect(res.type).toMatch(/json/)
+    expect(provider.confirmPhoneVerification).not.toHaveBeenCalled()
+  })
+
+  it('passes the caller session token (not just phone+code) to confirmPhoneVerification', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const provider = fakeProvider()
+    await request(makeApp(provider))
+      .post('/api/v1/security/verify/phone/confirm')
+      .set('Authorization', 'Bearer tok')
+      .send({ phone: '+1555', code: '123456' })
+      .expect(200)
+    expect(provider.confirmPhoneVerification).toHaveBeenCalledWith('tok', '+1555', '123456')
+  })
+
   it('returns 400 application/json when the required phone is missing from confirmation', async () => {
     // @fuzequality api confirmPhoneVerification
     const res = await request(makeApp(fakeProvider()))
       .post('/api/v1/security/verify/phone/confirm')
+      .set('Authorization', 'Bearer tok')
       .send({ code: '123456' })
       .expect(400)
     expect(res.type).toMatch(/json/)
@@ -1227,6 +1251,7 @@ describe('contact verification', () => {
     // @fuzequality api confirmPhoneVerification
     const res = await request(makeApp(fakeProvider()))
       .post('/api/v1/security/verify/phone/confirm')
+      .set('Authorization', 'Bearer tok')
       .send({ phone: '+1555' })
       .expect(400)
     expect(res.type).toMatch(/json/)
@@ -1236,6 +1261,7 @@ describe('contact verification', () => {
     // @fuzequality api confirmPhoneVerification
     const res = await request(makeApp(fakeProvider()))
       .post('/api/v1/security/verify/phone/confirm')
+      .set('Authorization', 'Bearer tok')
       .set('Content-Type', 'text/plain')
       .send('phone=+1555&code=123456')
       .expect(400)
