@@ -187,7 +187,7 @@ export class UnleashFlagSyncService {
       current.delete(entityId);
     }
 
-    await this.patchStrategyUserIds(flagName, strategy.id, serializeUserIds(current));
+    await this.putStrategyUserIds(flagName, strategy.id, serializeUserIds(current));
   }
 
   /**
@@ -223,15 +223,16 @@ export class UnleashFlagSyncService {
     return createResp.data;
   }
 
-  private async patchStrategyUserIds(
+  // PUT /strategies/:id is supported on both Unleash v4 and v5; PATCH is v5+ only.
+  private async putStrategyUserIds(
     flagName: string,
     strategyId: string,
     userIds: string,
   ): Promise<void> {
     const url = `${this.cfg.adminUrl}/api/admin/projects/${this.cfg.project}/features/${flagName}/environments/${this.cfg.environment}/strategies/${strategyId}`;
-    await axios.patch(
+    await axios.put(
       url,
-      { parameters: { userIds } },
+      { name: 'userWithId', parameters: { userIds } },
       { headers: { Authorization: this.cfg.adminToken, 'Content-Type': 'application/json' }, timeout: 5000 },
     );
   }
