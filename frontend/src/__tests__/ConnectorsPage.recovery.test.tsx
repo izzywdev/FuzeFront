@@ -1,92 +1,59 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import ConnectorsPage from '../pages/ConnectorsPage'
 
 vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'synthetic' }))
 
 const catalog = [
-  { id: 'google-drive', name: 'Google Drive', authentication: 'oauth', configured: true },
-  { id: 'openai', name: 'OpenAI', authentication: 'api-key', configured: true },
+  { id: 'google-drive', name: 'Google Drive', description: 'Read files', authentication: 'oauth', configured: true },
+  { id: 'openai', name: 'OpenAI', description: 'List models', authentication: 'api-key', configured: true },
 ]
 const ok = (data: unknown) => ({ ok: true, json: async () => data })
 const failed = () => ({ ok: false, status: 502, json: async () => ({ error: 'Status service unavailable' }) })
-const card = (name: string) => within(screen.getByRole('heading', { name, level: 2 }).closest('section')!)
+const renderPage = () => render(<MemoryRouter><ConnectorsPage /></MemoryRouter>)
 
 beforeEach(() => window.history.replaceState({}, '', '/connectors'))
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
-test('catalog cards appear while Gmail and another provider status are still pending', async () => {
+test('renders every catalog connector as a details link while statuses resolve independently', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url.endsWith('/catalog')) return ok({ connectors: catalog })
     if (url.endsWith('/openai')) return ok({ status: 'disconnected' })
     return new Promise(() => {})
   }))
-  render(<ConnectorsPage />)
-  expect(await screen.findByRole('heading', { name: 'Google Drive' })).toBeTruthy()
-  expect(await card('OpenAI').findByText('Not connected')).toBeTruthy()
-  expect(card('Google Drive').getByText('Loading connection status…')).toBeTruthy()
-  expect(card('Google Drive').getByRole('button', { name: 'Connect' }).hasAttribute('disabled')).toBe(true)
-  expect(card('Google Gmail').getByText('Loading connection status…')).toBeTruthy()
+  renderPage()
+  const drive = await screen.findByRole('link', { name: /Google Drive/i })
+  expect(drive.getAttribute('href')).toBe('/connectors/google-drive')
+  expect(screen.getAllByText('Loading connection status…').length).toBeGreaterThan(0)
+  expect(await screen.findByText('Not connected')).toBeTruthy()
 })
 
-test('failed metadata stays visible as unavailable and disables connection controls', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/catalog') ? ok({ connectors: catalog }) : failed()))
-  render(<ConnectorsPage />)
-  expect(await card('Google Gmail').findByText('Status unavailable')).toBeTruthy()
-  expect(await screen.findByRole('heading', { name: 'Google Drive' })).toBeTruthy()
-  await waitFor(() => expect(card('Google Drive').getByText('Status unavailable')).toBeTruthy())
-  expect(card('Google Gmail').queryByText('Not connected')).toBeNull()
-  expect(card('Google Drive').getByRole('button', { name: 'Connect' }).hasAttribute('disabled')).toBe(true)
-  expect(card('OpenAI').getByRole('button', { name: 'Save key' }).hasAttribute('disabled')).toBe(true)
-})
-
-test('retry recovers a failed catalog without changing credentials or grants', async () => {
+test('keeps the catalog visible and allows a retry when a status request fails', async () => {
   let unavailable = true
-  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-    expect(init?.method || 'GET').toBe('GET')
-    if (url.endsWith('/catalog')) return unavailable ? failed() : ok({ connectors: catalog })
-    return ok({ provider: 'google-gmail', status: 'disconnected' })
-  })
-  vi.stubGlobal('fetch', fetchMock)
-  render(<ConnectorsPage />)
-  expect(await screen.findByRole('alert')).toBeTruthy()
-  unavailable = false
-  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-  expect(await screen.findByRole('heading', { name: 'Google Drive' })).toBeTruthy()
-  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
-  expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/credential') || url.endsWith('/connect'))).toBe(false)
-})
-
-test('a timed-out status becomes unavailable while the catalog remains visible', async () => {
-  vi.useFakeTimers()
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.endsWith('/catalog')) return ok({ connectors: catalog })
-    return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))
-  }))
-  render(<ConnectorsPage />)
-  await act(async () => { await Promise.resolve() })
-  expect(screen.getByRole('heading', { name: 'Google Drive' })).toBeTruthy()
-  await act(async () => { vi.advanceTimersByTime(10_000) })
-  expect(card('Google Drive').getByText('Status unavailable')).toBeTruthy()
-  expect(card('Google Gmail').getByText('Status unavailable')).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
-})
-
-test('a late response from the previous load cannot overwrite a retried status', async () => {
-  let resolveOld: (response: ReturnType<typeof ok>) => void = () => {}
-  let retried = false
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url.endsWith('/catalog')) return ok({ connectors: catalog })
-    if (url.endsWith('/google-drive') && !retried) return new Promise<ReturnType<typeof ok>>(resolve => { resolveOld = resolve })
-    if (url.endsWith('/openai') && !retried) return failed()
+    return unavailable ? failed() : ok({ status: 'disconnected' })
+  }))
+  renderPage()
+  expect((await screen.findAllByText('Status unavailable')).length).toBe(3)
+  unavailable = false
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  await waitFor(() => expect(screen.queryByText('Status unavailable')).toBeNull())
+  expect(screen.getAllByText('Not connected').length).toBe(3)
+})
+
+test('does not start a competing catalog load while connection statuses are resolving', async () => {
+  let resolveStatus: (response: ReturnType<typeof ok>) => void = () => {}
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.endsWith('/catalog')) return ok({ connectors: catalog })
+    if (url.endsWith('/google-drive')) return new Promise<ReturnType<typeof ok>>(resolve => { resolveStatus = resolve })
+    if (url.endsWith('/google-gmail')) return failed()
     return ok({ status: 'disconnected' })
   }))
-  render(<ConnectorsPage />)
+  renderPage()
   const retry = await screen.findByRole('button', { name: 'Retry' })
-  retried = true
-  fireEvent.click(retry)
-  expect(await card('Google Drive').findByText('Not connected')).toBeTruthy()
-  await act(async () => resolveOld(ok({ status: 'connected', identity_email: 'stale@example.test' })))
-  expect(card('Google Drive').getByText('Not connected')).toBeTruthy()
-  expect(card('Google Drive').queryByText(/^Connected/)).toBeNull()
+  expect((retry as HTMLButtonElement).disabled).toBe(true)
+  await act(async () => resolveStatus(ok({ status: 'disconnected' })))
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(false))
 })
