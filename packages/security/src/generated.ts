@@ -112,6 +112,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/password/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change the password of an account that already has one
+         * @description Verifies `currentPassword`, applies the password policy to `newPassword`, sets it, and revokes every OTHER session of the account (the calling session survives), matching the reset-confirm posture. Accounts with no password get `409 NO_PASSWORD` — send the user to `POST /v1/security/password` (set-first). Failed attempts are rate-limited (`429 RATE_LIMITED`).
+         */
+        post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/sessions": {
         parameters: {
             query?: never;
@@ -789,7 +809,7 @@ export interface paths {
         post?: never;
         /**
          * Remove an MFA factor
-         * @description Removes an enrolled factor. Idempotent.
+         * @description Removes an enrolled factor. Idempotent. Refused with `409 LAST_FACTOR` when it is the user's last active factor.
          */
         delete: operations["removeMfaFactor"];
         options?: never;
@@ -1523,6 +1543,13 @@ export interface components {
             /** @description The password to set; must satisfy the account password policy. */
             newPassword: string;
         };
+        /** @description Change the password of an account that already has one. */
+        ChangePasswordRequest: {
+            /** @description The account's current password (verified before the change). */
+            currentPassword: string;
+            /** @description The new password; must satisfy the account password policy. */
+            newPassword: string;
+        };
         /** @description One active session for the current user, describing the device/agent it was established from. `current: true` marks the session making the request. */
         SessionDevice: {
             /** @description Session id; pass to `DELETE /v1/security/sessions/{id}` to revoke. */
@@ -1742,7 +1769,7 @@ export interface components {
         ErrorBody: {
             error: string;
             /** @enum {string} */
-            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "UNKNOWN";
+            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "LAST_FACTOR" | "NO_PASSWORD" | "PASSWORD_POLICY" | "RATE_LIMITED" | "UNKNOWN";
         };
     };
     responses: {
@@ -2004,6 +2031,65 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /** @description A password sign-in method already exists on this account. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed; other sessions revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed body (`MALFORMED`), or `currentPassword` is wrong (`INVALID_CREDENTIALS`). Sessions are untouched. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The account has no password (`NO_PASSWORD`); use set-first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description `PASSWORD_POLICY` — the new password fails the password policy. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many failed attempts (`RATE_LIMITED`). */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3131,6 +3217,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description `LAST_FACTOR` — this is the user's last ACTIVE factor, so removing it would silently disable two-factor for the account. The factor is NOT removed. Add another method first. The count-and-delete is atomic, so two concurrent removals cannot both succeed. Pending (unactivated) factors can always be removed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     regenerateRecoveryCodes: {

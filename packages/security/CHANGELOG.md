@@ -1,5 +1,29 @@
 # Changelog — @fuzefront/security-client
 
+## 0.12.0 — Account: change password; MFA last-factor guard (unreleased)
+
+**Stacks on #1552** (which bumps the contract to 0.11.0 and adds `PASSWORD_POLICY`
+to `ErrorBody`). This branch is cut from master (0.10.1), so the `ErrorBody.code`
+enum edit and version lines will conflict trivially with #1552; resolve by
+keeping #1552's values plus `LAST_FACTOR`, `NO_PASSWORD`, `RATE_LIMITED`, and
+version 0.12.0. `SECURITY_CONTRACT_VERSION` 0.10.1 -> 0.12.0.
+
+### Added
+
+- `POST /v1/security/password/change` (`changePassword`), body
+  `ChangePasswordRequest { currentPassword, newPassword }`
+  (`additionalProperties: false`), bearer required. `204` on success and every
+  OTHER session is revoked; `400 INVALID_CREDENTIALS` wrong current password
+  (sessions untouched); `400 MALFORMED`; `401`; `409 NO_PASSWORD` (use set-first);
+  `422 PASSWORD_POLICY`; `429 RATE_LIMITED` (failed attempts).
+- `ErrorBody.code`: `LAST_FACTOR`, `NO_PASSWORD`, `PASSWORD_POLICY`, `RATE_LIMITED`.
+
+### Changed
+
+- `DELETE /v1/security/mfa/factors/{factorId}` documents `409 LAST_FACTOR`:
+  removing the user's last ACTIVE factor is refused (atomically) and the factor
+  survives. Pending factors can always be removed.
+
 ## 0.10.1 — AuthZ: document the platform-admin gate on tenant creation and the caller-scoped tenant list (documentation fix, unreleased)
 
 **Documentation only, no shape change.** `info.version` 0.10.0 -> 0.10.1,
