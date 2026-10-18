@@ -148,8 +148,10 @@ It directly inserts a row into `selection_list_access` (bypassing Permit) and as
 that the service still denies all requests from that user. This test REQUIRES a DB
 connection to the test database.
 
-If the DB connection is unavailable, the tests fail loudly with an FFRNT-242 gap message (not
-silently passed) - it means FFRNT-242 is not verified in that run.
+If the DB connection is unreachable, the tests **fail loudly** with a clear "test database
+unreachable" error (never silently skipped), so an unverified run can never report a false
+green. In CI, `selection-list-service-integration-tests` always provides a migrated Postgres,
+so this holds there.
 
 ### Both renderings of the injected row
 
