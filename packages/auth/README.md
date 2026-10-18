@@ -12,6 +12,9 @@ eventual federated-JWKS migration — is uniform across the family.
 > [`jose`](https://github.com/panva/jose) (one dependency covers HS256 today and
 > RS256/JWKS for the federated target).
 
+> **Python services:** use the peer package [`fuzefront-auth`](../auth-py) — same
+> `Identity` shape and error codes, with a Flask decorator and a FastAPI dependency.
+
 ## Install
 
 ```bash

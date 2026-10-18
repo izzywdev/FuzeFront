@@ -25,6 +25,11 @@ on:
         type: boolean
         required: false
         default: false
+      run_fuzepicker_mention:
+        description: 'Create a controlled FuzePicker email mention and publish its recipient-portal recording'
+        type: boolean
+        required: false
+        default: false
 
   # Called as a reusable workflow by prod-post-deploy.yml after each release
   workflow_call:
@@ -43,6 +48,11 @@ on:
         type: boolean
         required: false
         default: false
+      run_fuzepicker_mention:
+        description: 'Create a controlled FuzePicker email mention and publish its recipient-portal recording'
+        type: boolean
+        required: false
+        default: false
     secrets:
       POST_PROD_EMAIL:
         required: false
@@ -57,6 +67,10 @@ on:
       POST_PROD_ADMIN_EMAIL:
         required: false
       POST_PROD_ADMIN_PASSWORD:
+        required: false
+      POST_PROD_TEST_RECIPIENT_PASSWORD:
+        required: false
+      POST_PROD_TEST_RECIPIENT_ZOHO_APP_PASSWORD:
         required: false
 
 permissions:
@@ -105,6 +119,10 @@ jobs:
           # assertion; when unset that one test self-skips as missing coverage.
           POST_PROD_ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
           POST_PROD_ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
+          POST_PROD_TEST_RECIPIENT_EMAIL: tests@fuzefront.com
+          POST_PROD_TEST_RECIPIENT_PASSWORD: ${{ secrets.POST_PROD_TEST_RECIPIENT_PASSWORD }}
+          POST_PROD_TEST_RECIPIENT_ZOHO_APP_PASSWORD: ${{ secrets.POST_PROD_TEST_RECIPIENT_ZOHO_APP_PASSWORD }}
+          POST_PROD_RUN_FUZEPICKER_MENTION: ${{ inputs.run_fuzepicker_mention || false }}
         run: |
           cd frontend
           if [[ "$CONNECTORS_ONLY" == 'true' ]]; then
@@ -201,4 +219,13 @@ jobs:
           name: fuzex-post-prod-playwright-video
           path: frontend/test-results-post-prod/**/fuzex-workspace-smoke-*/video.webm
           if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload FuzePicker mention post-production video
+        if: ${{ always() && inputs.run_fuzepicker_mention }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzepicker-mention-post-prod-playwright-video
+          path: frontend/test-results-post-prod/**/fuzepicker-mention-*/video.webm
+          if-no-files-found: error
           retention-days: 30

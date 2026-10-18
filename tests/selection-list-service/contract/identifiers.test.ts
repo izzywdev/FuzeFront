@@ -16,16 +16,17 @@
 import { mintTestToken } from '../helpers/auth';
 import { rawFetch } from '../helpers/client';
 import { assertSchema } from '../helpers/openapi';
-import { closeDb, dbQuery } from '../helpers/db';
+import { canonicalAccessRows, closeDb, dbQuery } from '../helpers/db';
+import { canonicalUuid, testOrg, testUser } from '../helpers/ids';
 
 afterAll(async () => {
   await closeDb();
 });
 
-const ORG = 'org_01test0000000idents00000000';
-const OTHER_ORG = 'org_01test0000000idents00000001';
-const U1 = 'usr_01test0000000identsuser1000';
-const U2 = 'usr_01test0000000identsuser2000';
+const ORG = testOrg('idents');
+const OTHER_ORG = testOrg('idents00000001');
+const U1 = testUser('identsuser1');
+const U2 = testUser('identsuser2');
 const tok = (user: string, org = ORG, roles: string[] = []) => mintTestToken({ userId: user, organizationId: org, roles });
 const call = (method: string, path: string, body?: unknown, token = tok(U1)) =>
   rawFetch(path, { method, token, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -134,8 +135,8 @@ describe('2. cross-type confusion is rejected', () => {
       expect([400, 404]).toContain(res.status);
       expect(res.status).not.toBe(200);
     }
-    const grants = await dbQuery('SELECT user_id FROM selection_list_access WHERE list_id = $1', [listId]);
-    expect(grants.map((g) => g.user_id)).toEqual([U1]); // only the creator's owner grant exists
+    const grants = await canonicalAccessRows(listId);
+    expect(grants.map((g) => g.user_id)).toEqual([canonicalUuid(U1)]); // only the creator's owner grant exists
   });
 
   it('a well-formed but never-minted item id resolves to `missing` (200), not an error', async () => {
@@ -179,8 +180,8 @@ describe('3. knowing an id grants nothing', () => {
     const items = await dbQuery('SELECT code, status FROM selection_list_items WHERE list_id = $1', [bId]);
     expect(items).toHaveLength(1);
     expect(items[0].status).toBe('active');
-    const grants = await dbQuery('SELECT user_id, role FROM selection_list_access WHERE list_id = $1', [bId]);
-    expect(grants).toEqual([{ user_id: U2, role: 'list-owner' }]);
+    const grants = (await canonicalAccessRows(bId)).map(({ user_id, role }) => ({ user_id, role }));
+    expect(grants).toEqual([{ user_id: canonicalUuid(U2), role: 'list-owner' }]);
   });
 
   it('a caller in ANOTHER organization is denied with a 404 indistinguishable from "no such id" on every verb', async () => {
