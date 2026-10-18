@@ -142,8 +142,16 @@
       "sourcePath": "components/forms/PasswordChecklist.jsx"
     },
     {
+      "name": "PhoneNumberInput",
+      "sourcePath": "components/forms/PhoneNumberInput.jsx"
+    },
+    {
       "name": "SearchField",
       "sourcePath": "components/forms/SearchField.jsx"
+    },
+    {
+      "name": "SegmentedControl",
+      "sourcePath": "components/forms/SegmentedControl.jsx"
     },
     {
       "name": "Select",

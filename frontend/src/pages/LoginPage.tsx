@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
-import type { SessionResult } from '../services/api'
+import { invitePath, readPendingInvite } from '../lib/pendingInvite'
+import { mapAuthError } from '../lib/authErrors'
+import type { SessionResult, SocialProvider } from '../services/api'
 import { Alert, AuthCard } from '@fuzefront/design-system'
 import { AuthPanel } from '@fuzefront/auth-ui'
 import type {
@@ -41,53 +43,6 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 // nesting a card inside a card. `compact` renders just the form/social/toggle
 // innards, which is what belongs inside the page's own card.
 const PANEL_VARIANT = 'compact' as const
-
-/**
- * Reproduces the previous `handleCredentialsSubmit` catch block's error-message
- * taxonomy (timeout / provider-outage 503 / rejected-credentials 401 / network
- * / 500 / fallback) so AuthPanel — which just surfaces `Error.message` as-is —
- * shows the exact same wording as before. Kept here (not in AuthPanel) because
- * it is a mapping of THIS app's axios/Security-API error shapes, not a
- * generic UI concern.
- */
-function mapAuthError(err: any): string {
-  const isTimeout = err?.code === 'ECONNABORTED' || err?.name === 'CanceledError'
-  const isNetworkError = !isTimeout && (err?.code === 'NETWORK_ERROR' || !err?.response)
-  const status = err?.response?.status
-
-  if (isTimeout) {
-    // The request was bounded and did not answer in time — this is NOT "you
-    // typed the wrong password"; word it as a service condition.
-    return 'Sign-in is taking longer than expected — the service may be busy. Please try again.'
-  }
-  if (status === 503) {
-    // The Security API distinguishes a provider outage from a rejected
-    // credential (503 PROVIDER_UNAVAILABLE vs 401) — say the true thing and
-    // nothing else, never mention credentials.
-    return err?.response?.data?.code === 'PROVIDER_UNAVAILABLE'
-      ? 'The sign-in service is temporarily unavailable. Your details are fine — please try again in a moment.'
-      : err?.response?.data?.error ||
-          'The sign-in service is temporarily unavailable. Please try again in a moment.'
-  }
-  if (status === 401) {
-    // Genuinely means "these credentials were rejected" (outage moved to 503
-    // above). Deliberately doesn't name WHICH field is wrong.
-    return 'Incorrect email or password. Please try again.'
-  }
-  if (isNetworkError) {
-    return (
-      (err?.message || 'Authentication failed') +
-      ' (Network connection failed — check if the service is running)'
-    )
-  }
-  if (status === 500) {
-    return (
-      (err?.response?.data?.error || err?.message || 'Authentication failed') +
-      ' (Server error — please try again shortly)'
-    )
-  }
-  return err?.response?.data?.error || err?.message || 'Authentication failed'
-}
 
 function LoginPage() {
   const { t } = useLanguage()
@@ -140,9 +95,16 @@ function LoginPage() {
       setUser(user)
       const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
       window.sessionStorage.removeItem('fuzepicker:return-path')
-      window.location.href = returnPath?.startsWith('/fuzepicker/mentions')
-        ? returnPath
-        : '/dashboard'
+      // Org invitations v2: an invitee who left /invitations/:token to sign in
+      // (or came back from a social provider) is returned to it so the accept
+      // flow auto-binds. Only the v2 accept page ever writes the pending token,
+      // so with the flag OFF this is inert. Only an in-app path is built from it.
+      const pendingInvite = readPendingInvite()
+      window.location.href = pendingInvite
+        ? invitePath(pendingInvite)
+        : returnPath?.startsWith('/fuzepicker/mentions')
+          ? returnPath
+          : '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
       setCallbackError('Signed in, but failed to load your profile. Please retry.')
@@ -203,7 +165,9 @@ function LoginPage() {
         }
       },
       getAuthMethods: () => authAPI.getAuthMethods(),
-      startSocial: provider => authAPI.startSocialLogin(provider),
+      // `facebook` is not in the frozen contract's SocialProvider yet; the panel
+      // only offers it when the server advertises it, so the cast is the seam.
+      startSocial: provider => authAPI.startSocialLogin(provider as SocialProvider),
     }),
     []
   )

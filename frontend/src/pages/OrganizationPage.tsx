@@ -5,6 +5,8 @@ import { getActiveAuthToken } from '../lib/accounts'
 import { PermissionGate } from '../components/PermissionGate'
 import { OrganizationSettings } from '../components/OrganizationSettings'
 import { IdentityPage } from '@fuzefront/identity-ui'
+import { useFlag } from '../platform/featureFlags'
+import { INVITE_V2_FLAG } from '../lib/inviteV2Flag'
 import {
   getOrganizations,
   getOrganizationMembers,
@@ -54,6 +56,8 @@ interface OrganizationMember {
 function OrganizationPage() {
   const { user } = useCurrentUser()
   const navigate = useNavigate()
+  // Org invitations v2 (FFRNT-309), default OFF — see OrganizationDetailPage.
+  const inviteV2Enabled = useFlag(INVITE_V2_FLAG, false)
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
   const [members, setMembers] = useState<OrganizationMember[]>([])
@@ -522,6 +526,8 @@ function OrganizationPage() {
                 // unauthenticated and 401s (the whole Members tab was broken).
                 // Mirror AccountSecurityPage / FuzeChatWidget.
                 getToken={() => getActiveAuthToken()}
+                organizationName={currentOrg.name}
+                invitationsV2={inviteV2Enabled}
                 onMembersChange={() => loadMembers(currentOrg.id)}
               />
             ))}

@@ -506,6 +506,31 @@ flags:
     epic: FF-EPIC-17
     story: S5
 
+  - key: fuzefront.identity.invite-v2
+    type: release
+    default: false
+    description: >
+      Gates the Org invitations v2 UI (FFRNT-309, epic FFRNT-304,
+      design/frames/org-invitations-v2/**): the Members-tab invite dialog
+      (invitee kind · email/WhatsApp channel · role · employee/customer member
+      type), the cursor-paginated pending-invitations panel, the accept -> sign
+      up -> auto-bind page (incl. Facebook sign-up), and the root-org customer
+      invite surface (`/root/customers`). Flag OFF => the v1 invite modal,
+      v1 pending list and v1 accept page render unchanged. UI ships dark and
+      releases together with the backend toggle for the v2 invitation endpoints.
+    owner: frontend-engineer (identity, FFRNT-309)
+    removal_criterion: >
+      Delete once org invitations v2 is at 100% rollout and stable, the v1
+      invite modal / v1 pending list / v1 AcceptInvitePage branch are removed,
+      and the flag-OFF path is no longer exercised in prod.
+    gates:
+      - "IdentityPage (OrganizationDetailPage / OrganizationPage) invite dialog + pending panel"
+      - "AcceptInvitePage v2 path (/invitations/:token)"
+      - "/root/customers RootCustomersPage"
+    web_exposed: true
+    jira: FFRNT-309
+    epic: FFRNT-304
+
   - key: fuzefront.identity.prefixed-ids
     type: release
     default: false

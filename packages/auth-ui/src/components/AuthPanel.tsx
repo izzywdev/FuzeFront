@@ -7,7 +7,8 @@ import type {
   AuthPanelMode,
 } from '../types'
 import { DEFAULT_AUTH_LABELS } from '../types'
-import { GoogleGlyph } from './GoogleGlyph'
+import { SocialButton } from './SocialButton'
+import type { SocialProviderSlug } from '../types'
 
 /**
  * Fallback capability descriptor — rendered immediately so the form is never
@@ -47,6 +48,9 @@ export function AuthPanel({
   onMfaRequired,
   social = true,
   labels: labelOverrides,
+  bindToken,
+  emailHint,
+  hideModeToggle = false,
 }: AuthPanelProps) {
   const labels = { ...DEFAULT_AUTH_LABELS, ...labelOverrides }
   const [mode, setMode] = useState<AuthPanelMode>(initialMode)
@@ -78,7 +82,15 @@ export function AuthPanel({
   }, [])
 
   const passwordEnabled = authMethods.password !== false
-  const socialEnabled = social && Boolean(transport.startSocial) && authMethods.social.includes('google')
+  // `authMethods.social` is typed from the frozen contract (`google` only today);
+  // widen to string so a server that advertises `facebook` lights the button
+  // without a contract bump — and one that doesn't keeps it hidden.
+  const advertised: readonly string[] = authMethods.social
+  const providers: SocialProviderSlug[] =
+    social && transport.startSocial
+      ? (['google', 'facebook'] as const).filter((p) => advertised.includes(p))
+      : []
+  const socialEnabled = providers.length > 0
 
   const toggleMode = () => {
     setMode((m) => (m === 'signin' ? 'signup' : 'signin'))
@@ -98,6 +110,7 @@ export function AuthPanel({
           password,
           firstName: firstName || undefined,
           lastName: lastName || undefined,
+          ...(bindToken ? { bindToken } : {}),
         })
         onAuthenticated(session)
         return
@@ -118,13 +131,13 @@ export function AuthPanel({
     }
   }
 
-  const handleGoogle = () => {
+  const handleSocial = (provider: SocialProviderSlug) => {
     if (!transport.startSocial) return
-    setPending('google')
+    setPending(provider)
     setError('')
     setNotice('')
     transport
-      .startSocial('google')
+      .startSocial(provider)
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : undefined
         setError(message || 'Failed to start sign-in')
@@ -181,7 +194,13 @@ export function AuthPanel({
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
             autoComplete="email"
             required
+            aria-describedby={emailHint ? 'fzf-auth-email-hint' : undefined}
           />
+          {emailHint && (
+            <p id="fzf-auth-email-hint" className="fzf-auth-panel__email-hint">
+              {emailHint}
+            </p>
+          )}
 
           <Input
             id="fzf-auth-password"
@@ -212,27 +231,32 @@ export function AuthPanel({
             <span className="fzf-auth-panel__divider-label">{labels.orDivider}</span>
             <SeamDivider style={{ flex: 1 }} />
           </div>
-          <button
-            type="button"
-            className="fzf-auth-panel__google-button"
-            onClick={handleGoogle}
-            disabled={loading}
-            aria-label={labels.googleCta}
-          >
-            <GoogleGlyph />
-            {pending === 'google' ? labels.googlePending : labels.googleCta}
-          </button>
+          {providers.map((provider) => {
+            const idle = provider === 'google' ? labels.googleCta : labels.facebookCta
+            const busy = provider === 'google' ? labels.googlePending : labels.facebookPending
+            return (
+              <SocialButton
+                key={provider}
+                provider={provider}
+                label={pending === provider ? busy : idle}
+                disabled={loading}
+                onClick={() => handleSocial(provider)}
+              />
+            )
+          })}
         </div>
       )}
 
-      <div className="fzf-auth-panel__toggle">
-        <p className="fzf-auth-panel__toggle-prompt">
-          {mode === 'signin' ? labels.toggleToSignUpPrompt : labels.toggleToSignInPrompt}
-        </p>
-        <Button type="button" variant="secondary" fullWidth disabled={loading} onClick={toggleMode}>
-          {mode === 'signin' ? labels.toggleToSignUpCta : labels.toggleToSignInCta}
-        </Button>
-      </div>
+      {!hideModeToggle && (
+        <div className="fzf-auth-panel__toggle">
+          <p className="fzf-auth-panel__toggle-prompt">
+            {mode === 'signin' ? labels.toggleToSignUpPrompt : labels.toggleToSignInPrompt}
+          </p>
+          <Button type="button" variant="secondary" fullWidth disabled={loading} onClick={toggleMode}>
+            {mode === 'signin' ? labels.toggleToSignUpCta : labels.toggleToSignInCta}
+          </Button>
+        </div>
+      )}
     </div>
   )
 

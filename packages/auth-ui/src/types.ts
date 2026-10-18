@@ -25,7 +25,21 @@ export interface SignupRequest {
   password: string
   firstName?: string
   lastName?: string
+  /**
+   * Single-use invitation bind token (`InvitationEnrollResponse.bindToken`).
+   * When present the server verifies the signup identity matches the invited
+   * identity and auto-binds the membership as part of signup (FFRNT-309).
+   */
+  bindToken?: string
 }
+
+/**
+ * Social providers this panel can render a button for. The frozen contract's
+ * `SocialProvider` enum is still `google` only (security-client 0.10.2); Facebook
+ * is shown ONLY when the server's `getAuthMethods().social` advertises it, so it
+ * stays hidden (fail-closed) until the backend ships the provider.
+ */
+export type SocialProviderSlug = 'google' | 'facebook'
 
 /**
  * The injection seam between `AuthPanel` and a host app's real transport
@@ -38,8 +52,8 @@ export interface AuthTransport {
   login(req: LoginRequest): Promise<SessionResult>
   signup(req: SignupRequest): Promise<AuthenticatedSession>
   getAuthMethods(): Promise<AuthMethods>
-  /** Only called when present — the Google button is hidden entirely otherwise. */
-  startSocial?(provider: 'google'): Promise<void>
+  /** Only called when present — the social buttons are hidden entirely otherwise. */
+  startSocial?(provider: SocialProviderSlug): Promise<void>
 }
 
 /** Which sign-in mode the panel starts in / can toggle to. */
@@ -63,6 +77,8 @@ export interface AuthLabels {
   signUpPending: string
   googleCta: string
   googlePending: string
+  facebookCta: string
+  facebookPending: string
   orDivider: string
   toggleToSignUpPrompt: string
   toggleToSignUpCta: string
@@ -86,6 +102,8 @@ export const DEFAULT_AUTH_LABELS: AuthLabels = {
   signUpPending: 'Creating account…',
   googleCta: 'Sign in with Google',
   googlePending: 'Redirecting to Google…',
+  facebookCta: 'Sign in with Facebook',
+  facebookPending: 'Redirecting to Facebook…',
   orDivider: 'or',
   toggleToSignUpPrompt: "Don't have an account?",
   toggleToSignUpCta: 'Sign up',
@@ -97,7 +115,7 @@ export const DEFAULT_AUTH_LABELS: AuthLabels = {
 }
 
 /** Which sign-in action is in flight — per-action so only the clicked control shows its own pending label. */
-export type PendingAction = 'credentials' | 'google' | null
+export type PendingAction = 'credentials' | SocialProviderSlug | null
 
 export interface AuthPanelProps {
   /** `full` (default) wraps in `CenteredCard` for a standalone page; `compact` renders just the form. */
@@ -114,4 +132,14 @@ export interface AuthPanelProps {
   social?: boolean
   /** Override any subset of the default copy. */
   labels?: Partial<AuthLabels>
+  /**
+   * Invitation bind token (from `POST /invitations/{token}/accept` → `202`).
+   * Forwarded on every `transport.signup(...)` so the server auto-binds the
+   * invited membership; the panel never interprets it.
+   */
+  bindToken?: string
+  /** Helper text under the email field (e.g. "Use the address this invite was sent to — u***@example.com"). */
+  emailHint?: string
+  /** Hide the sign-in/sign-up toggle (a dedicated sign-up surface, e.g. invitation accept). */
+  hideModeToggle?: boolean
 }

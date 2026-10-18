@@ -1,4 +1,6 @@
 export { AuthPanel } from './components/AuthPanel'
+export { SocialButton } from './components/SocialButton'
+export type { SocialButtonProps } from './components/SocialButton'
 
 export type {
   AuthPanelProps,
@@ -13,5 +15,6 @@ export type {
   AuthMethods,
   LoginRequest,
   SignupRequest,
+  SocialProviderSlug,
 } from './types'
 export { DEFAULT_AUTH_LABELS } from './types'
