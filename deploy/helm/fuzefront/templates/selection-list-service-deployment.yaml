@@ -44,6 +44,14 @@ spec:
               value: "production"
             - name: PORT
               value: {{ .Values.selectionListService.port | quote }}
+            # @fuzefront/telemetry (initTelemetry() in src/index.ts) reads this
+            # standard OTel env var for its OTLP exporter target. Without it the
+            # package falls back to packages/telemetry's docker-compose default
+            # (`otel-collector:4317`), which has no in-cluster DNS entry — spans
+            # fail to export silently and nothing reaches Tempo/Grafana. See
+            # values.yaml's selectionListService.otel.endpoint comment.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.selectionListService.otel.endpoint | quote }}
             {{- /*
             Data-tier identity: this service has its OWN database
             (selectionListService.dbName) and its OWN login role

@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 import pino from 'pino';
 import type { DestinationStream, Logger } from 'pino';
 import type { Request, Response, NextFunction } from 'express';
+import { withTraceContext, type TraceBearingRequest } from '@fuzefront/telemetry';
 
 declare global {
   namespace Express {
@@ -142,12 +143,22 @@ function pathOf(req: Request): string {
  * (info; error for 5xx). A 4xx is a normal answer, not a degradation, so it is
  * not escalated. Health probes log at debug so kubelet polling does not drown
  * the story.
+ *
+ * Also binds `trace_id`/`span_id` (via `@fuzefront/telemetry`'s
+ * `withTraceContext`) when the request carries them — set by
+ * `tracingMiddleware()`, mounted BEFORE this in app.ts. This is additive: an
+ * untraced request (tracing not initialized, or the middleware not mounted)
+ * still logs normally with just `reqId`. See `@fuzefront/telemetry`'s own
+ * `docs/TRACE_CONTRACT.md` for the full contract.
  */
 export function createRequestLogger(root: Logger = logger) {
   return function requestLogger(req: Request, res: Response, next: NextFunction): void {
     const reqId = resolveReqId(req.headers['x-request-id']);
     const path = pathOf(req);
-    const log = root.child({ reqId, method: req.method, route: path });
+    const log = withTraceContext(
+      root.child({ reqId, method: req.method, route: path }),
+      req as unknown as TraceBearingRequest,
+    );
     req.reqId = reqId;
     req.log = log;
     res.setHeader('x-request-id', reqId);
