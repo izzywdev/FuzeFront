@@ -127,19 +127,23 @@ export const logger = pino({
 
 // §9: tracingMiddleware() sets req.traceId/req.spanId from an inbound
 // traceparent (or starts a new trace) — it never touches x-request-id or
-// req.reqId, so mounting it alongside this middleware is additive, not a
-// header-precedence fight. See @izzywdev/fuzefront-telemetry's own docs.
-import { tracingMiddleware, withTraceContext } from '@izzywdev/fuzefront-telemetry';
-app.use(tracingMiddleware());
+// req.reqId, so it is additive to this middleware, not a header-precedence
+// fight. This module only exports the logger and requestLogger; it does NOT
+// import `app`. Mount both in the application bootstrap, tracing FIRST (see §9):
+//   app.use(tracingMiddleware());   // before requestLogger
+//   app.use(requestLogger);
+import { withTraceContext } from '@izzywdev/fuzefront-telemetry';
 
 // request middleware — bind a per-request child logger with a correlation id
 import { randomUUID } from 'crypto';
 export function requestLogger(req, res, next) {
   const reqId = (req.headers['x-request-id'] as string) ?? randomUUID();
   req.reqId = reqId;
-  // withTraceContext binds trace_id (+ span_id) alongside reqId when the
-  // request was traced; for an untraced request it returns the reqId-only
-  // child logger unchanged — never throws, never drops the reqId binding.
+  // withTraceContext binds trace_id (+ span_id) alongside reqId when
+  // tracingMiddleware() ran earlier and set req.traceId; when it did not (middleware
+  // not mounted on this route) it returns the reqId-only child logger unchanged —
+  // never throws, never drops the reqId binding. It does NOT validate the ids: see
+  // §9 "Initialization" for the all-zero id you get if initTelemetry() was skipped.
   req.log = withTraceContext(logger.child({ reqId, route: req.path, method: req.method }), req);
   req.log.info('request received');
   res.on('finish', () =>
@@ -184,9 +188,10 @@ if (user.hasPassword === null) {
 ```
 
 ```ts
+// app bootstrap (where `app` is created) — NOT in the logger module
 import { tracingMiddleware, withTraceContext } from '@izzywdev/fuzefront-telemetry';
 
-app.use(tracingMiddleware());                 // sets req.traceId / req.spanId
+app.use(tracingMiddleware());                 // FIRST: sets req.traceId / req.spanId
 
 app.use((req, res, next) => {
   const reqId = (req.headers['x-request-id'] as string) ?? randomUUID();
@@ -197,7 +202,15 @@ app.use((req, res, next) => {
 
 **Why this doesn't fight the `reqId` convention above.** `tracingMiddleware()` owns exactly one header (`traceparent`, W3C format) and exactly two fields (`req.traceId`/`req.spanId`) — it never reads or writes `req.reqId`, `req.requestId`, or `x-request-id`. If a caller sends both `x-request-id` and `traceparent`, both are honored independently; there is no precedence question because neither middleware inspects the other's header. Mount **`tracingMiddleware()` BEFORE** any logger that calls `withTraceContext()`, as in §8's reference implementation — order DOES matter here: `withTraceContext()` reads `req.traceId`/`req.spanId` off the request at the moment it's called to bind them onto the child logger, so if the logger middleware runs first, it sees neither field yet and produces an uncorrelated logger that `tracingMiddleware()` populating those fields afterward cannot retrofit.
 
-**Backend (Node/Express):** `initTelemetry({ serviceName })` once per process (bootstraps the OTel SDK, OTLP export to FuzeInfra's Collector — never Tempo/Loki directly), then `tracingMiddleware()` + `withTraceContext()` as above. **Browser:** `initBrowserTelemetry({ serviceName })` in the app's bootstrap entry point — it also stamps outgoing `fetch`/`XHR` calls with `traceparent` so the backend's `tracingMiddleware()` continues the SAME trace, and `tagWithTraceContext()`/`getActiveTraceId()` let you tag a client-side error log with the active trace id, mirroring `withTraceContext` for the browser.
+**Backend (Node/Express):** `initTelemetry({ serviceName })` once per process (bootstraps the OTel SDK, OTLP export to FuzeInfra's Collector — never Tempo/Loki directly), then `tracingMiddleware()` + `withTraceContext()` as above. **Browser:** `initBrowserTelemetry({ serviceName })` in the app's bootstrap entry point — it also stamps outgoing `fetch`/`XHR` calls with `traceparent` so the backend's `tracingMiddleware()` continues the SAME trace (see "Cross-origin calls" below for the one condition), and `tagWithTraceContext()`/`getActiveTraceId()` let you tag a client-side error log with the active trace id, mirroring `withTraceContext` for the browser.
+
+**Initialization — what has to be true for the fields to be real.**
+- **`initTelemetry()` must run before the modules it instruments are loaded.** Its `http`/`express` auto-instrumentation patches modules at require time, so a call placed in the entrypoint *after* `import express from 'express'` (static ESM imports execute first) silently misses spans. Use a preload (`node --require ./telemetry-bootstrap.js server.js`) or a tiny bootstrap entrypoint that calls `initTelemetry()` and only then `await import('./app')`. "Once per process" is necessary but not sufficient.
+- **Do not mount `tracingMiddleware()` without `initTelemetry()`.** Without an SDK the no-op tracer returns an all-zero, invalid trace id; `tracingMiddleware()` still assigns it to `req.traceId`, and `withTraceContext()` only checks that the string is non-empty, so every log line is stamped with a `trace_id`/`span_id` that resolves to nothing in Tempo and hides the missing initialization. `isValidTraceId` from `@opentelemetry/api` is how to check one.
+- **`span_id` is the request's server span, not the active span.** `withTraceContext()` copies `req.spanId` once, when the request logger is built. A line emitted inside a manual or instrumented child span still carries the parent request span's `span_id`. Use `trace_id` to jump from Loki to Tempo; treat `span_id` as "which request span", not span-level correlation inside a handler.
+- **Expect two server spans per request today.** `initTelemetry()` registers `HttpInstrumentation`, which already creates an inbound server span, and `tracingMiddleware()` then starts its own `SERVER` span (the one whose ids are logged). This is a known property of the package, not something a service can avoid by following this recipe; account for it when reading Tempo topology or counting request spans.
+
+**Cross-origin calls (browser).** `initBrowserTelemetry()` stamps `traceparent` only on requests to `propagateTraceHeaderCorsUrls`, which defaults to **`window.location.origin` alone**. A browser calling an API on another origin does not propagate the trace by default, and the backend starts a separate one. For a cross-origin API pass its origin(s) — `initBrowserTelemetry({ serviceName, propagateTraceHeaderCorsUrls: [apiOrigin] })` — and allow the `traceparent` request header in that API's CORS config (`Access-Control-Allow-Headers`), or the preflight will fail.
 
 **Package naming:** the canonical source lives in `izzywdev/FuzeFront`'s `packages/telemetry/` as `@fuzefront/telemetry` (that repo's internal workspace scope); it publishes to GitHub Packages as **`@izzywdev/fuzefront-telemetry`** via FuzeFront's own scope-rename publish step — install the published name in any OTHER repo: `npm install @izzywdev/fuzefront-telemetry`. Full contract (transport, env resolution, sampling, reference implementation): `izzywdev/FuzeFront`'s `packages/telemetry/README.md` and `packages/telemetry/docs/TRACE_CONTRACT.md`.
 
