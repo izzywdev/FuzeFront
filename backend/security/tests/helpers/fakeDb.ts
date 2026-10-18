@@ -52,7 +52,7 @@ class Query {
   whereRaw(sql: string, params: any[] = []): this {
     if (/LOWER\(email\) = \?/.test(sql)) {
       this.preds.push(r => String(r.email ?? '').toLowerCase() === params[0])
-    } else if (/\(created_at, id\) < \(\?, \?\)/.test(sql)) {
+    } else if (/\(created_at, id\) < \(\?(::timestamptz)?, \?(::uuid)?\)/.test(sql)) {
       this.preds.push(r => cmp(r.created_at, new Date(params[0])) < 0 || (cmp(r.created_at, new Date(params[0])) === 0 && r.id < params[1]))
     } else if (/status = 'expired' OR/.test(sql)) {
       this.preds.push(r => r.status === 'expired' || (r.status === 'pending' && cmp(r.expires_at, new Date()) <= 0))
@@ -61,8 +61,9 @@ class Query {
     }
     return this
   }
-  select(...cols: string[]): this {
-    this.cols = cols.flat()
+  select(...cols: any[]): this {
+    // '*' (+ raw expressions the fake does not evaluate) => whole row.
+    this.cols = cols.some(c => c === '*' || typeof c !== 'string') ? null : cols.flat()
     return this
   }
   orderBy(col: string, dir: 'asc' | 'desc' = 'asc'): this {
@@ -152,7 +153,8 @@ export class FakeDb {
   }
   /** knex-callable facade */
   fn = Object.assign((table: string) => new Query(this, table), {
-    raw: async (sql: string, params: any[] = []) => this.raw(sql, params),
+    raw: (sql: string, params: any[] = []) =>
+      /AS created_at_cursor/.test(sql) ? { __rawSelect: true } : this.rawAsync(sql, params),
     transaction: async (cb: (trx: any) => Promise<any>) => {
       const snapshot = clone(this.tables)
       try {
@@ -163,6 +165,9 @@ export class FakeDb {
       }
     },
   })
+  private async rawAsync(sql: string, params: any[]) {
+    return this.raw(sql, params)
+  }
   private raw(sql: string, params: any[]) {
     if (/UPDATE organization_invitations/.test(sql) && /SET status\s*=\s*'accepted'/.test(sql)) {
       const row = this.tables.organization_invitations.find(

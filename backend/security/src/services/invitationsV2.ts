@@ -212,12 +212,13 @@ export function parseListLimit(raw: unknown): number {
 }
 
 interface CursorKey {
-  c: string // created_at (ISO)
+  c: string // created_at (ISO, MICROsecond precision — see listInvitations)
   i: string // id (uuid) — tiebreaker
 }
 
 export function encodeCursor(createdAt: Date | string, id: string): string {
-  const c = (createdAt instanceof Date ? createdAt : new Date(createdAt)).toISOString()
+  // A string is already the DB's microsecond-precision rendering; a Date is ms.
+  const c = typeof createdAt === 'string' ? createdAt : createdAt.toISOString()
   return Buffer.from(JSON.stringify({ c, i: id } satisfies CursorKey)).toString('base64url')
 }
 
@@ -227,6 +228,7 @@ export function decodeCursor(cursor: string): CursorKey {
     if (
       !isPlainObject(parsed) ||
       typeof parsed.c !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/.test(parsed.c) ||
       Number.isNaN(Date.parse(parsed.c)) ||
       typeof parsed.i !== 'string' ||
       !/^[0-9a-f-]{36}$/i.test(parsed.i)
@@ -594,9 +596,16 @@ export async function listInvitations(
   if (opts.cursor) {
     const k = decodeCursor(opts.cursor)
     // Keyset (created_at DESC, id DESC): gap/dupe-free under concurrent writes.
-    q = q.whereRaw('(created_at, id) < (?, ?)', [k.c, k.i])
+    q = q.whereRaw('(created_at, id) < (?::timestamptz, ?::uuid)', [k.c, k.i])
   }
+  // The cursor timestamp MUST keep Postgres' microsecond precision: a JS Date
+  // truncates to ms, which would make rows that tie within one millisecond
+  // skip/duplicate across a page boundary. So the DB renders it as text.
   const fetched: any[] = await q
+    .select(
+      '*',
+      db.raw(`to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_cursor`)
+    )
     .orderBy('created_at', 'desc')
     .orderBy('id', 'desc')
     .limit(opts.limit + 1)
@@ -606,7 +615,7 @@ export async function listInvitations(
   return {
     rows,
     hasMore,
-    nextCursor: hasMore && last ? encodeCursor(last.created_at, last.id) : null,
+    nextCursor: hasMore && last ? encodeCursor(last.created_at_cursor ?? last.created_at, last.id) : null,
   }
 }
 
