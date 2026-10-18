@@ -101,25 +101,31 @@ jobs:
           # enables the production environment, and upserts a 100% flexibleRollout
           # strategy (skips adding a duplicate if one already exists).
           enable_ga() {
-            local FLAG="$1" DESC="$2"
-            echo "=== $FLAG ==="
+            local FLAG="$1" DESC="$2" TYPE="${3:-release}"
+            echo "=== $FLAG ($TYPE) ==="
 
-            # 1. Create (idempotent — 409 is fine)
+            # 1. Create (idempotent — 409 is fine). TYPE defaults to release;
+            #    pass kill-switch for ops kill-switches so a create (only taken
+            #    when the flag is ABSENT) records the correct Unleash type.
             STATUS=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST \
               "$UNLEASH/api/admin/projects/$PROJECT/features" \
               -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-              -d "{\"name\":\"$FLAG\",\"type\":\"release\",\"description\":\"$DESC\"}")
+              -d "{\"name\":\"$FLAG\",\"type\":\"$TYPE\",\"description\":\"$DESC\"}")
             if echo "$STATUS" | grep -qE '^(201|409)$'; then
               echo "  create: ok ($STATUS)"
             else
               echo "  create: FAILED ($STATUS)"; cat /tmp/resp.json; return 1
             fi
 
-            # 2. Enable the production environment
-            curl -sfX POST \
+            # 2. Enable the production environment (fail loudly — a 5xx/network
+            #    error here must not be swallowed, or the flag reports success
+            #    while staying OFF).
+            if ! curl -sfX POST \
               "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/on" \
-              -H "Authorization: $TOKEN" \
-              && echo "  environment on: ok"
+              -H "Authorization: $TOKEN"; then
+              echo "::error title=prod-unleash-ops::environment enable FAILED for $FLAG"; return 1
+            fi
+            echo "  environment on: ok"
 
             # 3. Add 100% flexibleRollout only if one does not already exist.
             #    (Re-POSTing creates a duplicate strategy; PATCH the existing one instead.)
@@ -140,11 +146,13 @@ jobs:
             if [ "$EXISTING" = "exists" ]; then
               echo "  100% strategy: already present, skipping"
             else
-              curl -sfX POST \
+              if ! curl -sfX POST \
                 "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/strategies" \
                 -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-                -d "{\"name\":\"flexibleRollout\",\"parameters\":{\"rollout\":\"100\",\"stickiness\":\"default\",\"groupId\":\"$FLAG\"}}" \
-                && echo "  100% strategy added: ok"
+                -d "{\"name\":\"flexibleRollout\",\"parameters\":{\"rollout\":\"100\",\"stickiness\":\"default\",\"groupId\":\"$FLAG\"}}"; then
+                echo "::error title=prod-unleash-ops::strategy add FAILED for $FLAG"; return 1
+              fi
+              echo "  100% strategy added: ok"
             fi
             echo ""
           }
@@ -315,9 +323,21 @@ jobs:
           #    (build-with-agent / creator-ownership / marketplace-publishing)
           #    activate; selection-lists.seed-defaults at 100% seeds default
           #    lists into every org. All are reversible via the env `off` path.
-          ALL_FLAGS="fuzefront.apps.org-context-disabled fuzefront.apps.org-context-hidden fuzefront.apps.build-with-agent fuzefront.apps.creator-ownership fuzefront.apps.marketplace-publishing fuzefront.authz.chat-agent-security-api fuzefront.account-security.hub fuzefront.billing.invoice-history fuzefront.platform.multi-tenant-portals fuzefront.platform.portal-domains fuzefront.platform.portals-directory fuzefront.platform.config-management fuzefront.app-registry.v1-registry-write fuzefront.app-registry.kafka-events-kill-switch fuzefront.apps.portal-catalog fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.identity.root-membership fuzefront.identity.personal-context fuzefront.identity.member-directory fuzefront.identity.prefixed-ids fuzefront.identity.employee-console fuzefront.devportal.enabled fuzefront.identity.portal-scoped-users fuzefront.billing.reseller-connect"
+          # The 23 release flags (the two ops-kill-switches are handled
+          # separately below so their create records type=kill-switch).
+          ALL_FLAGS_RELEASE="fuzefront.apps.org-context-hidden fuzefront.apps.build-with-agent fuzefront.apps.creator-ownership fuzefront.apps.marketplace-publishing fuzefront.authz.chat-agent-security-api fuzefront.account-security.hub fuzefront.billing.invoice-history fuzefront.platform.multi-tenant-portals fuzefront.platform.portal-domains fuzefront.platform.portals-directory fuzefront.platform.config-management fuzefront.app-registry.v1-registry-write fuzefront.apps.portal-catalog fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.identity.root-membership fuzefront.identity.personal-context fuzefront.identity.member-directory fuzefront.identity.prefixed-ids fuzefront.identity.employee-console fuzefront.devportal.enabled fuzefront.identity.portal-scoped-users fuzefront.billing.reseller-connect"
           apply_all_flags() {
-            for F in $ALL_FLAGS; do
+            # Two ops-kill-switches first, created with type=kill-switch. ON is
+            # their SAFE/normal state (org-context-disabled ON = normal gating;
+            # kafka-events-kill-switch ON = app-registry events emitted), so
+            # enabling them to 100% keeps them healthy.
+            enable_ga "fuzefront.apps.org-context-disabled" \
+              "Ops kill-switch. ON = normal org-context gating (SAFE/normal state). Bulk GA via all-flags set (owner-directed 2026-10-18)." \
+              "kill-switch"
+            enable_ga "fuzefront.app-registry.kafka-events-kill-switch" \
+              "Ops kill-switch. ON = app-registry Kafka events emitted (SAFE/normal state). Bulk GA via all-flags set (owner-directed 2026-10-18)." \
+              "kill-switch"
+            for F in $ALL_FLAGS_RELEASE; do
               enable_ga "$F" "Bulk GA via all-flags set (owner-directed 2026-10-18): all production flags to 100%."
             done
           }
@@ -365,9 +385,14 @@ jobs:
           echo "=== Verification ==="
           check_flag() {
             local FLAG="$1"
-            curl -sf \
+            # Remove any prior response so a failed fetch can't read a stale file
+            # from the previous flag and report the wrong state.
+            rm -f /tmp/flag_state.json
+            if ! curl -sf \
               "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT" \
-              -H "Authorization: $TOKEN" -o /tmp/flag_state.json 2>/dev/null || true
+              -H "Authorization: $TOKEN" -o /tmp/flag_state.json 2>/dev/null; then
+              echo "  $FLAG: UNREACHABLE (fetch failed)"; return 0
+            fi
             ENABLED=$(python3 -c "
           import json
           try:
