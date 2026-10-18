@@ -235,6 +235,23 @@ inputs:
       false AVAILABILITY/quota error (issue #418).
     required: false
     default: 'fuze-agent'
+  bot-name:
+    description: >-
+      Passed through verbatim as claude-code-action `bot_name`, the git author name
+      its `configureGitAuth` step stamps on commits. claude-code-action OVERWRITES
+      any `git config user.name` a caller set earlier in the job, so the only way
+      to attribute commits to a non-default identity (e.g. the least-privilege
+      `fuzeoneagent` coder) is to pass it here. Defaults to claude-code-action's
+      own default so a caller that does not set it is unchanged.
+    required: false
+    default: 'claude[bot]'
+  bot-id:
+    description: >-
+      Passed through verbatim as claude-code-action `bot_id` (the numeric GitHub
+      user id behind the `<id>+<name>@users.noreply.github.com` author email).
+      Pair with `bot-name`; defaults to claude-code-action's own default.
+    required: false
+    default: '41898282'
   additional-permissions:
     description: >-
       Passed through verbatim as claude-code-action `additional_permissions`
@@ -446,6 +463,8 @@ runs:
         claude_args: ${{ inputs.claude-args }}
         show_full_output: ${{ inputs.show-full-output }}
         allowed_bots: ${{ inputs.allowed-bots }}
+        bot_name: ${{ inputs.bot-name }}
+        bot_id: ${{ inputs.bot-id }}
         additional_permissions: ${{ inputs.additional-permissions }}
         settings: ${{ inputs.settings }}
 
@@ -619,6 +638,8 @@ runs:
         claude_args: ${{ inputs.claude-args }}
         show_full_output: ${{ inputs.show-full-output }}
         allowed_bots: ${{ inputs.allowed-bots }}
+        bot_name: ${{ inputs.bot-name }}
+        bot_id: ${{ inputs.bot-id }}
         additional_permissions: ${{ inputs.additional-permissions }}
         settings: ${{ inputs.settings }}
 
