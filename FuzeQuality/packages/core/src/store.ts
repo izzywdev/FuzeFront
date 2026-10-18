@@ -1328,7 +1328,7 @@ export class PostgresCatalogStore implements CatalogStore {
     for (const item of evaluations) await this.pool.query(
       `INSERT INTO fuzequality.policy_gate_evaluations (id,repository_id,tenant_id,revision,kind,severity,title,detail,policy_artifact_ids,gate_artifact_ids,confidence,scope,evidence_passages,remediation_action,recommendation,review_status,reviewed_at,created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-       ON CONFLICT (repository_id,revision,kind,policy_artifact_ids,gate_artifact_ids) DO UPDATE SET title=EXCLUDED.title,severity=EXCLUDED.severity,detail=EXCLUDED.detail,confidence=EXCLUDED.confidence,scope=EXCLUDED.scope,evidence_passages=EXCLUDED.evidence_passages,remediation_action=EXCLUDED.remediation_action,recommendation=EXCLUDED.recommendation`,
+       ON CONFLICT ON CONSTRAINT policy_gate_evaluations_artifact_identity_key DO UPDATE SET title=EXCLUDED.title,severity=EXCLUDED.severity,detail=EXCLUDED.detail,confidence=EXCLUDED.confidence,scope=EXCLUDED.scope,evidence_passages=EXCLUDED.evidence_passages,remediation_action=EXCLUDED.remediation_action,recommendation=EXCLUDED.recommendation`,
       [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.severity,item.title,item.detail,JSON.stringify([...item.policyArtifactIds].sort()),JSON.stringify([...item.gateArtifactIds].sort()),item.confidence,JSON.stringify(item.scope),JSON.stringify(item.evidencePassages ?? []),item.remediationAction,item.recommendation,item.reviewStatus,item.reviewedAt ?? null,item.createdAt],
     )
   }
