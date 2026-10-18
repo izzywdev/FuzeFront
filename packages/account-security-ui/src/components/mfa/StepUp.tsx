@@ -1,0 +1,518 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button, OtpInput, Skeleton, Spinner, StatusCallout } from '@fuzefront/design-system'
+import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
+import type { MfaFactorRef, MfaFactorType, MfaSession, StepUpClient } from '../../types'
+import {
+  Actions,
+  FlowPage,
+  FlowRoot,
+  Hint,
+  InlineError,
+  SeamCard,
+  useSecurityClient,
+  type FlowBaseProps,
+} from '../common/flowKit'
+import { FACTOR_ICON, factorName } from './factorMeta'
+
+/** Seconds a delivered code stays valid / before "resend" re-enables. */
+const EXPIRY_SECONDS = 300
+const RESEND_COOLDOWN_SECONDS = 30
+
+type Variant = 'desktop' | 'mobile'
+type Choice = MfaFactorRef | { type: 'recovery'; factorId?: undefined }
+
+export interface MfaStepUpProps extends FlowBaseProps {
+  /** The `mfa_required` challenge from login / social exchange. */
+  challenge: { challengeId: string; factors?: MfaFactorRef[] }
+  /** Optional: fetch the factor list when `challenge.factors` is absent (shows loading / error). */
+  loadFactors?: () => Promise<MfaFactorRef[]>
+  /** The authenticated session minted by a successful verification. */
+  onAuthenticated: (session: MfaSession) => void
+  /** Zero-factors fail-closed state: route the user to support. */
+  onContactSupport?: () => void
+  /** Offer the "Recovery code" option. DEFAULT OFF — the Security contract has no recovery-code step-up yet. */
+  recoveryEnabled?: boolean
+  onBack?: () => void
+}
+
+function formatClock(totalSeconds: number): string {
+  const s = Math.max(0, totalSeconds)
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** Counts down once a second from `from`; restart by changing `key`. */
+function useCountdown(from: number, key: unknown, active: boolean): number {
+  const [left, setLeft] = useState(from)
+  useEffect(() => {
+    setLeft(from)
+    if (!active) return
+    const id = setInterval(() => setLeft((n) => (n > 0 ? n - 1 : 0)), 1000)
+    return () => clearInterval(id)
+  }, [from, key, active])
+  return left
+}
+
+// ── FactorPicker ────────────────────────────────────────────────────────────
+
+export function FactorPicker({
+  factors,
+  recoveryEnabled,
+  onChoose,
+  variant = 'desktop',
+}: {
+  factors: MfaFactorRef[]
+  recoveryEnabled?: boolean
+  onChoose: (choice: Choice) => void
+  variant?: Variant
+}) {
+  const { messages: m, dir } = useAccountSecurityI18n()
+  const desc = (t: MfaFactorType): string =>
+    t === 'sms' ? m.stepUp.smsDesc : t === 'email' ? m.stepUp.emailDesc : m.stepUp.totpDesc
+  // Offer only what the server lists. SMS / email appear only when enrolled.
+  const offered = factors.filter((f) => f.type === 'totp' || f.type === 'sms' || f.type === 'email')
+  const touch = variant === 'mobile'
+  const row = (
+    key: string,
+    attrs: Record<string, string | undefined>,
+    icon: string,
+    title: string,
+    sub: string,
+    action: () => void
+  ) => (
+    <button
+      key={key}
+      type="button"
+      onClick={action}
+      {...attrs}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-3)',
+        width: '100%',
+        minHeight: touch ? 'calc(var(--touch-target) + var(--space-4))' : 'var(--touch-target)',
+        textAlign: 'start',
+        padding: 'var(--space-3) var(--space-4)',
+        background: 'var(--bg-secondary)',
+        color: 'var(--text-primary)',
+        border: '1px solid var(--border-color)',
+        borderRadius: 'var(--radius-md)',
+        cursor: 'pointer',
+        fontFamily: 'var(--font-sans)',
+        fontSize: 'var(--text-md)',
+      }}
+    >
+      <span aria-hidden="true">{icon}</span>
+      <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <b style={{ fontWeight: 'var(--weight-semibold)' }}>{title}</b>
+        <small style={{ color: 'var(--text-tertiary)' }}>{sub}</small>
+      </span>
+      <span aria-hidden="true">{dir === 'rtl' ? '‹' : '›'}</span>
+    </button>
+  )
+  return (
+    <div
+      data-component="factor-picker"
+      style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}
+    >
+      {offered.map((f) =>
+        row(
+          f.factorId,
+          { 'data-factor': f.type, 'data-factor-id': f.factorId, 'data-action': 'challenge' },
+          FACTOR_ICON[f.type],
+          factorName(m, f.type),
+          desc(f.type),
+          () => onChoose(f)
+        )
+      )}
+      {recoveryEnabled &&
+        row('recovery', { 'data-factor': 'recovery', 'data-action': 'use-recovery' }, FACTOR_ICON.recovery, factorName(m, 'recovery'), m.stepUp.recoveryDesc, () =>
+          onChoose({ type: 'recovery' })
+        )}
+      <Hint style={{ margin: 0 }}>{m.stepUp.onlyEnrolled}</Hint>
+    </div>
+  )
+}
+
+// ── MfaChallengeCard (code entry) ───────────────────────────────────────────
+
+type CodeStatus = 'idle' | 'verifying' | 'error-invalid' | 'error-delivery'
+
+export function MfaChallengeCard({
+  factor,
+  status,
+  delivered,
+  onVerify,
+  onResend,
+  onChooseFactor,
+  variant = 'desktop',
+}: {
+  factor: Choice
+  status: CodeStatus
+  /** A code was dispatched (sms / email) → show expiry + resend cooldown. */
+  delivered: boolean
+  onVerify: (code: string) => void
+  onResend: () => void
+  onChooseFactor?: () => void
+  variant?: Variant
+}) {
+  const { messages: m } = useAccountSecurityI18n()
+  const [code, setCode] = useState('')
+  const [resendKey, setResendKey] = useState(0)
+  const expiresIn = useCountdown(EXPIRY_SECONDS, resendKey, delivered)
+  const cooldown = useCountdown(RESEND_COOLDOWN_SECONDS, resendKey, delivered)
+  const mobile = variant === 'mobile'
+  const recovery = factor.type === 'recovery'
+  const needed = recovery ? 8 : 6
+
+  // Hooks differ per frame: desktop → data-component/mfa-challenge, mobile → data-panel/enter-code.
+  const frameAttrs = mobile
+    ? { 'data-panel': 'enter-code', 'data-state': status === 'idle' ? 'idle' : status, 'data-factor': factor.type }
+    : {
+        'data-component': 'mfa-challenge',
+        'data-state': status === 'idle' ? (factor.type === 'totp' ? 'totp-prompt' : 'code-prompt') : status,
+        'data-factor': factor.type,
+      }
+
+  if (status === 'error-delivery') {
+    return (
+      <SeamCard {...frameAttrs}>
+        <h2 style={{ margin: '0 0 var(--space-2)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
+          {m.stepUp.deliveryTitle}
+        </h2>
+        <Hint>{m.stepUp.deliveryText}</Hint>
+        <Actions style={{ flexDirection: 'column' }}>
+          <Button variant="primary" data-action="challenge" onClick={onResend}>
+            {m.stepUp.resend}
+          </Button>
+          {onChooseFactor && (
+            <Button variant="ghost" data-action="choose-factor" onClick={onChooseFactor}>
+              {m.stepUp.useAnother}
+            </Button>
+          )}
+        </Actions>
+      </SeamCard>
+    )
+  }
+
+  const prompt =
+    status === 'error-invalid'
+      ? m.stepUp.invalidPrompt
+      : recovery
+        ? m.stepUp.recoveryPrompt
+        : delivered
+          ? factor.type === 'email'
+            ? m.stepUp.sentPromptEmail
+            : m.stepUp.sentPromptSms
+          : mobile
+            ? m.stepUp.totpPromptShort
+            : m.stepUp.totpPrompt
+
+  return (
+    <SeamCard {...frameAttrs}>
+      <h2 style={{ margin: '0 0 var(--space-2)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
+        {m.stepUp.codeTitle}
+      </h2>
+      <Hint>{prompt}</Hint>
+      <OtpInput
+        length={needed}
+        numeric={!recovery}
+        value={code}
+        onChange={setCode}
+        error={status === 'error-invalid'}
+        disabled={status === 'verifying'}
+        size={mobile ? 'touch' : 'md'}
+        aria-label={recovery ? m.stepUp.recoveryLabel : m.stepUp.codeLabel}
+        autoFocus
+      />
+      {status === 'error-invalid' && <InlineError data-error="invalid-code">{m.stepUp.invalid}</InlineError>}
+      {delivered && (
+        <>
+          <div data-value="expires-in" style={{ marginBlockStart: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+            {m.stepUp.expiresIn.replace('{time}', formatClock(expiresIn))}
+          </div>
+          <div
+            data-state={cooldown > 0 ? 'cooldown' : 'ready'}
+            style={{ marginBlockStart: 'var(--space-2)', fontSize: 'var(--text-sm)' }}
+          >
+            <a
+              href="#resend"
+              data-action="resend"
+              aria-disabled={cooldown > 0 ? 'true' : 'false'}
+              onClick={(e) => {
+                e.preventDefault()
+                if (cooldown > 0) return
+                setResendKey((k) => k + 1)
+                onResend()
+              }}
+              style={{
+                color: cooldown > 0 ? 'var(--text-tertiary)' : 'var(--accent-color)',
+                pointerEvents: cooldown > 0 ? 'none' : 'auto',
+              }}
+            >
+              {m.stepUp.resendIn}
+            </a>{' '}
+            {cooldown > 0 && m.stepUp.resendCooldown.replace('{time}', formatClock(cooldown))}
+          </div>
+        </>
+      )}
+      <Actions style={{ flexDirection: 'column' }}>
+        <Button
+          variant="primary"
+          fullWidth
+          data-action="verify-mfa"
+          onClick={() => onVerify(code)}
+          disabled={status === 'verifying' || code.length < needed}
+          aria-busy={status === 'verifying' || undefined}
+          leadingIcon={status === 'verifying' ? <Spinner size={16} label={m.stepUp.verifying} /> : undefined}
+        >
+          {status === 'verifying'
+            ? m.stepUp.verifying
+            : status === 'error-invalid'
+              ? m.stepUp.tryAgain
+              : mobile
+                ? m.stepUp.verifyShort
+                : m.stepUp.verify}
+        </Button>
+        {onChooseFactor && (
+          <Button variant="ghost" fullWidth data-action="choose-factor" onClick={onChooseFactor} disabled={status === 'verifying'}>
+            {m.stepUp.useDifferent}
+          </Button>
+        )}
+      </Actions>
+    </SeamCard>
+  )
+}
+
+// ── Orchestrator ────────────────────────────────────────────────────────────
+
+type FactorsState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; factors: MfaFactorRef[] }
+
+type Step =
+  | { name: 'choose' }
+  | { name: 'code'; factor: Choice; delivered: boolean; code: CodeStatus }
+
+/**
+ * Login MFA step-up (desktop frame 05 `/login/mfa`; mobile frames 01-02 at
+ * 375px). Driven by the `mfa_required` challenge. FAIL-CLOSED throughout:
+ *  - a wrong / expired code stays on screen with an inline error (never navigates);
+ *  - the verify button disables while in flight (no double-submit);
+ *  - a delivery failure (sms / email) offers resend and other methods;
+ *  - zero factors → a "contact support" state, never a dead end or a guess;
+ *  - a failed factor-list load offers retry only (no silent factor choice).
+ */
+export function MfaStepUpFlow(props: MfaStepUpProps & { variant?: Variant }) {
+  return (
+    <FlowRoot locale={props.locale}>
+      <StepUpInner {...props} />
+    </FlowRoot>
+  )
+}
+
+/** Mobile (375px / TWA) step-up: touch-sized OTP cells and the mobile frame hooks. */
+export function MfaStepUpMobileFlow(props: MfaStepUpProps) {
+  return <MfaStepUpFlow {...props} variant="mobile" />
+}
+
+function StepUpInner({
+  challenge,
+  loadFactors,
+  onAuthenticated,
+  onContactSupport,
+  recoveryEnabled = false,
+  onBack,
+  client,
+  getToken,
+  variant = 'desktop',
+}: MfaStepUpProps & { variant?: Variant }) {
+  const { messages: m } = useAccountSecurityI18n()
+  const api = useSecurityClient<StepUpClient>(client, getToken)
+  const mobile = variant === 'mobile'
+  const [factorsState, setFactorsState] = useState<FactorsState>(
+    challenge.factors ? { status: 'ready', factors: challenge.factors } : { status: 'loading' }
+  )
+  const [step, setStep] = useState<Step>({ name: 'choose' })
+  const inFlight = useRef(false)
+  const alive = useRef(true)
+
+  const loadList = useCallback(async () => {
+    if (!loadFactors) {
+      setFactorsState({ status: 'ready', factors: [] })
+      return
+    }
+    setFactorsState({ status: 'loading' })
+    try {
+      const factors = await loadFactors()
+      if (alive.current) setFactorsState({ status: 'ready', factors })
+    } catch {
+      if (alive.current) setFactorsState({ status: 'error' })
+    }
+  }, [loadFactors])
+
+  useEffect(() => {
+    alive.current = true
+    if (!challenge.factors) void loadList()
+    return () => {
+      alive.current = false
+    }
+  }, [challenge.factors, loadList])
+
+  // Desktop frame: land directly on the authenticator prompt when TOTP is enrolled.
+  const startedRef = useRef(false)
+  useEffect(() => {
+    if (startedRef.current || mobile || factorsState.status !== 'ready') return
+    const totp = factorsState.factors.find((f) => f.type === 'totp')
+    if (totp) {
+      startedRef.current = true
+      setStep({ name: 'code', factor: totp, delivered: false, code: 'idle' })
+    }
+  }, [factorsState, mobile])
+
+  const choose = useCallback(
+    async (choice: Choice) => {
+      if (choice.type === 'recovery' || choice.type === 'totp') {
+        setStep({ name: 'code', factor: choice, delivered: false, code: 'idle' })
+        return
+      }
+      // sms / email: ask the server to dispatch a code first.
+      try {
+        const ack = await api.challengeMfa(challenge.challengeId, choice.factorId)
+        const delivered = ack?.delivered !== false
+        setStep({ name: 'code', factor: choice, delivered, code: delivered ? 'idle' : 'error-delivery' })
+      } catch {
+        setStep({ name: 'code', factor: choice, delivered: false, code: 'error-delivery' })
+      }
+    },
+    [api, challenge.challengeId]
+  )
+
+  const verify = useCallback(
+    async (factor: Choice, delivered: boolean, code: string) => {
+      if (!factor.factorId) {
+        // Recovery-code step-up has no contract operation yet (see recoveryEnabled):
+        // fail closed rather than send a request the server cannot honour.
+        setStep({ name: 'code', factor, delivered, code: 'error-invalid' })
+        return
+      }
+      if (inFlight.current) return
+      inFlight.current = true
+      setStep({ name: 'code', factor, delivered, code: 'verifying' })
+      try {
+        const session = await api.verifyMfa(challenge.challengeId, factor.factorId, code)
+        onAuthenticated(session)
+      } catch (err) {
+        // Wrong / expired code, expired challenge, or a server fault: all fail closed on this screen.
+        void err
+        setStep({ name: 'code', factor, delivered, code: 'error-invalid' })
+      } finally {
+        inFlight.current = false
+      }
+    },
+    [api, challenge.challengeId, onAuthenticated]
+  )
+
+  const title = step.name === 'choose' ? m.stepUp.chooseTitle : m.stepUp.codeTitle
+  const wrapAttrs = mobile
+    ? { 'data-frame': step.name === 'choose' ? '01-choose-factor' : '02-enter-code', 'data-viewport': '375' }
+    : { 'data-frame': '05-step-up-challenge', 'data-route': '/login/mfa' }
+
+  let body: React.ReactNode
+  if (step.name === 'code') {
+    body = (
+      <MfaChallengeCard
+        variant={variant}
+        factor={step.factor}
+        status={step.code}
+        delivered={step.delivered}
+        onVerify={(code) => void verify(step.factor, step.delivered, code)}
+        onResend={() => void choose(step.factor)}
+        onChooseFactor={() => setStep({ name: 'choose' })}
+      />
+    )
+  } else if (factorsState.status === 'loading') {
+    body = (
+      <div
+        data-panel={mobile ? 'choose-factor' : undefined}
+        data-state="loading"
+        aria-busy="true"
+        role="status"
+        aria-label={m.stepUp.loadingLabel}
+        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}
+      >
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} width="100%" height="var(--space-12)" radius="var(--radius-md)" />
+        ))}
+      </div>
+    )
+  } else if (factorsState.status === 'error') {
+    body = (
+      <div data-panel={mobile ? 'choose-factor' : undefined} data-state="error">
+        <StatusCallout
+          tone="error"
+          icon="!"
+          title={m.stepUp.errorTitle}
+          actions={
+            <Button variant="primary" data-action="retry" onClick={() => void loadList()}>
+              {m.stepUp.retry}
+            </Button>
+          }
+        >
+          {m.stepUp.errorText}
+        </StatusCallout>
+      </div>
+    )
+  } else if (factorsState.factors.length === 0) {
+    body = (
+      <div data-panel={mobile ? 'choose-factor' : undefined} data-state="empty">
+        <StatusCallout
+          tone="warning"
+          icon="🛟"
+          title={m.stepUp.emptyTitle}
+          actions={
+            <Button variant="ghost" data-action="contact-support" onClick={onContactSupport}>
+              {m.stepUp.contactSupport}
+            </Button>
+          }
+        >
+          {m.stepUp.emptyText}
+        </StatusCallout>
+      </div>
+    )
+  } else {
+    const picker = (
+      <FactorPicker
+        variant={variant}
+        factors={factorsState.factors}
+        recoveryEnabled={recoveryEnabled}
+        onChoose={(c) => void choose(c)}
+      />
+    )
+    body = mobile ? (
+      <div data-panel="choose-factor" data-state="loaded">
+        <Hint>{m.stepUp.chooseSubtitle}</Hint>
+        {picker}
+      </div>
+    ) : (
+      <SeamCard data-component="mfa-challenge" data-state="choose-factor">
+        <h2 style={{ margin: '0 0 var(--space-2)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
+          {m.stepUp.chooseTitle}
+        </h2>
+        <Hint>{m.stepUp.chooseSubtitle}</Hint>
+        {picker}
+      </SeamCard>
+    )
+  }
+
+  return (
+    <FlowPage title={title} maxWidth={mobile ? '100%' : 'var(--container-2xl)'} {...wrapAttrs}>
+      {onBack && step.name === 'choose' && (
+        <Button variant="ghost" data-action="back" onClick={onBack}>
+          {m.stepUp.back}
+        </Button>
+      )}
+      {body}
+    </FlowPage>
+  )
+}
