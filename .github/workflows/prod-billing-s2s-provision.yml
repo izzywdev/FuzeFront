@@ -261,8 +261,8 @@ jobs:
             kubeseal --cert /tmp/sealed-secrets-cert.pem \
               --raw --namespace fuzefront --name billing-secrets --scope strict)
 
-          echo "sealed_id=$SEALED_ID"         >> "$GITHUB_OUTPUT"
-          echo "sealed_secret=$SEALED_SECRET" >> "$GITHUB_OUTPUT"
+          printf 'sealed_id=%s\n'     "$(printf '%s' "$SEALED_ID"     | tr -d '\n')" >> "$GITHUB_OUTPUT"
+          printf 'sealed_secret=%s\n' "$(printf '%s' "$SEALED_SECRET" | tr -d '\n')" >> "$GITHUB_OUTPUT"
           echo "Sealing complete."
 
       - name: Patch billing-secrets.yaml
