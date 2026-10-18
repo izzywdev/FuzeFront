@@ -197,6 +197,33 @@ describe('app-registry manifest validation', () => {
     expect(r.success).toBe(false)
   })
 
+  it('accepts only explicitly declared public mobile distribution links', () => {
+    const result = appManifestSchema.safeParse({
+      ...baseManifest,
+      distribution: {
+        appleAppStoreUrl: 'https://apps.apple.com/app/id123456789',
+        googlePlayUrl: 'https://play.google.com/store/apps/details?id=com.example.app',
+        apkUrl: 'https://github.com/example/app/releases/latest/download/app.apk',
+      },
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('keeps mobile distribution closed to unknown destinations', () => {
+    expect(
+      appManifestSchema.safeParse({
+        ...baseManifest,
+        distribution: { apkUrl: 'https://example.com/app.apk', invented: 'nope' },
+      }).success
+    ).toBe(false)
+    expect(
+      appManifestSchema.safeParse({
+        ...baseManifest,
+        distribution: { apkUrl: 'javascript:alert(1)' },
+      }).success
+    ).toBe(false)
+  })
+
   // The same-origin remoteEntry shape (`/apps/<slug>/assets/remoteEntry.js`)
   // exists so an in-cluster remote is proxied by the host ingress instead of
   // hairpinning back through the public edge. "Starts with a slash" is NOT the

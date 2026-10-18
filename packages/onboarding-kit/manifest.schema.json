@@ -80,6 +80,9 @@
     "infra": {
       "$ref": "#/$defs/Infra"
     },
+    "distribution": {
+      "$ref": "#/$defs/Distribution"
+    },
     "visibility": {
       "$ref": "#/$defs/Visibility"
     },
@@ -205,6 +208,9 @@
         },
         "infra": {
           "$ref": "#/$defs/Infra"
+        },
+        "distribution": {
+          "$ref": "#/$defs/Distribution"
         },
         "visibility": {
           "$ref": "#/$defs/Visibility"
@@ -608,6 +614,31 @@
           "type": "boolean",
           "default": true,
           "description": "Deployed via the FuzeInfra GitOps pipeline"
+        }
+      }
+    },
+    "Distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Public installation destinations for a product's native mobile build. Omit a field until that exact store listing or APK is publicly available; clients must never synthesize download URLs from a product name.",
+      "properties": {
+        "appleAppStoreUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Public Apple App Store product URL."
+        },
+        "googlePlayUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Public Google Play Store product URL."
+        },
+        "apkUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Direct public Android APK URL, normally the product's latest GitHub Release asset."
         }
       }
     }

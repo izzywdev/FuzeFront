@@ -22,10 +22,11 @@
 import { rawFetch } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
 import { QUOTA_USER_TEST_ORG_ID, QUOTA_STORAGE_TEST_ORG_ID } from '../helpers/global-setup';
+import { testUser } from '../helpers/ids';
 
-const USER_A = 'usr_01test00000000qusera000000';
-const USER_B = 'usr_01test00000000quserb000000';
-const USER_S = 'usr_01test00000000storag000000';
+const USER_A = testUser('qusera');
+const USER_B = testUser('quserb');
+const USER_S = testUser('storag');
 
 const tokenFor = (userId: string, orgId: string) => () => mintTestToken({ userId, organizationId: orgId });
 const rand = () => Math.random().toString(16).slice(2, 8);

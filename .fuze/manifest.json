@@ -132,7 +132,6 @@
         "spec": "services/selection-list-service/openapi.yaml",
         "overrides": "deploy/helm/fuzefront/files/mcp-tools-selection-lists.overrides.yaml",
         "deployment": "deploy/helm/fuzefront/templates/selection-list-service-mcp-gateway.yaml",
-        "enabledWhen": "selectionListService.enabled && selectionListsMcp.enabled",
         "endpoints": {
           "sse": "/sse",
           "messages": "/messages",
