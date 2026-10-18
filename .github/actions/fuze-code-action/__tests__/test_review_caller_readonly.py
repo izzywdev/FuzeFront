@@ -170,6 +170,151 @@ class TestReviewCallerReadOnly(unittest.TestCase):
                           f"key no longer keeps it out of a read-only reviewer")
 
 
+VENDOR_USES = ("openai/", "google-github-actions/")
+VENDOR_RUN = re.compile(r"@openai/codex|@google/gemini-cli|codex_subscription_review|\bcodex\s+(exec|login)\b|\bgemini\s+-")
+
+
+def is_vendor_step(step):
+    """A step that installs or executes a non-Anthropic vendor, found by what it DOES
+    (the action it uses / the command it runs), not by its id or name."""
+    return str(step.get("uses", "")).startswith(VENDOR_USES) or bool(VENDOR_RUN.search(str(step.get("run", ""))))
+
+
+_REF = re.compile(r"\b(inputs|steps)\.([\w.-]+)")
+_OTHER_VALUES = {"inputs": ("", "x", "true", "false"), "steps": ("", "1", "true", "false", "success", "failure")}
+
+
+def _walk(node, env, cond):
+    """Evaluate a parsed rung condition by walking a WHITELIST of AST nodes; no eval()."""
+    import ast
+    if isinstance(node, ast.Expression):
+        return _walk(node.body, env, cond)
+    if isinstance(node, ast.BoolOp):
+        vals = (_walk(v, env, cond) for v in node.values)
+        return all(vals) if isinstance(node.op, ast.And) else any(vals)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not _walk(node.operand, env, cond)
+    if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], (ast.Eq, ast.NotEq)):
+        eq = _walk(node.left, env, cond) == _walk(node.comparators[0], env, cond)
+        return eq if isinstance(node.ops[0], ast.Eq) else not eq
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, bool)):
+        return node.value
+    if isinstance(node, ast.Name) and node.id in env:
+        return env[node.id]
+    raise AssertionError(f"unsupported expression in rung condition: {cond!r}")
+
+
+def true_assignments(cond):
+    """Assignments (review-only='true' fixed) under which a GitHub `if:` is truthy.
+
+    Supports only what the action's rung conditions use: `inputs.*` / `steps.*` refs,
+    string literals, ==, !=, &&, ||, parentheses and always(). Anything else raises, so a
+    new construct fails the test instead of being read as 'never true'. The condition is
+    parsed with `ast` and evaluated by a whitelist walker, never by eval()."""
+    import ast
+    import itertools
+    expr = re.sub(r"\btrue\b(?!')", "True", re.sub(r"\bfalse\b(?!')", "False", " ".join(cond.split())))
+    expr = expr.replace("always()", "True")
+    if re.search(r"[A-Za-z_]\w*\s*\(|!(?!=)|\$\{\{", _REF.sub("", expr).replace("True", "").replace("False", "")):
+        raise AssertionError(f"unsupported expression in rung condition: {cond!r}")
+    names = {}
+    def _name(m):
+        return names.setdefault(m.group(0), f"_r{len(names)}")
+    py = _REF.sub(_name, expr).replace("&&", " and ").replace("||", " or ")
+    try:
+        tree = ast.parse(py, mode="eval")
+    except SyntaxError as exc:
+        raise AssertionError(f"unparseable rung condition: {cond!r}") from exc
+    refs = sorted(set(names) - {"inputs.review-only"})
+    # Candidate values = the usual ones PLUS every literal the condition itself compares
+    # against, so a gate on a value nobody listed (e.g. code == '2') cannot hide.
+    literals = tuple(sorted(set(re.findall(r"'([^']*)'", expr))))
+    pools = [tuple(dict.fromkeys(_OTHER_VALUES[r.split(".")[0]] + literals)) for r in refs]
+    out = []
+    for combo in itertools.product(*pools):
+        V = dict(zip(refs, combo))
+        V["inputs.review-only"] = "true"
+        env = {names[k]: v for k, v in V.items() if k in names}
+        if _walk(tree, env, cond):
+            out.append(V)
+    return out
+
+
+class TestReviewOnlyOptIn(unittest.TestCase):
+    """fuze-code-review.yml opts into `review-only`, and that can never become a no-op.
+
+    An unknown `with:` input is only a GitHub warning, so if the action ever lost the
+    `review-only` input the caller's `review-only: 'true'` would silently stop turning
+    the Codex/OpenAI/Gemini fallover ladder off. fuze-code-action is FuzeSDLC-managed
+    (a re-render resets it), and fuze-code-review.yml carries no `fuze:managed` marker
+    (so neither governance-sync nor gate-workflow-drift would notice it drifting); this
+    file is neither, so it is where the opt-in is pinned.
+    """
+
+    def _review_steps(self):
+        doc = _load(os.path.join(WORKFLOWS, REVIEW_WORKFLOW))
+        return [s for j in doc["jobs"].values() for s in j["steps"]
+                if str(s.get("uses", "")).startswith("./.github/actions/fuze-code-action")]
+
+    def test_caller_passes_review_only_true(self):
+        steps = self._review_steps()
+        self.assertTrue(steps, "no fuze-code-action step in the review workflow")
+        for s in steps:
+            self.assertEqual(str((s.get("with") or {}).get("review-only")), "true",
+                             "fuze-code-review.yml must pass review-only: 'true'")
+
+    def test_action_declares_review_only_input(self):
+        inputs = _load(ACTION)["inputs"]
+        self.assertIn("review-only", inputs,
+                      "the action lost its review-only input: the caller's opt-in is now a silent no-op")
+        self.assertEqual(str(inputs["review-only"].get("default")), "false")
+
+    def test_vendor_keys_are_withheld_under_review_only(self):
+        # Bound to the `llm` step's own `with:` fields, with exact equality, so swapped
+        # vendor mappings or the expression sitting in some unrelated step cannot pass.
+        steps = {s.get("id"): s for s in _load(ACTION)["runs"]["steps"] if s.get("id")}
+        with_ = steps["llm"]["with"]
+        for vendor in ("openai", "gemini"):
+            self.assertEqual(
+                " ".join(str(with_[f"fallback-{vendor}-key"]).split()),
+                "${{ inputs.review-only != 'true' && inputs.%s-api-key || '' }}" % vendor,
+                f"fallback-{vendor}-key must withhold ONLY the {vendor} key under review-only; the "
+                f"inverted `review-only == 'true' && '' || key` always yields the key ('' is falsy)")
+
+    def test_no_vendor_step_can_run_under_review_only(self):
+        # EVALUATE each vendor step's `if` with review-only fixed to 'true' and every other
+        # input / step output / outcome it reads taken over all plausible values. A step
+        # that can still be true on any assignment would run a vendor for a read-only
+        # reviewer (the caller does supply codex-auth-json). Matching guard text instead
+        # would pass `(codex-auth-json != '' || review-only != 'true')`.
+        steps = _load(ACTION)["runs"]["steps"]
+        vendor = [s for s in steps if is_vendor_step(s)]
+        self.assertGreaterEqual(len(vendor), 4,
+                                "found too few vendor steps (codex install/run, openai, gemini); "
+                                "the discovery rules in is_vendor_step() are stale")
+        for s in vendor:
+            cond = str(s.get("if", "")).strip()
+            self.assertTrue(cond, f"vendor step {s.get('id') or s.get('name')!r} has no `if` at all")
+            self.assertEqual(true_assignments(cond), [],
+                             f"vendor step {s.get('id') or s.get('name')!r} can run under review-only: {cond}")
+
+    def test_condition_evaluator_is_not_vacuous(self):
+        self.assertEqual(true_assignments("inputs.review-only != 'true'"), [])
+        self.assertEqual(true_assignments("inputs.a != '' && inputs.review-only != 'true'"), [])
+        # The malformed shapes review flagged must be caught, not matched by substring.
+        self.assertTrue(true_assignments("(inputs.codex-auth-json != '' || inputs.review-only != 'true')"))
+        self.assertTrue(true_assignments("steps.x.outputs.code == '1'"))
+        # A literal nobody listed in advance must still be tried.
+        self.assertTrue(true_assignments("steps.guard.outputs.code == '2' || inputs.review-only != 'true'"))
+        self.assertTrue(true_assignments("steps.a.outcome == 'skipped' || inputs.review-only != 'true'"))
+        # Boolean-valued step outputs / inputs are real values too.
+        self.assertTrue(true_assignments("steps.guard.outputs.enabled == 'true' || inputs.review-only != 'true'"))
+        self.assertTrue(true_assignments("always() && inputs.review-only == 'true'"))
+        # Unsupported syntax must fail loudly rather than be treated as 'never true'.
+        with self.assertRaises(AssertionError):
+            true_assignments("contains(inputs.a, 'b')")
+
+
 PRE_FIX_STEP = {
     "uses": "./.github/actions/fuze-code-action",
     "with": {
