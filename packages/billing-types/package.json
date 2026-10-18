@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "description": "Canonical billing plan tier types shared across billing-service, backend, and frontend",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
   },
   "scripts": {
+    "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
