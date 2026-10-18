@@ -407,6 +407,24 @@ export interface DataTableProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export function DataTable(props: DataTableProps): React.JSX.Element;
 
+// ----- QrCode (data) -----
+/**
+ * QR code renderer for a precomputed module matrix (the caller owns the
+ * encoder). Always dark-on-light so it scans in either theme.
+ */
+export interface QrCodeProps extends Omit<React.SVGAttributes<SVGSVGElement>, "children"> {
+  /** `modules[row][col] === true` is a dark module. Square matrix. */
+  modules: boolean[][];
+  /** Accessible name. Default "QR code". */
+  label?: string;
+  /** CSS size (width = height). Default a 168px token expression. */
+  size?: string;
+  /** Quiet-zone width in modules. Default 4 (the QR spec minimum). */
+  quietZone?: number;
+}
+
+export function QrCode(props: QrCodeProps): React.JSX.Element | null;
+
 // ----- SortableList (data) -----
 export interface SortableListProps<T = unknown>
   extends Omit<React.HTMLAttributes<HTMLUListElement>, "children"> {
@@ -749,6 +767,50 @@ export interface InputProps
 
 export function Input(props: InputProps): React.JSX.Element;
 
+// ----- OtpInput (forms) -----
+/**
+ * Segmented one-time-code input (one cell per digit). Paste-aware, auto-advance,
+ * arrow/backspace navigation, `autocomplete="one-time-code"`. Digits always
+ * render left-to-right, even in an RTL page.
+ */
+export interface OtpInputProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "defaultValue"> {
+  /** Number of cells. Default 6. */
+  length?: number;
+  /** Controlled value (the digits entered so far). */
+  value?: string;
+  /** Initial value when uncontrolled. */
+  defaultValue?: string;
+  /**
+   * Fires with the current code on every edit. `complete` is true only when every cell is
+   * filled — a cleared middle cell leaves a blank inside the value (`"12 456"`), so
+   * `value.length` alone is NOT a completeness test.
+   */
+  onChange?: (value: string, complete: boolean) => void;
+  /** Fires once every cell is filled. */
+  onComplete?: (value: string) => void;
+  disabled?: boolean;
+  /** Error state — red cells and `aria-invalid`. */
+  error?: boolean;
+  /** `touch` gives each cell a >= 44px tap target (mobile / TWA). Default `md`. */
+  size?: "md" | "touch";
+  /** Digits only (default). Set false for alphanumeric codes. */
+  numeric?: boolean;
+  /** Focus the first cell on mount. */
+  autoFocus?: boolean;
+  /** Accessible name of the group. Default "One-time code". */
+  "aria-label"?: string;
+  /** Accessible name of cell `n` (1-based). Default "digit n". */
+  cellLabel?: (n: number) => string;
+}
+
+export function OtpInput(props: OtpInputProps): React.JSX.Element;
+
+export namespace OtpInput {
+  /** True only when every cell is filled (no blanks). Gate submit on this, not on length. */
+  function isComplete(value: string, length?: number): boolean;
+}
+
 // ----- PasswordChecklist (forms) -----
 /** A single password-policy requirement. */
 export interface PasswordRule {
@@ -791,6 +853,32 @@ export namespace PasswordChecklist {
   function meetsPolicy(value: string, rules?: PasswordRule[]): boolean;
   /** The default policy rules ({@link DEFAULT_PASSWORD_RULES}). */
   const rules: PasswordRule[];
+}
+
+// ----- PasswordStrengthMeter (forms) -----
+export type PasswordStrengthLevel = "empty" | "weak" | "fair" | "good" | "strong";
+
+/** 0 (empty) .. 4 (strong): share of policy rules the value meets. */
+export declare function passwordStrength(value: string, rules?: PasswordRule[]): 0 | 1 | 2 | 3 | 4;
+
+export interface PasswordStrengthMeterProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "children"> {
+  /** The password being measured. */
+  value?: string;
+  /** Policy rules; defaults to the same rules as `PasswordChecklist`. */
+  rules?: PasswordRule[];
+  /** Visible text per level (pass translated strings). */
+  labels?: Record<PasswordStrengthLevel, string>;
+  /** Accessible name of the meter. */
+  label?: string;
+}
+
+/** Segmented strength bar; exposes `data-meter="<level>"` and `role="meter"`. */
+export function PasswordStrengthMeter(props: PasswordStrengthMeterProps): React.JSX.Element;
+
+export namespace PasswordStrengthMeter {
+  /** 0 (empty) .. 4 (strong). */
+  function strength(value: string, rules?: PasswordRule[]): 0 | 1 | 2 | 3 | 4;
 }
 
 // ----- SearchField (forms) -----
