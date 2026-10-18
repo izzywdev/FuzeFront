@@ -57,6 +57,21 @@ describe('single-use token capture (Referer / telemetry leak)', () => {
     }
   })
 
+  it.each(['/verify/email', '/reset'])('%s: fragment token (#token=, never sent to the server) is stashed and scrubbed', path => {
+    window.history.replaceState({}, '', `${path}?email=a%40b.co#token=frag`)
+    captureSingleUseParams()
+    expect(window.location.href).not.toContain('frag')
+    expect(window.location.hash).toBe('')
+    expect(window.location.search).toBe('?email=a%40b.co')
+    expect(takeSingleUseParam('token')).toBe('frag')
+  })
+
+  it('keeps an unrelated fragment untouched', () => {
+    window.history.replaceState({}, '', '/reset?token=sekret#section')
+    captureSingleUseParams()
+    expect(window.location.hash).toBe('#section')
+  })
+
   it('ignores other paths', () => {
     setFlag(true)
     window.history.replaceState({}, '', '/somewhere?token=keep')
