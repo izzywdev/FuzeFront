@@ -605,6 +605,35 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Load more policy and gate history' })).toBeVisible()
   })
 
+  it('retains successful flow continuation when another repository fails', async () => {
+    mockEvidenceApis()
+    const secondRepository = { ...repository, id: 'repo-2', name: 'agent' }
+    const continuedFlow = {
+      ...candidate,
+      id: 'flow-continued',
+      title: 'Healthy repository flow continuation',
+      createdAt: '2026-10-08T00:00:00.000Z',
+    }
+    vi.spyOn(api, 'repositoryFlowCandidates').mockImplementation(async (repositoryId, filter = {}) => {
+      if (!filter.cursor) return {
+        items: repositoryId === repository.id ? [candidate] : [],
+        page: { nextCursor: `cursor-${repositoryId}`, hasMore: true },
+      }
+      if (repositoryId === secondRepository.id) throw new Error('temporary continuation failure')
+      return { items: [continuedFlow], page: { nextCursor: null, hasMore: false } }
+    })
+
+    render(<RepositoryIntelligence data={{ ...portfolio, repositories: [repository, secondRepository] }} />)
+
+    expect(await screen.findByText(candidate.title)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more UX-flow history' }))
+    expect(await screen.findByText(continuedFlow.title)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Unable to load more UX-flow history for 1 repository. Successful evidence remains visible.'
+    )
+    expect(screen.getByRole('button', { name: 'Load more UX-flow history' })).toBeVisible()
+  })
+
   it('drops an obsolete UX-flow continuation after filters change', async () => {
     mockEvidenceApis()
     let resolveContinuation!: (value: Awaited<ReturnType<typeof api.repositoryFlowCandidates>>) => void
