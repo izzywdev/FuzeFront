@@ -55,7 +55,7 @@ async function permitGet(path) {
 
 async function permitPost(path, body) {
   if (DRY_RUN) {
-    console.log(`[dry-run] POST ${path}`, JSON.stringify(body, null, 2));
+    console.log('[dry-run] POST', path, JSON.stringify(body, null, 2));
     return { ok: true, dry: true };
   }
   const r = await fetch(`${BASE}${path}`, {
