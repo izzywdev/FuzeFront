@@ -181,7 +181,7 @@ def is_vendor_step(step):
 
 
 _REF = re.compile(r"\b(inputs|steps)\.([\w.-]+)")
-_OTHER_VALUES = {"inputs": ("", "x"), "steps": ("", "1", "success", "failure")}
+_OTHER_VALUES = {"inputs": ("", "x", "true", "false"), "steps": ("", "1", "true", "false", "success", "failure")}
 
 
 def true_assignments(cond):
@@ -271,6 +271,8 @@ class TestReviewOnlyOptIn(unittest.TestCase):
         # The malformed shapes review flagged must be caught, not matched by substring.
         self.assertTrue(true_assignments("(inputs.codex-auth-json != '' || inputs.review-only != 'true')"))
         self.assertTrue(true_assignments("steps.x.outputs.code == '1'"))
+        # Boolean-valued step outputs / inputs are real values too.
+        self.assertTrue(true_assignments("steps.guard.outputs.enabled == 'true' || inputs.review-only != 'true'"))
         self.assertTrue(true_assignments("always() && inputs.review-only == 'true'"))
         # Unsupported syntax must fail loudly rather than be treated as 'never true'.
         with self.assertRaises(AssertionError):
