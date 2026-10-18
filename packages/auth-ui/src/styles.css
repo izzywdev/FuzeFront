@@ -100,3 +100,184 @@
   color: var(--text-secondary);
   font-size: var(--text-base, 0.9rem);
 }
+
+/* ── Forgot-password link (AuthPanel, sign-in mode) ───────────────────────── */
+.fzf-auth-panel__forgot {
+  align-self: flex-end;
+  margin-block-start: calc(var(--space-2) * -1);
+  font-size: var(--text-sm);
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.fzf-auth-panel__forgot:hover {
+  text-decoration: underline;
+}
+
+.fzf-auth-panel__forgot:focus-visible,
+.fzf-vr-foot a:focus-visible,
+.fzf-vr-help a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * ── verify-email / password-reset cards (FFRNT-360) ──────────────────────────
+ * Frames: design/frames/auth-experience/03..05. Tokens + logical properties only.
+ */
+.fzf-vr-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+}
+
+.fzf-vr-card--centered {
+  align-items: center;
+  text-align: center;
+}
+
+.fzf-vr-hero {
+  display: grid;
+  place-items: center;
+  inline-size: var(--space-16);
+  block-size: var(--space-16);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-color);
+}
+
+.fzf-vr-hero--success {
+  background: var(--success-soft);
+  color: var(--success-color);
+}
+
+.fzf-vr-hero--error {
+  background: var(--error-soft);
+  color: var(--error-color);
+}
+
+.fzf-vr-hero__svg {
+  inline-size: var(--space-8);
+  block-size: var(--space-8);
+}
+
+.fzf-vr-title {
+  margin-block: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.fzf-vr-sub {
+  margin-block: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.fzf-vr-chip {
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--bg-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.fzf-vr-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  text-align: start;
+}
+
+.fzf-vr-actions {
+  margin-block-start: var(--space-2);
+}
+
+.fzf-vr-spinner {
+  display: grid;
+  place-items: center;
+  padding-block: var(--space-2);
+}
+
+.fzf-vr-help,
+.fzf-vr-foot {
+  margin-block: var(--space-2) 0;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.fzf-vr-help a,
+.fzf-vr-foot a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.fzf-vr-help a:hover,
+.fzf-vr-foot a:hover {
+  text-decoration: underline;
+}
+
+.fzf-vr-alert {
+  inline-size: 100%;
+  margin-block-start: var(--space-2);
+  text-align: start;
+}
+
+/* Password strength meter (segmented bar + word) — tone follows data-strength. */
+.fzf-pwmeter {
+  --fzf-pw-tone: var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+  font-family: var(--font-sans);
+}
+
+.fzf-pwmeter[data-strength='weak'] {
+  --fzf-pw-tone: var(--error-color);
+}
+
+.fzf-pwmeter[data-strength='fair'] {
+  --fzf-pw-tone: var(--warning-color);
+}
+
+.fzf-pwmeter[data-strength='good'],
+.fzf-pwmeter[data-strength='strong'] {
+  --fzf-pw-tone: var(--success-color);
+}
+
+.fzf-pwmeter__bars {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-1);
+}
+
+.fzf-pwmeter__bar {
+  block-size: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--border-color);
+  transition: background var(--duration-base) var(--ease-standard);
+}
+
+.fzf-pwmeter__bar--on {
+  background: var(--fzf-pw-tone);
+}
+
+.fzf-pwmeter__label {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.fzf-pwmeter__label b {
+  color: var(--fzf-pw-tone);
+  font-weight: var(--weight-semibold);
+}

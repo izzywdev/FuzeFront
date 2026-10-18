@@ -4,8 +4,9 @@ import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
 import type { SessionResult } from '../services/api'
 import { Alert, AuthCard } from '@fuzefront/design-system'
-import { AuthPanel } from '@fuzefront/auth-ui'
+import { AuthPanel, isAuthExperienceEnabled } from '@fuzefront/auth-ui'
 import type {
+  AuthenticatedMeta,
   AuthTransport,
   AuthPanelMode,
   AuthenticatedSession,
@@ -208,7 +209,36 @@ function LoginPage() {
     []
   )
 
-  const handleAuthenticated = (session: AuthenticatedSession) => {
+  // `fuzefront.auth.experience` (default OFF): a fresh signup whose email is not
+  // yet verified is sent to the check-inbox screen instead of straight into the
+  // app. The signup response carries only the session, so "verification pending"
+  // is derived from the contract: AuthMethods.verification.email (the platform
+  // verifies email) AND GET /verify/status → emailVerified:false. Fail-open: any
+  // error here falls through to today's behaviour rather than blocking sign-up.
+  const routeAfterSignup = async (
+    session: AuthenticatedSession,
+    email: string
+  ): Promise<void> => {
+    try {
+      const methods = await authAPI.getAuthMethods()
+      if (methods.verification?.email) {
+        const status = await authAPI.getVerificationStatus()
+        if (!status.emailVerified) {
+          window.location.href = `/signup/verify?email=${encodeURIComponent(email)}`
+          return
+        }
+      }
+    } catch (err) {
+      console.warn('Could not determine email-verification status after signup:', err)
+    }
+    await completeSession(session)
+  }
+
+  const handleAuthenticated = (session: AuthenticatedSession, meta?: AuthenticatedMeta) => {
+    if (isAuthExperienceEnabled() && meta?.mode === 'signup') {
+      void routeAfterSignup(session, meta.email)
+      return
+    }
     void completeSession(session)
   }
 
@@ -258,6 +288,7 @@ function LoginPage() {
         transport={transport}
         onAuthenticated={handleAuthenticated}
         onMfaRequired={handleMfaRequired}
+        forgotPasswordHref={isAuthExperienceEnabled() ? '/reset' : undefined}
         labels={labels}
       />
     </AuthCard>

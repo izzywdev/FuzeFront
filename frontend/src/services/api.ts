@@ -226,7 +226,7 @@ api.interceptors.request.use(
  * not redirect away from them. Keep this the single source of truth: LoginPage
  * derives sign-in vs sign-up from the path, so silently rewriting it loses intent.
  */
-const AUTH_ROUTE_RE = /^\/(login|signup)\b/
+const AUTH_ROUTE_RE = /^\/(login|signup|reset|verify)\b/
 
 // Enhanced response logging with timing
 api.interceptors.response.use(
@@ -466,6 +466,43 @@ export const authAPI = {
   // path; on completion the app is returned to with `?code=` for exchange.
   async startSocialLogin(provider: SocialProvider = 'google'): Promise<void> {
     window.location.href = `${API_URL}${SECURITY_BASE}/social/${provider}/start`
+  },
+
+  // ── Email verification + self-service password reset (FFRNT-360) ───────────
+  // Thin 1:1 wrappers over the frozen contract; the auth-ui flows classify the
+  // axios error shapes themselves (429 / EXPIRED / INVALID_CODE / 400).
+
+  // POST /verify/email/start → 202. `email` for the signup-scoped case; the
+  // interceptor adds the bearer token when a session exists.
+  async startEmailVerification(email?: string): Promise<void> {
+    await api.post(`${SECURITY_BASE}/verify/email/start`, email ? { email } : {})
+  },
+
+  // POST /verify/email/confirm → 200 VerificationStatus (idempotent for an
+  // already-verified token) | 400 EXPIRED / INVALID_CODE.
+  async confirmEmailVerification(req: {
+    token: string
+  }): Promise<{ emailVerified: boolean; phoneVerified: boolean; phone?: string }> {
+    const response = await api.post(`${SECURITY_BASE}/verify/email/confirm`, req)
+    return response.data
+  },
+
+  // GET /verify/status — authenticated; used right after signup to decide
+  // whether the user must verify their email before continuing.
+  async getVerificationStatus(): Promise<{ emailVerified: boolean; phoneVerified: boolean }> {
+    const response = await api.get(`${SECURITY_BASE}/verify/status`)
+    return response.data
+  },
+
+  // POST /session/password/reset-request → ALWAYS 202 (no account enumeration).
+  async requestPasswordReset(email: string): Promise<void> {
+    await api.post(`${SECURITY_BASE}/session/password/reset-request`, { email })
+  },
+
+  // POST /session/password/reset-confirm → 200 { reset: true } | 400 (invalid,
+  // expired or already-used token, or a policy-rejected password).
+  async confirmPasswordReset(req: { token: string; newPassword: string }): Promise<void> {
+    await api.post(`${SECURITY_BASE}/session/password/reset-confirm`, req)
   },
 
   // Current identity ("me"). The Security API returns `{ identity, user }`; the
