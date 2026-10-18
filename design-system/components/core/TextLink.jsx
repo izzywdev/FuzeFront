@@ -19,11 +19,17 @@ import React from "react";
  * this component does not alter navigation behavior.
  */
 export function TextLink({ as: As = "a", children, style, ...rest }) {
+  // The resting color is the caller's override if they passed one, else the DS
+  // accent token. Capture it so the hover/focus handlers restore THIS value on
+  // leave/blur instead of unconditionally snapping back to --accent-color —
+  // otherwise a caller's `style={{ color: … }}` escape hatch is silently and
+  // permanently clobbered the first time the link is hovered or focused.
+  const restColor = style?.color ?? "var(--accent-color)";
   return (
     <As
       {...rest}
       style={{
-        color: "var(--accent-color)",
+        color: restColor,
         cursor: "pointer",
         transition: "color var(--duration-fast) var(--ease-standard)",
         ...style,
@@ -33,7 +39,7 @@ export function TextLink({ as: As = "a", children, style, ...rest }) {
         if (rest.onMouseEnter) rest.onMouseEnter(e);
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.color = "var(--accent-color)";
+        e.currentTarget.style.color = restColor;
         if (rest.onMouseLeave) rest.onMouseLeave(e);
       }}
       onFocus={(e) => {
@@ -41,7 +47,7 @@ export function TextLink({ as: As = "a", children, style, ...rest }) {
         if (rest.onFocus) rest.onFocus(e);
       }}
       onBlur={(e) => {
-        e.currentTarget.style.color = "var(--accent-color)";
+        e.currentTarget.style.color = restColor;
         if (rest.onBlur) rest.onBlur(e);
       }}
     >

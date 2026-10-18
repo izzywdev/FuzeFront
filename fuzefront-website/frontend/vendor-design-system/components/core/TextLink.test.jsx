@@ -79,4 +79,23 @@ describe("<TextLink>", () => {
     const link = screen.getByRole("link", { name: /danger link/i });
     expect(link.style.color).toBe("var(--error-color)");
   });
+
+  it("restores the caller's color override after hover/leave and focus/blur (not --accent-color)", () => {
+    render(
+      <TextLink href="/x" style={{ color: "var(--error-color)" }}>
+        Danger link
+      </TextLink>
+    );
+    const link = screen.getByRole("link", { name: /danger link/i });
+    // hover swaps to the hover token, but leaving restores the OVERRIDE, not the default accent
+    fireEvent.mouseEnter(link);
+    expect(link.style.color).toBe("var(--accent-hover)");
+    fireEvent.mouseLeave(link);
+    expect(link.style.color).toBe("var(--error-color)");
+    // same for keyboard focus/blur
+    fireEvent.focus(link);
+    expect(link.style.color).toBe("var(--accent-hover)");
+    fireEvent.blur(link);
+    expect(link.style.color).toBe("var(--error-color)");
+  });
 });
