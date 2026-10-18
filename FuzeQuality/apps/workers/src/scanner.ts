@@ -65,5 +65,20 @@ await runConsumer(
     } finally {
       if (temporary) await rm(root, { recursive: true, force: true })
     }
-  }
+  },
+  {
+    onExhausted: async (_topic, payload) => {
+      const parsed = scanRequestedSchema.safeParse(payload)
+      if (!parsed.success) return
+      await apiRequest(`/api/v1/internal/repositories/${parsed.data.repositoryId}/scan-failure`, {
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'SCAN_PROCESSING_FAILED',
+          message: 'Repository analysis could not complete after bounded worker retries. Review worker diagnostics and retry the scan.',
+          sourceRevision: parsed.data.commitSha,
+          failedAt: new Date().toISOString(),
+        }),
+      })
+    },
+  },
 )
