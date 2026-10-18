@@ -83,7 +83,7 @@ describe('policy-gate review lifecycle', () => {
 
     await store.savePolicyGateEvaluations([evaluation])
 
-    expect(String(query.mock.calls[0][0])).toContain('ON CONFLICT (repository_id,revision,kind,policy_artifact_ids,gate_artifact_ids)')
+    expect(String(query.mock.calls[0][0])).toContain('ON CONFLICT ON CONSTRAINT policy_gate_evaluations_artifact_identity_key')
     expect(String(query.mock.calls[0][0])).not.toContain('kind,title')
     expect(String(query.mock.calls[0][0])).not.toContain('created_at=EXCLUDED.created_at')
     expect(query.mock.calls[0][1][8]).toBe(JSON.stringify(['policy-a', 'policy-b']))
