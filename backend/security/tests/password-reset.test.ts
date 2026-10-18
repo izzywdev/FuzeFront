@@ -254,9 +254,10 @@ describe('confirmPasswordReset', () => {
 
     clock += 31 * 60_000 // past the 30-minute TTL
 
-    await expect(provider.confirmPasswordReset(raw, 'N3wPassw0rd!')).rejects.toThrow(
-      /invalid or expired/i
-    )
+    await expect(provider.confirmPasswordReset(raw, 'N3wPassw0rd!')).rejects.toMatchObject({
+      name: 'TokenError',
+      code: 'TOKEN_EXPIRED',
+    })
     expect(setPasswordFn).not.toHaveBeenCalled()
     expect(db.__tables.sessions).toHaveLength(1)
   })
@@ -275,9 +276,10 @@ describe('confirmPasswordReset', () => {
     expect(setPasswordFn).toHaveBeenCalledTimes(1)
 
     // Single-use: the second presentation must fail closed.
-    await expect(provider.confirmPasswordReset(raw, 'SecondPassw0rd!')).rejects.toThrow(
-      /invalid or expired/i
-    )
+    await expect(provider.confirmPasswordReset(raw, 'SecondPassw0rd!')).rejects.toMatchObject({
+      name: 'TokenError',
+      code: 'TOKEN_EXPIRED',
+    })
     expect(setPasswordFn).toHaveBeenCalledTimes(1)
   })
 
@@ -291,7 +293,7 @@ describe('confirmPasswordReset', () => {
 
     await expect(
       provider.confirmPasswordReset('deadbeef'.repeat(8), 'N3wPassw0rd!')
-    ).rejects.toThrow(/invalid or expired/i)
+    ).rejects.toMatchObject({ name: 'TokenError', code: 'TOKEN_INVALID' })
     expect(setPasswordFn).not.toHaveBeenCalled()
   })
 
@@ -413,6 +415,28 @@ describe('password-reset routes', () => {
       .post('/v1/security/session/password/reset-confirm')
       .send({ token: 'bad', newPassword: 'N3wPassw0rd!' })
       .expect(400)
+  })
+
+  it('reset-confirm maps TokenError to 400 TOKEN_EXPIRED / TOKEN_INVALID (never 401)', async () => {
+    const { TokenError } = require('../src/providers/authentik/AuthentikIdentityProvider')
+    for (const code of ['TOKEN_EXPIRED', 'TOKEN_INVALID']) {
+      provider.confirmPasswordReset.mockRejectedValueOnce(new TokenError(code))
+      const res = await request(app())
+        .post('/v1/security/session/password/reset-confirm')
+        .send({ token: 'bad', newPassword: 'N3wPassw0rd!' })
+        .expect(400)
+      expect(res.body.code).toBe(code)
+    }
+  })
+
+  it('reset-confirm returns 422 PASSWORD_POLICY when the identity provider rejects the password', async () => {
+    const policyError = Object.assign(new Error('too weak'), { name: 'PasswordPolicyError' })
+    provider.confirmPasswordReset.mockRejectedValueOnce(policyError)
+    const res = await request(app())
+      .post('/v1/security/session/password/reset-confirm')
+      .send({ token: 'tok', newPassword: 'weak' })
+      .expect(422)
+    expect(res.body.code).toBe('PASSWORD_POLICY')
   })
 
   it('reset-confirm 400s on a missing field', async () => {

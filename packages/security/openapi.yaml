@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.10.1
+  version: 0.11.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -319,8 +319,11 @@ paths:
       operationId: confirmPasswordReset
       description: >-
         Completes password reset by presenting the single-use `token` from the
-        reset message together with a `newPassword`. Fail-closed on an
-        unknown/expired/consumed token or a password that fails policy.
+        reset message together with a `newPassword`. Fail-closed: an
+        expired/already-used token is `400 TOKEN_EXPIRED`, an unknown token is
+        `400 TOKEN_INVALID`, and a password rejected by the identity provider
+        is `422 PASSWORD_POLICY` (the token is NOT consumed, so the caller may
+        retry with a compliant password).
       requestBody:
         required: true
         content:
@@ -335,7 +338,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/PasswordResetResult'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >-
+            Malformed body (`MALFORMED`), or the token is expired/already used
+            (`TOKEN_EXPIRED`) or unknown (`TOKEN_INVALID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '422':
+          description: >-
+            The identity provider rejected the new password (`PASSWORD_POLICY`).
+            The token remains live.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton reset-confirm action; no collection.
   # ─────────────────────── Account: set/add password ────────────────────────
@@ -1840,8 +1857,11 @@ paths:
       summary: Send an email verification link/code
       operationId: startEmailVerification
       description: >-
-        Sends a verification link/code. Targets the current user's email when
-        authenticated, or a signup-scoped address supplied in the body.
+        Sends a verification link/code. When authenticated, the target is ALWAYS
+        the current user's own email; a body `email` is ignored. When
+        unauthenticated, the account is resolved server-side from the body
+        `email`; an unknown address is a silent no-op. Always 202 for an
+        unauthenticated caller (no account enumeration).
       requestBody:
         required: false
         content:
@@ -1860,7 +1880,12 @@ paths:
       tags: [verify]
       summary: Confirm email ownership
       operationId: confirmEmailVerification
-      description: Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed on invalid/expired.
+      description: >-
+        Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed: an
+        expired/already-used challenge is `400 TOKEN_EXPIRED`; an unknown
+        challenge (or one that no longer matches the account's email) is
+        `400 TOKEN_INVALID`. Never reports `emailVerified: true` unless a user
+        was actually updated.
       requestBody:
         required: true
         content:
@@ -1875,7 +1900,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/VerificationStatus'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >-
+            Malformed body (`MALFORMED`), or the challenge is expired/already
+            used (`TOKEN_EXPIRED`) or unknown/mismatched (`TOKEN_INVALID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton confirmation action.
   # ──────────────────────── Contact verification: phone ─────────────────────
@@ -3198,7 +3229,9 @@ components:
         email:
           type: string
           format: email
-          description: Signup-scoped address to verify when unauthenticated.
+          description: >-
+            Address used to look up the account when unauthenticated. Ignored
+            when a bearer token is present (the account's own email is used).
     PhoneVerifyStartRequest:
       type: object
       properties:
@@ -3723,7 +3756,14 @@ components:
     # ── Errors ──
     ErrorBody:
       type: object
-      description: Stable error body. Fail-closed; provider-neutral codes.
+      description: >-
+        Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED
+        (past TTL or already used) and TOKEN_INVALID (matches nothing) are
+        returned as 400 by the email-verify and password-reset confirm
+        operations; they are NOT session failures and clients must not treat
+        them as 401 session expiry. PASSWORD_POLICY (422) is returned by
+        reset-confirm when the identity provider rejects the new password; the
+        reset token stays live so a compliant retry succeeds.
       properties:
         error:
           type: string
@@ -3747,5 +3787,8 @@ components:
             - FORBIDDEN
             - NOT_FOUND
             - PROVIDER_UNAVAILABLE
+            - TOKEN_EXPIRED
+            - TOKEN_INVALID
+            - PASSWORD_POLICY
             - UNKNOWN
       required: [error, code]

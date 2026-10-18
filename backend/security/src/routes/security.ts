@@ -18,6 +18,7 @@ import { getIdentityProvider } from '../providers/factory'
 import {
   MfaRequiredError,
   ConflictError,
+  TokenError,
   InvalidInputError,
   UnauthorizedError,
   NotFoundError,
@@ -193,6 +194,10 @@ function sendError(res: Response, err: unknown): void {
   }
   if (err instanceof NotFoundError) {
     res.status(404).json({ error: err.message, code: 'NOT_FOUND' })
+    return
+  }
+  if (err instanceof TokenError) {
+    res.status(400).json({ error: err.message, code: err.code })
     return
   }
   if (err instanceof UnauthorizedError) {
@@ -390,11 +395,16 @@ router.post('/session/password/reset-confirm', async (req: Request, res: Respons
     await getIdentityProvider().confirmPasswordReset(req.body.token, req.body.newPassword)
     res.status(200).json({ reset: true })
   } catch (err) {
-    // Per contract this surface is 400-or-200: an invalid/expired/consumed token
-    // and a policy-rejected password are all fail-closed 400s.
+    // 400 TOKEN_EXPIRED/TOKEN_INVALID for an unredeemable token, 422 PASSWORD_POLICY
+    // for a rejected password (token stays live); anything else fails closed as 400.
     const name = (err as Error)?.name
+    if (err instanceof TokenError) {
+      res.status(400).json({ error: err.message, code: err.code })
+      return
+    }
     if (name === 'PasswordPolicyError') {
-      res.status(400).json({ error: (err as Error).message, code: 'MALFORMED' })
+      // 422, not 400: the token is still live, only the password was rejected.
+      res.status(422).json({ error: (err as Error).message, code: 'PASSWORD_POLICY' })
       return
     }
     if (err instanceof InvalidInputError) {

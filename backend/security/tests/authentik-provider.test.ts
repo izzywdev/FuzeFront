@@ -44,6 +44,12 @@ function makeFakeDb() {
       andWhere(cond: any, val?: any) {
         return api.where(cond, val)
       },
+      whereRaw(_sql: string, bindings: any[]) {
+        const prev = filter
+        const want = String(bindings[0]).toLowerCase()
+        filter = (r: any) => prev(r) && String(r.email || '').toLowerCase() === want
+        return api
+      },
       async first() {
         return tables[table].find(filter)
       },
@@ -307,6 +313,8 @@ describe('MFA TOTP enroll + activate', () => {
 
 describe('contact verification', () => {
   it('email start + confirm marks the user verified', async () => {
+    process.env.REQUIRE_EMAIL_VERIFICATION = 'true'
+    process.env.EMAIL_SERVICE_URL = 'http://email-service:3000'
     const db = makeFakeDb()
     db.__tables.users.push({ id: 'u1', email: 'u@e.com', roles: '["user"]' })
     const p = newProvider(db)
@@ -316,8 +324,10 @@ describe('contact verification', () => {
     const row = db.__tables.email_verifications[0]
     // recover the plaintext token by calling confirm with the code the impl hashed:
     // we cannot read the plaintext, so assert confirm rejects a bad token fail-closed
-    await expect(p.confirmEmailVerification({ token: 'wrong' })).rejects.toBeInstanceOf(UnauthorizedError)
+    await expect(p.confirmEmailVerification({ token: 'wrong' })).rejects.toMatchObject({ code: 'TOKEN_INVALID' })
     expect(row.email).toBe('u@e.com')
+    delete process.env.REQUIRE_EMAIL_VERIFICATION
+    delete process.env.EMAIL_SERVICE_URL
   })
 
   it('phone confirm marks verified when the OTP checks out', async () => {
