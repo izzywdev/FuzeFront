@@ -63,8 +63,18 @@ async function main() {
     // either finishes after the SDK has shut down (its span lost) or is cut
     // off by process.exit(0) below.
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await consumer.disconnect();
-    await statusProducer.disconnect();
+    // Each disconnect is isolated: if the broker is unavailable during
+    // SIGTERM and one of these rejects, an unguarded `await` chain would
+    // abort right there, skipping the telemetry flush below — leaving
+    // buffered spans dropped and the process hung for Kubernetes to kill.
+    // Caught by a Codex review on PR #1489 (provisioning-service had the
+    // identical ordering, fixed alongside).
+    await consumer.disconnect().catch((error) => {
+      console.error('[email-service] Error disconnecting the Kafka consumer during shutdown:', error);
+    });
+    await statusProducer.disconnect().catch((error) => {
+      console.error('[email-service] Error disconnecting the status producer during shutdown:', error);
+    });
     // Flush any spans still buffered before the process exits — otherwise the
     // last few requests before shutdown silently never reach Tempo.
     await telemetry.shutdown().catch(() => {});
