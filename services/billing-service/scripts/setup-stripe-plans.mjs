@@ -130,9 +130,23 @@ async function ensurePlan(p) {
     `\nFuzeFront → Stripe plan setup  [${IS_LIVE ? 'LIVE' : 'TEST'} account]  ` +
       `${APPLY ? 'APPLY (writing)' : 'DRY-RUN (no writes — pass --apply to write)'}\n`,
   );
+  console.log('── Canonical plans ──');
   for (const p of PLANS) await ensurePlan(p);
+
+  console.log('\n── Legacy plan archival ──');
+  for (const legacyId of LEGACY_PLAN_IDS) {
+    const product = await findProduct(legacyId);
+    if (!product) {
+      console.log(`  ${legacyId.padEnd(11)} not found in Stripe — skipping`);
+      continue;
+    }
+    const action = product.active ? (APPLY ? 'archive' : 'would-archive') : 'already-inactive';
+    if (APPLY && product.active) await stripe.products.update(product.id, { active: false });
+    console.log(`  ${legacyId.padEnd(11)} product:${action}`);
+  }
+
   console.log(
-    `\n${APPLY ? 'Applied' : 'Would apply'} ${PLANS.length} plans. ` +
+    `\n${APPLY ? 'Applied' : 'Would apply'} ${PLANS.length} canonical plans; archived ${LEGACY_PLAN_IDS.length} legacy plans.\n` +
       `billing-service picks these up via PlanService.syncPlans() (Stripe = source of truth).\n` +
       `Next: register the webhook endpoint and POST /api/v1/billing (internal) once deployed.\n`,
   );
