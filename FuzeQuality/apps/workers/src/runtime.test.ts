@@ -21,4 +21,19 @@ describe('worker delivery reliability', () => {
     expect(failureCode(new Error('LiteLLM returned 500'))).toBe('INTELLIGENCE_UNAVAILABLE')
     expect(MAX_DELIVERY_ATTEMPTS).toBe(3)
   })
+
+  it('reports a terminal delivery once after every retry is exhausted', async () => {
+    let attempts = 0
+    const exhausted: unknown[] = []
+    const failure = new Error('checkout failed with a secret provider detail')
+
+    await expect(retry(
+      async () => { attempts++; throw failure },
+      async () => undefined,
+      async error => { exhausted.push(error) },
+    )).rejects.toBe(failure)
+
+    expect(attempts).toBe(MAX_DELIVERY_ATTEMPTS)
+    expect(exhausted).toEqual([failure])
+  })
 })
