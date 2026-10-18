@@ -31,11 +31,33 @@ jobs:
           MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          if [[ "$MESSAGE" =~ ^release:\ fuzefront\ images\ ([0-9a-f]{12})$ ]]; then
-            release_sha="${BASH_REMATCH[1]}"
-          else
-            echo "::error title=merged-gitops-release::release commit message did not contain the expected 12-character image SHA"
+          # GitHub's squash merge appends " (#<PR>)" to the subject and keeps
+          # the release commit body in head_commit.message. Validate only the
+          # bounded subject, accepting that standard suffix without allowing
+          # arbitrary text to dispatch a production verification.
+          subject="${MESSAGE%%$'\n'*}"
+          prefix='release: fuzefront images '
+          if [[ "$subject" != "$prefix"* ]]; then
+            echo "::error title=merged-gitops-release::release commit subject did not contain the expected 12-character image SHA"
             exit 1
+          fi
+          payload="${subject#"$prefix"}"
+          release_sha="${payload:0:12}"
+          suffix="${payload:12}"
+          if ! printf '%s\n' "$release_sha" | grep -Eq '^[0-9a-f]{12}$'; then
+            echo "::error title=merged-gitops-release::release commit subject did not contain the expected 12-character image SHA"
+            exit 1
+          fi
+          if [[ -n "$suffix" ]]; then
+            if [[ "$suffix" != ' (#'*')' ]]; then
+              echo "::error title=merged-gitops-release::release commit subject had an unrecognized suffix"
+              exit 1
+            fi
+            pr_number="${suffix:3:${#suffix}-4}"
+            if [[ -z "$pr_number" || "$pr_number" == *[!0-9]* ]]; then
+              echo "::error title=merged-gitops-release::release commit subject had an invalid pull-request suffix"
+              exit 1
+            fi
           fi
 
           gh workflow run prod-post-deploy.yml --ref master \

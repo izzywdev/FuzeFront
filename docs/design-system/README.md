@@ -50,5 +50,7 @@ design-system/components/**  ─┤ node scripts/ds-artifact/build-artifact.mjs
 
 68 primitives across 13 groups (brand, core, shell, launcher, feedback, forms, access,
 data, layout, mobile, navigation, overlay, billing), the full token system (color in
-`dark`/`light` themes, type, spacing, radius, shadow, z-index), and the brand book. See
-[`artifact/project/README.md`](./artifact/project/README.md).
+`dark`/`light` themes, type, spacing, radius, shadow, z-index), the brand book, and the
+**mobile & responsiveness guidelines** (breakpoint scale, the `md` nav transition, touch
+targets, safe-area insets, fluid-layout rules — parsed from the source so they can't drift).
+See [`artifact/project/README.md`](./artifact/project/README.md).
