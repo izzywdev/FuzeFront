@@ -56,6 +56,20 @@ const PLAN_CAPABILITY_MAP: Record<string, readonly string[]> = {
   enterprise: ['fuzefront.billing.plan-starter', 'fuzefront.billing.plan-growth', 'fuzefront.billing.plan-enterprise'],
 };
 
+// Full Unleash strategy object shape returned by GET /strategies and created by POST.
+// All fields beyond id/name/parameters are preserved on PUT so they are not silently wiped.
+interface UnleashStrategy {
+  id: string;
+  name: string;
+  parameters: Record<string, string | undefined>;
+  constraints?: unknown[];
+  segments?: number[];
+  sortOrder?: number;
+  title?: string;
+  disabled?: boolean;
+  variants?: unknown[];
+}
+
 export interface UnleashFlagSyncConfig {
   /** Unleash admin API base, e.g. http://fuzefront-unleash.fuzefront.svc.cluster.local:4242 */
   adminUrl: string;
@@ -187,7 +201,7 @@ export class UnleashFlagSyncService {
       current.delete(entityId);
     }
 
-    await this.putStrategyUserIds(flagName, strategy.id, serializeUserIds(current));
+    await this.putStrategyUserIds(flagName, strategy, serializeUserIds(current));
   }
 
   /**
@@ -196,13 +210,13 @@ export class UnleashFlagSyncService {
    */
   private async getOrCreateUserWithIdStrategy(
     flagName: string,
-  ): Promise<{ id: string; parameters: { userIds?: string } } | null> {
+  ): Promise<UnleashStrategy | null> {
     const url = `${this.cfg.adminUrl}/api/admin/projects/${this.cfg.project}/features/${flagName}/environments/${this.cfg.environment}/strategies`;
     const headers = { Authorization: this.cfg.adminToken, 'Content-Type': 'application/json' };
 
     // GET existing strategies — Unleash v4 returns a bare array; v5+ wraps it as { strategies: [] }.
     const resp = await axios.get<unknown>(url, { headers, timeout: 5000 });
-    const list: Array<{ id: string; name: string; parameters: { userIds?: string } }> =
+    const list: UnleashStrategy[] =
       Array.isArray(resp.data) ? resp.data : ((resp.data as any).strategies ?? []);
     const existing = list.find((s) => s.name === 'userWithId');
     if (existing) return existing;
@@ -215,7 +229,7 @@ export class UnleashFlagSyncService {
       { headers: { Authorization: this.cfg.adminToken }, timeout: 5000, validateStatus: () => true },
     );
 
-    const createResp = await axios.post<{ id: string; parameters: { userIds?: string } }>(
+    const createResp = await axios.post<UnleashStrategy>(
       url,
       { name: 'userWithId', parameters: { userIds: '' } },
       { headers, timeout: 5000 },
@@ -223,16 +237,18 @@ export class UnleashFlagSyncService {
     return createResp.data;
   }
 
-  // PUT /strategies/:id is supported on both Unleash v4 and v5; PATCH is v5+ only.
+  // PUT /strategies/:id preserves all existing strategy fields by spreading the full strategy
+  // object and only overwriting parameters.userIds. A bare { name, parameters: { userIds } }
+  // body would silently wipe constraints, segments, sortOrder, title, disabled, and variants.
   private async putStrategyUserIds(
     flagName: string,
-    strategyId: string,
+    strategy: UnleashStrategy,
     userIds: string,
   ): Promise<void> {
-    const url = `${this.cfg.adminUrl}/api/admin/projects/${this.cfg.project}/features/${flagName}/environments/${this.cfg.environment}/strategies/${strategyId}`;
+    const url = `${this.cfg.adminUrl}/api/admin/projects/${this.cfg.project}/features/${flagName}/environments/${this.cfg.environment}/strategies/${strategy.id}`;
     await axios.put(
       url,
-      { name: 'userWithId', parameters: { userIds } },
+      { ...strategy, parameters: { ...strategy.parameters, userIds } },
       { headers: { Authorization: this.cfg.adminToken, 'Content-Type': 'application/json' }, timeout: 5000 },
     );
   }
