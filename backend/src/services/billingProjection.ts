@@ -5,6 +5,7 @@ import {
   billingSubscriptionChangedSchemaV1,
   BillingSubscriptionChangedPayloadV1,
 } from '@fuzefront/shared/kafka'
+import { normalizeTier } from '@fuzefront/billing-types'
 import { db } from '../config/database'
 
 /**
@@ -40,12 +41,13 @@ export async function applySubscriptionChanged(
   payload: BillingSubscriptionChangedPayloadV1
 ): Promise<number> {
   const table = payload.entityType === 'user' ? 'users' : 'organizations'
-  // planTier written here uses canonical values: free | starter | growth | enterprise.
-  // Legacy values (professional, scale) are normalized by billing-service before emit.
+  // Normalize at the projection boundary as defense-in-depth: billing-service normalizes
+  // before emitting, but a Kafka replay of a pre-migration event would carry legacy values.
+  const tierName = normalizeTier(payload.planTier)
   const updated = await db(table)
     .where({ id: payload.entityId })
     .update({
-      billing_plan_tier: payload.planTier,
+      billing_plan_tier: tierName,
       billing_plan_status: payload.status,
     })
   return updated
