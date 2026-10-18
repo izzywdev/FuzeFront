@@ -24,6 +24,7 @@ import {
   authorizeInviter,
   authorizeOrgAdmin,
   createInvitation,
+  errorBody,
   emitInvitationCreated,
   INVITE_TTL_MS,
   listInvitations,
@@ -46,10 +47,10 @@ function log(req: Request) {
 
 function sendError(req: Request, res: Response, err: unknown, fallback: string) {
   if (err instanceof InviteError) {
-    return res.status(err.status).json({ error: err.message, code: err.code })
+    return res.status(err.status).json(errorBody(err.status, err.message, err.code))
   }
   log(req).error({ err }, fallback)
-  return res.status(500).json({ error: fallback, code: 'INTERNAL_ERROR' })
+  return res.status(500).json(errorBody(500, fallback))
 }
 
 /** Path ids are wire-validated (assertRef) and stored as uuid. Malformed -> 404. */
@@ -122,8 +123,8 @@ export async function listHandler(req: any, res: Response) {
 
 function conflictBody(reason: string | undefined) {
   return reason === 'already-member'
-    ? { error: 'That person is already a member of this organization', code: 'CONFLICT', reason }
-    : { error: 'A pending invitation already exists for this invitee', code: 'CONFLICT', reason }
+    ? errorBody(409, 'That person is already a member of this organization', reason)
+    : errorBody(409, 'A pending invitation already exists for this invitee', reason)
 }
 
 async function createOne(req: any, res: Response, parsed: ParsedCreate, orgId: string) {

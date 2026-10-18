@@ -506,6 +506,38 @@ flags:
     epic: FF-EPIC-17
     story: S5
 
+  - key: fuzefront.identity.invite-v2
+    type: release
+    default: false
+    description: >
+      Gates the Org-invitations-v2 SERVER behavior (FFRNT-307 / epic FFRNT-304,
+      contract packages/security/openapi.yaml 0.10.2): the contract-shaped
+      invitation endpoints (InviteeRef + memberType + channel, cursor-paginated
+      list, 204 revoke) on /api/organizations/:id/invitations* and
+      POST /:id/members, the public masked resolve + auth-optional accept with
+      the single-use bindToken (202), the signup-time external-invitee bind
+      (POST /api/v1/security/signup bindToken), and the
+      identity.invitation.{created,accepted} outbox events. Flag OFF => the
+      legacy { email, role } invitation behavior is byte-identical (zero
+      regression). Rollout convenience only: real authorization (org
+      owner/admin; root-org OWNER for customer invites; accepting identity must
+      match the invited channel identity) is enforced on every request and
+      never depends on this flag.
+    owner: backend-engineer (identity, FFRNT-307)
+    removal_criterion: >
+      Delete once org-invitations v2 is rolled out to 100%, the invitations UI
+      no longer sends the legacy { email } body, and the flag-OFF (legacy) path
+      is no longer exercised in prod; then remove the legacy branches in
+      routes/organizations.ts, routes/invitations.ts and drop the flag checks.
+    gates:
+      - "/api/organizations/:id/invitations* and POST /:id/members (backend/security/src/routes/organizationInvitationsV2.ts)"
+      - "GET/POST /api/invitations/:token[/accept] (backend/security/src/routes/invitations.ts)"
+      - "POST /api/v1/security/signup bindToken redemption (backend/security/src/routes/security.ts)"
+    web_exposed: true
+    jira: FFRNT-307
+    epic: FFRNT-304
+    story: ~
+
   - key: fuzefront.identity.prefixed-ids
     type: release
     default: false

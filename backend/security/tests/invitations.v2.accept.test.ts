@@ -168,7 +168,9 @@ describe('POST /:token/accept — anonymous (202 + bindToken)', () => {
 
   it('flag ON: 410 for a revoked/expired invite and 409 for an already-accepted one (no token minted)', async () => {
     inv()[0].status = 'revoked'
-    expect((await request(appAs(null)).post(`/api/invitations/${TOKEN}/accept`)).status).toBe(410)
+    const gone = await request(appAs(null)).post(`/api/invitations/${TOKEN}/accept`)
+    expect(gone.status).toBe(410)
+    expect(gone.body.code).toBe('EXPIRED')
     inv()[0].status = 'pending'
     inv()[0].expires_at = new Date(Date.now() - 1)
     expect((await request(appAs(null)).post(`/api/invitations/${TOKEN}/accept`)).status).toBe(410)
@@ -227,7 +229,7 @@ describe('POST /:token/accept — authenticated (200 bound)', () => {
   it('403 when the accepting account is not the invited identity — nothing changes', async () => {
     const res = await accept(U_OTHER)
     expect(res.status).toBe(403)
-    expect(res.body.code).toBe('IDENTITY_MISMATCH')
+    expect(res.body).toMatchObject({ code: 'FORBIDDEN', reason: 'IDENTITY_MISMATCH' })
     expect(inv()[0].status).toBe('pending')
     expect(memberships(U_OTHER, ORG_A)).toHaveLength(0)
     expect(outbox(TOPICS.IDENTITY_INVITATION_ACCEPTED)).toHaveLength(0)
@@ -301,7 +303,7 @@ describe('POST /:token/accept — authenticated (200 bound)', () => {
     fakeDb.tables.organization_memberships.push({ id: 'cb', user_id: U_NEW, organization_id: ORG_B, role: 'member', member_type: 'customer', status: 'active' })
     const res = await accept(U_NEW)
     expect(res.status).toBe(403)
-    expect(res.body.code).toBe('PORTAL_CONTEXT_MISMATCH')
+    expect(res.body).toMatchObject({ code: 'FORBIDDEN', reason: 'PORTAL_CONTEXT_MISMATCH' })
     expect(inv()[0].status).toBe('pending') // CAS never ran
     expect(memberships(U_NEW, ORG_A)).toHaveLength(0)
   })

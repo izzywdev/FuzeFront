@@ -73,6 +73,27 @@ export class InviteError extends Error {
 const bad = (message: string) => new InviteError(400, 'BAD_REQUEST', message)
 
 /**
+ * Error body per the contract's `ErrorBody` (`{ error, code }`, `code` from its
+ * closed enum) plus an optional finer-grained `reason` for the cases the UI
+ * renders distinctly (identity mismatch, portal mismatch, already-pending…).
+ */
+const CONTRACT_CODE: Record<number, string> = {
+  400: 'MALFORMED',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+  409: 'CONFLICT',
+  410: 'EXPIRED',
+}
+const GENERIC_REASONS = new Set(['BAD_REQUEST', 'FORBIDDEN', 'NOT_FOUND', 'CONFLICT', 'GONE', 'INTERNAL_ERROR'])
+export function errorBody(status: number, message: string, reason?: string) {
+  return {
+    error: message,
+    code: CONTRACT_CODE[status] ?? 'UNKNOWN',
+    ...(reason && !GENERIC_REASONS.has(reason) ? { reason } : {}),
+  }
+}
+
+/**
  * Wire reference -> storage uuid. A prefixed TypeID is validated with
  * `assertRef(type, …)` (so a `usr_` id is rejected where an `org_` is expected).
  * A BARE uuid is tolerated for the dual-accept window (the same leniency

@@ -210,6 +210,7 @@ describe('flag ON — POST /:id/invitations', () => {
   ])('400 on %s', async (_name, body) => {
     const res = await post(body)
     expect(res.status).toBe(400)
+    expect(res.body.code).toBe('MALFORMED') // the contract's ErrorBody enum
     expect(invs()).toHaveLength(0)
     expect(outbox()).toHaveLength(0)
   })
@@ -231,7 +232,7 @@ describe('flag ON — POST /:id/invitations', () => {
     expect((await post(body)).status).toBe(201)
     const dup = await post(body)
     expect(dup.status).toBe(409)
-    expect(dup.body.reason).toBe('already-pending')
+    expect(dup.body).toMatchObject({ code: 'CONFLICT', reason: 'already-pending' })
     const member = await post({ invitee: { kind: 'account', userId: U_MEMBER }, memberType: 'employee' })
     expect(member.status).toBe(409)
     expect(member.body.reason).toBe('already-member')
@@ -294,7 +295,7 @@ describe('flag ON — POST /:id/invitations', () => {
       makeCustomer(ORG_B)
       const res = await post({ invitee: { kind: 'account', userId: U_EXT }, memberType: 'customer' })
       expect(res.status).toBe(403)
-      expect(res.body.code).toBe('PORTAL_CONTEXT_MISMATCH')
+      expect(res.body).toMatchObject({ code: 'FORBIDDEN', reason: 'PORTAL_CONTEXT_MISMATCH' })
       expect(invs()).toHaveLength(0)
     })
 

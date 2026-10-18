@@ -16,6 +16,7 @@ import { isInviteV2Enabled } from '../utils/inviteV2Flag'
 import {
   bindInvitation,
   checkIdentityMatch,
+  errorBody,
   issueBindToken,
   maskEmail as maskEmailV2,
   maskPhone,
@@ -70,7 +71,7 @@ const effectiveInvitationState = (inv: any): 'pending' | 'accepted' | 'gone' =>
 // v2: public masked resolve (contract `InvitationResolveResult`).
 async function resolveV2(req: any, res: any, invitation: any) {
   if (invitation.status !== 'pending' || new Date(invitation.expires_at) < new Date()) {
-    return res.status(410).json({ error: 'This invitation has expired or been revoked', code: 'GONE' })
+    return res.status(410).json(errorBody(410, 'This invitation has expired or been revoked'))
   }
   const organization = await db('organizations').where('id', invitation.organization_id).first()
   const wire = wireIds(await isPrefixedIdsEnabled({ orgId: invitation.organization_id }))
@@ -98,10 +99,10 @@ async function acceptV2(req: any, res: any, invitation: any) {
   const rlog = withReqId(req.requestId, req)
   const state = effectiveInvitationState(invitation)
   if (state === 'accepted') {
-    return res.status(409).json({ error: 'Invitation has already been accepted', code: 'CONFLICT' })
+    return res.status(409).json(errorBody(409, 'Invitation has already been accepted'))
   }
   if (state === 'gone') {
-    return res.status(410).json({ error: 'This invitation has expired or been revoked', code: 'GONE' })
+    return res.status(410).json(errorBody(410, 'This invitation has expired or been revoked'))
   }
 
   // Anonymous / no account yet: hand back the single-use bindToken that carries
@@ -123,19 +124,19 @@ async function acceptV2(req: any, res: any, invitation: any) {
   const match = await checkIdentityMatch(invitation, req.user.id, { requireVerifiedEmail: true })
   if (!match.ok) {
     rlog.warn({ invitationId: invitation.id, userId: req.user.id }, 'invitation accept: identity mismatch (fail-closed)')
-    return res.status(403).json({ error: match.message, code: 'IDENTITY_MISMATCH' })
+    return res.status(403).json(errorBody(403, match.message, 'IDENTITY_MISMATCH'))
   }
 
   const result = await bindInvitation(invitation, req.user.id)
   if (result.outcome === 'conflict') {
-    return res.status(409).json({ error: 'Invitation has already been accepted', code: 'CONFLICT' })
+    return res.status(409).json(errorBody(409, 'Invitation has already been accepted'))
   }
   if (result.outcome === 'expired') {
-    return res.status(410).json({ error: 'This invitation has expired or been revoked', code: 'GONE' })
+    return res.status(410).json(errorBody(410, 'This invitation has expired or been revoked'))
   }
   if (result.outcome === 'forbidden') {
     rlog.warn({ invitationId: invitation.id, userId: req.user.id, code: result.code }, 'invitation accept: forbidden')
-    return res.status(403).json({ error: result.message, code: result.code })
+    return res.status(403).json(errorBody(403, result.message, result.code))
   }
 
   // Permit role assignment is non-blocking: an outage must not undo the accept.
