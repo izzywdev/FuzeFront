@@ -351,6 +351,22 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
 
 export function Text(props: TextProps): React.JSX.Element;
 
+// ----- TextLink (core) -----
+/**
+ * An inline accent-colored link/action — the recurring
+ * `text-{shade}-600 hover:text-{shade}-700` pattern as a DS primitive.
+ * Color (default / hover / focus) is the only concern this component owns;
+ * `as` picks the rendered element (`"a"` default, a router `Link`, or
+ * `"button"`) and every other prop is forwarded unchanged.
+ */
+export interface TextLinkProps
+  extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
+  /** The element (or component) to render. Defaults to a plain `<a>`. */
+  as?: React.ElementType;
+}
+
+export function TextLink(props: TextLinkProps): React.JSX.Element;
+
 // ----- DataTable (data) -----
 /** Column descriptor passed to DataTable. */
 export interface DataTableColumn {
@@ -1023,6 +1039,20 @@ export interface EyebrowProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 export declare function Eyebrow(props: EyebrowProps): JSX.Element;
+
+// ----- HeroPatternOverlay (layout) -----
+/**
+ * Absolutely-positioned dot-grid texture overlay for hero/band sections.
+ * Decorative only — renders `aria-hidden` and `pointer-events: none`.
+ * Place it as the first child of a `position: relative` section.
+ */
+export interface HeroPatternOverlayProps extends HTMLAttributes<HTMLDivElement> {
+  /** Overall opacity, 0–1 — dial the texture up/down per section. Defaults to 0.1. */
+  opacity?: number;
+  style?: CSSProperties;
+}
+
+export declare function HeroPatternOverlay(props: HeroPatternOverlayProps): JSX.Element;
 
 // ----- InfoRow (layout) -----
 export interface InfoRowProps {
