@@ -26,7 +26,7 @@
  */
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
-import { assertRef, mintId, toUuid, fromUuid } from '@izzywdev/fuzefront-identity'
+import { assertRef, isUuid, mintId, toUuid, fromUuid, type EntityType } from '@izzywdev/fuzefront-identity'
 import { enqueueEvent } from '@fuzefront/core'
 import {
   TOPICS,
@@ -72,6 +72,19 @@ export class InviteError extends Error {
 
 const bad = (message: string) => new InviteError(400, 'BAD_REQUEST', message)
 
+/**
+ * Wire reference -> storage uuid. A prefixed TypeID is validated with
+ * `assertRef(type, …)` (so a `usr_` id is rejected where an `org_` is expected).
+ * A BARE uuid is tolerated for the dual-accept window (the same leniency
+ * `routes/authz.ts` applies at this boundary): every reference here is already
+ * typed by its position (`invitee.kind`, the route's `:id`), and nothing about
+ * the id grants access — authorization comes from the token + membership.
+ */
+export function refToUuid(type: EntityType, raw: unknown): string {
+  if (typeof raw === 'string' && isUuid(raw)) return raw.toLowerCase()
+  return toUuid(assertRef(type, raw))
+}
+
 // ─── input parsing / validation ──────────────────────────────────────────────
 
 /** Storage-shaped (uuid) invitee as parsed from the wire `InviteeRef`. */
@@ -102,7 +115,7 @@ export function parseInvitee(raw: unknown): ParsedInvitee {
     assertOnlyKeys(raw, ['kind', 'userId'], 'invitee')
     let userId: string
     try {
-      userId = toUuid(assertRef('user', raw.userId))
+      userId = refToUuid('user', raw.userId)
     } catch {
       throw bad('invitee.userId must be a valid user id')
     }

@@ -15,7 +15,6 @@
  */
 import { Request, Response } from 'express'
 import { v4 as uuidv4 } from 'uuid'
-import { assertRef, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { withReqId } from '../lib/logger'
 import { isPrefixedIdsEnabled } from '../identity/flags'
@@ -31,6 +30,7 @@ import {
   parseBulkBody,
   parseCreateBody,
   parseListLimit,
+  refToUuid,
   toInvitationDto,
   wireIds,
   type InviterContext,
@@ -55,7 +55,7 @@ function sendError(req: Request, res: Response, err: unknown, fallback: string) 
 /** Path ids are wire-validated (assertRef) and stored as uuid. Malformed -> 404. */
 function pathUuid(type: 'organization' | 'invitation', raw: unknown): string {
   try {
-    return toUuid(assertRef(type, raw))
+    return refToUuid(type, raw)
   } catch {
     throw new InviteError(404, 'NOT_FOUND', `${type} not found`)
   }
