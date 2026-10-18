@@ -15,6 +15,10 @@ module.exports = {
   moduleNameMapper: {
     '^@fuzefront/service-auth$': '<rootDir>/../../packages/service-auth/src/index.ts',
     '^@fuzefront/security-client$': '<rootDir>/../../packages/security/src/index.ts',
+    // @fuzefront/telemetry's dist is gitignored too — map straight to TS
+    // source so tests run without a prior `npm run build` in
+    // packages/telemetry (app.ts's tracingMiddleware()).
+    '^@fuzefront/telemetry$': '<rootDir>/../../packages/telemetry/src/index.ts',
   },
   testTimeout: 60000,
 };

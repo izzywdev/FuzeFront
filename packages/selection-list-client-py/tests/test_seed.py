@@ -159,11 +159,11 @@ def test_count_ceilings() -> None:
     kw = _kwargs()
     kw["lists"] = [
         {
-            "key": f"fuzecrm-l{l}",
-            "name": f"L{l}",
+            "key": f"fuzecrm-l{idx}",
+            "name": f"L{idx}",
             "items": [{"code": f"C{n}", "label": f"C{n}"} for n in range(401)],
         }
-        for l in range(5)
+        for idx in range(5)
     ]
     assert any("items in total" in m for m in _issues(**kw))
 
@@ -172,14 +172,14 @@ def test_oversized_request() -> None:
     kw = _kwargs()
     kw["lists"] = [
         {
-            "key": f"fuzecrm-l{l}",
-            "name": f"L{l}",
+            "key": f"fuzecrm-l{idx}",
+            "name": f"L{idx}",
             "items": [
                 {"code": f"C{n}", "label": "x" * 200, "description": "y" * 300}
                 for n in range(500)
             ],
         }
-        for l in range(4)
+        for idx in range(4)
     ]
     assert any("bytes" in m for m in _issues(**kw))
 

@@ -53,19 +53,21 @@ const telemetry: TelemetryHandle = initTelemetry({
 let outboxRelay: OutboxRelayHandle | null = null
 
 const PORT = process.env.PORT || 3002
-const app = createExpressApp({ serviceName: 'security-service' })
+// tracingMiddleware() passed as preMiddleware, not app.use()'d after the
+// fact: createExpressApp() has already mounted helmet/cors/body-parsers/
+// request-logging by the time it returns, so appending afterward would run
+// it LAST — missing spans for anything those reject (e.g. oversized/
+// malformed JSON) and leaving the request logger's line un-correlated
+// (req.traceId doesn't exist yet when that logger runs). Deliberately
+// independent of `@fuzefront/core`'s own request-id assignment (inside
+// `createExpressApp`) — tracingMiddleware() never reads/writes
+// req.requestId/x-request-id, so the two correlation ids coexist rather than
+// compete; see tracingMiddleware's own doc comment.
+const app = createExpressApp({ serviceName: 'security-service', preMiddleware: [tracingMiddleware()] })
 // Behind the k8s ingress every request otherwise carries the ingress IP —
 // trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
 // the real client from X-Forwarded-For.
 app.set('trust proxy', 1)
-// Starts/continues a per-request span, exposing req.traceId/req.spanId for
-// `withReqId(reqId, req)` (see `lib/logger.ts`) to bind onto the request's
-// child logger alongside `reqId`. Deliberately mounted independently of
-// `@fuzefront/core`'s own request-id assignment above (inside
-// `createExpressApp`) — tracingMiddleware() never reads/writes
-// req.requestId/x-request-id, so the two correlation ids coexist rather than
-// compete; see tracingMiddleware's own doc comment.
-app.use(tracingMiddleware())
 const httpServer = createServer(app)
 const startTime = Date.now()
 
