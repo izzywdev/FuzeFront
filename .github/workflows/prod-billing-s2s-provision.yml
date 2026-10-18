@@ -317,9 +317,11 @@ jobs:
             exit 1
           fi
 
-          # Check if already patched (optional: true no longer follows the AUTHENTIK key)
-          if ! grep -A2 'key: AUTHENTIK_CLIENT_ID' "$HELM_FILE" | grep -q 'optional'; then
-            echo "Helm template already patched — skipping"
+          # Check if already patched (FUZEFRONT_BILLING_AUTHZ_ENABLED env var already present,
+          # which is what this step adds; the old check for `optional:` is insufficient
+          # because PR #1272 replaced the static `optional: true` with a Helm conditional).
+          if grep -q 'FUZEFRONT_BILLING_AUTHZ_ENABLED' "$HELM_FILE"; then
+            echo "Helm template already patched (FUZEFRONT_BILLING_AUTHZ_ENABLED found) — skipping"
             echo "patched=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
