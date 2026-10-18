@@ -432,6 +432,23 @@ describe('test execution evidence', () => {
     ])
   })
 
+  it('filters each explicit policy-gate pair in memory aggregates', async () => {
+    const store = new MemoryCatalogStore()
+    await store.saveTestExecution({
+      id: 'mixed-pairs', repositoryId: 'repo-1', tenantId: 'org-1', provider: 'external', externalRunId: 'mixed-pairs',
+      attempt: 1, revision: 'revision-a', kind: 'ci', status: 'failed', name: 'Mixed gates', completedAt: '2026-10-10T00:00:00.000Z',
+      policyArtifactIds: ['policy-a', 'policy-b'], gateArtifactIds: ['gate-a', 'gate-b'], thresholds: [], evidenceLinks: [],
+      gateEvaluations: [
+        { policyArtifactId: 'policy-a', gateArtifactId: 'gate-a', status: 'passed' },
+        { policyArtifactId: 'policy-b', gateArtifactId: 'gate-b', status: 'failed' },
+      ],
+    })
+
+    await expect(store.policyGatePerformance('repo-1', 'org-1', { policyArtifactId: 'policy-a' })).resolves.toEqual([
+      expect.objectContaining({ policyArtifactId: 'policy-a', gateArtifactId: 'gate-a', passed: 1, failed: 0 }),
+    ])
+  })
+
   it('loads performance labels only by bounded artifact IDs inside the repository tenant', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
