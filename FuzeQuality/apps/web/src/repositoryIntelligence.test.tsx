@@ -2287,25 +2287,25 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
-  it('isolates execution history, trends, and policy-gate outcomes by provider evidence collection state', async () => {
+  it('isolates execution history, trends, and policy-gate outcomes without a retained collection attempt', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)
     await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
     fireEvent.change(screen.getByLabelText('Evidence collection'), {
-      target: { value: 'unavailable' },
+      target: { value: 'not-collected' },
     })
 
     await waitFor(() => {
       expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
-        evidenceCollectionStatus: 'unavailable',
+        evidenceCollectionStatus: 'not-collected',
       })
       expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
-        evidenceCollectionStatus: 'unavailable',
+        evidenceCollectionStatus: 'not-collected',
       })
       expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
-        evidenceCollectionStatus: 'unavailable',
+        evidenceCollectionStatus: 'not-collected',
       })
     })
   })

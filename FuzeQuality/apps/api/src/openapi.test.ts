@@ -193,7 +193,7 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionEvidenceCollectionStatus).toMatchObject({
         name: 'evidenceCollectionStatus',
         in: 'query',
-        schema: { type: 'string', enum: ['complete', 'partial', 'unavailable'] },
+        schema: { type: 'string', enum: ['complete', 'partial', 'unavailable', 'not-collected'] },
       })
       expect(document.components.parameters.ExecutionThresholdOutcome.schema.enum).toEqual([
         'passed', 'failed',

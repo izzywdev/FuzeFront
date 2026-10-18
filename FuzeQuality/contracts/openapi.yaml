@@ -1294,8 +1294,8 @@ components:
     ExecutionEvidenceCollectionStatus:
       name: evidenceCollectionStatus
       in: query
-      description: Require an explicit provider artifact-discovery outcome. Legacy unchecked executions do not match.
-      schema: { type: string, enum: [complete, partial, unavailable] }
+      description: Require a provider artifact-discovery outcome, or `not-collected` for executions with no retained collection attempt.
+      schema: { type: string, enum: [complete, partial, unavailable, not-collected] }
     ExecutionThresholdOutcome:
       name: thresholdOutcome
       in: query

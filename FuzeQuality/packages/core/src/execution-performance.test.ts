@@ -105,6 +105,7 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'complete' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'unavailable' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'partial' })).toEqual([])
+  expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'not-collected' })).toEqual([executions[0]])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'failed' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'passed' })).toEqual([])
   expect(filterTestExecutions(executions, { branch: 'feature/load' })).toEqual([executions[1]])

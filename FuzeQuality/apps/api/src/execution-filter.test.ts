@@ -52,6 +52,7 @@ describe('execution evidence filter', () => {
   it('accepts only explicit provider evidence collection states', () => {
     expect(executionFilterSchema.parse({ evidenceCollectionStatus: 'complete' }).evidenceCollectionStatus).toBe('complete')
     expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'unavailable' }).evidenceCollectionStatus).toBe('unavailable')
+    expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'not-collected' }).evidenceCollectionStatus).toBe('not-collected')
     expect(executionFilterSchema.safeParse({ evidenceCollectionStatus: 'unknown' }).success).toBe(false)
   })
 

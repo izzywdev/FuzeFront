@@ -3581,7 +3581,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     TestExecution['evidenceLinks'][number]['kind'] | ''
   >('')
   const [executionEvidenceCollectionStatus, setExecutionEvidenceCollectionStatus] = useState<
-    NonNullable<TestExecution['evidenceCollection']>['status'] | ''
+    NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected' | ''
   >('')
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
@@ -5511,7 +5511,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 value={executionEvidenceCollectionStatus}
                 onChange={event =>
                   setExecutionEvidenceCollectionStatus(
-                    event.target.value as NonNullable<TestExecution['evidenceCollection']>['status'] | ''
+                    event.target.value as NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected' | ''
                   )
                 }
               >
@@ -5519,6 +5519,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="complete">Complete</option>
                 <option value="partial">Partial</option>
                 <option value="unavailable">Unavailable</option>
+                <option value="not-collected">Not collected</option>
               </select>
             </label>
             <label>

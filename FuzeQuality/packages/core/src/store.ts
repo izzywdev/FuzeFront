@@ -89,7 +89,7 @@ export type TestExecutionQuery = {
   status?: TestExecution['status']
   provider?: TestExecution['provider']
   name?: string
-  evidenceKind?: TestExecution['evidenceLinks'][number]['kind']; evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status']
+  evidenceKind?: TestExecution['evidenceLinks'][number]['kind']; evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
   thresholdOutcome?: 'passed' | 'failed'
   gateOutcome?: TestExecution['status']
   externalRunId?: string
@@ -1457,7 +1457,7 @@ export class PostgresCatalogStore implements CatalogStore {
            WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
          ))
          AND ($23::text IS NULL OR executions.branch=$23)
-         AND ($24::text IS NULL OR executions.evidence_collection->>'status'=$24)
+         AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
        ORDER BY executions.created_at DESC,executions.id DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null],
@@ -1632,7 +1632,7 @@ export class PostgresCatalogStore implements CatalogStore {
            WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
          ))
          AND ($23::text IS NULL OR executions.branch=$23)
-         AND ($24::text IS NULL OR executions.evidence_collection->>'status'=$24)
+         AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
        GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
        ORDER BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
@@ -1710,7 +1710,7 @@ export class PostgresCatalogStore implements CatalogStore {
            ))
            AND ($24::text IS NULL OR executions.name=$24)
            AND ($26::text IS NULL OR executions.branch=$26)
-           AND ($27::text IS NULL OR executions.evidence_collection->>'status'=$27)
+           AND ($27::text IS NULL OR ($27='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$27)
        ), explicit_pairs AS (
          SELECT execution.repository_id,execution.revision,execution.completed_at,execution.occurred_at,
                 pair.value->>'policyArtifactId' AS policy_artifact_id,

@@ -233,6 +233,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('executions.name=$21')
     expect(String(sql)).toContain("gate_evaluation.value->>'status',executions.status)=$22")
     expect(String(sql)).toContain('executions.branch=$23')
+    expect(String(sql)).toContain("$24='not-collected' AND executions.evidence_collection IS NULL")
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', 'failed', 'github-actions', 'abc',
@@ -279,6 +280,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('executions.name=$21')
     expect(String(sql)).toContain("gate_evaluation.value->>'status',executions.status)=$22")
     expect(String(sql)).toContain('executions.branch=$23')
+    expect(String(sql)).toContain("$24='not-collected' AND executions.evidence_collection IS NULL")
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
     expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42', 'policy-1', 'gate-1', 'report', 'passed', 'Integration suite', 'passed', 'feature/checkout', 'complete'])
@@ -322,6 +324,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('executions.name=$24')
     expect(String(sql)).toContain("pair.value->>'status',execution.status)=$25")
     expect(String(sql)).toContain('executions.branch=$26')
+    expect(String(sql)).toContain("$27='not-collected' AND executions.evidence_collection IS NULL")
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$27")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
