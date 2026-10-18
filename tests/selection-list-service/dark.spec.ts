@@ -16,10 +16,11 @@
  */
 import { rawFetch, SERVICE_BASE_URL } from './helpers/client';
 import { mintTestToken } from './helpers/auth';
+import { testOrg, testUser } from './helpers/ids';
 
 const token = mintTestToken({
-  userId: 'usr_01test0000000000000000dark',
-  organizationId: 'org_01test0000000000000000dark',
+  userId: testUser('dark'),
+  organizationId: testOrg('dark'),
 });
 
 describe('selection-list-service — flag OFF (dark)', () => {

@@ -41,6 +41,29 @@ describe('legacy-hs256', () => {
     expect(id.roles).toEqual([])
   })
 
+  it('verifies a plain session token (no `kind`) even with a resolver wired', async () => {
+    const resolve = jest.fn(async () => ({ tenantId: 't-1', roles: ['admin'] }))
+    const v = createVerifier({ mode: 'legacy-hs256', secret: SECRET, resolver: { resolve } })
+    const id = await v.verify(await hs256({ userId: 'u-1', sessionId: 's-1' }))
+    expect(id.userId).toBe('u-1')
+    expect(resolve).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['fuze-org-session', 'fuze-workload', 'fuze-delegation'])(
+    'refuses a narrowed `%s` token and never calls the resolver',
+    async (kind) => {
+      const resolve = jest.fn(async () => ({ tenantId: 't-1', roles: ['admin'] }))
+      const v = createVerifier({ mode: 'legacy-hs256', secret: SECRET, resolver: { resolve } })
+      const token = await hs256({ userId: 'u-1', kind })
+      const err = await v.verify(token).catch((e) => e)
+      expect(err).toBeInstanceOf(AuthError)
+      expect(err.code).toBe('INVALID_AUDIENCE')
+      expect(err.status).toBe(401)
+      expect(err.message).not.toContain(token)
+      expect(resolve).not.toHaveBeenCalled()
+    },
+  )
+
   it('rejects a token signed with the wrong secret', async () => {
     const forged = await new SignJWT({ userId: 'u-1' })
       .setProtectedHeader({ alg: 'HS256' })
