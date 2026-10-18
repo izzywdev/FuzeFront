@@ -5,7 +5,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
+    "ignoreDeprecations": "5.0",
     "paths": {
       "@fuzefront/shared/kafka": ["../../shared/dist/kafka/index.d.ts"]
     },
