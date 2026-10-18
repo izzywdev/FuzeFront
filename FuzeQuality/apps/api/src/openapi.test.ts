@@ -407,9 +407,12 @@ describe('contract discovery', () => {
       ).toBe('#/components/schemas/RepositoryScanFailure')
       expect(schemas.RepositoryScanFailure).toMatchObject({
         additionalProperties: false,
-        required: ['code', 'message', 'observedBytes', 'maxBytes', 'failedAt'],
+        required: ['code', 'message', 'failedAt'],
       })
-      expect(schemas.RepositoryScanFailure.properties.code.enum).toEqual(['SCAN_TRANSPORT_LIMIT_EXCEEDED'])
+      expect(schemas.RepositoryScanFailure.properties.code.enum).toEqual([
+        'SCAN_TRANSPORT_LIMIT_EXCEEDED',
+        'SCAN_PROCESSING_FAILED',
+      ])
       expect(schemas.RepositoryProcessingStatus.properties.lastScanFailure.$ref).toBe(
         '#/components/schemas/RepositoryScanFailure'
       )
