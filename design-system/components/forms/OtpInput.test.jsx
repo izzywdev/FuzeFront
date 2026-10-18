@@ -83,4 +83,26 @@ describe("<OtpInput>", () => {
     expect(screen.getByRole("group")).toHaveAttribute("dir", "ltr");
     expect(screen.getByLabelText("digit 1").style.minWidth).toBe("var(--touch-target)");
   });
+
+  it("clearing a MIDDLE cell leaves a blank: onChange reports incomplete and onComplete does not fire", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const onComplete = vi.fn();
+    render(<OtpInput defaultValue="123456" onChange={onChange} onComplete={onComplete} />);
+    await user.click(screen.getByLabelText("digit 3"));
+    await user.keyboard("{Backspace}");
+    const [value, complete] = onChange.mock.lastCall;
+    expect(value).toBe("12 456");
+    expect(value).toHaveLength(6); // the trap: length alone looks complete
+    expect(complete).toBe(false);
+    expect(OtpInput.isComplete(value, 6)).toBe(false);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("isComplete is true only for a fully filled code", () => {
+    expect(OtpInput.isComplete("123456", 6)).toBe(true);
+    expect(OtpInput.isComplete("12345", 6)).toBe(false);
+    expect(OtpInput.isComplete("12 456", 6)).toBe(false);
+    expect(OtpInput.isComplete("", 6)).toBe(false);
+  });
 });

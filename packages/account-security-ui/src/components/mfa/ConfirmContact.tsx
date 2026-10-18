@@ -39,7 +39,7 @@ export function ContactVerifyPanel(p: ContactVerifyPanelProps) {
 
   return (
     <div data-panel="confirm-contact" data-state={p.state} data-channel="phone">
-      <SeamCard>
+      <SeamCard flush>
         {showHeaderSkip && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBlockEnd: 'var(--space-2)' }}>
             <Button variant="ghost" size="sm" data-action="skip" onClick={p.onSkip}>
@@ -101,7 +101,7 @@ export function ContactVerifyPanel(p: ContactVerifyPanelProps) {
                 fullWidth
                 data-action="verify-contact"
                 onClick={() => p.onVerify(code)}
-                disabled={p.state === 'verifying' || code.length < 6}
+                disabled={p.state === 'verifying' || !OtpInput.isComplete(code, 6)}
                 aria-busy={p.state === 'verifying' || undefined}
                 leadingIcon={p.state === 'verifying' ? <Spinner size={16} label={m.contact.confirming} /> : undefined}
               >

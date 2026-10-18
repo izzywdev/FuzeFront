@@ -103,10 +103,27 @@ const SEAM: Record<SeamTone, string> = {
 /** Card with the fuse-seam top bar (the approved frames' `.card`). */
 export function SeamCard({
   tone = 'default',
+  flush = false,
   children,
   style,
   ...rest
-}: { tone?: SeamTone; children: React.ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
+}: {
+  tone?: SeamTone
+  /**
+   * Drop the card chrome (padding, border, seam) when the host already supplies a card
+   * (e.g. the login AuthCard) — on a 375px screen the double padding would leave no room
+   * for the six 44px OTP cells.
+   */
+  flush?: boolean
+  children: React.ReactNode
+} & React.HTMLAttributes<HTMLDivElement>) {
+  if (flush) {
+    return (
+      <div style={{ marginBottom: 'var(--space-4)', ...style }} {...rest}>
+        {children}
+      </div>
+    )
+  }
   return (
     <div
       style={{

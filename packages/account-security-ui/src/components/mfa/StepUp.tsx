@@ -18,6 +18,9 @@ import { FACTOR_ICON, factorName } from './factorMeta'
 const EXPIRY_SECONDS = 300
 const RESEND_COOLDOWN_SECONDS = 30
 
+/** Factor kinds the step-up can actually answer today (webauthn is not drivable from this UI). */
+const SUPPORTED_STEP_UP_TYPES: readonly MfaFactorType[] = ['totp', 'sms', 'email']
+
 type Variant = 'desktop' | 'mobile'
 type Choice = MfaFactorRef | { type: 'recovery'; factorId?: undefined }
 
@@ -69,7 +72,7 @@ export function FactorPicker({
   const desc = (t: MfaFactorType): string =>
     t === 'sms' ? m.stepUp.smsDesc : t === 'email' ? m.stepUp.emailDesc : m.stepUp.totpDesc
   // Offer only what the server lists. SMS / email appear only when enrolled.
-  const offered = factors.filter((f) => f.type === 'totp' || f.type === 'sms' || f.type === 'email')
+  const offered = factors.filter((f) => SUPPORTED_STEP_UP_TYPES.includes(f.type))
   const touch = variant === 'mobile'
   const row = (
     key: string,
@@ -175,7 +178,7 @@ export function MfaChallengeCard({
 
   if (status === 'error-delivery') {
     return (
-      <SeamCard {...frameAttrs}>
+      <SeamCard flush={mobile} {...frameAttrs}>
         <h2 style={{ margin: '0 0 var(--space-2)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
           {m.stepUp.deliveryTitle}
         </h2>
@@ -208,7 +211,7 @@ export function MfaChallengeCard({
             : m.stepUp.totpPrompt
 
   return (
-    <SeamCard {...frameAttrs}>
+    <SeamCard flush={mobile} {...frameAttrs}>
       <h2 style={{ margin: '0 0 var(--space-2)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
         {m.stepUp.codeTitle}
       </h2>
@@ -261,7 +264,7 @@ export function MfaChallengeCard({
           fullWidth
           data-action="verify-mfa"
           onClick={() => onVerify(code)}
-          disabled={status === 'verifying' || code.length < needed}
+          disabled={status === 'verifying' || !OtpInput.isComplete(code, needed)}
           aria-busy={status === 'verifying' || undefined}
           leadingIcon={status === 'verifying' ? <Spinner size={16} label={m.stepUp.verifying} /> : undefined}
         >
@@ -468,7 +471,12 @@ function StepUpInner({
         </StatusCallout>
       </div>
     )
-  } else if (factorsState.factors.length === 0) {
+  } else if (
+    // Empty is judged on the factors the picker can actually OFFER: a webauthn-only
+    // challenge would otherwise render an empty picker (a dead end).
+    !recoveryEnabled &&
+    !factorsState.factors.some((f) => SUPPORTED_STEP_UP_TYPES.includes(f.type))
+  ) {
     body = (
       <div data-panel={mobile ? 'choose-factor' : undefined} data-state="empty">
         <StatusCallout

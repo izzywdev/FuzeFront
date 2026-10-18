@@ -13,8 +13,12 @@ export interface OtpInputProps
   value?: string;
   /** Initial value when uncontrolled. */
   defaultValue?: string;
-  /** Fires with the current code on every edit. */
-  onChange?: (value: string) => void;
+  /**
+   * Fires with the current code on every edit. `complete` is true only when every cell is
+   * filled — a cleared middle cell leaves a blank inside the value (`"12 456"`), so
+   * `value.length` alone is NOT a completeness test.
+   */
+  onChange?: (value: string, complete: boolean) => void;
   /** Fires once every cell is filled. */
   onComplete?: (value: string) => void;
   disabled?: boolean;
@@ -33,3 +37,8 @@ export interface OtpInputProps
 }
 
 export function OtpInput(props: OtpInputProps): React.JSX.Element;
+
+export namespace OtpInput {
+  /** True only when every cell is filled (no blanks). Gate submit on this, not on length. */
+  function isComplete(value: string, length?: number): boolean;
+}

@@ -66,11 +66,8 @@ export function createAccountSecurityClient(
       await http.post(`${BASE}/session/password/reset-confirm`, { token, newPassword })
     },
     async changePassword(currentPassword, newPassword) {
-      // CONTRACT GAP: the frozen contract has no change-with-current-password
-      // operation (only set-first via POST /password, and token-based reset).
-      // This targets the PROPOSED `POST /v1/security/password/change`
-      // { currentPassword, newPassword } → 200 | 400 INVALID_CREDENTIALS (wrong
-      // current) | 400 MALFORMED (policy). Needs contract-designer + backend.
+      // Contract (backend #1555): POST /v1/security/password/change { currentPassword, newPassword }
+      // → 204 | 400 INVALID_CREDENTIALS (wrong current) | 422 PASSWORD_POLICY | 409 NO_PASSWORD.
       await http.post(`${BASE}/password/change`, { currentPassword, newPassword })
     },
 

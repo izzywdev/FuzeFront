@@ -122,7 +122,7 @@ export function TotpEnrollPanel({ enroll, onActivate, onCancel, activating, inva
             variant="primary"
             data-action="activate-factor"
             onClick={() => onActivate(code)}
-            disabled={activating || code.length < 6}
+            disabled={activating || !OtpInput.isComplete(code, 6)}
             aria-busy={activating || undefined}
             leadingIcon={activating ? <Spinner size={16} label={m.mfa.totp.activating} /> : undefined}
           >

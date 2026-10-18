@@ -11,7 +11,7 @@ export interface QrCodeProps extends Omit<React.SVGAttributes<SVGSVGElement>, "c
   label?: string;
   /** CSS size (width = height). Default a 168px token expression. */
   size?: string;
-  /** Quiet-zone width in modules. Default 2. */
+  /** Quiet-zone width in modules. Default 4 (the QR spec minimum). */
   quietZone?: number;
 }
 

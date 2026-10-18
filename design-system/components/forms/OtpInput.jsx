@@ -1,6 +1,15 @@
 import React from "react";
 
 /**
+ * True only when EVERY cell is filled. A cleared middle cell is a blank (a space) inside
+ * the value (`"12 456"`), so `value.length === length` is NOT a completeness test —
+ * gate submit buttons on this (or on the second `onChange` argument), never on length.
+ */
+export function isOtpComplete(value, length = 6) {
+  return typeof value === "string" && value.length === length && !/\s/.test(value);
+}
+
+/**
  * Segmented one-time-code input — one cell per digit. Paste-aware (a pasted
  * code fills every cell), auto-advances on entry, Backspace/Arrow keys move
  * between cells, and `autoComplete="one-time-code"` lets the OS offer the SMS
@@ -38,8 +47,9 @@ export function OtpInput({
   const commit = (next) => {
     const clipped = next.slice(0, length);
     if (!controlled) setInner(clipped);
-    if (onChange) onChange(clipped);
-    if (clipped.length === length && !clipped.includes(" ") && onComplete) onComplete(clipped);
+    const complete = isOtpComplete(clipped, length);
+    if (onChange) onChange(clipped, complete);
+    if (complete && onComplete) onComplete(clipped);
   };
 
   const focusCell = (i) => {
@@ -178,3 +188,6 @@ export function OtpInput({
     </div>
   );
 }
+
+// Pure helper surfaced as a static so feature code reaches it through the barrel.
+OtpInput.isComplete = isOtpComplete;

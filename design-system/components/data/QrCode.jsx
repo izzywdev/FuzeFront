@@ -12,7 +12,7 @@ export function QrCode({
   modules,
   label = "QR code",
   size = "calc(var(--space-12) * 3.5)",
-  quietZone = 2,
+  quietZone = 4,
   style,
   ...rest
 }) {

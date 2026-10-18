@@ -148,7 +148,7 @@ export function SmsEnrollPanel(p: SmsEnrollPanelProps) {
           variant="primary"
           data-action="activate-factor"
           onClick={() => p.onActivate(code)}
-          disabled={p.activating || code.length < 6}
+          disabled={p.activating || !OtpInput.isComplete(code, 6)}
           aria-busy={p.activating || undefined}
         >
           {p.activating ? m.mfa.totp.activating : m.mfa.sms.activate}

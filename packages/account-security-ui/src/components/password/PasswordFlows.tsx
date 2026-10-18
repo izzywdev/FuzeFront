@@ -33,6 +33,7 @@ type Phase =
   | { name: 'submitting' }
   | { name: 'error'; retry: () => void }
   | { name: 'exists' }
+  | { name: 'no-password' }
   | { name: 'success' }
 
 function SuccessPanel({
@@ -89,6 +90,27 @@ function AlreadyHasPassword({ onChange, onReset }: { onChange: () => void; onRes
   )
 }
 
+/** Shown when change-password hits 409 NO_PASSWORD: the account has no password yet — set one instead. */
+function NoPasswordYet({ onSet }: { onSet: () => void }) {
+  const { messages: m } = useAccountSecurityI18n()
+  return (
+    <div data-state="no-password">
+      <StatusCallout
+        tone="warning"
+        icon="🔑"
+        title={m.password.noPassword.title}
+        actions={
+          <Button variant="primary" data-action="go-set" onClick={onSet}>
+            {m.password.noPassword.action}
+          </Button>
+        }
+      >
+        {m.password.noPassword.text}
+      </StatusCallout>
+    </div>
+  )
+}
+
 /**
  * Signed-in CHANGE password (frames 05 variant change + 06). Wrong current
  * password → inline field error; policy rejection → inline policy error;
@@ -124,11 +146,16 @@ function ChangePasswordInner({
         setPhase({ name: 'success' })
         onDone?.()
       } catch (err) {
+        // POST /v1/security/password/change: 400 INVALID_CREDENTIALS (wrong current) /
+        // 422 PASSWORD_POLICY / 409 NO_PASSWORD / 204.
         const code = err instanceof HttpError ? err.code : undefined
+        const status = statusOf(err)
         if (code === 'INVALID_CREDENTIALS') {
           setErrors({ current: true })
           setPhase({ name: 'form' })
-        } else if (statusOf(err) === 400) {
+        } else if (status === 409) {
+          setPhase({ name: 'no-password' })
+        } else if (status === 422 || code === 'PASSWORD_POLICY' || status === 400) {
           setErrors({ policy: true })
           setPhase({ name: 'form' })
         } else {
@@ -152,6 +179,8 @@ function ChangePasswordInner({
           text={m.password.success.changedText}
           onBack={() => (onCancel ? onCancel() : nav(ROUTES.security))}
         />
+      ) : phase.name === 'no-password' ? (
+        <NoPasswordYet onSet={() => nav(ROUTES.password + '?mode=set')} />
       ) : phase.name === 'error' ? (
         <ErrorWithRetry
           data-state="error"
@@ -285,10 +314,14 @@ function PasswordManagementInner(props: FlowBaseProps & PasswordFlowCallbacks) {
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   // A 409 from set-password proves a password exists even though the read said
   // otherwise: "Change password" then switches this surface to the change form.
-  const [forcedChange, setForcedChange] = useState(false)
+  const [forced, setForced] = useState<'change' | 'set' | null>(null)
   const alive = useRef(true)
   const navigate = (route: string) =>
-    route.includes('mode=change') ? setForcedChange(true) : props.onNavigate?.(route)
+    route.includes('mode=change')
+      ? setForced('change')
+      : route.includes('mode=set')
+        ? setForced('set')
+        : props.onNavigate?.(route)
 
   const load = useCallback(async () => {
     setState({ status: 'loading' })
@@ -336,7 +369,8 @@ function PasswordManagementInner(props: FlowBaseProps & PasswordFlowCallbacks) {
       </FlowPage>
     )
   }
-  return state.connections.hasPassword || forcedChange ? (
+  const showChange = forced ? forced === 'change' : state.connections.hasPassword
+  return showChange ? (
     <ChangePasswordFlow {...props} onNavigate={navigate} />
   ) : (
     <SetPasswordFlow {...props} onNavigate={navigate} />

@@ -123,11 +123,9 @@ export interface AccountSecurityClient {
 
 /**
  * Password operations. `requestPasswordReset` / `confirmPasswordReset` /
- * `setPassword` are in the frozen contract. `changePassword` is NOT: the
- * contract has no "change with current password" endpoint (the frame
- * `05-signed-in` / `06-states wrong-current` assumes one). The default client
- * posts to `POST /v1/security/password/change` — a PROPOSED endpoint that the
- * contract-designer / backend-engineer must add (see securityClient.ts).
+ * `setPassword` are in the frozen contract. `changePassword` is
+ * `POST /v1/security/password/change` (backend #1555): 204 | 400 INVALID_CREDENTIALS
+ * (wrong current) | 422 PASSWORD_POLICY | 409 NO_PASSWORD (set one instead).
  */
 export interface PasswordClient {
   /** `POST /v1/security/session/password/reset-request` — always 202. */
@@ -136,7 +134,7 @@ export interface PasswordClient {
   confirmPasswordReset(token: string, newPassword: string): Promise<void>
   /** `POST /v1/security/password` — 200 | 409 (one exists) | 400 (policy). */
   setPassword(newPassword: string): Promise<IdentityConnections>
-  /** PROPOSED `POST /v1/security/password/change` — see interface docs. */
+  /** `POST /v1/security/password/change` — see interface docs. */
   changePassword(currentPassword: string, newPassword: string): Promise<void>
 }
 

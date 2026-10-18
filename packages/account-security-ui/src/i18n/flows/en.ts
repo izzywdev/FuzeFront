@@ -46,6 +46,11 @@ export const flowsEn = {
       setText: 'You can now sign in with your email and password too.',
       back: 'Back to security',
     },
+    noPassword: {
+      title: "You don't have a password yet",
+      text: 'Your account signs in another way, so there is no current password to change. Set one to enable password sign-in.',
+      action: 'Set a password',
+    },
     errors: {
       required: 'Enter a password.',
       mismatch: "The passwords don't match.",
