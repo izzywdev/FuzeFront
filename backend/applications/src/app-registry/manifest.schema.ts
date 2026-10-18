@@ -182,6 +182,22 @@ export const infraSchema = z
   })
   .strict()
 
+const publicMobileUrlSchema = z
+  .string()
+  .url()
+  .refine(value => new URL(value).protocol === 'https:', {
+    message: 'must be an https URL',
+  })
+
+/** Public, product-declared native mobile installation destinations. */
+export const distributionSchema = z
+  .object({
+    appleAppStoreUrl: publicMobileUrlSchema.optional(),
+    googlePlayUrl: publicMobileUrlSchema.optional(),
+    apkUrl: publicMobileUrlSchema.optional(),
+  })
+  .strict()
+
 export const appManifestSchema = z
   .object({
     manifestVersion: z.literal('1'),
@@ -220,6 +236,7 @@ export const appManifestSchema = z
     nav: navSchema.optional(),
     routing: routingSchema.optional(),
     infra: infraSchema.optional(),
+    distribution: distributionSchema.optional(),
     visibility: visibilitySchema.optional(),
     scopeLevel: z.enum(['personal', 'organization', 'both']).optional(),
     requiresOrgContext: z.boolean().optional(),
@@ -236,6 +253,7 @@ export type AppStatus = z.infer<typeof appStatusSchema>
 export type Visibility = z.infer<typeof visibilitySchema>
 export type NavSection = (typeof NAV_SECTIONS)[number]
 export type Nav = z.infer<typeof navSchema>
+export type Distribution = z.infer<typeof distributionSchema>
 
 // FFRNT-185: accept TypeID wire format (org_<26-char suffix>) OR bare UUID (for
 // backward-compat during migration). The route normalizes to bare UUID before DB.
