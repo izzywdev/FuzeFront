@@ -100,8 +100,10 @@ jobs:
           [ "$(jq -r .head.repo.full_name <<<"$PR_JSON")" = "$GH_REPO" ] || stop "PR #${PR_NUMBER} is from a fork."
 
           REVIEW_FILE="${RUNNER_TEMP}/fuze-review-findings.md"
+          # No --jq here: with --paginate it runs once PER PAGE, so `last` would pick the last
+          # match on each page. Slurp every page, then take the globally newest match.
           gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" --paginate \
-            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state == "CHANGES_REQUESTED" and .commit_id == "'"$RUN_HEAD_SHA"'" and (.body | contains("fuze-code-review")))] | last | .body // empty' \
+            | jq -rs --arg sha "$RUN_HEAD_SHA" '[.[][] | select(.user.login == "github-actions[bot]" and .state == "CHANGES_REQUESTED" and .commit_id == $sha and (.body | contains("fuze-code-review")))] | last | .body // empty' \
             > "$REVIEW_FILE"
           [ -s "$REVIEW_FILE" ] || stop "No CHANGES_REQUESTED review from the reviewer on the current head of PR #${PR_NUMBER}."
 
