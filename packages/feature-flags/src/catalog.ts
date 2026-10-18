@@ -348,10 +348,10 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   // surfaces (upgrade prompts, locked nav items). Real authorization always
   // lives in Permit on the server — these flags are convenience only.
   //
-  // plan-free and plan-starter default TRUE: every org can access Free/Starter-tier
-  // features by default (fail-open for the base tiers).
+  // plan-free defaults TRUE: every org can access Free-tier features by default.
+  // plan-starter defaults FALSE: Starter is a paid tier — fail-closed until Unleash enables it.
   { key: FLAG_KEYS.BILLING_PLAN_FREE, type: 'permission', default: true },
-  { key: FLAG_KEYS.BILLING_PLAN_STARTER, type: 'permission', default: true },
+  { key: FLAG_KEYS.BILLING_PLAN_STARTER, type: 'permission', default: false },
   // All other plan flags default FALSE: higher-tier features are locked until
   // the billing sync enables them per-org in Unleash.
   { key: FLAG_KEYS.BILLING_PLAN_GROWTH, type: 'permission', default: false },
