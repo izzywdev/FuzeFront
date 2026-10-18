@@ -139,16 +139,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 1
-          # SECURITY — this checkout is the TRUSTED source the preserve step below copies
-          # from, so it must never be PR-author content. `actions/checkout` defaults to
-          # GITHUB_REF, and GITHUB_REF is NOT the same thing on every trigger this workflow
-          # listens to: on `issue_comment` it is the default branch, but on
-          # `pull_request_review` and `pull_request_review_comment` it is the PR MERGE branch
-          # `refs/pull/N/merge` (GitHub's "Events that trigger workflows" reference) — which
-          # already contains the PR author's `.github/actions`. Defaulting there would make
-          # the preserve/restore pair copy the attacker's action tree out and restore it back,
-          # a no-op mitigation on exactly the two review triggers. Pin the ref explicitly.
-          ref: ${{ github.event.repository.default_branch }}
 
       # SECURITY — pin the EXECUTED action code to this TRUSTED checkout, before the next
       # step replaces the working tree with a PR head that can be a fork's. `uses:
