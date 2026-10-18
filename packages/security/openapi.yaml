@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.10.1
+  version: 0.10.2
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -1907,7 +1907,15 @@ paths:
       tags: [verify]
       summary: Confirm phone ownership
       operationId: confirmPhoneVerification
-      description: Confirms `{ phone, code }`. Fail-closed on invalid/expired code.
+      description: >-
+        Confirms `{ phone, code }` for the **calling session's own account
+        only**. Requires a bearer session; the number is marked verified solely
+        for the account resolved from the token, and only when `phone` is that
+        account's current number (set by `startPhoneVerification`). Other
+        accounts holding the same number are never affected. Fail-closed on
+        invalid/expired code or a number that is not the caller's.
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -1923,6 +1931,8 @@ paths:
                 $ref: '#/components/schemas/VerificationStatus'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Singleton confirmation action.
   /v1/security/verify/status:

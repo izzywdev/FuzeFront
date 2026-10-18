@@ -1,5 +1,19 @@
 # Changelog — @fuzefront/security-client
 
+## 0.10.2 — Security: `POST /v1/security/verify/phone/confirm` now requires a session (security fix, unreleased)
+
+`info.version` 0.10.1 -> 0.10.2, `SECURITY_CONTRACT_VERSION` 0.10.1 -> 0.10.2.
+Request/response schemas are unchanged.
+
+### Fixed (security)
+
+- `confirmPhoneVerification` declared no auth and the implementation marked
+  EVERY account holding the number as phone-verified from an unauthenticated
+  request. It now declares `bearerAuth`, documents `401`, and is bound to the
+  caller's own account: verified only when `phone` is that account's current
+  number. Callers must send `Authorization: Bearer <token>` (the same session
+  that called `startPhoneVerification`).
+
 ## 0.10.1 — AuthZ: document the platform-admin gate on tenant creation and the caller-scoped tenant list (documentation fix, unreleased)
 
 **Documentation only, no shape change.** `info.version` 0.10.0 -> 0.10.1,
