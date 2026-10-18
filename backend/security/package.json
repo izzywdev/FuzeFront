@@ -18,10 +18,10 @@
   },
   "dependencies": {
     "@izzywdev/fuzefront-identity": "1.1.0",
-    "@fuzefront/core": "1.0.5",
+    "@fuzefront/core": "^1.0.5",
     "@fuzefront/feature-flags": "file:../../packages/feature-flags",
     "@fuzefront/shared": "^1.2.0",
-    "@fuzefront/telemetry": "0.1.0",
+    "@fuzefront/telemetry": "^0.1.0",
     "bcrypt": "^6.0.0",
     "express-rate-limit": "7.2.0",
     "bcryptjs": "^2.4.3",
