@@ -99,6 +99,19 @@ describe('ExecutionThresholdEvidence', () => {
 
     rerender(<ExecutionEvidenceCoverage execution={{
       ...execution,
+      evidenceLinks: [],
+      evidenceCollection: {
+        status: 'partial',
+        checkedAt: '2026-10-16T08:00:00.000Z',
+        errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED',
+      },
+    }} />)
+
+    expect(screen.getByText(/provider result limit reached/i)).toHaveTextContent('including videos first')
+    expect(screen.queryByText('Provider checked; no durable artifacts reported')).not.toBeInTheDocument()
+
+    rerender(<ExecutionEvidenceCoverage execution={{
+      ...execution,
       provider: 'github-actions',
       evidenceLinks: [{
         kind: 'report',

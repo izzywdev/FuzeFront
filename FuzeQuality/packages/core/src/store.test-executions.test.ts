@@ -540,6 +540,31 @@ describe('test execution evidence', () => {
     ])
   })
 
+  it('replaces an older complete marker when bounded pagination proves collection was partial', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '904', attempt: 1, revision: 'abc', kind: 'post-production' as const, status: 'passed' as const, name: 'Post-production', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+    await store.saveTestExecution({ id: 'first', ...base, evidenceCollection: { status: 'complete', checkedAt: '2026-10-16T08:00:00.000Z' } })
+    await store.saveTestExecution({ id: 'second', ...base, evidenceCollection: { status: 'partial', checkedAt: '2026-10-16T08:01:00.000Z', errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' } })
+
+    await expect(store.testExecutions('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({ evidenceCollection: { status: 'partial', checkedAt: '2026-10-16T08:01:00.000Z', errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' } }),
+    ])
+  })
+
+  it('applies the same partial-evidence precedence in the Postgres upsert', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+    await store.saveTestExecution({
+      id: 'partial', repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions', externalRunId: '904', attempt: 1,
+      revision: 'abc', kind: 'post-production', status: 'passed', name: 'Post-production', policyArtifactIds: [], gateArtifactIds: [],
+      gateEvaluations: [], thresholds: [], evidenceLinks: [],
+      evidenceCollection: { status: 'partial', checkedAt: '2026-10-16T08:01:00.000Z', errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' },
+    })
+
+    expect(String(query.mock.calls[0][0])).toContain("EXCLUDED.evidence_collection->>'status' IN ('complete','partial')")
+  })
+
   it('does not regress terminal evidence when a running delivery arrives late', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '789', attempt: 1, revision: 'abc', kind: 'post-production' as const, name: 'Post-production', policyArtifactIds: ['policy-1'], gateArtifactIds: ['gate-1'], thresholds: [], evidenceLinks: [] }

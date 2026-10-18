@@ -1746,11 +1746,11 @@ components:
       additionalProperties: false
       required: [status, checkedAt]
       properties:
-        status: { type: string, enum: [complete, unavailable] }
+        status: { type: string, enum: [complete, partial, unavailable] }
         checkedAt: { type: string, format: date-time }
         errorCode:
           type: string
-          enum: [PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, PROVIDER_RESPONSE_INVALID]
+          enum: [PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, PROVIDER_RESPONSE_INVALID, PROVIDER_RESULT_LIMIT_EXCEEDED]
     TestExecutionInput:
       type: object
       additionalProperties: false

@@ -173,18 +173,64 @@ describe('GitHub workflow artifact evidence', () => {
       installationId: '1234',
       tokenProvider: async () => 'secret',
       fetcher,
-    })).resolves.toEqual([
-      { kind: 'video', name: 'fuzequality-post-prod-playwright-video', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/11' },
-      { kind: 'report', name: 'playwright-report', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/12' },
-      { kind: 'trace', name: 'browser-trace', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/13' },
-      { kind: 'screenshot', name: 'failure-screenshots', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/14' },
-      { kind: 'log', name: 'service-logs', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/15' },
-      { kind: 'other', name: 'raw-artifacts', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/16' },
-    ])
+    })).resolves.toEqual({
+      truncated: false,
+      links: [
+        { kind: 'video', name: 'fuzequality-post-prod-playwright-video', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/11' },
+        { kind: 'report', name: 'playwright-report', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/12' },
+        { kind: 'trace', name: 'browser-trace', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/13' },
+        { kind: 'screenshot', name: 'failure-screenshots', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/14' },
+        { kind: 'log', name: 'service-logs', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/15' },
+        { kind: 'other', name: 'raw-artifacts', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/16' },
+      ],
+    })
     expect(fetcher).toHaveBeenCalledWith(
       'https://api.github.com/repos/izzywdev/FuzeFront/actions/runs/4242/artifacts?per_page=100',
       expect.objectContaining({ headers: expect.objectContaining({ authorization: 'Bearer secret' }), signal: expect.any(AbortSignal) }),
     )
+  })
+
+  it('finds a Playwright video on a later provider page and retains it ahead of generic artifacts', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      name: `generic-artifact-${String(index + 1).padStart(3, '0')}`,
+      expired: false,
+    }))
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ total_count: 101, artifacts: firstPage }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ total_count: 101, artifacts: [
+        { id: 101, name: 'post-production-playwright-video', expired: false },
+      ] }), { status: 200 }))
+
+    const result = await githubWorkflowArtifactEvidence({
+      owner: 'izzywdev', name: 'FuzeFront', runId: '4242', installationId: '1234',
+      tokenProvider: async () => 'secret', fetcher,
+    })
+
+    expect(result.truncated).toBe(false)
+    expect(result.links[0]).toMatchObject({ kind: 'video', name: 'post-production-playwright-video' })
+    expect(result.links).toHaveLength(99)
+    expect(fetcher).toHaveBeenNthCalledWith(2, expect.stringContaining('per_page=100&page=2'), expect.any(Object))
+  })
+
+  it('marks evidence partial when provider pagination exceeds the collection bound', async () => {
+    const artifacts = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      name: `artifact-${index + 1}`,
+      expired: false,
+    }))
+    const fetcher = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      total_count: 1001,
+      artifacts,
+    }), { status: 200 }))
+
+    const result = await githubWorkflowArtifactEvidence({
+      owner: 'izzywdev', name: 'FuzeFront', runId: '4242', installationId: '1234',
+      tokenProvider: async () => 'secret', fetcher,
+    })
+
+    expect(result.truncated).toBe(true)
+    expect(fetcher).toHaveBeenCalledTimes(10)
   })
 
   it('rejects invalid run identity before requesting an installation token', async () => {

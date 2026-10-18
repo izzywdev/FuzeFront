@@ -351,6 +351,7 @@ export function ExecutionEvidenceCoverage({
         ? 'Provider returned an invalid artifact response'
         : 'Provider artifact lookup was unavailable'
     : undefined
+  const collectionPartial = collection?.status === 'partial'
 
   return (
     <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
@@ -359,6 +360,11 @@ export function ExecutionEvidenceCoverage({
       {collectionFailure && (
         <span className="status-pill status-failed">
           {collectionFailure}; zero artifacts is not a verified result
+        </span>
+      )}
+      {collectionPartial && (
+        <span className="status-pill status-running">
+          Provider result limit reached; showing prioritized evidence, including videos first
         </span>
       )}
       {collection?.status === 'complete' && !links && (

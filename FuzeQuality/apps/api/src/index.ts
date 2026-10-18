@@ -1322,8 +1322,10 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
         })
         executionWithEvidence = {
           ...execution,
-          evidenceLinks: mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered),
-          evidenceCollection: { status: 'complete', checkedAt },
+          evidenceLinks: mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered.links),
+          evidenceCollection: discovered.truncated
+            ? { status: 'partial', checkedAt, errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' }
+            : { status: 'complete', checkedAt },
         }
       } catch (error) {
         const errorCode = error instanceof GitHubArtifactEvidenceError

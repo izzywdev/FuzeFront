@@ -644,21 +644,24 @@ export type TestExecutionEvidenceLink = {
 }
 
 export type TestExecutionEvidenceCollection = {
-  status: 'complete' | 'unavailable'
+  status: 'complete' | 'partial' | 'unavailable'
   checkedAt: string
-  errorCode?: 'PROVIDER_TIMEOUT' | 'PROVIDER_UNAVAILABLE' | 'PROVIDER_RESPONSE_INVALID'
+  errorCode?: 'PROVIDER_TIMEOUT' | 'PROVIDER_UNAVAILABLE' | 'PROVIDER_RESPONSE_INVALID' | 'PROVIDER_RESULT_LIMIT_EXCEEDED'
 }
 
 export const testExecutionEvidenceCollectionSchema = z.object({
-  status: z.enum(['complete', 'unavailable']),
+  status: z.enum(['complete', 'partial', 'unavailable']),
   checkedAt: z.string().datetime(),
-  errorCode: z.enum(['PROVIDER_TIMEOUT', 'PROVIDER_UNAVAILABLE', 'PROVIDER_RESPONSE_INVALID']).optional(),
+  errorCode: z.enum(['PROVIDER_TIMEOUT', 'PROVIDER_UNAVAILABLE', 'PROVIDER_RESPONSE_INVALID', 'PROVIDER_RESULT_LIMIT_EXCEEDED']).optional(),
 }).strict().superRefine((collection, context) => {
   if (collection.status === 'complete' && collection.errorCode) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Completed evidence collection cannot include an error code' })
   }
   if (collection.status === 'unavailable' && !collection.errorCode) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Unavailable evidence collection requires an error code' })
+  }
+  if (collection.status === 'partial' && collection.errorCode !== 'PROVIDER_RESULT_LIMIT_EXCEEDED') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Partial evidence collection requires the provider result-limit code' })
   }
 })
 

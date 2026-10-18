@@ -153,6 +153,24 @@ export class GitHubArtifactEvidenceError extends Error {
   }
 }
 
+export type GitHubWorkflowArtifactEvidence = {
+  links: TestExecutionEvidenceLink[]
+  /** True when the provider had more pages than the bounded collection permits. */
+  truncated: boolean
+}
+
+const GITHUB_ARTIFACT_PAGE_SIZE = 100
+const GITHUB_ARTIFACT_MAX_PAGES = 10
+const GITHUB_ARTIFACT_LINK_LIMIT = 99
+const artifactKindPriority: Record<TestExecutionEvidenceLink['kind'], number> = {
+  video: 0,
+  report: 1,
+  trace: 2,
+  screenshot: 3,
+  log: 4,
+  other: 5,
+}
+
 /** Discovers durable, browser-accessible evidence uploaded by one completed run. */
 export async function githubWorkflowArtifactEvidence(input: {
   owner: string
@@ -162,7 +180,7 @@ export async function githubWorkflowArtifactEvidence(input: {
   tokenProvider?: (installationId: string) => Promise<string>
   fetcher?: typeof fetch
   timeoutMs?: number
-}): Promise<TestExecutionEvidenceLink[]> {
+}): Promise<GitHubWorkflowArtifactEvidence> {
   assertIdentifier(input.owner, 'owner')
   assertIdentifier(input.name, 'repository name')
   if (!/^\d+$/.test(input.runId)) throw new Error('Invalid GitHub Actions run ID')
@@ -181,32 +199,49 @@ export async function githubWorkflowArtifactEvidence(input: {
   })
   const collect = async () => {
     const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
-    const response = await (input.fetcher ?? fetch)(
-      `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}/artifacts?per_page=100`,
-      {
-        signal: controller.signal,
-        headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
-      },
-    )
-    if (!response.ok) throw new GitHubArtifactEvidenceError('PROVIDER_UNAVAILABLE', `GitHub workflow artifact discovery failed: ${response.status}`)
-    const body = (await response.json()) as { artifacts?: unknown }
-    if (!Array.isArray(body.artifacts)) {
-      throw new GitHubArtifactEvidenceError('PROVIDER_RESPONSE_INVALID', 'GitHub workflow artifact response was invalid')
+    const fetchGithub = input.fetcher ?? fetch
+    const links: TestExecutionEvidenceLink[] = []
+    let truncated = false
+    for (let page = 1; page <= GITHUB_ARTIFACT_MAX_PAGES; page += 1) {
+      const pageSuffix = page === 1 ? '' : `&page=${page}`
+      const response = await fetchGithub(
+        `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}/artifacts?per_page=${GITHUB_ARTIFACT_PAGE_SIZE}${pageSuffix}`,
+        {
+          signal: controller.signal,
+          headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
+        },
+      )
+      if (!response.ok) throw new GitHubArtifactEvidenceError('PROVIDER_UNAVAILABLE', `GitHub workflow artifact discovery failed: ${response.status}`)
+      const body = (await response.json()) as { artifacts?: unknown; total_count?: unknown }
+      if (!Array.isArray(body.artifacts) || (body.total_count !== undefined && (!Number.isSafeInteger(body.total_count) || Number(body.total_count) < 0))) {
+        throw new GitHubArtifactEvidenceError('PROVIDER_RESPONSE_INVALID', 'GitHub workflow artifact response was invalid')
+      }
+      links.push(...body.artifacts.flatMap((value): TestExecutionEvidenceLink[] => {
+        if (!value || typeof value !== 'object') return []
+        const artifact = value as { id?: unknown; name?: unknown; expired?: unknown }
+        if (
+          typeof artifact.id !== 'number' || !Number.isSafeInteger(artifact.id) || artifact.id <= 0 ||
+          typeof artifact.name !== 'string' || !artifact.name.trim() || artifact.expired === true
+        ) return []
+        const name = artifact.name.trim().slice(0, 200)
+        return [{
+          kind: workflowArtifactKind(name),
+          name,
+          url: `https://github.com/${input.owner}/${input.name}/actions/runs/${input.runId}/artifacts/${artifact.id}`,
+        }]
+      }))
+      const totalCount = typeof body.total_count === 'number' ? body.total_count : undefined
+      const consumed = page * GITHUB_ARTIFACT_PAGE_SIZE
+      const hasMore = totalCount !== undefined
+        ? consumed < totalCount
+        : body.artifacts.length === GITHUB_ARTIFACT_PAGE_SIZE
+      if (!hasMore) break
+      if (page === GITHUB_ARTIFACT_MAX_PAGES) truncated = true
     }
-    return body.artifacts.flatMap((value): TestExecutionEvidenceLink[] => {
-      if (!value || typeof value !== 'object') return []
-      const artifact = value as { id?: unknown; name?: unknown; expired?: unknown }
-      if (
-        typeof artifact.id !== 'number' || !Number.isSafeInteger(artifact.id) || artifact.id <= 0 ||
-        typeof artifact.name !== 'string' || !artifact.name.trim() || artifact.expired === true
-      ) return []
-      const name = artifact.name.trim().slice(0, 200)
-      return [{
-        kind: workflowArtifactKind(name),
-        name,
-        url: `https://github.com/${input.owner}/${input.name}/actions/runs/${input.runId}/artifacts/${artifact.id}`,
-      }]
-    }).slice(0, 99)
+    const prioritized = [...new Map(links.map(link => [link.url, link])).values()]
+      .sort((left, right) => artifactKindPriority[left.kind] - artifactKindPriority[right.kind] || left.name.localeCompare(right.name))
+      .slice(0, GITHUB_ARTIFACT_LINK_LIMIT)
+    return { links: prioritized, truncated }
   }
   try {
     return await Promise.race([collect(), timedOut])
