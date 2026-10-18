@@ -156,7 +156,8 @@
                   "exempt": { "type": "boolean", "description": "Set true only for a flow with no mobile surface (e.g. a desktop-only admin console behind a gate). Requires exemptReason." },
                   "exemptReason": { "type": "string", "minLength": 1, "description": "Why this flow has no mobile frame. Required when exempt is true." }
                 },
-                "dependencies": { "exempt": ["exemptReason"] }
+                "if": { "properties": { "exempt": { "const": true } }, "required": ["exempt"] },
+                "then": { "required": ["exemptReason"] }
               },
               "approvedBy": { "type": ["string", "null"], "description": "GitHub login of the approver (must be owner/CODEOWNER). null while unapproved." },
               "approvedAt": {

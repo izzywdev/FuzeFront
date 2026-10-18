@@ -38,16 +38,25 @@ desktop and mobile — against the approved frames. You never skip to code.
 3. **Open the frames PR — frames only.** No feature code, tests or config ride along. CI
    enforces the UX/UI policy: `gate-ds-conformance` (tokens only), `gate-frames-schema`
    (manifest valid + mobile coverage), `gate-frames-stamped` (content stamp current).
+   > `gate-frames-schema` ships with the **phase-2 CI-gates change**; until that lands on
+   > `master`, manifest validity and mobile coverage are reviewer-enforced, not gated. The
+   > other two gates are already live.
 4. **Owner approves per flow.** One ready flow is not held up by an unready sibling. **Reject
    re-dispatches `product-designer`** to iterate — it does not close the thread.
-5. **Merge triggers the build.** QA writes Playwright specs per flow that are **ALL RED**
-   first (the spec fails before any implementation exists). Then:
+5. **Merge is the trigger for the next phase** — an **orchestrated hand-off** (the UX-QA and
+   frontend agents are dispatched to act on the merged frames), not a merge-triggered CI
+   workflow; nothing in `.github/workflows` auto-dispatches it today, so the orchestrator starts
+   this phase. QA writes Playwright specs per flow that are **ALL RED** first (the spec fails
+   before any implementation exists). Then:
    - `frontend-engineer` builds components → flow orchestrators → the private `@fuzefront/*-ui`
-     package, design-system-first, against the API contract/client, until the desktop specs
-     go green;
-   - `mobile-frontend-engineer` implements the responsive shell layout to match the **approved
-     mobile frame** (drawer/nav transition, touch targets, safe-area, PWA/TWA constraints).
-     It does **not** author its own mobile design — the frame is the design.
+     package, design-system-first, against the API contract/client. It owns the feature's own
+     responsiveness: each component — the screen's tables, forms and actions — must match
+     **both** its desktop and its approved **mobile** frame, until the specs go green at both
+     viewports;
+   - `mobile-frontend-engineer` implements the responsive **shell chrome around** that content
+     to match the approved mobile frame (drawer/nav transition, top bar, safe-area, PWA/TWA
+     constraints) — the shell, not the feature's own content. Neither authors its own mobile
+     design — the frame is the design.
 6. **Validate before "done".** Both implementers run the `ui-runtime-validation` console-clean
    check in a real Chromium at **desktop and mobile** viewports (0 errors / 0 CSP·mixed-content
    / 0 failed requests). A missing primitive is added to the design system by `frontend-engineer`
@@ -74,16 +83,19 @@ Everything in Track A, plus the app-platform wiring. Design-first still comes fi
 4. **Honour the in-shell behavior contract** (`portal-ux.md` §3): no shell chrome in your
    remote, own only your data's states, use the bridge for toasts/menu/context, same-origin
    API, inherit theme + support RTL, scroll within the content area.
-5. **Mobile is not optional.** The app declares `mobile` in its manifest and ships a mobile
-   layout; the standalone surface is what the APK wraps. A desktop-only app is an explicit,
-   justified exemption (`build.flows[].responsive.exempt` + reason), not a default.
+5. **Mobile is not optional.** Two distinct manifests, don't conflate them: the app declares
+   its mobile requirement in the **product repo's `.fuze/manifest.json`** (`mobile` block), while
+   the **registration manifest** (schema `additionalProperties: false`, no `mobile` key) expresses
+   the wrappable surface through `modes` (including `standalone`) and `routing.host`. The TWA
+   wraps the standalone surface. A desktop-only app is an explicit, justified exemption
+   (`build.flows[].responsive.exempt` + reason in the frames manifest), not a default.
 
 ## What will stop you (the gates)
 
 | You did this | This catches it |
 |---|---|
 | Wrote feature UI with no approved covering frame flow | `gate-frames-first` (BLOCKED → hard-fail) |
-| Frames PR with an invalid manifest, or a flow with no mobile coverage | `gate-frames-schema` (+ responsive-coverage check) |
+| Frames PR with an invalid manifest, or a flow with no mobile coverage | `gate-frames-schema` (+ responsive-coverage check) — *ships with the phase-2 gates PR* |
 | Edited frames without re-stamping | `gate-frames-stamped` |
 | Raw hex / px / font in frames or feature code | `gate-ds-conformance` (changed-lines, enforcing) |
 | Mobile layout broken (drawer, touch targets, overflow) | the `mobile-layout` Playwright gate |
@@ -97,8 +109,8 @@ If a gate you expect is missing, that is a defect to fix, not a step to skip —
 | Phase | Agent |
 |---|---|
 | Design (frames, desktop + mobile, states, inventory) | `product-designer` — sole author of `design/frames/**` |
-| Desktop implementation + design-system primitives | `frontend-engineer` — sole editor of `design-system/` |
-| Responsive shell / mobile implementation (against approved mobile frames) | `mobile-frontend-engineer` |
+| Feature implementation (components responsive at desktop **and** mobile) + design-system primitives | `frontend-engineer` — sole editor of `design-system/` |
+| Responsive **shell chrome** around the content (drawer/nav, top bar, safe-area, PWA/TWA) | `mobile-frontend-engineer` |
 | Independent verification (Playwright + mobile-conformance, desktop + mobile) | `frontend-test-engineer` |
 | API/event contract | `contract-designer` · **Deploy/CI** `devops-engineer` · **Docs** `docs-maintainer` |
 

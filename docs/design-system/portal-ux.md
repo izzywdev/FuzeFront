@@ -28,8 +28,15 @@ design system) is stable and apps consume it — never bundle their own React.
 An app is mounted by `frontend/src/utils/loadFederatedApp.ts` + `FederatedAppLoader.tsx`,
 which resolve the app's `integration.remoteEntry` against the shell origin and render the
 remote inside `Layout` → `.content-area`. Three integration types are supported
-(`module-federation`, `iframe`/`spa`, `web-component`); all three get the same host-provided
-context, loading, error and retry treatment.
+(`module-federation`, `iframe`/`spa`, `web-component`). The host-provided **context, props
+and the mount loading/error/retry treatment reach a `module-federation` or `web-component`
+remote** — one that shares the shell's `window` and receives component props. A cross-origin
+`iframe`/`spa` app is sandboxed: it has its own `window`, does **not** receive
+`window.__FUZEFRONT__`, `window.__FRONTFUSE_CONTEXT__` or props, and the loader renders it as a
+plain sandboxed `<iframe src>` with no load-error/retry wrapper. So §3's in-shell behavior
+contract below applies to same-origin MF/web-component remotes; an iframe app coordinates with
+the host only through whatever `postMessage` channel it and the host agree on (none is defined
+today).
 
 ## 2. Shell owns vs. app owns — the ownership boundary
 
@@ -44,7 +51,7 @@ This table is the contract. If you are building an app and find yourself re-impl
 | Organization / account switching | **Shell** (app subscribes, never renders its own switcher) | `bridge.ts` `onOrgSwitch`/`onAccountSwitch` |
 | Toast / notification surface | **Shell** (app calls `bridge.notify`) | `bridge.ts`, `<Toaster>` in `Layout.tsx` |
 | "Return to portal" control in substitution mode | **Shell** (non-removable — an app cannot trap the user) | `SidePanel.tsx` |
-| Auth token / session context | **Shell** (injected; app requests via the bridge) | `FederatedAppLoader.tsx` `getToken`, `window.__FRONTFUSE_CONTEXT__` |
+| Auth token / session context | **Shell** (injected; the remote reads it from the `getToken` prop or `window.__FRONTFUSE_CONTEXT__.getAccessToken` — **not** from the bridge, which has no token method) | `FederatedAppLoader.tsx` `getToken`, `window.__FRONTFUSE_CONTEXT__` |
 | Theme (dark/light) + brand accent | **Shell** (app inherits CSS tokens; never hard-codes) | `PortalThemeScope` |
 | Mount loading / error / retry while the remote loads | **Shell** | `FederatedAppLoader.tsx`, `FederatedAppErrorBoundary.tsx` |
 | The app's own content surface | **App** | the remote |
