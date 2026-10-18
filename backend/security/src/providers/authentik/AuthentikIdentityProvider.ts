@@ -1237,14 +1237,32 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   async startPhoneVerification(token: string, phone: string): Promise<void> {
     if (!phone) throw new InvalidInputError('phone is required')
     const { user } = await this.getUserInfo(token)
-    await this.db('users').where({ id: user.id }).update({ phone })
+    // Changing the number invalidates any prior verification of the old one.
+    const current = await this.db('users').where({ id: user.id }).first()
+    const changed = !current || current.phone !== phone
+    await this.db('users')
+      .where({ id: user.id })
+      .update(changed ? { phone, phone_verified: false } : { phone })
     await this.notifications.sendSmsOtp(phone)
   }
 
-  async confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus> {
+  async confirmPhoneVerification(token: string, phone: string, code: string): Promise<VerificationStatus> {
+    if (!phone || !code) throw new InvalidInputError('phone and code are required')
+    // Bind to the caller's session — never to "whoever holds this number".
+    const { user } = await this.getUserInfo(token)
+    const row = await this.db('users').where({ id: user.id }).first()
+    if (!row || row.phone !== phone) {
+      // Fail closed without revealing whether another account holds the number.
+      throw new UnauthorizedError('invalid or expired code')
+    }
     const ok = await this.notifications.checkSmsOtp(phone, code)
     if (!ok) throw new UnauthorizedError('invalid or expired code')
-    await this.db('users').where({ phone }).update({ phone_verified: true })
+    // Re-assert the phone in the write: a concurrent /start for a new number
+    // may have changed users.phone while the OTP check was in flight.
+    const updated = await this.db('users')
+      .where({ id: user.id, phone })
+      .update({ phone_verified: true })
+    if (!updated) throw new UnauthorizedError('invalid or expired code')
     return { emailVerified: false, phoneVerified: true, phone }
   }
 

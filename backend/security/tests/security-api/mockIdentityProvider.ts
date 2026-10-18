@@ -384,13 +384,18 @@ export class MockIdentityProvider implements IdentityProvider {
   }
 
   async startPhoneVerification(token: string, phone: string): Promise<void> {
-    this.userByToken(token)
+    const u = this.userByToken(token)
     if (!phone) throw new ProviderError('MALFORMED', 'phone required', 400)
+    if (u.phone !== phone) u.phoneVerified = false
+    u.phone = phone
   }
 
-  async confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus> {
+  async confirmPhoneVerification(token: string, phone: string, code: string): Promise<VerificationStatus> {
+    const u = this.userByToken(token)
+    if (u.phone !== phone) throw new ProviderError('INVALID_CODE', 'bad code', 400)
     if (code !== OTP) throw new ProviderError('INVALID_CODE', 'bad code', 400)
-    return { emailVerified: false, phoneVerified: true, phone }
+    u.phoneVerified = true
+    return { emailVerified: u.emailVerified, phoneVerified: true, phone }
   }
 
   async getVerificationStatus(token: string): Promise<VerificationStatus> {
