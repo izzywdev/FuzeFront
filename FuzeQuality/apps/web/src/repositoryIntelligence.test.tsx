@@ -1644,6 +1644,35 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.qualityArtifacts).toHaveBeenLastCalledWith(repository.id, undefined, 'artifact-page-2')
   })
 
+  it('retains successful artifact continuation when another repository fails', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const secondRepository = { ...repository, id: 'repo-2', name: 'agent' }
+    const continuedArtifact = {
+      ...documentationArtifact,
+      id: 'documentation-continued',
+      title: 'Healthy repository evidence continuation',
+    }
+    vi.mocked(api.qualityArtifacts).mockImplementation(async (repositoryId, _revision, cursor) => {
+      if (!cursor) return {
+        items: repositoryId === repository.id ? [documentationArtifact] : [],
+        page: { nextCursor: `cursor-${repositoryId}`, hasMore: true },
+      }
+      if (repositoryId === secondRepository.id) throw new Error('temporary continuation failure')
+      return { items: [continuedArtifact], page: { nextCursor: null, hasMore: false } }
+    })
+
+    render(<RepositoryIntelligence data={{ ...portfolio, repositories: [repository, secondRepository] }} />)
+
+    expect(await screen.findByText(documentationArtifact.title)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more repository evidence' }))
+    expect(await screen.findByText(continuedArtifact.title)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Unable to load more repository evidence for 1 repository. Successful evidence remains visible.'
+    )
+    expect(screen.getByRole('button', { name: 'Load more repository evidence' })).toBeVisible()
+  })
+
   it('renders every repository evidence row loaded into a kind panel', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
