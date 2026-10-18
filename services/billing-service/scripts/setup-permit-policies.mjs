@@ -11,8 +11,9 @@
  *
  * Run order:
  *   1. This script (prod-permit-policy-setup.yml) — creates schema + policies
- *   2. prod-billing-stripe-sync.yml mode=apply — syncs plan_tier attributes
- *   3. Helm deploy with FUZEFRONT_BILLING_AUTHZ_ENABLED=true — activates authz
+ *   2. Helm deploy with FUZEFRONT_BILLING_AUTHZ_ENABLED=true — enables attribute sync
+ *   3. prod-billing-stripe-sync.yml mode=apply — backfills plan_tier/status now that
+ *      authz is enabled (syncPlanToPermit is a no-op while the flag is off)
  *
  * Usage:
  *   node setup-permit-policies.mjs [--apply]
@@ -71,7 +72,7 @@ async function permitPost(path, body) {
 const schemaBase = `/v2/schema/${PROJECT_KEY}/${ENV_KEY}`;
 const factsBase  = `/v2/facts/${PROJECT_KEY}/${ENV_KEY}`;
 
-// ── 1. Resource definitions ───────────────────────────────────────────────────
+// ── 1. Resource definitions ────────────────────────────────────────────────────
 
 const RESOURCES = [
   {
@@ -112,7 +113,7 @@ const RESOURCES = [
   },
 ];
 
-// ── 2. Resource sets — one per resource, matching all instances ───────────────
+// ── 2. Resource sets — one per resource, matching all instances ────────────────
 // Required by the set_rules API; empty conditions = any instance of the resource.
 
 const RESOURCE_SETS = RESOURCES.map((r) => ({
@@ -122,7 +123,27 @@ const RESOURCE_SETS = RESOURCES.map((r) => ({
   conditions: {},
 }));
 
-// ── 3. Condition sets (user sets) — one per tier gate ─────────────────────────
+// ── 3. User attribute definitions ─────────────────────────────────────────────
+// Permit requires user attributes to be defined in the environment before any
+// condition set that references them can be created. plan_tier and plan_status are
+// written by PermitSyncService (via the Security API); we declare the schema here.
+
+const USER_ATTRIBUTES = [
+  {
+    key: 'plan_tier',
+    name: 'Plan Tier',
+    type: 'string',
+    description: 'Billing plan tier: free | starter | growth | enterprise',
+  },
+  {
+    key: 'plan_status',
+    name: 'Plan Status',
+    type: 'string',
+    description: 'Billing plan status: active | trialing | past_due | canceled',
+  },
+];
+
+// ── 4. Condition sets (user sets) — one per tier gate ─────────────────────────
 // Permit attribute-first format: {"user.attr": {"op": value}}
 // Entitled statuses: active + trialing (no-card trials) + past_due (grace period).
 
@@ -164,8 +185,9 @@ const CONDITION_SETS = [
   },
 ];
 
-// ── 4. Policy rules — resource set + action → user set ───────────────────────
+// ── 5. Policy rules — resource set + action → user set ───────────────────────
 // Posted to /v2/facts/{project}/{env}/set_rules (not the schema endpoint).
+// permission must be fully qualified: resource_key:action_key.
 
 const POLICY_RULES = [
   // Billing portal: any active paid subscriber
@@ -225,6 +247,13 @@ for (const rs of RESOURCE_SETS) {
   );
 }
 
+console.log('\nCreating user attribute definitions...');
+for (const attr of USER_ATTRIBUTES) {
+  await step(`user-attr: ${attr.key}`, () =>
+    permitPost(`${schemaBase}/users/attributes`, attr),
+  );
+}
+
 console.log('\nCreating condition sets (user sets)...');
 for (const cs of CONDITION_SETS) {
   await step(`condition-set: ${cs.key}`, () =>
@@ -238,7 +267,7 @@ for (const rule of POLICY_RULES) {
     permitPost(`${factsBase}/set_rules`, {
       user_set: rule.userSet,
       resource_set: rule.resourceSet,
-      permission: rule.action,
+      permission: `${rule.resourceSet.replace(/_all$/, '')}:${rule.action}`,
     }),
   );
 }

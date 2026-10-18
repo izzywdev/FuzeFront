@@ -5,8 +5,9 @@ name: "prod: Permit ABAC policy setup"
 #
 # Run order after merge:
 #   1. This workflow  (dry-run first, then apply)
-#   2. prod-billing-stripe-sync (mode=apply) — syncs plan_tier attributes
-#   3. prod-unleash-ops (flags=authz-enabled) — flips the gate ON
+#   2. Helm deploy with FUZEFRONT_BILLING_AUTHZ_ENABLED=true — enables attribute sync
+#   3. prod-billing-stripe-sync (mode=apply) — backfills plan_tier/status attributes
+#      now that authz is enabled (syncPlanToPermit is a no-op while the flag is off)
 #
 # All secrets are read from k8s at runtime via the runner SA token.
 # No GitHub repo secrets required.
