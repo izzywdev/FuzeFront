@@ -179,8 +179,8 @@
         },
         "packages": {
           "type": "array",
-          "description": "npm packages to be created/extended. Private: publishConfig → GitHub Packages, access restricted.",
-          "items": { "type": "string", "pattern": "^@fuzefront/" }
+          "description": "npm packages to be created/extended. Private: publishConfig → GitHub Packages, access restricted. Scopes in use across the family: @fuzefront (base) and @fuzeone (e.g. selection-lists clients).",
+          "items": { "type": "string", "pattern": "^@(fuzefront|fuzeone)/" }
         }
       }
     }
