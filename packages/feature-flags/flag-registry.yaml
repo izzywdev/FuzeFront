@@ -172,11 +172,11 @@ flags:
       Gates the password reset / change-password / set-first-password UI
       (@fuzefront/account-security-ui PasswordResetFlow, ChangePasswordFlow,
       SetPasswordFlow). Ships dark; flag OFF leaves /account/security/password
-      and /reset unchanged (not exposed).
+      unchanged (not exposed).
     owner: frontend-engineer
     removal_criterion: When the password flows are GA and enabled for 100% of users.
     gates:
-      - /account/security/password (change / set first password) and the /reset route
+      - /account/security/password (change / set first password)
     web_exposed: true
     jira: FFRNT-140
 

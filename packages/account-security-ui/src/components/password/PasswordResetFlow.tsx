@@ -256,9 +256,9 @@ export function ResetDoneNotice({ onSignIn }: { onSignIn?: () => void }) {
  * exists — a failed request is NEVER surfaced, so it can't be an enumeration
  * oracle) → choose a new password from the emailed token → done.
  *
- * Note: the host's `/reset` route is also being built in `@fuzefront/auth-ui`
- * (auth-experience frames); this flow is the account-security-ui build of the
- * password-reset frames and is flag-gated (`fuzefront.account-security.password-reset`).
+ * Note: the host's unauthenticated `/reset` route is owned by `@fuzefront/auth-ui`
+ * (auth-experience frames); this flow is exported for the password-reset manifest's
+ * build inventory and is NOT mounted by the host.
  */
 export function PasswordResetFlow(props: PasswordResetFlowProps) {
   return (

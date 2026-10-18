@@ -39,11 +39,10 @@ export const FLAG_KEYS = {
   /**
    * FFRNT-140 — password reset / change-password / set-first-password UI
    * (`@fuzefront/account-security-ui` PasswordResetFlow | ChangePasswordFlow |
-   * SetPasswordFlow). Gates the /account/security/password surface and the
-   * pre-auth /reset route. Default OFF. Release flag. Owner: frontend-engineer.
+   * SetPasswordFlow). Gates the /account/security/password surface (the
+   * unauthenticated /reset route is owned by @fuzefront/auth-ui). Default OFF. Release flag. Owner: frontend-engineer.
    * Removal criterion: password flows GA at 100% of users; flag-OFF path
-   * unexercised. Web-exposed (read via `useFlag()`); the pre-auth /reset route
-   * resolves it through `window.__FF_FLAGS__` / build-time default (no session yet).
+   * unexercised. Web-exposed (read via `useFlag()`).
    */
   ACCOUNT_SECURITY_PASSWORD_RESET: 'fuzefront.account-security.password-reset',
   /**

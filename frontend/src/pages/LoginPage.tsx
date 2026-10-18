@@ -5,7 +5,6 @@ import { authAPI } from '../services/api'
 import type { SessionResult } from '../services/api'
 import { Alert, AuthCard } from '@fuzefront/design-system'
 import { AuthPanel } from '@fuzefront/auth-ui'
-import { MfaStepUpFlow, MfaStepUpMobileFlow } from '@fuzefront/account-security-ui'
 import type {
   AuthTransport,
   AuthPanelMode,
@@ -13,9 +12,7 @@ import type {
   MfaRequiredChallenge,
 } from '@fuzefront/auth-ui'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
-import { isPreAuthFlagEnabled } from '../platform/preAuthFlags'
-import { isCompactViewport } from '../lib/compactViewport'
-import { ACCOUNT_SECURITY_FLAGS } from '../components/account-security/FlaggedSurface'
+import { useLoginStepUp } from '../components/account-security/LoginStepUp'
 
 /**
  * LoginPage — a thin adapter around `@fuzefront/auth-ui`'s `AuthPanel`.
@@ -45,23 +42,6 @@ import { ACCOUNT_SECURITY_FLAGS } from '../components/account-security/FlaggedSu
 // nesting a card inside a card. `compact` renders just the form/social/toggle
 // innards, which is what belongs inside the page's own card.
 const PANEL_VARIANT = 'compact' as const
-
-/** Support contact for the step-up "no verification method" fail-closed state. */
-const SUPPORT_MAILTO = 'mailto:support@frontfuse.dev'
-
-/**
- * Which MFA step-up surface to render for an `mfa_required` challenge, or null
- * when both release flags are OFF (default) — in which case the page keeps its
- * original behaviour (an info notice, no step-up UI). Pre-auth, so the flags
- * resolve through the pre-auth override (platform/preAuthFlags.ts).
- */
-export function resolveStepUpVariant(compact: boolean): 'desktop' | 'mobile' | null {
-  const mobileOn = isPreAuthFlagEnabled(ACCOUNT_SECURITY_FLAGS.mfaStepUpMobile)
-  const mgmtOn = isPreAuthFlagEnabled(ACCOUNT_SECURITY_FLAGS.mfaManagement)
-  if (mobileOn && (compact || !mgmtOn)) return 'mobile'
-  if (mgmtOn) return 'desktop'
-  return null
-}
 
 /**
  * Reproduces the previous `handleCredentialsSubmit` catch block's error-message
@@ -140,12 +120,12 @@ function LoginPage() {
   // externally-sourced result, and this is page-load routing, not a panel
   // concern, per the refactor plan. Rendered as its own Alert above the panel.
   const [callbackError, setCallbackError] = useState('')
-  // MFA step-up (FFRNT-141 / FFRNT-362). Held only when a step-up flag is ON; with
-  // both OFF the original notice-only behaviour is unchanged.
-  const [challenge, setChallenge] = useState<MfaRequiredChallenge | null>(null)
-  const compact = isCompactViewport()
-  const stepUpVariant = resolveStepUpVariant(compact)
   const [callbackNotice, setCallbackNotice] = useState('')
+  // MFA step-up (FFRNT-141/362) behind default-OFF flags; flag OFF = unchanged.
+  const stepUp = useLoginStepUp(session => {
+    authAPI.completeMfaSession(session)
+    void completeSession({ status: 'authenticated', ...session } as unknown as SessionResult)
+  })
 
   // Route an authenticated Security-API session into the app: hydrate the
   // current user then land on the dashboard. Always re-fetches via
@@ -156,10 +136,7 @@ function LoginPage() {
   // A `SessionResult` may instead be an `mfa_required` challenge (step-up).
   const completeSession = async (result: SessionResult): Promise<void> => {
     if (result.status === 'mfa_required') {
-      if (stepUpVariant) {
-        setChallenge({ status: 'mfa_required', challengeId: result.challengeId, factors: result.factors })
-        return
-      }
+      if (stepUp.begin(result)) return
       setCallbackNotice(
         'Additional verification is required to finish signing in. Please complete the verification step to continue.'
       )
@@ -245,15 +222,8 @@ function LoginPage() {
   // AuthPanel already shows its own MFA notice (from `labels.mfaNotice`,
   // identical wording to the callback path above) when a form submit resolves
   // to a challenge — nothing further to surface here.
-  const handleMfaRequired = (next: MfaRequiredChallenge) => {
-    if (stepUpVariant) setChallenge(next)
-  }
-
-  // A successful step-up minted a session: persist it exactly like a password
-  // login, then land via the same completion path.
-  const handleStepUpAuthenticated = (session: { token: string; sessionId?: string }) => {
-    authAPI.completeMfaSession(session)
-    void completeSession({ status: 'authenticated', ...session } as unknown as SessionResult)
+  const handleMfaRequired = (challenge: MfaRequiredChallenge) => {
+    stepUp.begin(challenge)
   }
 
   // Only the mode-toggle strings were ever routed through t() on this page —
@@ -291,32 +261,14 @@ function LoginPage() {
         </Alert>
       )}
 
-      {challenge && stepUpVariant ? (
-        stepUpVariant === 'mobile' ? (
-          <MfaStepUpMobileFlow
-            challenge={challenge}
-            onAuthenticated={handleStepUpAuthenticated}
-            onContactSupport={() => window.location.assign(SUPPORT_MAILTO)}
-            onBack={() => setChallenge(null)}
-          />
-        ) : (
-          <MfaStepUpFlow
-            challenge={challenge}
-            onAuthenticated={handleStepUpAuthenticated}
-            onContactSupport={() => window.location.assign(SUPPORT_MAILTO)}
-            onBack={() => setChallenge(null)}
-          />
-        )
-      ) : (
-        <AuthPanel
-          variant={PANEL_VARIANT}
-          mode={mode}
-          transport={transport}
-          onAuthenticated={handleAuthenticated}
-          onMfaRequired={handleMfaRequired}
-          labels={labels}
-        />
-      )}
+      {stepUp.view ?? <AuthPanel
+        variant={PANEL_VARIANT}
+        mode={mode}
+        transport={transport}
+        onAuthenticated={handleAuthenticated}
+        onMfaRequired={handleMfaRequired}
+        labels={labels}
+      />}
     </AuthCard>
   )
 }

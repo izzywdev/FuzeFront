@@ -390,7 +390,8 @@ test.describe('MFA step-up at sign-in (frame 05-step-up-challenge) — pre-auth'
 
   async function reachChallenge(page: Page) {
     await page.addInitScript(flag => {
-      ;(window as unknown as { __FF_FLAGS__: Record<string, boolean> }).__FF_FLAGS__ = { [flag]: true }
+      const w = window as unknown as { __FF_FLAGS__: Record<string, boolean> }
+      w.__FF_FLAGS__ = { [flag]: true }
     }, FLAG)
     await page.route('**/v1/security/methods', route => route.fulfill(json(200, methods(['totp', 'sms']))))
     await page.route('**/v1/security/session', route => {

@@ -43,7 +43,8 @@ async function mockFlags(page: Page, on: boolean) {
 async function preAuthFlag(page: Page, on: boolean) {
   await page.addInitScript(
     ([flag, value]) => {
-      ;(window as unknown as { __FF_FLAGS__: Record<string, boolean> }).__FF_FLAGS__ = { [flag as string]: value as boolean }
+      const w = window as unknown as { __FF_FLAGS__: Record<string, boolean> }
+      w.__FF_FLAGS__ = { [flag as string]: value as boolean }
     },
     [FLAG, on],
   )

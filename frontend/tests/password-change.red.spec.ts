@@ -8,9 +8,9 @@
  *   POST /v1/security/password                        -> 200 IdentityConnections | 409 | 400
  *   GET  /v1/security/identity/connections            -> { providers[], hasPassword }
  *
- * Flows covered (build.flows): reset (PasswordResetFlow, /reset),
- * change-password + set-password (ChangePasswordFlow / SetPasswordFlow,
- * /account/security/password).
+ * Flows covered: change-password + set-password (ChangePasswordFlow / SetPasswordFlow,
+ * /account/security/password). The unauthenticated /reset flow is owned by
+ * @fuzefront/auth-ui (auth-experience frames/specs), not mounted or tested here.
  *
  * Release flag `fuzefront.account-security.password-reset` (default OFF) is
  * forced ON by mocking GET /api/flags; a "flag OFF" test asserts the surface
@@ -26,7 +26,6 @@ import { test, expect, type Page } from '@playwright/test'
 import { installShellMocks, KNOWN_SHELL_NOISE_RE, seedAuth } from './support/mock-shell'
 
 const PASSWORD_ROUTE = '/account/security/password'
-const RESET_ROUTE = '/reset'
 const FLAG = 'fuzefront.account-security.password-reset'
 const FORBIDDEN_VENDORS = ['Authentik', 'authentik', 'Permit', 'permit.io']
 const STRONG = 'Correct-Horse-Battery-9!'
@@ -207,74 +206,6 @@ test.describe('Password — set first password (frame 05-signed-in variant set; 
     await expect(page.locator("[data-variant='change']")).toHaveCount(0)
     await expect(page.locator("[data-variant='set']")).toHaveCount(0)
     await expect(page.locator("[data-state='error']")).toBeVisible()
-  })
-})
-
-test.describe('Password reset — unauthenticated (frames 01-04, 06-states)', () => {
-  test.beforeEach(async ({ page }) => {
-    // /reset is PRE-auth: the authenticated GET /api/flags cannot serve it, so the host
-    // resolves it through the pre-auth flag override (window.__FF_FLAGS__, build-time
-    // default OFF) — same pattern as isMultiTenantPortalsEnabled().
-    await page.addInitScript(flag => {
-      ;(window as unknown as { __FF_FLAGS__: Record<string, boolean> }).__FF_FLAGS__ = { [flag]: true }
-    }, FLAG)
-  })
-
-  test('flag OFF: /reset is not exposed pre-auth', async ({ page }) => {
-    await page.addInitScript(flag => {
-      ;(window as unknown as { __FF_FLAGS__: Record<string, boolean> }).__FF_FLAGS__ = { [flag]: false }
-    }, FLAG)
-    await page.goto(RESET_ROUTE, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator("[data-panel='reset-request']")).toHaveCount(0)
-  })
-
-  test('request -> unconditional 202 "check your email" with the no-enumeration note', async ({ page }) => {
-    await page.route('**/v1/security/session/password/reset-request', route => route.fulfill({ status: 202 }))
-    await page.goto(RESET_ROUTE, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator("[data-panel='reset-request']")).toBeVisible()
-    await page.locator("[data-input='email']").fill('nobody@example.com')
-    await page.locator("[data-action='send-reset']").click()
-    await expect(page.locator("[data-panel='reset-sent'][data-http='202']")).toBeVisible()
-    await expect(page.locator("[data-security-note='no-enumeration']")).toBeVisible()
-    await expect(page.locator("[data-action='resend']")).toBeVisible()
-  })
-
-  test('reset-request 5xx still renders the identical confirmation (never an enumeration oracle)', async ({ page }) => {
-    await page.route('**/v1/security/session/password/reset-request', route => route.fulfill(json(500, {})))
-    await page.goto(RESET_ROUTE, { waitUntil: 'domcontentloaded' })
-    await page.locator("[data-input='email']").fill('a@example.com')
-    await page.locator("[data-action='send-reset']").click()
-    await expect(page.locator("[data-panel='reset-sent']")).toBeVisible()
-  })
-
-  test('valid token: set new password -> done with sessions-revoked note', async ({ page }) => {
-    let body: unknown
-    await page.route('**/v1/security/session/password/reset-confirm', route => {
-      body = route.request().postDataJSON()
-      return route.fulfill(json(200, { reset: true }))
-    })
-    await page.goto(`${RESET_ROUTE}/confirm?token=tok_abc`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator("[data-panel='reset-confirm'][data-token-state='valid']")).toBeVisible()
-    await page.locator("[data-input='new-password']").fill(STRONG)
-    await expect(page.locator('[data-meter]')).toBeVisible()
-    await page.locator("[data-input='confirm-password']").fill(STRONG)
-    await page.locator("[data-action='set-new-password']").click()
-    await expect(page.locator("[data-panel='reset-done']")).toBeVisible()
-    await expect(page.locator("[data-security-note='sessions-revoked']")).toBeVisible()
-    await expect(page.locator("[data-action='go-sign-in']")).toBeVisible()
-    expect(body).toEqual({ token: 'tok_abc', newPassword: STRONG })
-  })
-
-  test('expired / consumed token (400) routes back to request a new link', async ({ page }) => {
-    await page.route('**/v1/security/session/password/reset-confirm', route =>
-      route.fulfill(json(400, { error: 'Password reset failed', code: 'MALFORMED' })),
-    )
-    await page.goto(`${RESET_ROUTE}/confirm?token=tok_old`, { waitUntil: 'domcontentloaded' })
-    await page.locator("[data-input='new-password']").fill(STRONG)
-    await page.locator("[data-input='confirm-password']").fill(STRONG)
-    await page.locator("[data-action='set-new-password']").click()
-    await expect(page.locator("[data-token-state='invalid']")).toBeVisible()
-    await expect(page.locator("[data-action='request-again']")).toBeVisible()
   })
 })
 

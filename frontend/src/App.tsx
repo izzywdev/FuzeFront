@@ -44,9 +44,6 @@ import AccountConnectionsPage from './pages/AccountConnectionsPage'
 import AccountPasswordPage from './pages/AccountPasswordPage'
 import AccountMfaPage from './pages/AccountMfaPage'
 import AccountVerifyPhonePage from './pages/AccountVerifyPhonePage'
-import ResetPasswordPage from './pages/ResetPasswordPage'
-import { isPreAuthFlagEnabled } from './platform/preAuthFlags'
-import { ACCOUNT_SECURITY_FLAGS } from './components/account-security/FlaggedSurface'
 import PortalsDirectory from './pages/PortalsDirectory'
 import PortalBillingPage from './pages/PortalBillingPage'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
@@ -305,16 +302,6 @@ function AppContent() {
   // Public route: invitation accept page — handle before auth check
   if (currentPath.startsWith('/invitations/')) {
     return <AcceptInvitePage />
-  }
-
-  // Public password-reset route (FFRNT-140). Pre-auth, so the flag resolves through
-  // the pre-auth override (platform/preAuthFlags.ts), default OFF — flag OFF falls
-  // through to today's unauthenticated experience, completely unchanged.
-  if (
-    (currentPath === '/reset' || currentPath.startsWith('/reset/')) &&
-    isPreAuthFlagEnabled(ACCOUNT_SECURITY_FLAGS.passwordReset)
-  ) {
-    return <ResetPasswordPage />
   }
 
   // Public picker harness — embeddable component demo/test surface.

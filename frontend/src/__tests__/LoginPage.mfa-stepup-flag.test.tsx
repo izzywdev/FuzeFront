@@ -20,7 +20,8 @@ vi.mock('../contexts/LanguageContext', () => ({
 }))
 vi.mock('../lib/shared', () => ({ useCurrentUser: vi.fn() }))
 
-import LoginPage, { resolveStepUpVariant } from '../pages/LoginPage'
+import LoginPage from '../pages/LoginPage'
+import { resolveStepUpVariant } from '../components/account-security/LoginStepUp'
 import * as sharedMock from '../lib/shared'
 import { authAPI } from '../services/api'
 import { isPreAuthFlagEnabled, preAuthFlagEnvName } from '../platform/preAuthFlags'
@@ -45,7 +46,8 @@ const CHALLENGE = {
 }
 
 function setFlags(flags: Record<string, boolean> | undefined) {
-  ;(window as unknown as { __FF_FLAGS__?: Record<string, boolean> }).__FF_FLAGS__ = flags
+  const w = window as unknown as { __FF_FLAGS__?: Record<string, boolean> }
+  w.__FF_FLAGS__ = flags
 }
 
 function setLocation(pathname: string) {
