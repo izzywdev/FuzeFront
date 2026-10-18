@@ -33,6 +33,7 @@
 // header describes the reasoning in detail; it applies equally here.
 
 import axios from 'axios';
+import { Pool } from 'pg';
 import { normalizeTier } from '@fuzefront/billing-types';
 import { getBooleanFlag, FlagContext } from './authz.flags';
 
@@ -64,15 +65,23 @@ export interface UnleashFlagSyncConfig {
 }
 
 export class UnleashFlagSyncService {
-  // Per-flag mutex: chains Promises so concurrent setOrgInFlag calls on the
-  // same flag serialize their GET→PATCH within this process instance.
-  // Without this, two concurrent webhooks both read an empty userIds list and
-  // each PATCH their own single-entry list — last write silently drops the other.
+  // Per-flag mutex: serializes GET→PATCH within this process. Combined with
+  // the Postgres advisory lock below, this prevents both intra- and inter-
+  // process races in multi-replica deployments.
   private readonly _flagLocks = new Map<string, Promise<void>>();
+
+  // Deterministic lock IDs in the billing-service namespace (2_147_000_0xx).
+  // Each flag gets a unique int so replicas don't contend across flag names.
+  private static readonly FLAG_LOCK_IDS: Readonly<Record<string, number>> = {
+    'fuzefront.billing.plan-starter':    2_147_000_001,
+    'fuzefront.billing.plan-growth':     2_147_000_002,
+    'fuzefront.billing.plan-enterprise': 2_147_000_003,
+  };
 
   constructor(
     private readonly cfg: UnleashFlagSyncConfig,
     private readonly logger: Pick<Console, 'error' | 'warn' | 'info'> = console,
+    private readonly db?: Pool,
   ) {}
 
   private withFlagLock<T>(flagName: string, fn: () => Promise<T>): Promise<T> {
@@ -81,6 +90,26 @@ export class UnleashFlagSyncService {
     // Store a void chain so the Map never holds a rejected promise.
     this._flagLocks.set(flagName, next.then(() => undefined, () => undefined));
     return next;
+  }
+
+  // Acquires a Postgres session-level advisory lock for the given flag, runs
+  // fn(), then unconditionally releases it. Uses a dedicated client checkout
+  // so the lock and unlock always land on the same connection. Falls back to
+  // calling fn() directly when db is absent (single-process / test mode).
+  private async withDbAdvisoryLock<T>(flagName: string, fn: () => Promise<T>): Promise<T> {
+    const lockId = UnleashFlagSyncService.FLAG_LOCK_IDS[flagName];
+    if (!this.db || lockId === undefined) return fn();
+    const client = await this.db.connect();
+    try {
+      await client.query('SELECT pg_advisory_lock($1)', [lockId]);
+      try {
+        return await fn();
+      } finally {
+        await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
+      }
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -109,7 +138,9 @@ export class UnleashFlagSyncService {
       for (const flag of PLAN_TIER_FLAGS) {
         const shouldEnable = enabledFlags.has(flag);
         try {
-          await this.withFlagLock(flag, () => this.setOrgInFlag(flag, entityId, shouldEnable));
+          await this.withFlagLock(flag, () =>
+            this.withDbAdvisoryLock(flag, () => this.setOrgInFlag(flag, entityId, shouldEnable)),
+          );
         } catch (err) {
           this.logger.error(
             `[flag-sync] failed to ${shouldEnable ? 'add' : 'remove'} ${entityId} ${shouldEnable ? 'to' : 'from'} ${flag}: ${

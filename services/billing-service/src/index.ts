@@ -123,7 +123,7 @@ async function main() {
         adminToken: config.unleash.adminToken,
         project: config.unleash.project,
         environment: config.unleash.environment,
-      })
+      }, console, pool)
     : undefined;
 
   const consumer = new TypedConsumer(kafka, config.kafka.groupId);
