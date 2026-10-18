@@ -59,14 +59,17 @@ jobs:
             exit 1
           fi
           echo "::add-mask::$AK_TOKEN"
-          echo "ak_token=$AK_TOKEN" >> "$GITHUB_OUTPUT"
+          printf '%s' "$AK_TOKEN" > /tmp/ak_token
+          # Never write token to GITHUB_OUTPUT; pass via tmp file to the provision step.
 
       - name: Provision s2s-billing-service in Authentik
         id: provision
-        env:
-          AK_TOKEN: ${{ steps.cluster.outputs.ak_token }}
         run: |
           set -euo pipefail
+          AK_TOKEN=$(cat /tmp/ak_token)
+          rm -f /tmp/ak_token
+          echo "::add-mask::$AK_TOKEN"
+          export AK_TOKEN
 
           python3 << 'PYEOF'
           import os, sys, json, urllib.request, urllib.error, urllib.parse
@@ -278,7 +281,7 @@ jobs:
             exit 0
           fi
 
-          python3 << PYEOF
+          python3 << 'PYEOF'
           import os, re
 
           path = 'deploy/contabo/sealed/billing-secrets.yaml'
