@@ -928,7 +928,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm phone ownership
-         * @description Confirms `{ phone, code }`. Fail-closed on invalid/expired code.
+         * @description Confirms `{ phone, code }` for the **calling session's own account only**. Requires a bearer session; the number is marked verified solely for the account resolved from the token, and only when `phone` is that account's current number (set by `startPhoneVerification`). Other accounts holding the same number are never affected. Fail-closed on invalid/expired code or a number that is not the caller's.
          */
         post: operations["confirmPhoneVerification"];
         delete?: never;
@@ -3606,6 +3606,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     getVerificationStatus: {
