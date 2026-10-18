@@ -55,6 +55,27 @@ describe('ChangePasswordFlow', () => {
     expect(document.querySelector('[data-field-error="new-password"]')).toBeTruthy()
   })
 
+  it('server policy rejection (422 PASSWORD_POLICY) → password-policy error', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({ changePassword: vi.fn(async () => { throw err(422, 'PASSWORD_POLICY') }) })
+    render(<ChangePasswordFlow client={asClient(client)} />)
+    await fillChange(user)
+    await user.click(screen.getByRole('button', { name: /save new password/i }))
+    await waitFor(() => expect(document.querySelector('[data-error="password-policy"]')).toBeTruthy())
+  })
+
+  it('409 NO_PASSWORD → offers set-first-password instead of failing', async () => {
+    const user = userEvent.setup()
+    const onNavigate = vi.fn()
+    const client = makeClient({ changePassword: vi.fn(async () => { throw err(409, 'NO_PASSWORD') }) })
+    render(<ChangePasswordFlow client={asClient(client)} onNavigate={onNavigate} />)
+    await fillChange(user)
+    await user.click(screen.getByRole('button', { name: /save new password/i }))
+    await waitFor(() => expect(document.querySelector('[data-state="no-password"]')).toBeTruthy())
+    await user.click(document.querySelector('[data-action="go-set"]')!)
+    expect(onNavigate).toHaveBeenCalledWith('/account/security/password?mode=set')
+  })
+
   it('mismatched confirmation blocks submit without a request', async () => {
     const user = userEvent.setup()
     const client = makeClient()
@@ -174,6 +195,17 @@ describe('PasswordManagementFlow', () => {
     render(<PasswordManagementFlow client={asClient(client)} />)
     await waitFor(() => expect(document.querySelector('[data-state="error"]')).toBeTruthy())
     expect(document.querySelector('[data-variant]')).toBeNull()
+  })
+
+  it('409 NO_PASSWORD on change switches the management surface to the set form', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({ changePassword: vi.fn(async () => { throw err(409, 'NO_PASSWORD') }) })
+    render(<PasswordManagementFlow client={asClient(client)} />)
+    await waitFor(() => expect(document.querySelector('[data-variant="change"]')).toBeTruthy())
+    await fillChange(user)
+    await user.click(screen.getByRole('button', { name: /save new password/i }))
+    await user.click(await screen.findByRole('button', { name: /set a password/i }))
+    await waitFor(() => expect(document.querySelector('[data-variant="set"]')).toBeTruthy())
   })
 
   it('a 409 on set switches the surface to the change form via "Change password"', async () => {

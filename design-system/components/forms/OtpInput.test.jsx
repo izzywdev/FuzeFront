@@ -21,7 +21,7 @@ describe("<OtpInput>", () => {
     await user.click(screen.getByLabelText("digit 1"));
     await user.keyboard("492017");
     expect(onComplete).toHaveBeenCalledWith("492017");
-    expect(onChange).toHaveBeenLastCalledWith("492017");
+    expect(onChange).toHaveBeenLastCalledWith("492017", true);
     expect(screen.getByLabelText("digit 6")).toHaveValue("7");
   });
 
@@ -31,7 +31,7 @@ describe("<OtpInput>", () => {
     render(<OtpInput onChange={onChange} />);
     await user.click(screen.getByLabelText("digit 1"));
     await user.keyboard("a1b2");
-    expect(onChange).toHaveBeenLastCalledWith("12");
+    expect(onChange).toHaveBeenLastCalledWith("12", false);
   });
 
   it("is paste-aware: a pasted code fills every cell", () => {

@@ -59,7 +59,7 @@ describe('SecurityStatusMobileFlow (frame 04)', () => {
 
   it('REMOVE-LAST: 409 shows the bottom-sheet blocked state; the factor stays active (no optimistic removal)', async () => {
     const user = userEvent.setup()
-    const client = makeClient({ removeFactor: vi.fn(async () => { throw err(409, 'CONFLICT') }) })
+    const client = makeClient({ removeFactor: vi.fn(async () => { throw err(409, 'LAST_FACTOR') }) })
     render(<SecurityStatusMobileFlow client={asClient(client)} />)
     await waitFor(() => expect(q('[data-action="remove-factor"]')).toBeTruthy())
     await user.click(q('[data-action="remove-factor"]')!)
@@ -91,7 +91,7 @@ describe('SecurityStatusMobileFlow (frame 04)', () => {
 
   it('add-method OFF: the remove-last blocked sheet offers no "add another" link either', async () => {
     const user = userEvent.setup()
-    const client = makeClient({ removeFactor: vi.fn(async () => { throw err(409, 'CONFLICT') }) })
+    const client = makeClient({ removeFactor: vi.fn(async () => { throw err(409, 'LAST_FACTOR') }) })
     render(<SecurityStatusMobileFlow client={asClient(client)} addMethodEnabled={false} />)
     await waitFor(() => expect(q('[data-action="remove-factor"]')).toBeTruthy())
     await user.click(q('[data-action="remove-factor"]')!)

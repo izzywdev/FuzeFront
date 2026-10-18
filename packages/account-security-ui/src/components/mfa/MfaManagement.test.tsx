@@ -81,7 +81,7 @@ describe('MfaOverviewFlow', () => {
   it('REMOVE-LAST: a 409 renders the blocked state, the factor stays, and "add another" routes to enrolment', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
-    const client = makeClient({ removeFactor: vi.fn(async () => { throw err(409, 'CONFLICT') }) })
+    const client = makeClient({ removeFactor: vi.fn(async () => { throw err(409, 'LAST_FACTOR') }) })
     render(<MfaOverviewFlow client={asClient(client)} onNavigate={onNavigate} />)
     await waitFor(() => expect(q('[data-factor="totp"]')).toBeTruthy())
     await user.click(q('[data-action="remove-factor"]')!)
@@ -241,6 +241,18 @@ describe('TotpEnrollFlow', () => {
     await waitFor(() => expect(q('[data-component="totp-enroll"][data-state="scan"]')).toBeTruthy())
   })
 
+  it('clearing a MIDDLE cell keeps "Turn on" disabled (blank inside a 6-char value is not complete)', async () => {
+    const user = userEvent.setup()
+    render(<TotpEnrollFlow client={asClient(makeClient())} />)
+    await start(user)
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('492017')
+    expect(q('[data-action="activate-factor"]')).toBeEnabled()
+    await user.click(screen.getByLabelText('digit 3'))
+    await user.keyboard('{Backspace}')
+    expect(q('[data-action="activate-factor"]')).toBeDisabled()
+  })
+
   it('buildQrMatrix returns a square matrix with finder patterns', () => {
     const m = buildQrMatrix('otpauth://totp/x?secret=ABC')
     expect(m.length).toBeGreaterThanOrEqual(21)
@@ -313,6 +325,27 @@ describe('SmsEnrollFlow', () => {
     await user.click(q('[data-action="activate-factor"]')!)
     await waitFor(() => expect(q('[data-component="sms-enroll"][data-state="error-invalid"]')).toBeTruthy())
     expect(q('[data-error="invalid-code"]')).toBeTruthy()
+  })
+
+  it('RESEND replaces the pending factor: the previous one is deleted, only the newest is tracked', async () => {
+    const user = userEvent.setup()
+    let n = 0
+    const client = makeClient({
+      getMethods: vi.fn(async () => methods(['sms'])),
+      enrollFactor: vi.fn(async () => ({ factorId: `fct_sms_${++n}`, type: 'sms', status: 'pending', codeSent: true })),
+    })
+    const { unmount } = render(<SmsEnrollFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '+447700900471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-action="resend-code"]')).toBeTruthy())
+    await user.click(q('[data-action="resend-code"]')!)
+    await waitFor(() => expect(client.enrollFactor).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(client.removeFactor).toHaveBeenCalledWith('fct_sms_1'))
+    expect(client.removeFactor).not.toHaveBeenCalledWith('fct_sms_2')
+    unmount()
+    await waitFor(() => expect(client.removeFactor).toHaveBeenCalledWith('fct_sms_2'))
+    expect(client.removeFactor).toHaveBeenCalledTimes(2)
   })
 
   it('cancel / unmount after sending deletes the pending sms factor (best-effort)', async () => {

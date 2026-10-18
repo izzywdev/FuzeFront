@@ -127,6 +127,24 @@ test.describe('MFA overview (frame 01-mfa-overview)', () => {
     await expect(page.locator("[data-add='sms']")).toHaveCount(0)
   })
 
+  test('the legacy hub route /account/security/two-factor aliases to the MFA overview', async ({ page }) => {
+    await mockMethods(page, ['totp'])
+    await mockFactors(page, [TOTP])
+    await page.goto('/account/security/two-factor', { waitUntil: 'domcontentloaded' })
+    await expect(page).toHaveURL(/\/account\/security\/mfa$/)
+    await expect(page.locator("[data-panel='mfa-overview'][data-state='loaded']")).toBeVisible()
+  })
+
+  test('the hub two-factor card links to the MFA overview when the flag is ON', async ({ page }) => {
+    await mockMethods(page, ['totp'])
+    await mockFactors(page, [TOTP])
+    await page.route('**/v1/security/identity/connections', route =>
+      route.fulfill(json(200, { providers: [], hasPassword: true })),
+    )
+    await page.goto('/account/security', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-card='two-factor']")).toHaveAttribute('data-route', '/account/security/mfa')
+  })
+
   test('recovery-codes status is linked from the overview', async ({ page }) => {
     await mockMethods(page, ['totp'])
     await mockFactors(page, [TOTP])
@@ -335,6 +353,14 @@ test.describe('Recovery codes (frame 04) — REVEAL ONCE', () => {
     await expect(shown.locator("[data-action='print-codes']")).toBeVisible()
     expect(calls).toBe(1)
 
+    // Dismiss ("I've saved them"): the codes leave the DOM and were never written to any storage.
+    await shown.locator("[data-action='codes-saved']").click()
+    await expect(page.locator('[data-codes]')).toHaveCount(0)
+    await expect(page.locator('body')).not.toContainText('4f2a-9c11')
+    const stored = await page.evaluate(() => JSON.stringify([{ ...localStorage }, { ...sessionStorage }]))
+    for (const c of CODES) expect(stored).not.toContain(c)
+    expect(calls).toBe(1)
+
     // Leave and come back: the codes are gone from the DOM and were not re-fetched.
     await page.goto(OVERVIEW, { waitUntil: 'domcontentloaded' })
     await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
@@ -384,7 +410,7 @@ test.describe('Remove a factor (frame 06) — remove-last is BLOCKED (409)', () 
     await mockFactors(page, [TOTP])
     await page.route('**/v1/security/mfa/factors/*', route => {
       if (route.request().method() === 'DELETE') {
-        return route.fulfill(json(409, { error: 'Two-factor is required', code: 'CONFLICT' }))
+        return route.fulfill(json(409, { error: 'Two-factor is required', code: 'LAST_FACTOR' }))
       }
       return route.fallback()
     })

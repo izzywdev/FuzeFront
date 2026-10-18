@@ -6,6 +6,7 @@
  *   POST /v1/security/session/password/reset-request  -> 202 ALWAYS (no enumeration)
  *   POST /v1/security/session/password/reset-confirm  -> 200 {reset:true} | 400
  *   POST /v1/security/password                        -> 200 IdentityConnections | 409 | 400
+ *   POST /v1/security/password/change (backend #1555) -> 204 | 400 INVALID_CREDENTIALS | 422 PASSWORD_POLICY | 409 NO_PASSWORD
  *   GET  /v1/security/identity/connections            -> { providers[], hasPassword }
  *
  * Flows covered: change-password + set-password (ChangePasswordFlow / SetPasswordFlow,
@@ -86,9 +87,11 @@ test.describe('Password — change (frame 05-signed-in, variant change)', () => 
   })
 
   test('wrong current password -> inline field error, password unchanged (400 INVALID_CREDENTIALS)', async ({ page }) => {
-    await page.route('**/v1/security/password/change', route =>
-      route.fulfill(json(400, { error: 'Invalid credentials', code: 'INVALID_CREDENTIALS' })),
-    )
+    let body: unknown
+    await page.route('**/v1/security/password/change', route => {
+      body = route.request().postDataJSON()
+      return route.fulfill(json(400, { error: 'Invalid credentials', code: 'INVALID_CREDENTIALS' }))
+    })
     await page.goto(PASSWORD_ROUTE, { waitUntil: 'domcontentloaded' })
     const form = page.locator("[data-variant='change']")
     await form.locator("[data-input='current-password']").fill('not-my-password')
@@ -97,11 +100,43 @@ test.describe('Password — change (frame 05-signed-in, variant change)', () => 
     await form.locator("[data-action='change-password']").click()
     await expect(page.locator("[data-error='wrong-current']")).toBeVisible()
     await expect(page.locator("[data-field-error='current-password']")).toBeVisible()
+    expect(body).toEqual({ currentPassword: 'not-my-password', newPassword: STRONG })
   })
 
-  test('policy rejection (400) shows the password-policy field error', async ({ page }) => {
+  test('success (204) posts { currentPassword, newPassword } and confirms', async ({ page }) => {
+    let body: unknown
+    await page.route('**/v1/security/password/change', route => {
+      body = route.request().postDataJSON()
+      return route.fulfill({ status: 204 })
+    })
+    await page.goto(PASSWORD_ROUTE, { waitUntil: 'domcontentloaded' })
+    const form = page.locator("[data-variant='change']")
+    await form.locator("[data-input='current-password']").fill('old-password-1!')
+    await form.locator("[data-input='new-password']").fill(STRONG)
+    await form.locator("[data-input='confirm-password']").fill(STRONG)
+    await form.locator("[data-action='change-password']").click()
+    await expect(page.locator("[data-state='success']")).toBeVisible()
+    expect(body).toEqual({ currentPassword: 'old-password-1!', newPassword: STRONG })
+  })
+
+  test('409 NO_PASSWORD (account has no password) routes to set-first-password, not a crash', async ({ page }) => {
     await page.route('**/v1/security/password/change', route =>
-      route.fulfill(json(400, { error: 'Password too common', code: 'MALFORMED' })),
+      route.fulfill(json(409, { error: 'No password set', code: 'NO_PASSWORD' })),
+    )
+    await page.goto(PASSWORD_ROUTE, { waitUntil: 'domcontentloaded' })
+    const form = page.locator("[data-variant='change']")
+    await form.locator("[data-input='current-password']").fill('old-password-1!')
+    await form.locator("[data-input='new-password']").fill(STRONG)
+    await form.locator("[data-input='confirm-password']").fill(STRONG)
+    await form.locator("[data-action='change-password']").click()
+    await expect(page.locator("[data-state='no-password']")).toBeVisible()
+    await page.locator("[data-action='go-set']").click()
+    await expect(page.locator("[data-variant='set']")).toBeVisible()
+  })
+
+  test('policy rejection (422 PASSWORD_POLICY) shows the password-policy field error', async ({ page }) => {
+    await page.route('**/v1/security/password/change', route =>
+      route.fulfill(json(422, { error: 'Password too common', code: 'PASSWORD_POLICY' })),
     )
     await page.goto(PASSWORD_ROUTE, { waitUntil: 'domcontentloaded' })
     const form = page.locator("[data-variant='change']")
@@ -117,7 +152,7 @@ test.describe('Password — change (frame 05-signed-in, variant change)', () => 
     let called = false
     await page.route('**/v1/security/password/change', route => {
       called = true
-      return route.fulfill(json(200, { hasPassword: true, providers: [] }))
+      return route.fulfill({ status: 204 })
     })
     await page.goto(PASSWORD_ROUTE, { waitUntil: 'domcontentloaded' })
     const form = page.locator("[data-variant='change']")
@@ -135,7 +170,7 @@ test.describe('Password — change (frame 05-signed-in, variant change)', () => 
       n += 1
       return n === 1
         ? route.fulfill(json(500, { error: 'boom' }))
-        : route.fulfill(json(200, { hasPassword: true, providers: [] }))
+        : route.fulfill({ status: 204 })
     })
     await page.goto(PASSWORD_ROUTE, { waitUntil: 'domcontentloaded' })
     const form = page.locator("[data-variant='change']")

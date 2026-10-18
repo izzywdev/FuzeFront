@@ -19,6 +19,7 @@
  */
 import { test, expect, type Page } from '@playwright/test'
 import { installShellMocks, seedAuth } from './support/mock-shell'
+import { readActiveAuthToken } from './support/account-vault'
 
 const FLAG = 'fuzefront.security.mfa-stepup-mobile'
 const FORBIDDEN_VENDORS = ['Authentik', 'authentik', 'Permit', 'permit.io']
@@ -53,8 +54,12 @@ const methodsBody = (types: string[]) => ({
   password: true, social: [], mfa: { enabled: true, types }, verification: { email: true, sms: types.includes('sms') },
 })
 
-async function signInToChallenge(page: Page, factors: Array<{ factorId: string; type: string }>) {
-  await preAuthFlag(page, true)
+async function signInToChallenge(
+  page: Page,
+  factors: Array<{ factorId: string; type: string }>,
+  flagOn = true,
+) {
+  await preAuthFlag(page, flagOn)
   await page.route('**/v1/security/methods', route => route.fulfill(json(200, methodsBody(['totp', 'sms']))))
   await page.route('**/v1/security/session', route => {
     if (route.request().method() === 'POST') {
@@ -72,11 +77,31 @@ async function signInToChallenge(page: Page, factors: Array<{ factorId: string; 
   ])
 }
 
+/** Every OTP cell must be fully inside the viewport AND inside the OTP group (no clipping / overflow). */
+async function expectOtpCellsUnclipped(page: Page) {
+  const group = page.locator("[data-component='otp-input']")
+  const g = await group.boundingBox()
+  const vw = page.viewportSize()?.width ?? 375
+  const cells = group.locator('input')
+  expect(await cells.count()).toBe(6)
+  for (let i = 0; i < 6; i += 1) {
+    const b = await cells.nth(i).boundingBox()
+    expect(b, `cell ${i + 1} has a box`).not.toBeNull()
+    expect(b!.x, `cell ${i + 1} left edge`).toBeGreaterThanOrEqual(0)
+    expect(b!.x + b!.width, `cell ${i + 1} right edge inside viewport`).toBeLessThanOrEqual(vw)
+    expect(b!.x + b!.width, `cell ${i + 1} right edge inside its container`).toBeLessThanOrEqual(g!.x + g!.width + 0.5)
+    expect(b!.width, `cell ${i + 1} stays a >=44px tap target`).toBeGreaterThanOrEqual(44)
+  }
+  const overflow = await group.evaluate(el => el.scrollWidth > el.clientWidth)
+  expect(overflow).toBe(false)
+}
+
 test.describe('Step-up, choose a factor (frame 01-choose-factor)', () => {
-  test('flag OFF: the mobile step-up is not exposed', async ({ page }) => {
-    await preAuthFlag(page, false)
-    await page.goto('/login', { waitUntil: 'domcontentloaded' })
+  test('EVERY flag OFF: a server mfa_required still renders the (desktop) step-up, never the mobile one or a dead end', async ({ page }) => {
+    await signInToChallenge(page, [{ factorId: 'fct_totp_1', type: 'totp' }], false)
+    await expect(page.locator("[data-component='mfa-challenge']")).toBeVisible()
     await expect(page.locator("[data-panel='choose-factor']")).toHaveCount(0)
+    await expect(page.locator("[data-component='otp-input'] input")).toHaveCount(6)
   })
 
   test('loaded: only the enrolled factors the server lists (email / sms only when offered)', async ({ page }) => {
@@ -112,9 +137,11 @@ test.describe('Step-up, choose a factor (frame 01-choose-factor)', () => {
 
 test.describe('Step-up, enter code (frame 02-enter-code)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/v1/security/mfa/challenge', route =>
-      route.fulfill(json(202, { challengeId: 'chl_1', factorId: 'fct_sms_1', delivered: true })),
-    )
+    // Echo the factor that was actually requested (not a fixed id).
+    await page.route('**/v1/security/mfa/challenge', route => {
+      const req = route.request().postDataJSON() as { challengeId: string; factorId: string }
+      return route.fulfill(json(202, { challengeId: req.challengeId, factorId: req.factorId, delivered: true }))
+    })
   })
 
   test('verify button disables while in flight (no double-submit)', async ({ page }) => {
@@ -169,11 +196,44 @@ test.describe('Step-up, enter code (frame 02-enter-code)', () => {
     await expect(page.locator("[data-action='choose-factor']")).toBeVisible()
   })
 
+  test('NO OTP cell is clipped at 375px: all six 44px cells sit inside the viewport and their container', async ({ page }) => {
+    await signInToChallenge(page, [{ factorId: 'fct_totp_1', type: 'totp' }])
+    await page.locator("[data-factor='totp'][data-action='challenge']").click()
+    await expectOtpCellsUnclipped(page)
+  })
+
+  test('a correct code: POSTs the real ids + code, persists the session and lands on the dashboard', async ({ page }) => {
+    await installShellMocks(page, { [FLAG]: true })
+    let verifyBody: unknown
+    await page.route('**/v1/security/mfa/verify', route => {
+      verifyBody = route.request().postDataJSON()
+      return route.fulfill(json(200, { token: 'tok_ok', sessionId: 'sess_ok', user: { id: 'usr-e2e-1', email: 'amara@rowan.co' } }))
+    })
+    await signInToChallenge(page, [{ factorId: 'fct_totp_1', type: 'totp' }])
+    // After sign-in the app hydrates the user via GET /session; the POST keeps the earlier handler.
+    await page.route('**/v1/security/session', route => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill(json(200, { user: { id: 'usr-e2e-1', email: 'amara@rowan.co', roles: ['user'], firstName: 'Amara', lastName: 'Rowan' } }))
+      }
+      return route.fallback()
+    })
+    await page.locator("[data-factor='totp'][data-action='challenge']").click()
+    await page.locator("[data-component='otp-input'] input").first().click()
+    await page.keyboard.type('123456')
+    await page.locator("[data-action='verify-mfa']").click()
+    await page.waitForURL('**/dashboard')
+    expect(verifyBody).toEqual({ challengeId: 'chl_1', factorId: 'fct_totp_1', code: '123456' })
+    // The shell may reload while booting the dashboard; read the vault once it settles.
+    await expect(async () => {
+      expect(await page.evaluate(readActiveAuthToken)).toBe('tok_ok')
+    }).toPass()
+  })
+
   test('OTP cells are touch sized (>= 44px)', async ({ page }) => {
     await signInToChallenge(page, [{ factorId: 'fct_totp_1', type: 'totp' }])
     await page.locator("[data-factor='totp'][data-action='challenge']").click()
     const box = await page.locator("[data-component='otp-input'] input").first().boundingBox()
-    expect(box?.width ?? 0).toBeGreaterThanOrEqual(42)
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
   })
 })
@@ -185,11 +245,17 @@ test.describe('Confirm phone (frame 03-confirm-contact)', () => {
     await mockFlags(page, true)
   })
 
-  test('enter phone -> send code -> enter code -> verified', async ({ page }) => {
-    await page.route('**/v1/security/verify/phone/start', route => route.fulfill({ status: 202 }))
-    await page.route('**/v1/security/verify/phone/confirm', route =>
-      route.fulfill(json(200, { emailVerified: true, phoneVerified: true, phone: '+15550000000' })),
-    )
+  test('enter phone -> send code -> enter code -> verified (asserts the start + confirm request bodies)', async ({ page }) => {
+    let startBody: unknown
+    let confirmBody: unknown
+    await page.route('**/v1/security/verify/phone/start', route => {
+      startBody = route.request().postDataJSON()
+      return route.fulfill({ status: 202 })
+    })
+    await page.route('**/v1/security/verify/phone/confirm', route => {
+      confirmBody = route.request().postDataJSON()
+      return route.fulfill(json(200, { emailVerified: true, phoneVerified: true, phone: '+15550000000' }))
+    })
     await page.goto(ROUTE, { waitUntil: 'domcontentloaded' })
     await expect(page.locator("[data-panel='confirm-contact'][data-state='enter-phone']")).toBeVisible()
     await page.locator('#phone, input[inputmode="tel"]').first().fill('+1 555 000 0000')
@@ -197,8 +263,13 @@ test.describe('Confirm phone (frame 03-confirm-contact)', () => {
     await expect(page.locator("[data-panel='confirm-contact'][data-state='enter-code']")).toBeVisible()
     await page.locator("[data-component='otp-input'] input").first().click()
     await page.keyboard.type('123456')
+    await expect(async () => {
+      await expectOtpCellsUnclipped(page)
+    }).toPass()
     await page.locator("[data-action='verify-contact']").click()
     await expect(page.locator("[data-panel='confirm-contact'][data-state='verified']")).toBeVisible()
+    expect(startBody).toEqual({ phone: '+1 555 000 0000' })
+    expect(confirmBody).toEqual({ phone: '+1 555 000 0000', code: '123456' })
   })
 
   test('wrong / expired code (400): inline error, no navigation', async ({ page }) => {
@@ -302,7 +373,7 @@ test.describe('Security status, mobile (frame 04-security-status)', () => {
     )
     await page.route('**/v1/security/mfa/factors/*', route => {
       if (route.request().method() === 'DELETE') {
-        return route.fulfill(json(409, { error: 'Two-factor is required', code: 'CONFLICT' }))
+        return route.fulfill(json(409, { error: 'Two-factor is required', code: 'LAST_FACTOR' }))
       }
       return route.fallback()
     })

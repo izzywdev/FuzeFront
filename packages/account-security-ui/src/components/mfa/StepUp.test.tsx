@@ -105,6 +105,35 @@ describe('MfaStepUpFlow (desktop, frame 05)', () => {
   })
 })
 
+describe('step-up empty state is judged on the factors the picker can offer', () => {
+  it('a webauthn-only challenge fails closed to support (no empty picker)', () => {
+    render(
+      <MfaStepUpFlow
+        client={asClient(makeClient())}
+        challenge={{ challengeId: 'c', factors: [{ factorId: 'w1', type: 'webauthn' }] }}
+        onAuthenticated={vi.fn()}
+      />
+    )
+    expect(q('[data-state="empty"]')).toBeTruthy()
+    expect(q('[data-action="contact-support"]')).toBeTruthy()
+    expect(q('[data-component="factor-picker"]')).toBeNull()
+  })
+
+  it('webauthn alongside a supported factor still offers only the supported one', async () => {
+    const user = userEvent.setup()
+    render(
+      <MfaStepUpFlow
+        client={asClient(makeClient())}
+        challenge={{ challengeId: 'c', factors: [{ factorId: 'w1', type: 'webauthn' }, SMS] }}
+        onAuthenticated={vi.fn()}
+      />
+    )
+    expect(q('[data-factor="sms"]')).toBeTruthy()
+    expect(q('[data-factor="webauthn"]')).toBeNull()
+    await user.click(q('[data-factor="sms"][data-action="challenge"]')!)
+  })
+})
+
 describe('MfaStepUpMobileFlow (frames 01-02, 375px)', () => {
   it('starts at the picker (loaded): only enrolled factors, touch-height rows', () => {
     render(
