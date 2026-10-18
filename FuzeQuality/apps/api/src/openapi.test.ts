@@ -173,6 +173,7 @@ describe('contract discovery', () => {
         expect(parameterRefs).toContain('#/components/parameters/ExecutionExternalRunId')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionName')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceKind')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCollectionStatus')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionThresholdOutcome')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionGateOutcome')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionPolicyArtifactId')
@@ -189,6 +190,11 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionEvidenceKind.schema.enum).toEqual([
         'video', 'report', 'trace', 'screenshot', 'log', 'other',
       ])
+      expect(document.components.parameters.ExecutionEvidenceCollectionStatus).toMatchObject({
+        name: 'evidenceCollectionStatus',
+        in: 'query',
+        schema: { type: 'string', enum: ['complete', 'partial', 'unavailable'] },
+      })
       expect(document.components.parameters.ExecutionThresholdOutcome.schema.enum).toEqual([
         'passed', 'failed',
       ])

@@ -92,8 +92,8 @@ describe('execution performance', () => {
 it('filters and trends only timestamped execution evidence', () => {
   const executions = [
     { id: 'one', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'three', attempt: 1, revision: 'a', branch: 'main', kind: 'ci' as const, status: 'failed' as const, name: 'CI', startedAt: '2026-10-07T11:59:30.000Z', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
-    { id: 'two', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'two', attempt: 2, revision: 'b', branch: 'feature/load', kind: 'load' as const, status: 'failed' as const, name: 'Load', completedAt: '2026-10-08T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
-    { id: 'three', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'three', attempt: 2, revision: 'c', branch: 'main', kind: 'ci' as const, status: 'passed' as const, name: 'CI', startedAt: '2026-10-07T11:59:00.000Z', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [{ metric: 'p95', observed: 640, unit: 'ms', operator: 'lte' as const, target: 500, passed: false }], evidenceLinks: [{ kind: 'video' as const, name: 'Playwright recording', url: 'https://evidence.example/post-prod.webm' }] },
+    { id: 'two', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'two', attempt: 2, revision: 'b', branch: 'feature/load', kind: 'load' as const, status: 'failed' as const, name: 'Load', completedAt: '2026-10-08T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [], evidenceCollection: { status: 'unavailable' as const, checkedAt: '2026-10-08T12:01:00.000Z', errorCode: 'PROVIDER_TIMEOUT' as const } },
+    { id: 'three', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'three', attempt: 2, revision: 'c', branch: 'main', kind: 'ci' as const, status: 'passed' as const, name: 'CI', startedAt: '2026-10-07T11:59:00.000Z', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [{ metric: 'p95', observed: 640, unit: 'ms', operator: 'lte' as const, target: 500, passed: false }], evidenceLinks: [{ kind: 'video' as const, name: 'Playwright recording', url: 'https://evidence.example/post-prod.webm' }], evidenceCollection: { status: 'complete' as const, checkedAt: '2026-10-07T12:01:00.000Z' } },
   ]
   expect(filterTestExecutions(executions, { kind: 'load', from: '2026-10-08T00:00:00.000Z' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { provider: 'github-actions' })).toEqual([])
@@ -102,6 +102,9 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { name: 'Load' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceKind: 'video' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { evidenceKind: 'report' })).toEqual([])
+  expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'complete' })).toEqual([executions[2]])
+  expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'unavailable' })).toEqual([executions[1]])
+  expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'partial' })).toEqual([])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'failed' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'passed' })).toEqual([])
   expect(filterTestExecutions(executions, { branch: 'feature/load' })).toEqual([executions[1]])

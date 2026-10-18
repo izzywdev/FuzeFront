@@ -3580,6 +3580,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceKind, setExecutionEvidenceKind] = useState<
     TestExecution['evidenceLinks'][number]['kind'] | ''
   >('')
+  const [executionEvidenceCollectionStatus, setExecutionEvidenceCollectionStatus] = useState<
+    NonNullable<TestExecution['evidenceCollection']>['status'] | ''
+  >('')
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
   >('')
@@ -3809,6 +3812,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         status: executionStatus,
         provider: executionProvider,
         evidenceKind: executionEvidenceKind,
+        evidenceCollectionStatus: executionEvidenceCollectionStatus,
         thresholdOutcome: executionThresholdOutcome,
         gateOutcome: executionGateOutcome,
         externalRunId: executionExternalRunId.trim(),
@@ -3829,7 +3833,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5499,6 +5503,22 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="screenshot">Screenshot</option>
                 <option value="log">Log</option>
                 <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              Evidence collection
+              <select
+                value={executionEvidenceCollectionStatus}
+                onChange={event =>
+                  setExecutionEvidenceCollectionStatus(
+                    event.target.value as NonNullable<TestExecution['evidenceCollection']>['status'] | ''
+                  )
+                }
+              >
+                <option value="">All collection states</option>
+                <option value="complete">Complete</option>
+                <option value="partial">Partial</option>
+                <option value="unavailable">Unavailable</option>
               </select>
             </label>
             <label>

@@ -869,6 +869,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
+        - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionGateOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
@@ -1077,6 +1078,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
+        - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionGateOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
@@ -1132,6 +1134,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
+        - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionGateOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
@@ -1288,6 +1291,11 @@ components:
       in: query
       description: Require at least one retained execution attachment of this kind.
       schema: { type: string, enum: [video, report, trace, screenshot, log, other] }
+    ExecutionEvidenceCollectionStatus:
+      name: evidenceCollectionStatus
+      in: query
+      description: Require an explicit provider artifact-discovery outcome. Legacy unchecked executions do not match.
+      schema: { type: string, enum: [complete, partial, unavailable] }
     ExecutionThresholdOutcome:
       name: thresholdOutcome
       in: query

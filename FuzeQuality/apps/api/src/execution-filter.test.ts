@@ -9,6 +9,7 @@ describe('execution evidence filter', () => {
       provider: 'github-actions',
       name: 'Post-production browser suite',
       evidenceKind: 'video',
+      evidenceCollectionStatus: 'partial',
       thresholdOutcome: 'failed',
       gateOutcome: 'failed',
       externalRunId: '123456789',
@@ -46,6 +47,12 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.parse({ evidenceKind: 'video' }).evidenceKind).toBe('video')
     expect(executionPageFilterSchema.parse({ evidenceKind: 'trace' }).evidenceKind).toBe('trace')
     expect(executionFilterSchema.safeParse({ evidenceKind: 'artifact' }).success).toBe(false)
+  })
+
+  it('accepts only explicit provider evidence collection states', () => {
+    expect(executionFilterSchema.parse({ evidenceCollectionStatus: 'complete' }).evidenceCollectionStatus).toBe('complete')
+    expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'unavailable' }).evidenceCollectionStatus).toBe('unavailable')
+    expect(executionFilterSchema.safeParse({ evidenceCollectionStatus: 'unknown' }).success).toBe(false)
   })
 
   it('accepts only evaluated threshold outcomes', () => {
