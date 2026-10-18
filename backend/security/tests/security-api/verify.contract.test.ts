@@ -57,9 +57,23 @@ describe(`contact verification (against ${RUNNING_AGAINST})`, () => {
       expect(res.status).toBe(202)
     })
 
-    it('POST /verify/phone/confirm valid → 200; bad code → 400', async () => {
+    it('POST /verify/phone/confirm requires auth (401 without token)', async () => {
+      const res = await agent()
+        .post('/api/v1/security/verify/phone/confirm')
+        .send({ phone: '+15550001111', code: '000000' })
+      expect(res.status).toBe(401)
+      assertSchema('ErrorBody', res.body)
+    })
+
+    it('POST /verify/phone/confirm (authed) valid → 200; bad code → 400', async () => {
+      const t = await token()
+      await agent()
+        .post('/api/v1/security/verify/phone/start')
+        .set('Authorization', `Bearer ${t}`)
+        .send({ phone: '+15550001111' })
       const ok = await agent()
         .post('/api/v1/security/verify/phone/confirm')
+        .set('Authorization', `Bearer ${t}`)
         .send({ phone: '+15550001111', code: '000000' })
       expect(ok.status).toBe(200)
       assertSchema('VerificationStatus', ok.body)
@@ -67,6 +81,7 @@ describe(`contact verification (against ${RUNNING_AGAINST})`, () => {
 
       const bad = await agent()
         .post('/api/v1/security/verify/phone/confirm')
+        .set('Authorization', `Bearer ${t}`)
         .send({ phone: '+15550001111', code: '424242' })
       expect(bad.status).toBe(400)
       assertSchema('ErrorBody', bad.body)
