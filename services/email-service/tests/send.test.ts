@@ -46,7 +46,7 @@ describe('POST /send (internal)', () => {
     const msg = send.mock.calls[0][0];
     expect(msg.to).toBe('user@example.com');
     expect(msg.from).toBe('noreply@fuzefront.com');
-    expect(msg.text).toContain('/reset?token=abc123');
+    expect(msg.text).toContain('/reset#token=abc123');
   });
 
   it('sends the verify-email template with link and code', async () => {
@@ -57,7 +57,7 @@ describe('POST /send (internal)', () => {
       .send({ to: 'user@example.com', template: 'verify-email', data: { token: 'tok9', code: '123456' } });
     expect(res.status).toBe(202);
     const msg = send.mock.calls[0][0];
-    expect(msg.text).toContain('/verify/email?token=tok9');
+    expect(msg.text).toContain('/verify/email#token=tok9');
     expect(msg.html).toContain('123456');
     expect(msg.text).toContain('123456');
   });
@@ -106,10 +106,10 @@ describe('verify-email / password-reset templates', () => {
 
   it('prefers the tenant origin from the payload, re-validated; bad values fall back to APP_BASE_URL', () => {
     expect(renderTemplate('password-reset', { token: 't', appBaseUrl: 'https://acme.example.com' }).text).toContain(
-      'https://acme.example.com/reset?token=t',
+      'https://acme.example.com/reset#token=t',
     );
     expect(renderTemplate('verify-email', { token: 't', appBaseUrl: 'javascript:alert(1)' }).text).toContain(
-      'https://app.fuzefront.com/verify/email?token=t',
+      'https://app.fuzefront.com/verify/email#token=t',
     );
     expect(renderTemplate('password-reset', { token: 't', appBaseUrl: 42 }).text).toContain('https://app.fuzefront.com/reset');
   });
@@ -118,7 +118,7 @@ describe('verify-email / password-reset templates', () => {
     process.env.APP_BASE_URL = 'https://stage.example.com/';
     try {
       expect(renderTemplate('password-reset', { token: 't' }).text).toContain(
-        'https://stage.example.com/reset?token=t',
+        'https://stage.example.com/reset#token=t',
       );
     } finally {
       delete process.env.APP_BASE_URL;

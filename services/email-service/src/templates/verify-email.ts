@@ -11,7 +11,7 @@ export function renderVerifyEmail(vars: Record<string, unknown>): TemplateResult
   const token = String(vars.token || '');
   const code = String(vars.code || '');
 
-  const link = token ? `${appBaseUrl(vars.appBaseUrl)}/verify/email?token=${encodeURIComponent(token)}` : '';
+  const link = token ? `${appBaseUrl(vars.appBaseUrl)}/verify/email#token=${encodeURIComponent(token)}` : '';
   const safeLink = link ? validateAndEscapeUrl(link) : '';
   const safeCode = escapeHtml(code);
 
