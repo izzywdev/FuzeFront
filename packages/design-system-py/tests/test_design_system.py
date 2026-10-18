@@ -1,12 +1,11 @@
 from fuzefront_design_system import (
-    COLOR_ELECTRIC_INDIGO,
     COLOR_CYAN,
+    COLOR_ELECTRIC_INDIGO,
     SEAM_GRADIENT,
-    ThemeContext,
-    FuzeTheme,
-    format_cli_status,
     StatusPillData,
+    ThemeContext,
 )
+
 
 def test_tokens():
     assert COLOR_ELECTRIC_INDIGO == "#6e5cff"

@@ -2,9 +2,8 @@
 Theme models and contextual theme detection for FuzeFront microservices.
 """
 
-from enum import Enum
-from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from enum import Enum
 
 from . import tokens
 
@@ -65,7 +64,7 @@ LIGHT_PALETTE = ThemePalette(
 
 
 class ThemeContext:
-    def __init__(self, theme: Optional[str] = None):
+    def __init__(self, theme: str | None = None):
         self.theme: FuzeTheme = (
             FuzeTheme.LIGHT if theme == "light" else FuzeTheme.DARK
         )
@@ -82,7 +81,7 @@ class ThemeContext:
     def is_light(self) -> bool:
         return self.theme == FuzeTheme.LIGHT
 
-    def to_css_variables(self) -> Dict[str, str]:
+    def to_css_variables(self) -> dict[str, str]:
         p = self.palette
         return {
             "--bg-primary": p.bg_primary,
