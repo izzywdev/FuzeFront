@@ -170,6 +170,45 @@ class TestReviewCallerReadOnly(unittest.TestCase):
                           f"key no longer keeps it out of a read-only reviewer")
 
 
+class TestReviewOnlyOptIn(unittest.TestCase):
+    """fuze-code-review.yml opts into `review-only`, and that can never become a no-op.
+
+    An unknown `with:` input is only a GitHub warning, so if the action ever lost the
+    `review-only` input the caller's `review-only: 'true'` would silently stop turning
+    the Codex/OpenAI/Gemini fallover ladder off. fuze-code-action is FuzeSDLC-managed
+    (a re-render resets it), and fuze-code-review.yml carries no `fuze:managed` marker
+    (so neither governance-sync nor gate-workflow-drift would notice it drifting); this
+    file is neither, so it is where the opt-in is pinned.
+    """
+
+    def _review_steps(self):
+        doc = _load(os.path.join(WORKFLOWS, REVIEW_WORKFLOW))
+        return [s for j in doc["jobs"].values() for s in j["steps"]
+                if str(s.get("uses", "")).startswith("./.github/actions/fuze-code-action")]
+
+    def test_caller_passes_review_only_true(self):
+        steps = self._review_steps()
+        self.assertTrue(steps, "no fuze-code-action step in the review workflow")
+        for s in steps:
+            self.assertEqual(str((s.get("with") or {}).get("review-only")), "true",
+                             "fuze-code-review.yml must pass review-only: 'true'")
+
+    def test_action_declares_review_only_input(self):
+        inputs = _load(ACTION)["inputs"]
+        self.assertIn("review-only", inputs,
+                      "the action lost its review-only input: the caller's opt-in is now a silent no-op")
+        self.assertEqual(str(inputs["review-only"].get("default")), "false")
+
+    def test_vendor_keys_are_withheld_under_review_only(self):
+        doc = _load(ACTION)
+        text = yaml.safe_dump(doc["runs"]["steps"])
+        for vendor in ("openai", "gemini"):
+            expr = f"inputs.review-only != 'true' && inputs.{vendor}-api-key || ''"
+            self.assertIn(expr, " ".join(text.split()),
+                          f"fallback-{vendor}-key must be `{expr}`; the inverted `review-only == 'true' "
+                          f"&& '' || key` always yields the key because '' is falsy")
+
+
 PRE_FIX_STEP = {
     "uses": "./.github/actions/fuze-code-action",
     "with": {
