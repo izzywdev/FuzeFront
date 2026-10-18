@@ -3,6 +3,22 @@
 All notable changes to this package are documented here. Versioned
 independently — bump on every interface change (SemVer).
 
+## 0.1.1 — Express 5 peer range
+
+### Fixed
+
+- `peerDependencies.express` widened from `^4.22.2` to `^4.22.2 || ^5.0.0`.
+  `tracingMiddleware()` only touches `req.headers`/`req.method`/`req.path`/
+  `req.route?.path` and `res.on('finish', ...)`/`res.statusCode` — all stable
+  across Express 4/5 — so there was no functional reason to reject Express 5
+  at install time. Surfaced as a hard `npm error ERESOLVE` installing this
+  package into `izzywdev/FuzeHub` (Express `^5.1.0`) during the fleet-wide
+  OTel rollout.
+  `@opentelemetry/instrumentation-express`'s own Express 5 auto-instrumentation
+  coverage is unverified here — that package patches Express internals rather
+  than depending on a peer range, so it is unaffected by this change either
+  way; `tracingMiddleware()`'s manual spans are unaffected regardless.
+
 ## 0.1.0 — Initial implementation
 
 Phases 1–3 of the OpenTelemetry distributed-tracing initiative: a Node SDK
