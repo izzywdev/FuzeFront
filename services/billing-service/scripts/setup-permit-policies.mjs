@@ -40,6 +40,19 @@ if (!API_KEY) {
   process.exit(1);
 }
 
+// Validate path components before URL construction to prevent path injection.
+// A value containing ../ or / could reach unintended Permit Management API endpoints
+// using the management-level API key.
+const SAFE_KEY_RE = /^[a-zA-Z0-9_-]+$/;
+if (!SAFE_KEY_RE.test(ENV_KEY)) {
+  console.error(`PERMIT_ENVIRONMENT contains invalid characters: "${ENV_KEY}"`);
+  process.exit(1);
+}
+if (!SAFE_KEY_RE.test(PROJECT_KEY)) {
+  console.error(`PERMIT_PROJECT contains invalid characters: "${PROJECT_KEY}"`);
+  process.exit(1);
+}
+
 const headers = {
   Authorization: `Bearer ${API_KEY}`,
   'Content-Type': 'application/json',
