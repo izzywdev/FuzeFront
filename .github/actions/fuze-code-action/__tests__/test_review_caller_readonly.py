@@ -170,6 +170,43 @@ class TestReviewCallerReadOnly(unittest.TestCase):
                           f"key no longer keeps it out of a read-only reviewer")
 
 
+VENDOR_USES = ("openai/", "google-github-actions/")
+VENDOR_RUN = re.compile(r"@openai/codex|@google/gemini-cli|codex_subscription_review|\bcodex\s+(exec|login)\b|\bgemini\s+-")
+
+
+def is_vendor_step(step):
+    """A step that installs or executes a non-Anthropic vendor, found by what it DOES
+    (the action it uses / the command it runs), not by its id or name."""
+    return str(step.get("uses", "")).startswith(VENDOR_USES) or bool(VENDOR_RUN.search(str(step.get("run", ""))))
+
+
+_REF = re.compile(r"\b(inputs|steps)\.([\w.-]+)")
+_OTHER_VALUES = {"inputs": ("", "x"), "steps": ("", "1", "success", "failure")}
+
+
+def true_assignments(cond):
+    """Assignments (review-only='true' fixed) under which a GitHub `if:` is truthy.
+
+    Supports only what the action's rung conditions use: `inputs.*` / `steps.*` refs,
+    string literals, ==, !=, &&, ||, parentheses and always(). Anything else raises, so a
+    new construct fails the test instead of being read as 'never true'."""
+    import itertools
+    expr = re.sub(r"\btrue\b(?!')", "True", re.sub(r"\bfalse\b(?!')", "False", " ".join(cond.split()))).replace("always()", "True")
+    leftover = _REF.sub("", expr)
+    if re.search(r"[A-Za-z_]\w*\s*\(|!(?!=)|\$\{\{", leftover.replace("True", "").replace("False", "")):
+        raise AssertionError(f"unsupported expression in rung condition: {cond!r}")
+    refs = sorted({m.group(0) for m in _REF.finditer(expr)} - {"inputs.review-only"})
+    py = expr.replace("&&", " and ").replace("||", " or ")
+    py = _REF.sub(lambda m: f"V[{m.group(0)!r}]", py)
+    out = []
+    for combo in itertools.product(*[_OTHER_VALUES[r.split(".")[0]] for r in refs]):
+        V = dict(zip(refs, combo))
+        V["inputs.review-only"] = "true"
+        if eval(py, {"__builtins__": {}}, {"V": V}):  # noqa: S307 - constrained, test-only
+            out.append(V)
+    return out
+
+
 class TestReviewOnlyOptIn(unittest.TestCase):
     """fuze-code-review.yml opts into `review-only`, and that can never become a no-op.
 
@@ -211,20 +248,33 @@ class TestReviewOnlyOptIn(unittest.TestCase):
                 f"fallback-{vendor}-key must withhold ONLY the {vendor} key under review-only; the "
                 f"inverted `review-only == 'true' && '' || key` always yields the key ('' is falsy)")
 
-    def test_every_vendor_fallover_rung_is_gated_on_review_only(self):
-        # The vendor keys are only half of it: caller supplies codex-auth-json, so the
-        # Codex subscription rung must itself be off under review-only.
-        rungs = [
-            s for s in _load(ACTION)["runs"]["steps"]
-            if s.get("id") in ("codex-subscription", "codex", "codex-no-key", "gemini", "gemini-no-key")
-            or any(t in str(s.get("name", "")) for t in ("Codex subscription reviewer", "Gemini CLI"))
-        ]
-        self.assertGreaterEqual(len(rungs), 8, "vendor rung steps were renamed or removed; update this guard")
-        for s in rungs:
-            cond = " ".join(str(s.get("if", "")).split())
-            self.assertIn("inputs.review-only != 'true'", cond,
-                          f"step {s.get('id') or s.get('name')!r} is not gated on review-only: a "
-                          f"review-only caller would still reach this vendor rung")
+    def test_no_vendor_step_can_run_under_review_only(self):
+        # EVALUATE each vendor step's `if` with review-only fixed to 'true' and every other
+        # input / step output / outcome it reads taken over all plausible values. A step
+        # that can still be true on any assignment would run a vendor for a read-only
+        # reviewer (the caller does supply codex-auth-json). Matching guard text instead
+        # would pass `(codex-auth-json != '' || review-only != 'true')`.
+        steps = _load(ACTION)["runs"]["steps"]
+        vendor = [s for s in steps if is_vendor_step(s)]
+        self.assertGreaterEqual(len(vendor), 4,
+                                "found too few vendor steps (codex install/run, openai, gemini); "
+                                "the discovery rules in is_vendor_step() are stale")
+        for s in vendor:
+            cond = str(s.get("if", "")).strip()
+            self.assertTrue(cond, f"vendor step {s.get('id') or s.get('name')!r} has no `if` at all")
+            self.assertEqual(true_assignments(cond), [],
+                             f"vendor step {s.get('id') or s.get('name')!r} can run under review-only: {cond}")
+
+    def test_condition_evaluator_is_not_vacuous(self):
+        self.assertEqual(true_assignments("inputs.review-only != 'true'"), [])
+        self.assertEqual(true_assignments("inputs.a != '' && inputs.review-only != 'true'"), [])
+        # The malformed shapes review flagged must be caught, not matched by substring.
+        self.assertTrue(true_assignments("(inputs.codex-auth-json != '' || inputs.review-only != 'true')"))
+        self.assertTrue(true_assignments("steps.x.outputs.code == '1'"))
+        self.assertTrue(true_assignments("always() && inputs.review-only == 'true'"))
+        # Unsupported syntax must fail loudly rather than be treated as 'never true'.
+        with self.assertRaises(AssertionError):
+            true_assignments("contains(inputs.a, 'b')")
 
 
 PRE_FIX_STEP = {
