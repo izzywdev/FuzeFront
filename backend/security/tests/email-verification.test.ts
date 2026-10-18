@@ -9,7 +9,7 @@ import crypto from 'crypto'
 import request from 'supertest'
 
 process.env.REQUIRE_EMAIL_VERIFICATION = 'true'
-process.env.EMAIL_SERVICE_URL = 'http://email-service:3000'
+process.env.EMAIL_SERVICE_URL = 'http://email-service:3003'
 process.env.PERMIT_API_KEY = process.env.PERMIT_API_KEY || 'test'
 process.env.PUBLIC_SEND_RATE_LIMIT = '2' // per-IP cap exercised in the route tests below
 

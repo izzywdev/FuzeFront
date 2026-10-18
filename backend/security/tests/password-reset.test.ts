@@ -21,7 +21,7 @@ import type { NotificationClient } from '../src/providers/authentik/notification
 
 process.env.JWT_SECRET = 'test-secret'
 // A deliverable email channel — the enabled path. The degrade path clears this.
-process.env.EMAIL_SERVICE_URL = 'http://email-service:3000'
+process.env.EMAIL_SERVICE_URL = 'http://email-service:3003'
 
 jest.mock('../src/services/organizationProvisioning', () => ({
   runInternalProvision: jest.fn().mockResolvedValue(undefined),
