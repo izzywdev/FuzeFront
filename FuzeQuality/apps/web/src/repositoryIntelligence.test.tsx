@@ -740,6 +740,36 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('retains successful execution continuation when another repository fails', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const secondRepository = { ...repository, id: 'repo-2', name: 'agent' }
+    const continuedExecution: TestExecution = {
+      ...loadExecution,
+      id: 'execution-load-continued',
+      externalRunId: '12344',
+      name: 'Healthy repository continuation',
+    }
+    vi.mocked(api.testExecutions).mockImplementation(async (repositoryId, filter) => {
+      if (!filter?.cursor) return {
+        items: repositoryId === repository.id ? [loadExecution] : [],
+        page: { nextCursor: `cursor-${repositoryId}`, hasMore: true },
+      }
+      if (repositoryId === secondRepository.id) throw new Error('temporary continuation failure')
+      return { items: [continuedExecution], page: { nextCursor: null, hasMore: false } }
+    })
+
+    render(<RepositoryIntelligence data={{ ...portfolio, repositories: [repository, secondRepository] }} />)
+
+    expect(await screen.findByText(loadExecution.name)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more execution evidence' }))
+    expect(await screen.findByText(continuedExecution.name)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Unable to load more execution evidence for 1 repository. Successful evidence remains visible.'
+    )
+    expect(screen.getByRole('button', { name: 'Load more execution evidence' })).toBeVisible()
+  })
+
   it('loads exact provider attempt history and proves recovery from retained failure evidence', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
