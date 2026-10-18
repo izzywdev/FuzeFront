@@ -268,6 +268,17 @@ export const FLAG_KEYS = {
    * Removal criterion: retire if MF hosting becomes available on all tiers.
    */
   BILLING_MODULE_FEDERATION: 'fuzefront.billing.module-federation',
+  /**
+   * fuzefront.billing.plan-flag-sync-enabled
+   * Type: release. Default: FALSE (dark deploy).
+   * SERVER-ONLY: gates whether billing-service's UnleashFlagSyncService calls
+   * the Unleash Admin API to maintain per-org plan-tier permission flag states.
+   * Flip via prod-unleash-ops.yml (billing-plan-flag-sync option).
+   * Owner: feature-flags-engineer (billing domain) / backend-engineer.
+   * Removal criterion: after per-org flag sync has run in production for >= 2
+   * sprints with no regression, remove this flag and the dead OFF-path.
+   */
+  BILLING_PLAN_FLAG_SYNC_ENABLED: 'fuzefront.billing.plan-flag-sync-enabled',
 } as const;
 
 /**

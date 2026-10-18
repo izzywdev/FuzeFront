@@ -34,14 +34,23 @@ export interface Config {
   /**
    * Real Stripe price IDs for the four subscription tiers. When set, these
    * override the placeholder values in PLAN_ID_TO_PRICE_ID at runtime.
-   * Configure via STRIPE_PRICE_STARTER / STRIPE_PRICE_PROFESSIONAL /
-   * STRIPE_PRICE_SCALE environment variables. Enterprise has no Stripe price
-   * (contact-sales flow) — use the 'contact_sales' sentinel value in code.
+   * Configure via STRIPE_PRICE_STARTER / STRIPE_PRICE_GROWTH env variables.
+   * Enterprise has no Stripe price (contact-sales flow).
    */
   stripePrices: {
     starter?: string;
-    professional?: string;
-    scale?: string;
+    growth?: string;
+  };
+  /**
+   * Unleash Admin API config for per-org plan-tier flag sync (FFRNT-364).
+   * When `adminToken` is unset, the UnleashFlagSyncService is not started
+   * (the feature flag guard also defaults OFF independently).
+   */
+  unleash: {
+    adminUrl: string;
+    adminToken?: string;
+    project: string;
+    environment: string;
   };
 }
 
@@ -89,8 +98,13 @@ export function loadConfig(): Config {
     },
     stripePrices: {
       starter: process.env.STRIPE_PRICE_STARTER,
-      professional: process.env.STRIPE_PRICE_PROFESSIONAL,
-      scale: process.env.STRIPE_PRICE_SCALE,
+      growth: process.env.STRIPE_PRICE_GROWTH,
+    },
+    unleash: {
+      adminUrl: process.env.UNLEASH_URL || 'http://fuzefront-unleash.fuzefront.svc.cluster.local:4242',
+      adminToken: process.env.UNLEASH_ADMIN_TOKEN,
+      project: process.env.UNLEASH_PROJECT || 'default',
+      environment: process.env.UNLEASH_ENVIRONMENT || 'production',
     },
   };
 }
