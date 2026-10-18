@@ -200,13 +200,31 @@ class TestReviewOnlyOptIn(unittest.TestCase):
         self.assertEqual(str(inputs["review-only"].get("default")), "false")
 
     def test_vendor_keys_are_withheld_under_review_only(self):
-        doc = _load(ACTION)
-        text = yaml.safe_dump(doc["runs"]["steps"])
+        # Bound to the `llm` step's own `with:` fields, with exact equality, so swapped
+        # vendor mappings or the expression sitting in some unrelated step cannot pass.
+        steps = {s.get("id"): s for s in _load(ACTION)["runs"]["steps"] if s.get("id")}
+        with_ = steps["llm"]["with"]
         for vendor in ("openai", "gemini"):
-            expr = f"inputs.review-only != 'true' && inputs.{vendor}-api-key || ''"
-            self.assertIn(expr, " ".join(text.split()),
-                          f"fallback-{vendor}-key must be `{expr}`; the inverted `review-only == 'true' "
-                          f"&& '' || key` always yields the key because '' is falsy")
+            self.assertEqual(
+                " ".join(str(with_[f"fallback-{vendor}-key"]).split()),
+                "${{ inputs.review-only != 'true' && inputs.%s-api-key || '' }}" % vendor,
+                f"fallback-{vendor}-key must withhold ONLY the {vendor} key under review-only; the "
+                f"inverted `review-only == 'true' && '' || key` always yields the key ('' is falsy)")
+
+    def test_every_vendor_fallover_rung_is_gated_on_review_only(self):
+        # The vendor keys are only half of it: caller supplies codex-auth-json, so the
+        # Codex subscription rung must itself be off under review-only.
+        rungs = [
+            s for s in _load(ACTION)["runs"]["steps"]
+            if s.get("id") in ("codex-subscription", "codex", "codex-no-key", "gemini", "gemini-no-key")
+            or any(t in str(s.get("name", "")) for t in ("Codex subscription reviewer", "Gemini CLI"))
+        ]
+        self.assertGreaterEqual(len(rungs), 8, "vendor rung steps were renamed or removed; update this guard")
+        for s in rungs:
+            cond = " ".join(str(s.get("if", "")).split())
+            self.assertIn("inputs.review-only != 'true'", cond,
+                          f"step {s.get('id') or s.get('name')!r} is not gated on review-only: a "
+                          f"review-only caller would still reach this vendor rung")
 
 
 PRE_FIX_STEP = {
