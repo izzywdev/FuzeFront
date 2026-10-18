@@ -18,7 +18,9 @@ def code_of(v, token):
 
 
 def test_valid_token_normalises_to_identity():
-    ident = verifier().verify(make_token(SECRET, claims={"userId": "u-1", "sessionId": "s-1"}))
+    ident = verifier(allow_unvalidated_sessions=True).verify(
+        make_token(SECRET, claims={"userId": "u-1", "sessionId": "s-1"})
+    )
     assert ident.user_id == "u-1"
     assert ident.tenant_id is None  # unresolved => unprivileged, never guessed
     assert ident.roles == ()
@@ -248,3 +250,41 @@ def test_a_non_numeric_exp_is_rejected_not_authenticated_without_expiry(exp):
 
 def test_a_string_exp_specifically_is_malformed():
     assert code_of(verifier(), make_token(SECRET, claims={"userId": "u", "exp": "9999999999"})) == "MALFORMED"
+
+
+# --- sessions are refused unless something can check them (reject by default) ---------------
+
+
+def _session_token(**extra):
+    return make_token(SECRET, claims={"userId": "u", "sessionId": "s-1", **extra})
+
+
+def test_a_token_naming_a_session_is_refused_when_nothing_can_validate_it():
+    calls = []
+    v = verifier(resolver=lambda uid: calls.append(uid) or {"roles": ["admin"]})
+    with pytest.raises(AuthError) as info:
+        v.verify(_session_token())
+    # A misconfiguration, not a bad credential: loud 500, never hydrated.
+    assert (info.value.code, info.value.status) == ("VERIFIER_UNAVAILABLE", 500)
+    assert calls == []
+    assert "s-1" not in str(info.value) and SECRET not in str(info.value)
+
+
+def test_a_validator_makes_session_tokens_acceptable():
+    assert verifier(session_validator=lambda *a: True).verify(_session_token()).session_id == "s-1"
+
+
+def test_the_revocation_gap_can_be_accepted_only_explicitly():
+    assert verifier(allow_unvalidated_sessions=True).verify(_session_token()).user_id == "u"
+
+
+def test_the_explicit_opt_out_does_not_bypass_a_configured_validator():
+    # Opting out of REQUIRING a validator must never switch off one that is wired.
+    v = verifier(allow_unvalidated_sessions=True, session_validator=lambda *a: False)
+    with pytest.raises(AuthError) as info:
+        v.verify(_session_token())
+    assert info.value.code == "EXPIRED"
+
+
+def test_tokens_that_name_no_session_are_unaffected():
+    assert verifier().verify(make_token(SECRET, claims={"sub": "u-2"})).user_id == "u-2"

@@ -73,6 +73,12 @@ class LegacyHs256Config:
     subject_claim: str = "userId"
     resolver: Resolver | None = None
     session_validator: SessionValidator | None = None
+    # FuzeFront session tokens carry a `sessionId`, and only the session store knows whether
+    # that session has since been logged out or revoked. A token that names a session is
+    # therefore REFUSED unless a `session_validator` can check it. A service that genuinely
+    # cannot reach the session store may accept the revocation gap EXPLICITLY with this flag;
+    # it is never the default.
+    allow_unvalidated_sessions: bool = False
     clock_tolerance_sec: int = 0
     issuer: str | None = None
     audience: str | list[str] | None = None
@@ -250,6 +256,15 @@ class _LegacyVerifier:
             raise AuthError("MISSING_CLAIM", f"token has no `{cfg.subject_claim}` (or `sub`) claim")
 
         session_id = _bound_claim(payload, "sessionId")
+        if session_id is not None and cfg.session_validator is None and not cfg.allow_unvalidated_sessions:
+            # Fail closed. This is a deployment misconfiguration, not a bad credential: a 500
+            # is loud and points at the fix, where a 401 would send the user to re-login.
+            raise AuthError(
+                "VERIFIER_UNAVAILABLE",
+                "token names a session but no session_validator is configured "
+                "(set one, or allow_unvalidated_sessions=True to accept the revocation gap)",
+                500,
+            )
         if cfg.session_validator is not None:
             # Revocation: a signed token stays valid until `exp`, but the session it
             # names may have been ended. Only `True` keeps it alive; anything else is a

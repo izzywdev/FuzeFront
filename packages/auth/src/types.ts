@@ -20,7 +20,7 @@
  * Semantic version of THIS contract. Bump on every interface change and record
  * the change in CHANGELOG.md. Consumers may assert on the major.
  */
-export const AUTH_CONTRACT_VERSION = '0.2.0' as const;
+export const AUTH_CONTRACT_VERSION = '0.3.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -53,6 +53,8 @@ export interface Identity {
   roles: string[];
   /** Principal email, when available from the token/verifier. */
   email?: string;
+  /** The session this token names (`legacy-hs256` session tokens), when present. */
+  sessionId?: string;
   /** Which verifier produced this identity. Useful for logging/migration. */
   authMode: AuthMode;
   /** Token issued-at (epoch seconds), when present. */
@@ -126,6 +128,19 @@ export interface OutOfBandResolver {
   resolve(userId: string): Promise<{ tenantId?: string | null; roles?: string[]; email?: string }>;
 }
 
+/**
+ * Asks the session store whether the session a token names is still active.
+ * A signed token stays valid until `exp`, but a logout or device revoke ends the
+ * session it names; only the session store knows. Resolve `true` to keep the
+ * session alive. Anything else denies (401 `EXPIRED`), and a rejection/throw is
+ * a retryable 503 `VERIFIER_UNAVAILABLE` (an outage must not read as a denial).
+ */
+export type SessionValidator = (
+  userId: string,
+  sessionId: string,
+  claims: Record<string, unknown>,
+) => boolean | Promise<boolean>;
+
 /** Config for the `legacy-hs256` verifier (interop with today's token). */
 export interface LegacyHs256Config {
   mode: 'legacy-hs256';
@@ -135,6 +150,20 @@ export interface LegacyHs256Config {
   subjectClaim?: string;
   /** Optional out-of-band hydration for tenantId/roles/email. */
   resolver?: OutOfBandResolver;
+  /**
+   * Checks that the session a token names is still active (see
+   * {@link SessionValidator}). Runs before the resolver hydrates anything.
+   */
+  sessionValidator?: SessionValidator;
+  /**
+   * FuzeFront session tokens carry a `sessionId`. A token that names a session is
+   * REFUSED (500 `VERIFIER_UNAVAILABLE`, a deployment misconfiguration) unless a
+   * `sessionValidator` is configured. Set this to `true` to accept the
+   * logout/revocation gap deliberately: a logged-out session then keeps
+   * authenticating until the token's `exp`. It only waives the requirement for a
+   * validator; a configured validator still runs. Default `false`.
+   */
+  allowUnvalidatedSessions?: boolean;
   /** Clock-skew tolerance in seconds. Default 0. */
   clockToleranceSec?: number;
 }

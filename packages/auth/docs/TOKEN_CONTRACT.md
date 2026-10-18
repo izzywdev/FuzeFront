@@ -1,4 +1,6 @@
-# `@fuzefront/auth` — Token & Claims Contract
+# `@izzywdev/fuzefront-auth` — Token & Claims Contract
+
+> Published as `@izzywdev/fuzefront-auth` (workspace-internal name `@fuzefront/auth`, which is not installable). The Python peer is `fuzefront-auth`.
 
 This document freezes the token/claims contract for both verification modes and
 the HS256 → OIDC/JWKS migration path. **Consumers code against the stable
@@ -56,8 +58,25 @@ user's roles/tenant. This mirrors `backend/src/middleware/auth.ts` and the
 Python `fuzefront-auth` verifier. `federated-jwks` is unaffected (`iss`/`aud`
 enforced).
 
+**A token that names a session is refused unless something can check it.** A signed
+token stays valid until `exp` (24h), but a logout or device revoke ends the session
+its `sessionId` names, and only the session store knows. `legacy-hs256` therefore
+requires a `sessionValidator(userId, sessionId, claims)` (Node) /
+`session_validator` (Python): only `true` keeps the session alive, anything else is a
+401 `EXPIRED`, and a validator that throws is a retryable 503 `VERIFIER_UNAVAILABLE`.
+It runs *before* the resolver. With no validator the verifier answers a loud 500
+`VERIFIER_UNAVAILABLE` (a deployment misconfiguration, not a bad credential) and
+hydrates nothing. A service that cannot reach the session store may accept the
+revocation gap explicitly with `allowUnvalidatedSessions: true` (Node) /
+`allow_unvalidated_sessions=True` (Python, or
+`FUZEFRONT_ALLOW_UNVALIDATED_SESSIONS=true` via `verifier_from_env`); that flag only
+waives the *requirement* for a validator and never disables a configured one. A
+present-but-malformed `sessionId` is `MALFORMED`, never treated as "no session". Tokens
+that name no session (the OIDC-callback path emits `{ userId }` only) are unaffected.
+`federated-jwks` is unaffected.
+
 ```ts
-import { createVerifier, requireAuth } from '@fuzefront/auth';
+import { createVerifier, requireAuth } from '@izzywdev/fuzefront-auth';
 
 const verifier = createVerifier({
   mode: 'legacy-hs256',
@@ -102,7 +121,7 @@ const verifier = createVerifier({
 The `Identity` shape is invariant, so **consumers do not change** across the
 migration. Only the verifier config the host wires changes:
 
-1. **Today — legacy-hs256.** All services verify the current HS256 token; tenant/roles hydrated out-of-band. `@fuzefront/auth` gives interop immediately without waiting on federated token issuance.
+1. **Today — legacy-hs256.** All services verify the current HS256 token; tenant/roles hydrated out-of-band. `@izzywdev/fuzefront-auth` gives interop immediately without waiting on federated token issuance.
 2. **Dual-accept (transition).** The federation provider begins issuing RS256/JWKS tokens carrying `tenantId`+`roles`. A host may run BOTH verifiers and try `federated-jwks` first, falling back to `legacy-hs256`, until all clients present the new token. (The package exposes both verifiers; the dual-accept composition is a small host-side wrapper — a follow-up impl detail, not a contract change.)
 3. **OIDC-only.** Once all tokens are RS256/JWKS, drop `legacy-hs256`, remove `JWT_SECRET` from services, and rely on JWKS. `tenantId`/`roles` now come from the token itself; the out-of-band resolver is retired. **No consumer code change** — they still read `Identity`.
 

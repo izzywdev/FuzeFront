@@ -1,8 +1,35 @@
-# Changelog — @fuzefront/auth
+# Changelog — @izzywdev/fuzefront-auth
 
 All notable changes to this contract are documented here. This package is
 versioned independently; bump on every interface change (SemVer — the major is
 the contract-stability guarantee consumers may assert on).
+
+## 0.4.0 — legacy-hs256 rejects unvalidated session tokens by default
+
+### Changed (BREAKING for `legacy-hs256` consumers)
+
+- A `legacy-hs256` token that names a `sessionId` is now **refused** with
+  `AuthError` `VERIFIER_UNAVAILABLE` (500, a deployment misconfiguration) unless a
+  `sessionValidator` is configured. Previously such tokens authenticated until
+  `exp` even after a logout or device revoke. The resolver is never called for a
+  refused token.
+- **Migrating:** supply `sessionValidator(userId, sessionId, claims)` (resolve
+  `true` while the session is active), or, if the service genuinely cannot reach
+  the session store, set `allowUnvalidatedSessions: true` to keep the old
+  behaviour deliberately. Tokens that name no session are unaffected;
+  `federated-jwks` is unaffected.
+
+### Added
+
+- `LegacyHs256Config.sessionValidator`, `LegacyHs256Config.allowUnvalidatedSessions`,
+  and the `SessionValidator` type. Only `true` keeps a session alive (anything else
+  is 401 `EXPIRED`); a throwing/rejecting validator is a retryable 503
+  `VERIFIER_UNAVAILABLE` with a fixed message. It runs before the resolver.
+- `Identity.sessionId` (optional) carries the validated session id.
+- A present-but-malformed `sessionId` claim is `MALFORMED` rather than being
+  treated as "no session".
+- `AUTH_CONTRACT_VERSION` 0.2.0 → 0.3.0. The Python peer `fuzefront-auth` 0.2.0
+  ships the same rule (`allow_unvalidated_sessions`, `session_validator`).
 
 ## 0.3.1 — legacy-hs256 refuses narrowed `kind` tokens
 

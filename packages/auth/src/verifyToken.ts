@@ -137,6 +137,41 @@ function createLegacyVerifier(config: LegacyHs256Config): Verifier {
         throw new AuthError('MISSING_CLAIM', `token has no \`${subjectClaim}\` (or \`sub\`) claim`);
       }
 
+      // Session revocation. A signed token outlives the session it names (logout,
+      // device revoke), and only the session store knows. A binding claim that is
+      // present-but-malformed is rejected, never normalised to "no session".
+      let sessionId: string | undefined;
+      if ('sessionId' in payload) {
+        const raw = payload.sessionId;
+        if (typeof raw !== 'string' || raw === '') {
+          throw new AuthError('MALFORMED', 'token has a malformed `sessionId` claim');
+        }
+        sessionId = raw;
+      }
+      if (sessionId !== undefined) {
+        if (!config.sessionValidator) {
+          if (!config.allowUnvalidatedSessions) {
+            // Fail closed. A deployment misconfiguration, not a bad credential: a 500
+            // is loud and names the fix where a 401 would send the user to re-login.
+            throw new AuthError(
+              'VERIFIER_UNAVAILABLE',
+              'token names a session but no sessionValidator is configured ' +
+                '(set one, or allowUnvalidatedSessions: true to accept the revocation gap)',
+              500,
+            );
+          }
+        } else {
+          let active: boolean;
+          try {
+            active = await config.sessionValidator(userId, sessionId, payload as Record<string, unknown>);
+          } catch {
+            // Fixed message: never surface the validator's own error text.
+            throw new AuthError('VERIFIER_UNAVAILABLE', 'session validation is unavailable', 503);
+          }
+          if (active !== true) throw new AuthError('EXPIRED', 'session is no longer active');
+        }
+      }
+
       // Today's token carries neither tenant nor roles. Without a resolver the
       // identity is deliberately UNPRIVILEGED (tenantId null, roles []) rather
       // than guessed — an authz decision must never rest on an assumption.
@@ -168,6 +203,7 @@ function createLegacyVerifier(config: LegacyHs256Config): Verifier {
         tenantId,
         roles,
         email,
+        sessionId,
         authMode: 'legacy-hs256',
         issuedAt: payload.iat,
         expiresAt: payload.exp,
