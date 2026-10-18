@@ -223,12 +223,15 @@ export const FLAG_KEYS = {
    * Removal criterion: retire only if Enterprise tier is removed from the product.
    */
   BILLING_PLAN_ENTERPRISE: 'fuzefront.billing.plan-enterprise',
-  // Deprecated aliases — kept for zero-downtime migration; remove after all consumers
-  // are updated to use BILLING_PLAN_GROWTH.
-  /** @deprecated Use BILLING_PLAN_GROWTH */
-  BILLING_PLAN_PROFESSIONAL: 'fuzefront.billing.plan-growth',
-  /** @deprecated Use BILLING_PLAN_GROWTH */
-  BILLING_PLAN_SCALE: 'fuzefront.billing.plan-growth',
+  // Deprecated aliases — kept for zero-downtime migration. These still check
+  // the ORIGINAL Unleash flag keys so existing consumers keep working until:
+  //   1. billing-sync backfill enables plan-growth per-org for all affected orgs
+  //   2. all consumers are updated to BILLING_PLAN_GROWTH
+  // Remove these once both conditions are met.
+  /** @deprecated Use BILLING_PLAN_GROWTH. Checks original 'plan-professional' key until migration completes. */
+  BILLING_PLAN_PROFESSIONAL: 'fuzefront.billing.plan-professional',
+  /** @deprecated Use BILLING_PLAN_GROWTH. Checks original 'plan-scale' key until migration completes. */
+  BILLING_PLAN_SCALE: 'fuzefront.billing.plan-scale',
   /**
    * fuzefront.billing.sso-enabled
    * Type: permission. Default: FALSE.
@@ -281,10 +284,14 @@ export const FLAG_KEYS = {
  * must always go through Permit (permit.check) — never rely on a flag alone.
  */
 export const PLAN_FLAGS = {
+  FREE: 'fuzefront.billing.plan-free',
   STARTER: 'fuzefront.billing.plan-starter',
-  PROFESSIONAL: 'fuzefront.billing.plan-professional',
-  SCALE: 'fuzefront.billing.plan-scale',
+  GROWTH: 'fuzefront.billing.plan-growth',
   ENTERPRISE: 'fuzefront.billing.plan-enterprise',
+  /** @deprecated Use PLAN_FLAGS.GROWTH. Checks original 'plan-professional' key until migration completes. */
+  PROFESSIONAL: 'fuzefront.billing.plan-professional',
+  /** @deprecated Use PLAN_FLAGS.GROWTH. Checks original 'plan-scale' key until migration completes. */
+  SCALE: 'fuzefront.billing.plan-scale',
 } as const;
 
 export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
