@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:f2c81591f1af1dce3610db883e3e8770f916b124347cfbd088d44fa993e5e58c
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:e5197ea8e80c033c4d61491d0eac9de02da387554969c30338d615d03acf5b2b
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -140,6 +140,23 @@ jobs:
         with:
           fetch-depth: 1
 
+      # SECURITY — pin the EXECUTED action code to this TRUSTED checkout, before the next
+      # step replaces the working tree with a PR head that can be a fork's. `uses:
+      # ./.github/actions/...` below resolves against whatever is on disk at that point, not
+      # against any ref or pin in this file — so without this step, a fork PR that edits
+      # fuze-code-action/llm-endpoint/fuze-push-identity executes its OWN version the moment a
+      # trusted collaborator comments `@fuze` on it, with this job's FUZEONEAGENT_TOKEN (and,
+      # via claude.yml, LITELLM_FUZE_KEY/ANTHROPIC_API_KEY/CLAUDE_CODE_OAUTH_TOKEN/OPENAI_API_KEY/
+      # GEMINI_API_KEY too) in scope. That is a credential-exfiltration path a comment alone
+      # can trigger — Gate 2 above authenticates the COMMENTER, never the PR HEAD's content.
+      # Copying the whole `.github/actions/` tree out of the repo now, then restoring it
+      # verbatim after the PR-head checkout below, means the step that runs `uses: ./...`
+      # always executes what THIS commit (the trusted trigger ref) shipped, regardless of
+      # what the PR head contains. Everything else about the PR head — its code, its
+      # task-prompt context — is still the real thing; only the action DEFINITIONS are pinned.
+      - name: Preserve trusted local actions (before any PR-head checkout)
+        run: cp -a .github/actions "${RUNNER_TEMP}/trusted-fuze-actions"
+
       - name: Checkout PR branch (when triggered from a PR)
         if: |
           (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
@@ -168,6 +185,18 @@ jobs:
           git fetch origin "$HEAD_SHA"
           git checkout "$HEAD_SHA"
           echo "Checked out PR branch: $HEAD_REF @ $HEAD_SHA"
+
+      # SECURITY — restore the TRUSTED action code over whatever the just-checked-out PR head
+      # (possibly a fork) put at these paths. Same `if:` as the checkout above: a no-op copy
+      # when that step didn't run. See "Preserve trusted local actions" for the threat.
+      - name: Restore trusted local actions (never execute PR-head-controlled action code)
+        if: |
+          (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
+          github.event_name == 'pull_request_review_comment' ||
+          github.event_name == 'pull_request_review'
+        run: |
+          rm -rf .github/actions
+          cp -a "${RUNNER_TEMP}/trusted-fuze-actions" .github/actions
 
       # CODER IDENTITY (docs/identity-and-roles.md). Prefer the least-privilege `fuzeoneagent`
       # collaborator token as the coding/commit/push credential when it is provisioned; fall
