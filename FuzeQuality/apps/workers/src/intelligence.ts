@@ -38,6 +38,7 @@ await runConsumer(
         persistCandidates: candidates => apiRequest('/api/v1/internal/repository-flow-candidates', { method: 'POST', body: JSON.stringify({ candidates }) }),
         persistEvaluations: evaluations => apiRequest('/api/v1/internal/policy-gate-evaluations', { method: 'POST', body: JSON.stringify({ evaluations }) }),
         persistStatus: status => apiRequest(analysisPath, { method: 'POST', body: JSON.stringify(status) }),
+        heartbeat,
       })
       return
     }
