@@ -228,6 +228,13 @@ function mockEvidenceApis() {
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
   vi.spyOn(api, 'testExecutionAttempts').mockResolvedValue([])
+  vi.spyOn(api, 'refreshTestExecutionEvidence').mockImplementation(async (_repositoryId, execution) => ({
+    ...loadExecution,
+    id: `execution-${execution.externalRunId}-${execution.attempt}`,
+    provider: execution.provider,
+    externalRunId: execution.externalRunId,
+    attempt: execution.attempt,
+  }))
   vi.spyOn(api, 'latestPerformanceExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'latestIntegrationExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'latestPostProductionExecutions').mockResolvedValue({ items: [] })
@@ -1956,6 +1963,45 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(outcome).toHaveTextContent('p95 latency')
     expect(outcome).toHaveTextContent('420 ms ≤ 300 ms')
     expect(within(outcome).getByRole('link', { name: /Open CI run/ })).toHaveAttribute('href', loadExecution.sourceUrl)
+  })
+
+  it('refreshes incomplete provider evidence directly from a workflow outcome card', async () => {
+    mockEvidenceApis()
+    const incomplete = {
+      ...loadExecution,
+      evidenceCollection: {
+        status: 'unavailable' as const,
+        checkedAt: '2026-10-18T04:00:00.000Z',
+        errorCode: 'PROVIDER_TIMEOUT' as const,
+      },
+    }
+    const refreshed: TestExecution = {
+      ...incomplete,
+      evidenceLinks: [{
+        kind: 'video',
+        name: 'Playwright post-production recording',
+        url: 'https://github.com/fuze/front/actions/runs/12345/artifacts/99',
+      }],
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T05:00:00.000Z' },
+    }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.mocked(api.latestPerformanceExecutions).mockResolvedValue({ items: [incomplete] })
+    vi.mocked(api.refreshTestExecutionEvidence).mockResolvedValue(refreshed)
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    const outcome = await screen.findByLabelText(`Latest execution for ${loadArtifact.title}`)
+    fireEvent.click(within(outcome).getByRole('button', { name: 'Refresh provider evidence' }))
+
+    await waitFor(() => expect(api.refreshTestExecutionEvidence).toHaveBeenCalledWith(repository.id, {
+      provider: 'github-actions', externalRunId: '12345', attempt: 1,
+    }))
+    expect(await within(outcome).findByRole('link', { name: /Playwright post-production recording/ })).toHaveAttribute(
+      'href',
+      'https://github.com/fuze/front/actions/runs/12345/artifacts/99',
+    )
+    expect(within(outcome).queryByRole('button', { name: 'Refresh provider evidence' })).not.toBeInTheDocument()
   })
 
   it('explains performance precedence when one workflow overlaps integration inventory', async () => {

@@ -5294,7 +5294,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
                                   <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
                                   <ExecutionEvidenceMetadata execution={latestExecution} />
-                                  <ExecutionEvidenceCoverage execution={latestExecution} />
+                                  <ExecutionEvidenceCoverage
+                                    execution={latestExecution}
+                                    onRefresh={() => void refreshExecutionEvidence(latestExecution)}
+                                    refreshing={refreshingExecutionEvidenceId === latestExecution.id}
+                                  />
                                   <ExecutionLinkageEvidence execution={latestExecution} />
                                   <ExecutionThresholdEvidence execution={latestExecution} />
                                   <ExecutionEvidenceLinks execution={latestExecution} />
@@ -5316,7 +5320,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
                                   <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
                                   <ExecutionEvidenceMetadata execution={latestExecution} />
-                                  <ExecutionEvidenceCoverage execution={latestExecution} />
+                                  <ExecutionEvidenceCoverage
+                                    execution={latestExecution}
+                                    onRefresh={() => void refreshExecutionEvidence(latestExecution)}
+                                    refreshing={refreshingExecutionEvidenceId === latestExecution.id}
+                                  />
                                   <ExecutionLinkageEvidence execution={latestExecution} />
                                   <ExecutionEvidenceLinks execution={latestExecution} />
                                   <ExecutionSourceLink execution={latestExecution} />
@@ -5337,7 +5345,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
                                   <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
                                   <ExecutionEvidenceMetadata execution={latestExecution} />
-                                  <ExecutionEvidenceCoverage execution={latestExecution} />
+                                  <ExecutionEvidenceCoverage
+                                    execution={latestExecution}
+                                    onRefresh={() => void refreshExecutionEvidence(latestExecution)}
+                                    refreshing={refreshingExecutionEvidenceId === latestExecution.id}
+                                  />
                                   <ExecutionLinkageEvidence execution={latestExecution} />
                                   <ExecutionEvidenceLinks execution={latestExecution} />
                                   <ExecutionSourceLink execution={latestExecution} />
