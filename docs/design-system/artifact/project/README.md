@@ -84,14 +84,14 @@ drawer, bottom nav or sheet in feature code.
 
 ## Components
 
-69 primitives across 13 groups, each styled entirely with tokens — no raw hex, px or font outside the token set. Guideline docs are generated from each component's source `.prompt.md` / `.d.ts`; a curated set carries a rich visual preview (the rest show a usage specimen). The authoritative implementations ship as the private npm package `@fuzefront/design-system`.
+70 primitives across 13 groups, each styled entirely with tokens — no raw hex, px or font outside the token set. Guideline docs are generated from each component's source `.prompt.md` / `.d.ts`; a curated set carries a rich visual preview (the rest show a usage specimen). The authoritative implementations ship as the private npm package `@fuzefront/design-system`.
 
 | Group | Primitives |
 |---|---|
 | Access | `RoleBadge` |
 | Billing | `PricingCard` |
 | Brand | `BrandMark`, `BrandTokenScope`, `Logo`, `SeamDivider` |
-| Core | `Avatar`, `Badge`, `Button`, `Caption`, `ExternalLink`, `IconButton`, `IconTile`, `Text` |
+| Core | `Avatar`, `Badge`, `Button`, `Caption`, `ExternalLink`, `IconButton`, `IconTile`, `Text`, `TextLink` |
 | Data | `DataTable`, `SortableList`, `StatCard`, `StatGroup` |
 | Feedback | `Alert`, `EmptyState`, `ProgressMeter`, `Rating`, `Skeleton`, `Spinner`, `StatusCallout`, `StatusPill`, `Stepper`, `Toast` |
 | Forms | `CodeField`, `FieldLabel`, `FieldStatus`, `FileDropZone`, `Input`, `PasswordChecklist`, `SearchField`, `Select`, `Textarea`, `Toggle` |
