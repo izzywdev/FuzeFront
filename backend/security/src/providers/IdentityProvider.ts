@@ -419,8 +419,12 @@ export interface IdentityProvider {
   /** Send an SMS OTP to a phone number. */
   startPhoneVerification(token: string, phone: string): Promise<void>;
 
-  /** Confirm phone ownership via `{ phone, code }`. */
-  confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus>;
+  /**
+   * Confirm phone ownership via `{ phone, code }`. Session-bound: only the
+   * caller's own account (resolved from `token`) is marked verified, and only
+   * when `phone` is that account's pending/current number.
+   */
+  confirmPhoneVerification(token: string, phone: string, code: string): Promise<VerificationStatus>;
 
   /** Current contact-verification status for the user. */
   getVerificationStatus(token: string): Promise<VerificationStatus>;

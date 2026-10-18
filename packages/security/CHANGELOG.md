@@ -1,5 +1,19 @@
 # Changelog — @fuzefront/security-client
 
+## 0.10.3 — Security: `POST /v1/security/verify/phone/confirm` now requires a session (security fix, unreleased)
+
+`info.version` 0.10.2 -> 0.10.3, `SECURITY_CONTRACT_VERSION` 0.10.2 -> 0.10.3.
+Request/response schemas are unchanged.
+
+### Fixed (security)
+
+- `confirmPhoneVerification` declared no auth and the implementation marked
+  EVERY account holding the number as phone-verified from an unauthenticated
+  request. It now declares `bearerAuth`, documents `401`, and is bound to the
+  caller's own account: verified only when `phone` is that account's current
+  number. Callers must send `Authorization: Bearer <token>` (the same session
+  that called `startPhoneVerification`).
+
 ## 0.10.2 — Org invitations v2: memberType, external (email/WhatsApp) invitees, and the signup bind-token flow (FFRNT-305 / FFRNT-304, unreleased)
 
 **Additive surface.** `info.version` 0.10.1 -> 0.10.2, `SECURITY_CONTRACT_VERSION`
