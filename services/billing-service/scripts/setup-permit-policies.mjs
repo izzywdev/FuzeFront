@@ -1,40 +1,38 @@
 #!/usr/bin/env node
 /**
- * Sets up Permit.io ABAC resources, condition sets, and policies for plan-tier
- * access control.
+ * Sets up Permit.io ABAC resources, resource sets, condition sets, and policy
+ * rules for plan-tier access control.
  *
  * Background: billing-service's PermitSyncService writes `plan_tier` and
- * `plan_status` attributes onto the tenant subject in Permit whenever a
- * subscription changes (via the FuzeFront Security API proxy). This script
- * defines the POLICY SIDE — the resources, condition sets, and rules that
- * evaluate those attributes when permit.check() is called.
+ * `plan_status` attributes onto the subject in Permit whenever a subscription
+ * changes (via the FuzeFront Security API proxy). This script defines the
+ * POLICY SIDE — the resources, condition sets, and rules that evaluate those
+ * attributes when permit.check() is called.
  *
  * Run order:
  *   1. This script (prod-permit-policy-setup.yml) — creates schema + policies
  *   2. prod-billing-stripe-sync.yml mode=apply — syncs plan_tier attributes
- *   3. prod-unleash-ops.yml flags=authz-enabled — flips feature flag ON
+ *   3. Helm deploy with FUZEFRONT_BILLING_AUTHZ_ENABLED=true — activates authz
  *
  * Usage:
- *   node setup-permit-policies.mjs [--apply] [--env <environment>]
+ *   node setup-permit-policies.mjs [--apply]
  *
  * Flags:
  *   --apply    Write changes to Permit. Without it, only prints what would change.
- *   --env      Permit environment key (default: production)
  *
  * Secrets (read from env, injected by the cluster runner):
- *   PERMIT_API_KEY   Permit Management API key (project-scoped, read from k8s)
- *   PERMIT_PROJECT   Permit project key (default: fuzefront)
+ *   PERMIT_API_KEY      Permit Management API key (from k8s fuzefront-secrets)
+ *   PERMIT_PROJECT      Permit project key (default: fuzefront)
+ *   PERMIT_ENVIRONMENT  Permit environment key (default: production)
  */
 
 import process from 'node:process';
 
 const DRY_RUN = !process.argv.includes('--apply');
-const ENV_KEY = process.argv.includes('--env')
-  ? process.argv[process.argv.indexOf('--env') + 1]
-  : (process.env.PERMIT_ENVIRONMENT ?? 'production');
+const ENV_KEY = process.env.PERMIT_ENVIRONMENT ?? 'production';
 const PROJECT_KEY = process.env.PERMIT_PROJECT ?? 'fuzefront';
 const API_KEY = process.env.PERMIT_API_KEY;
-const BASE = 'https://api.permit.io/v2';
+const BASE = 'https://api.permit.io';
 
 if (!API_KEY) {
   console.error('PERMIT_API_KEY is required');
@@ -64,16 +62,16 @@ async function permitPost(path, body) {
     headers,
     body: JSON.stringify(body),
   });
-  // 409 = already exists — idempotent
+  // 409 = already exists — idempotent (caller may need to update; see reconcile note)
   if (r.status === 409) return { ok: true, existed: true };
   if (!r.ok) throw new Error(`POST ${path} → ${r.status} ${await r.text()}`);
   return r.json();
 }
 
 const schemaBase = `/v2/schema/${PROJECT_KEY}/${ENV_KEY}`;
+const factsBase  = `/v2/facts/${PROJECT_KEY}/${ENV_KEY}`;
 
 // ── 1. Resource definitions ───────────────────────────────────────────────────
-// Each resource corresponds to a product surface gated by plan tier.
 
 const RESOURCES = [
   {
@@ -114,7 +112,21 @@ const RESOURCES = [
   },
 ];
 
-// ── 2. Condition sets — one per tier gate ─────────────────────────────────────
+// ── 2. Resource sets — one per resource, matching all instances ───────────────
+// Required by the set_rules API; empty conditions = any instance of the resource.
+
+const RESOURCE_SETS = RESOURCES.map((r) => ({
+  key: `${r.key}_all`,
+  name: `${r.name} — all instances`,
+  resource: r.key,
+  conditions: {},
+}));
+
+// ── 3. Condition sets (user sets) — one per tier gate ─────────────────────────
+// Permit attribute-first format: {"user.attr": {"op": value}}
+// Entitled statuses: active + trialing (no-card trials) + past_due (grace period).
+
+const ENTITLED_STATUSES = ['active', 'trialing', 'past_due'];
 
 const CONDITION_SETS = [
   {
@@ -123,18 +135,8 @@ const CONDITION_SETS = [
     type: 'userset',
     conditions: {
       allOf: [
-        {
-          attribute_name: 'plan_tier',
-          attribute_type: 'user',
-          operator: 'array-contains-any',
-          value: ['starter', 'growth', 'enterprise'],
-        },
-        {
-          attribute_name: 'plan_status',
-          attribute_type: 'user',
-          operator: 'equals',
-          value: 'active',
-        },
+        { 'user.plan_tier': { in: ['starter', 'growth', 'enterprise'] } },
+        { 'user.plan_status': { in: ENTITLED_STATUSES } },
       ],
     },
   },
@@ -144,18 +146,8 @@ const CONDITION_SETS = [
     type: 'userset',
     conditions: {
       allOf: [
-        {
-          attribute_name: 'plan_tier',
-          attribute_type: 'user',
-          operator: 'array-contains-any',
-          value: ['growth', 'enterprise'],
-        },
-        {
-          attribute_name: 'plan_status',
-          attribute_type: 'user',
-          operator: 'equals',
-          value: 'active',
-        },
+        { 'user.plan_tier': { in: ['growth', 'enterprise'] } },
+        { 'user.plan_status': { in: ENTITLED_STATUSES } },
       ],
     },
   },
@@ -165,40 +157,31 @@ const CONDITION_SETS = [
     type: 'userset',
     conditions: {
       allOf: [
-        {
-          attribute_name: 'plan_tier',
-          attribute_type: 'user',
-          operator: 'array-contains-any',
-          value: ['enterprise'],
-        },
-        {
-          attribute_name: 'plan_status',
-          attribute_type: 'user',
-          operator: 'equals',
-          value: 'active',
-        },
+        { 'user.plan_tier': { in: ['enterprise'] } },
+        { 'user.plan_status': { in: ENTITLED_STATUSES } },
       ],
     },
   },
 ];
 
-// ── 3. Policy rules — resource + action → condition set ───────────────────────
+// ── 4. Policy rules — resource set + action → user set ───────────────────────
+// Posted to /v2/facts/{project}/{env}/set_rules (not the schema endpoint).
 
 const POLICY_RULES = [
   // Billing portal: any active paid subscriber
-  { resource: 'billing_portal', action: 'access', userSet: 'plan_starter_or_above' },
+  { resourceSet: 'billing_portal_all', action: 'access', userSet: 'plan_starter_or_above' },
   // Additional workspaces: Growth+
-  { resource: 'workspace', action: 'create', userSet: 'plan_growth_or_above' },
-  { resource: 'workspace', action: 'manage', userSet: 'plan_growth_or_above' },
+  { resourceSet: 'workspace_all', action: 'create', userSet: 'plan_growth_or_above' },
+  { resourceSet: 'workspace_all', action: 'manage', userSet: 'plan_growth_or_above' },
   // API keys: Growth+
-  { resource: 'api_keys', action: 'read', userSet: 'plan_growth_or_above' },
-  { resource: 'api_keys', action: 'manage', userSet: 'plan_growth_or_above' },
+  { resourceSet: 'api_keys_all', action: 'read', userSet: 'plan_growth_or_above' },
+  { resourceSet: 'api_keys_all', action: 'manage', userSet: 'plan_growth_or_above' },
   // SSO config: Growth+
-  { resource: 'sso_config', action: 'manage', userSet: 'plan_growth_or_above' },
+  { resourceSet: 'sso_config_all', action: 'manage', userSet: 'plan_growth_or_above' },
   // Module Federation hosting: Growth+
-  { resource: 'module_federation', action: 'manage', userSet: 'plan_growth_or_above' },
+  { resourceSet: 'module_federation_all', action: 'manage', userSet: 'plan_growth_or_above' },
   // Custom domain: Enterprise only
-  { resource: 'custom_domain', action: 'configure', userSet: 'plan_enterprise' },
+  { resourceSet: 'custom_domain_all', action: 'configure', userSet: 'plan_enterprise' },
 ];
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -218,7 +201,15 @@ async function step(label, fn) {
 console.log(`\nPermit ABAC policy setup — project=${PROJECT_KEY} env=${ENV_KEY} mode=${DRY_RUN ? 'dry-run' : 'APPLY'}\n`);
 
 console.log('Verifying Permit credentials...');
-await step('credentials valid', () => permitGet(`/v2/api-key/scope`));
+if (DRY_RUN) {
+  console.log('[dry-run] GET /v2/api-key/scope (skipping in dry-run)');
+} else {
+  await step('credentials valid', () => permitGet('/v2/api-key/scope'));
+  if (errors > 0) {
+    console.error('\nCredential check failed — aborting.');
+    process.exit(1);
+  }
+}
 
 console.log('\nCreating resources...');
 for (const resource of RESOURCES) {
@@ -227,7 +218,14 @@ for (const resource of RESOURCES) {
   );
 }
 
-console.log('\nCreating condition sets...');
+console.log('\nCreating resource sets...');
+for (const rs of RESOURCE_SETS) {
+  await step(`resource-set: ${rs.key}`, () =>
+    permitPost(`${schemaBase}/resourcesets`, rs),
+  );
+}
+
+console.log('\nCreating condition sets (user sets)...');
 for (const cs of CONDITION_SETS) {
   await step(`condition-set: ${cs.key}`, () =>
     permitPost(`${schemaBase}/condition_sets`, cs),
@@ -236,17 +234,21 @@ for (const cs of CONDITION_SETS) {
 
 console.log('\nCreating policy rules...');
 for (const rule of POLICY_RULES) {
-  await step(`policy: ${rule.resource}:${rule.action} → ${rule.userSet}`, () =>
-    permitPost(`${schemaBase}/condition_set_rules`, {
+  await step(`policy: ${rule.resourceSet}:${rule.action} → ${rule.userSet}`, () =>
+    permitPost(`${factsBase}/set_rules`, {
       user_set: rule.userSet,
-      resource_set: rule.resource,
-      permission: `${rule.resource}:${rule.action}`,
+      resource_set: rule.resourceSet,
+      permission: rule.action,
     }),
   );
 }
 
 console.log(`\n${'─'.repeat(60)}`);
 if (DRY_RUN) {
+  if (errors > 0) {
+    console.error(`Dry-run completed with ${errors} error(s). Review above before running with --apply.`);
+    process.exit(1);
+  }
   console.log('Dry-run complete. Re-run with --apply to write changes.');
 } else if (errors > 0) {
   console.error(`Done with ${errors} error(s). Review above and re-run.`);

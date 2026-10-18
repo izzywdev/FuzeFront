@@ -8,7 +8,8 @@ name: "prod: Permit ABAC policy setup"
 #   2. prod-billing-stripe-sync (mode=apply) — syncs plan_tier attributes
 #   3. prod-unleash-ops (flags=authz-enabled) — flips the gate ON
 #
-# All secrets are read from k8s at runtime. No GitHub repo secrets required.
+# All secrets are read from k8s at runtime via the runner SA token.
+# No GitHub repo secrets required.
 
 on:
   workflow_dispatch:
@@ -30,13 +31,14 @@ on:
 jobs:
   permit-policy-setup:
     name: 'Permit ABAC policy setup (${{ inputs.mode }})'
-    runs-on: [self-hosted, fuzefront]
+    runs-on: fuzefront
+    timeout-minutes: 10
     environment: production
     permissions:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
 
       - uses: actions/setup-node@v4
         with:
@@ -45,22 +47,34 @@ jobs:
       - name: Read Permit API key from k8s
         id: read-permit-secret
         run: |
-          # Reads the Permit Management API key from the cluster's sealed secret.
-          # The secret is provisioned by prod-billing-s2s-provision.yml and sealed
-          # by governance — never stored as a GitHub repo secret.
-          PERMIT_API_KEY=$(kubectl get secret permit-secrets \
-            -n fuzefront \
-            -o jsonpath='{.data.PERMIT_API_KEY}' | base64 -d)
+          set -euo pipefail
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+          _SECRET=$(curl -sf --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/fuzefront-secrets")
+
+          PERMIT_API_KEY=$(echo "$_SECRET" | python3 -c "
+import sys,json,base64
+d=json.load(sys.stdin)
+v=d.get('data',{}).get('PERMIT_API_KEY')
+print(base64.b64decode(v).decode().strip() if v else '')
+" 2>/dev/null || echo "")
           if [ -z "$PERMIT_API_KEY" ]; then
-            echo "::error::PERMIT_API_KEY not found in k8s secret permit-secrets/fuzefront"
+            echo "::error::PERMIT_API_KEY not found in k8s secret fuzefront-secrets/fuzefront"
             exit 1
           fi
           echo "::add-mask::$PERMIT_API_KEY"
           echo "PERMIT_API_KEY=$PERMIT_API_KEY" >> "$GITHUB_ENV"
 
-          PERMIT_PROJECT=$(kubectl get secret permit-secrets \
-            -n fuzefront \
-            -o jsonpath='{.data.PERMIT_PROJECT}' 2>/dev/null | base64 -d || echo "fuzefront")
+          PERMIT_PROJECT=$(echo "$_SECRET" | python3 -c "
+import sys,json,base64
+d=json.load(sys.stdin)
+v=d.get('data',{}).get('PERMIT_PROJECT')
+print(base64.b64decode(v).decode().strip() if v else '')
+" 2>/dev/null || echo "")
+          PERMIT_PROJECT="${PERMIT_PROJECT:-fuzefront}"
           echo "PERMIT_PROJECT=$PERMIT_PROJECT" >> "$GITHUB_ENV"
 
       - name: Run policy setup (${{ inputs.mode }})
@@ -74,5 +88,4 @@ jobs:
           if [ "${{ inputs.mode }}" = "apply" ]; then
             ARGS="--apply"
           fi
-          node scripts/setup-permit-policies.mjs $ARGS \
-            --env "${{ inputs.environment }}"
+          node scripts/setup-permit-policies.mjs $ARGS
