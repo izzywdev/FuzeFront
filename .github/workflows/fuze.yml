@@ -153,20 +153,22 @@ jobs:
       # verbatim after the PR-head checkout below, means the step that runs `uses: ./...`
       # always executes what the BASE BRANCH shipped, regardless of what the PR head contains.
       #
-      # NOTE ON pull_request_review EVENTS: for that event type github.sha IS the PR HEAD
-      # commit (not the base branch). The initial checkout above therefore already contains
-      # potentially attacker-modified actions. We correct for this by explicitly fetching
-      # .github/actions from the base branch before copying, ensuring the preserved copy is
-      # always from the trusted ref regardless of which event triggered the workflow.
+      # NOTE ON pull_request_review AND pull_request_review_comment EVENTS: for both event
+      # types github.sha IS the PR HEAD commit (not the base branch). The initial checkout
+      # above therefore already contains potentially attacker-modified actions. We correct
+      # for this by explicitly fetching .github/actions from the base branch before copying,
+      # ensuring the preserved copy is always from the trusted ref regardless of which event
+      # triggered the workflow.
       - name: Preserve trusted local actions (before any PR-head checkout)
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
         run: |
-          # For pull_request_review events github.sha is the PR HEAD, so the initial checkout
-          # above already checked out potentially untrusted code. Re-fetch .github/actions
-          # from the base branch so the preserved copy is always from the trusted ref.
-          if [ "$EVENT_NAME" = "pull_request_review" ]; then
+          # For pull_request_review and pull_request_review_comment events github.sha is the
+          # PR HEAD, so the initial checkout above already checked out potentially untrusted
+          # code. Re-fetch .github/actions from the base branch so the preserved copy is
+          # always from the trusted ref.
+          if [ "$EVENT_NAME" = "pull_request_review" ] || [ "$EVENT_NAME" = "pull_request_review_comment" ]; then
             git fetch origin "${BASE_REF:-master}" --depth=1
             git checkout "origin/${BASE_REF:-master}" -- .github/actions
           fi
