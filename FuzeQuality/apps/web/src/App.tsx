@@ -3550,6 +3550,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionNextCursors, setExecutionNextCursors] = useState<Record<string, string>>({})
   const [loadingMoreExecutions, setLoadingMoreExecutions] = useState(false)
   const [executionPaginationError, setExecutionPaginationError] = useState<string>()
+  const [refreshingExecutionEvidenceId, setRefreshingExecutionEvidenceId] = useState<string>()
+  const [executionEvidenceRefreshError, setExecutionEvidenceRefreshError] = useState<string>()
   const [executionHistoryFailures, setExecutionHistoryFailures] = useState<string[]>([])
   const [executionTrendFailures, setExecutionTrendFailures] = useState<string[]>([])
   const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
@@ -4356,6 +4358,29 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       }
     } finally {
       if (executionTrendQueryRef.current === query) setLoadingMoreExecutions(false)
+    }
+  }
+  const refreshExecutionEvidence = async (execution: TestExecution) => {
+    setRefreshingExecutionEvidenceId(execution.id)
+    setExecutionEvidenceRefreshError(undefined)
+    try {
+      const refreshed = await api.refreshTestExecutionEvidence(execution.repositoryId, {
+        provider: execution.provider,
+        externalRunId: execution.externalRunId,
+        attempt: execution.attempt,
+      })
+      const replace = (items: TestExecution[]) => items.map(item => item.id === refreshed.id ? refreshed : item)
+      setExecutions(replace)
+      setPerformanceExecutions(replace)
+      setIntegrationExecutions(replace)
+      setPostProductionExecutions(replace)
+      if (refreshed.evidenceCollection?.status === 'unavailable') {
+        setExecutionEvidenceRefreshError('Provider evidence is still unavailable. The failed lookup remains visible and can be retried.')
+      }
+    } catch (cause) {
+      setExecutionEvidenceRefreshError(cause instanceof Error ? cause.message : 'Unable to refresh provider evidence.')
+    } finally {
+      setRefreshingExecutionEvidenceId(undefined)
     }
   }
   const loadMorePerformance = async () => {
@@ -5680,6 +5705,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               {executionHistoryFailures.length === 1 ? 'repository' : 'repositories'}. Available trend and policy-gate evidence remains visible.
             </p>
           )}
+          {executionEvidenceRefreshError && (
+            <p className="form-error" role="alert">{executionEvidenceRefreshError}</p>
+          )}
           <div className="catalog-list">
             {executions.map(execution => (
               <article className="catalog-row" key={execution.id}>
@@ -5700,7 +5728,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         : ''}
                   </small>
                   <ExecutionEvidenceMetadata execution={execution} />
-                  <ExecutionEvidenceCoverage execution={execution} />
+                  <ExecutionEvidenceCoverage
+                    execution={execution}
+                    onRefresh={() => void refreshExecutionEvidence(execution)}
+                    refreshing={refreshingExecutionEvidenceId === execution.id}
+                  />
                   <ExecutionLinkageEvidence execution={execution} />
                   <ExecutionEvidenceLinks execution={execution} />
                   <ExecutionGateEvidence

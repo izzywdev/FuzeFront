@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
 import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionSourceLink, ExecutionThresholdEvidence, latestIntegrationExecution, latestPerformanceExecution, latestPostProductionExecution } from './executionEvidence'
 
@@ -128,6 +128,35 @@ describe('ExecutionThresholdEvidence', () => {
       '2 thresholds · 0 artifacts · 1 policy–gate outcomes'
     )
     expect(screen.getByText('Provider checked; no durable artifacts reported')).toBeInTheDocument()
+    unmount()
+  })
+
+  it('offers a retry only for terminal incomplete GitHub evidence', () => {
+    const onRefresh = vi.fn()
+    const { rerender, unmount } = render(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      provider: 'github-actions',
+      status: 'failed',
+      evidenceCollection: { status: 'unavailable', checkedAt: '2026-10-18T04:00:00.000Z', errorCode: 'PROVIDER_TIMEOUT' },
+    }} onRefresh={onRefresh} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh provider evidence' }))
+    expect(onRefresh).toHaveBeenCalledOnce()
+
+    rerender(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      provider: 'github-actions',
+      status: 'running',
+      evidenceCollection: { status: 'partial', checkedAt: '2026-10-18T04:00:00.000Z', errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' },
+    }} onRefresh={onRefresh} />)
+    expect(screen.queryByRole('button', { name: /refresh provider evidence/i })).not.toBeInTheDocument()
+
+    rerender(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      provider: 'external',
+      evidenceCollection: { status: 'unavailable', checkedAt: '2026-10-18T04:00:00.000Z', errorCode: 'PROVIDER_UNAVAILABLE' },
+    }} onRefresh={onRefresh} />)
+    expect(screen.queryByRole('button', { name: /refresh provider evidence/i })).not.toBeInTheDocument()
     unmount()
   })
 

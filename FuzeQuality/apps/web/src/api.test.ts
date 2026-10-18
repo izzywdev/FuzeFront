@@ -124,4 +124,24 @@ describe('FuzeQuality portal API identity context', () => {
       '/api/v1/repositories/repo-1/test-executions/attempts?provider=github-actions&externalRunId=run%2Fid+with+spaces&cursor=next+page'
     )
   })
+
+  it('refreshes provider evidence for one exact execution attempt', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.refreshTestExecutionEvidence('repo-1', {
+      provider: 'github-actions',
+      externalRunId: '98765',
+      attempt: 3,
+    })
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/repositories/repo-1/test-executions/evidence/refresh')
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      provider: 'github-actions', externalRunId: '98765', attempt: 3,
+    })
+  })
 })

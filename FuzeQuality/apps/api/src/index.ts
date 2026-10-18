@@ -36,7 +36,7 @@ import {
   webhookScanCommands,
   webhookWorkflowExecutions,
 } from '@fuzequality/github-app'
-import { dispatchPerformanceWorkflow, dispatchTestWorkflow, GitHubArtifactEvidenceError, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
+import { dispatchPerformanceWorkflow, dispatchTestWorkflow, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { qualityResources } from './platform-permissions'
@@ -45,7 +45,7 @@ import { createOpenApiSurface } from './openapi'
 import { executionAttemptHistoryFilterSchema, executionPerformanceFilterSchema, executionPageFilterSchema } from './execution-filter'
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
-import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
@@ -131,6 +131,11 @@ const intelligenceFailureSchema = z.object({
   sourceType: z.literal('jira'),
   sourceKey: z.string().trim().min(1).max(200),
   code: z.enum(['JIRA_UNAVAILABLE', 'INTELLIGENCE_UNAVAILABLE', 'SEMANTIC_INDEX_UNAVAILABLE']),
+}).strict()
+const executionEvidenceRefreshSchema = z.object({
+  provider: z.literal('github-actions'),
+  externalRunId: z.string().max(500).regex(/^\d+$/),
+  attempt: z.number().int().positive(),
 }).strict()
 const repositoryAdministrationSchema = z.object({
   ownership: z.object({
@@ -805,6 +810,41 @@ app.get('/api/v1/repositories/:id/test-executions/attempts', mayReadCatalog, asy
     page: page.page,
   })
 })
+app.post('/api/v1/repositories/:id/test-executions/evidence/refresh', mayRunExecution, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const parsed = executionEvidenceRefreshSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  if (!repository.installationId) {
+    return response.status(409).json({
+      error: 'Repository has no GitHub App installation available for artifact discovery',
+      code: 'GITHUB_INSTALLATION_REQUIRED',
+    })
+  }
+  const installationId = repository.installationId
+  const candidates = await store.testExecutions(repositoryId, tenantId, {
+    provider: parsed.data.provider,
+    externalRunId: parsed.data.externalRunId,
+  })
+  const execution = candidates.find(item => item.attempt === parsed.data.attempt)
+  if (!execution) return response.status(404).json({ error: 'Test execution attempt not found' })
+  if (execution.status === 'running') {
+    return response.status(409).json({
+      error: 'Artifact evidence can only be refreshed after the execution reaches a terminal state',
+      code: 'EXECUTION_NOT_TERMINAL',
+    })
+  }
+  const refreshed = await refreshExecutionArtifactEvidence(execution, () => githubWorkflowArtifactEvidence({
+    owner: repository.owner,
+    name: repository.name,
+    runId: execution.externalRunId,
+    installationId,
+  }))
+  await store.saveTestExecution(refreshed)
+  response.json(refreshed)
+})
 app.get('/api/v1/repositories/:id/performance-test-executions/latest', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
@@ -1313,33 +1353,23 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
     } = execution
     if (execution.status !== 'running' && repository.installationId) {
       const checkedAt = new Date().toISOString()
-      try {
-        const discovered = await githubWorkflowArtifactEvidence({
+      const installationId = repository.installationId
+      executionWithEvidence = await refreshExecutionArtifactEvidence(
+        execution,
+        () => githubWorkflowArtifactEvidence({
           owner: repository.owner,
           name: repository.name,
           runId: execution.externalRunId,
-          installationId: repository.installationId,
-        })
-        executionWithEvidence = {
-          ...execution,
-          evidenceLinks: mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered.links),
-          evidenceCollection: discovered.truncated
-            ? { status: 'partial', checkedAt, errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' }
-            : { status: 'complete', checkedAt },
-        }
-      } catch (error) {
-        const errorCode = error instanceof GitHubArtifactEvidenceError
-          ? error.code
-          : 'PROVIDER_UNAVAILABLE'
-        executionWithEvidence = {
-          ...execution,
-          evidenceCollection: { status: 'unavailable', checkedAt, errorCode },
-        }
+          installationId,
+        }),
+        checkedAt,
+      )
+      if (executionWithEvidence.evidenceCollection?.status === 'unavailable') {
         console.warn(JSON.stringify({
           event: 'github_workflow_artifact_discovery_failed',
           repositoryId: repository.id,
           externalRunId: execution.externalRunId,
-          errorCode,
+          errorCode: executionWithEvidence.evidenceCollection.errorCode,
         }))
       }
     }

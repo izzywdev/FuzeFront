@@ -1,6 +1,7 @@
 import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
 import { artifactWorkflowExecutionKind } from '@fuzequality/contracts/workflow-execution'
 import { ExternalLink } from 'lucide-react'
+import { QualityAction } from './primitives'
 
 const THRESHOLD_OPERATOR_LABELS = {
   lt: '<',
@@ -336,8 +337,12 @@ export function ExecutionEvidenceLinks({
 /** Makes sparse provider lifecycle events distinguishable from detailed test evidence. */
 export function ExecutionEvidenceCoverage({
   execution,
+  onRefresh,
+  refreshing = false,
 }: {
   execution: TestExecution
+  onRefresh?: () => void
+  refreshing?: boolean
 }) {
   const thresholds = execution.thresholds?.length ?? 0
   const links = (execution.evidenceLinks ?? []).filter(link => !(execution.provider === 'github-actions' && link.kind === 'report' && link.name === 'GitHub Actions artifacts' && link.url.endsWith('#artifacts'))).length
@@ -352,6 +357,10 @@ export function ExecutionEvidenceCoverage({
         : 'Provider artifact lookup was unavailable'
     : undefined
   const collectionPartial = collection?.status === 'partial'
+  const canRefresh = execution.provider === 'github-actions' &&
+    execution.status !== 'running' &&
+    (collection?.status === 'partial' || collection?.status === 'unavailable') &&
+    Boolean(onRefresh)
 
   return (
     <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
@@ -371,6 +380,11 @@ export function ExecutionEvidenceCoverage({
         <span className="status-pill status-passed">
           Provider checked; no durable artifacts reported
         </span>
+      )}
+      {canRefresh && (
+        <QualityAction intent="quiet" onClick={onRefresh} disabled={refreshing}>
+          {refreshing ? 'Refreshing provider evidence…' : 'Refresh provider evidence'}
+        </QualityAction>
       )}
       {missingThresholds && (
         <span className="status-pill status-running">

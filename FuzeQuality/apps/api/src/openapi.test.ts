@@ -144,6 +144,21 @@ describe('contract discovery', () => {
           'application/json'
         ].schema.$ref
       ).toBe('#/components/schemas/TestExecutionPage')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.requestBody.content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/TestExecutionEvidenceRefresh')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.responses['200'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/TestExecution')
+      expect(schemas.TestExecutionEvidenceRefresh).toMatchObject({
+        additionalProperties: false,
+        required: ['provider', 'externalRunId', 'attempt'],
+      })
+      expect(schemas.TestExecutionEvidenceRefresh.properties.provider.enum).toEqual(['github-actions'])
       expect(document.components.parameters.ExecutionName).toMatchObject({
         name: 'name',
         in: 'query',

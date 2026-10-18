@@ -943,6 +943,39 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/repositories/{repositoryId}/test-executions/evidence/refresh:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    post:
+      operationId: refreshTestExecutionEvidence
+      summary: Refresh provider artifacts for one immutable execution attempt
+      description: >-
+        Re-runs GitHub Actions artifact discovery through the repository's tenant-owned GitHub App
+        installation. The execution outcome and attempt identity remain immutable; only merged evidence
+        links and the explicit collection state are updated.
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TestExecutionEvidenceRefresh' }
+      responses:
+        '200':
+          description: The exact execution attempt with refreshed provider evidence state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestExecution' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The repository has no GitHub App installation or the execution is still running.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
   /api/v1/repositories/{repositoryId}/performance-test-executions/latest:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
@@ -1813,6 +1846,14 @@ components:
         invalidGateArtifactIds:
           type: array
           items: { type: string }
+    TestExecutionEvidenceRefresh:
+      type: object
+      additionalProperties: false
+      required: [provider, externalRunId, attempt]
+      properties:
+        provider: { type: string, enum: [github-actions] }
+        externalRunId: { type: string, pattern: '^\d+$', maxLength: 500 }
+        attempt: { type: integer, minimum: 1 }
     TestExecution:
       type: object
       description: The first terminal outcome for a provider run attempt is immutable; reruns use a new attempt.

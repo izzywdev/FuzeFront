@@ -67,6 +67,58 @@ export function mergeExecutionEvidenceLinks(
   ).values()].slice(0, 100)
 }
 
+type ArtifactEvidenceResult = {
+  links: TestExecution['evidenceLinks']
+  truncated: boolean
+}
+
+const artifactEvidenceErrorCodes = new Set<NonNullable<TestExecution['evidenceCollection']>['errorCode']>([
+  'PROVIDER_TIMEOUT',
+  'PROVIDER_UNAVAILABLE',
+  'PROVIDER_RESPONSE_INVALID',
+  'PROVIDER_RESULT_LIMIT_EXCEEDED',
+])
+
+/**
+ * Refreshes provider-hosted artifacts without rewriting the immutable outcome
+ * of an exact execution attempt. Provider failures are retained as explicit
+ * evidence state so the portal never presents an unchecked empty result as a
+ * verified absence of artifacts.
+ */
+export async function refreshExecutionArtifactEvidence<T extends Pick<TestExecution, 'evidenceLinks' | 'evidenceCollection'>>(
+  execution: T,
+  collect: () => Promise<ArtifactEvidenceResult>,
+  checkedAt = new Date().toISOString(),
+): Promise<T & { evidenceCollection: NonNullable<TestExecution['evidenceCollection']> }> {
+  try {
+    const discovered = await collect()
+    return {
+      ...execution,
+      evidenceLinks: mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered.links),
+      evidenceCollection: discovered.truncated
+        ? { status: 'partial', checkedAt, errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' }
+        : { status: 'complete', checkedAt },
+    }
+  } catch (error) {
+    // A retry failure must not downgrade evidence already proven complete or
+    // partial. This mirrors store merge precedence and keeps the API response
+    // consistent with the durable record.
+    if (execution.evidenceCollection?.status === 'complete' || execution.evidenceCollection?.status === 'partial') {
+      return execution as T & { evidenceCollection: NonNullable<TestExecution['evidenceCollection']> }
+    }
+    const candidate = error && typeof error === 'object' && 'code' in error
+      ? String(error.code)
+      : 'PROVIDER_UNAVAILABLE'
+    const errorCode = artifactEvidenceErrorCodes.has(candidate as NonNullable<TestExecution['evidenceCollection']>['errorCode'])
+      ? candidate as NonNullable<TestExecution['evidenceCollection']>['errorCode']
+      : 'PROVIDER_UNAVAILABLE'
+    return {
+      ...execution,
+      evidenceCollection: { status: 'unavailable', checkedAt, errorCode },
+    }
+  }
+}
+
 /**
  * Builds a GitHub webhook execution with exact-revision catalog evidence.
  * Catalog-derived links and performance kind are authoritative over the

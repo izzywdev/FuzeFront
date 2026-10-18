@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { testExecutionInputSchema, type ScanResult } from '@fuzequality/contracts'
-import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
   it('requires a safe diagnostic for unavailable evidence collection', () => {
@@ -37,6 +37,62 @@ describe('internal execution ingestion compatibility', () => {
       generic,
       ...discovered.slice(0, 99),
     ])
+  })
+
+  it('refreshes exact-attempt artifacts and records bounded provider results', async () => {
+    const execution = webhookExecutionRecord({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000', provider: 'github-actions',
+      externalRunId: '42', attempt: 2, revision: 'abc123', kind: 'post-production',
+      status: 'passed', name: 'Production journey', evidenceLinks: [],
+    }, 'tenant-1', { policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
+    const refreshed = await refreshExecutionArtifactEvidence(execution, async () => ({
+      links: [{ kind: 'video', name: 'Playwright video', url: 'https://github.com/acme/app/actions/runs/42/artifacts/7' }],
+      truncated: true,
+    }), '2026-10-18T04:00:00.000Z')
+
+    expect(refreshed.evidenceLinks).toEqual([expect.objectContaining({ kind: 'video' })])
+    expect(refreshed.evidenceCollection).toEqual({
+      status: 'partial', checkedAt: '2026-10-18T04:00:00.000Z', errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED',
+    })
+    expect(refreshed.externalRunId).toBe('42')
+    expect(refreshed.attempt).toBe(2)
+  })
+
+  it('retains a safe unavailable state when artifact refresh fails', async () => {
+    const execution = webhookExecutionRecord({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000', provider: 'github-actions',
+      externalRunId: '43', attempt: 1, revision: 'abc123', kind: 'ci', status: 'failed',
+      name: 'CI', evidenceLinks: [],
+    }, 'tenant-1', { policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
+    const failure = Object.assign(new Error('secret provider detail'), { code: 'PROVIDER_TIMEOUT' })
+
+    const refreshed = await refreshExecutionArtifactEvidence(
+      execution,
+      async () => { throw failure },
+      '2026-10-18T04:01:00.000Z',
+    )
+
+    expect(refreshed.evidenceCollection).toEqual({
+      status: 'unavailable', checkedAt: '2026-10-18T04:01:00.000Z', errorCode: 'PROVIDER_TIMEOUT',
+    })
+    expect(JSON.stringify(refreshed)).not.toContain('secret provider detail')
+  })
+
+  it('does not downgrade previously discovered partial evidence when a retry fails', async () => {
+    const execution = webhookExecutionRecord({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000', provider: 'github-actions',
+      externalRunId: '44', attempt: 1, revision: 'abc123', kind: 'post-production', status: 'passed',
+      name: 'Production journey', evidenceLinks: [],
+      evidenceCollection: { status: 'partial', checkedAt: '2026-10-18T03:00:00.000Z', errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' },
+    }, 'tenant-1', { policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
+
+    const refreshed = await refreshExecutionArtifactEvidence(
+      execution,
+      async () => { throw Object.assign(new Error('timeout'), { code: 'PROVIDER_TIMEOUT' }) },
+      '2026-10-18T04:00:00.000Z',
+    )
+
+    expect(refreshed.evidenceCollection).toEqual(execution.evidenceCollection)
   })
 
   it('makes exact-revision links authoritative in webhook execution records', () => {

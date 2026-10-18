@@ -137,6 +137,10 @@ export const api = {
   reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed', reason?: string, expectedReviewedAt?: string | null) => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}), ...(expectedReviewedAt !== undefined ? { expectedReviewedAt } : {}) }) }),
   testExecutions: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').TestExecutionPage | import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions?${new URLSearchParams(filter)}`),
   testExecutionAttempts: (id: string, provider: import('@fuzequality/contracts').TestExecution['provider'], externalRunId: string, cursor?: string) => request<import('@fuzequality/contracts').TestExecutionPage | import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions/attempts?${new URLSearchParams({ provider, externalRunId, ...(cursor ? { cursor } : {}) })}`),
+  refreshTestExecutionEvidence: (id: string, execution: Pick<import('@fuzequality/contracts').TestExecution, 'provider' | 'externalRunId' | 'attempt'>) => request<import('@fuzequality/contracts').TestExecution>(`/api/v1/repositories/${id}/test-executions/evidence/refresh`, {
+    method: 'POST',
+    body: JSON.stringify(execution),
+  }),
   latestPerformanceExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/performance-test-executions/latest`),
   latestIntegrationExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/integration-test-executions/latest`),
   latestPostProductionExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/post-production-test-executions/latest`),
