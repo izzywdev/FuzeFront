@@ -26,9 +26,12 @@
  * TWO CHECKS, TWO SCOPES
  * ----------------------
  *   1. SCHEMA  — every design/frames/<feature>/manifest.json must match the shape.
- *                Runs for ALL manifests; a violation always fails. This is pure
- *                structural truth that should already hold, so it does not need a
- *                ramp.
+ *                Validated for ALL manifests, but a violation FAILS only for a
+ *                feature this PR changed (same scope as the mobile check below);
+ *                a schema error in an unchanged manifest prints as a backlog
+ *                warning, not a failure. Structural truth should already hold, so
+ *                there is no separate ramp knob — the changed-feature scoping is
+ *                the ramp. Use --all to fail on every manifest.
  *   2. MOBILE  — each flow in a CHANGED feature must declare mobile coverage:
  *                a `build.flows[].responsive` pointing at a mobile/responsive frame
  *                (or listing a mobile viewport), OR a frame tagged
