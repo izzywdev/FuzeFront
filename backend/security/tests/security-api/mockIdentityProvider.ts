@@ -29,6 +29,9 @@ import {
   MfaEnrollResult,
   MfaChallengeAck,
   VerificationStatus,
+  SessionDevice,
+  IdentityConnections,
+  SocialLinkStart,
 } from '../../src/providers/IdentityProvider'
 import { randomUUID } from 'crypto'
 
@@ -183,7 +186,7 @@ export class MockIdentityProvider implements IdentityProvider {
     const url = new URL('https://app.fuzefront.com/api/auth/idp/authorize')
     url.searchParams.set('state', state)
     if (redirectTo) url.searchParams.set('redirectTo', redirectTo)
-    return { redirectUrl: url.toString(), state }
+    return { redirectUrl: url.toString(), state, codeVerifier: "mock-verifier" }
   }
 
   async brokerCallback(input: SocialCallbackInput): Promise<SocialCallbackResult> {
@@ -393,5 +396,57 @@ export class MockIdentityProvider implements IdentityProvider {
   async getVerificationStatus(token: string): Promise<VerificationStatus> {
     const u = this.userByToken(token)
     return { emailVerified: u.emailVerified, phoneVerified: u.phoneVerified, phone: u.phone }
+  }
+
+  // ── Minimal fixtures for the account/session/password surface (not exercised
+  // by the provider-agnostic contract suite; present so the mock satisfies the
+  // IdentityProvider interface). ──
+  async requestPasswordReset(_email: string): Promise<void> {}
+
+  async confirmPasswordReset(_token: string, _newPassword: string): Promise<void> {
+    throw new ProviderError('MALFORMED', 'invalid or expired reset token', 400)
+  }
+
+  async listSessions(token: string): Promise<SessionDevice[]> {
+    this.userByToken(token)
+    return [{ id: 'mock-session', current: true }]
+  }
+
+  async revokeSession(token: string, _sessionId: string): Promise<void> {
+    this.userByToken(token)
+  }
+
+  async revokeOtherSessions(token: string): Promise<void> {
+    const u = this.userByToken(token)
+    for (const [t, id] of [...this.sessions]) if (id === u.id && t !== token) this.sessions.delete(t)
+  }
+
+  async getIdentityConnections(token: string): Promise<IdentityConnections> {
+    this.userByToken(token)
+    return { providers: [], hasPassword: true }
+  }
+
+  async startSocialLink(token: string, _provider: string): Promise<SocialLinkStart> {
+    this.userByToken(token)
+    return { redirectUrl: '/mock-link', state: 'mock-state', codeVerifier: 'mock-verifier' }
+  }
+
+  async unlinkSocial(token: string, _provider: string): Promise<IdentityConnections> {
+    this.userByToken(token)
+    return { providers: [], hasPassword: true }
+  }
+
+  async setPassword(token: string, _newPassword: string): Promise<IdentityConnections> {
+    this.userByToken(token)
+    throw new ProviderError('CONFLICT', 'password already exists', 409)
+  }
+
+  async changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+    const u = this.userByToken(token)
+    if (u.password !== currentPassword) {
+      throw new ProviderError('INVALID_CREDENTIALS', 'current password is incorrect', 400)
+    }
+    u.password = newPassword
+    await this.revokeOtherSessions(token)
   }
 }

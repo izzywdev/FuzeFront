@@ -59,6 +59,18 @@ class AltIdentityProvider implements IdentityProvider {
       user: { id: this.users[email].id, email, roles: ['member'] },
     }
   }
+  // Minimal stubs for the account/session/password surface (not exercised here).
+  async emailExists(): Promise<boolean> { return false }
+  async requestPasswordReset(): Promise<void> {}
+  async confirmPasswordReset(): Promise<void> { throw new ProviderError('MALFORMED', 'invalid', 400) }
+  async listSessions(): Promise<any[]> { return [] }
+  async revokeSession(): Promise<void> {}
+  async revokeOtherSessions(): Promise<void> {}
+  async getIdentityConnections(): Promise<any> { return { providers: [], hasPassword: true } }
+  async startSocialLink(): Promise<any> { return { redirectUrl: '/l', state: 's', codeVerifier: 'v' } }
+  async unlinkSocial(): Promise<any> { return { providers: [], hasPassword: true } }
+  async setPassword(): Promise<any> { throw new ProviderError('CONFLICT', 'exists', 409) }
+  async changePassword(): Promise<void> { throw new ProviderError('INVALID_CREDENTIALS', 'nope', 400) }
   async passwordLogin(i: PasswordLoginInput): Promise<BrokeredSession> {
     const u = this.users[i.email]
     if (!u || u.pw !== i.password) throw new ProviderError('INVALID_CREDENTIALS', 'nope', 401)
@@ -66,7 +78,7 @@ class AltIdentityProvider implements IdentityProvider {
   }
   async startSocialLogin(provider: string): Promise<SocialLoginStart> {
     if (provider !== 'google') throw new ProviderError('MALFORMED', 'bad provider', 400)
-    return { redirectUrl: 'https://app.fuzefront.com/api/auth/idp/authorize?x=1', state: 's' }
+    return { redirectUrl: 'https://app.fuzefront.com/api/auth/idp/authorize?x=1', state: 's', codeVerifier: 'v' }
   }
   async brokerCallback(i: SocialCallbackInput): Promise<SocialCallbackResult> {
     const code = `ALTCODE-${this.n++}`
