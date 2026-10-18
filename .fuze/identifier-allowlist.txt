@@ -30,7 +30,7 @@
 # explicit so a source move requires deliberate review rather than silently
 # broadening the exception.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality test-implementation entity
-src FuzeQuality/apps/api/src/index.ts:483                   # FuzeQuality test-execution entity
+src FuzeQuality/apps/api/src/index.ts:488                   # FuzeQuality test-execution entity
 src FuzeQuality/packages/core/src/store.ts:475              # FuzeQuality repository-flow review audit entity
 src FuzeQuality/packages/core/src/store.ts:534              # FuzeQuality policy-gate review audit entity
 src FuzeQuality/packages/core/src/store.ts:696              # FuzeQuality repository entity
