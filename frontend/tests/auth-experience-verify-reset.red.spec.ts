@@ -91,15 +91,18 @@ test.describe('verify-email — check inbox (frame 03-check-inbox)', () => {
     await expect(resend).toHaveAttribute('data-state', 'cooldown')
   })
 
-  test('429 on resend surfaces a rate-limited message and keeps the button usable later', async ({ page }) => {
+  test('429 on resend surfaces a rate-limited message and keeps cooling down', async ({ page }) => {
     await page.route(`${SEC}/verify/email/start`, route =>
       json(route, 429, { error: 'Too many requests', code: 'RATE_LIMITED' }),
     )
     await page.clock.install()
     await page.goto('/signup/verify?email=ada%40lovelace.io', { waitUntil: 'domcontentloaded' })
+    const resend = page.locator("[data-action='resend']")
+    await expect(resend).toBeDisabled() // mounted and cooling down before time moves
     await page.clock.fastForward(61_000)
-    await page.locator("[data-action='resend']").click()
+    await resend.click()
     await expect(page.locator("[data-state='rate-limited']")).toBeVisible()
+    await expect(resend).toHaveAttribute('data-state', 'cooldown')
   })
 })
 
