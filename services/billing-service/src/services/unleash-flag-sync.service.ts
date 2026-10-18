@@ -77,33 +77,44 @@ export class UnleashFlagSyncService {
    * logged and swallowed — a partial sync is still better than a failed webhook).
    */
   async syncPlanFlags(entityId: string, planTier: string): Promise<boolean> {
-    const flagCtx: FlagContext = { entityId };
-    const enabled = await getBooleanFlag(PLAN_FLAG_SYNC_ENABLED, false, flagCtx);
-    if (!enabled) {
-      this.logger.info(
-        `[flag-sync] ${PLAN_FLAG_SYNC_ENABLED} is OFF — skipping Unleash plan flag sync for ${entityId}`,
+    try {
+      const flagCtx: FlagContext = { entityId };
+      const enabled = await getBooleanFlag(PLAN_FLAG_SYNC_ENABLED, false, flagCtx);
+      if (!enabled) {
+        this.logger.info(
+          `[flag-sync] ${PLAN_FLAG_SYNC_ENABLED} is OFF — skipping Unleash plan flag sync for ${entityId}`,
+        );
+        return false;
+      }
+
+      const enabledFlags = new Set(PLAN_CAPABILITY_MAP[planTier] ?? []);
+      let allOk = true;
+
+      for (const flag of PLAN_TIER_FLAGS) {
+        const shouldEnable = enabledFlags.has(flag);
+        try {
+          await this.setOrgInFlag(flag, entityId, shouldEnable);
+        } catch (err) {
+          this.logger.error(
+            `[flag-sync] failed to ${shouldEnable ? 'add' : 'remove'} ${entityId} ${shouldEnable ? 'to' : 'from'} ${flag}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+          allOk = false;
+        }
+      }
+
+      return allOk;
+    } catch (err) {
+      // getBooleanFlag or any top-level await threw — swallow to prevent an
+      // unhandled rejection from crashing the Node.js 24 process mid-webhook.
+      this.logger.error(
+        `[flag-sync] unexpected error syncing plan flags for ${entityId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
       return false;
     }
-
-    const enabledFlags = new Set(PLAN_CAPABILITY_MAP[planTier] ?? []);
-    let allOk = true;
-
-    for (const flag of PLAN_TIER_FLAGS) {
-      const shouldEnable = enabledFlags.has(flag);
-      try {
-        await this.setOrgInFlag(flag, entityId, shouldEnable);
-      } catch (err) {
-        this.logger.error(
-          `[flag-sync] failed to ${shouldEnable ? 'add' : 'remove'} ${entityId} ${shouldEnable ? 'to' : 'from'} ${flag}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-        allOk = false;
-      }
-    }
-
-    return allOk;
   }
 
   /** Adds or removes entityId from the userWithId strategy for the given flag. */
