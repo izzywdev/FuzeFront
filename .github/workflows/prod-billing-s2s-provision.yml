@@ -50,10 +50,10 @@ jobs:
             "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/fuzefront-secrets")
 
           AK_TOKEN=$(echo "$_SECRET" | python3 -c "
-          import sys,json,base64
-          d=json.load(sys.stdin)
-          print(base64.b64decode(d['data']['AUTHENTIK_BOOTSTRAP_TOKEN']).decode().strip())
-          " 2>/dev/null)
+import sys,json,base64
+d=json.load(sys.stdin)
+print(base64.b64decode(d['data']['AUTHENTIK_BOOTSTRAP_TOKEN']).decode().strip())
+" 2>/dev/null)
           if [ -z "$AK_TOKEN" ]; then
             echo "::error::AUTHENTIK_BOOTSTRAP_TOKEN not found in fuzefront-secrets"
             exit 1
@@ -208,6 +208,7 @@ jobs:
           # Mask both values immediately after the Python script writes them
           CLIENT_ID=$(cat /tmp/s2s_client_id)
           CLIENT_SECRET=$(cat /tmp/s2s_client_secret)
+          rm -f /tmp/s2s_client_id /tmp/s2s_client_secret
           echo "::add-mask::$CLIENT_ID"
           echo "::add-mask::$CLIENT_SECRET"
           echo "client_id=$CLIENT_ID"         >> "$GITHUB_OUTPUT"
@@ -338,6 +339,7 @@ jobs:
           )
 
           # Add FUZEFRONT_BILLING_AUTHZ_ENABLED before the readinessProbe block
+          original = content
           content = content.replace(
             '          readinessProbe:\n',
             '            - name: FUZEFRONT_BILLING_AUTHZ_ENABLED\n'
@@ -345,7 +347,10 @@ jobs:
             '          readinessProbe:\n',
             1  # only the first occurrence (the billing-service container)
           )
-
+          if content == original:
+            import sys
+            print('::error::Pattern "          readinessProbe:" not found in billing-service.yaml — patch is a no-op. Check indentation in the Helm template.')
+            sys.exit(1)
           open('deploy/helm/fuzefront/templates/billing-service.yaml', 'w').write(content)
           print('Patched deploy/helm/fuzefront/templates/billing-service.yaml')
           PYEOF
@@ -388,27 +393,27 @@ jobs:
             commit_file "$SECRETS_FILE" \
               "chore(billing): seal AUTHENTIK_CLIENT_ID + CLIENT_SECRET into billing-secrets
 
-          Provisioned by prod-billing-s2s-provision workflow. S2S machine identity
-          for billing-service (authz-enabled cutover, step 1/2).
+Provisioned by prod-billing-s2s-provision workflow. S2S machine identity
+for billing-service (authz-enabled cutover, step 1/2).
 
-          Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-          Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT"
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT"
           fi
 
           if [ "${{ steps.patch_helm.outputs.patched }}" = "true" ]; then
             commit_file "$HELM_FILE" \
               "feat(billing): enable authz path — remove optional S2S keys, add FUZEFRONT_BILLING_AUTHZ_ENABLED
 
-          Removes optional: true from AUTHENTIK_CLIENT_ID / AUTHENTIK_CLIENT_SECRET
-          (sealed credentials are now in billing-secrets.yaml) and adds
-          FUZEFRONT_BILLING_AUTHZ_ENABLED=true to activate PermitSyncService.
-          Step 2/2 of the authz-enabled cutover.
+Removes optional: true from AUTHENTIK_CLIENT_ID / AUTHENTIK_CLIENT_SECRET
+(sealed credentials are now in billing-secrets.yaml) and adds
+FUZEFRONT_BILLING_AUTHZ_ENABLED=true to activate PermitSyncService.
+Step 2/2 of the authz-enabled cutover.
 
-          Follow-up: trigger prod-unleash-ops with flags=authz-enabled to flip the
-          feature flag after the billing-service pod rolls over.
+Follow-up: trigger prod-unleash-ops with flags=authz-enabled to flip the
+feature flag after the billing-service pod rolls over.
 
-          Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-          Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT"
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT"
           fi
 
           echo "All commits pushed to $BRANCH."
