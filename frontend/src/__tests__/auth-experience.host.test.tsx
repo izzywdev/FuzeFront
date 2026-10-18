@@ -171,6 +171,21 @@ describe('AuthExperiencePages', () => {
     window.history.replaceState({}, '', '/signup/verify?next=https%3A%2F%2Fevil.example')
     const second = render(<VerifyCheckInboxPage />)
     expect(second.container.querySelector('[data-action="continue"]')).toHaveAttribute('href', '/dashboard')
+    second.unmount()
+  })
+
+  it.each([
+    '/fuzepicker/mentions/../../admin',
+    '/fuzepicker/mentions/%2e%2e/%2e%2e/admin',
+    '/fuzepicker/mentionsadmin',
+    '/fuzepicker/mentions/..\\..\\admin',
+    '//evil.example/fuzepicker/mentions',
+  ])('check-inbox next=%s cannot escape the mention allowlist', async raw => {
+    vi.mocked(sharedMock.useCurrentUser).mockReturnValue({ user: null, isAuthenticated: false } as any)
+    window.history.replaceState({}, '', `/signup/verify?next=${encodeURIComponent(raw)}`)
+    const { VerifyCheckInboxPage } = await import('../pages/AuthExperiencePages')
+    const { container } = render(<VerifyCheckInboxPage />)
+    expect(container.querySelector('[data-action="continue"]')).toHaveAttribute('href', '/dashboard')
   })
 
   it('reset "Back to sign in": with another account signed in, enters add-account mode first', async () => {
@@ -287,6 +302,22 @@ describe('AuthExperiencePages', () => {
     await authAPI.startEmailVerification()
     await authAPI.startEmailVerification('acct-b')
     expect(seen).toEqual(['Bearer tok-a', 'Bearer tok-b'])
+  })
+
+  it('startEmailVerification(accountId) for an account with no stored session rejects instead of using the active token', async () => {
+    window.localStorage.clear()
+    const accounts = await import('../lib/accounts')
+    accounts.rememberAccount({ id: 'acct-a', email: 'a@x.io' } as any, { token: 'tok-a' })
+    accounts.setActiveAccountId('acct-a')
+    const seen: string[] = []
+    axios.defaults.adapter = async config => {
+      seen.push(String((config.headers as any).Authorization))
+      return { status: 202, statusText: 'Accepted', headers: {}, config, data: '' } as any
+    }
+    vi.resetModules()
+    const { authAPI } = await import('../services/api')
+    await expect(authAPI.startEmailVerification('acct-gone')).rejects.toThrow()
+    expect(seen).toEqual([])
   })
 
   it('landing signed-out + expired token: offers sign-in with a return path, no anonymous resend', async () => {

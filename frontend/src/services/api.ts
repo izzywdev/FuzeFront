@@ -487,6 +487,9 @@ export const authAPI = {
     // several accounts signed in, `accountId` picks WHICH account's session
     // (never an address) — omitted means the active account.
     const token = accountId ? getAccountValue(accountId, 'authToken') : null
+    // A named account with no stored session must fail, not fall through to
+    // the ACTIVE account's token and verify the wrong address.
+    if (accountId && !token) throw new Error('That account is no longer signed in')
     await api.post(
       `${SECURITY_BASE}/verify/email/start`,
       {},

@@ -71,7 +71,19 @@ function useSignInAsAnotherAccount() {
 
 /** Only the fuzepicker mention deep link survives the verification detour (same allowlist as LoginPage). */
 function safeNext(raw: string | null): string | undefined {
-  return raw && raw.startsWith('/fuzepicker/mentions') && !raw.startsWith('//') ? raw : undefined
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return undefined
+  // Check the path the browser will actually navigate to: `../` segments and
+  // percent-encoded dots are resolved by URL, so a prefix match on the raw
+  // string would let `/fuzepicker/mentions/../../admin` escape the allowlist.
+  let url: URL
+  try {
+    url = new URL(raw, window.location.origin)
+  } catch {
+    return undefined
+  }
+  if (url.origin !== window.location.origin) return undefined
+  const ok = url.pathname === '/fuzepicker/mentions' || url.pathname.startsWith('/fuzepicker/mentions/')
+  return ok ? `${url.pathname}${url.search}${url.hash}` : undefined
 }
 
 function PageChrome({ children }: { children: ReactNode }) {
