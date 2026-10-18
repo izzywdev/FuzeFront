@@ -50,10 +50,10 @@ jobs:
             "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/fuzefront-secrets")
 
           AK_TOKEN=$(echo "$_SECRET" | python3 -c "
-          import sys,json,base64
-          d=json.load(sys.stdin)
-          print(base64.b64decode(d['data']['AUTHENTIK_BOOTSTRAP_TOKEN']).decode().strip())
-          " 2>/dev/null)
+import sys,json,base64
+d=json.load(sys.stdin)
+print(base64.b64decode(d['data']['AUTHENTIK_BOOTSTRAP_TOKEN']).decode().strip())
+" 2>/dev/null)
           if [ -z "$AK_TOKEN" ]; then
             echo "::error::AUTHENTIK_BOOTSTRAP_TOKEN not found in fuzefront-secrets"
             exit 1
@@ -393,31 +393,45 @@ jobs:
             echo "Committed $FILE"
           }
 
+          SECRETS_COMMITTED=false
+          HELM_COMMITTED=false
+
           if [ "${{ steps.patch_secrets.outputs.patched }}" = "true" ]; then
             commit_file "$SECRETS_FILE" \
               "chore(billing): seal AUTHENTIK_CLIENT_ID + CLIENT_SECRET into billing-secrets
 
-          Provisioned by prod-billing-s2s-provision workflow. S2S machine identity
-          for billing-service (authz-enabled cutover, step 1/2).
+Provisioned by prod-billing-s2s-provision workflow. S2S machine identity
+for billing-service (authz-enabled cutover, step 1/2).
 
-          Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-          Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT"
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT" \
+              && SECRETS_COMMITTED=true \
+              || { echo "::error::Failed to commit $SECRETS_FILE"; exit 1; }
           fi
 
           if [ "${{ steps.patch_helm.outputs.patched }}" = "true" ]; then
             commit_file "$HELM_FILE" \
               "feat(billing): enable authz path — remove optional S2S keys, add FUZEFRONT_BILLING_AUTHZ_ENABLED
 
-          Removes optional: true from AUTHENTIK_CLIENT_ID / AUTHENTIK_CLIENT_SECRET
-          (sealed credentials are now in billing-secrets.yaml) and adds
-          FUZEFRONT_BILLING_AUTHZ_ENABLED=true to activate PermitSyncService.
-          Step 2/2 of the authz-enabled cutover.
+Removes optional: true from AUTHENTIK_CLIENT_ID / AUTHENTIK_CLIENT_SECRET
+(sealed credentials are now in billing-secrets.yaml) and adds
+FUZEFRONT_BILLING_AUTHZ_ENABLED=true to activate PermitSyncService.
+Step 2/2 of the authz-enabled cutover.
 
-          Follow-up: trigger prod-unleash-ops with flags=authz-enabled to flip the
-          feature flag after the billing-service pod rolls over.
+Follow-up: trigger prod-unleash-ops with flags=authz-enabled to flip the
+feature flag after the billing-service pod rolls over.
 
-          Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-          Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT"
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT" \
+              && HELM_COMMITTED=true \
+              || {
+                if [ "$SECRETS_COMMITTED" = "true" ]; then
+                  echo "::error::Partial commit state: billing-secrets.yaml was committed but billing-service.yaml was not. Re-run the workflow to complete the cutover — the secrets commit is idempotent."
+                else
+                  echo "::error::Failed to commit $HELM_FILE"
+                fi
+                exit 1
+              }
           fi
 
           echo "All commits pushed to $BRANCH."

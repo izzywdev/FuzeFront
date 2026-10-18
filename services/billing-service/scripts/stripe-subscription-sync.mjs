@@ -363,6 +363,7 @@ async function syncCustomer(stripeCustomer, priceTierMap, stats) {
     customersCreated:   0,
     subscriptionsUpserted: 0,
     invoicesUpserted:   0,
+    errors:            0,
   };
 
   // Paginate all Stripe customers
@@ -375,6 +376,7 @@ async function syncCustomer(stripeCustomer, priceTierMap, stats) {
         await syncCustomer(customer, priceTierMap, stats);
       } catch (err) {
         console.error(`  ERROR processing ${customer.id}: ${err?.message ?? err}`);
+        stats.errors++;
       }
       console.log('');
     }
@@ -387,15 +389,24 @@ async function syncCustomer(stripeCustomer, priceTierMap, stats) {
     });
   }
 
+  if (APPLY && stats.errors > 0) {
+    console.error(`\n${stats.errors} customer(s) failed — see errors above.`);
+  }
+
   console.log('─'.repeat(60));
   console.log(`Customers processed:   ${stats.customersProcessed}`);
   console.log(`Customers created:     ${stats.customersCreated}`);
   console.log(`Customers skipped:     ${stats.customersSkipped}`);
   console.log(`Subscriptions upserted:${stats.subscriptionsUpserted}`);
   console.log(`Invoices upserted:     ${stats.invoicesUpserted}`);
+  if (stats.errors > 0) {
+    console.log(`Customers with errors: ${stats.errors}  ← re-run --apply to retry`);
+  }
   console.log('');
   if (!APPLY) {
     console.log('Dry-run complete — no changes written. Pass --apply to write.\n');
+  } else if (stats.errors > 0) {
+    process.exit(1);
   } else {
     console.log('Sync complete.\n');
   }
