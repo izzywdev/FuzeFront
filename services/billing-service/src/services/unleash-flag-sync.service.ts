@@ -64,10 +64,24 @@ export interface UnleashFlagSyncConfig {
 }
 
 export class UnleashFlagSyncService {
+  // Per-flag mutex: chains Promises so concurrent setOrgInFlag calls on the
+  // same flag serialize their GET→PATCH within this process instance.
+  // Without this, two concurrent webhooks both read an empty userIds list and
+  // each PATCH their own single-entry list — last write silently drops the other.
+  private readonly _flagLocks = new Map<string, Promise<void>>();
+
   constructor(
     private readonly cfg: UnleashFlagSyncConfig,
     private readonly logger: Pick<Console, 'error' | 'warn' | 'info'> = console,
   ) {}
+
+  private withFlagLock<T>(flagName: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this._flagLocks.get(flagName) ?? Promise.resolve();
+    const next = prior.then(fn, fn);
+    // Store a void chain so the Map never holds a rejected promise.
+    this._flagLocks.set(flagName, next.then(() => undefined, () => undefined));
+    return next;
+  }
 
   /**
    * Syncs the per-org plan-tier permission flags for the given entity.
@@ -95,7 +109,7 @@ export class UnleashFlagSyncService {
       for (const flag of PLAN_TIER_FLAGS) {
         const shouldEnable = enabledFlags.has(flag);
         try {
-          await this.setOrgInFlag(flag, entityId, shouldEnable);
+          await this.withFlagLock(flag, () => this.setOrgInFlag(flag, entityId, shouldEnable));
         } catch (err) {
           this.logger.error(
             `[flag-sync] failed to ${shouldEnable ? 'add' : 'remove'} ${entityId} ${shouldEnable ? 'to' : 'from'} ${flag}: ${
