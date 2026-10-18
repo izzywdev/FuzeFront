@@ -94,4 +94,30 @@ describe('repository inventory analysis ordering', () => {
       revision: 'abc', status: 'failed', errorCode: 'INTELLIGENCE_TIMEOUT',
     }))
   })
+
+  it('heartbeats while reviewed LiteLLM analysis remains in flight', async () => {
+    vi.useFakeTimers()
+    let resolveAnalysis!: (value: []) => void
+    const analysis = new Promise<[]>((resolve) => { resolveAnalysis = resolve })
+    const heartbeat = vi.fn(async () => undefined)
+    try {
+      const tracked = runTrackedRepositoryInventoryAnalysis(repository, 'abc', artifacts, {
+        analyzer: { analyze: vi.fn(() => analysis) },
+        persistCandidates: vi.fn(async () => undefined),
+        persistEvaluations: vi.fn(async () => undefined),
+        persistStatus: vi.fn(async () => undefined),
+        heartbeat,
+        heartbeatIntervalMs: 100,
+      })
+
+      await vi.advanceTimersByTimeAsync(250)
+      expect(heartbeat).toHaveBeenCalledTimes(3)
+      resolveAnalysis([])
+      await tracked
+      await vi.advanceTimersByTimeAsync(250)
+      expect(heartbeat).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
