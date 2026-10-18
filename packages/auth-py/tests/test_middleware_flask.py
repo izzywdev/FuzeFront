@@ -165,7 +165,7 @@ def test_optional_degrades_client_failures_but_surfaces_server_failures():
         raise RuntimeError("sessions down")
 
     broken = create_verifier(LegacyHs256Config(secret=SECRET, session_validator=validator_down))
-    assert build_optional(None, broken).get("/open", headers={"Authorization": f"Bearer {make_token(SECRET, claims={'userId': 'u-1'})}"}).status_code == 503
+    assert build_optional(None, broken).get("/open", headers={"Authorization": f"Bearer {make_token(SECRET, claims={'userId': 'u-1', 'sessionId': 's-1'})}"}).status_code == 503
 
 
 def test_async_views_keep_working_under_the_decorators():

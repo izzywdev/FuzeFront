@@ -1,7 +1,7 @@
 # fuzefront-auth
 
 Consumable authentication for **Python** FuzeFront-family services -- the peer of
-[`@fuzefront/auth`](../auth). Same stable `Identity` shape, same error codes, same
+[`@izzywdev/fuzefront-auth`](../auth). Same stable `Identity` shape, same error codes, same
 fail-closed behaviour, with a Flask decorator and a FastAPI dependency.
 
 > Verifies only. It **never mints** tokens. Any verification problem raises
@@ -16,11 +16,11 @@ Distributed as a GitHub Release asset, like `fuzefront-identity` and
 `fuzefront-service-auth`:
 
 ```bash
-pip install https://github.com/izzywdev/FuzeFront/releases/download/auth-py-v0.1.0/fuzefront_auth-0.1.0-py3-none-any.whl
+pip install https://github.com/izzywdev/FuzeFront/releases/download/auth-py-v0.2.0/fuzefront_auth-0.2.0-py3-none-any.whl
 
 # with a framework adapter:
-pip install "fuzefront-auth[flask] @ https://github.com/izzywdev/FuzeFront/releases/download/auth-py-v0.1.0/fuzefront_auth-0.1.0-py3-none-any.whl"
-pip install "fuzefront-auth[fastapi] @ https://github.com/izzywdev/FuzeFront/releases/download/auth-py-v0.1.0/fuzefront_auth-0.1.0-py3-none-any.whl"
+pip install "fuzefront-auth[flask] @ https://github.com/izzywdev/FuzeFront/releases/download/auth-py-v0.2.0/fuzefront_auth-0.2.0-py3-none-any.whl"
+pip install "fuzefront-auth[fastapi] @ https://github.com/izzywdev/FuzeFront/releases/download/auth-py-v0.2.0/fuzefront_auth-0.2.0-py3-none-any.whl"
 ```
 
 ## Modes
@@ -102,19 +102,34 @@ or tell a client its credentials are invalid). Flask answers `{"error", "code"}`
 ## Session revocation (legacy-hs256)
 
 A signed token stays valid until `exp` (24h), but the session it names may have been ended
-by a logout or a device revoke; only the session store knows. Supply a validator and the
-verifier asks it before hydrating anything:
+by a logout or a device revoke; only the session store knows. **A token that names a session
+(every FuzeFront session token carries a `sessionId`) is therefore refused unless something
+can check it.** Supply a validator and the verifier asks it before hydrating anything:
 
 ```python
 LegacyHs256Config(secret=..., session_validator=lambda user_id, session_id, claims: session_is_active(session_id))
 ```
 
 Only `True` keeps the session alive; anything else is a 401 `EXPIRED`, and a validator that
-raises is a retryable 503. It runs before the resolver. **Without a validator a revoked
-session keeps authenticating until the token expires**; this is the same property as
-`@fuzefront/auth`. The package does not make a validator mandatory because it cannot
-assume how a given service reaches the session store (FuzeFront's own backend checks its
-session table directly); a service that needs revocation must supply one.
+raises is a retryable 503. It runs before the resolver.
+
+With no validator the default is **reject**: a 500 `VERIFIER_UNAVAILABLE` (a deployment
+misconfiguration, not a bad credential, so it is loud rather than a 401 that sends the user
+to log in again), and nothing is hydrated. A service that genuinely cannot reach FuzeFront's
+session store can accept the revocation gap, deliberately and visibly:
+
+```python
+LegacyHs256Config(secret=..., allow_unvalidated_sessions=True)   # or FUZEFRONT_ALLOW_UNVALIDATED_SESSIONS=true
+```
+
+That flag only waives the *requirement* for a validator; a configured validator still runs
+(and only for a token that names a session). It is keyword-only, so a positional argument can
+never turn it on by accident.
+Without one, a logged-out session keeps authenticating until the token expires. Tokens that
+name no session are unaffected, but every current FuzeFront login (local and OIDC) mints a
+`sessionId`, so in practice a `legacy-hs256` service must wire a validator or the opt-out. The Node peer
+[`@izzywdev/fuzefront-auth`](../auth) has the same rule from 0.4.0
+(`allowUnvalidatedSessions` / `sessionValidator`).
 
 ## Portal-bound sessions
 

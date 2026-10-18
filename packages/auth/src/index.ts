@@ -24,6 +24,7 @@ export type {
   FederatedJwksConfig,
   OidcJwksConfig,
   OutOfBandResolver,
+  SessionValidator,
 } from './types';
 
 export { createVerifier, verifyToken } from './verifyToken';
