@@ -11,6 +11,13 @@
      border-start-*, text-align: start). No left/right.
    ============================================================ */
 
+/* ---- Component-level dimension tokens (override per host) --- */
+:root {
+  --ffc-drawer-inline-min-h: 480px;
+  --ffc-drawer-inline-max-h: 650px;
+  --ffc-suggested-max-w: 480px;
+}
+
 /* ---- Launcher (floating toggle button) ---------------------- */
 .ffc-launcher {
   position: fixed;
@@ -476,8 +483,8 @@
   inset-inline-end: auto;
   inline-size: 100%;
   block-size: 100%;
-  min-height: 480px;
-  max-height: 650px;
+  min-height: var(--ffc-drawer-inline-min-h);
+  max-height: var(--ffc-drawer-inline-max-h);
   border-inline-start: none;
   border: var(--border-width) solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -584,7 +591,7 @@
   flex-direction: column;
   gap: var(--space-2);
   width: 100%;
-  max-width: 480px;
+  max-width: var(--ffc-suggested-max-w);
 }
 .ffc-suggested__label {
   font-size: var(--text-xs);
