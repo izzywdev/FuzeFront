@@ -4,6 +4,7 @@ import type { App } from '@fuzefront/app-registry-client'
 import { useAppRegistry } from '../platform/appRegistry'
 import { loadFederatedAppFromManifest } from '../utils/loadFederatedApp'
 import { FederatedAppErrorBoundary } from './FederatedAppErrorBoundary'
+import MobileInstallBanner from './MobileInstallBanner'
 
 /**
  * Standalone surface (frame 04-standalone): renders a `mode = "standalone"` app
@@ -103,6 +104,7 @@ function StandaloneAppSurface({ slug }: { slug: string }) {
 
   return (
     <div style={canvas}>
+      <MobileInstallBanner app={app} />
       <FederatedAppErrorBoundary appName={app?.manifest.name}>
         <Suspense fallback={null}>{Component ? <Component /> : null}</Suspense>
       </FederatedAppErrorBoundary>

@@ -323,6 +323,15 @@ securityService:
   replicas: 1
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # backend/security/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from the
+  # env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster, so every span
+  # export fails silently and nothing reaches Tempo. Point it at FuzeInfra's
+  # collector explicitly, the same way kafka.brokers/PERMIT_PDP_URL are wired
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # @fuzefront/feature-flags (OpenFeature + Unleash) client — gates
   # fuzefront.identity.root-membership (FF-EPIC-17) and future security-service
   # release/kill-switch flags (utils/feature-flags.ts / rootMembershipFlag.ts).
@@ -976,6 +985,32 @@ selectionListsMcp:
     # Same image as the app-registry MCP gateway. Version must be kept in sync
     # with mcp.image.tag above whenever the gateway image is bumped.
     tag: "12cb4f787248"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+# MCP SSE gateway for the config-service (tools: namespaces, key definitions,
+# effective config, config writes, history; secret reveal is intentionally NOT
+# exposed). Both configService.enabled AND configMcp.enabled must be true.
+# Port 8083: 8081=app-registry, 8082=selection-lists gateways.
+# NOTE: port MUST be declared explicitly — no | int / | default / | toString
+# in the template (FuzeInfra#501 precedent).
+configMcp:
+  enabled: false
+  replicas: 1
+  port: 8083
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    # Same image as the app-registry gateway; keep in sync with mcp.image.tag.
+    tag: "1abe510f5981"
     pullPolicy: IfNotPresent
   resources:
     requests:

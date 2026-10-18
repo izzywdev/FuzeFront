@@ -122,6 +122,16 @@ function createLegacyVerifier(config: LegacyHs256Config): Verifier {
         throw toAuthError(err);
       }
 
+      // Only a PLAIN platform session authenticates here — mirrors
+      // backend/src/middleware/auth.ts. A token carrying a `kind`
+      // (`fuze-org-session`, `fuze-workload`, `fuze-delegation`) is a narrowed /
+      // machine credential for a different audience that merely shares
+      // JWT_SECRET. Refused BEFORE the resolver so the holder is never hydrated
+      // with a user's roles/tenant. Fixed message: no token material echoed.
+      if (payload.kind !== undefined) {
+        throw new AuthError('INVALID_AUDIENCE', 'token is not a platform session token');
+      }
+
       const userId = claimString(payload, subjectClaim) ?? claimString(payload, 'sub');
       if (!userId) {
         throw new AuthError('MISSING_CLAIM', `token has no \`${subjectClaim}\` (or \`sub\`) claim`);
