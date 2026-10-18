@@ -69,13 +69,21 @@ export type RepositoryProcessingStatus = Pick<Repository,
 >
 
 export const repositoryScanFailureSchema = z.object({
-  code: z.enum(['SCAN_TRANSPORT_LIMIT_EXCEEDED']),
+  code: z.enum(['SCAN_TRANSPORT_LIMIT_EXCEEDED', 'SCAN_PROCESSING_FAILED']),
   message: z.string().trim().min(1).max(500),
   sourceRevision: z.string().regex(/^[0-9a-f]{40}$/i).optional(),
-  observedBytes: z.number().int().positive(),
-  maxBytes: z.number().int().positive(),
+  observedBytes: z.number().int().positive().optional(),
+  maxBytes: z.number().int().positive().optional(),
   failedAt: z.string().datetime(),
-}).strict()
+}).strict().superRefine((failure, context) => {
+  if (failure.code !== 'SCAN_TRANSPORT_LIMIT_EXCEEDED') return
+  if (failure.observedBytes === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['observedBytes'], message: 'Required for transport-limit failures' })
+  }
+  if (failure.maxBytes === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['maxBytes'], message: 'Required for transport-limit failures' })
+  }
+})
 
 export type RepositoryScanFailure = z.infer<typeof repositoryScanFailureSchema>
 
