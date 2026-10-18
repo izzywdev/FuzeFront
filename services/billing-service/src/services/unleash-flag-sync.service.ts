@@ -33,6 +33,7 @@
 // header describes the reasoning in detail; it applies equally here.
 
 import axios from 'axios';
+import { normalizeTier } from '@fuzefront/billing-types';
 import { getBooleanFlag, FlagContext } from './authz.flags';
 
 export const PLAN_FLAG_SYNC_ENABLED = 'fuzefront.billing.plan-flag-sync-enabled';
@@ -87,7 +88,8 @@ export class UnleashFlagSyncService {
         return false;
       }
 
-      const enabledFlags = new Set(PLAN_CAPABILITY_MAP[planTier] ?? []);
+      const canonicalTier = normalizeTier(planTier);
+      const enabledFlags = new Set(PLAN_CAPABILITY_MAP[canonicalTier] ?? []);
       let allOk = true;
 
       for (const flag of PLAN_TIER_FLAGS) {
