@@ -30,6 +30,7 @@ on:
             app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
             root-membership     — fuzefront.identity.root-membership (100%): new signups take the root-membership path instead of a personal org (FF-EPIC-17-S1/S2; the S2 backfill is #1095, deployed)
             selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + fuzefront.selection-lists.seed-defaults, left OFF
+            devportal           — fuzefront.devportal.enabled (100%): gates developers.fuzefront.com sign-in; GA per owner decision 2026-10-18
         required: true
         default: billing-portal
         type: choice
@@ -42,6 +43,7 @@ on:
           - app-builder
           - root-membership
           - selection-lists-create
+          - devportal
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
         required: false
@@ -273,6 +275,12 @@ jobs:
               "Release flag, default OFF. Gates the marketplace publication-request endpoints (submit/approve/reject/get) and the Publish to marketplace UI. Owner: backend-engineer. Removal: once the marketplace flow is rolled out and stable."
           }
 
+          # ── Developer Portal ──────────────────────────────────────────────────
+          apply_devportal() {
+            enable_ga "fuzefront.devportal.enabled" \
+              "Release flag. Gates developers.fuzefront.com sign-in (DevPortalFlow). GA per owner decision 2026-10-18 (izzy). Owner: feature-flags-engineer. Removal: once the devportal is GA and the OFF path is unused."
+          }
+
           # ── Root membership (FF-EPIC-17-S1/S2) ─────────────────────────────
           # Backend release flag (web_exposed:false). ON = signup / auth
           # self-heal upserts a root organization_memberships(role='member')
@@ -312,6 +320,7 @@ jobs:
             app-builder)         apply_app_builder ;;
             root-membership)     apply_root_membership ;;
             selection-lists-create) apply_selection_lists_create ;;
+            devportal)           apply_devportal ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
@@ -379,6 +388,8 @@ jobs:
               check_flag "fuzefront.apps.marketplace-publishing" ;;
             root-membership)
               check_flag "fuzefront.identity.root-membership" ;;
+            devportal)
+              check_flag "fuzefront.devportal.enabled" ;;
             selection-lists-create)
               check_flag "fuzefront.selection-lists.service"
               check_flag "fuzefront.selection-lists.seed-defaults"
