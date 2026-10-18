@@ -20,6 +20,7 @@ import { CustomerService } from './services/customer.service';
 import { PlanService } from './services/plan.service';
 import { SubscriptionService } from './services/subscription.service';
 import { PermitSyncService } from './services/permit.service';
+import { UnleashFlagSyncService } from './services/unleash-flag-sync.service';
 import { getAuthzClient } from './services/authz';
 import { getMachineToken, machineTokenConfigFromEnv } from './services/machineToken';
 import { MeteringService } from './services/metering.service';
@@ -87,6 +88,18 @@ async function main() {
 
   const permit = new PermitSyncService(getAuthzClient(), () => getMachineToken(machineTokenConfigFromEnv()));
 
+  // Unleash plan-flag sync — wired only when UNLEASH_ADMIN_TOKEN is set.
+  // The service itself also checks the PLAN_FLAG_SYNC_ENABLED feature flag
+  // before making any API call, so this is doubly dark until both are enabled.
+  const unleashFlagSync = config.unleash.adminToken
+    ? new UnleashFlagSyncService({
+        adminUrl: config.unleash.adminUrl,
+        adminToken: config.unleash.adminToken,
+        project: config.unleash.project,
+        environment: config.unleash.environment,
+      })
+    : undefined;
+
   const consumer = new TypedConsumer(kafka, config.kafka.groupId);
   // The usage consumer runs in the background; failures dead-letter via producer.
   startUsageConsumer(consumer, metering, producer).catch((err) =>
@@ -144,6 +157,7 @@ async function main() {
     plans: planRepo,
     payments: paymentRepo,
     permit,
+    unleashFlagSync,
     emitter,
     // Lets the checkout.session.completed handler fetch the full subscription
     // (the session payload only carries its id) to mirror price/status/periods.
