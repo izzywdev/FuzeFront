@@ -24,7 +24,7 @@ import type { Knex } from 'knex';
 import { FuzeEvent, IdentityOrgUpdatedPayloadV1 } from '@fuzefront/shared/kafka';
 import { db as defaultDb } from '../db';
 import { logger, timed } from '../lib/logger';
-import { upsertOrgProjection } from './orgProjection';
+import { futureSkewToleranceMs, isFutureDated, upsertOrgProjection } from './orgProjection';
 import { handlePlatformSnapshot, resumeIfReactivated } from './platformGuard';
 
 export interface OrgUpdatedDeps {
@@ -39,6 +39,12 @@ export async function handleOrgUpdated(
   const { organizationId, type, isActive, name } = event.payload;
   const log = logger.child({ reqId: event.correlationId, component: 'org-updated' });
   log.info({ organizationId, type, isActive }, 'identity.org.updated received');
+  // An envelope dated beyond the skew tolerance is REJECTED (acknowledged, nothing applied): a clamp to now would give
+  // the same event a different ordering instant on every redelivery (events/orgProjection.ts `isFutureDated`).
+  if (isFutureDated(event.occurredAt)) {
+    log.warn({ organizationId, topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt, toleranceMs: futureSkewToleranceMs() }, 'REJECTED a future-dated org lifecycle envelope (beyond the clock-skew tolerance): nothing was applied; re-send once the producer clock is right');
+    return { organizationId };
+  }
 
   // The platform organization: a deactivation SUSPENDS its writes, a retype is refused (platformGuard.ts).
   const ctx = { topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt };

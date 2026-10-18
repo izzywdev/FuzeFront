@@ -341,6 +341,24 @@ For B (duplicate forks): keep the winner (same rule), archive the loser fork and
 **Order of operations:** audit (10.1) → reconcile (10.2) → re-run the audit (0 rows) → only then set
 `fuzefront.selection-lists.shared-lists` ON. Do not skip the re-run.
 
+#### Access mirror rows under both renderings of one user (informational; no action required)
+
+Lists created before the
+rendering-aware code can hold `selection_list_access` rows for BOTH the bare UUID and the `usr_...` TypeID of one user
+(the `(list_id, user_id)` key is exact). The service treats all live rows of a user as ONE grant group: `GET .../access`
+lists the user once (survivor = the row under the Permit key form, i.e. the bare UUID, then the oldest `granted_at`, then
+the smallest `user_id`); `DELETE` revokes every row's authority grant and soft-revokes every row; `PUT` converges the group
+to exactly one live row with the new role (every other role in the group is revoked first); the last-owner guard counts the
+pair as one owner (and the user as an owner when any row is). A TypeID cannot be decoded in SQL, so pairs are found with the
+identity package; the legacy-rendering rows to look at are:
+
+```sql
+-- D. live access rows stored under the usr_ rendering (legacy; pair them with a bare-UUID row of the same list by decoding)
+SELECT list_id, user_id, role, org_id FROM selection_list_access WHERE user_id LIKE 'usr_%' AND revoked_at IS NULL ORDER BY list_id, user_id;
+```
+
+Nothing needs to be reconciled by hand: the next `PUT` or `DELETE` of such a user through the API collapses the group.
+
 ### 10.3 The platform organization: deactivation = writes suspended, reads available
 
 `SELECTION_LIST_PLATFORM_ORG_ID` must be a codec-valid `org_…` TypeID. A value that merely looks like one
@@ -363,9 +381,20 @@ its items/translations/grants by the platform org, purge of a platform list or i
 the platform-org cache never masks it.
 
 **Ordering (the lifecycle topics have separate consumer groups, so events arrive out of order).** Every suspension
-path (`org.deleted` soft/hard, `org.updated`/`org.created` with `isActive:false`) compares the event's `occurredAt`
-(clamped to now: a forged far-future timestamp cannot pin the clocks ahead) with the newest snapshot already applied
-(`snapshot_at`):
+path (`org.deleted` soft/hard, `org.updated`/`org.created` with `isActive:false`) compares the event's ORIGINAL
+`occurredAt` (never altered: the ordering value is identical on every delivery) with the newest snapshot already applied
+(`snapshot_at`).
+
+**Future-dated envelopes are REJECTED, not clamped.** The three org lifecycle handlers (`org.created`, `org.updated`,
+`org.deleted`, ordinary and platform orgs alike) acknowledge and **ignore** an envelope whose `occurredAt` is more than
+the skew tolerance ahead of this service's clock: warn `REJECTED a future-dated org lifecycle envelope …` with the
+`correlationId` and `occurredAt`, nothing applied (no projection, no suspension, no resume, no cascade, no seed). The
+tolerance is `SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS` (default **300** = 5 minutes). A clamp to now was unsafe: the same
+event got a different, later ordering instant on every redelivery, so a redelivered future-dated activation could clear
+a genuine suspension (and the mirror case could re-suspend). An event inside the tolerance is applied with its original
+timestamp, so a skew of up to the tolerance can make events of the next few minutes look stale (bounded, self-healing).
+**A legitimately skewed producer clock drops the event** (the warn names it); fix the clock and have an operator re-send it
+(for an `org.deleted` that was dropped the org simply keeps its data until the re-send).
 
 | Deactivation vs newest applied snapshot | Result |
 |---|---|

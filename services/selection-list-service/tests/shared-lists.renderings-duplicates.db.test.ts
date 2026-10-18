@@ -196,6 +196,35 @@ dbDescribe('duplicate keys across renderings yield exactly one effective row (re
       expect(res.body.items.map((r: any) => r.organization_id)).toEqual([x.typeId]);
     });
 
+    it('shadowing considers only the rendering WINNER: an unreadable private winner does not let a losing org-visible duplicate hide the common list', async () => {
+      const x = orgWorld();
+      // the winner for byType (its exact rendering) is PRIVATE and the caller holds no role on it; the loser is org-visible
+      const winner = await insertList(x.typeId, 'priority', { visibility: 'private' }, 10);
+      const loser = await insertList(x.uuid, 'priority', { visibility: 'org' }, 20);
+      const res = await list(x.byType, '?include_shared=true&key=priority');
+      expect(res.status).toBe(200);
+      // the common list stays visible: the loser is not an effective row, so it cannot shadow; the unreadable winner is filtered
+      expect(res.body.items.map((r: any) => r.id)).toEqual([platform.listId]);
+      expect(res.body.items.map((r: any) => r.id)).not.toContain(winner);
+      expect(res.body.items.map((r: any) => r.id)).not.toContain(loser);
+      // once the caller can read the winner it is the one effective row and shadows the common list
+      w.authz.give(x.typeId, x.byType.userId, winner, 'list-owner');
+      const readable = await list(x.byType, '?include_shared=true&key=priority');
+      expect(readable.body.items.map((r: any) => r.id)).toEqual([winner]);
+    });
+
+    it('shadowing, readable winner: an org-visible winner hides the common list, the losing duplicate is not listed', async () => {
+      const x = orgWorld();
+      const winner = await insertList(x.typeId, 'priority', { visibility: 'org' }, 10);
+      await insertList(x.uuid, 'priority', { visibility: 'org' }, 20);
+      const res = await list(x.byType, '?include_shared=true&key=priority');
+      expect(res.body.items.map((r: any) => r.id)).toEqual([winner]);
+      // the same org through its other rendering: its OWN exact row wins there
+      const other = await list(x.byUuid, '?include_shared=true&key=priority');
+      expect(other.body.items).toHaveLength(1);
+      expect(other.body.items[0].organization_id).toBe(x.uuid);
+    });
+
     it('flag OFF: the 4.0.0 exact scope (a caller sees only its own stored rendering)', async () => {
       const x = orgWorld();
       const t = await insertList(x.typeId, 'dup-off', { visibility: 'private' }, 10);
@@ -260,6 +289,20 @@ dbDescribe('duplicate keys across renderings yield exactly one effective row (re
     const queryB = sqlBlocks[0].slice(sqlBlocks[0].indexOf('-- B.'), sqlBlocks[0].indexOf('-- C.'));
     const queryC = sqlBlocks[0].slice(sqlBlocks[0].indexOf('-- C.'));
     const fallback = sqlBlocks[1];
+    const queryD = sqlBlocks[2];
+
+    it('D (legacy usr_ access rows) is real SQL that finds a live usr_ row and ignores revoked and bare-UUID rows', async () => {
+      const x = orgWorld();
+      const id = await insertList(x.typeId, 'rb-access', {}, 5);
+      const usr = (n: string) => fromUuid('user', `0195a8f2-aaaa-7a11-8b2d-3f4e5a6b7c${n}`);
+      await w.db('selection_list_access').insert([
+        { list_id: id, user_id: usr('01'), role: 'list-viewer', granted_by: 'x', org_id: x.uuid },
+        { list_id: id, user_id: toUuid(usr('02') as never), role: 'list-viewer', granted_by: 'x', org_id: x.uuid },
+        { list_id: id, user_id: usr('03'), role: 'list-viewer', granted_by: 'x', org_id: x.uuid, revoked_at: new Date() },
+      ]);
+      const found = (await w.db.raw(queryD)).rows.filter((r: any) => r.list_id === id);
+      expect(found.map((r: any) => r.user_id)).toEqual([usr('01')]);
+    });
 
     it('A finds the duplicate, the fallback UPDATE reconciles it (winner kept, loser renamed + archived, ids kept), A is then empty', async () => {
       const x = orgWorld();

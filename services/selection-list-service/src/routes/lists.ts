@@ -188,6 +188,11 @@ async function shadowedPlatformKeys(
   platformOrg: string,
   keyFilter: string | undefined,
 ): Promise<string[]> {
+  // Only the rendering WINNER of each key can shadow: the listing keeps exactly that row per key (the same
+  // `notOutrankedByRendering` predicate), so a losing duplicate - which the listing drops - must not hide the common
+  // list. (If the winner itself is unreadable for the caller it is simply not a candidate below, the common list
+  // stays visible and no key is left without an effective row.)
+  const winner = notOutrankedByRendering('o', orgRenderings(orgId), orgId);
   const res = await db.raw<{ rows: Array<{ id: string; organization_id: string; key: string; visibility: string }> }>(
     `
     SELECT o.id, o.organization_id, o.key, o.visibility
@@ -195,13 +200,14 @@ async function shadowedPlatformKeys(
      WHERE o.organization_id = ANY(?)
        AND o.status = 'active'
        AND o.visibility <> 'platform'
+       AND ${winner.sql}
        ${keyFilter ? 'AND o.key = ?' : ''}
        AND EXISTS (
          SELECT 1 FROM selection_lists p
           WHERE p.visibility = 'platform' AND p.status = 'active' AND p.key = o.key AND p.organization_id = ANY(?)
        )
     `,
-    [orgRenderings(orgId), ...(keyFilter ? [keyFilter] : []), orgForms(platformOrg)],
+    [orgRenderings(orgId), ...winner.params, ...(keyFilter ? [keyFilter] : []), orgForms(platformOrg)],
   );
   const candidates = res.rows ?? [];
   if (candidates.length === 0) return [];

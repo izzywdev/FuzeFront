@@ -494,7 +494,7 @@ its two effects: **reads stay available** to every tenant (list reads, items, re
 closed** — the projection row records `suspended_at`, and while it is set `publish_platform`, every mutation of a
 `platform` list (list, items, translations, grants), purge of a platform list or item, and seeding of platform lists are
 refused, the state read fresh per request (never from the platform-org cache). A legitimate reactivation (`isActive:true`,
-type `platform`) clears it. The suspend/resume state machine is ORDERED by the envelope time (clamped to now; `snapshot_at` for applied snapshots,
+type `platform`) clears it. The suspend/resume state machine is ORDERED by the envelope's ORIGINAL time (future-dated envelopes beyond `SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS`, default 300, are rejected and ignored, never clamped: a clamp re-orders the same event on every redelivery; `snapshot_at` for applied snapshots,
 `suspended_event_at` for the deactivation that suspended): a deactivation suspends only if strictly newer than the newest
 applied snapshot (stale and same-instant ones are ignored, ties go to active), an activation resumes only if not older than
 the suspending deactivation. The write gate is flag-independent (like the purge guard): with the shared-lists flag OFF a

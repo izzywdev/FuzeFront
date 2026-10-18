@@ -47,6 +47,7 @@
 import type { Knex } from 'knex';
 import type { Logger } from 'pino';
 import { getAuthzClient, SELECTION_LIST_RESOURCE } from '../middleware/authz';
+import { canonicalUserId } from '../lib/sharedLists';
 import {
   authzCompensationTotal,
   grantCleanupFailedTotal,
@@ -88,7 +89,18 @@ export async function hasConfirmedOtherOwner(q: OtherOwnerQuery): Promise<boolea
   // whatever the granting token carried, which need not be the rendering this caller (or the stored list)
   // uses. Legacy rows without it fall back to the caller's tenant.
   const grantTenant = new Map(rows.map((r) => [r.user_id, r.org_id ?? q.orgId]));
-  const candidates = rows.map((r) => r.user_id).filter((u) => !excluded.has(u));
+  // Owners are counted per LOGICAL user, not per row: a pre-upgrade list can hold rows for BOTH renderings of one
+  // user (bare UUID and `usr_...`); they are one owner, confirmed once (both render to the same Permit key).
+  const seenOwner = new Set<string>();
+  const candidates = rows
+    .map((r) => r.user_id)
+    .filter((u) => !excluded.has(u))
+    .filter((u) => {
+      const logical = canonicalUserId(u) ?? u;
+      if (seenOwner.has(logical)) return false;
+      seenOwner.add(logical);
+      return true;
+    });
 
   if (candidates.length === 0) {
     q.log.info({ listId: q.listId, candidates: 0 }, 'last-owner guard: no other list-owner in the mirror');
@@ -150,6 +162,12 @@ export interface RestoreQuery {
   prior: string | null;
   /** The role this request tried to grant; null for DELETE. */
   target: string | null;
+  /**
+   * Further grants this request revoked, beyond `prior`: a user whose mirror holds SEVERAL live rows (both renderings
+   * of the id, possibly with different roles) is one logical grant group; each distinct role the request revoked is
+   * re-granted here (with the subject and tenant it was recorded under) after the standard steps.
+   */
+  alsoRestore?: Array<{ subject: string; tenant: string; role: string }>;
   writes: AuthorityWrites;
   /**
    * The acting human's token. Compensation re-applies what that human just changed,
@@ -194,6 +212,15 @@ export async function restoreAuthority(q: RestoreQuery): Promise<void> {
           q.token,
         ),
     });
+  }
+
+  if (q.writes.revokeAttempted) {
+    for (const g of q.alsoRestore ?? []) {
+      steps.push({
+        name: 'regrant-group-role',
+        run: () => getAuthzClient().grant({ subject: g.subject, tenant: g.tenant, role: g.role, resource }, q.token),
+      });
+    }
   }
 
   for (const step of steps) {

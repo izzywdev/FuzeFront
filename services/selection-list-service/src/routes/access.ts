@@ -43,6 +43,18 @@
 // which asks the authority, still refuses to treat the stale mirror row as an
 // owner.
 //
+// One LOGICAL grant per user (grant groups). The same user can hold mirror rows under BOTH renderings of its id
+// (bare UUID and `usr_...`) on a list that predates the rendering-aware code (the (list_id, user_id) key is exact).
+// All live rows of the user are ONE grant group:
+//   - the SURVIVOR is deterministic: the row stored under the Permit key form (the bare UUID the Security API is
+//     sent) first, then the oldest `granted_at`, then the smallest `user_id` (the list winner rule: exact key, oldest,
+//     smallest id);
+//   - DELETE revokes EVERY row's authority grant (each with the subject and tenant it was recorded under) and
+//     soft-revokes every row; PUT converges the group to exactly one live row with the new role (every other role
+//     held in the group is revoked first, the other rows are soft-revoked, the survivor is upserted) - all under the
+//     one compensation scheme below, which re-grants every role the request revoked;
+//   - GET lists the user once (its survivor); the last-owner guard treats the group as an owner when ANY row is one.
+//
 // Pagination (GET):
 //   - Default limit: 50; max: 200 (clamped server-side).
 //   - Cursor: opaque base64url encoding of the last user_id in the page.
@@ -56,7 +68,7 @@ import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { getAuthzClient, bearer } from '../middleware/authz';
 import { assertPlatformWritable, replyPlatformSuspended, requireListMutation } from '../middleware/listAccess';
-import { canonicalUserId, userScope, writeOrgs } from '../lib/sharedLists';
+import { canonicalUserId, userRenderings, userScope, writeOrgs } from '../lib/sharedLists';
 import { PermitKeyError, permitSubjectKey, permitTenantKey } from '../lib/permitKeys';
 import { authMiddleware } from '../middleware/auth';
 import { lockOrgOutbox } from '../events/outbox';
@@ -181,11 +193,28 @@ router.get(
 
       const rows = await query.limit(limit + 1);
       const hasMore = rows.length > limit;
-      const items = hasMore ? rows.slice(0, limit) : rows;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+      // One entry per LOGICAL user: a user stored under both renderings of its id (pre-upgrade rows) is listed once,
+      // at the position of its survivor (see the grant-group rule in the header); the other row is skipped here and
+      // the cursor still follows the raw order, so the walk stays gap- and duplicate-free.
+      const partnerIds = [...new Set(pageRows.flatMap((r) => userRenderings(r['user_id'] as string).filter((f) => f !== r['user_id'])))];
+      const partners = partnerIds.length
+        ? ((await db('selection_list_access')
+            .where({ list_id: listId })
+            .whereNull('revoked_at')
+            .whereIn('user_id', partnerIds)
+            .select('user_id', 'granted_at')) as Array<{ user_id: string; granted_at: Date | string | null }>)
+        : [];
+      const items = pageRows.filter((r) => {
+        const mine = userRenderings(r['user_id'] as string);
+        const group = [r as { user_id: string; granted_at: Date | string | null }, ...partners.filter((p) => mine.includes(p.user_id))];
+        return group.length === 1 || rankGroup(group)[0].user_id === r['user_id'];
+      });
 
       const nextCursor =
-        hasMore && items.length > 0
-          ? encodeCursor(items[items.length - 1]['user_id'])
+        hasMore && pageRows.length > 0
+          ? encodeCursor(pageRows[pageRows.length - 1]['user_id'])
           : null;
 
       res.status(200).json({
@@ -209,20 +238,48 @@ router.get(
 // PUT /:listId/access/:userId  — grant or change a role
 // ---------------------------------------------------------------------------
 
+interface GroupRow {
+  role: string;
+  org_id: string | null;
+  user_id: string;
+  granted_at: Date | string | null;
+}
+
+/** Is `id` the Permit key form of a user (what the Security API is sent: the bare UUID)? */
+function isPermitKeyForm(id: string): boolean {
+  try {
+    return permitSubjectKey(id) === id;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * The live grant of a user on a list, found under any of `userForms` (one entry = the exact 4.0.0 lookup).
- * Returns the role, the tenant it was made in and the subject it is recorded under.
+ * Deterministic order of the rows of ONE logical grant (first = the survivor): the row stored under the Permit key
+ * form, then the oldest `granted_at`, then the smallest `user_id`. The same winner rule as the lists (exact key form,
+ * oldest, smallest id), so every reader and writer picks the same row.
  */
-async function existingGrant(
-  trx: Knex.Transaction,
-  listId: string,
-  userForms: string[],
-): Promise<{ role: string; org_id: string | null; user_id: string } | undefined> {
+function rankGroup<T extends { user_id: string; granted_at?: Date | string | null }>(rows: T[]): T[] {
+  const at = (v: Date | string | null | undefined): number => (v ? new Date(v).getTime() : 0);
+  return [...rows].sort(
+    (a, b) =>
+      Number(isPermitKeyForm(b.user_id)) - Number(isPermitKeyForm(a.user_id)) ||
+      at(a.granted_at) - at(b.granted_at) ||
+      (a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0),
+  );
+}
+
+/**
+ * The LIVE grant group of a user on a list, found under any of `userForms` (one entry = the exact 4.0.0 lookup),
+ * survivor first. Empty = no live grant.
+ */
+async function grantGroup(trx: Knex.Transaction, listId: string, userForms: string[]): Promise<GroupRow[]> {
   const q =
     userForms.length === 1
       ? trx('selection_list_access').where({ list_id: listId, user_id: userForms[0] })
       : trx('selection_list_access').where({ list_id: listId }).whereIn('user_id', userForms);
-  return (await q.whereNull('revoked_at').first('role', 'org_id', 'user_id')) as never;
+  const rows = (await q.whereNull('revoked_at').select('role', 'org_id', 'user_id', 'granted_at')) as GroupRow[];
+  return rankGroup(rows.map((r) => ({ ...r }))); // copies: a later write must not change what this read saw
 }
 
 class HttpError extends Error {
@@ -278,6 +335,8 @@ router.put(
     // Authority-write bookkeeping for compensation (see header).
     const writes: AuthorityWrites = { revokeAttempted: false, grantAttempted: false };
     let prior: string | null = null;
+    // Every role the request revoked in the authority (before the call, so a possibly-applied revoke is restored).
+    const revokedRoles: Array<{ subject: string; tenant: string; role: string }> = [];
     // The tenant this user's grant on this list lives in: where an existing grant was made (the mirror's org_id),
     // else the caller's. Role changes revoke/re-grant/compensate THERE, so a grant is never split across two
     // renderings of the org id.
@@ -326,28 +385,40 @@ router.put(
         // Serialise every access mutation on this list (guard + writes).
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
-        const existing = await existingGrant(trx, listId, userForms);
+        // The user's grant GROUP (every live row under any rendering of the id), survivor first.
+        const group = await grantGroup(trx, listId, userForms);
+        const existing = group[0];
 
-        prior = existing ? (existing['role'] as string) : null;
-        if (existing?.['org_id']) grantTenant = existing['org_id'] as string;
-        if (existing?.['user_id']) subject = existing['user_id'] as string;
+        prior = existing ? existing.role : null;
+        if (existing?.org_id) grantTenant = existing.org_id;
+        if (existing?.user_id) subject = existing.user_id;
         else {
           // No live grant: a previously REVOKED row of this user (under any rendering) is re-activated in place,
-          // rather than leaving a second row for the same user next to it.
-          const revoked = await trx('selection_list_access').where({ list_id: listId }).whereIn('user_id', userForms).first('user_id');
-          if (revoked?.['user_id']) subject = revoked['user_id'] as string;
+          // rather than leaving a second row for the same user next to it. Deterministic when there are several
+          // (the survivor rule), never an arbitrary `first()`.
+          const revokedRows = (await trx('selection_list_access')
+            .where({ list_id: listId })
+            .whereIn('user_id', userForms)
+            .select('user_id', 'granted_at')) as Array<{ user_id: string; granted_at: Date | string | null }>;
+          if (revokedRows.length > 0) subject = rankGroup(revokedRows)[0].user_id;
         }
 
-        // EVERY Permit key this operation will use (the grant's tenant and subject - possibly a LEGACY mirror row's
-        // org_id / user_id) is validated and computed HERE, before any Security API call: a malformed key fails with
-        // nothing written, never after revoke/grant landed (which would split the authority from the mirror).
+        // EVERY Permit key this operation will use (the grant's tenant and subject - and those of every other row of
+        // the group - possibly a LEGACY mirror row's org_id / user_id) is validated and computed HERE, before any
+        // Security API call: a malformed key fails with nothing written, never after revoke/grant landed (which
+        // would split the authority from the mirror).
         const mirrorTenantKey = permitTenantKey(grantTenant);
         permitSubjectKey(subject);
+        for (const g of group) {
+          permitTenantKey(g.org_id ?? orgId);
+          permitSubjectKey(g.user_id);
+        }
 
-        // Last-owner guard: demoting the only list-owner is refused. Decided by
-        // the AUTHORITY (review M-2): another mirror owner must be confirmed by
-        // the Security API, not merely counted.
-        if (existing && existing['role'] === 'list-owner' && role !== 'list-owner') {
+        // Last-owner guard: demoting the only list-owner is refused (ANY row of the group being an owner makes the
+        // user an owner). Decided by the AUTHORITY (review M-2): another mirror owner must be confirmed by the
+        // Security API, not merely counted.
+        const wasOwner = group.some((g) => g.role === 'list-owner');
+        if (wasOwner && role !== 'list-owner') {
           const otherOwner = await hasConfirmedOtherOwner({
             executor: trx,
             listId,
@@ -373,24 +444,23 @@ router.put(
         // An owner demoting themselves must retain manage_access until the
         // final revoke. The replacement is strictly weaker than list-owner;
         // a failed revoke retains existing authority rather than adding any.
-        const selfDemotion = userForms.includes(actorId) && existing?.['role'] === 'list-owner' && role !== 'list-owner';
+        const selfDemotion = userForms.includes(actorId) && wasOwner && role !== 'list-owner';
         if (selfDemotion) {
           writes.grantAttempted = true;
           await getAuthzClient().grant(assignment, callerToken);
         }
 
-        // Other role changes revoke first, leaving less access on failure.
-        if (existing && existing['role'] !== role) {
+        // Other role changes revoke first, leaving less access on failure. EVERY distinct role of the group other
+        // than the new one is revoked (each with the subject / tenant it was recorded under), so the user ends with
+        // exactly the new role.
+        const seenRoles = new Set<string>();
+        for (const g of group) {
+          if (g.role === role || seenRoles.has(g.role)) continue;
+          seenRoles.add(g.role);
+          const entry = { subject: g.user_id, tenant: g.org_id ?? orgId, role: g.role };
+          revokedRoles.push(entry);
           writes.revokeAttempted = true;
-          await getAuthzClient().revoke(
-            {
-              subject,
-              tenant: grantTenant,
-              role: existing['role'],
-              resource: { type: 'SelectionList', key: listId },
-            },
-            callerToken,
-          );
+          await getAuthzClient().revoke({ ...entry, resource: { type: 'SelectionList', key: listId } }, callerToken);
         }
 
         // Assign role via the Security API (source of truth for authz).
@@ -421,15 +491,24 @@ router.put(
           `,
           [listId, subject, role, actorId, mirrorTenantKey],
         );
+        // Converge to ONE live row: the group's other rows are soft-revoked (their authority roles were revoked above).
+        const duplicates = group.slice(1).map((g) => g.user_id).filter((u) => u !== subject);
+        if (duplicates.length > 0) {
+          await trx('selection_list_access')
+            .where({ list_id: listId })
+            .whereIn('user_id', duplicates)
+            .whereNull('revoked_at')
+            .update({ revoked_at: trx.fn.now(), updated_at: trx.fn.now() });
+        }
 
         // Outbox, same transaction: access.granted (previousRole null for a new
         // grant). A repeat PUT of the role the user already holds changes nothing,
         // so it announces nothing.
-        if (!existing || existing['role'] !== role) {
+        if (!existing || group.some((g) => g.role !== role)) {
           await emitAccessGranted(trx, eventContextFromRequest(req), listId, {
             userId,
             role,
-            previousRole: existing ? (existing['role'] as string) : null,
+            previousRole: existing ? existing.role : null,
           });
         }
 
@@ -457,6 +536,7 @@ router.put(
           listId,
           prior,
           target: role,
+          alsoRestore: revokedRoles.filter((r) => r.role !== prior),
           writes,
           token,
           log: getLog(req),
@@ -500,6 +580,8 @@ router.delete(
     let prior: string | null = null;
     let grantTenant = orgId; // where the grant being removed was made (see PUT)
     let subject = userId; // the grant's subject as recorded (see PUT)
+    // Every grant the request revoked in the authority (before the call), for compensation.
+    const revokedRoles: Array<{ subject: string; tenant: string; role: string }> = [];
     const userForms = await userScope(req, userId);
 
     try {
@@ -520,23 +602,28 @@ router.delete(
         await assertPlatformWritable(trx, listId);
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
-        // Fetch current grant for last-owner guard and idempotency.
-        const existing = await existingGrant(trx, listId, userForms);
+        // Fetch the user's grant GROUP (every live row under any rendering) for the last-owner guard and idempotency.
+        const group = await grantGroup(trx, listId, userForms);
+        const existing = group[0];
 
         // Idempotent: no active grant → nothing to do (204).
         if (!existing) return;
-        prior = existing['role'] as string;
-        if (existing['org_id']) grantTenant = existing['org_id'] as string;
-        if (existing['user_id']) subject = existing['user_id'] as string;
+        prior = existing.role;
+        if (existing.org_id) grantTenant = existing.org_id;
+        if (existing.user_id) subject = existing.user_id;
 
-        // Validate every Permit key before any Security API call (see PUT): a malformed legacy mirror key fails with
-        // nothing written.
+        // Validate every Permit key (of EVERY row) before any Security API call (see PUT): a malformed legacy mirror
+        // key fails with nothing written.
         permitTenantKey(grantTenant);
         permitSubjectKey(subject);
+        for (const g of group) {
+          permitTenantKey(g.org_id ?? orgId);
+          permitSubjectKey(g.user_id);
+        }
 
         // Last-owner guard, decided by the AUTHORITY (review M-2): another
-        // mirror owner must be confirmed by the Security API.
-        if (existing['role'] === 'list-owner') {
+        // mirror owner must be confirmed by the Security API. The user is an owner when ANY row of the group is.
+        if (group.some((g) => g.role === 'list-owner')) {
           const otherOwner = await hasConfirmedOtherOwner({
             executor: trx,
             listId,
@@ -553,29 +640,27 @@ router.delete(
           }
         }
 
-        // Revoke via the Security API. resource is REQUIRED: it scopes the
-        // revocation to this list's instance. revoke() THROWS on failure,
+        // Revoke via the Security API: EVERY row of the group, each with the subject / tenant / role it was recorded
+        // under. resource is REQUIRED: it scopes the revocation to this list's instance. revoke() THROWS on failure,
         // rolling back before the mirror soft-delete, so a failed revoke never
         // leaves the mirror claiming access was removed when it was not.
-        writes.revokeAttempted = true;
-        await getAuthzClient().revoke(
-          {
-            subject,
-            tenant: grantTenant,
-            role: existing['role'],
-            resource: { type: 'SelectionList', key: listId },
-          },
-          callerToken,
-        );
+        for (const g of group) {
+          const entry = { subject: g.user_id, tenant: g.org_id ?? orgId, role: g.role };
+          revokedRoles.push(entry);
+          writes.revokeAttempted = true;
+          await getAuthzClient().revoke({ ...entry, resource: { type: 'SelectionList', key: listId } }, callerToken);
+        }
 
         await trx('selection_list_access')
-          .where({ list_id: listId, user_id: subject })
+          .where({ list_id: listId })
+          .whereIn('user_id', group.map((g) => g.user_id))
+          .whereNull('revoked_at')
           .update({ revoked_at: trx.fn.now(), updated_at: trx.fn.now() });
 
         // Outbox, same transaction: access.revoked (an idempotent no-op returned above).
         await emitAccessRevoked(trx, eventContextFromRequest(req), listId, {
           userId,
-          role: existing['role'] as string,
+          role: existing.role,
         });
       });
 
@@ -595,8 +680,9 @@ router.delete(
           subject,
           tenant: grantTenant,
           listId,
-          prior,
+          prior: null, // every revoked grant is re-granted through `alsoRestore`
           target: null,
+          alsoRestore: revokedRoles,
           writes,
           token,
           log: getLog(req),

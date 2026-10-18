@@ -527,17 +527,113 @@ dbDescribe('the platform organization is immutable and suspendable for the org l
       expect(await suspended()).toBe(false);
     });
 
-    it('a FAR-FUTURE forged timestamp is clamped to now: it cannot pin the clocks ahead of every legitimate event', async () => {
+    // Future-dated envelopes are REJECTED (acknowledged, nothing applied), never clamped to now: a clamp gives the SAME
+    // event a different, later ordering instant on every redelivery. Within the tolerance the ORIGINAL timestamp is used.
+    const ahead = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString();
+    const rejectedWarn = (needle: string) =>
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ correlationId: expect.stringContaining(needle), toleranceMs: 300_000 }),
+        expect.stringContaining('REJECTED a future-dated'),
+      );
+
+    it('a FAR-FUTURE deactivation or activation of the platform org is ignored (warn with its correlationId): nothing is suspended, nothing resumed', async () => {
+      await upd({}, T(10));
+      const before = await projection();
       await del('2099-01-01T00:00:00.000Z');
-      expect(await suspended()).toBe(true);
-      expect(new Date((await projection()).suspended_event_at).getTime()).toBeLessThanOrEqual(Date.now());
-      await new Promise((r) => setTimeout(r, 5));
-      await upd({ name: 'Legit' }, new Date().toISOString()); // a legitimate activation right now resumes
+      await created({ isActive: false }, '2099-01-01T00:00:00.000Z');
+      await upd({ isActive: false }, ahead(3600));
       expect(await suspended()).toBe(false);
+      rejectedWarn('corr-identity.org.created');
+      rejectedWarn('corr-identity.org.updated');
+      rejectedWarn('corr-del');
+      expect(new Date((await projection()).snapshot_at).getTime()).toBe(new Date(before.snapshot_at).getTime());
+      // and a far-future ACTIVATION cannot resume a genuine suspension, nor pin snapshot_at ahead
+      await del(T(20));
+      expect(await suspended()).toBe(true);
       await upd({ name: 'Forged' }, '2099-01-01T00:00:00.000Z');
-      await new Promise((r) => setTimeout(r, 5));
-      await upd({ name: 'Later legit' }, new Date().toISOString());
-      expect((await projection()).org_name).toBe('Later legit'); // not rejected as stale behind a future-dated snapshot
+      expect(await suspended()).toBe(true);
+      expect((await projection()).org_name).not.toBe('Forged');
+      await upd({ name: 'Legit' }, T(30)); // the clocks were not pinned ahead: a legitimate activation resumes
+      expect(await suspended()).toBe(false);
+      expect((await projection()).org_name).toBe('Legit');
+    });
+
+    it('far-future events are ignored for an ORDINARY org too (created / updated / deleted): no projection change, no tombstone, no cascade', async () => {
+      const { handleOrgCreated } = await import('../src/events/org-created.handler');
+      const { handleOrgUpdated } = await import('../src/events/org-updated.handler');
+      const { handleOrgDeleted } = await import('../src/events/org-deleted.handler');
+      const org = toUuid(ORG_A as never);
+      const row = () => w.db('selection_list_ref_index').where({ wire_id: ORG_A }).first();
+      await handleOrgUpdated(orgEvent('identity.org.updated', org, { type: 'organization', name: 'A' }, T(1)));
+      const before = await row();
+      const lists = Number(((await w.db('selection_lists').whereIn('organization_id', [ORG_A, org]).count('id as c').first()) as any).c);
+      const far = '2099-01-01T00:00:00.000Z';
+      expect(await handleOrgCreated(orgEvent('identity.org.created', org, { type: 'organization', name: 'Forged' }, far))).toEqual({ projected: false, seeding: 'rejected-future-dated' });
+      await handleOrgUpdated(orgEvent('identity.org.updated', org, { type: 'organization', isActive: false, name: 'Forged' }, far));
+      await handleOrgDeleted(deleted(org, 'hard', far));
+      const after = await row();
+      expect({ n: after.org_name, a: after.is_active, st: after.status, at: new Date(after.snapshot_at).getTime() }).toEqual({ n: before.org_name, a: before.is_active, st: 'active', at: new Date(before.snapshot_at).getTime() });
+      expect(Number(((await w.db('selection_lists').whereIn('organization_id', [ORG_A, org]).count('id as c').first()) as any).c)).toBe(lists);
+      expect(warnSpy).toHaveBeenCalledWith(expect.objectContaining({ organizationId: org, occurredAt: far }), expect.stringContaining('REJECTED a future-dated'));
+    });
+
+    it('REDELIVERY of a future-dated (within tolerance) activation never clears a genuine suspension: the ordering value is stable', async () => {
+      const F = ahead(120); // within the 5 minute tolerance: applied with its ORIGINAL timestamp
+      const D = ahead(180);
+      await upd({ name: 'F' }, F);
+      expect(await suspended()).toBe(false);
+      await del(D);
+      expect(await suspended()).toBe(true);
+      for (let i = 0; i < 3; i++) {
+        await upd({ name: 'F' }, F); // redelivered, later each time
+        await new Promise((r) => setTimeout(r, 5));
+        expect(await suspended()).toBe(true);
+      }
+      expect(new Date((await projection()).suspended_event_at).toISOString()).toBe(D);
+    });
+
+    it('REDELIVERY of a future-dated (within tolerance) deactivation never re-suspends after a genuine activation (the mirror case)', async () => {
+      const D = ahead(120);
+      const A = ahead(180);
+      await upd({}, T(10));
+      await del(D);
+      expect(await suspended()).toBe(true);
+      await upd({}, A);
+      expect(await suspended()).toBe(false);
+      for (let i = 0; i < 3; i++) {
+        await del(D); // redelivered
+        await created({ isActive: false }, D);
+        await new Promise((r) => setTimeout(r, 5));
+        expect(await suspended()).toBe(false);
+      }
+      warnedWith('stale', D);
+    });
+
+    it('within the tolerance an event behaves normally and keeps its original timestamp', async () => {
+      const when = ahead(60);
+      await upd({}, T(10));
+      await del(when);
+      expect(await suspended()).toBe(true);
+      expect(new Date((await projection()).suspended_event_at).toISOString()).toBe(when);
+      await upd({}, ahead(90));
+      expect(await suspended()).toBe(false);
+    });
+
+    it('the skew tolerance is configurable (SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS); a bad value falls back to 300', async () => {
+      const { futureSkewToleranceMs, isFutureDated, orderingInstant } = await import('../src/events/orgProjection');
+      expect(futureSkewToleranceMs({} as never)).toBe(300_000);
+      expect(futureSkewToleranceMs({ SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS: '30' } as never)).toBe(30_000);
+      expect(futureSkewToleranceMs({ SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS: '0' } as never)).toBe(0);
+      for (const bad of ['', 'abc', '-5']) expect(futureSkewToleranceMs({ SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS: bad } as never)).toBe(300_000);
+      const now = Date.parse('2026-01-01T00:00:00.000Z');
+      expect(isFutureDated('2026-01-01T00:04:59.000Z', now, 300_000)).toBe(false);
+      expect(isFutureDated('2026-01-01T00:05:01.000Z', now, 300_000)).toBe(true);
+      expect(isFutureDated('2025-12-31T00:00:00.000Z', now, 300_000)).toBe(false);
+      expect(isFutureDated(undefined, now, 300_000)).toBe(false);
+      expect(isFutureDated('not a date', now, 300_000)).toBe(false);
+      // never altered: the same input gives the same ordering value on every call
+      expect(orderingInstant('2099-01-01T00:00:00.000Z')).toBe('2099-01-01T00:00:00.000Z');
+      expect(orderingInstant('garbage')).toBeNull();
     });
   });
 });

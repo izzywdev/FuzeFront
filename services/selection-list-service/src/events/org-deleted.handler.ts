@@ -2,7 +2,7 @@ import { FuzeEvent, IdentityOrgDeletedPayloadV1 } from '@fuzefront/shared/kafka'
 import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { db } from '../db';
 import { logger, timed } from '../lib/logger';
-import { markOrgProjectionDeleted } from './orgProjection';
+import { futureSkewToleranceMs, isFutureDated, markOrgProjectionDeleted } from './orgProjection';
 import { isProtectedPlatformOrg, recordPlatformDeactivation } from './platformGuard';
 
 /**
@@ -60,6 +60,12 @@ export async function handleOrgDeleted(
   // The event's correlationId is this thread's reqId so one event is one grep.
   const log = logger.child({ reqId: event.correlationId, component: 'org-deleted' });
   log.info({ organizationId, cascade }, 'identity.org.deleted received');
+  // An envelope dated beyond the skew tolerance is REJECTED (acknowledged, nothing applied): a clamp to now would give
+  // the same event a different ordering instant on every redelivery (events/orgProjection.ts `isFutureDated`).
+  if (isFutureDated(event.occurredAt)) {
+    log.warn({ organizationId, topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt, toleranceMs: futureSkewToleranceMs() }, 'REJECTED a future-dated org lifecycle envelope (beyond the clock-skew tolerance): nothing was applied; re-send once the producer clock is right');
+    return ;
+  }
 
   // The platform organization owns every common list: nothing is deleted, archived or tombstoned for it, whatever the
   // envelope says (platformGuard.ts). Its deactivation SUSPENDS platform writes instead (fail closed: publish_platform,

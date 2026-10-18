@@ -38,15 +38,40 @@ export interface OrgProjectionSnapshot {
  * (e.g. a late `org.created` after an `org.updated`) is ignored. Returns the org's wire id.
  */
 /**
- * The ordering instant of an envelope: its `occurredAt`, CLAMPED to now (an event cannot have happened in the future;
- * a forged far-future timestamp must not pin `snapshot_at` / `suspended_event_at` ahead of every legitimate event).
- * Unparseable / absent: null (callers fall back to now()).
+ * Accepted clock skew of an envelope AHEAD of this service's clock. Env `SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS`
+ * (default 300 = 5 minutes; 0 accepts nothing in the future).
  */
-export function orderingInstant(occurredAt: string | undefined | null, now: number = Date.now()): string | null {
+export const DEFAULT_FUTURE_SKEW_SECONDS = 300;
+export function futureSkewToleranceMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env['SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS'];
+  const n = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
+  return (Number.isFinite(n) && n >= 0 ? n : DEFAULT_FUTURE_SKEW_SECONDS) * 1000;
+}
+
+/**
+ * Is the envelope dated MORE than the skew tolerance ahead of now? Such an envelope is REJECTED by the org lifecycle
+ * handlers (acknowledged, logged at warn with its correlationId, nothing applied): an event cannot have happened in
+ * the future, and - unlike a clamp to now, which gives the SAME event a different, later ordering instant on every
+ * redelivery - rejection keeps the ordering decision stable. A legitimately skewed producer clock therefore DROPS
+ * the event; an operator re-sends it once the clocks agree. Unparseable / absent: false (the schema guarantees a
+ * timestamp; such an envelope falls back to now() and never wedges the consumer).
+ */
+export function isFutureDated(occurredAt: string | undefined | null, now: number = Date.now(), toleranceMs: number = futureSkewToleranceMs()): boolean {
+  if (!occurredAt) return false;
+  const t = Date.parse(occurredAt);
+  return !Number.isNaN(t) && t > now + toleranceMs;
+}
+
+/**
+ * The ordering instant of an envelope: its ORIGINAL `occurredAt` (never altered, so the value is identical on every
+ * delivery - within the skew tolerance it may be slightly ahead of now, which the handlers have already accepted via
+ * `isFutureDated`). Unparseable / absent: null (callers fall back to now()).
+ */
+export function orderingInstant(occurredAt: string | undefined | null): string | null {
   if (!occurredAt) return null;
   const t = Date.parse(occurredAt);
   if (Number.isNaN(t)) return null;
-  return new Date(Math.min(t, now)).toISOString();
+  return new Date(t).toISOString();
 }
 
 export async function upsertOrgProjection(ex: Knex | Knex.Transaction, snapshot: OrgProjectionSnapshot): Promise<string> {
