@@ -319,9 +319,9 @@
           "04-save-conflict"
         ],
         "contractStatus": "real — binds to the frozen services/config-service/openapi.yaml",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-18T14:35:31.657Z"
       },
       {
         "id": "key-catalog",
