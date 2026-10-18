@@ -72,12 +72,15 @@ export function SecurityStatusList({
   onRemove,
   onAddFactor,
   onVerifyPhone,
+  addMethodEnabled = true,
 }: {
   factors: MfaFactor[]
   status: VerificationStatus
   onRemove: (f: MfaFactor) => void
   onAddFactor: () => void
   onVerifyPhone: () => void
+  /** False when the MFA-management surface it routes to is not available (flag OFF). */
+  addMethodEnabled?: boolean
 }) {
   const { messages: m } = useAccountSecurityI18n()
   const active = activeFactors(factors)
@@ -114,9 +117,16 @@ export function SecurityStatusList({
           }
         />
       ))}
-      <Button variant="ghost" fullWidth data-action="add-factor" onClick={onAddFactor} style={{ margin: 'var(--space-3) 0 var(--space-5)' }}>
-        {m.securityStatus.addMethod}
-      </Button>
+      {addMethodEnabled ? (
+        <Button variant="ghost" fullWidth data-action="add-factor" onClick={onAddFactor} style={{ margin: 'var(--space-3) 0 var(--space-5)' }}>
+          {m.securityStatus.addMethod}
+        </Button>
+      ) : (
+        // The add-method route is gated by the MFA-management flag: say so instead of a dead link.
+        <Hint data-state="add-unavailable" style={{ margin: 'var(--space-3) 0 var(--space-5)' }}>
+          {m.securityStatus.addUnavailable}
+        </Hint>
+      )}
 
       <Hint style={{ margin: 'var(--space-4) 0 var(--space-1)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
         {m.securityStatus.contact}
@@ -157,6 +167,11 @@ export function SecurityStatusList({
 export interface SecurityStatusMobileFlowProps extends FlowBaseProps {
   onNavigate?: (route: string) => void
   routes?: Partial<MfaRoutes> & { verifyPhone?: string }
+  /**
+   * Whether the MFA-management routes (add method) are reachable. The host passes the
+   * `fuzefront.security.mfa-management` flag; OFF hides "Add a method" (explained, not a dead link).
+   */
+  addMethodEnabled?: boolean
 }
 
 type State =
@@ -178,7 +193,7 @@ export function SecurityStatusMobileFlow(props: SecurityStatusMobileFlowProps) {
   )
 }
 
-function SecurityStatusInner({ client, getToken, onNavigate, routes }: SecurityStatusMobileFlowProps) {
+function SecurityStatusInner({ client, getToken, onNavigate, routes, addMethodEnabled = true }: SecurityStatusMobileFlowProps) {
   const { messages: m, dir } = useAccountSecurityI18n()
   const api = useSecurityClient<MfaClient & ContactClient>(client, getToken)
   const r = { ...DEFAULT_MFA_ROUTES, verifyPhone: '/account/security/verify/phone', ...routes }
@@ -254,12 +269,14 @@ function SecurityStatusInner({ client, getToken, onNavigate, routes }: SecurityS
             onRemove={setRemoving}
             onAddFactor={() => go(r.addAuthenticator)}
             onVerifyPhone={() => go(r.verifyPhone)}
+            addMethodEnabled={addMethodEnabled}
           />
         </div>
       )}
       <RemoveFactorDialog
         presentation="sheet"
         factor={removing}
+        canAddAnother={addMethodEnabled}
         otherCount={others}
         onRemove={(id) => api.removeFactor(id)}
         onRemoved={() => void load()}

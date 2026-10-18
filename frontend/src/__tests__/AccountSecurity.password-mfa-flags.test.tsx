@@ -22,6 +22,7 @@ vi.mock('../platform/featureFlags', () => ({
 vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'tok' }))
 
 const hubProps = vi.fn()
+const statusProps = vi.fn()
 vi.mock('@fuzefront/account-security-ui', () => {
   const stub = (id: string) => (props: Record<string, unknown>) => <div data-testid={id} data-props={Object.keys(props).join(',')} />
   return {
@@ -31,7 +32,10 @@ vi.mock('@fuzefront/account-security-ui', () => {
     SmsEnrollFlow: stub('mfa-sms'),
     RecoveryCodesFlow: stub('mfa-recovery'),
     ConfirmContactFlow: stub('confirm-contact'),
-    SecurityStatusMobileFlow: stub('security-status-mobile'),
+    SecurityStatusMobileFlow: (props: Record<string, unknown>) => {
+      statusProps(props)
+      return <div data-testid="security-status-mobile" />
+    },
     AccountSecurityHub: (props: Record<string, unknown>) => {
       hubProps(props)
       return <div data-testid="hub" />
@@ -55,6 +59,7 @@ beforeEach(() => {
   flags = {}
   ready = true
   hubProps.mockClear()
+  statusProps.mockClear()
   window.matchMedia = ((q: string) => ({
     matches: false,
     media: q,
@@ -144,6 +149,20 @@ describe('/account/security hub integration', () => {
     inRouter(<AccountSecurityPage />)
     expect(screen.getByTestId('security-status-mobile')).toBeInTheDocument()
     expect(screen.getByTestId('hub')).toBeInTheDocument()
+    // mfa-management OFF: the status panel must not offer a link into the gated MFA routes.
+    expect(statusProps.mock.calls[0][0].addMethodEnabled).toBe(false)
+  })
+
+  it('mobile ON + mfa-management ON: the status panel offers "add method"', () => {
+    flags = { [HUB]: true, [MOBILE]: true, [MFA]: true }
+    window.matchMedia = ((q: string) => ({
+      matches: true,
+      media: q,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+    inRouter(<AccountSecurityPage />)
+    expect(statusProps.mock.calls[0][0].addMethodEnabled).toBe(true)
   })
 
   it('hub flag OFF: nothing new leaks onto the page even with the new flags ON', () => {

@@ -115,10 +115,32 @@ describe('MfaOverviewFlow', () => {
 })
 
 describe('TotpEnrollFlow', () => {
-  it('enrols once and shows QR + setup key + 6-cell OTP', async () => {
+  const start = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(await screen.findByRole('button', { name: /set up authenticator/i }))
+    await waitFor(() => expect(q('[data-component="totp-enroll"][data-state="scan"]')).toBeTruthy())
+  }
+
+  it('opening the route creates NOTHING: an intro with an explicit start button', () => {
     const client = makeClient()
     render(<TotpEnrollFlow client={asClient(client)} />)
-    await waitFor(() => expect(q('[data-component="totp-enroll"][data-state="scan"]')).toBeTruthy())
+    expect(q('[data-component="totp-enroll"][data-state="intro"]')).toBeTruthy()
+    expect(q('[data-action="start-setup"]')).toBeTruthy()
+    expect(client.enrollFactor).not.toHaveBeenCalled()
+  })
+
+  it('leaving the intro without starting creates and deletes nothing', () => {
+    const client = makeClient()
+    const { unmount } = render(<TotpEnrollFlow client={asClient(client)} />)
+    unmount()
+    expect(client.enrollFactor).not.toHaveBeenCalled()
+    expect(client.removeFactor).not.toHaveBeenCalled()
+  })
+
+  it('Start enrols once and shows QR + setup key + 6-cell OTP', async () => {
+    const user = userEvent.setup()
+    const client = makeClient()
+    render(<TotpEnrollFlow client={asClient(client)} />)
+    await start(user)
     expect(client.enrollFactor).toHaveBeenCalledTimes(1)
     expect(client.enrollFactor).toHaveBeenCalledWith({ type: 'totp' })
     expect(q('[data-provisioning-uri]')).toBeTruthy()
@@ -127,9 +149,52 @@ describe('TotpEnrollFlow', () => {
     expect(document.querySelectorAll('[data-component="otp-input"] input')).toHaveLength(6)
   })
 
+  it('CANCEL deletes the pending factor (best-effort) and navigates back', async () => {
+    const user = userEvent.setup()
+    const onNavigate = vi.fn()
+    const client = makeClient()
+    render(<TotpEnrollFlow client={asClient(client)} onNavigate={onNavigate} />)
+    await start(user)
+    await user.click(q('[data-component="totp-enroll"] [data-action="cancel"]')!)
+    await waitFor(() => expect(client.removeFactor).toHaveBeenCalledWith('fct_new'))
+    expect(onNavigate).toHaveBeenCalledWith('/account/security/mfa')
+  })
+
+  it('UNMOUNT (abandoning the route) deletes the pending factor', async () => {
+    const user = userEvent.setup()
+    const client = makeClient()
+    const { unmount } = render(<TotpEnrollFlow client={asClient(client)} />)
+    await start(user)
+    unmount()
+    await waitFor(() => expect(client.removeFactor).toHaveBeenCalledWith('fct_new'))
+  })
+
+  it('a failing cleanup DELETE never throws or blocks (best-effort)', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({ removeFactor: vi.fn(async () => { throw err(500) }) })
+    const { unmount } = render(<TotpEnrollFlow client={asClient(client)} />)
+    await start(user)
+    expect(() => unmount()).not.toThrow()
+    await waitFor(() => expect(client.removeFactor).toHaveBeenCalled())
+  })
+
+  it('an ACTIVATED factor is never deleted on unmount', async () => {
+    const user = userEvent.setup()
+    const client = makeClient()
+    const { unmount } = render(<TotpEnrollFlow client={asClient(client)} onActivated={vi.fn()} />)
+    await start(user)
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('492017')
+    await user.click(q('[data-action="activate-factor"]')!)
+    await waitFor(() => expect(client.activateFactor).toHaveBeenCalled())
+    unmount()
+    expect(client.removeFactor).not.toHaveBeenCalled()
+  })
+
   it('does not leak the secret into the provisioning attribute', async () => {
+    const user = userEvent.setup()
     render(<TotpEnrollFlow client={asClient(makeClient())} />)
-    await waitFor(() => expect(q('[data-provisioning-uri]')).toBeTruthy())
+    await start(user)
     expect(q('[data-provisioning-uri]')!.getAttribute('data-provisioning-uri')).not.toContain('JBSWY3DP')
   })
 
@@ -138,7 +203,7 @@ describe('TotpEnrollFlow', () => {
     const onActivated = vi.fn()
     const client = makeClient()
     render(<TotpEnrollFlow client={asClient(client)} onActivated={onActivated} />)
-    await waitFor(() => expect(q('[data-action="activate-factor"]')).toBeTruthy())
+    await start(user)
     expect(q('[data-action="activate-factor"]')).toBeDisabled()
     await user.click(document.querySelector('[data-component="otp-input"] input')!)
     await user.keyboard('492017')
@@ -153,7 +218,7 @@ describe('TotpEnrollFlow', () => {
     const onActivated = vi.fn()
     const client = makeClient({ activateFactor: vi.fn(async () => { throw err(401, 'NOT_ACTIVE') }) })
     render(<TotpEnrollFlow client={asClient(client)} onActivated={onActivated} />)
-    await waitFor(() => expect(q('[data-action="activate-factor"]')).toBeTruthy())
+    await start(user)
     await user.click(document.querySelector('[data-component="otp-input"] input')!)
     await user.keyboard('111111')
     await user.click(q('[data-action="activate-factor"]')!)
@@ -162,15 +227,18 @@ describe('TotpEnrollFlow', () => {
     expect(onActivated).not.toHaveBeenCalled()
   })
 
-  it('a failed start shows a retryable error', async () => {
+  it('a failed start shows a retryable error (and nothing to clean up)', async () => {
     const user = userEvent.setup()
     const enrollFactor = vi.fn().mockRejectedValueOnce(err(500)).mockResolvedValueOnce({
       factorId: 'f', type: 'totp', status: 'pending', secret: 'ABCDEFGH', provisioningUri: 'otpauth://totp/x?secret=ABCDEFGH',
     })
-    render(<TotpEnrollFlow client={asClient(makeClient({ enrollFactor }))} />)
+    const client = makeClient({ enrollFactor })
+    render(<TotpEnrollFlow client={asClient(client)} />)
+    await user.click(await screen.findByRole('button', { name: /set up authenticator/i }))
     await waitFor(() => expect(q('[data-state="error"]')).toBeTruthy())
+    expect(client.removeFactor).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: /try again/i }))
-    await waitFor(() => expect(q('[data-component="totp-enroll"]')).toBeTruthy())
+    await waitFor(() => expect(q('[data-component="totp-enroll"][data-state="scan"]')).toBeTruthy())
   })
 
   it('buildQrMatrix returns a square matrix with finder patterns', () => {
@@ -245,6 +313,21 @@ describe('SmsEnrollFlow', () => {
     await user.click(q('[data-action="activate-factor"]')!)
     await waitFor(() => expect(q('[data-component="sms-enroll"][data-state="error-invalid"]')).toBeTruthy())
     expect(q('[data-error="invalid-code"]')).toBeTruthy()
+  })
+
+  it('cancel / unmount after sending deletes the pending sms factor (best-effort)', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({
+      getMethods: vi.fn(async () => methods(['sms'])),
+      enrollFactor: vi.fn(async () => ({ factorId: 'fct_sms_pending', type: 'sms', status: 'pending', codeSent: true })),
+    })
+    const { unmount } = render(<SmsEnrollFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '+447700900471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-component="sms-enroll"][data-state="confirm-code"]')).toBeTruthy())
+    unmount()
+    await waitFor(() => expect(client.removeFactor).toHaveBeenCalledWith('fct_sms_pending'))
   })
 
   it('a send failure stays on the phone step with an error', async () => {

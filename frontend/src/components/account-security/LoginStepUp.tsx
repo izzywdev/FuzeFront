@@ -16,26 +16,25 @@ export interface StepUpChallenge {
 }
 
 /**
- * Which MFA step-up surface to render for an `mfa_required` challenge, or null
- * when both release flags are OFF (default) — in which case LoginPage keeps its
- * original behaviour (an info notice, no step-up UI). Pre-auth, so the flags
- * resolve through the pre-auth override (platform/preAuthFlags.ts).
+ * Which MFA step-up surface answers an `mfa_required` challenge. NEVER null: once
+ * the server has issued a challenge the user MUST be able to answer it, or anyone
+ * who enrolled a factor would be locked out at their next sign-in whenever no
+ * pre-auth flag is on (pre-auth flags can't be served by Unleash — see
+ * platform/preAuthFlags.ts). The flags only choose the PRESENTATION:
+ *   - mobile variant: mfa-stepup-mobile flag ON and a compact viewport;
+ *   - desktop variant otherwise (the default, flags OFF included).
  */
-export function resolveStepUpVariant(
-  compact: boolean
-): 'desktop' | 'mobile' | null {
-  const mobileOn = isPreAuthFlagEnabled(ACCOUNT_SECURITY_FLAGS.mfaStepUpMobile)
-  const mgmtOn = isPreAuthFlagEnabled(ACCOUNT_SECURITY_FLAGS.mfaManagement)
-  if (mobileOn && (compact || !mgmtOn)) return 'mobile'
-  if (mgmtOn) return 'desktop'
-  return null
+export function resolveStepUpVariant(compact: boolean): 'desktop' | 'mobile' {
+  return isPreAuthFlagEnabled(ACCOUNT_SECURITY_FLAGS.mfaStepUpMobile) && compact
+    ? 'mobile'
+    : 'desktop'
 }
 
 /**
  * Login MFA step-up (FFRNT-141 / FFRNT-362), isolated from LoginPage so the page
  * carries only a hook call and two one-line hand-offs.
- *  - `begin(challenge)` returns true when a step-up flag is ON and the step-up took
- *    over (the caller then skips its own notice); false leaves behaviour unchanged.
+ *  - `begin(challenge)` always takes over (returns true): a server challenge is never
+ *    left unanswerable; the caller skips its own dead-end notice.
  *  - `view` is the step-up UI to render in place of the sign-in panel, or null.
  */
 export function useLoginStepUp(
@@ -48,12 +47,11 @@ export function useLoginStepUp(
   const variant = resolveStepUpVariant(isCompactViewport())
 
   const begin = (next: StepUpChallenge): boolean => {
-    if (!variant) return false
     setChallenge(next)
     return true
   }
 
-  if (!challenge || !variant) return { begin, view: null }
+  if (!challenge) return { begin, view: null }
   const Flow = variant === 'mobile' ? MfaStepUpMobileFlow : MfaStepUpFlow
   return {
     begin,

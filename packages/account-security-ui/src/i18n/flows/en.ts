@@ -155,6 +155,7 @@ export const flowsEn = {
     totp: {
       title: 'Add an authenticator app',
       subtitle: 'Use an app on your phone to generate 6-digit codes. Works without signal or a SIM.',
+      introText: 'Nothing is created until you start. Setting up generates a QR code and setup key for your authenticator app.',
       stepScan: '1 · Scan',
       stepConfirm: '2 · Confirm',
       instructions: "Scan this with your authenticator app. Can't scan? Enter the setup key by hand.",
@@ -317,6 +318,7 @@ export const flowsEn = {
     primary: 'Primary method',
     onlyActive: 'Only active method',
     addMethod: '+ Add a method',
+    addUnavailable: 'Adding a method isn’t available yet.',
     noFactors: 'No two-factor method yet',
     email: 'Email',
     phone: 'Phone',

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import { Button, OtpInput, QrCode, Spinner } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
@@ -16,6 +16,7 @@ import {
 } from '../common/flowKit'
 import { groupSecret } from './factorMeta'
 import { useMfaNav, type MfaNavProps } from './MfaOverview'
+import { usePendingFactor } from './pendingFactor'
 
 /** Build the QR module matrix for an `otpauth://` URI (encoder lives here, not in the DS). */
 export function buildQrMatrix(uri: string): boolean[][] {
@@ -155,6 +156,7 @@ export function TotpEnrollFlow(props: EnrollFlowProps) {
 }
 
 type TotpPhase =
+  | { name: 'intro' }
   | { name: 'starting' }
   | { name: 'start-failed' }
   | { name: 'scan'; enroll: MfaEnrollResult; activating: boolean; invalid: boolean }
@@ -164,30 +166,33 @@ function TotpEnrollInner(props: EnrollFlowProps) {
   const { messages: m } = useAccountSecurityI18n()
   const api = useSecurityClient<MfaClient>(props.client, props.getToken)
   const { routes, go } = useMfaNav(props)
-  const [phase, setPhase] = useState<TotpPhase>({ name: 'starting' })
-  const started = useRef(false)
+  const [phase, setPhase] = useState<TotpPhase>({ name: 'intro' })
+  const pending = usePendingFactor(api)
 
+  // The factor (and its secret) is created ONLY when the user explicitly starts
+  // setup — merely opening the route creates nothing to clean up.
   const start = useCallback(async () => {
     setPhase({ name: 'starting' })
     try {
       const enroll = await api.enrollFactor({ type: 'totp' })
+      pending.track(enroll.factorId)
       setPhase({ name: 'scan', enroll, activating: false, invalid: false })
     } catch {
       setPhase({ name: 'start-failed' })
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])
 
-  useEffect(() => {
-    // One pending factor per visit (StrictMode mounts effects twice in dev).
-    if (started.current) return
-    started.current = true
-    void start()
-  }, [start])
+  const cancel = () => {
+    pending.discard()
+    go(routes.overview)
+  }
 
   const activate = async (enroll: MfaEnrollResult, code: string) => {
     setPhase({ name: 'scan', enroll, activating: true, invalid: false })
     try {
       const factor = await api.activateFactor(enroll.factorId, code)
+      pending.clear()
       if (props.onActivated) props.onActivated(factor)
       else go(routes.overview)
     } catch (err) {
@@ -198,6 +203,21 @@ function TotpEnrollInner(props: EnrollFlowProps) {
 
   return (
     <FlowPage title={m.mfa.totp.title} subtitle={m.mfa.totp.subtitle} data-frame="02-totp-enroll">
+      {phase.name === 'intro' && (
+        <SeamCard data-component="totp-enroll" data-state="intro">
+          <p style={{ margin: '0 0 var(--space-4)', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
+            {m.mfa.totp.introText}
+          </p>
+          <Actions style={{ marginBlockStart: 0 }}>
+            <Button variant="primary" data-action="start-setup" onClick={() => void start()}>
+              {m.mfa.overview.enrollFirst}
+            </Button>
+            <Button variant="ghost" data-action="cancel" onClick={() => go(routes.overview)}>
+              {m.mfa.totp.cancel}
+            </Button>
+          </Actions>
+        </SeamCard>
+      )}
       {phase.name === 'starting' && (
         <div role="status" aria-busy="true" data-state="loading">
           <Spinner label={m.mfa.overview.loadingLabel} />
@@ -218,7 +238,7 @@ function TotpEnrollInner(props: EnrollFlowProps) {
           activating={phase.activating}
           invalid={phase.invalid}
           onActivate={(code) => void activate(phase.enroll, code)}
-          onCancel={() => go(routes.overview)}
+          onCancel={cancel}
         />
       )}
       {phase.name === 'activate-failed' && (

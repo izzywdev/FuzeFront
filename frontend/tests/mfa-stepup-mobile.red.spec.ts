@@ -265,6 +265,27 @@ test.describe('Security status, mobile (frame 04-security-status)', () => {
     await expect(panel.locator("[data-action='verify-phone']")).toBeVisible()
   })
 
+  test('"Add a method" is hidden (explained) while mfa-management is OFF, offered when ON', async ({ page }) => {
+    await page.route('**/v1/security/mfa/factors', route => route.fulfill(json(200, { items: [TOTP] })))
+    await page.route('**/v1/security/verify/status', route =>
+      route.fulfill(json(200, { emailVerified: true, phoneVerified: true })),
+    )
+    await page.goto(ROUTE, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-panel='security-status'][data-state='loaded']")).toBeVisible()
+    await expect(page.locator("[data-panel='security-status'] [data-action='add-factor']")).toHaveCount(0)
+    await expect(page.locator("[data-state='add-unavailable']")).toBeVisible()
+  })
+
+  test('mfa-management ON: "Add a method" is offered', async ({ page }) => {
+    await installShellMocks(page, { [FLAG]: true, 'fuzefront.security.mfa-management': true, 'fuzefront.account-security.hub': true })
+    await page.route('**/v1/security/mfa/factors', route => route.fulfill(json(200, { items: [TOTP] })))
+    await page.route('**/v1/security/verify/status', route =>
+      route.fulfill(json(200, { emailVerified: true, phoneVerified: true })),
+    )
+    await page.goto(ROUTE, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-panel='security-status'] [data-action='add-factor']")).toBeVisible()
+  })
+
   test('error: retry, never a stale guess', async ({ page }) => {
     await page.route('**/v1/security/mfa/factors', route => route.fulfill(json(500, { error: 'boom' })))
     await page.route('**/v1/security/verify/status', route => route.fulfill(json(500, { error: 'boom' })))

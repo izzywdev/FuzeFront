@@ -20,6 +20,8 @@ export interface RemoveFactorDialogProps {
   onRemoved?: () => void
   /** "Add another method" from the blocked state. */
   onAddAnother: () => void
+  /** False when the add-method route is unavailable (flag OFF): the blocked state offers no dead link. */
+  canAddAnother?: boolean
   /** `sheet` renders a bottom sheet (mobile / TWA); `modal` a centred dialog. */
   presentation?: 'modal' | 'sheet'
 }
@@ -38,6 +40,7 @@ export function RemoveFactorDialog({
   onClose,
   onRemoved,
   onAddAnother,
+  canAddAnother = true,
   presentation = 'modal',
 }: RemoveFactorDialogProps) {
   const { messages: m, t } = useAccountSecurityI18n()
@@ -130,9 +133,11 @@ export function RemoveFactorDialog({
             </StatusCallout>
           </div>
           <Actions>
-            <Button variant="primary" data-action="add-factor" onClick={onAddAnother}>
-              {m.mfa.remove.addAnother}
-            </Button>
+            {canAddAnother && (
+              <Button variant="primary" data-action="add-factor" onClick={onAddAnother}>
+                {m.mfa.remove.addAnother}
+              </Button>
+            )}
             <Button variant="ghost" data-action="dismiss" onClick={onClose}>
               {m.mfa.remove.keep}
             </Button>

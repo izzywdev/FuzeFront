@@ -75,4 +75,29 @@ describe('SecurityStatusMobileFlow (frame 04)', () => {
     render(<SecurityStatusMobileFlow client={asClient(makeClient())} locale="he" />)
     expect(q('section[data-frame="04-security-status"]')).toHaveAttribute('dir', 'rtl')
   })
+
+  it('add-method flag ON (default): the "Add a method" button is offered', async () => {
+    render(<SecurityStatusMobileFlow client={asClient(makeClient())} />)
+    await waitFor(() => expect(q('[data-action="add-factor"]')).toBeTruthy())
+    expect(q('[data-state="add-unavailable"]')).toBeNull()
+  })
+
+  it('add-method OFF (mfa-management flag OFF): no dead link — an explanation instead', async () => {
+    render(<SecurityStatusMobileFlow client={asClient(makeClient())} addMethodEnabled={false} />)
+    await waitFor(() => expect(q('[data-panel="security-status"][data-state="loaded"]')).toBeTruthy())
+    expect(q('[data-action="add-factor"]')).toBeNull()
+    expect(q('[data-state="add-unavailable"]')).toBeTruthy()
+  })
+
+  it('add-method OFF: the remove-last blocked sheet offers no "add another" link either', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({ removeFactor: vi.fn(async () => { throw err(409, 'CONFLICT') }) })
+    render(<SecurityStatusMobileFlow client={asClient(client)} addMethodEnabled={false} />)
+    await waitFor(() => expect(q('[data-action="remove-factor"]')).toBeTruthy())
+    await user.click(q('[data-action="remove-factor"]')!)
+    await user.click(q('[data-action="remove-confirm"]')!)
+    await waitFor(() => expect(q('[data-component="remove-factor-dialog"][data-state="remove-last-blocked"]')).toBeTruthy())
+    expect(q('[data-component="remove-factor-dialog"] [data-action="add-factor"]')).toBeNull()
+    expect(q('[data-error="remove-last"]')).toBeTruthy()
+  })
 })

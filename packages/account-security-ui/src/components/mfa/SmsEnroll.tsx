@@ -15,6 +15,7 @@ import {
 } from '../common/flowKit'
 import { maskPhone } from './factorMeta'
 import { useMfaNav } from './MfaOverview'
+import { usePendingFactor } from './pendingFactor'
 import type { EnrollFlowProps } from './TotpEnroll'
 
 /**
@@ -184,6 +185,7 @@ function SmsEnrollInner(props: EnrollFlowProps) {
   const [phase, setPhase] = useState<SmsPhase>({ name: 'loading' })
   const [phone, setPhone] = useState('')
   const alive = useRef(true)
+  const pending = usePendingFactor(api)
 
   const load = useCallback(async () => {
     setPhase({ name: 'loading' })
@@ -212,7 +214,9 @@ function SmsEnrollInner(props: EnrollFlowProps) {
   const sendCode = async () => {
     setPhase({ name: 'enter-phone', sending: true, failed: false })
     try {
+      pending.discard() // a resend replaces the previous pending factor
       const res = await api.enrollFactor({ type: 'sms', phone })
+      pending.track(res.factorId)
       setPhase({ name: 'confirm-code', factorId: res.factorId, activating: false, invalid: false })
     } catch {
       setPhase({ name: 'enter-phone', sending: false, failed: true })
@@ -223,6 +227,7 @@ function SmsEnrollInner(props: EnrollFlowProps) {
     setPhase({ name: 'confirm-code', factorId, activating: true, invalid: false })
     try {
       const factor = await api.activateFactor(factorId, code)
+      pending.clear()
       if (props.onActivated) props.onActivated(factor)
       else go(routes.overview)
     } catch {
@@ -264,7 +269,10 @@ function SmsEnrollInner(props: EnrollFlowProps) {
           onSendCode={() => void sendCode()}
           onActivate={() => undefined}
           onResend={() => undefined}
-          onCancel={() => go(routes.overview)}
+          onCancel={() => {
+            pending.discard()
+            go(routes.overview)
+          }}
         />
       )}
       {phase.name === 'confirm-code' && (
@@ -277,7 +285,10 @@ function SmsEnrollInner(props: EnrollFlowProps) {
           onSendCode={() => undefined}
           onActivate={(code) => void activate(phase.factorId, code)}
           onResend={() => void sendCode()}
-          onCancel={() => go(routes.overview)}
+          onCancel={() => {
+            pending.discard()
+            go(routes.overview)
+          }}
         />
       )}
     </FlowPage>

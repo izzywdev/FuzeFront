@@ -1,13 +1,14 @@
 /**
  * LoginPage MFA step-up gating (FFRNT-141 / FFRNT-362).
  *
+ * A server `mfa_required` is ALWAYS answerable: with every flag OFF the desktop step-up
+ * renders (a challenge must never dead-end). The flags only pick the presentation.
  * Both release flags default OFF. Pre-auth, so they resolve through the pre-auth
  * override (`window.__FF_FLAGS__`, platform/preAuthFlags.ts). Both states are
  * exercised (feature-flags skill: test BOTH states):
- *   - OFF: an `mfa_required` result keeps today's behaviour — an info notice, no
- *     step-up UI, nothing fetched.
- *   - mfa-management ON: the desktop step-up (MfaStepUpFlow) renders.
- *   - mfa-stepup-mobile ON: the mobile step-up (MfaStepUpMobileFlow) renders.
+ *   - OFF: the desktop step-up (MfaStepUpFlow) renders and works.
+ *   - mfa-management ON: the desktop step-up renders.
+ *   - mfa-stepup-mobile ON + compact viewport: the mobile step-up renders.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -45,6 +46,15 @@ const CHALLENGE = {
   ],
 }
 
+function setCompact(compact: boolean) {
+  window.matchMedia = ((q: string) => ({
+    matches: compact,
+    media: q,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  })) as unknown as typeof window.matchMedia
+}
+
 function setFlags(flags: Record<string, boolean> | undefined) {
   const w = window as unknown as { __FF_FLAGS__?: Record<string, boolean> }
   w.__FF_FLAGS__ = flags
@@ -60,6 +70,7 @@ function setLocation(pathname: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setCompact(false)
   setLocation('/login')
   ;(sharedMock.useCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue({
     user: null,
@@ -95,26 +106,37 @@ describe('pre-auth flag resolution', () => {
     expect(isPreAuthFlagEnabled(MGMT)).toBe(false)
   })
 
-  it('resolveStepUpVariant: OFF → null; mgmt → desktop; mobile → mobile; both → by viewport', () => {
+  it('resolveStepUpVariant is NEVER null: desktop by default, mobile only with its flag AND a compact viewport', () => {
     setFlags(undefined)
-    expect(resolveStepUpVariant(false)).toBeNull()
+    expect(resolveStepUpVariant(false)).toBe('desktop')
+    expect(resolveStepUpVariant(true)).toBe('desktop')
     setFlags({ [MGMT]: true })
     expect(resolveStepUpVariant(true)).toBe('desktop')
     setFlags({ [MOBILE]: true })
-    expect(resolveStepUpVariant(false)).toBe('mobile')
-    setFlags({ [MGMT]: true, [MOBILE]: true })
-    expect(resolveStepUpVariant(true)).toBe('mobile')
     expect(resolveStepUpVariant(false)).toBe('desktop')
+    expect(resolveStepUpVariant(true)).toBe('mobile')
   })
 })
 
 describe('LoginPage — MFA step-up', () => {
-  it('flags OFF (default): unchanged — the info notice shows and NO step-up UI renders', async () => {
+  it('EVERY flag OFF: a server mfa_required still renders a WORKING step-up (never a dead-end notice)', async () => {
     setFlags(undefined)
+    const persist = vi.spyOn(authAPI, 'completeMfaSession').mockImplementation(() => {})
+    vi.spyOn(authAPI, 'getCurrentUser').mockRejectedValue(new Error('stop after persist'))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ token: 'tok_off', sessionId: 's' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    )
+    const user = userEvent.setup()
     render(<LoginPage />)
-    await waitFor(() => expect(screen.getByText(/additional verification is required/i)).toBeInTheDocument())
-    expect(document.querySelector('[data-component="mfa-challenge"]')).toBeNull()
+    await waitFor(() => expect(document.querySelector('[data-component="mfa-challenge"]')).toBeTruthy())
+    expect(screen.queryByText(/additional verification is required/i)).toBeNull()
     expect(document.querySelector('[data-panel="choose-factor"]')).toBeNull()
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('123456')
+    await user.click(document.querySelector('[data-action="verify-mfa"]')!)
+    await waitFor(() => expect(persist).toHaveBeenCalledWith({ token: 'tok_off', sessionId: 's' }))
+    vi.unstubAllGlobals()
   })
 
   it('mfa-management ON: the desktop step-up renders for the challenge', async () => {
@@ -124,7 +146,15 @@ describe('LoginPage — MFA step-up', () => {
     expect(document.querySelector('[data-frame="05-step-up-challenge"]')).toBeTruthy()
   })
 
-  it('mfa-stepup-mobile ON: the mobile step-up renders (choose a factor)', async () => {
+  it('mfa-stepup-mobile ON on a wide viewport still renders the desktop step-up', async () => {
+    setFlags({ [MOBILE]: true })
+    render(<LoginPage />)
+    await waitFor(() => expect(document.querySelector('[data-component="mfa-challenge"]')).toBeTruthy())
+    expect(document.querySelector('[data-panel="choose-factor"]')).toBeNull()
+  })
+
+  it('mfa-stepup-mobile ON + compact viewport: the mobile step-up renders (choose a factor)', async () => {
+    setCompact(true)
     setFlags({ [MOBILE]: true })
     render(<LoginPage />)
     await waitFor(() => expect(document.querySelector('[data-panel="choose-factor"][data-state="loaded"]')).toBeTruthy())
@@ -132,6 +162,7 @@ describe('LoginPage — MFA step-up', () => {
   })
 
   it('a verified step-up persists the minted session through authAPI', async () => {
+    setCompact(true)
     setFlags({ [MOBILE]: true })
     const persist = vi.spyOn(authAPI, 'completeMfaSession').mockImplementation(() => {})
     vi.spyOn(authAPI, 'getCurrentUser').mockRejectedValue(new Error('stop after persist'))

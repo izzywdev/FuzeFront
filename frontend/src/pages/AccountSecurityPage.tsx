@@ -59,7 +59,7 @@ export default function AccountSecurityPage() {
           small screens only, behind fuzefront.security.mfa-stepup-mobile. */}
       {mfaStepUpMobile && compact && (
         <div style={{ marginBottom: 'var(--space-6)' }}>
-          <SecurityStatusMobileFlow getToken={getToken} onNavigate={onNavigate} />
+          <SecurityStatusMobileFlow getToken={getToken} onNavigate={onNavigate} addMethodEnabled={mfaManagement} />
         </div>
       )}
       <AccountSecurityHub

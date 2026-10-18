@@ -157,8 +157,16 @@ test.describe('TOTP enrolment (frame 02-totp-enroll)', () => {
     })
   })
 
-  test('shows QR + copyable setup key + 6-cell OTP input', async ({ page }) => {
+  test('opening the route creates nothing; Start enrols, then shows QR + copyable setup key + 6-cell OTP input', async ({ page }) => {
+    let enrolCalls = 0
+    await page.route('**/v1/security/mfa/factors', route => {
+      if (route.request().method() === 'POST') enrolCalls += 1
+      return route.fallback()
+    })
     await page.goto('/account/security/mfa/add/authenticator', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-component='totp-enroll'][data-state='intro']")).toBeVisible()
+    expect(enrolCalls).toBe(0)
+    await page.locator("[data-action='start-setup']").click()
     const card = page.locator("[data-component='totp-enroll'][data-state='scan']")
     await expect(card).toBeVisible()
     await expect(card.locator('[data-provisioning-uri]')).toBeVisible()
@@ -173,6 +181,7 @@ test.describe('TOTP enrolment (frame 02-totp-enroll)', () => {
       route.fulfill(json(401, { error: 'invalid code', code: 'NOT_ACTIVE' })),
     )
     await page.goto('/account/security/mfa/add/authenticator', { waitUntil: 'domcontentloaded' })
+    await page.locator("[data-action='start-setup']").click()
     const otp = page.locator("[data-component='otp-input']")
     await otp.locator('input').first().click()
     await page.keyboard.type('111111')
@@ -182,8 +191,25 @@ test.describe('TOTP enrolment (frame 02-totp-enroll)', () => {
     expect(page.url()).toContain('/mfa/add/authenticator')
   })
 
+  test('cancelling after Start DELETEs the pending factor (best-effort cleanup)', async ({ page }) => {
+    let deleted = ''
+    await page.route('**/v1/security/mfa/factors/*', route => {
+      if (route.request().method() === 'DELETE') {
+        deleted = route.request().url()
+        return route.fulfill({ status: 204 })
+      }
+      return route.fallback()
+    })
+    await page.goto('/account/security/mfa/add/authenticator', { waitUntil: 'domcontentloaded' })
+    await page.locator("[data-action='start-setup']").click()
+    await expect(page.locator("[data-component='totp-enroll'][data-state='scan']")).toBeVisible()
+    await page.locator("[data-component='totp-enroll'] [data-action='cancel']").click()
+    await expect.poll(() => deleted).toContain('fct_totp_new')
+  })
+
   test('OTP input is paste-aware', async ({ page }) => {
     await page.goto('/account/security/mfa/add/authenticator', { waitUntil: 'domcontentloaded' })
+    await page.locator("[data-action='start-setup']").click()
     const inputs = page.locator("[data-component='otp-input'] input")
     await inputs.first().click()
     await page.evaluate(() => {
@@ -388,11 +414,14 @@ test.describe('MFA step-up at sign-in (frame 05-step-up-challenge) — pre-auth'
     ],
   }
 
-  async function reachChallenge(page: Page) {
-    await page.addInitScript(flag => {
-      const w = window as unknown as { __FF_FLAGS__: Record<string, boolean> }
-      w.__FF_FLAGS__ = { [flag]: true }
-    }, FLAG)
+  async function reachChallenge(page: Page, flagOn = true) {
+    await page.addInitScript(
+      ([flag, on]) => {
+        const w = window as unknown as { __FF_FLAGS__: Record<string, boolean> }
+        w.__FF_FLAGS__ = { [flag as string]: on as boolean }
+      },
+      [FLAG, flagOn],
+    )
     await page.route('**/v1/security/methods', route => route.fulfill(json(200, methods(['totp', 'sms']))))
     await page.route('**/v1/security/session', route => {
       if (route.request().method() === 'POST') return route.fulfill(json(200, CHALLENGE))
@@ -407,6 +436,15 @@ test.describe('MFA step-up at sign-in (frame 05-step-up-challenge) — pre-auth'
       page.locator("button[type='submit']").first().click(),
     ])
   }
+
+  test('EVERY flag OFF: a server mfa_required still renders a working step-up (no lockout)', async ({ page }) => {
+    await page.route('**/v1/security/mfa/verify', route => route.fulfill(json(401, { error: 'x', code: 'NOT_ACTIVE' })))
+    await reachChallenge(page, false)
+    await expect(page.locator("[data-component='mfa-challenge']")).toBeVisible()
+    await page.locator("[data-component='otp-input'] input").first().click()
+    await page.keyboard.type('123456')
+    await expect(page.locator("[data-action='verify-mfa']")).toBeEnabled()
+  })
 
   test('mfa_required renders the challenge card with a factor picker', async ({ page }) => {
     await reachChallenge(page)
