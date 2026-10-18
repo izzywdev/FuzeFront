@@ -352,6 +352,20 @@ describe('contact verification', () => {
     expect(db.__tables.users.find((u: any) => u.id === 'u1').phone_verified).toBeFalsy()
   })
 
+  it('phone confirm does not verify a number swapped in while the OTP check was in flight', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15550000000', roles: '["user"]' })
+    const p = newProvider(db)
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    ;(notifications.checkSmsOtp as jest.Mock).mockImplementationOnce(async () => {
+      // A concurrent /start for a new number lands mid-check.
+      Object.assign(db.__tables.users[0], { phone: '+15559999999', phone_verified: false })
+      return true
+    })
+    await expect(p.confirmPhoneVerification(session.token, '+15550000000', '123456')).rejects.toBeInstanceOf(UnauthorizedError)
+    expect(db.__tables.users[0].phone_verified).toBe(false)
+  })
+
   it('changing the phone via start resets phone_verified', async () => {
     const db = makeFakeDb()
     db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15550000000', phone_verified: true, roles: '["user"]' })

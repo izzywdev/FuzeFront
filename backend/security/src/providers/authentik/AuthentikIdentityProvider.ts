@@ -1184,7 +1184,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     }
     const ok = await this.notifications.checkSmsOtp(phone, code)
     if (!ok) throw new UnauthorizedError('invalid or expired code')
-    await this.db('users').where({ id: user.id }).update({ phone_verified: true })
+    // Re-assert the phone in the write: a concurrent /start for a new number
+    // may have changed users.phone while the OTP check was in flight.
+    const updated = await this.db('users')
+      .where({ id: user.id, phone })
+      .update({ phone_verified: true })
+    if (!updated) throw new UnauthorizedError('invalid or expired code')
     return { emailVerified: false, phoneVerified: true, phone }
   }
 
