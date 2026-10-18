@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AccountSecurityHub, SecurityStatusMobileFlow } from '@fuzefront/account-security-ui'
 import { useFlag } from '../platform/featureFlags'
 import { getActiveAuthToken } from '../lib/accounts'
 import { ACCOUNT_SECURITY_FLAGS } from '../components/account-security/FlaggedSurface'
+import { useCompactViewport } from '../lib/compactViewport'
 
 /**
  * Feature-flag gate for the account-security hub
@@ -18,23 +19,6 @@ import { ACCOUNT_SECURITY_FLAGS } from '../components/account-security/FlaggedSu
  */
 function useAccountSecurityHubFlag(): boolean {
   return useFlag('fuzefront.account-security.hub', false)
-}
-
-/** Small-screen (Android TWA / phone) viewport, kept in sync with the media query. */
-function useCompactViewport(): boolean {
-  const query = '(max-width: 640px)'
-  const [compact, setCompact] = useState(
-    () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(query).matches
-  )
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const mql = window.matchMedia(query)
-    const onChange = () => setCompact(mql.matches)
-    onChange()
-    mql.addEventListener?.('change', onChange)
-    return () => mql.removeEventListener?.('change', onChange)
-  }, [])
-  return compact
 }
 
 /**

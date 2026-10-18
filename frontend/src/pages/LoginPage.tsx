@@ -14,6 +14,7 @@ import type {
 } from '@fuzefront/auth-ui'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 import { isPreAuthFlagEnabled } from '../platform/preAuthFlags'
+import { isCompactViewport } from '../lib/compactViewport'
 import { ACCOUNT_SECURITY_FLAGS } from '../components/account-security/FlaggedSurface'
 
 /**
@@ -142,10 +143,7 @@ function LoginPage() {
   // MFA step-up (FFRNT-141 / FFRNT-362). Held only when a step-up flag is ON; with
   // both OFF the original notice-only behaviour is unchanged.
   const [challenge, setChallenge] = useState<MfaRequiredChallenge | null>(null)
-  const compact =
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(max-width: 640px)').matches
+  const compact = isCompactViewport()
   const stepUpVariant = resolveStepUpVariant(compact)
   const [callbackNotice, setCallbackNotice] = useState('')
 
