@@ -1,4 +1,4 @@
-import { TOPICS, type Repository, type ScanResult } from '@fuzequality/contracts'
+import { TOPICS, repositoryScanFailureSchema, type Repository, type ScanResult } from '@fuzequality/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import { InProcessEventBus, relayOutboxBatch } from './events'
 import { MemoryCatalogStore, PostgresCatalogStore } from './store'
@@ -18,6 +18,23 @@ function seed(repositoryValue: Repository = repository) {
 }
 
 describe('repository analysis lifecycle storage', () => {
+  it('requires byte evidence only for transport-limit failures', () => {
+    const base = {
+      message: 'Repository scan failed safely.',
+      sourceRevision: 'a'.repeat(40),
+      failedAt: '2026-10-18T00:00:00.000Z',
+    }
+
+    expect(repositoryScanFailureSchema.safeParse({
+      ...base,
+      code: 'SCAN_PROCESSING_FAILED',
+    }).success).toBe(true)
+    expect(repositoryScanFailureSchema.safeParse({
+      ...base,
+      code: 'SCAN_TRANSPORT_LIMIT_EXCEEDED',
+    }).success).toBe(false)
+  })
+
   it('records a controlled scan failure only while work is active and clears it on retry', async () => {
     const store = new MemoryCatalogStore(seed({ ...repository, lastScanStatus: 'running', lastScanFailure: undefined }))
     const failure = {
@@ -39,6 +56,23 @@ describe('repository analysis lifecycle storage', () => {
     expect(await store.repository(repository.id, 'tenant-1')).toMatchObject({
       lastScanStatus: 'queued',
       lastScanFailure: undefined,
+    })
+  })
+
+  it('records sanitized terminal worker exhaustion without transport byte fields', async () => {
+    const store = new MemoryCatalogStore(seed({ ...repository, lastScanStatus: 'queued', lastScanFailure: undefined }))
+    const failure = {
+      code: 'SCAN_PROCESSING_FAILED' as const,
+      message: 'Repository analysis could not complete after bounded worker retries.',
+      sourceRevision: 'b'.repeat(40),
+      failedAt: '2026-10-18T00:00:00.000Z',
+    }
+
+    await store.setRepositoryScanFailure(repository.id, failure)
+
+    expect(await store.repository(repository.id, 'tenant-1')).toMatchObject({
+      lastScanStatus: 'failed',
+      lastScanFailure: failure,
     })
   })
 
