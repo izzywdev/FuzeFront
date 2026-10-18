@@ -22,6 +22,8 @@ import { permitSchema } from '../permit/schema'
 import { EMPLOYEE_ROLE_CATALOG_ENTRY, resolveEmployeeStatus } from '../services/employeeRole'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 import { isMemberDirectoryEnabled } from '../utils/memberDirectoryFlag'
+import { isInviteV2Enabled } from '../utils/inviteV2Flag'
+import * as inviteV2 from './organizationInvitationsV2'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import { assertTenantMatches, sessionTenantId } from '../middleware/tenant-context'
 import { mintOrgSessionToken, OrgSessionError } from '../services/orgSessionToken'
@@ -717,6 +719,10 @@ router.delete(
 
 // GET /api/organizations/:id/invitations — list pending invitations
 router.get('/:id/invitations', authenticateToken, async (req: any, res) => {
+  // FFRNT-307: Org invitations v2 (contract-shaped) behind the release flag, default OFF.
+  if (await isInviteV2Enabled({ userId: req.user?.id, organizationId: req.params.id })) {
+    return inviteV2.listHandler(req, res)
+  }
   try {
     const { id } = req.params
 
@@ -744,6 +750,10 @@ router.get('/:id/invitations', authenticateToken, async (req: any, res) => {
 
 // POST /api/organizations/:id/invitations — create invitation
 router.post('/:id/invitations', authenticateToken, async (req: any, res) => {
+  // FFRNT-307: Org invitations v2 (contract-shaped) behind the release flag, default OFF.
+  if (await isInviteV2Enabled({ userId: req.user?.id, organizationId: req.params.id })) {
+    return inviteV2.createHandler(req, res)
+  }
   try {
     const { id } = req.params
     const { email, role = 'member' } = req.body
@@ -833,6 +843,10 @@ router.post('/:id/invitations', authenticateToken, async (req: any, res) => {
 // NOTE: must be registered BEFORE /:id/invitations/:invitationId routes to avoid
 // "bulk" being treated as an invitationId.
 router.post('/:id/invitations/bulk', authenticateToken, async (req: any, res) => {
+  // FFRNT-307: Org invitations v2 (contract-shaped) behind the release flag, default OFF.
+  if (await isInviteV2Enabled({ userId: req.user?.id, organizationId: req.params.id })) {
+    return inviteV2.bulkHandler(req, res)
+  }
   try {
     const { id } = req.params
     const { emails, role = 'member' } = req.body
@@ -925,6 +939,10 @@ router.post('/:id/invitations/bulk', authenticateToken, async (req: any, res) =>
 
 // POST /api/organizations/:id/invitations/:invitationId/resend — resend email
 router.post('/:id/invitations/:invitationId/resend', authenticateToken, async (req: any, res) => {
+  // FFRNT-307: Org invitations v2 (contract-shaped) behind the release flag, default OFF.
+  if (await isInviteV2Enabled({ userId: req.user?.id, organizationId: req.params.id })) {
+    return inviteV2.resendHandler(req, res)
+  }
   try {
     const { id, invitationId } = req.params
 
@@ -984,6 +1002,10 @@ router.post('/:id/invitations/:invitationId/resend', authenticateToken, async (r
 
 // DELETE /api/organizations/:id/invitations/:invitationId — revoke
 router.delete('/:id/invitations/:invitationId', authenticateToken, async (req: any, res) => {
+  // FFRNT-307: Org invitations v2 (contract-shaped) behind the release flag, default OFF.
+  if (await isInviteV2Enabled({ userId: req.user?.id, organizationId: req.params.id })) {
+    return inviteV2.revokeHandler(req, res)
+  }
   try {
     const { id, invitationId } = req.params
 
@@ -1479,6 +1501,10 @@ router.get('/:id/directory', authenticateToken, async (req: any, res) => {
 // POST /api/organizations/:id/members — invite a single member (legacy path)
 // Creates a pending invitation row, identical to POST /:id/invitations.
 router.post('/:id/members', authenticateToken, async (req: any, res) => {
+  // FFRNT-307: Org invitations v2 (contract-shaped) behind the release flag, default OFF.
+  if (await isInviteV2Enabled({ userId: req.user?.id, organizationId: req.params.id })) {
+    return inviteV2.addMemberHandler(req, res)
+  }
   try {
     const { id } = req.params
     const { email, role = 'member' } = req.body
