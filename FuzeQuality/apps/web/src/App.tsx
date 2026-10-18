@@ -4409,7 +4409,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setLoadingMoreFlows(true)
     setHistoryPaginationError(undefined)
     try {
-      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => {
+      const results = await Promise.allSettled(cursors.map(async ([repositoryId, cursor]) => {
         const repository = data.repositories.find(item => item.id === repositoryId)
         const page = normalizeHistoryPage(await api.repositoryFlowCandidates(
           repositoryId,
@@ -4428,12 +4428,24 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         return { repositoryId, page }
       }))
       if (flowQueryRef.current !== query) return
+      const groups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
       setFlowCandidates(current => [...new Map(
         [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
       ).values()])
-      setFlowNextCursors(Object.fromEntries(
-        groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
-      ))
+      setFlowNextCursors(current => {
+        const next = { ...current }
+        for (const group of groups) {
+          if (group.page.page.nextCursor) next[group.repositoryId] = group.page.page.nextCursor
+          else delete next[group.repositoryId]
+        }
+        return next
+      })
+      const failed = results.filter(result => result.status === 'rejected').length
+      if (failed) {
+        setHistoryPaginationError(
+          `Unable to load more UX-flow history for ${failed} ${failed === 1 ? 'repository' : 'repositories'}. Successful evidence remains visible.`
+        )
+      }
     } catch (cause) {
       if (flowQueryRef.current === query) {
         setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more UX-flow history.')
