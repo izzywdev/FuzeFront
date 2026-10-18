@@ -22,21 +22,23 @@ FuzeFront is a **Module-Federation host shell**: a dark-default dashboard that d
 mounts and fuses remote micro-frontends ("apps") into one runtime experience. The shell
 provides persistent chrome (top bar, navigation, launcher, identity, notifications); each app
 provides a **content surface** mounted into the shell's content area, plus optional
-navigation contributions. The shell's shared-dependency contract (React 19 singleton, the
-design system) is stable and apps consume it — never bundle their own React.
+navigation contributions.
 
 An app is mounted by `frontend/src/utils/loadFederatedApp.ts` + `FederatedAppLoader.tsx`,
 which resolve the app's `integration.remoteEntry` against the shell origin and render the
-remote inside `Layout` → `.content-area`. Three integration types are supported
-(`module-federation`, `iframe`/`spa`, `web-component`). The host-provided **context, props
-and the mount loading/error/retry treatment reach a `module-federation` or `web-component`
-remote** — one that shares the shell's `window` and receives component props. A cross-origin
-`iframe`/`spa` app is sandboxed: it has its own `window`, does **not** receive
-`window.__FUZEFRONT__`, `window.__FRONTFUSE_CONTEXT__` or props, and the loader renders it as a
-plain sandboxed `<iframe src>` with no load-error/retry wrapper. So §3's in-shell behavior
-contract below applies to same-origin MF/web-component remotes; an iframe app coordinates with
-the host only through whatever `postMessage` channel it and the host agree on (none is defined
-today).
+remote inside `Layout` → `.content-area`. Three integration types are supported, and **what
+the host provides differs by type** — the in-shell contract below is written for
+module-federation:
+
+| Integration | React | Host context / props | Mount load-error / retry |
+|---|---|---|---|
+| `module-federation` | **consumes the shell's React 19 singleton — never bundle your own** | `getToken` prop + `window.__FUZEFRONT__` / `window.__FRONTFUSE_CONTEXT__` | yes (`FederatedAppErrorBoundary` + Retry) |
+| `web-component` | shares the shell `window`, but the loader passes **no props** — only `data-app-slug` / `data-app-name` attributes | shares `window.__FUZEFRONT__` | **no** — the loader hides the spinner once the script loads; a script that fails to define the element leaves an empty surface |
+| `iframe` / `spa` | **ships its own React/runtime** (separate document) | **none** — own `window`, no bridge, no props | **no** — plain sandboxed `<iframe src>`; coordinate only via a `postMessage` channel you and the host agree on (none defined today) |
+
+So the React-singleton rule and §3's in-shell behavior contract apply to **module-federation**
+remotes; a web-component shares the window but must not expect props or retry; a cross-origin
+iframe is fully sandboxed and owns its own dependencies and failure handling.
 
 ## 2. Shell owns vs. app owns — the ownership boundary
 

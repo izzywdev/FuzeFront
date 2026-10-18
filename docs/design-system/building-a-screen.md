@@ -97,7 +97,7 @@ Everything in Track A, plus the app-platform wiring. Design-first still comes fi
 | Wrote feature UI with no approved covering frame flow | `gate-frames-first` (BLOCKED → hard-fail) |
 | Frames PR with an invalid manifest, or a flow with no mobile coverage | `gate-frames-schema` (+ responsive-coverage check) — *ships with the phase-2 gates PR* |
 | Edited frames without re-stamping | `gate-frames-stamped` |
-| Raw hex / px / font in frames or feature code | `gate-ds-conformance` (changed-lines, enforcing) |
+| Raw hex / px / font in **feature code** (`frontend`/`apps`/`src`/`packages`) | `gate-ds-conformance` (changed-lines, enforcing) — note it does **not** scan `design/frames/**` HTML/CSS; tokens-only in frames is reviewer-enforced |
 | Mobile layout broken (drawer, touch targets, overflow) | the `mobile-layout` Playwright gate |
 | Shipped a console error / CSP / failed MF load | `ui-runtime-validation` (desktop + mobile) |
 
