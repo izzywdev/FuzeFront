@@ -170,6 +170,9 @@
 .pv-resend .pv-count { font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
 .pv-change { color: var(--text-secondary); background: none; border: 0; font-family: var(--font-sans);
   font-size: var(--text-sm); cursor: pointer; min-height: var(--pv-touch-min); padding: 0; text-decoration: underline; }
+.pv-change[disabled] { color: var(--text-tertiary); cursor: not-allowed; text-decoration: none; }
+/* Resend in flight: spinner sized for the text button, tinted for a non-accent background. */
+.pv-spinner--inline { width: 14px; height: 14px; border-color: var(--border-strong); border-top-color: var(--accent-color); }
 
 /* ---------- Alert primitive ---------- */
 .pv-alert { display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);

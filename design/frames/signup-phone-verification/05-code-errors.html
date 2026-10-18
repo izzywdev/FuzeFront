@@ -33,7 +33,7 @@
         <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
     </div>
     <form class="pv-form" data-form="code" novalidate>
-      <div class="pv-otp" data-component="otp-input" data-otp-state="error" role="group" aria-label="6-digit code">
+      <div class="pv-otp" data-component="otp-input" data-otp-state="error" role="group" aria-label="6-digit code" aria-describedby="pv-otp-err-invalid-1">
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" aria-invalid="true" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" aria-invalid="true" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" aria-invalid="true" />
@@ -41,7 +41,7 @@
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" aria-invalid="true" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" aria-invalid="true" />
       </div>
-      <div class="pv-error" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. Enter it again. You have 3 tries left.</div>
+      <div class="pv-error" id="pv-otp-err-invalid-1" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. Enter it again. You have 3 tries left.</div>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" data-submit-guard="awaiting-new-code" disabled>Confirm</button>
         <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
@@ -79,7 +79,7 @@
         <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
     </div>
     <form class="pv-form" data-form="code" novalidate>
-      <div class="pv-otp" data-component="otp-input" data-otp-state="error" role="group" aria-label="6-digit code">
+      <div class="pv-otp" data-component="otp-input" data-otp-state="error" role="group" aria-label="6-digit code" aria-describedby="pv-otp-err-invalid-2">
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" aria-invalid="true" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" aria-invalid="true" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" aria-invalid="true" />
@@ -87,7 +87,7 @@
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" aria-invalid="true" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" aria-invalid="true" />
       </div>
-      <div class="pv-error" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. Enter it again. You have 3 tries left.</div>
+      <div class="pv-error" id="pv-otp-err-invalid-2" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. Enter it again. You have 3 tries left.</div>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" data-submit-guard="awaiting-new-code" disabled>Confirm</button>
         <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
@@ -130,7 +130,7 @@
         <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
     </div>
     <form class="pv-form" data-form="code" novalidate>
-      <div class="pv-otp" data-component="otp-input" data-otp-state="error" role="group" aria-label="6-digit code">
+      <div class="pv-otp" data-component="otp-input" data-otp-state="error" role="group" aria-label="6-digit code" aria-describedby="pv-otp-err-invalid-3">
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" aria-invalid="true" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" aria-invalid="true" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" aria-invalid="true" />
@@ -138,7 +138,7 @@
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" aria-invalid="true" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" aria-invalid="true" />
       </div>
-      <div class="pv-error" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. Enter it again. You have 3 tries left.</div>
+      <div class="pv-error" id="pv-otp-err-invalid-3" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. Enter it again. You have 3 tries left.</div>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" data-submit-guard="awaiting-new-code" disabled>Confirm</button>
         <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
@@ -180,7 +180,7 @@
         <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
     </div>
     <form class="pv-form" data-form="code" novalidate>
-      <div class="pv-otp" data-component="otp-input" data-otp-state="disabled" role="group" aria-label="6-digit code">
+      <div class="pv-otp" data-component="otp-input" data-otp-state="disabled" role="group" aria-label="6-digit code" aria-describedby="pv-otp-err-expired-4">
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" disabled />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" disabled />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" disabled />
@@ -188,7 +188,7 @@
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" disabled />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" disabled />
       </div>
-      <div class="pv-error" style="justify-content:center" data-error="expired-code" role="alert"><span aria-hidden="true">⏱</span>That code has expired. Request a new one to continue.</div>
+      <div class="pv-error" id="pv-otp-err-expired-4" style="justify-content:center" data-error="expired-code" role="alert"><span aria-hidden="true">⏱</span>That code has expired. Request a new one to continue.</div>
       <div class="pv-actions">
         <button type="button" class="pv-btn pv-btn--primary" data-action="resend" data-resend-via="session">Send a new code</button>
       </div>
@@ -261,7 +261,7 @@
         <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
     </div>
     <form class="pv-form" data-form="code" novalidate>
-      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code">
+      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code" aria-describedby="pv-otp-err-unavailable-5">
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" value="4" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" value="8" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" value="2" />
@@ -269,7 +269,7 @@
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" value="1" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" value="3" />
       </div>
-      <div class="pv-alert pv-alert--warning" data-error="verify-unavailable" role="alert"><span class="pv-alert__icon" aria-hidden="true">⚠</span>
+      <div class="pv-alert pv-alert--warning" id="pv-otp-err-unavailable-5" data-error="verify-unavailable" role="alert"><span class="pv-alert__icon" aria-hidden="true">⚠</span>
         <span><b>We couldn't check your code right now.</b> This isn't a problem with your code, so you haven't used up a try. Try again in a moment.</span></div>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact">Try again</button>
@@ -308,7 +308,7 @@
         <button type="button" class="pv-change" data-action="change-number">Change number</button></p>
     </div>
     <form class="pv-form" data-form="code" novalidate>
-      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code">
+      <div class="pv-otp" data-component="otp-input" data-otp-state="idle" role="group" aria-label="6-digit code" aria-describedby="pv-otp-err-unavailable-6">
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" value="4" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" value="8" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" value="2" />
@@ -316,7 +316,7 @@
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" value="1" />
         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" value="3" />
       </div>
-      <div class="pv-alert pv-alert--warning" data-error="verify-unavailable" role="alert"><span class="pv-alert__icon" aria-hidden="true">⚠</span>
+      <div class="pv-alert pv-alert--warning" id="pv-otp-err-unavailable-6" data-error="verify-unavailable" role="alert"><span class="pv-alert__icon" aria-hidden="true">⚠</span>
         <span><b>We couldn't check your code right now.</b> This isn't a problem with your code, so you haven't used up a try. Try again in a moment.</span></div>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact">Try again</button>

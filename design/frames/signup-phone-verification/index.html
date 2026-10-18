@@ -155,7 +155,14 @@
         and the provider runs <code>users.where({ phone }).update({ phone_verified: true })</code>, which marks <i>every</i>
         account with that number as verified.</li>
       <li data-delta="pending-phone"><code>/start</code> must not write <code>users.phone</code> before the user proves they
-        have the phone. It should hold a pending number, promote it on confirm, and accept a confirm body of <code>{ code }</code>.</li>
+        have the phone. Today the provider writes <code>users.phone</code> and only <i>then</i> awaits <code>sendSmsOtp</code>.
+        It should hold a pending number, promote it on confirm, and accept a confirm body of <code>{ code }</code>. The pending
+        challenge, and so <code>phonePending</code>, is committed <b>only after the SMS provider accepts the send</b>. On 502, 503
+        or 429 it is rolled back, so a reload never resumes at code entry when no code was sent.</li>
+      <li data-delta="return-path"><span class="pv-tag pv-tag--delta">security</span> Every <code>?next</code> goes through one
+        <code>safeReturnPath()</code> guard, following LoginPage's allowlist approach: a single leading <code>/</code> (never
+        <code>//</code>, never a scheme), same origin, normalized, and on the allowlist of app routes. Anything else goes to the
+        default app. Without it, <code>?next=//evil.example</code> is an open redirect straight after sign-in.</li>
       <li data-delta="start-ack"><code>202</code> body <code>PhoneVerifyStartAck { maskedPhone, expiresInSeconds, resendAfterSeconds }</code>.
         On a resend, <code>expiresInSeconds</code> is the code's <b>actual remaining</b> lifetime. The provider may re-send the
         same unexpired code without extending it.</li>

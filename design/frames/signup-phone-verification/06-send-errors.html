@@ -296,7 +296,7 @@
       <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
       <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
     </ol>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-number-unavailable" data-http-status="409">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-number-unavailable" data-http-status="409" data-policy="optional">
 <div class="pv-center">
       <div class="pv-hero pv-hero--warning" aria-hidden="true">☎</div>
       <h2 class="pv-title">This number can't be used here</h2>
@@ -305,6 +305,40 @@
     <div class="pv-actions">
       <button type="button" class="pv-btn pv-btn--primary" data-action="change-number">Use a different number</button>
       <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>error-number-unavailable</b> · under <code>required</code></p>
+      <p class="pv-state__note">Same 409, but Skip isn't allowed. The escape is <b>Continue for now</b> (<code>continue-without-phone</code>), alongside "Use a different number", so a user with only one phone isn't stuck. They are re-prompted at the next sign-in.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-number-unavailable" data-http-status="409" data-policy="required">
+<div class="pv-center">
+      <div class="pv-hero pv-hero--warning" aria-hidden="true">☎</div>
+      <h2 class="pv-title">This number can't be used here</h2>
+      <p class="pv-sub">Try a different mobile number. If this number is already set up on another account of yours, remove it there first.</p>
+    </div>
+    <div class="pv-actions">
+      <button type="button" class="pv-btn pv-btn--primary" data-action="change-number">Use a different number</button>
+      <button type="button" class="pv-btn pv-btn--link" data-action="continue-without-phone">Continue for now</button>
     </div>
     <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>

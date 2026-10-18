@@ -95,6 +95,29 @@
     <p>Re-prompting happens once per sign-in, not on every navigation: a deferral during that sign-in (503 or lockout) holds until the next sign-in. This is a frontend routing delta on the approved <code>signin</code> flow, behind the same flag. No approved frame changes.</p>
   </section>
 
+  <section class="pv-section" data-return-path-rule>
+    <h2>Return-path safety: <code>?next</code> is never an open redirect</h2>
+    <p>Every <code>next</code> this flow reads or writes goes through one shared guard, <code>safeReturnPath(next)</code>. That covers the sign-in → <code>/signup/phone?next=…</code> re-prompt, the session-expired → sign-in → back hop, and every <code>nextAfterPhone()</code> exit. The guard follows the existing <code>LoginPage</code> approach (<code>frontend/src/pages/LoginPage.tsx:103-114</code>): an <b>allowlist</b> of same-origin paths, never a generic redirect. Any value that fails a check is <b>discarded</b>, and the user lands on the default app. Nothing is reflected, and no error is shown.</p>
+    <ol data-return-path-checks>
+      <li>Decode <b>once</b>. A value that still contains <code>%2F</code>/<code>%5C</code> after one decode is rejected (no double-encoding tricks). The one exception is the single nested <code>next</code> inside a <code>/signup/phone</code> target, which is decoded and checked again with this same guard, at most one level deep.</li>
+      <li>It must start with <b>exactly one</b> <code>/</code>. Rejected: <code>//…</code>, <code>/\…</code>, <code>\…</code>, any scheme (<code>https:</code>, <code>javascript:</code>, <code>data:</code>), and control characters or whitespace.</li>
+      <li>Resolve with <code>new URL(next, location.origin)</code> and require <code>url.origin === location.origin</code>. Then use only <code>pathname + search</code>, normalized (no <code>.</code>/<code>..</code> segments, no fragment).</li>
+      <li>The normalized pathname must match the <b>allowlist</b> of app route prefixes, held in one module next to LoginPage's: e.g. <code>/apps/</code>, <code>/account/</code>, <code>/signup/phone</code>, <code>/fuzepicker/mentions</code>. A route that isn't listed falls back to the default app.</li>
+    </ol>
+    <table class="pv-table">
+      <thead><tr><th><code>next</code> value</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr data-return-case="ok"><td><code>/apps/plan</code></td><td>Allowed: <code>/apps/plan</code></td></tr>
+        <tr data-return-case="ok-nested"><td><code>/signup/phone?next=%2Fapps%2Fplan</code></td><td>Allowed. The inner <code>/apps/plan</code> is checked again by the same guard</td></tr>
+        <tr data-return-case="protocol-relative"><td><code>//evil.example</code></td><td>Rejected → default app</td></tr>
+        <tr data-return-case="scheme"><td><code>https://evil.example/apps/plan</code>, <code>javascript:alert(1)</code></td><td>Rejected → default app</td></tr>
+        <tr data-return-case="backslash"><td><code>/\evil.example</code></td><td>Rejected → default app</td></tr>
+        <tr data-return-case="not-allowlisted"><td><code>/admin/impersonate</code></td><td>Not on the allowlist → default app</td></tr>
+        <tr data-return-case="nested-bad"><td><code>/signup/phone?next=%2F%2Fevil.example</code></td><td>The outer path is allowed, the inner one is rejected: the user goes to <code>/signup/phone</code> and its exits use the default app</td></tr>
+      </tbody>
+    </table>
+  </section>
+
 <nav class="pv-nav" aria-label="Frame navigation">
   <span class="pv-nav__caption"><b>01 / 08 · Where the step sits</b> — signup → <b>phone</b> → check inbox · in parallel with the email link</span>
   <span class="pv-nav__links">
