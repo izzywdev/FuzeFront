@@ -199,7 +199,11 @@ def true_assignments(cond):
     py = expr.replace("&&", " and ").replace("||", " or ")
     py = _REF.sub(lambda m: f"V[{m.group(0)!r}]", py)
     out = []
-    for combo in itertools.product(*[_OTHER_VALUES[r.split(".")[0]] for r in refs]):
+    # Candidate values = the usual ones PLUS every literal the condition itself compares
+    # against, so a gate on a value nobody listed (e.g. code == '2') cannot hide.
+    literals = tuple(sorted(set(re.findall(r"'([^']*)'", expr))))
+    pools = [tuple(dict.fromkeys(_OTHER_VALUES[r.split(".")[0]] + literals)) for r in refs]
+    for combo in itertools.product(*pools):
         V = dict(zip(refs, combo))
         V["inputs.review-only"] = "true"
         if eval(py, {"__builtins__": {}}, {"V": V}):  # noqa: S307 - constrained, test-only
@@ -271,6 +275,9 @@ class TestReviewOnlyOptIn(unittest.TestCase):
         # The malformed shapes review flagged must be caught, not matched by substring.
         self.assertTrue(true_assignments("(inputs.codex-auth-json != '' || inputs.review-only != 'true')"))
         self.assertTrue(true_assignments("steps.x.outputs.code == '1'"))
+        # A literal nobody listed in advance must still be tried.
+        self.assertTrue(true_assignments("steps.guard.outputs.code == '2' || inputs.review-only != 'true'"))
+        self.assertTrue(true_assignments("steps.a.outcome == 'skipped' || inputs.review-only != 'true'"))
         # Boolean-valued step outputs / inputs are real values too.
         self.assertTrue(true_assignments("steps.guard.outputs.enabled == 'true' || inputs.review-only != 'true'"))
         self.assertTrue(true_assignments("always() && inputs.review-only == 'true'"))
