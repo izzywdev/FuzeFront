@@ -18,6 +18,7 @@
   "dependencies": {
     "@fuzefront/auth": "file:../../packages/auth",
     "@fuzefront/shared": "file:../../shared",
+    "@fuzefront/telemetry": "file:../../packages/telemetry",
     "express": "4.19.2",
     "kafkajs": "2.2.4",
     "pg": "^8",
