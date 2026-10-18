@@ -291,7 +291,7 @@ def test_tokens_that_name_no_session_are_unaffected():
 
 
 def test_the_validator_is_not_called_for_a_token_that_names_no_session():
-    # e.g. the OIDC-callback token: nothing to validate, and a session-store validator
+    # a token minted before sessions existed: nothing to validate, and a session-store validator
     # asked about `None` would wrongly deny it.
     seen = []
     v = verifier(session_validator=lambda *a: seen.append(a) or False)
@@ -311,3 +311,13 @@ def test_the_opt_out_is_keyword_only_and_cannot_be_hit_by_a_positional_argument(
     assert field.kw_only is True
     with pytest.raises(AuthError):  # still fail-closed with that positional config
         create_verifier(cfg).verify(make_token(SECRET, claims={"userId": "u", "sessionId": "s-1"}))
+
+
+@pytest.mark.parametrize("flag", ["false", "0", "no", 1, 2, object(), [True]])
+def test_only_a_literal_true_opts_out_of_session_validation(flag):
+    # Python annotations are not enforced; a truthy non-bool from a config layer must not
+    # silently disable revocation enforcement.
+    v = verifier(allow_unvalidated_sessions=flag)
+    with pytest.raises(AuthError) as info:
+        v.verify(_session_token())
+    assert (info.value.code, info.value.status) == ("VERIFIER_UNAVAILABLE", 500)

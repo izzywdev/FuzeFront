@@ -64,8 +64,8 @@ Resolver = Callable[[str], dict[str, Any]]
 # (user_id, session_id, claims) -> True while the session is still active. The token
 # alone cannot say whether the user has since logged out or had the device revoked;
 # only the session store can. The host supplies this (e.g. a call to FuzeFront).
-# Called only for a token that NAMES a session; a token without a `sessionId` (e.g. the
-# OIDC-callback token) has nothing to validate and never reaches it.
+# Called only for a token that NAMES a session; a token without a `sessionId` (only legacy
+# tokens minted before sessions existed) has nothing to validate and never reaches it.
 SessionValidator = Callable[[str, str, dict[str, Any]], bool]
 
 
@@ -259,7 +259,7 @@ class _LegacyVerifier:
             raise AuthError("MISSING_CLAIM", f"token has no `{cfg.subject_claim}` (or `sub`) claim")
 
         session_id = _bound_claim(payload, "sessionId")
-        if session_id is not None and cfg.session_validator is None and not cfg.allow_unvalidated_sessions:
+        if session_id is not None and cfg.session_validator is None and cfg.allow_unvalidated_sessions is not True:
             # Fail closed. This is a deployment misconfiguration, not a bad credential: a 500
             # is loud and points at the fix, where a 401 would send the user to re-login.
             raise AuthError(

@@ -39,7 +39,10 @@ Verifies FuzeFront's **current** token, verified against
 - **Algorithm:** HS256 (default of `jsonwebtoken`; no `algorithm` option set).
 - **Key:** the shared secret `JWT_SECRET`.
 - **Claims present today:** `{ userId, sessionId? }` + `iat`/`exp` (24h TTL).
-  - Local login emits `{ userId, sessionId }`; the OIDC-callback path emits `{ userId }` only.
+  - Every current mint path carries a `sessionId`: local login, the OIDC-callback path
+    (`backend/src/routes/auth.ts`) and the split security service
+    (`backend/security/src/routes/auth.ts`). Only tokens minted before sessions existed
+    lack it.
   - **No `tenantId`, no `roles`** in the token — roles live in Postgres (`users.roles`)
     and are re-fetched per request by the current middleware.
 
@@ -72,8 +75,10 @@ revocation gap explicitly with `allowUnvalidatedSessions: true` (Node) /
 `FUZEFRONT_ALLOW_UNVALIDATED_SESSIONS=true` via `verifier_from_env`); that flag only
 waives the *requirement* for a validator and never disables a configured one. A
 present-but-malformed `sessionId` is `MALFORMED`, never treated as "no session". Tokens
-that name no session (the OIDC-callback path emits `{ userId }` only) are unaffected.
-`federated-jwks` is unaffected.
+that name no session (only legacy tokens minted before sessions existed) are unaffected,
+and so is `federated-jwks`. **Because every current FuzeFront login, including OIDC,
+mints a `sessionId`, every `legacy-hs256` consumer must wire a validator or set the
+explicit opt-out when upgrading.**
 
 ```ts
 import { createVerifier, requireAuth } from '@izzywdev/fuzefront-auth';

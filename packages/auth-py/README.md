@@ -126,7 +126,8 @@ That flag only waives the *requirement* for a validator; a configured validator 
 (and only for a token that names a session). It is keyword-only, so a positional argument can
 never turn it on by accident.
 Without one, a logged-out session keeps authenticating until the token expires. Tokens that
-name no session (for example an OIDC `sub` token) are unaffected. The Node peer
+name no session are unaffected, but every current FuzeFront login (local and OIDC) mints a
+`sessionId`, so in practice a `legacy-hs256` service must wire a validator or the opt-out. The Node peer
 [`@izzywdev/fuzefront-auth`](../auth) has the same rule from 0.4.0
 (`allowUnvalidatedSessions` / `sessionValidator`).
 
