@@ -13,8 +13,10 @@ export interface VerifyResetTransport {
   /**
    * POST /v1/security/verify/email/start → 202. Takes NO address: the server
    * derives the target from the authenticated session, so the UI never sends one.
+   * `accountId` is an opaque host key choosing WHICH signed-in session to use when
+   * several are signed in (omitted = the active one); it is never an address.
    */
-  startEmailVerification(): Promise<void>
+  startEmailVerification(accountId?: string): Promise<void>
   /** POST /v1/security/verify/email/confirm → 200 VerificationStatus | 400 EXPIRED/INVALID_CODE. */
   confirmEmailVerification(req: { token: string }): Promise<VerificationStatus>
   /** POST /v1/security/session/password/reset-request → ALWAYS 202 (no enumeration). */
@@ -46,6 +48,10 @@ export interface VerifyResetLabels {
   expiredText: string
   sendNewLink: string
   signInForNewLink: string
+  sendNewLinkTo: (email: string) => string
+  notYou: string
+  chooseAccount: string
+  sendToAccount: (email: string) => string
   signInForNewLinkText: string
   newLinkSent: string
   backToSignIn: string
@@ -105,6 +111,10 @@ export const DEFAULT_VERIFY_RESET_LABELS: VerifyResetLabels = {
     "Verification links are good for 30 minutes. Request a fresh one and we'll send it right over.",
   sendNewLink: 'Send a new link',
   signInForNewLink: 'Sign in to get a new link',
+  sendNewLinkTo: email => `Send a new link to ${email}`,
+  notYou: 'Not you? Sign in to another account',
+  chooseAccount: 'Which account is this link for?',
+  sendToAccount: email => `Send to ${email}`,
   signInForNewLinkText: 'For your security, sign in first and we will send a fresh verification link.',
   newLinkSent: 'A new verification link is on its way.',
   backToSignIn: 'Back to sign in',

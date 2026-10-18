@@ -281,6 +281,54 @@ describe('EmailVerificationFlow — verify landing', () => {
     expect(transport.startEmailVerification).not.toHaveBeenCalled()
   })
 
+  describe('expired link resend target (multi-account)', () => {
+    const expiredTransport = () =>
+      makeTransport({ confirmEmailVerification: vi.fn().mockRejectedValue(httpErr(400, 'EXPIRED')) })
+
+    it('one signed-in account: the button names it, plus a Not you? action', async () => {
+      const transport = expiredTransport()
+      const onUseAnotherAccount = vi.fn()
+      const { container } = render(
+        <EmailVerificationFlow
+          transport={transport}
+          view="landing"
+          token="t"
+          canResend
+          accounts={[{ id: 'a', email: 'ada@lovelace.io' }]}
+          onUseAnotherAccount={onUseAnotherAccount}
+        />,
+      )
+      await waitFor(() => expect(container.querySelector('[data-state="expired"]')).toBeInTheDocument())
+      await userEvent.click(screen.getByRole('button', { name: 'Send a new link to ada@lovelace.io' }))
+      expect(transport.startEmailVerification).toHaveBeenCalledWith()
+      await userEvent.click(screen.getByRole('button', { name: /not you\? sign in to another account/i }))
+      expect(onUseAnotherAccount).toHaveBeenCalled()
+    })
+
+    it('several accounts: shows a choice, no bare resend; sending targets the chosen account', async () => {
+      const transport = expiredTransport()
+      const { container } = render(
+        <EmailVerificationFlow
+          transport={transport}
+          view="landing"
+          token="t"
+          canResend
+          accounts={[
+            { id: 'a', email: 'ada@lovelace.io' },
+            { id: 'b', email: 'bob@example.com' },
+          ]}
+          onUseAnotherAccount={vi.fn()}
+        />,
+      )
+      await waitFor(() => expect(container.querySelector('[data-state="choose-account"]')).toBeInTheDocument())
+      expect(container.querySelector('[data-action="resend"]')).not.toBeInTheDocument()
+      expect(screen.getByText('Which account is this link for?')).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Send to bob@example.com' }))
+      expect(transport.startEmailVerification).toHaveBeenCalledWith('b')
+      expect(screen.getByRole('button', { name: /not you/i })).toBeInTheDocument()
+    })
+  })
+
   it('401 NOT_ACTIVE (expired token) renders expired, not a generic error', async () => {
     const transport = makeTransport({ confirmEmailVerification: vi.fn().mockRejectedValue(httpErr(401, 'NOT_ACTIVE')) })
     const { container } = render(<EmailVerificationFlow transport={transport} view="landing" token="t" canResend />)

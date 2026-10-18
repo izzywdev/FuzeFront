@@ -14,6 +14,12 @@ export interface VerifyStatusPanelProps {
   signInHref?: string
   onBackToSignIn?: () => void
   resending?: boolean
+  /** Signed-in accounts that could receive a new link, ACTIVE FIRST. >1 shows a choice; 1 names the target on the button. */
+  accounts?: { id: string; email: string }[]
+  /** Resend to a specific signed-in account. */
+  onResendTo?: (accountId: string) => void
+  /** "Not you? Sign in to another account". */
+  onUseAnotherAccount?: () => void
   /** Only a signed-in user may request a new link (the server binds it to the session). Default true. */
   canResend?: boolean
   /** Where "sign in to get a new link" goes (signed-out expired state). */
@@ -34,6 +40,9 @@ export function VerifyStatusPanel({
   signInHref = '/login',
   onBackToSignIn,
   resending = false,
+  accounts,
+  onResendTo,
+  onUseAnotherAccount,
   canResend = true,
   signInForLinkHref = '/login',
   children,
@@ -73,9 +82,31 @@ export function VerifyStatusPanel({
       subtitle={expired ? (canResend ? labels.expiredText : labels.signInForNewLinkText) : errorText}
       data-state={expired ? 'expired' : 'error'}
     >
-      {expired && canResend ? (
+      {expired && canResend && accounts && accounts.length > 1 ? (
+        <div className="fzf-vr-form" role="group" aria-label={labels.chooseAccount} data-state="choose-account">
+          <p className="fzf-vr-sub">{labels.chooseAccount}</p>
+          {accounts.map((a, i) => (
+            <Button
+              key={a.id}
+              type="button"
+              variant={i === 0 ? 'primary' : 'secondary'}
+              fullWidth
+              data-action="resend-account"
+              data-account-id={a.id}
+              disabled={resending}
+              onClick={() => onResendTo?.(a.id)}
+            >
+              {labels.sendToAccount(a.email)}
+            </Button>
+          ))}
+        </div>
+      ) : expired && canResend ? (
         <Button type="button" variant="primary" fullWidth data-action="resend" disabled={resending} onClick={onResend}>
-          {resending ? labels.resending : labels.sendNewLink}
+          {resending
+            ? labels.resending
+            : accounts && accounts.length === 1
+              ? labels.sendNewLinkTo(accounts[0].email)
+              : labels.sendNewLink}
         </Button>
       ) : expired ? (
         <Button variant="primary" fullWidth data-action="sign-in-for-link" href={signInForLinkHref}>
@@ -84,6 +115,11 @@ export function VerifyStatusPanel({
       ) : (
         <Button type="button" variant="primary" fullWidth data-action="retry" onClick={onRetry}>
           {labels.retry}
+        </Button>
+      )}
+      {expired && canResend && onUseAnotherAccount && (
+        <Button type="button" variant="ghost" fullWidth data-action="use-another-account" onClick={onUseAnotherAccount}>
+          {labels.notYou}
         </Button>
       )}
       {children}

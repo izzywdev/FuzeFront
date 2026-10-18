@@ -1,10 +1,17 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { Alert } from '@fuzefront/design-system'
 import { EmailVerificationFlow, PasswordResetFlow } from '@fuzefront/auth-ui'
 import type { VerifyResetTransport } from '@fuzefront/auth-ui'
 import { authAPI } from '../services/api'
 import { useCurrentUser } from '../lib/shared'
 import { takeSingleUseParam } from '../lib/singleUseParams'
-import { beginAddAccount, canAddAccount, getActiveAuthToken } from '../lib/accounts'
+import {
+  beginAddAccount,
+  canAddAccount,
+  getActiveAccountId,
+  getActiveAuthToken,
+  listAccounts,
+} from '../lib/accounts'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 
 /**
@@ -20,22 +27,46 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 
 const transport: VerifyResetTransport = {
   // No address is ever sent: the server derives it from the session.
-  startEmailVerification: () => authAPI.startEmailVerification(),
+  startEmailVerification: accountId =>
+    accountId ? authAPI.startEmailVerification(accountId) : authAPI.startEmailVerification(),
   confirmEmailVerification: req => authAPI.confirmEmailVerification(req),
   requestPasswordReset: email => authAPI.requestPasswordReset(email),
   confirmPasswordReset: req => authAPI.confirmPasswordReset(req),
 }
 
 /**
- * "Back to sign in" from /reset. If ANOTHER account is signed in in this tab,
- * a plain /login reload would find that session and bounce to /dashboard — so the
- * user would never reach a sign-in form for the account they just reset. Route
- * through the repo's add-account (provisional-session) flow so the shell boots
- * unauthenticated in this tab only; other accounts keep their sessions.
+ * "Sign in as another account" (Back to sign in from /reset, "Not you?" on an
+ * expired verify link). If an account is signed in in this tab a plain /login
+ * would find that session and bounce to /dashboard, so route through the repo's
+ * add-account (provisional-session) flow: the shell boots unauthenticated in
+ * this tab only and the other accounts keep their sessions. When the roster is
+ * FULL that flow is unavailable and a plain /login would bounce too, so do NOT
+ * navigate; show an inline notice instead.
  */
-function goToSignIn() {
-  if (getActiveAuthToken() && canAddAccount()) beginAddAccount()
-  window.location.href = '/login'
+function useSignInAsAnotherAccount() {
+  const [rosterFull, setRosterFull] = useState(false)
+  const go = () => {
+    if (!getActiveAuthToken()) {
+      window.location.href = '/login'
+      return
+    }
+    if (!canAddAccount()) {
+      setRosterFull(true)
+      return
+    }
+    beginAddAccount()
+    window.location.href = '/login'
+  }
+  const notice = rosterFull ? (
+    <Alert tone="warning" data-state="account-limit" style={{ marginTop: 'var(--space-4)' }}>
+      You're signed in to the maximum number of accounts. Sign out of one to sign in as another.{' '}
+      {/* The account switcher / sign-out live in the user menu inside the app shell. */}
+      <a href="/dashboard" data-action="open-account-menu">
+        Open FuzeFront to sign out or switch accounts
+      </a>
+    </Alert>
+  ) : null
+  return { go, notice }
 }
 
 /** Only the fuzepicker mention deep link survives the verification detour (same allowlist as LoginPage). */
@@ -89,6 +120,14 @@ export function VerifyCheckInboxPage() {
 export function VerifyLandingPage() {
   const token = takeSingleUseParam('token')
   const { isAuthenticated } = useCurrentUser()
+  const anotherAccount = useSignInAsAnotherAccount()
+  // Signed-in accounts the server could target, ACTIVE FIRST. An expired token does
+  // not say which account it was for, so the UI must name the target (or ask).
+  const activeId = getActiveAccountId()
+  const accounts = listAccounts()
+    .filter(a => !a.expired)
+    .sort((x, y) => Number(y.id === activeId) - Number(x.id === activeId))
+    .map(a => ({ id: a.id, email: a.email }))
   return (
     <PageChrome>
       <EmailVerificationFlow
@@ -96,26 +135,31 @@ export function VerifyLandingPage() {
         transport={transport}
         token={token}
         canResend={isAuthenticated}
+        accounts={accounts}
+        onUseAnotherAccount={anotherAccount.go}
         signInForLinkHref="/login?next=/signup/verify"
         signInHref="/login"
         onContinue={() => {
           window.location.href = '/dashboard'
         }}
       />
+      {anotherAccount.notice}
     </PageChrome>
   )
 }
 
 export function ResetPage() {
   const token = takeSingleUseParam('token')
+  const anotherAccount = useSignInAsAnotherAccount()
   return (
     <PageChrome>
       <PasswordResetFlow
         transport={transport}
         token={token}
         signInHref="/login"
-        onBackToSignIn={goToSignIn}
+        onBackToSignIn={anotherAccount.go}
       />
+      {anotherAccount.notice}
     </PageChrome>
   )
 }

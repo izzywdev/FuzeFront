@@ -207,6 +207,88 @@ describe('AuthExperiencePages', () => {
     Object.defineProperty(window, 'location', { configurable: true, writable: true, value: loc })
   })
 
+  it('reset "Back to sign in" with the roster FULL: no navigation, an inline notice with a way to sign out', async () => {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+    window.history.replaceState({}, '', '/reset')
+    const accounts = await import('../lib/accounts')
+    for (let i = 0; i < accounts.MAX_PARALLEL_ACCOUNTS; i++) {
+      accounts.rememberAccount({ id: `acct-${i}`, email: `u${i}@x.io` } as any, { token: `tok-${i}` })
+    }
+    expect(accounts.canAddAccount()).toBe(false)
+    const { ResetPage } = await import('../pages/AuthExperiencePages')
+    const { container } = render(<ResetPage />)
+    const loc = window.location
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: { ...loc, href: 'http://localhost/reset' } })
+    fireEvent.click(container.querySelector('.fzf-vr-foot a')!)
+    expect(window.location.href).toBe('http://localhost/reset') // did not navigate
+    expect(accounts.isAddingAccount()).toBe(false)
+    const notice = container.querySelector('[data-state="account-limit"]')!
+    expect(notice).toHaveTextContent(
+      "You're signed in to the maximum number of accounts. Sign out of one to sign in as another."
+    )
+    expect(container.querySelector('[data-action="open-account-menu"]')).toHaveAttribute('href', '/dashboard')
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: loc })
+  })
+
+  async function landingWithAccounts(n: number) {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+    window.history.replaceState({}, '', '/verify/email?token=old')
+    const accounts = await import('../lib/accounts')
+    for (let i = 0; i < n; i++) {
+      accounts.rememberAccount({ id: `acct-${i}`, email: `u${i}@x.io` } as any, { token: `tok-${i}` })
+    }
+    accounts.setActiveAccountId('acct-0')
+    vi.mocked(sharedMock.useCurrentUser).mockReturnValue({ user: { id: 'acct-0', email: 'u0@x.io' }, isAuthenticated: true } as any)
+    const { authAPI } = await import('../services/api')
+    vi.spyOn(authAPI, 'confirmEmailVerification').mockRejectedValue({ response: { status: 400, data: { code: 'EXPIRED' } } })
+    const start = vi.spyOn(authAPI, 'startEmailVerification').mockResolvedValue()
+    const { VerifyLandingPage } = await import('../pages/AuthExperiencePages')
+    return { start, accounts, ...render(<VerifyLandingPage />) }
+  }
+
+  it('expired link, ONE account: button names the target; "Not you?" enters add-account mode', async () => {
+    const { start, accounts } = await landingWithAccounts(1)
+    fireEvent.click(await screen.findByRole('button', { name: 'Send a new link to u0@x.io' }))
+    await waitFor(() => expect(start).toHaveBeenCalledWith())
+    const loc = window.location
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: { ...loc, href: '' } })
+    fireEvent.click(screen.getByRole('button', { name: /not you\? sign in to another account/i }))
+    expect(accounts.isAddingAccount()).toBe(true)
+    expect(window.location.href).toBe('/login')
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: loc })
+  })
+
+  it('expired link, SEVERAL accounts: a choice (active first), sending targets the chosen account id', async () => {
+    const { start, container } = await landingWithAccounts(3)
+    await waitFor(() => expect(container.querySelector('[data-state="choose-account"]')).not.toBeNull())
+    expect(container.querySelector('[data-action="resend"]')).toBeNull()
+    const buttons = container.querySelectorAll('[data-action="resend-account"]')
+    expect(buttons).toHaveLength(3)
+    expect(buttons[0]).toHaveAttribute('data-account-id', 'acct-0') // active first
+    fireEvent.click(screen.getByRole('button', { name: 'Send to u2@x.io' }))
+    await waitFor(() => expect(start).toHaveBeenCalledWith('acct-2'))
+  })
+
+  it('startEmailVerification(accountId) authenticates as THAT account, not the active one', async () => {
+    window.localStorage.clear()
+    const accounts = await import('../lib/accounts')
+    accounts.rememberAccount({ id: 'acct-a', email: 'a@x.io' } as any, { token: 'tok-a' })
+    accounts.rememberAccount({ id: 'acct-b', email: 'b@x.io' } as any, { token: 'tok-b' })
+    accounts.setActiveAccountId('acct-a')
+    const seen: string[] = []
+    axios.defaults.adapter = async config => {
+      seen.push(String((config.headers as any).Authorization))
+      return { status: 202, statusText: 'Accepted', headers: {}, config, data: '' } as any
+    }
+    vi.resetModules()
+    const { authAPI } = await import('../services/api')
+    await authAPI.startEmailVerification()
+    await authAPI.startEmailVerification('acct-b')
+    expect(seen).toEqual(['Bearer tok-a', 'Bearer tok-b'])
+  })
+
   it('landing signed-out + expired token: offers sign-in with a return path, no anonymous resend', async () => {
     vi.mocked(sharedMock.useCurrentUser).mockReturnValue({ user: null, isAuthenticated: false } as any)
     window.history.replaceState({}, '', '/verify/email?token=old')

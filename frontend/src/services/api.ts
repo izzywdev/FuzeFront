@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { App } from '../lib/shared'
 import {
+  getAccountValue,
   getActiveAccountId,
   getActiveAuthToken,
   setActiveValue,
@@ -205,7 +206,9 @@ api.interceptors.request.use(
       console.groupEnd()
     }
 
-    if (token) {
+    // An explicit Authorization (e.g. startEmailVerification targeting a chosen
+    // signed-in account) wins over the active account's token.
+    if (token && !config.headers.Authorization) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
@@ -479,9 +482,16 @@ export const authAPI = {
   // axios error shapes themselves (429 / EXPIRED / INVALID_CODE / 400).
 
   // POST /verify/email/start → 202. Needs a session (the interceptor adds the bearer).
-  async startEmailVerification(): Promise<void> {
-    // No body: the server derives the target address from the session.
-    await api.post(`${SECURITY_BASE}/verify/email/start`, {})
+  async startEmailVerification(accountId?: string): Promise<void> {
+    // No body: the server derives the target address from the session. With
+    // several accounts signed in, `accountId` picks WHICH account's session
+    // (never an address) — omitted means the active account.
+    const token = accountId ? getAccountValue(accountId, 'authToken') : null
+    await api.post(
+      `${SECURITY_BASE}/verify/email/start`,
+      {},
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    )
   },
 
   // POST /verify/email/confirm → 200 VerificationStatus (idempotent for an

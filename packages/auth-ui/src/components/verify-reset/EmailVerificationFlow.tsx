@@ -26,6 +26,10 @@ export interface EmailVerificationFlowProps {
   canResend?: boolean
   /** Landing: where "Sign in to get a new link" goes. */
   signInForLinkHref?: string
+  /** Landing: signed-in accounts, ACTIVE FIRST — names the resend target / offers a choice when several. */
+  accounts?: { id: string; email: string }[]
+  /** Landing: "Not you? Sign in to another account". */
+  onUseAnotherAccount?: () => void
   signInHref?: string
   onBackToSignIn?: () => void
   /** Resend cooldown in seconds. Default 60. */
@@ -119,6 +123,8 @@ function VerifyLanding({
   token,
   canResend = false,
   signInForLinkHref,
+  accounts,
+  onUseAnotherAccount,
   onContinue,
   signInHref,
   onBackToSignIn,
@@ -172,11 +178,12 @@ function VerifyLanding({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, attempt, transport])
 
-  const sendNewLink = async () => {
+  const sendNewLink = async (accountId?: string) => {
     setNotice(null)
     setResending(true)
     try {
-      await transport.startEmailVerification()
+      if (accountId) await transport.startEmailVerification(accountId)
+      else await transport.startEmailVerification()
       setNotice({ kind: 'sent', text: labels.newLinkSent })
     } catch (err) {
       const kind = classifyAuthError(err)
@@ -195,7 +202,10 @@ function VerifyLanding({
       <VerifyStatusPanel
         status={status}
         onContinue={onContinue}
-        onResend={sendNewLink}
+        onResend={() => sendNewLink()}
+        onResendTo={id => sendNewLink(id)}
+        accounts={accounts}
+        onUseAnotherAccount={onUseAnotherAccount}
         onRetry={() => setAttempt(a => a + 1)}
         resending={resending}
         canResend={canResend}
