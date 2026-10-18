@@ -4452,7 +4452,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setLoadingMorePolicyGates(true)
     setHistoryPaginationError(undefined)
     try {
-      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => {
+      const results = await Promise.allSettled(cursors.map(async ([repositoryId, cursor]) => {
         const repository = data.repositories.find(item => item.id === repositoryId)
         const page = normalizeHistoryPage(await api.policyGateEvaluations(
           repositoryId,
@@ -4471,15 +4471,27 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         return { repositoryId, page }
       }))
       if (policyGateHistoryQueryRef.current !== selectionQuery) return
+      const groups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
       const continuedEvaluations = groups.flatMap(group => group.page.items)
       setPolicyGateEvaluations(current => mergePolicyGateContinuation(
         current,
         continuedEvaluations,
         visibleAtRequestStart,
       ))
-      setPolicyGateNextCursors(Object.fromEntries(
-        groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
-      ))
+      setPolicyGateNextCursors(current => {
+        const next = { ...current }
+        for (const group of groups) {
+          if (group.page.page.nextCursor) next[group.repositoryId] = group.page.page.nextCursor
+          else delete next[group.repositoryId]
+        }
+        return next
+      })
+      const failed = results.filter(result => result.status === 'rejected').length
+      if (failed) {
+        setHistoryPaginationError(
+          `Unable to load more policy and gate history for ${failed} ${failed === 1 ? 'repository' : 'repositories'}. Successful evidence remains visible.`
+        )
+      }
     } catch (cause) {
       if (policyGateHistoryQueryRef.current === selectionQuery) {
         setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more policy and gate history.')
