@@ -141,6 +141,11 @@ export function InvitationAcceptFlow({
       if (failure === 'already-accepted' && fromSignup.current) {
         // The bindToken redeemed on signup already bound the membership.
         setStep({ name: 'bound', role: resolved.invitation.role, memberType: resolved.invitation.memberType })
+        onBound?.({
+          organizationId: resolved.organization.id,
+          role: resolved.invitation.role,
+          memberType: resolved.invitation.memberType,
+        })
         return
       }
       setStep({ name: 'failed', failure })

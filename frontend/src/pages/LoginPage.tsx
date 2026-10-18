@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
-import type { SessionResult } from '../services/api'
+import { invitePath, readPendingInvite } from '../lib/pendingInvite'
+import type { SessionResult, SocialProvider } from '../services/api'
 import { Alert, AuthCard } from '@fuzefront/design-system'
 import { AuthPanel } from '@fuzefront/auth-ui'
 import type {
@@ -50,7 +51,7 @@ const PANEL_VARIANT = 'compact' as const
  * it is a mapping of THIS app's axios/Security-API error shapes, not a
  * generic UI concern.
  */
-function mapAuthError(err: any): string {
+export function mapAuthError(err: any): string {
   const isTimeout = err?.code === 'ECONNABORTED' || err?.name === 'CanceledError'
   const isNetworkError = !isTimeout && (err?.code === 'NETWORK_ERROR' || !err?.response)
   const status = err?.response?.status
@@ -140,9 +141,16 @@ function LoginPage() {
       setUser(user)
       const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
       window.sessionStorage.removeItem('fuzepicker:return-path')
-      window.location.href = returnPath?.startsWith('/fuzepicker/mentions')
-        ? returnPath
-        : '/dashboard'
+      // Org invitations v2: an invitee who left /invitations/:token to sign in
+      // (or came back from a social provider) is returned to it so the accept
+      // flow auto-binds. Only the v2 accept page ever writes the pending token,
+      // so with the flag OFF this is inert. Only an in-app path is built from it.
+      const pendingInvite = readPendingInvite()
+      window.location.href = pendingInvite
+        ? invitePath(pendingInvite)
+        : returnPath?.startsWith('/fuzepicker/mentions')
+          ? returnPath
+          : '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
       setCallbackError('Signed in, but failed to load your profile. Please retry.')
@@ -203,7 +211,9 @@ function LoginPage() {
         }
       },
       getAuthMethods: () => authAPI.getAuthMethods(),
-      startSocial: provider => authAPI.startSocialLogin(provider),
+      // `facebook` is not in the frozen contract's SocialProvider yet; the panel
+      // only offers it when the server advertises it, so the cast is the seam.
+      startSocial: provider => authAPI.startSocialLogin(provider as SocialProvider),
     }),
     []
   )

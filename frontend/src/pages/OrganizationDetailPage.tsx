@@ -5,6 +5,8 @@ import { PermissionGate } from '../components/PermissionGate'
 import { OrganizationSettings } from '../components/OrganizationSettings'
 import { IdentityPage, OrgContextBadge } from '@fuzefront/identity-ui'
 import { useFlag } from '../platform/featureFlags'
+import { INVITE_V2_FLAG } from '../lib/inviteV2Flag'
+import { getActiveAuthToken } from '../lib/accounts'
 import {
   getOrganizations,
   getOrganizationMembers,
@@ -59,6 +61,9 @@ function OrganizationDetailPage() {
   const { user } = useCurrentUser()
   const navigate = useNavigate()
   const memberDirectoryEnabled = useFlag('fuzefront.identity.member-directory', false)
+  // Org invitations v2 (FFRNT-309), default OFF: ON swaps the Members-tab invite
+  // dialog + pending list for the v2 ones (design/frames/org-invitations-v2).
+  const inviteV2Enabled = useFlag(INVITE_V2_FLAG, false)
   const [org, setOrg] = useState<Organization | null>(null)
   const [members, setMembers] = useState<OrganizationMember[]>([])
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'settings'>('overview')
@@ -236,8 +241,14 @@ function OrganizationDetailPage() {
             )}
             <IdentityPage
               organizationId={org.id}
+              organizationName={org.name}
               userRole={org.user_role ?? 'viewer'}
               userId={user?.id}
+              // A stable accessor: without a token the identity client goes out
+              // unauthenticated (401), and an inline arrow would rebuild the client
+              // every render.
+              getToken={getActiveAuthToken}
+              invitationsV2={inviteV2Enabled}
               onMembersChange={() => void loadMembers(org.id)}
             />
           </>

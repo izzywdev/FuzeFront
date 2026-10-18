@@ -351,6 +351,8 @@ export interface SignupCredentials {
   firstName?: string
   lastName?: string
   tenantName?: string
+  /** Invitation bind token (`InvitationEnrollResponse.bindToken`) — auto-binds the invited membership on signup. */
+  bindToken?: string
 }
 
 // Result of the signup email-availability probe. `available: null` means the
