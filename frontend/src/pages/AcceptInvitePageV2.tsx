@@ -14,34 +14,9 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { getActiveAuthToken } from '../lib/accounts'
 import { authAPI } from '../services/api'
 import type { SocialProvider } from '../services/api'
-import {
-  clearPendingInvite,
-  isSafeInviteToken,
-  readPendingInvite,
-  savePendingInvite,
-} from '../lib/pendingInvite'
-import { mapAuthError } from './LoginPage'
-
-/**
- * The invitation token for this URL. The emailed link is `/invitations/<token>`;
- * `AppContent` renders this page outside a `<Route>`, so `useParams()` is empty
- * in production — read the path (and the frames' `?token=`) as the source of
- * truth and keep `useParams` as the in-router fast path.
- */
-export function tokenFromLocation(
-  param: string | undefined,
-  pathname: string,
-  search: string
-): string | null {
-  if (isSafeInviteToken(param) && param !== 'accept') return param
-  const seg = /^\/invitations\/([^/?#]+)/.exec(pathname)?.[1]
-  if (seg) {
-    const decoded = decodeURIComponent(seg)
-    if (decoded !== 'accept' && isSafeInviteToken(decoded)) return decoded
-  }
-  const q = new URLSearchParams(search).get('token')
-  return isSafeInviteToken(q) ? q : null
-}
+import { clearPendingInvite, readPendingInvite, savePendingInvite } from '../lib/pendingInvite'
+import { tokenFromLocation } from '../lib/inviteToken'
+import { mapAuthError } from '../lib/authErrors'
 
 /**
  * AcceptInvitePageV2 — `/invitations/:token` behind `fuzefront.identity.invite-v2`
@@ -154,7 +129,7 @@ function AcceptInvitePageV2() {
 
   return (
     <IdentityI18nProvider locale={language === 'he' ? 'he' : 'en'}>
-      <Center style={{ minBlockSize: '100vh', padding: 'var(--space-4)' }}>
+      <Center style={{ padding: 'var(--space-4)' }}>
         {token ? (
           <InvitationAcceptFlow
             token={token}
