@@ -132,11 +132,6 @@ const intelligenceFailureSchema = z.object({
   sourceKey: z.string().trim().min(1).max(200),
   code: z.enum(['JIRA_UNAVAILABLE', 'INTELLIGENCE_UNAVAILABLE', 'SEMANTIC_INDEX_UNAVAILABLE']),
 }).strict()
-const executionEvidenceRefreshSchema = z.object({
-  provider: z.literal('github-actions'),
-  externalRunId: z.string().max(500).regex(/^\d+$/),
-  attempt: z.number().int().positive(),
-}).strict()
 const repositoryAdministrationSchema = z.object({
   ownership: z.object({
     team: z.string().trim().min(1).max(100),
@@ -810,6 +805,11 @@ app.get('/api/v1/repositories/:id/test-executions/attempts', mayReadCatalog, asy
     page: page.page,
   })
 })
+const executionEvidenceRefreshSchema = z.object({
+  provider: z.literal('github-actions'),
+  externalRunId: z.string().max(500).regex(/^\d+$/),
+  attempt: z.number().int().positive(),
+}).strict()
 app.post('/api/v1/repositories/:id/test-executions/evidence/refresh', mayRunExecution, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
