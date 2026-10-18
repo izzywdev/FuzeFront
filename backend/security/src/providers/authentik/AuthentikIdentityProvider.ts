@@ -613,10 +613,23 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       )) as BrokeredUser
     }
 
-    // Mint the session now and hand back a single-use opaque code (never a token
-    // in the URL). Social sign-in does not re-gate MFA at the browser hop.
-    const session = await this.mintSession(user, ctx)
+    // Hand back a single-use opaque code (never a token in the URL). Social
+    // sign-in MUST honour MFA exactly like password login: a user with an active
+    // factor gets NO session here. The code carries only the user, and redemption
+    // (`exchangeCode`) answers with an `mfa_required` challenge bound to that
+    // user. Otherwise a linked social account would bypass the second factor.
     const code = crypto.randomBytes(32).toString('hex')
+    const activeFactors = await this.loadActiveFactors(user.id)
+    if (activeFactors.length > 0) {
+      putBrokerCode(code, {
+        mfaPendingUser: user,
+        ctx: ctx ? { ip: ctx.ip ?? null, userAgent: ctx.userAgent ?? null } : undefined,
+        expiresAt: this.now() + CODE_TTL_MS,
+      })
+      console.warn(`[security] social sign-in for user ${user.id} deferred to MFA step-up`)
+      return { code, redirectTo: st.redirectTo || '/', returnOrigin: st.returnOrigin }
+    }
+    const session = await this.mintSession(user, ctx)
     // Shared store: a code minted here OR by the legacy /api/auth/oidc/callback
     // is redeemable by the SPA's /api/v1/security/session/exchange.
     putBrokerCode(code, {
@@ -644,7 +657,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     if (!entry) {
       throw new UnauthorizedError('invalid or expired code')
     }
-    return { token: entry.token, sessionId: entry.sessionId, user: entry.user }
+    if (entry.mfaPendingUser) {
+      // Re-checks factors at redemption: throws MfaRequiredError (challenge
+      // bound to this user) or mints a session if the factors were since removed.
+      return this.sessionOrChallenge(entry.mfaPendingUser, entry.ctx)
+    }
+    return { token: entry.token!, sessionId: entry.sessionId!, user: entry.user! }
   }
 
   // ── Signup (server-brokered against Authentik enrollment) ─────────────────

@@ -43,7 +43,7 @@ export interface paths {
         put?: never;
         /**
          * Exchange an opaque broker code for a session
-         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session. The code is single-use and short-lived. Returns a `SessionResult`: an authenticated session, or an `mfa_required` challenge when the account requires step-up. Fail-closed on an unknown/expired code.
+         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session. The code is single-use and short-lived. Returns a `SessionResult`: an authenticated session, or an `mfa_required` challenge when the account has an active MFA factor. Social sign-in never bypasses MFA: no session is minted until the challenge is completed via `POST /mfa/verify`, and the challenge is bound to the user who signed in. Fail-closed on an unknown/expired or already-redeemed code.
          */
         post: operations["exchangeSessionCode"];
         delete?: never;
