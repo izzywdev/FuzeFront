@@ -34,6 +34,14 @@ spec:
               value: "production"
             - name: PORT
               value: {{ .Values.provisioningService.port | quote }}
+            # @fuzefront/telemetry (initTelemetry() in src/index.ts) reads this
+            # standard OTel env var for its OTLP exporter target. Without it the
+            # package falls back to packages/telemetry's docker-compose default
+            # (`otel-collector:4317`), which has no in-cluster DNS entry — spans
+            # fail to export silently and nothing reaches Tempo/Grafana. See
+            # values.yaml's provisioningService.otel.endpoint comment.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.provisioningService.otel.endpoint | quote }}
             - name: KAFKA_BROKERS
               value: {{ .Values.provisioningService.kafka.brokers | quote }}
             - name: KAFKA_CLIENT_ID
