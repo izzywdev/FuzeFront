@@ -617,7 +617,18 @@ export class MemoryCatalogStore implements CatalogStore {
     const snapshot = this.executionSnapshot(query.snapshotAt)
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
       .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
-    const items = executionPerformance(filterTestExecutions(snapshot, query, snapshot), [], query.gateOutcome)
+    const filteredExecutions = filterTestExecutions(snapshot, query, snapshot).map(execution =>
+      execution.gateEvaluations.length && (query.policyArtifactId || query.gateArtifactId)
+        ? {
+            ...execution,
+            gateEvaluations: execution.gateEvaluations.filter(evaluation =>
+              (!query.policyArtifactId || evaluation.policyArtifactId === query.policyArtifactId) &&
+              (!query.gateArtifactId || evaluation.gateArtifactId === query.gateArtifactId)
+            ),
+          }
+        : execution
+    )
+    const items = executionPerformance(filteredExecutions, [], query.gateOutcome)
       .map(item => ({
         ...item,
         revisionCount: item.revisions?.length ?? 0,
