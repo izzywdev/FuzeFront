@@ -1,0 +1,78 @@
+name: "prod: Permit ABAC policy setup"
+
+# Sets up Permit.io ABAC resources, condition sets, and policies for plan-tier
+# access control. Run ONCE before enabling fuzefront.billing.authz-enabled.
+#
+# Run order after merge:
+#   1. This workflow  (dry-run first, then apply)
+#   2. prod-billing-stripe-sync (mode=apply) — syncs plan_tier attributes
+#   3. prod-unleash-ops (flags=authz-enabled) — flips the gate ON
+#
+# All secrets are read from k8s at runtime. No GitHub repo secrets required.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run (default) or apply'
+        required: false
+        default: 'dry-run'
+        type: choice
+        options:
+          - dry-run
+          - apply
+      environment:
+        description: 'Permit environment key'
+        required: false
+        default: 'production'
+        type: string
+
+jobs:
+  permit-policy-setup:
+    name: 'Permit ABAC policy setup (${{ inputs.mode }})'
+    runs-on: [self-hosted, fuzefront]
+    environment: production
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      - name: Read Permit API key from k8s
+        id: read-permit-secret
+        run: |
+          # Reads the Permit Management API key from the cluster's sealed secret.
+          # The secret is provisioned by prod-billing-s2s-provision.yml and sealed
+          # by governance — never stored as a GitHub repo secret.
+          PERMIT_API_KEY=$(kubectl get secret permit-secrets \
+            -n fuzefront \
+            -o jsonpath='{.data.PERMIT_API_KEY}' | base64 -d)
+          if [ -z "$PERMIT_API_KEY" ]; then
+            echo "::error::PERMIT_API_KEY not found in k8s secret permit-secrets/fuzefront"
+            exit 1
+          fi
+          echo "::add-mask::$PERMIT_API_KEY"
+          echo "PERMIT_API_KEY=$PERMIT_API_KEY" >> "$GITHUB_ENV"
+
+          PERMIT_PROJECT=$(kubectl get secret permit-secrets \
+            -n fuzefront \
+            -o jsonpath='{.data.PERMIT_PROJECT}' 2>/dev/null | base64 -d || echo "fuzefront")
+          echo "PERMIT_PROJECT=$PERMIT_PROJECT" >> "$GITHUB_ENV"
+
+      - name: Run policy setup (${{ inputs.mode }})
+        working-directory: services/billing-service
+        env:
+          PERMIT_API_KEY: ${{ env.PERMIT_API_KEY }}
+          PERMIT_PROJECT: ${{ env.PERMIT_PROJECT }}
+          PERMIT_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.mode }}" = "apply" ]; then
+            ARGS="--apply"
+          fi
+          node scripts/setup-permit-policies.mjs $ARGS \
+            --env "${{ inputs.environment }}"
