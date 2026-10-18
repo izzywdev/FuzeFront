@@ -129,6 +129,16 @@
                   },
                   "auth": {"type": "object", "description": "Identity the app needs the platform to provision."},
                   "infra": {"type": "object", "description": "Platform infrastructure the app opts into."},
+                  "distribution": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Public installation destinations for the product's native mobile build. Omit a field until that store listing or APK is publicly available; clients must never synthesize download URLs.",
+                    "properties": {
+                      "appleAppStoreUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Apple App Store product URL."},
+                      "googlePlayUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Google Play Store product URL."},
+                      "apkUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Direct public Android APK URL, normally the product's latest GitHub Release asset."}
+                    }
+                  },
                   "visibility": {"type": "string", "enum": ["private", "organization", "public", "marketplace"]},
                   "roles": {"type": "array", "items": {"type": "string"}, "description": "Roles permitted to see/activate the app. Empty = all members."}
                 }
@@ -194,6 +204,16 @@
               "routing": {"type": "object"},
               "auth": {"type": "object"},
               "infra": {"type": "object"},
+              "distribution": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Public installation destinations for the product's native mobile build. Omit a field until that store listing or APK is publicly available; clients must never synthesize download URLs.",
+                "properties": {
+                  "appleAppStoreUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Apple App Store product URL."},
+                  "googlePlayUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Google Play Store product URL."},
+                  "apkUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Direct public Android APK URL, normally the product's latest GitHub Release asset."}
+                }
+              },
               "visibility": {"type": "string", "enum": ["private", "organization", "public", "marketplace"]},
               "roles": {"type": "array", "items": {"type": "string"}}
             }

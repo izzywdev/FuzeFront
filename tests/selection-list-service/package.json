@@ -29,6 +29,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "@fuzeone/selection-list-client": "file:../../selection-list-client"
+    "@fuzeone/selection-list-client": "file:../../selection-list-client",
+    "@izzywdev/fuzefront-identity": "file:../../packages/identity"
   }
 }

@@ -45,6 +45,7 @@ const NEEDED = [
   'AuthOidc',
   'Routing',
   'Infra',
+  'Distribution',
 ]
 
 const defs = {}
