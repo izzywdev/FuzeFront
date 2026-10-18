@@ -1,11 +1,11 @@
-import { useMemo } from 'react'
 import { useIdentityI18n } from '../../../i18n/IdentityI18nProvider'
 import type { HttpClientOptions } from '../../../api/http'
 import {
-  createInvitationsClient,
+
   type InvitationsApiClient,
   type OrgInvitation,
 } from '../../../api/invitationsClient'
+import { useInvitationsClient } from '../shared/useInvitationsClient'
 import type { OrgRole } from '../../../types'
 import { InvitationErrorState } from '../shared/InvitationErrorState'
 import { RootCustomerInviteForm } from './RootCustomerInviteForm'
@@ -36,7 +36,7 @@ export function RootCustomerInviteFlow({
 }: RootCustomerInviteFlowProps) {
   const { messages } = useIdentityI18n()
   const r = messages.invitationsV2.root
-  const client = useMemo(() => injected ?? createInvitationsClient({ getToken }), [injected, getToken])
+  const client = useInvitationsClient(injected, getToken)
 
   return (
     <div data-flow="root-customer-invite" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>

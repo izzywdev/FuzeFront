@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useIdentityI18n } from '../../../i18n/IdentityI18nProvider'
 import { HttpError, type HttpClientOptions } from '../../../api/http'
 import {
-  createInvitationsClient,
+
   type InvitationsApiClient,
   type OrgInvitation,
 } from '../../../api/invitationsClient'
+import { useInvitationsClient } from '../shared/useInvitationsClient'
 import type { OrgRole } from '../../../types'
 import { PendingInvitationsPanel } from '../pending/PendingInvitationsPanel'
 import { InviteModalV2 } from './InviteModalV2'
@@ -60,7 +61,7 @@ export function OrgInviteFlow({
   pageSize = PAGE_SIZE,
 }: OrgInviteFlowProps) {
   const { messages } = useIdentityI18n()
-  const client = useMemo(() => injected ?? createInvitationsClient({ getToken }), [injected, getToken])
+  const client = useInvitationsClient(injected, getToken)
   const canManage = userRole === 'owner' || userRole === 'admin'
 
   const [items, setItems] = useState<OrgInvitation[]>([])

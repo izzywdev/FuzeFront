@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AuthCard, Skeleton } from '@fuzefront/design-system'
 import { useIdentityI18n } from '../../../i18n/IdentityI18nProvider'
 import type { HttpClientOptions } from '../../../api/http'
 import {
   classifyInviteError,
-  createInvitationsClient,
+
   isEnroll,
   type InvitationAcceptResult,
   type InvitationChannel,
@@ -12,6 +12,7 @@ import {
   type InvitationsApiClient,
   type InviteFailure,
 } from '../../../api/invitationsClient'
+import { useInvitationsClient } from '../shared/useInvitationsClient'
 import { InvitationErrorState } from '../shared/InvitationErrorState'
 import { InvitationAcceptCard } from './InvitationAcceptCard'
 import { InvitationBindSuccess } from './InvitationBindSuccess'
@@ -94,7 +95,7 @@ export function InvitationAcceptFlow({
   onBound,
 }: InvitationAcceptFlowProps) {
   const { messages } = useIdentityI18n()
-  const client = useMemo(() => injected ?? createInvitationsClient({ getToken }), [injected, getToken])
+  const client = useInvitationsClient(injected, getToken)
   const [resolved, setResolved] = useState<InvitationResolveResult | null>(null)
   const [step, setStep] = useState<Step>({ name: 'resolving' })
   const fromSignup = useRef(false)
