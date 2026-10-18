@@ -1,6 +1,7 @@
 import express, { Application, NextFunction, Request, Response } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { z } from 'zod';
+import { tracingMiddleware } from '@fuzefront/telemetry';
 import { SUPPORTED_TEMPLATES } from '@fuzefront/shared/kafka';
 import { EmailProvider } from './providers';
 import { renderTemplate } from './templates';
@@ -34,6 +35,11 @@ function bearerMatches(header: string | undefined, secret: string): boolean {
 
 export function createApp(deps: AppDeps = {}): Application {
   const app = express();
+  // Starts/continues a per-request span, exposing req.traceId/req.spanId for
+  // log correlation. Mounted before any other middleware so the span wraps
+  // the whole request lifecycle (OTLP export to FuzeInfra's Collector, never
+  // Tempo/Loki directly — see @fuzefront/telemetry's docs/TRACE_CONTRACT.md).
+  app.use(tracingMiddleware());
   app.use(express.json());
 
   app.get('/health', (_req: Request, res: Response) => {

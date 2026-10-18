@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@fuzefront/service-auth": "file:../../packages/service-auth",
+    "@fuzefront/telemetry": "file:../../packages/telemetry",
     "express": "^5.1.0",
     "stripe": "^17",
     "zod": "3.22.4"
