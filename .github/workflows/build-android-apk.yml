@@ -140,6 +140,43 @@ jobs:
           bubblewrap update --skipPwaValidation --skipVersionUpgrade
           kill $HTTP_PID || true
 
+      - name: Force minSdkVersion 24 in generated Gradle project
+        working-directory: android
+        run: |
+          set -euo pipefail
+          # Bubblewrap scaffolds app/build.gradle with its own default minSdk (21)
+          # and does NOT honour "minSdkVersion": 24 from twa-manifest.json. 21 is
+          # below the 24 required by androidbrowserhelper:2.7.4, so the Android
+          # manifest-merger fails and the APK build errors out. Force 24 here.
+          GRADLE_FILE="app/build.gradle"
+          test -f "$GRADLE_FILE" || {
+            echo "::error::$GRADLE_FILE not found after bubblewrap scaffold — template layout may have changed" >&2
+            exit 1
+          }
+          # The generated key is 'minSdkVersion N' (Groovy DSL) but may be 'minSdk N'
+          # or 'minSdk = N' depending on the AGP/template version — handle all three.
+          # Fail loudly if none is present so a future template change can't silently
+          # no-op this fix. Each sed is idempotent (re-running just re-sets 24).
+          if grep -Eq 'minSdkVersion[[:space:]]+[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' "$GRADLE_FILE"
+          elif grep -Eq 'minSdk[[:space:]]*=[[:space:]]*[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' "$GRADLE_FILE"
+          elif grep -Eq 'minSdk[[:space:]]+[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdk[[:space:]]+[0-9]+/minSdk 24/g' "$GRADLE_FILE"
+          else
+            echo "::error::No minSdk/minSdkVersion declaration found in $GRADLE_FILE — Bubblewrap template changed; update this step." >&2
+            echo "----- $GRADLE_FILE -----" >&2
+            cat "$GRADLE_FILE" >&2
+            exit 1
+          fi
+          echo "minSdk after patch:"
+          grep -En 'minSdk(Version)?' "$GRADLE_FILE"
+          # Verify 24 actually landed (guards against an unexpected replacement result).
+          grep -Eq 'minSdk(Version)?([[:space:]]+|[[:space:]]*=[[:space:]]*)24\b' "$GRADLE_FILE" || {
+            echo "::error::minSdk patch did not yield 24 in $GRADLE_FILE" >&2
+            exit 1
+          }
+
       - name: Build APK
         working-directory: android
         env:
@@ -190,8 +227,14 @@ jobs:
           fi
           test -n "$APK" || { echo "Expected APK was not produced" >&2; exit 1; }
           DEST="${{ steps.version.outputs.slug }}-android-${{ steps.version.outputs.name }}.apk"
+          LATEST="${{ steps.version.outputs.slug }}-android-latest.apk"
           cp "$APK" "$DEST"
+          # GitHub resolves /releases/latest/download/<name> against the newest
+          # release, making this stable public APK URL safe to declare in a
+          # product's FuzeFront manifest.
+          cp "$APK" "$LATEST"
           echo "path=android/$DEST" >> "$GITHUB_OUTPUT"
+          echo "latest_path=android/$LATEST" >> "$GITHUB_OUTPUT"
           echo "Found: $DEST"
 
       - name: Upload APK artifact
@@ -221,9 +264,11 @@ jobs:
             The app opens Chrome in standalone mode (no browser chrome) — backed by your live prod cluster.
 
             ### Requirements
-            - Android 5.0+ (API 21+)
+            - Android 7.0+ (API 24+)
             - Chrome 72+ installed on device
-          files: ${{ steps.apk.outputs.path }}
+          files: |
+            ${{ steps.apk.outputs.path }}
+            ${{ steps.apk.outputs.latest_path }}
           draft: false
           prerelease: false
           overwrite_files: true

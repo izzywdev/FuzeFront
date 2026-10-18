@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Org invitations v2 — Sign up &amp; bind</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .two-up { display: grid; gap: var(--space-8); grid-template-columns: 1fr;
+    max-width: 960px; margin: 0 auto; }
+  @media (min-width: 820px){ .two-up { grid-template-columns: 1fr 1fr; align-items: start; } }
+  .step-cap { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin: 0 0 var(--space-2); text-align: center; }
+</style>
+</head>
+<body data-frame="04-accept-signup-bind">
+<div class="ffi-authwrap">
+  <div class="two-up">
+
+    <!-- Step 1: create account (carries the invite context forward) -->
+    <div>
+      <p class="step-cap">Step 1 — create account</p>
+      <div class="ffi-card" data-panel="accept-signup">
+        <div class="ffi-card__seam"></div>
+        <div class="ffi-card__body">
+          <div class="ffi-card__brand">
+            <div class="ffi-card__org" aria-hidden="true">N</div>
+            <div>
+              <p class="ffi-card__lead">Join Northwind as <b>Admin</b></p>
+              <h1 class="ffi-card__title">Create your account</h1>
+            </div>
+          </div>
+
+          <!-- Social — Google exists today; Facebook is NET-NEW (commissioned by these frames) -->
+          <div class="ffi-social" data-panel="social">
+            <button class="ffi-social__btn" data-action="social-google">
+              <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#ffc107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.3 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5z"/><path fill="#ff3d00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.3 6.1 29.4 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4caf50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.2 35 26.7 36 24 36c-5.3 0-9.7-3.1-11.3-7.6l-6.5 5C9.6 39.6 16.2 44 24 44z"/><path fill="#1976d2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.5l6.3 5.3C41.9 36.3 44 30.7 44 24c0-1.3-.1-2.3-.4-3.5z"/></svg>
+              Continue with Google</button>
+            <button class="ffi-social__btn" data-action="social-facebook">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#1877f2" d="M24 12a12 12 0 10-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.6 4.5-4.6 1.3 0 2.6.2 2.6.2v2.9h-1.5c-1.4 0-1.9.9-1.9 1.8V12h3.3l-.5 3.5h-2.8v8.4A12 12 0 0024 12z"/></svg>
+              Continue with Facebook</button>
+          </div>
+
+          <div class="ffi-divider">or with email</div>
+
+          <div class="ffi-field">
+            <label class="ffi-label" for="su-email">Email</label>
+            <input class="ffi-input" id="su-email" type="email" value="jordan@acme.com" readonly
+                   data-input="signup-email" aria-describedby="su-email-hint" />
+            <p class="ffi-hint" id="su-email-hint">Locked to the invited address. It's how we bind you to Northwind.</p>
+          </div>
+          <div class="ffi-field">
+            <label class="ffi-label" for="su-name">Your name</label>
+            <input class="ffi-input" id="su-name" type="text" placeholder="Jordan Lee" data-input="signup-name" />
+          </div>
+          <div class="ffi-field">
+            <label class="ffi-label" for="su-pw">Password</label>
+            <input class="ffi-input" id="su-pw" type="password" placeholder="At least 12 characters" data-input="signup-password" />
+          </div>
+
+          <button class="btn btn-primary" data-action="create-and-accept" style="justify-content:center">
+            Create account &amp; join Northwind</button>
+          <p class="ffi-hint" style="text-align:center">Powered by the existing
+            <code>@fuzefront/auth-ui</code> sign-up — we only add the invite binding.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: bound (auto-accept on return) -->
+    <div>
+      <p class="step-cap">Step 2 — bound automatically</p>
+      <div class="ffi-card" data-panel="bind-success">
+        <div class="ffi-card__seam"></div>
+        <div class="ffi-card__body">
+          <div class="ffi-callout ffi-callout--success" data-state="bound">
+            <svg class="ffi-callout__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+            <div class="ffi-callout__body">
+              <span class="ffi-callout__title">You're in. Welcome to Northwind.</span>
+              <p class="ffi-callout__text">Your new account was created and the invitation was accepted and bound — no extra step.</p>
+            </div>
+          </div>
+
+          <div class="ffi-preview" data-panel="bound-summary">
+            <div class="ffi-preview__row"><span class="ffi-preview__k">Organization</span>
+              <span class="ffi-preview__v" data-value="org">Northwind</span></div>
+            <div class="ffi-preview__row"><span class="ffi-preview__k">Role</span>
+              <span class="ffi-tag ffi-tag--admin" data-value="role"><span class="ffi-tag__dot"></span>Admin</span></div>
+            <div class="ffi-preview__row"><span class="ffi-preview__k">Member type</span>
+              <span class="ffi-tag ffi-tag--employee" data-value="member-type"><span class="ffi-tag__dot"></span>Employee</span></div>
+            <div class="ffi-preview__row"><span class="ffi-preview__k">Signed in as</span>
+              <span class="ffi-preview__v" data-value="account">jordan@acme.com</span></div>
+          </div>
+
+          <a class="btn btn-primary" href="#" data-action="go-to-org" style="justify-content:center">Go to Northwind →</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption">Frame (d) · <b>Sign up &amp; bind</b> — create account (Google / Facebook* / email) → POST /invitations/accept auto-binds → org + role + member type</span>
+  <span class="links">
+    <a href="03-accept-resolve.html" class="btn btn-ghost">← Resolve</a>
+    <a href="05-root-customer-invite.html" class="btn btn-ghost">Next: Root customer →</a>
+  </span>
+</div>
+</body>
+</html>

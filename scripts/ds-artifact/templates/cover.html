@@ -1,0 +1,35 @@
+<!-- @dsCard height=300 -->
+<!--
+  blocks: bg-tertiary slab 92x228 (shell) · accent-color slab 150x228 (the fuse) · accent-2 tile 150x108 (signal) · indigo-100 tile 150x108 (tint) · seam bar accent-color/accent-2 10x228 (radius-pill)
+  arrangement: left host-shell slab, a thin vertical seam bar, then the module tiles to its right — the shell fusing remote modules at runtime
+  pattern: geometric/modular (tiles cut by radius-lg meeting along the seam) — chosen because FuzeFront's one defining act is fusing remote micro-frontends into a host shell across the indigo->cyan seam
+  scales: radius-lg (10) tile corners, radius-pill seam bar, space-4 (16) gaps, border-strong hairline on the graphite shell
+-->
+<style>
+  html, body { margin: 0; }
+  .cover { display: block; width: 100%; height: auto; background: var(--bg-primary); }
+  .shell { fill: var(--bg-tertiary); stroke: var(--border-strong); stroke-width: 1.5; }
+  .fuse  { fill: var(--accent-color); }
+  .signal{ fill: var(--accent-2); }
+  .tint  { fill: var(--indigo-100); }
+  .seam-top { fill: var(--accent-color); }
+  .seam-bot { fill: var(--accent-2); }
+  .name  { fill: var(--text-primary); font-family: var(--font-display); font-weight: 700; font-size: 72px; letter-spacing: -0.02em; }
+  .tag   { fill: var(--text-secondary); font-family: var(--font-sans); font-weight: 400; font-size: 13px; letter-spacing: 0.01em; }
+</style>
+<svg class="cover" viewBox="0 0 960 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="FuzeFront Fuse Seam design system cover">
+  <!-- host shell -->
+  <rect class="shell" x="496" y="36" width="92" height="228" rx="10" />
+  <!-- the seam: indigo fuses into cyan where the shell joins its modules -->
+  <rect class="seam-top" x="600" y="36" width="10" height="114" rx="5" />
+  <rect class="seam-bot" x="600" y="150" width="10" height="114" rx="5" />
+  <!-- the fuse (indigo), the largest identity block -->
+  <rect class="fuse" x="624" y="36" width="150" height="228" rx="10" />
+  <!-- the signal (cyan) and a tint for relief -->
+  <rect class="signal" x="786" y="36" width="150" height="108" rx="10" />
+  <rect class="tint" x="786" y="156" width="150" height="108" rx="10" />
+  <!-- the name -->
+  <text class="name" x="54" y="168">FuzeFront</text>
+  <text class="name" x="54" y="236">Fuse Seam</text>
+  <text class="tag" x="56" y="266">The runtime-fabric design system for the host shell.</text>
+</svg>
