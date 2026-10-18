@@ -36,13 +36,13 @@
         <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="current"><span class="pv-progress__dot"></span>Phone</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-policy="optional" data-validation="idle">
 <div class="pv-center">
       <div class="pv-hero" aria-hidden="true">📱</div>
@@ -52,12 +52,12 @@
 
     <form class="pv-form" data-form="phone" novalidate>
       <div class="pv-field">
-        <label class="pv-label" for="pv-phone">Mobile number</label>
+        <label class="pv-label" for="pv-phone-8">Mobile number</label>
         <div class="pv-phone" data-component="phone-number-field">
-        <select class="pv-select" id="pv-cc" aria-label="Country calling code" data-field="country">
+        <select class="pv-select" id="pv-cc-8" aria-label="Country calling code" data-field="country">
           <option value="GB" selected>🇬🇧 +44</option><option value="US">🇺🇸 +1</option><option value="IL">🇮🇱 +972</option><option value="DE">🇩🇪 +49</option>
         </select>
-          <input class="pv-input" id="pv-phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" />
+          <input class="pv-input" id="pv-phone-8" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" />
         </div>
         <div class="pv-e164" data-e164 data-valid="unknown">Sent as <code>+44 …</code></div>
       </div>
@@ -84,13 +84,13 @@
 
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="pending"><span class="pv-progress__dot"></span>Phone · later</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="current"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Phone · later<span class="pv-sr" data-step-sr> (skipped, you can add it later)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (current step)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="skipped" data-policy="optional">
 <div class="pv-center">
       <div class="pv-hero pv-hero--neutral" aria-hidden="true">⤼</div>
@@ -117,13 +117,13 @@
 
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="current"><span class="pv-progress__dot"></span>Phone</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-policy="required" data-validation="idle">
 <div class="pv-center">
       <div class="pv-hero" aria-hidden="true">📱</div>
@@ -134,12 +134,12 @@
       <span>A verified phone is <b>required</b> to finish setting up your account.</span></div>
     <form class="pv-form" data-form="phone" novalidate>
       <div class="pv-field">
-        <label class="pv-label" for="pv-phone">Mobile number</label>
+        <label class="pv-label" for="pv-phone-9">Mobile number</label>
         <div class="pv-phone" data-component="phone-number-field">
-        <select class="pv-select" id="pv-cc" aria-label="Country calling code" data-field="country">
+        <select class="pv-select" id="pv-cc-9" aria-label="Country calling code" data-field="country">
           <option value="GB" selected>🇬🇧 +44</option><option value="US">🇺🇸 +1</option><option value="IL">🇮🇱 +972</option><option value="DE">🇩🇪 +49</option>
         </select>
-          <input class="pv-input" id="pv-phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" />
+          <input class="pv-input" id="pv-phone-9" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" />
         </div>
         <div class="pv-e164" data-e164 data-valid="unknown">Sent as <code>+44 …</code></div>
       </div>
@@ -166,13 +166,13 @@
 
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="pending"><span class="pv-progress__dot"></span>Phone · later</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="current"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Phone · later<span class="pv-sr" data-step-sr> (skipped, you can add it later)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (current step)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-unavailable" data-policy="required" data-http-status="503">
 <div class="pv-center">
       <div class="pv-hero pv-hero--neutral" aria-hidden="true">⊘</div>

@@ -143,7 +143,8 @@
     <p>OpenAPI <code>packages/security/openapi.yaml</code> → <code>@fuzefront/security-client</code> · flag
       <code>fuzefront.auth.signup-phone-verification</code> (<b>default OFF</b>, builders audience) · endpoints
       <code>GET /v1/security/methods</code>, <code>GET /v1/security/verify/status</code>,
-      <code>POST /v1/security/verify/phone/start</code>, <code>POST /v1/security/verify/phone/confirm</code>.</p>
+      <code>POST /v1/security/verify/phone/start</code>, <code>POST /v1/security/verify/phone/resend</code> (new, Δ),
+      <code>POST /v1/security/verify/phone/confirm</code>.</p>
     <p><b>AuthMethods does advertise SMS availability</b>: <code>verification.sms</code>, derived from
       <code>SMS_SERVICE_URL</code> in <code>GET /methods</code>. The step relies on it to decide whether to appear.
       The contract today is <b>not enough</b> to render these frames honestly. The deltas below are for
@@ -168,7 +169,18 @@
         another account already uses it.</li>
       <li data-delta="policy"><code>AuthMethods.verification.phoneAtSignup: "off" | "optional" | "required"</code>.</li>
       <li data-delta="pending-status"><code>VerificationStatus.phonePending?: { maskedPhone, expiresInSeconds, resendAfterSeconds }</code>
-        so the step can resume after a reload.</li>
+        so the step can resume after a reload. Only the <b>masked</b> number ever comes back to the client.</li>
+      <li data-delta="resend-session"><b>New</b> <code>POST /verify/phone/resend</code>: session-bound with an <b>empty body</b>. It
+        resends to the pending number the server holds, so Resend still works after a reload, when the client knows only the
+        masked number. Returns <code>PhoneVerifyStartAck</code>; <code>404 NO_PENDING_VERIFICATION</code> sends the user back to
+        enter-phone. <code>/start</code> remains the only call that takes a full number.</li>
+      <li data-delta="confirm-outage">Confirm-time outage: when sms-service <code>/sms/verify</code> times out or returns
+        non-2xx, the result is <code>503 VERIFY_UNAVAILABLE</code>. It doesn't use an attempt and isn't reported as a wrong code.
+        Today <code>checkSmsOtp</code> turns every failure into <code>false</code>, and <code>/sms/verify</code> returns only a
+        boolean. It should return the provider status, and the client should get a tagged result.</li>
+      <li data-delta="sms-retry-after">Rate-limit pass-through: sms-service <code>/sms/send</code> returns 429 with no
+        <code>Retry-After</code>, and <code>sendSmsOtp</code> discards the response. Both must carry <code>retryAfterSeconds</code>
+        through to <code>429 RATE_LIMITED</code> + <code>Retry-After</code> on <code>/start</code> and <code>/resend</code>.</li>
       <li data-delta="signup-route">Routing: when the step applies, 01-signup's submit goes to <code>/signup/phone</code>.
         Otherwise it goes through <code>nextAfterPhone()</code>: <code>/signup/verify</code> only if an email is pending,
         else the app. Behind the flag; no approved frame changes.</li>

@@ -81,7 +81,8 @@
 .pv-center { text-align: center; }
 
 /* SignupProgress (NET-NEW, tiny): step rail so the user knows where the phone step sits */
-.pv-progress { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-5);
+.pv-progress { display: flex; gap: var(--space-2); align-items: center; margin: 0 0 var(--space-5); padding: 0;
+  list-style: none;
   font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
   text-transform: uppercase; color: var(--text-tertiary); }
 .pv-progress__step { display: inline-flex; align-items: center; gap: var(--space-1); }

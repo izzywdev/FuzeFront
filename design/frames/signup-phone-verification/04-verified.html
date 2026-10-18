@@ -18,13 +18,13 @@
     <div class="pv-stage">
       <div class="pv-card"><div class="pv-card__seam"></div><div class="pv-card__body">
     <div class="pv-brand"><span class="pv-brand__mark" aria-hidden="true">F</span><span class="pv-brand__word">FuzeFront</span></div>
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="done"><span class="pv-progress__dot"></span>Phone</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="current"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (current step)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="verified" data-next-resolved="verify-email">
 <div class="pv-center" data-result="verified">
       <div class="pv-hero pv-hero--success" aria-hidden="true">✓</div>
@@ -49,13 +49,13 @@
 
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="done"><span class="pv-progress__dot"></span>Phone</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="current"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (current step)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="verified" data-next-resolved="verify-email">
 <div class="pv-center" data-result="verified">
       <div class="pv-hero pv-hero--success" aria-hidden="true">✓</div>
@@ -85,11 +85,11 @@
 
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="done"><span class="pv-progress__dot"></span>Phone</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="omitted" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (completed)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="verified" data-next-resolved="app">
 <div class="pv-center" data-result="verified">
       <div class="pv-hero pv-hero--success" aria-hidden="true">✓</div>

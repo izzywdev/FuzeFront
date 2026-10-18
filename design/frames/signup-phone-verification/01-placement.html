@@ -51,7 +51,12 @@
 
   <section class="pv-section" data-exit-rule>
     <h2>One exit rule: <code>nextAfterPhone()</code></h2>
-    <p>Every way out of the phone step goes through the same check: Continue after verifying, Skip, Continue-without-phone (deferral), and every bypass in the table below. The check uses <b>freshly re-fetched</b> <code>GET /verify/status</code>, because the email link may have been confirmed in another tab while the phone step was open.</p>
+    <p>Every way out of the phone step goes through the same check: Continue after verifying, Skip, Continue-without-phone (deferral), and every bypass in the table below. It <i>tries</i> a fresh <code>GET /verify/status</code>, because the email link may have been confirmed in another tab while the phone step was open. <b>An exit never waits on that call</b>, which matters most during an outage, when Skip and Continue-for-now are the user's way out:</p>
+    <ol data-exit-fallback>
+      <li>Refresh with a short timeout (about 3 s). If it succeeds, use it.</li>
+      <li>If it fails or times out, use the <b>snapshot</b> of <code>GET /methods</code> + <code>GET /verify/status</code> loaded when the step opened. The step never renders interactive controls without it (08 · loading), so this snapshot always exists.</li>
+      <li>Navigate straight away. A stale snapshot can only mean showing check-inbox for an email that was just confirmed, which is harmless (that screen says "you can keep working"). It can never trap the user.</li>
+    </ol>
     <table class="pv-table">
       <thead><tr><th>Condition at exit</th><th>Destination</th><th><code>data-next</code></th></tr></thead>
       <tbody>
@@ -83,6 +88,7 @@
       <thead><tr><th>Condition</th><th>Goes to</th></tr></thead>
       <tbody>
         <tr data-signin-case="reprompt"><td>Flag ON <b>and</b> <code>phoneAtSignup === "required"</code> <b>and</b> <code>phoneVerified === false</code> <b>and</b> <code>verification.sms === true</code></td><td><code>/signup/phone?next=&lt;original next&gt;</code>. The same flow and frames, with the signup progress rail hidden. Every exit returns to <code>?next=</code>.</td></tr>
+        <tr data-signin-case="already-in-flow"><td>The sign-in <code>?next=</code> <b>already points at this flow</b> (its path is <code>/signup/phone</code>), e.g. after a session expired mid-step (08)</td><td>Go to that <code>next</code> <b>as is</b>. It is <b>never re-wrapped</b>, so <code>/signup/phone?next=/signup/phone?…</code> can't arise and there is no loop. The nested downstream target inside it is kept.</td></tr>
         <tr data-signin-case="no-reprompt"><td>Anything else: <code>optional</code> or <code>off</code>, flag OFF, already verified, or SMS unavailable</td><td><code>?next=</code> as today. Under <code>optional</code> the only reminder is the "Unverified" chip in Security.</td></tr>
       </tbody>
     </table>

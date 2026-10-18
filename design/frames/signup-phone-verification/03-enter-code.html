@@ -18,13 +18,13 @@
     <div class="pv-stage">
       <div class="pv-card"><div class="pv-card__seam"></div><div class="pv-card__body">
     <div class="pv-brand"><span class="pv-brand__mark" aria-hidden="true">F</span><span class="pv-brand__word">FuzeFront</span></div>
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="current"><span class="pv-progress__dot"></span>Phone</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
@@ -47,7 +47,7 @@
         <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
-        <button type="button" class="pv-resend" data-action="resend" data-resend-state="cooldown" disabled>↻ Resend code in <span class="pv-count" data-countdown="resend">0:27</span></button>
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="cooldown" disabled>↻ Resend code in <span class="pv-count" data-countdown="resend">0:27</span></button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
@@ -64,13 +64,13 @@
         <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="current"><span class="pv-progress__dot"></span>Phone</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
@@ -93,7 +93,7 @@
         <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
-        <button type="button" class="pv-resend" data-action="resend" data-resend-state="cooldown" disabled>↻ Resend code in <span class="pv-count" data-countdown="resend">0:27</span></button>
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="cooldown" disabled>↻ Resend code in <span class="pv-count" data-countdown="resend">0:27</span></button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
@@ -115,13 +115,13 @@
         <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="current"><span class="pv-progress__dot"></span>Phone</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-input="pasted">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
@@ -144,7 +144,7 @@
         <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
-        <button type="button" class="pv-resend" data-action="resend" data-resend-state="ready">↻ Resend code</button>
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="ready">↻ Resend code</button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
@@ -165,13 +165,13 @@
 
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="current"><span class="pv-progress__dot"></span>Phone</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="verifying">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
@@ -194,7 +194,7 @@
 
       </div>
       <div class="pv-resend-row">
-        <button type="button" class="pv-resend" data-action="resend" data-resend-state="disabled" disabled>↻ Resend code</button>
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="disabled" disabled>↻ Resend code</button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
@@ -206,7 +206,7 @@
     </div>
     <div class="pv-state">
       <p class="pv-state__label"><b>enter-code</b> · resend ready (cooldown elapsed)</p>
-      <p class="pv-state__note">Resend calls <code>POST /verify/phone/start</code> again for the same number. While the earlier code is still valid, the provider may re-send <b>the same code</b> without extending its lifetime. So the expiry countdown keeps the <b>server's remaining time</b> from the new ack (<code>expiresInSeconds</code>) and only the resend cooldown restarts. Typed digits are kept, and whichever code the server accepts works. The announcer speaks once when the cooldown ends.</p>
+      <p class="pv-state__note">Resend calls <code>POST /verify/phone/resend</code> with an <b>empty body</b> (Δ). The server re-sends to the pending number it holds for this session, so the client never needs the full number, and this works the same after a reload. While the earlier code is still valid, the provider may re-send <b>the same code</b> without extending its lifetime. So the expiry countdown keeps the <b>server's remaining time</b> from the new ack (<code>expiresInSeconds</code>) and only the resend cooldown restarts. Typed digits are kept, and whichever code the server accepts works. The announcer speaks once when the cooldown ends.</p>
       <div data-viewport="375">
     <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
     <div class="pv-device">
@@ -215,13 +215,13 @@
         <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
       </header>
       <div class="pv-device__body">
-    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
-      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="phone" data-step-state="current"><span class="pv-progress__dot"></span>Phone</span>
-      <span class="pv-progress__sep"></span>
-      <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
-    </div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
     <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-resend="ready">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
@@ -244,7 +244,7 @@
         <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
-        <button type="button" class="pv-resend" data-action="resend" data-resend-state="ready">↻ Resend code</button>
+        <button type="button" class="pv-resend" data-action="resend" data-resend-via="session" data-resend-state="ready">↻ Resend code</button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
