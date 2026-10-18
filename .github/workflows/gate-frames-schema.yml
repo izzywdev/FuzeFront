@@ -71,7 +71,10 @@ jobs:
       # ${{ ... }} straight into `run:` is a shell-injection path into the runner.
       - name: Validate frames manifests (schema + changed-feature mobile coverage)
         env:
-          BASE_REF: ${{ github.base_ref }}
+          # github.base_ref is set only for pull_request events; on a manual
+          # workflow_dispatch it is empty, so fall back to the default branch — else
+          # `git fetch origin ""` fails before any validation runs.
+          BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
         run: |
           git fetch --no-tags origin "$BASE_REF"
           node scripts/check-frames-schema.mjs --base "origin/$BASE_REF"

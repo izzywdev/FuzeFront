@@ -4,7 +4,10 @@
 // a conforming manifest passes, and each defect the gate exists to catch fails.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { validateSchema, flowMobileCoverage, mobileReport } from '../check-frames-schema.mjs'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { validateSchema, flowMobileCoverage, mobileReport, missingManifestFeatures } from '../check-frames-schema.mjs'
 
 const baseManifest = () => ({
   name: 'x', description: 'd', designSystem: 'fuse-seam', entry: 'index.html',
@@ -94,6 +97,44 @@ test('responsive.mobileFrame pointing at a desktop frame is NOT covered, with a 
   const r = flowMobileCoverage(m.build.flows[0], m.frames)
   assert.equal(r.covered, false)
   assert.match(r.reason, /not mobile\/responsive/)
+})
+
+// ---- robustness holes Codex found on the gate itself ----
+
+test('an array where an object is required is rejected (build: [])', () => {
+  const m = baseManifest(); m.build = []
+  assert.ok(validateSchema('bad', m).some(e => e.includes('build')))
+})
+
+test('contract/implementation/responsive as arrays are rejected', () => {
+  const m1 = baseManifest(); m1.contract = []
+  assert.ok(validateSchema('b', m1).some(e => e.includes('contract')))
+  const m2 = baseManifest(); m2.implementation = []
+  assert.ok(validateSchema('b', m2).some(e => e.includes('implementation')))
+  const m3 = baseManifest(); m3.build.flows[0].responsive = []
+  assert.ok(validateSchema('b', m3).some(e => e.includes('responsive')))
+})
+
+test('a mobileFrame belonging to another flow does NOT cover this flow', () => {
+  const m = baseManifest()
+  m.frames = [{ id: '02', file: '02.html', label: 'L', summary: 'S', testHooks: ['[x]'], viewport: 'mobile', flow: 'other-flow' }]
+  m.build.flows = [{ id: 'f1', orchestrator: 'O', route: '/x', responsive: { mobileFrame: '02' } }]
+  const r = flowMobileCoverage(m.build.flows[0], m.frames)
+  assert.equal(r.covered, false)
+  assert.match(r.reason, /belongs to flow/)
+})
+
+test('missingManifestFeatures flags a changed feature dir with frames but no manifest', () => {
+  const root = mkdtempSync(join(tmpdir(), 'frames-'))
+  mkdirSync(join(root, 'has-manifest'))
+  writeFileSync(join(root, 'has-manifest', 'manifest.json'), '{}')
+  mkdirSync(join(root, 'no-manifest'))
+  writeFileSync(join(root, 'no-manifest', '01.html'), '<html></html>')
+  // "deleted" is a changed feature whose directory does not exist — legitimate removal.
+  const changed = new Set(['has-manifest', 'no-manifest', 'deleted'])
+  assert.deepEqual(missingManifestFeatures(changed, root), ['no-manifest'])
+  // No changed set (report/all mode) → nothing flagged.
+  assert.deepEqual(missingManifestFeatures(null, root), [])
 })
 
 test('mobileReport skips features with no flows and reports uncovered flows', () => {

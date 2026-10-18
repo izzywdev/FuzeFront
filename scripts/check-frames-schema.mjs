@@ -69,6 +69,10 @@ const ENDPOINT_RE = /^(GET|POST|PUT|PATCH|DELETE) \//
 const FLAG_RE = /^[a-z0-9-]+\.[a-z0-9-]+\.[a-z0-9-]+$/
 const STAMP_RE = /^[0-9a-f]{64}$/
 
+// A JSON object, not an array and not null. `typeof [] === 'object'` is true, so a
+// manifest with `"build": []` must be rejected here, not treated as an empty object.
+const isObj = v => typeof v === 'object' && v !== null && !Array.isArray(v)
+
 /* ------------------------------------------------------------- tiny assert kit */
 
 // Collect per-manifest errors as `path: message` strings; a non-empty list fails.
@@ -124,7 +128,7 @@ export function validateSchema(feature, m) {
 
   if ('implementation' in m) {
     const impl = m.implementation
-    if (typeof impl !== 'object' || impl === null) errors.push(`${root}.implementation: must be an object`)
+    if (!isObj(impl)) errors.push(`${root}.implementation: must be an object`)
     else c.optArrStr(impl, 'paths', `${root}.implementation`)
   }
 
@@ -134,7 +138,7 @@ export function validateSchema(feature, m) {
   else {
     m.frames.forEach((f, i) => {
       const w = `${root}.frames[${i}]`
-      if (typeof f !== 'object' || f === null) return errors.push(`${w}: must be an object`)
+      if (!isObj(f)) return errors.push(`${w}: must be an object`)
       c.reqStr(f, 'id', w)
       if (!('file' in f)) errors.push(`${w}: missing required "file"`)
       else if (!c.isStr(f.file) || !/\.html$/.test(f.file)) errors.push(`${w}.file: must be a string ending in .html`)
@@ -150,7 +154,7 @@ export function validateSchema(feature, m) {
 
   if ('contract' in m) {
     const ct = m.contract
-    if (typeof ct !== 'object' || ct === null) errors.push(`${root}.contract: must be an object`)
+    if (!isObj(ct)) errors.push(`${root}.contract: must be an object`)
     else {
       c.optStr(ct, 'openapi', `${root}.contract`)
       c.optStr(ct, 'client', `${root}.contract`)
@@ -163,7 +167,7 @@ export function validateSchema(feature, m) {
 
   if ('build' in m) {
     const b = m.build
-    if (typeof b !== 'object' || b === null) errors.push(`${root}.build: must be an object`)
+    if (!isObj(b)) errors.push(`${root}.build: must be an object`)
     else {
       if ('flows' in b) {
         if (!Array.isArray(b.flows) || b.flows.length < 1) errors.push(`${root}.build.flows: must be an array with >= 1 item`)
@@ -178,14 +182,14 @@ export function validateSchema(feature, m) {
 }
 
 function validateFlow(fl, w, errors, c) {
-  if (typeof fl !== 'object' || fl === null) return errors.push(`${w}: must be an object`)
+  if (!isObj(fl)) return errors.push(`${w}: must be an object`)
   c.reqStr(fl, 'id', w)
   c.reqStr(fl, 'orchestrator', w)
   if (!('route' in fl)) errors.push(`${w}: missing required "route"`)
   else if (!c.isStr(fl.route) || !/^\//.test(fl.route)) errors.push(`${w}.route: must be a string starting with /`)
   if ('implementation' in fl) {
     const impl = fl.implementation
-    if (typeof impl !== 'object' || impl === null) errors.push(`${w}.implementation: must be an object`)
+    if (!isObj(impl)) errors.push(`${w}.implementation: must be an object`)
     else c.optArrStr(impl, 'paths', `${w}.implementation`)
   }
   if ('approved' in fl && typeof fl.approved !== 'boolean') errors.push(`${w}.approved: must be a boolean`)
@@ -194,7 +198,7 @@ function validateFlow(fl, w, errors, c) {
   if (('approvedBy' in fl || 'approvedAt' in fl) && !('approved' in fl)) errors.push(`${w}: approvedBy/approvedAt require "approved"`)
   if ('responsive' in fl) {
     const r = fl.responsive
-    if (typeof r !== 'object' || r === null) errors.push(`${w}.responsive: must be an object`)
+    if (!isObj(r)) errors.push(`${w}.responsive: must be an object`)
     else {
       c.optStr(r, 'mobileFrame', `${w}.responsive`)
       if ('coveredViewports' in r) {
@@ -219,8 +223,13 @@ export function flowMobileCoverage(flow, frames) {
   const framesById = new Map(frames.map(f => [f.id, f]))
   if (r.mobileFrame) {
     const mf = framesById.get(r.mobileFrame)
-    if (mf && MOBILE_VIEWPORTS.includes(mf.viewport)) return { covered: true, reason: `mobileFrame ${r.mobileFrame}` }
     if (!mf) return { covered: false, reason: `responsive.mobileFrame "${r.mobileFrame}" is not a frame id` }
+    // A frame explicitly assigned to another flow does not cover THIS flow — else a
+    // desktop-only flow could claim a sibling flow's mobile frame.
+    if (mf.flow && mf.flow !== flow.id) {
+      return { covered: false, reason: `responsive.mobileFrame "${r.mobileFrame}" belongs to flow "${mf.flow}", not "${flow.id}"` }
+    }
+    if (MOBILE_VIEWPORTS.includes(mf.viewport)) return { covered: true, reason: `mobileFrame ${r.mobileFrame}` }
     return { covered: false, reason: `responsive.mobileFrame "${r.mobileFrame}" viewport is "${mf.viewport || 'desktop'}", not mobile/responsive` }
   }
   if (Array.isArray(r.coveredViewports) && r.coveredViewports.some(v => MOBILE_VIEWPORTS.includes(v))) {
@@ -291,6 +300,23 @@ function changedFeaturesFromGit(base) {
   }
 }
 
+// A changed feature directory that still exists but has no manifest.json escapes
+// loadManifests entirely, so the required gate would pass with nothing to enforce on
+// it. Adding frames without a manifest, or deleting an existing manifest, must FAIL
+// rather than silently skip. A directory that no longer exists is a legitimate
+// whole-feature removal and is not flagged.
+export function missingManifestFeatures(changed, framesDir = FRAMES_DIR) {
+  if (!changed) return []
+  const out = []
+  for (const feature of changed) {
+    const dir = path.join(framesDir, feature)
+    if (!existsSync(dir)) continue // whole feature removed — legitimate
+    if (existsSync(path.join(dir, 'manifest.json'))) continue // has one — validated elsewhere
+    out.push(feature)
+  }
+  return out.sort()
+}
+
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(name)
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback
@@ -305,16 +331,26 @@ function main() {
   const base = arg('--base', 'origin/master')
   const manifests = loadManifests()
 
-  if (manifests.length === 0) {
-    console.log(YELLOW('No design/frames/<feature>/manifest.json found — nothing to validate.'))
-    return 0
-  }
-
   // Scope. Both checks enforce on CHANGED features only by default (block-now for
   // new/edited manifests, without retro-failing the pre-existing backlog), exactly
   // as gate-ds-conformance enforces on changed lines. --all enforces everywhere
   // (use before flipping the ramp); --report never fails.
   const changed = (all || report) ? null : changedFeaturesFromGit(base)
+
+  // A changed feature with frames but no manifest.json would otherwise slip the gate
+  // entirely (loadManifests skips it). Fail for it under the enforcing scope.
+  const missing = missingManifestFeatures(changed)
+  let missingFailures = 0
+  for (const feature of missing) {
+    missingFailures++
+    console.log(RED(`✗ ${feature}: feature directory has frames but no manifest.json — it cannot be validated or approved`))
+  }
+
+  if (manifests.length === 0 && missingFailures === 0) {
+    console.log(YELLOW('No design/frames/<feature>/manifest.json found — nothing to validate.'))
+    return 0
+  }
+
   if (!all && !report && changed === null) {
     console.log(YELLOW('Could not compute the changed-feature set (shallow clone / unknown base).'))
     console.log(YELLOW('Nothing is enforced this run; use --all to validate every manifest, or --report to audit.'))
@@ -360,7 +396,8 @@ function main() {
     return 0
   }
   const scopeLabel = all ? 'all features' : `changed feature(s): ${changed && changed.size ? [...changed].join(', ') : '(none)'}`
-  if (schemaFailures > 0 || mobileFailures > 0) {
+  if (schemaFailures > 0 || mobileFailures > 0 || missingFailures > 0) {
+    if (missingFailures > 0) console.log(RED(`gate-frames-schema FAILED: ${missingFailures} changed feature(s) have frames but no manifest.json.`))
     if (schemaFailures > 0) console.log(RED(`gate-frames-schema FAILED: ${schemaFailures} schema error(s) in ${scopeLabel}.`))
     if (mobileFailures > 0) {
       console.log(RED(`gate-frames-schema FAILED: ${mobileFailures} flow(s) in ${scopeLabel} declare no mobile coverage.`))
