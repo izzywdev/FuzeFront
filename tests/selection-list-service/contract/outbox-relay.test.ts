@@ -10,31 +10,48 @@
  *   O3  per-org order is preserved across a transient failure: row N+1 is never published while
  *       row N of the same org is pending retry
  *
- * The relay claims every org's head row, so the fakes only fail for THIS file's org and pass the
- * rest through (marking other test files' rows `sent` is harmless: they assert on topics/payloads).
+ * ISOLATION. `drainOutboxOnce` is database-wide: it claims the head row of every org with pending rows
+ * (FOR UPDATE SKIP LOCKED) and a row another drainer holds is skipped. Run against the shared
+ * `public.event_outbox`, a test asserting "my org's row has `attempts` N after MY pass" therefore raced every
+ * other drainer on the database (a second run of this suite, another worker, a relay loop), and its own
+ * pass-through fakes swept everyone else's rows. So each test drives the UNMODIFIED relay against a private
+ * copy of the table (helpers/relay-sandbox.ts): events are still produced by the real service over HTTP into
+ * the real table, then copied into the sandbox, where only this test's pass can reach them.
  */
 import { mintTestToken } from '../helpers/auth';
 import { rawFetch } from '../helpers/client';
 import { closeDb, dbQuery } from '../helpers/db';
 import { allEvents, payloadErrors, TOPICS } from '../helpers/outbox';
+import { createRelaySandbox, RelaySandbox } from '../helpers/relay-sandbox';
 import { newOrg, newUser, newUuid } from '../helpers/seed-harness';
 
 import { drainOutboxOnce } from '../../../services/selection-list-service/dist/events/outboxRelay';
 import { makeOutboxPublisher } from '../../../services/selection-list-service/dist/events/outboxPublisher';
-import { db } from '../../../services/selection-list-service/dist/db';
+import { db as publicDb } from '../../../services/selection-list-service/dist/db';
 
+let sbx: RelaySandbox;
+/** The Knex handle every drain in this file uses: the sandbox's private `event_outbox`. */
+let db: RelaySandbox['db'];
+
+beforeEach(async () => {
+  sbx = await createRelaySandbox();
+  db = sbx.db;
+});
+afterEach(async () => {
+  await sbx.destroy();
+});
 afterAll(async () => {
-  await db.destroy();
+  await publicDb.destroy();
   await closeDb();
 });
 
-/** The relay claims the head row of up to this many orgs per pass; the shared test DB holds many orgs' rows. */
+/** The relay claims the head row of up to this many orgs per pass; the sandbox holds only this test's orgs. */
 const ALL_ORGS = 1_000_000;
 
 type Rec = { id: string; seq: string; organizationId: string; topic: string; payload: any; attempts: number };
 
-/** An org with three outbox rows: list.created, access.granted, item.created. */
-async function orgWithEvents() {
+/** An org with three outbox rows (list.created, access.granted, item.created), written by the real service and adopted into the sandbox. */
+async function orgWithEvents(opts: { seqStart?: number } = {}) {
   const org = newOrg();
   const user = newUser();
   const tok = mintTestToken({ userId: user.wire, organizationId: org.wire });
@@ -44,10 +61,13 @@ async function orgWithEvents() {
   expect(item.status).toBe(201);
   const rows = await allEvents(org.wire);
   expect(rows.map((r) => r.topic)).toEqual([TOPICS.SELECTION_LISTS_LIST_CREATED, TOPICS.SELECTION_LISTS_ACCESS_GRANTED, TOPICS.SELECTION_LISTS_ITEM_CREATED]);
+  expect(await sbx.adopt(org.wire, opts)).toBe(rows.length);
+  expect((await statusOf(org.wire)).map((r) => [r.status, r.attempts])).toEqual([['pending', 0], ['pending', 0], ['pending', 0]]);
   return { org, rows };
 }
 
-const statusOf = async (orgWire: string) => (await dbQuery('SELECT id, seq::text, status, attempts FROM event_outbox WHERE organization_id = $1 ORDER BY seq', [orgWire]));
+/** Delivery state of one org's sandboxed rows, in seq order. */
+const statusOf = (orgWire: string) => sbx.rows(orgWire);
 
 describe('O1: the relay publishes with key = organizationId, in the versioned envelope', () => {
   it('hands the real publisher a producer call keyed by the org, carrying a schema-valid payload', async () => {
@@ -77,8 +97,12 @@ describe('O1: the relay publishes with key = organizationId, in the versioned en
 });
 
 describe('O3: per-org ordering across a transient publish failure', () => {
-  it('row N+1 is not published while row N is pending retry; after recovery everything flows in seq order', async () => {
-    const { org, rows } = await orgWithEvents();
+  /**
+   * The O3 property, parameterised on where the org's rows sit in the `seq` space. `seqStart` renumbers them
+   * (order preserved) so the run does not depend on how many events other tests happened to write first.
+   */
+  const perOrgOrderAcrossTransientFailure = async (seqStart?: number) => {
+    const { org, rows } = await orgWithEvents({ seqStart });
     const published: Rec[] = [];
     let failFirst = true;
     const publish = async (r: Rec) => {
@@ -89,9 +113,11 @@ describe('O3: per-org ordering across a transient publish failure', () => {
     const deadLetter = jest.fn().mockResolvedValue(undefined);
 
     const pass1 = await drainOutboxOnce({ db, maxOrgsPerPass: ALL_ORGS, publish: publish as never, deadLetter });
-    expect(pass1.retried).toBeGreaterThanOrEqual(1);
+    // The sandbox holds only this org, so the pass is fully accounted for: one claim, one failed publish, nothing else.
+    expect(pass1).toMatchObject({ orgs: 1, sent: 0, retried: 1, parked: 0, deadLetterFailed: 0 });
     expect(published).toEqual([]); // rows 2 and 3 of THIS org waited behind row 1
     let st = await statusOf(org.wire);
+    expect(st.map((r) => r.id)).toEqual(rows.map((r) => r.id)); // the read itself is in numeric seq order (see statusOf)
     expect(st.map((r) => r.status)).toEqual(['pending', 'pending', 'pending']);
     expect(st[0].attempts).toBe(1);
     expect(st[1].attempts).toBe(0);
@@ -102,7 +128,13 @@ describe('O3: per-org ordering across a transient publish failure', () => {
     st = await statusOf(org.wire);
     expect(st.map((r) => r.status)).toEqual(['sent', 'sent', 'sent']);
     expect(deadLetter).not.toHaveBeenCalled();
-  });
+  };
+
+  it('row N+1 is not published while row N is pending retry; after recovery everything flows in seq order', () => perOrgOrderAcrossTransientFailure());
+  // `seq` is a BIGINT whose decimal width changes at 10, 100, ...; a read that ordered it as TEXT put '10' before '4'
+  // and made the head row look like the LAST one. These pin the widths the suite's own event volume crosses.
+  it('... with the org\'s rows straddling seq 9 -> 10', () => perOrgOrderAcrossTransientFailure(8));
+  it('... with the org\'s rows straddling seq 99 -> 100', () => perOrgOrderAcrossTransientFailure(98));
 
   it('a failing org does not block other orgs (head-of-line blocking is per org)', async () => {
     const bad = await orgWithEvents();
@@ -113,8 +145,9 @@ describe('O3: per-org ordering across a transient publish failure', () => {
     await drainOutboxOnce({ db, maxOrgsPerPass: ALL_ORGS, publish: publish as never, deadLetter: jest.fn().mockResolvedValue(undefined) as never });
     expect((await statusOf(good.org.wire)).map((r) => r.status)).toEqual(['sent', 'sent', 'sent']);
     expect((await statusOf(bad.org.wire)).map((r) => r.status)).toEqual(['pending', 'pending', 'pending']);
-    // drain the bad org so its rows do not stay pending forever for other runs
+    // once the poison clears, the blocked org flows too
     await drainOutboxOnce({ db, maxOrgsPerPass: ALL_ORGS, publish: (async () => undefined) as never, deadLetter: jest.fn() as never });
+    expect((await statusOf(bad.org.wire)).map((r) => r.status)).toEqual(['sent', 'sent', 'sent']);
   });
 });
 
@@ -184,6 +217,8 @@ describe('O2: ten failures park the row, copy it to <topic>.dlq, and unblock the
        VALUES ($1, $2, $3, $4::jsonb, 'sl7-bad', 'pending', 0)`,
       [id, org.wire, TOPICS.SELECTION_LISTS_LIST_CREATED, JSON.stringify({ eventId: id, organizationId: org.wire, nonsense: true })],
     );
+    expect(await sbx.adopt(org.wire)).toBe(1);
+    await dbQuery('DELETE FROM public.event_outbox WHERE id = $1', [id]); // the sandbox owns the only copy that matters
     const published: string[] = [];
     const dead: string[] = [];
     await drainOutboxOnce({
@@ -194,5 +229,25 @@ describe('O2: ten failures park the row, copy it to <topic>.dlq, and unblock the
     expect(published).toEqual([]);
     expect(dead).toEqual([id]);
     expect((await statusOf(org.wire))[0]).toMatchObject({ status: 'failed' });
+  });
+});
+
+describe('sandbox isolation: no other drainer can reach the rows these tests assert on', () => {
+  it('a pass over the sandbox sees exactly the sandboxed rows and never a row of the shared table', async () => {
+    const { rows } = await orgWithEvents();
+    const stranger = newOrg();
+    const strangerId = newUuid();
+    await dbQuery(
+      `INSERT INTO public.event_outbox (id, organization_id, topic, payload, correlation_id)
+       VALUES ($1, $2, $3, $4::jsonb, 'sl7-stranger')`,
+      [strangerId, stranger.wire, TOPICS.SELECTION_LISTS_LIST_CREATED, JSON.stringify({ eventId: strangerId, organizationId: stranger.wire })],
+    );
+    try {
+      const seen: string[] = [];
+      await drainOutboxOnce({ db, maxOrgsPerPass: ALL_ORGS, publish: (async (r: Rec) => void seen.push(r.id)) as never, deadLetter: jest.fn() as never });
+      expect(seen).toEqual(rows.map((r) => r.id)); // exactly this test's rows, in seq order, and no stranger
+    } finally {
+      await dbQuery('DELETE FROM public.event_outbox WHERE id = $1', [strangerId]);
+    }
   });
 });
