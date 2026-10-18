@@ -18,6 +18,7 @@ import type { AddressInfo } from 'node:net';
 import { bytesToUuid, mintId, toUuid, uuidv7Bytes } from '@izzywdev/fuzefront-identity';
 import { dbQuery } from './db';
 import { allEvents, OutboxRow } from './outbox';
+import { FAKE_SECURITY_URL } from './security-url';
 
 
 /** A fresh org: wire TypeID (what tokens/HTTP/events carry) + the bare UUID identity events carry. */
@@ -216,7 +217,6 @@ export async function eventsAfterIndex(orgWire: string, from: number): Promise<O
 // The support path (docs/planning/selection-lists-permit-actions.md §5)
 // ---------------------------------------------------------------------------------------------
 
-const FAKE_SECURITY_URL = process.env['FAKE_SECURITY_URL'] ?? 'http://localhost:3002';
 
 /**
  * Grant a user `list-owner` on one list through the Security API with a MACHINE token — exactly

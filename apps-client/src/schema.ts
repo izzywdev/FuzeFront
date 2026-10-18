@@ -375,6 +375,15 @@ export interface components {
              */
             deployOnFuzeInfra: boolean;
         };
+        /** @description Public installation destinations for a product's native mobile build. Omit a field until that exact store listing or APK is publicly available; clients must never synthesize download URLs from a product name. */
+        Distribution: {
+            /** @description Public Apple App Store product URL. */
+            appleAppStoreUrl?: string;
+            /** @description Public Google Play Store product URL. */
+            googlePlayUrl?: string;
+            /** @description Direct public Android APK URL, normally the product's latest GitHub Release asset. */
+            apkUrl?: string;
+        };
         /** @description The declarative document describing how the host mounts and chromes an app. Stored on the app row, served back on read, and the single shared type across UI / backend / tests. */
         AppManifest: {
             /** @enum {string} */
@@ -403,6 +412,7 @@ export interface components {
             auth?: components["schemas"]["Auth"];
             routing?: components["schemas"]["Routing"];
             infra?: components["schemas"]["Infra"];
+            distribution?: components["schemas"]["Distribution"];
             visibility?: components["schemas"]["Visibility"];
             /** @description Roles permitted to see/activate the app. Empty = all members. */
             roles?: string[];
