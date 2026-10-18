@@ -277,7 +277,7 @@ class TestReviewOnlyOptIn(unittest.TestCase):
         for vendor in ("openai", "gemini"):
             self.assertEqual(
                 " ".join(str(with_[f"fallback-{vendor}-key"]).split()),
-                "${{ inputs.review-only != 'true' && inputs.%s-api-key || '' }}" % vendor,
+                f"${{{{ inputs.review-only != 'true' && inputs.{vendor}-api-key || '' }}}}",
                 f"fallback-{vendor}-key must withhold ONLY the {vendor} key under review-only; the "
                 f"inverted `review-only == 'true' && '' || key` always yields the key ('' is falsy)")
 
