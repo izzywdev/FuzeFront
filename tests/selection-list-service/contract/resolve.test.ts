@@ -22,16 +22,17 @@ import jwt from 'jsonwebtoken';
 import { mintTestToken, TEST_JWT_SECRET } from '../helpers/auth';
 import { createTestList, createTestListWithItems, purgeList } from '../helpers/factories';
 import type { SelectionListId, SelectionListItemId } from '../helpers/factories';
+import { testOrg, testUser } from '../helpers/ids';
 
 // ---------------------------------------------------------------------------
 // Test actors — two separate orgs
 // ---------------------------------------------------------------------------
 
-const ORG_A = 'org_01test00000000resolve0000a';
-const USER_A = 'usr_01test00000000resolveusra0';
+const ORG_A = testOrg('resolve0000a');
+const USER_A = testUser('resolveusra');
 
-const ORG_B = 'org_01test00000000resolve0000b';
-const USER_B = 'usr_01test00000000resolveusrb0';
+const ORG_B = testOrg('resolve0000b');
+const USER_B = testUser('resolveusrb');
 
 function orgAToken(): string {
   return mintTestToken({ userId: USER_A, organizationId: ORG_A });

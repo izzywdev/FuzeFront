@@ -1,0 +1,25 @@
+<!-- @dsCard group="Shell" height=372 static -->
+<style>@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");</style>
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">UserMenu · usage</span>
+<pre><code>&lt;UserMenu
+  user={{ firstName: "Iris", lastName: "Vale", email: "iris@fuze.dev", roles: ["admin"] }}
+  onNavigate={(path) =&gt; router.push(path)}
+  onSignOut={() =&gt; auth.signOut()}
+/&gt;
+
+// Non-admin: the Admin row is hidden, role tag reads "User".
+&lt;UserMenu
+  user={{ firstName: "Sam", email: "sam@fuze.dev", roles: ["user"] }}
+  onNavigate={go}
+  onSignOut={signOut}
+/&gt;
+
+// Email-only user: initials + display name fall back to the email.
+&lt;UserMenu user={{ email: "ops@fuze.dev" }} onNavigate={go} onSignOut={signOut} /&gt;</code></pre>

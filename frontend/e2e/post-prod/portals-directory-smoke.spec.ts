@@ -62,9 +62,16 @@ function attachErrorCollectors(page: Page) {
   page.on('pageerror', (err: Error) => pageErrors.push(err.message))
   page.on('requestfailed', req => {
     const url = req.url()
+    const failure = req.failure()?.errorText ?? 'failed'
+    // The app deliberately cancels these long-lived notification requests when
+    // a route changes. Playwright reports that normal browser cleanup as a
+    // failed request, but it is neither an API error nor a broken portal.
+    if (failure === 'net::ERR_ABORTED' && /\/api\/v1\/notifications\/(?:unread-count|stream)/.test(url)) {
+      return
+    }
     // Only app assets / API — ignore third-party beacons/analytics noise.
     if (/\/api\/|remoteEntry|\.js(\?|$)|\/portals/i.test(url)) {
-      failedRequests.push(`${req.method()} ${url} :: ${req.failure()?.errorText ?? 'failed'}`)
+      failedRequests.push(`${req.method()} ${url} :: ${failure}`)
     }
   })
   return { pageErrors, failedRequests }
