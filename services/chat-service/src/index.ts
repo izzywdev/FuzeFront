@@ -1,3 +1,4 @@
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { createApp } from './app';
 import { loadConfig } from './config';
 import { db } from './db';
@@ -19,6 +20,20 @@ import { KnexRefIndexRepository } from './repositories/ref-index.repository';
 import { initFeatureFlags } from './utils/feature-flags';
 import { injectRecentGmailSummary } from './connectors/gmail-injection';
 import { createDelegationClient, createWorkloadAuthClient } from '@fuzefront/service-auth';
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'chat-service',
+  serviceVersion: SERVICE_VERSION,
+});
 
 async function main() {
   const config = loadConfig();
@@ -113,9 +128,17 @@ async function main() {
   const shutdown = async () => {
     // eslint-disable-next-line no-console
     console.log('[chat-service] Shutting down...');
+    // Stop accepting new connections FIRST. Flushing telemetry (or
+    // disconnecting the Kafka producer) before the server stops listening
+    // lets in-flight requests keep being served after the exporter/producer
+    // are already torn down — their spans/events then silently never ship.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     await stopRefIndexProjection().catch(() => {});
     await producer.disconnect().catch(() => {});
-    server.close(() => process.exit(0));
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => {});
+    process.exit(0);
   };
 
   process.on('SIGTERM', shutdown);
