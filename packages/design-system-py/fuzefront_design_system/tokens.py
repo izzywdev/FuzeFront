@@ -2,7 +2,7 @@
 Design tokens matching FuzeFront's fuse seam design system (tokens.css).
 """
 
-from typing import Final, Dict
+from typing import Final
 
 # Core Brand Colors
 COLOR_ELECTRIC_INDIGO: Final[str] = "#6e5cff"
@@ -50,7 +50,7 @@ FONT_SANS: Final[str] = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
 FONT_MONO: Final[str] = "'JetBrains Mono', 'Fira Code', monospace"
 
 # Spacing Tokens (in rem / px equivalents)
-SPACING_MAP: Final[Dict[str, str]] = {
+SPACING_MAP: Final[dict[str, str]] = {
     "1": "0.25rem",  # 4px
     "2": "0.5rem",   # 8px
     "3": "0.75rem",  # 12px

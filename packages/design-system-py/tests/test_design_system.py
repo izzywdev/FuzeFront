@@ -1,17 +1,17 @@
 from fuzefront_design_system import (
-    COLOR_ELECTRIC_INDIGO,
     COLOR_CYAN,
+    COLOR_ELECTRIC_INDIGO,
     SEAM_GRADIENT,
-    ThemeContext,
-    FuzeTheme,
-    format_cli_status,
     StatusPillData,
+    ThemeContext,
 )
+
 
 def test_tokens():
     assert COLOR_ELECTRIC_INDIGO == "#6e5cff"
     assert COLOR_CYAN == "#29d3e6"
     assert "linear-gradient" in SEAM_GRADIENT
+
 
 def test_theme_context():
     dark_ctx = ThemeContext("dark")
@@ -25,6 +25,7 @@ def test_theme_context():
     css_vars = dark_ctx.to_css_variables()
     assert "--seam" in css_vars
     assert "--accent-color" in css_vars
+
 
 def test_components():
     pill = StatusPillData(status="online", label="⚡ Live WebSocket Bus")

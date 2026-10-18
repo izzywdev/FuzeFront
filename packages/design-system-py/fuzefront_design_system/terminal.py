@@ -2,7 +2,6 @@
 Terminal & CLI styling adhering to FuzeFront Design System fuse seam tokens.
 """
 
-from typing import Dict, Any
 from . import tokens
 
 
@@ -24,7 +23,7 @@ def format_cli_status(label: str, status: str = "online") -> str:
     return f"{color}[{status.upper()}]\033[0m {label}"
 
 
-def get_rich_theme_dict() -> Dict[str, str]:
+def get_rich_theme_dict() -> dict[str, str]:
     """Provides style dictionary for Rich console"""
     return {
         "fuze.indigo": tokens.COLOR_ELECTRIC_INDIGO,

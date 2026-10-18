@@ -2,9 +2,9 @@
 Component schema and UI data structures adhering to FuzeFront DS.
 """
 
-from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 
 @dataclass
@@ -13,7 +13,7 @@ class StatusPillData:
     label: str
     pulse: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
             "label": self.label,
@@ -29,11 +29,11 @@ class ChatBubbleData:
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
-    thought: Optional[str] = None
-    tool_call: Optional[Dict[str, str]] = None
-    status: Optional[str] = None
+    thought: str | None = None
+    tool_call: dict[str, str] | None = None
+    status: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "role": self.role,
