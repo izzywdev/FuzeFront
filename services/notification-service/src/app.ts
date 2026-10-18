@@ -1,5 +1,6 @@
 import express, { Application, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import { tracingMiddleware } from '@fuzefront/telemetry';
 import {
   NotificationRouterDeps,
   createNotificationRouter,
@@ -13,6 +14,11 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps = {}): Application {
   const app = express();
+  // Starts/continues a per-request span, exposing req.traceId/req.spanId for
+  // log correlation. Mounted before any other middleware so the span wraps
+  // the whole request lifecycle (OTLP export to FuzeInfra's Collector, never
+  // Tempo/Loki directly — see @fuzefront/telemetry's docs/TRACE_CONTRACT.md).
+  app.use(tracingMiddleware());
   app.use(express.json({ limit: '256kb' }));
 
   // UNAUTHENTICATED — also the Helm readiness/liveness probe target.
