@@ -29,7 +29,7 @@
     <a class="pv-flow__node" data-node-kind="existing" data-node="check-inbox" href="../auth-experience/03-check-inbox.html">
       <span class="pv-flow__kind">approved · auth-experience</span>
       <p class="pv-flow__title">03 Check your inbox</p>
-      <p class="pv-flow__desc">Unchanged. Reached by Continue, Skip, or an honest degrade. Never by a dead end.</p>
+      <p class="pv-flow__desc">Unchanged. Reached only when an email was sent and isn't confirmed yet (<code>nextAfterPhone()</code>). Otherwise the user goes straight into the app.</p>
     </a>
     <span class="pv-flow__arrow" aria-hidden="true">→</span>
     <a class="pv-flow__node" data-node-kind="existing" data-node="verify-landing" href="../auth-experience/04-verify-landing.html">
@@ -49,18 +49,44 @@
     </ul>
   </section>
 
+  <section class="pv-section" data-exit-rule>
+    <h2>One exit rule: <code>nextAfterPhone()</code></h2>
+    <p>Every way out of the phone step goes through the same check: Continue after verifying, Skip, Continue-without-phone (deferral), and every bypass in the table below. The check uses <b>freshly re-fetched</b> <code>GET /verify/status</code>, because the email link may have been confirmed in another tab while the phone step was open.</p>
+    <table class="pv-table">
+      <thead><tr><th>Condition at exit</th><th>Destination</th><th><code>data-next</code></th></tr></thead>
+      <tbody>
+        <tr data-exit-case="email-pending"><td><code>AuthMethods.verification.email === true</code> <b>and</b> <code>VerificationStatus.emailVerified === false</code></td><td><code>/signup/verify</code> (auth-experience 03, check inbox)</td><td><code>verify-email</code></td></tr>
+        <tr data-exit-case="email-off"><td><code>verification.email === false</code>: no email was sent, so the inbox screen would be untrue</td><td>The app: <code>?next=</code>, else the default app</td><td><code>app</code></td></tr>
+        <tr data-exit-case="email-done"><td><code>emailVerified === true</code> (confirmed in parallel)</td><td>The app: <code>?next=</code>, else the default app</td><td><code>app</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
   <section class="pv-section" data-routing-table>
     <h2>Routing after <code>POST /signup</code> → 201 (decided client-side from <code>GET /methods</code> + <code>GET /verify/status</code>)</h2>
     <table class="pv-table">
       <thead><tr><th>Condition</th><th>Goes to</th><th>Frame</th></tr></thead>
       <tbody>
-        <tr data-route-case="flag-off"><td>Flag <code>fuzefront.auth.signup-phone-verification</code> OFF, or <code>verification.phoneAtSignup = "off"</code> (Δ)</td><td><code>/signup/verify</code>. The step doesn't exist</td><td>auth-experience 03</td></tr>
-        <tr data-route-case="sms-unavailable"><td><code>AuthMethods.verification.sms === false</code> (no <code>SMS_SERVICE_URL</code>)</td><td><code>/signup/verify</code>. The step is <b>not shown</b> because we don't open a flow we can't finish. Under <code>required</code>, the user is re-prompted at next sign-in.</td><td>08 · sms-off-preflight</td></tr>
-        <tr data-route-case="already-verified"><td><code>VerificationStatus.phoneVerified === true</code></td><td><code>/signup/verify</code> (skip silently)</td><td>08 · already-verified</td></tr>
+        <tr data-route-case="flag-off"><td>Flag <code>fuzefront.auth.signup-phone-verification</code> OFF, or <code>verification.phoneAtSignup = "off"</code> (Δ)</td><td><code>nextAfterPhone()</code>. The step doesn't exist</td><td>auth-experience 03 or the app</td></tr>
+        <tr data-route-case="sms-unavailable"><td><code>AuthMethods.verification.sms === false</code> (no <code>SMS_SERVICE_URL</code>)</td><td><code>nextAfterPhone()</code>. The step is <b>not shown</b>, because we don't open a flow we can't finish. Under <code>required</code>, the sign-in redirect below re-prompts once SMS is available.</td><td>08 · sms-off-preflight</td></tr>
+        <tr data-route-case="already-verified"><td><code>VerificationStatus.phoneVerified === true</code></td><td><code>nextAfterPhone()</code> (skip silently)</td><td>08 · already-verified</td></tr>
         <tr data-route-case="pending"><td><code>VerificationStatus.phonePending</code> present (Δ, e.g. after a reload)</td><td><code>/signup/phone</code> resumes at <b>enter code</b></td><td>08 · resumed</td></tr>
         <tr data-route-case="default"><td>Otherwise</td><td><code>/signup/phone</code> → enter phone</td><td>02</td></tr>
       </tbody>
     </table>
+  </section>
+
+  <section class="pv-section" data-signin-redirect>
+    <h2>Re-prompt at sign-in (flagged): how <code>required</code> keeps its promise</h2>
+    <p>After any <b>successful</b> sign-in (auth-experience <code>SignInFlow</code>, including after the MFA step-up), and before navigating to <code>?next=</code>, the client checks <code>GET /methods</code> + <code>GET /verify/status</code>:</p>
+    <table class="pv-table">
+      <thead><tr><th>Condition</th><th>Goes to</th></tr></thead>
+      <tbody>
+        <tr data-signin-case="reprompt"><td>Flag ON <b>and</b> <code>phoneAtSignup === "required"</code> <b>and</b> <code>phoneVerified === false</code> <b>and</b> <code>verification.sms === true</code></td><td><code>/signup/phone?next=&lt;original next&gt;</code>. The same flow and frames, with the signup progress rail hidden. Every exit returns to <code>?next=</code>.</td></tr>
+        <tr data-signin-case="no-reprompt"><td>Anything else: <code>optional</code> or <code>off</code>, flag OFF, already verified, or SMS unavailable</td><td><code>?next=</code> as today. Under <code>optional</code> the only reminder is the "Unverified" chip in Security.</td></tr>
+      </tbody>
+    </table>
+    <p>Re-prompting happens once per sign-in, not on every navigation: a deferral during that sign-in (503 or lockout) holds until the next sign-in. This is a frontend routing delta on the approved <code>signin</code> flow, behind the same flag. No approved frame changes.</p>
   </section>
 
 <nav class="pv-nav" aria-label="Frame navigation">

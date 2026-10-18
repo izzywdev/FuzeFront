@@ -1,6 +1,6 @@
 {
   "name": "Signup phone verification (SMS OTP) — approval frames",
-  "description": "FFRNT-361: SMS phone verification as a step of account registration. Freezes where the step sits in signup (immediately after POST /signup issues a session, before the approved check-inbox screen, in parallel with email verification), the enter-phone → sending → enter-code → verified path, and every state the UI must render: wrong / expired / too-many-attempts (429) codes, send failure, send rate-limit, SMS channel unavailable (honest degrade, never a dead end), number can't be used (409 only after a correct code — no enumeration), server-rejected number, both skip-policy outcomes, loading, already-verified, resume-after-reload, session expired and generic error — at desktop and 375px. Approving the flow approves the build inventory below and the listed contract deltas. frontend-test-engineer drives Playwright against the data-frame / data-* hooks.",
+  "description": "FFRNT-361: SMS phone verification as a step of account registration. Freezes where the step sits in signup (immediately after POST /signup issues a session, before the approved check-inbox screen, in parallel with email verification), the single exit rule that skips check-inbox when no email is pending, the flagged sign-in re-prompt for policy=required, the enter-phone → sending → enter-code → verified path, and every state the UI must render: wrong / expired / too-many-attempts (429) codes, send failure, send rate-limit, SMS channel unavailable (honest degrade, never a dead end), number can't be used (409 only after a correct code — no enumeration), server-rejected number, both skip-policy outcomes, loading, already-verified, resume-after-reload, session expired and generic error — at desktop and 375px. Approving the flow approves the build inventory below and the listed contract deltas. frontend-test-engineer drives Playwright against the data-frame / data-* hooks.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
   "plan": "Jira FFRNT-361",
   "entry": "index.html",
@@ -11,8 +11,8 @@
   },
   "reconciliation": {
     "notes": [
-      "mfa-stepup-mobile/03-confirm-contact.html (flow confirm-contact-phone, approved: false) is the post-signup/settings phone OTP screen. This feature is the SIGNUP context of the same screen: same data-panel='confirm-contact', same state names (enter-phone, sending, enter-code, error-invalid, error-send, verified) and action names (send-code, verify-contact, resend, skip), plus data-context='signup' and the states that frame is missing (error-expired, error-locked/429, error-rate-limited, error-unavailable, error-number-unavailable, loading, already-verified, resumed, error-session, error-generic). OtpInput geometry is identical (42x52 cells, >=44px tap target). Implementation must be ONE ContactVerifyPanel + state machine used in both contexts, not a parallel component tree. If this feature is approved first, confirm-contact-phone should adopt these states on its next iteration.",
-      "auth-experience (signup, verify-email approved) is NOT edited. 01-signup, 03-check-inbox and 04-verify-landing are unchanged; email stays link-click (the same ruling mfa-stepup-mobile recorded). The only change to the approved flow is a flagged routing delta: when this step applies, signup's submit routes to /signup/phone instead of /signup/verify.",
+      "mfa-stepup-mobile/03-confirm-contact.html (flow confirm-contact-phone, approved: false) is the post-signup/settings phone OTP screen. This feature is the SIGNUP context of the same screen: same data-panel='confirm-contact', same state names (enter-phone, sending, enter-code, error-invalid, error-send, verified) and action names (send-code, verify-contact, resend, skip), plus data-context='signup' and the states that frame is missing (error-expired, error-locked/429, error-rate-limited, error-unavailable, error-number-unavailable, loading, already-verified, resumed, error-session, error-generic). OtpInput is the same primitive, with cells widened to 44x52 so BOTH dimensions meet the 44px tap target; mfa-stepup-mobile's 42px-wide cells should adopt 44px on its next iteration. Implementation must be ONE ContactVerifyPanel + state machine used in both contexts, not a parallel component tree. If this feature is approved first, confirm-contact-phone should adopt these states on its next iteration.",
+      "auth-experience (signup, verify-email approved) is NOT edited. 01-signup, 03-check-inbox and 04-verify-landing are unchanged; email stays link-click (the same ruling mfa-stepup-mobile recorded). The only changes to approved flows are flagged routing deltas: signup's post-201 navigation targets /signup/phone when this step applies, and signin's post-success navigation re-prompts under policy=required (see contract.deltas).",
       "After a skip, the reminder surface is the existing 'Unverified' phone chip in account-security / mfa-stepup-mobile 04-security-status; no new reminder surface is introduced."
     ],
     "openQuestionsForOwner": [
@@ -24,10 +24,15 @@
   },
   "decisions": {
     "placement": "After POST /v1/security/signup → 201 (session issued) and BEFORE auth-experience 03-check-inbox, in parallel with email verification. Phone verify REQUIRES an authenticated session (requireBearer on /verify/phone/start and /verify/status in backend/security/src/routes/security.ts); signup already establishes one, so the step runs immediately with no extra sign-in. Not after email verification: that is a non-blocking link-click that may complete on another device without a session, and it would make a working SMS step depend on email delivery.",
-    "skipPolicy": "Server-driven AuthMethods.verification.phoneAtSignup: off | optional | required (contract delta). Recommended default: optional (Skip visible, reminder in Settings → Security). required removes the user's Skip but never blocks account creation and never dead-ends: service failures (503 SMS_UNAVAILABLE, 429 lockout) defer with Continue and re-prompt at next sign-in.",
+    "skipPolicy": "Server-driven AuthMethods.verification.phoneAtSignup: off | optional | required (contract delta). Recommended default: optional (Skip visible, reminder in Settings → Security). required removes the user's own Skip on enter-phone/enter-code but never blocks account creation and never dead-ends: EVERY failure state (502 send failure, 429 rate-limit/lockout, 503 SMS unavailable, 409, network error / unclassified 5xx) carries continue-without-phone in place of Skip, and the sign-in redirect (decisions.signinReprompt) re-prompts later.",
     "noEnumeration": "POST /verify/phone/start answers 202 for any well-formed number regardless of other accounts. 409 PHONE_UNAVAILABLE is returned only by /confirm after a CORRECT code, so only someone in possession of the phone can learn the number is unusable, and the copy still does not assert that another account exists.",
     "honestDegrade": "AuthMethods.verification.sms === false (no SMS_SERVICE_URL) → the step is never rendered (routed past). 503 mid-flow → 'Text messages aren't available right now' + Continue. No vendor name anywhere in the UI.",
-    "e164": "Client: country calling-code + national number normalised with libphonenumber-js (MIT; adopt, don't hand-roll) and shown as the exact E.164 string sent; Send disabled until valid. Server re-validates (400 PHONE_INVALID)."
+    "e164": "Client: country calling-code + national number normalised with libphonenumber-js (MIT; adopt, don't hand-roll) and shown as the exact E.164 string sent; Send disabled until valid. Server re-validates (400 PHONE_INVALID).",
+    "exitRule": "nextAfterPhone() resolves EVERY exit from the step — Continue after verified, Skip, continue-without-phone deferral, and every bypass (flag/policy off, sms unavailable, already verified) — from a freshly re-fetched GET /verify/status: verification.email === true AND emailVerified === false → /signup/verify (check inbox); otherwise (email off, or confirmed in parallel) → the app (?next= or default app). The check-inbox screen is never shown when no email was sent or the email is already confirmed. Exit controls carry data-next='verify-email'|'app'.",
+    "signinReprompt": "Flagged redirect after any successful sign-in (SignInFlow, incl. after MFA step-up), before navigating to ?next=: if flag ON AND phoneAtSignup === 'required' AND phoneVerified === false AND verification.sms === true → /signup/phone?next=<original> (same flow, progress rail hidden, exits return to ?next=). Otherwise ?next= as today. Evaluated once per sign-in; a deferral holds until the next sign-in. Under 'optional' there is no redirect — only the 'Unverified' chip in Security.",
+    "otpEntry": "CODE_INVALID clears the rejected digits and focuses cell 1; Confirm is disabled until 6 new digits are entered, so a resubmit cannot burn an attempt. Resend: the provider may re-send the SAME still-valid code without extending its lifetime, so the expiry countdown always takes the server's remaining time from the new ack (expiresInSeconds) and only the resend cooldown restarts; typed digits are kept and whichever code the server accepts works.",
+    "a11y": "Panels are not live regions. Countdowns update visually but are never announced per second; a dedicated visually-hidden [data-announcer] (role=status, aria-live=polite) speaks milestones only (code sent, you can request a new code now, verified); errors are role=alert. OtpInput cells are 44x52 (>= 44px both ways).",
+    "copy": "Copy promises only what /verify/phone does — confirm a contact number on the account. It does not claim the number enables text-message sign-in codes or account recovery; SMS MFA enrolment is a separate flow (mfa-management)."
   },
   "contract": {
     "openapi": "packages/security/openapi.yaml",
@@ -53,13 +58,14 @@
     "deltas": [
       "SECURITY — POST /v1/security/verify/phone/confirm must declare and enforce bearerAuth and bind to the session user. Today the route has no requireBearer, the OpenAPI operation has no `security`, and AuthentikIdentityProvider.confirmPhoneVerification runs users.where({ phone }).update({ phone_verified: true }) — marking EVERY account holding that number verified.",
       "POST /verify/phone/start must not write users.phone before possession is proven (today it updates users.phone then sends). Hold a pending number; promote it on confirm. PhoneVerifyConfirmRequest becomes { code } (phone optional; if supplied it must equal the pending number).",
-      "NEW 202 body PhoneVerifyStartAck { maskedPhone: string, expiresInSeconds: integer, resendAfterSeconds: integer } — drives the resend cooldown and expiry countdown instead of client-hard-coded timers.",
+      "NEW 202 body PhoneVerifyStartAck { maskedPhone: string, expiresInSeconds: integer, resendAfterSeconds: integer } — drives the resend cooldown and expiry countdown instead of client-hard-coded timers. On a resend, expiresInSeconds is the AUTHORITATIVE remaining lifetime of the active code (the provider may re-send the same unexpired code without extending it), not a fresh full window.",
       "POST /verify/phone/start error taxonomy: 400 PHONE_INVALID (server-side E.164 + SMS-capable), 429 RATE_LIMITED + Retry-After (per user, per number, per IP — no limiter exists on this route today), 502 SMS_SEND_FAILED, 503 SMS_UNAVAILABLE + Retry-After. Today any transport error falls through sendError to 401 UNKNOWN 'Authentication failed', which a client must read as a lost session.",
       "POST /verify/phone/confirm error taxonomy: 422 CODE_INVALID { attemptsRemaining }, 422 CODE_EXPIRED, 429 TOO_MANY_ATTEMPTS + Retry-After, 409 PHONE_UNAVAILABLE (only after a correct code). Today wrong and expired both return 401 NOT_ACTIVE — indistinguishable from session expiry — and HttpNotificationClient.checkSmsOtp maps every non-2xx (incl. sms-service 429) to false. Distinguishing expired/max-attempts needs sms-service /sms/verify to return a status (pending|approved|expired|max_attempts) — a family sms-service change, delegate accordingly.",
       "No-enumeration: POST /verify/phone/start returns 202 for every well-formed number whether or not it is held by another account; uniqueness is decided only at confirm.",
       "NEW AuthMethods.verification.phoneAtSignup: 'off' | 'optional' | 'required' (server-derived signup policy).",
       "NEW VerificationStatus.phonePending?: { maskedPhone, expiresInSeconds, resendAfterSeconds } — lets a reload resume at enter-code without a second SMS.",
-      "Routing (frontend, flagged): when the step applies, auth-experience signup's post-201 navigation targets /signup/phone instead of /signup/verify. No approved frame changes."
+      "Routing (frontend, flagged): auth-experience signup's post-201 navigation targets /signup/phone when the step applies, else nextAfterPhone() — /signup/verify only if verification.email is true and emailVerified is false, otherwise the app. No approved frame changes.",
+      "Routing (frontend, flagged): auth-experience signin's post-success navigation re-prompts → /signup/phone?next=<original> when phoneAtSignup === 'required' AND phoneVerified === false AND verification.sms === true (decisions.signinReprompt). No approved frame changes."
     ]
   },
   "build": {
@@ -94,7 +100,7 @@
       "libphonenumber-js (MIT) — E.164 parsing/formatting + per-country length validation"
     ],
     "designSystemAdditions": [
-      "OtpInput — 6-cell, paste-aware, arrow/backspace nav, autocomplete=one-time-code on cell 1, 42x52 cells / >=44px target. Already named missing by mfa-management and mfa-stepup-mobile: build ONCE.",
+      "OtpInput — 6-cell, paste-aware, arrow/backspace nav, autocomplete=one-time-code on cell 1, 44x52 cells (>= 44px in both dimensions). Already named missing by mfa-management and mfa-stepup-mobile: build ONCE.",
       "PhoneInput / CountryCodeSelect — flag + dial-code select paired with a tel input, >=44px target.",
       "Alert info/warning variants — add if still missing."
     ]
@@ -125,7 +131,8 @@
         "[data-nav='05-code-errors']",
         "[data-nav='06-send-errors']",
         "[data-nav='07-skip-policy']",
-        "[data-nav='08-states']"
+        "[data-nav='08-states']",
+        "[data-delta='signin-reprompt']"
       ]
     },
     {
@@ -134,8 +141,8 @@
       "label": "(01) Where the step sits",
       "route": "/signup/phone",
       "flow": "signup-phone",
-      "summary": "Signup → phone → check inbox → verify landing, with the placement rationale and the post-signup routing table (flag/policy off, SMS unavailable, already verified, pending resume, default).",
-      "acceptanceNotes": "After POST /signup 201 the client routes to /signup/phone ONLY when the flag is ON, phoneAtSignup != off, verification.sms is true and phoneVerified is false; otherwise straight to /signup/verify. phonePending resumes at enter-code. Email verification proceeds independently and may complete first.",
+      "summary": "Signup → phone → check inbox / app, with the placement rationale, the single exit rule nextAfterPhone(), the post-signup routing table (flag/policy off, SMS unavailable, already verified, pending resume, default) and the flagged sign-in re-prompt for policy=required.",
+      "acceptanceNotes": "After POST /signup 201 the client routes to /signup/phone ONLY when the flag is ON, phoneAtSignup != off, verification.sms is true and phoneVerified is false; otherwise nextAfterPhone(). phonePending resumes at enter-code. EVERY exit/bypass resolves via nextAfterPhone() from re-fetched status: /signup/verify only when verification.email is true AND emailVerified is false; otherwise the app. After any successful sign-in: flag ON + phoneAtSignup=required + phoneVerified=false + sms available → /signup/phone?next=<original>; otherwise ?next=.",
       "testHooks": [
         "[data-frame='01-placement']",
         "[data-flow-diagram]",
@@ -146,7 +153,14 @@
         "[data-route-case='sms-unavailable']",
         "[data-route-case='already-verified']",
         "[data-route-case='pending']",
-        "[data-route-case='default']"
+        "[data-route-case='default']",
+        "[data-exit-rule]",
+        "[data-exit-case='email-pending']",
+        "[data-exit-case='email-off']",
+        "[data-exit-case='email-done']",
+        "[data-signin-redirect]",
+        "[data-signin-case='reprompt']",
+        "[data-signin-case='no-reprompt']"
       ]
     },
     {
@@ -156,7 +170,7 @@
       "route": "/signup/phone",
       "flow": "signup-phone",
       "summary": "PhoneNumberField (country calling code + national number → E.164 preview) at desktop and 375px: idle, client-invalid, valid, and sending (start in flight).",
-      "acceptanceNotes": "Send code is disabled until libphonenumber-js reports a valid number; the E.164 preview shows the exact string posted to POST /verify/phone/start { phone }. Invalid shows aria-invalid + role=alert on blur/submit, not per keystroke. While sending, inputs + button disable with a spinner so a slow network cannot double-send. Skip is rendered only under policy=optional.",
+      "acceptanceNotes": "Send code is disabled until libphonenumber-js reports a valid number; the E.164 preview shows the exact string posted to POST /verify/phone/start { phone }. Invalid shows aria-invalid + role=alert on blur/submit, not per keystroke. While sending, inputs + button disable with a spinner so a slow network cannot double-send. Skip is rendered only under policy=optional. Copy promises only contact verification (no sign-in-code / recovery claims — SMS MFA enrolment is separate).",
       "testHooks": [
         "[data-frame='02-enter-phone']",
         "[data-viewport='desktop']",
@@ -172,7 +186,8 @@
         "[data-e164][data-valid='true']",
         "[data-panel='confirm-contact'][data-state='sending']",
         "[data-action='send-code']",
-        "[data-action='skip']"
+        "[data-action='skip']",
+        "[data-announcer][role='status'][aria-live='polite']"
       ]
     },
     {
@@ -181,8 +196,8 @@
       "label": "(03) Enter code",
       "route": "/signup/phone",
       "flow": "signup-phone",
-      "summary": "6-cell OtpInput (same primitive as mfa-stepup-mobile) with masked number + change-number, paste-aware entry, SMS autofill, expiry countdown, resend cooldown → ready, and verifying (confirm in flight).",
-      "acceptanceNotes": "Pasting a 6-digit code into ANY cell fills all six (non-digits stripped) and auto-submits. Cell 1 carries autocomplete=one-time-code. Confirm is disabled until 6 digits. Resend is disabled with a live countdown for resendAfterSeconds (Δ start ack), then enabled; resending clears the cells and restarts both timers. While verifying, cells/Confirm/Resend are disabled — no double submit. Change number returns to enter-phone with the number prefilled.",
+      "summary": "6-cell OtpInput (same primitive as mfa-stepup-mobile, 44x52 cells) with masked number + change-number, paste-aware entry, SMS autofill, expiry countdown, resend cooldown → ready, verifying, and a milestone-only live announcer.",
+      "acceptanceNotes": "Pasting a 6-digit code into ANY cell fills all six (non-digits stripped) and auto-submits. Cell 1 carries autocomplete=one-time-code. Cells are >= 44x44 (44x52). Confirm is disabled until 6 digits. Resend is disabled with a visual countdown for resendAfterSeconds (Δ start ack), then enabled. On resend ONLY the cooldown restarts; the expiry countdown takes the server's remaining expiresInSeconds from the new ack (the same unexpired code may be re-sent, lifetime not extended); typed digits are kept. While verifying, cells/Confirm/Resend are disabled — no double submit. Change number returns to enter-phone with the number prefilled. Countdowns are NOT inside a live region; only [data-announcer] (role=status, polite) speaks milestones: code sent, you can request a new code now.",
       "testHooks": [
         "[data-frame='03-enter-code']",
         "[data-panel='confirm-contact'][data-context='signup'][data-state='enter-code']",
@@ -196,7 +211,8 @@
         "[data-action='resend'][data-resend-state='cooldown']",
         "[data-action='resend'][data-resend-state='ready']",
         "[data-countdown='resend']",
-        "[data-countdown='expiry']"
+        "[data-countdown='expiry']",
+        "[data-announcer][role='status'][aria-live='polite']"
       ]
     },
     {
@@ -205,14 +221,17 @@
       "label": "(04) Verified → continue",
       "route": "/signup/phone",
       "flow": "signup-phone",
-      "summary": "Server-confirmed success (masked number) with the email-next hint and Continue to auth-experience 03-check-inbox; progress rail marks Phone done.",
-      "acceptanceNotes": "Rendered only after POST /verify/phone/confirm 200 with phoneVerified: true — never optimistically. Continue routes to /signup/verify, or straight into the app when verification.email is false.",
+      "summary": "Server-confirmed success (masked number, contact-verification copy only). Continue resolves via nextAfterPhone(): check-inbox when the email is still pending, or straight into the app (Email step dropped from the rail) when email is off or was confirmed in parallel.",
+      "acceptanceNotes": "Rendered only after POST /verify/phone/confirm 200 with phoneVerified: true — never optimistically. Continue re-fetches GET /verify/status and routes via nextAfterPhone(): data-next='verify-email' → /signup/verify only when verification.email is true AND emailVerified is false; otherwise data-next='app' → ?next= or the default app. Copy claims only that the number is confirmed on the account.",
       "testHooks": [
         "[data-frame='04-verified']",
         "[data-panel='confirm-contact'][data-state='verified']",
         "[data-result='verified']",
         "[data-step='phone'][data-step-state='done']",
-        "[data-action='continue']"
+        "[data-action='continue']",
+        "[data-action='continue'][data-next='verify-email']",
+        "[data-action='continue'][data-next='app']",
+        "[data-next-resolved='app']"
       ]
     },
     {
@@ -222,7 +241,7 @@
       "route": "/signup/phone",
       "flow": "signup-phone",
       "summary": "Wrong code (server-reported attempts remaining), expired code (send a new code), too many attempts / 429 with Retry-After countdown and a Continue-for-now exit.",
-      "acceptanceNotes": "All fail closed and stay on screen — no navigation, no verified state. 422 CODE_INVALID: cells error, focus cell 1, attemptsRemaining from the server. 422 CODE_EXPIRED (or client expiry reaching 0:00): cells disabled, only 'Send a new code'. 429 TOO_MANY_ATTEMPTS: live Retry-After countdown, Continue-for-now (continue-without-phone) under both policies — never a dead end.",
+      "acceptanceNotes": "All fail closed and stay on screen — no navigation, no verified state. 422 CODE_INVALID: the rejected digits are CLEARED, cells keep the error ring, focus moves to cell 1, and Confirm is disabled until 6 new digits are entered (a resubmit cannot burn an attempt); attemptsRemaining comes from the server. 422 CODE_EXPIRED (or client expiry reaching 0:00): cells disabled, only 'Send a new code'. 429 TOO_MANY_ATTEMPTS: Retry-After countdown, continue-without-phone under both policies — never a dead end.",
       "testHooks": [
         "[data-frame='05-code-errors']",
         "[data-panel='confirm-contact'][data-state='error-invalid']",
@@ -232,7 +251,8 @@
         "[data-error='expired-code']",
         "[data-panel='confirm-contact'][data-state='error-locked'][data-http-status='429']",
         "[data-countdown='retry-after']",
-        "[data-action='continue-without-phone']"
+        "[data-action='continue-without-phone']",
+        "[data-action='verify-contact'][data-submit-guard='awaiting-new-code'][disabled]"
       ]
     },
     {
@@ -241,8 +261,8 @@
       "label": "(06) Send & channel errors",
       "route": "/signup/phone",
       "flow": "signup-phone",
-      "summary": "SMS channel unavailable (503 honest degrade, desktop + 375), send failed (502), send rate-limited (429, 'I already have a code'), number can't be used (409 after a correct code — no enumeration), server-rejected number (400).",
-      "acceptanceNotes": "Every state offers a way forward. 503 SMS_UNAVAILABLE → Continue (both policies). 502 → Try again / different number / skip. 429 RATE_LIMITED → Retry-After countdown + return to enter-code. 409 PHONE_UNAVAILABLE comes only from /confirm after a correct code; copy never asserts another account exists. 400 PHONE_INVALID stays on enter-phone with an inline error. No provider/vendor text is ever rendered.",
+      "summary": "SMS channel unavailable (503 honest degrade, desktop + 375), send failed (502) under optional and required, send rate-limited (429) with and without a pending code, number can't be used (409 after a correct code — no enumeration), server-rejected number (400).",
+      "acceptanceNotes": "Every state offers a way forward under both policies: optional shows Skip; required shows continue-without-phone in its place. 503 SMS_UNAVAILABLE → Continue. 502 → Try again / different number / escape. 429 RATE_LIMITED → Retry-After countdown; 'I already have a code' ([data-action='enter-code']) is rendered ONLY when phonePending is true — never on a 429 for the first /start. 409 PHONE_UNAVAILABLE comes only from /confirm after a correct code; copy never asserts another account exists. 400 PHONE_INVALID stays on enter-phone with an inline error. No provider/vendor text is ever rendered.",
       "testHooks": [
         "[data-frame='06-send-errors']",
         "[data-panel='confirm-contact'][data-state='error-unavailable'][data-http-status='503']",
@@ -253,7 +273,10 @@
         "[data-validation='server-invalid'][data-http-status='400']",
         "[data-error='phone-unsupported']",
         "[data-action='continue-without-phone']",
-        "[data-action='change-number']"
+        "[data-action='change-number']",
+        "[data-panel='confirm-contact'][data-state='error-send'][data-policy='required'] [data-action='continue-without-phone']",
+        "[data-panel='confirm-contact'][data-state='error-rate-limited'][data-pending='true'] [data-action='enter-code']",
+        "[data-panel='confirm-contact'][data-state='error-rate-limited'][data-pending='false']"
       ]
     },
     {
@@ -263,7 +286,7 @@
       "route": "/signup/phone",
       "flow": "signup-phone",
       "summary": "Policy matrix (off / optional / required) and both outcomes: optional with Skip + skipped confirmation; required with no Skip + required-but-SMS-unavailable deferral.",
-      "acceptanceNotes": "policy=optional: Skip rendered (top bar + link button), no confirm dialog, then Continue to check-inbox; rail shows Phone 'later'. policy=required: NO [data-action='skip'] anywhere in the panel or top bar, info note explains why; a service failure still defers via continue-without-phone and re-prompts at next sign-in. policy=off / flag OFF: the route is never rendered.",
+      "acceptanceNotes": "policy=optional: Skip rendered (top bar + link button), no confirm dialog, then nextAfterPhone(); rail shows Phone 'later'. policy=required: NO [data-action='skip'] anywhere in the panel or top bar, info note explains why; EVERY failure state (incl. network / unclassified 5xx) offers continue-without-phone, and the flagged sign-in redirect re-prompts later. policy=off / flag OFF: the route is never rendered.",
       "testHooks": [
         "[data-frame='07-skip-policy']",
         "[data-policy-table]",
@@ -285,7 +308,7 @@
       "route": "/signup/phone",
       "flow": "signup-phone",
       "summary": "Loading skeleton (methods + status in flight, desktop + 375), already verified (auto-advance), resumed after reload (phonePending), SMS-off preflight (step skipped), session expired (401), generic error.",
-      "acceptanceNotes": "Loading renders a layout-stable skeleton and no Skip until the policy is known. phoneVerified true → auto-advance to /signup/verify. phonePending → resume at enter-code with server cooldown, no new SMS. verification.sms false → route skipped. 401 (true session failure only) → Sign in with ?next=/signup/phone. Network/5xx → Try again (+ Skip under optional); raw server text never shown.",
+      "acceptanceNotes": "Loading renders a layout-stable skeleton and no Skip until the policy is known. phoneVerified true → auto-advance via nextAfterPhone(). phonePending → resume at enter-code with server cooldown, no new SMS. verification.sms false → route skipped via nextAfterPhone(). 401 (true session failure only) → Sign in with ?next=/signup/phone. Network/5xx → Try again plus Skip (optional) or continue-without-phone (required) — never retry-only; raw server text never shown.",
       "testHooks": [
         "[data-frame='08-states']",
         "[data-panel='confirm-contact'][data-state='loading']",
@@ -295,9 +318,11 @@
         "[data-panel='confirm-contact'][data-state='error-session'][data-http-status='401']",
         "[data-action='sign-in-again']",
         "[data-panel='confirm-contact'][data-state='error-generic']",
-        "[data-action='retry']"
+        "[data-action='retry']",
+        "[data-panel='confirm-contact'][data-state='error-generic'][data-policy='required'] [data-action='continue-without-phone']",
+        "[data-panel='confirm-contact'][data-state='error-generic'][data-policy='optional'] [data-action='skip']"
       ]
     }
   ],
-  "stamp": "0322cfa430549f09b81f295ac2366b34294c9ddec788f717e188326635622947"
+  "stamp": "bf3eb08200a2826030aa3fbe7846e8054645aecdfe998b637bfa74e68d69f035"
 }

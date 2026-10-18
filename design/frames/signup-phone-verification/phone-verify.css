@@ -14,8 +14,9 @@
   --pv-device-width: 375px;   /* mobile viewport under test (Android TWA) */
   --pv-card-width: 420px;     /* AuthCard max-width, same as auth-experience */
   --pv-touch-min: 44px;       /* WCAG 2.5.5 / platform minimum tap target */
-  --pv-otp-cell-w: 42px;      /* OtpInput cell, identical to mfa-stepup-mobile */
-  --pv-otp-cell-h: 52px;
+  --pv-otp-cell-w: 44px;      /* OtpInput cell: BOTH dimensions >= the 44px target.
+                                 mfa-stepup-mobile's 42px width should adopt this. */
+  --pv-otp-cell-h: 52px;      /* 6 x 44 + 5 x 8 gap = 304px: fits 375 - 32 padding */
   --pv-on-accent: var(--bg-primary);
   --pv-border-error: color-mix(in srgb, var(--error-color) 40%, transparent);
   --pv-border-success: color-mix(in srgb, var(--success-color) 40%, transparent);
@@ -187,6 +188,11 @@
 .pv-chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-primary);
   background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-3); }
+
+/* Visually hidden live announcer: milestones only (code sent, resend available,
+   code expired, verified). Per-second countdowns are NOT inside any live region. */
+.pv-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* skeleton */
 .pv-skel { height: 14px; border-radius: var(--radius-pill); margin: 0 auto var(--space-3);

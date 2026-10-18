@@ -11,7 +11,7 @@
 <main class="pv-page" data-frame="03-enter-code" data-flow="signup-phone">
   <div class="pv-crumb"><a href="index.html">← All frames</a> · Frame 03 · Enter code</div>
   <h1 class="pv-h1">Enter the 6-digit code</h1>
-  <p class="pv-lead"><b>OtpInput</b> is the same primitive as <code>mfa-stepup-mobile</code> (6 cells, 42×52, at least a 44px tap target). It auto-advances, Backspace moves back, arrow keys move between cells, and a paste in <i>any</i> cell spreads all six digits. The first cell has <code>autocomplete="one-time-code"</code> for iOS and Android SMS autofill. The form auto-submits when the 6th digit arrives. The resend cooldown and code expiry both come from the start acknowledgement (Δ <code>resendAfterSeconds</code>, <code>expiresInSeconds</code>), not hard-coded client values.</p>
+  <p class="pv-lead"><b>OtpInput</b> is the same primitive as <code>mfa-stepup-mobile</code>: 6 cells, each <b>44×52</b> so both dimensions meet the 44px minimum tap target. mfa-stepup-mobile's 42px-wide cells should be widened to match. Countdowns update visually every second but are <b>not</b> in a live region. The panel's <code>[data-announcer]</code> speaks only milestones: "code sent", "you can request a new code now", "code expired". It auto-advances, Backspace moves back, arrow keys move between cells, and a paste in <i>any</i> cell spreads all six digits. The first cell has <code>autocomplete="one-time-code"</code> for iOS and Android SMS autofill. The form auto-submits when the 6th digit arrives. The resend cooldown and code expiry both come from the start acknowledgement (Δ <code>resendAfterSeconds</code>, <code>expiresInSeconds</code>), not hard-coded client values.</p>
   <div class="pv-pair">
   <div data-viewport="desktop">
     <p class="pv-viewport-label">Desktop · AuthCard 420px · /signup/phone</p>
@@ -25,7 +25,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
       <p class="pv-sub">Enter the 6-digit code we sent to</p>
@@ -44,12 +44,14 @@
       <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
         <button type="button" class="pv-resend" data-action="resend" data-resend-state="cooldown" disabled>↻ Resend code in <span class="pv-count" data-countdown="resend">0:27</span></button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite">Code sent to +44 •••• •• 0123.</p>
   </section>
       </div></div>
     </div>
@@ -69,7 +71,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
       <p class="pv-sub">Enter the 6-digit code we sent to</p>
@@ -88,12 +90,14 @@
       <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
         <button type="button" class="pv-resend" data-action="resend" data-resend-state="cooldown" disabled>↻ Resend code in <span class="pv-count" data-countdown="resend">0:27</span></button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -118,7 +122,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-input="pasted" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-input="pasted">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
       <p class="pv-sub">Enter the 6-digit code we sent to</p>
@@ -137,12 +141,14 @@
       <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact">Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
         <button type="button" class="pv-resend" data-action="resend" data-resend-state="ready">↻ Resend code</button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -166,7 +172,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="verifying" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="verifying">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
       <p class="pv-sub">Enter the 6-digit code we sent to</p>
@@ -185,12 +191,14 @@
       <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled aria-busy="true"><span class="pv-spinner" aria-hidden="true"></span>Checking…</button>
+
       </div>
       <div class="pv-resend-row">
         <button type="button" class="pv-resend" data-action="resend" data-resend-state="disabled" disabled>↻ Resend code</button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite">Checking your code.</p>
   </section>
       </div>
     </div>
@@ -198,7 +206,7 @@
     </div>
     <div class="pv-state">
       <p class="pv-state__label"><b>enter-code</b> · resend ready (cooldown elapsed)</p>
-      <p class="pv-state__note">Resend sends a new code to the same number (<code>POST /verify/phone/start</code> again), clears the cells, and restarts both timers. The old code stops working.</p>
+      <p class="pv-state__note">Resend calls <code>POST /verify/phone/start</code> again for the same number. While the earlier code is still valid, the provider may re-send <b>the same code</b> without extending its lifetime. So the expiry countdown keeps the <b>server's remaining time</b> from the new ack (<code>expiresInSeconds</code>) and only the resend cooldown restarts. Typed digits are kept, and whichever code the server accepts works. The announcer speaks once when the cooldown ends.</p>
       <div data-viewport="375">
     <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
     <div class="pv-device">
@@ -214,7 +222,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-resend="ready" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-code" data-resend="ready">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
       <p class="pv-sub">Enter the 6-digit code we sent to</p>
@@ -233,12 +241,14 @@
       <p class="pv-help pv-center">Paste the whole code into any box — it fills all six. On Android the code can fill in automatically.</p>
       <div class="pv-actions">
         <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
         <button type="button" class="pv-resend" data-action="resend" data-resend-state="ready">↻ Resend code</button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite">You can request a new code now.</p>
   </section>
       </div>
     </div>

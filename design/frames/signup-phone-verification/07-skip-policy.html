@@ -11,16 +11,16 @@
 <main class="pv-page" data-frame="07-skip-policy" data-flow="signup-phone">
   <div class="pv-crumb"><a href="index.html">← All frames</a> · Frame 07 · Skip policy</div>
   <h1 class="pv-h1">"Skip for now" — both policy outcomes</h1>
-  <p class="pv-lead">The ticket doesn't settle whether phone is mandatory, so both outcomes are designed, with one server-driven switch, <code>AuthMethods.verification.phoneAtSignup: "off" | "optional" | "required"</code> (Δ). <b>Recommended default: <code>optional</code>.</b> Even <code>required</code> <b>never blocks account creation</b> and is never a dead end. It removes the user's own Skip, but if the service fails (SMS unavailable, lockout) the user continues and is re-prompted at next sign-in.</p>
+  <p class="pv-lead">The ticket doesn't settle whether phone is mandatory, so both outcomes are designed, with one server-driven switch, <code>AuthMethods.verification.phoneAtSignup: "off" | "optional" | "required"</code> (Δ). <b>Recommended default: <code>optional</code>.</b> Even <code>required</code> <b>never blocks account creation</b> and is never a dead end. It removes the user's own Skip, but in <b>any</b> failure state (including a network error or an unclassified 5xx) the user can continue, and is re-prompted at next sign-in.</p>
 
   <section class="pv-section" data-policy-table>
     <h2>Policy matrix</h2>
     <table class="pv-table">
-      <thead><tr><th>Policy</th><th>Skip visible</th><th>SMS unavailable / locked out</th><th>After skipping or deferring</th></tr></thead>
+      <thead><tr><th>Policy</th><th>Skip visible</th><th>Any failure state (send 502, 429, 503, lockout, 409, network/5xx)</th><th>After skipping or deferring</th></tr></thead>
       <tbody>
-        <tr data-policy-row="off"><td><code>off</code> (or flag OFF)</td><td>n/a. The step isn't rendered</td><td>n/a</td><td>Straight to check-inbox</td></tr>
-        <tr data-policy-row="optional"><td><code>optional</code> <b>(recommended)</b></td><td>Yes: top bar + under the primary action</td><td>Continue (06 / 05)</td><td>Reminder in Settings → Security (the "Unverified" chip in mfa-stepup-mobile 04)</td></tr>
-        <tr data-policy-row="required"><td><code>required</code></td><td><b>No</b></td><td>Continue (honest degrade, never a dead end)</td><td>Re-prompted at every sign-in until verified</td></tr>
+        <tr data-policy-row="off"><td><code>off</code> (or flag OFF)</td><td>n/a. The step isn't rendered</td><td>n/a</td><td><code>nextAfterPhone()</code></td></tr>
+        <tr data-policy-row="optional"><td><code>optional</code> <b>(recommended)</b></td><td>Yes: top bar + under the primary action</td><td>Skip for now (alongside Retry / Change number)</td><td><code>nextAfterPhone()</code>. Reminder in Settings → Security (the "Unverified" chip in mfa-stepup-mobile 04)</td></tr>
+        <tr data-policy-row="required"><td><code>required</code></td><td><b>No</b>. Not on the enter-phone or enter-code screens</td><td><b>Continue for now</b> (<code>continue-without-phone</code>) replaces Skip in <b>every</b> failure state, so no state is ever retry-only</td><td><code>nextAfterPhone()</code>. Re-prompted by the flagged sign-in redirect (01) at each later sign-in until verified</td></tr>
       </tbody>
     </table>
   </section>
@@ -43,11 +43,11 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-policy="optional" data-validation="idle" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-policy="optional" data-validation="idle">
 <div class="pv-center">
       <div class="pv-hero" aria-hidden="true">📱</div>
       <h2 class="pv-title">Add your phone number</h2>
-      <p class="pv-sub">We'll text you a 6-digit code to confirm it's yours. A verified phone helps you get back into your account and lets you use text-message sign-in codes.</p>
+      <p class="pv-sub">We'll text you a 6-digit code to confirm this number is yours. It's saved to your account as a verified contact number.</p>
     </div>
 
     <form class="pv-form" data-form="phone" novalidate>
@@ -65,8 +65,9 @@
         <button type="submit" class="pv-btn pv-btn--primary" data-action="send-code" disabled>Send code</button>
         <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
-      <p class="pv-help pv-center">Message and data rates may apply. We only use this number for your account's security.</p>
+      <p class="pv-help pv-center">Message and data rates may apply.</p>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -74,7 +75,7 @@
     </div>
     <div class="pv-state">
       <p class="pv-state__label"><b>policy=optional</b> · skipped</p>
-      <p class="pv-state__note">Brief confirmation, then Continue to check-inbox. The progress rail shows Phone as "later", not done.</p>
+      <p class="pv-state__note">Brief confirmation, then Continue via <code>nextAfterPhone()</code> (check-inbox shown here; the app if email is off or already confirmed). The progress rail shows Phone as "later", not done.</p>
       <div data-viewport="375">
     <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
     <div class="pv-device">
@@ -90,15 +91,16 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="current"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="skipped" data-policy="optional" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="skipped" data-policy="optional">
 <div class="pv-center">
       <div class="pv-hero pv-hero--neutral" aria-hidden="true">⤼</div>
       <h2 class="pv-title">Phone skipped</h2>
       <p class="pv-sub">No problem. You can add it anytime from <b>Settings → Security</b>. We'll show a reminder there until it's verified.</p>
     </div>
     <div class="pv-actions">
-      <a class="pv-btn pv-btn--primary" href="../auth-experience/03-check-inbox.html" data-action="continue">Continue</a>
+      <a class="pv-btn pv-btn--primary" href="../auth-experience/03-check-inbox.html" data-action="continue" data-next="verify-email">Continue</a>
     </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -122,11 +124,11 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-policy="required" data-validation="idle" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-policy="required" data-validation="idle">
 <div class="pv-center">
       <div class="pv-hero" aria-hidden="true">📱</div>
       <h2 class="pv-title">Add your phone number</h2>
-      <p class="pv-sub">We'll text you a 6-digit code to confirm it's yours. A verified phone helps you get back into your account and lets you use text-message sign-in codes.</p>
+      <p class="pv-sub">We'll text you a 6-digit code to confirm this number is yours. It's saved to your account as a verified contact number.</p>
     </div>
     <div class="pv-alert pv-alert--info" role="note" data-policy-note="required"><span class="pv-alert__icon" aria-hidden="true">ℹ</span>
       <span>A verified phone is <b>required</b> to finish setting up your account.</span></div>
@@ -145,8 +147,9 @@
         <button type="submit" class="pv-btn pv-btn--primary" data-action="send-code" disabled>Send code</button>
 
       </div>
-      <p class="pv-help pv-center">Message and data rates may apply. We only use this number for your account's security.</p>
+      <p class="pv-help pv-center">Message and data rates may apply.</p>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -154,7 +157,7 @@
     </div>
     <div class="pv-state">
       <p class="pv-state__label"><b>policy=required</b> · SMS unavailable → deferred</p>
-      <p class="pv-state__note">Required + 503 or lockout: the user continues anyway and is re-prompted at next sign-in. A required step the platform can't deliver must not trap the user.</p>
+      <p class="pv-state__note">Required + 503 or lockout: the user continues anyway, and the sign-in redirect (01) re-prompts next time. A required step the platform can't deliver must not trap the user.</p>
       <div data-viewport="375">
     <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
     <div class="pv-device">
@@ -170,7 +173,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="current"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-unavailable" data-policy="required" data-http-status="503" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-unavailable" data-policy="required" data-http-status="503">
 <div class="pv-center">
       <div class="pv-hero pv-hero--neutral" aria-hidden="true">⊘</div>
       <h2 class="pv-title">We'll finish this later</h2>
@@ -179,6 +182,7 @@
     <div class="pv-actions">
       <button type="button" class="pv-btn pv-btn--primary" data-action="continue-without-phone">Continue</button>
     </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>

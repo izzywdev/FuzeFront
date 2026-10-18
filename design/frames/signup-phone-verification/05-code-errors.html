@@ -25,7 +25,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-invalid" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-invalid">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
       <p class="pv-sub">Enter the 6-digit code we sent to</p>
@@ -34,22 +34,24 @@
     </div>
     <form class="pv-form" data-form="code" novalidate>
       <div class="pv-otp" data-component="otp-input" data-otp-state="error" role="group" aria-label="6-digit code">
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" value="0" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" aria-invalid="true" />
       </div>
-      <div class="pv-error" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. You have 3 tries left.</div>
+      <div class="pv-error" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. Enter it again. You have 3 tries left.</div>
       <div class="pv-actions">
-        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact">Try again</button>
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" data-submit-guard="awaiting-new-code" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
         <button type="button" class="pv-resend" data-action="resend" data-resend-state="ready">↻ Resend code</button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div></div>
     </div>
@@ -69,7 +71,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-invalid" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-invalid">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
       <p class="pv-sub">Enter the 6-digit code we sent to</p>
@@ -78,22 +80,24 @@
     </div>
     <form class="pv-form" data-form="code" novalidate>
       <div class="pv-otp" data-component="otp-input" data-otp-state="error" role="group" aria-label="6-digit code">
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" value="0" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" aria-invalid="true" />
       </div>
-      <div class="pv-error" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. You have 3 tries left.</div>
+      <div class="pv-error" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. Enter it again. You have 3 tries left.</div>
       <div class="pv-actions">
-        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact">Try again</button>
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" data-submit-guard="awaiting-new-code" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
         <button type="button" class="pv-resend" data-action="resend" data-resend-state="ready">↻ Resend code</button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -102,7 +106,7 @@
   <div class="pv-states">
     <div class="pv-state">
       <p class="pv-state__label"><b>error-invalid</b> · wrong code</p>
-      <p class="pv-state__note"><code>422 CODE_INVALID</code>. Cells turn red and the first cell gets focus, so typing replaces the code. The tries-left count comes from the server, not a client counter.</p>
+      <p class="pv-state__note"><code>422 CODE_INVALID</code>. The rejected digits are <b>cleared</b>, the cells keep their red error ring, and cell 1 gets focus. Confirm stays disabled until 6 new digits are entered, so re-submitting the same wrong code can't burn an attempt. The tries-left count comes from the server, not a client counter. The error is announced once via <code>role=alert</code>.</p>
       <div data-viewport="375">
     <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
     <div class="pv-device">
@@ -118,7 +122,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-invalid" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-invalid">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
       <p class="pv-sub">Enter the 6-digit code we sent to</p>
@@ -127,22 +131,24 @@
     </div>
     <form class="pv-form" data-form="code" novalidate>
       <div class="pv-otp" data-component="otp-input" data-otp-state="error" role="group" aria-label="6-digit code">
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" value="0" aria-invalid="true" />
-        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" value="0" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 of 6" autocomplete="one-time-code" data-focus="true" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 of 6" autocomplete="off" aria-invalid="true" />
+        <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 6 of 6" autocomplete="off" aria-invalid="true" />
       </div>
-      <div class="pv-error" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. You have 3 tries left.</div>
+      <div class="pv-error" style="justify-content:center" data-error="invalid-code" data-attempts-remaining="3" role="alert"><span aria-hidden="true">⚠</span>That code isn't right. Enter it again. You have 3 tries left.</div>
       <div class="pv-actions">
-        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact">Try again</button>
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="verify-contact" data-submit-guard="awaiting-new-code" disabled>Confirm</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
       <div class="pv-resend-row">
         <button type="button" class="pv-resend" data-action="resend" data-resend-state="ready">↻ Resend code</button>
         <span class="pv-help" style="margin:0" data-expiry>Code expires in <span class="pv-count" data-countdown="expiry">9:41</span></span>
       </div>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -166,7 +172,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-expired" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-expired">
 <div class="pv-center">
       <h2 class="pv-title">Enter your code</h2>
       <p class="pv-sub">The code we sent to this number has expired</p>
@@ -187,6 +193,7 @@
         <button type="button" class="pv-btn pv-btn--primary" data-action="resend">Send a new code</button>
       </div>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -210,7 +217,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-locked" data-http-status="429" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-locked" data-http-status="429">
 <div class="pv-center">
       <div class="pv-hero pv-hero--warning" aria-hidden="true">🔒</div>
       <h2 class="pv-title">Too many tries</h2>
@@ -222,6 +229,7 @@
       <button type="button" class="pv-btn pv-btn--primary" data-action="continue-without-phone">Continue for now</button>
       <button type="button" class="pv-btn pv-btn--secondary" data-action="verify-contact" disabled>Try again in 14:52</button>
     </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>

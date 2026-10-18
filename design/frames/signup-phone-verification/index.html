@@ -22,7 +22,7 @@
     <a class="pv-cardlink" href="01-placement.html" data-nav="01-placement">
       <span class="pv-cardlink__step">01 · placement</span>
       <h2 class="pv-cardlink__title">Where the step sits</h2>
-      <p class="pv-cardlink__desc">signup → <b>phone</b> → check inbox, in parallel with the email link. Routing table
+      <p class="pv-cardlink__desc">signup → <b>phone</b> → check inbox or the app, in parallel with the email link. The exit rule, the sign-in re-prompt, and a routing table
         from <code>GET /methods</code> + <code>GET /verify/status</code>.</p>
     </a>
     <a class="pv-cardlink" href="02-enter-phone.html" data-nav="02-enter-phone">
@@ -38,7 +38,7 @@
     <a class="pv-cardlink" href="04-verified.html" data-nav="04-verified">
       <span class="pv-cardlink__step">04 · /signup/phone</span>
       <h2 class="pv-cardlink__title">Verified → continue</h2>
-      <p class="pv-cardlink__desc">Server-confirmed success only, then Continue to the approved check-inbox screen.</p>
+      <p class="pv-cardlink__desc">Server-confirmed success only. Continue goes to check-inbox if an email is still pending, otherwise into the app.</p>
     </a>
     <a class="pv-cardlink" href="05-code-errors.html" data-nav="05-code-errors">
       <span class="pv-cardlink__step">05 · fail-closed</span>
@@ -74,10 +74,19 @@
         <code>requireBearer</code>. Signup issues one, so the step can run immediately. Waiting for email verification
         first would make a working SMS step depend on email, and a user who opens the link on another device would arrive
         there without a session. <a href="01-placement.html" style="color:var(--accent-color)">See 01</a>.</li>
+      <li><b>One exit rule.</b> Every way out of the step goes through <code>nextAfterPhone()</code>, using freshly re-fetched
+        status: Continue, Skip, a deferral, and every bypass (flag or policy off, SMS unavailable, already verified).
+        The user sees check-inbox <b>only</b> if an email was sent and isn't confirmed yet. If email verification is off,
+        or the link was confirmed in parallel, they go straight into the app.</li>
       <li><b>Skip policy.</b> Both outcomes are designed, with one server switch
         <code>verification.phoneAtSignup</code> (Δ). The recommended default is <code>optional</code>. <code>required</code>
-        removes the user's Skip but still never blocks account creation. If the service fails, the user continues and is
-        re-prompted at next sign-in.</li>
+        removes the user's Skip but still never blocks account creation. <b>Every</b> failure state, including a network
+        error or an unclassified 5xx, offers <i>Continue for now</i> in place of Skip.</li>
+      <li><b>Re-prompt at sign-in.</b> Under <code>required</code>, a flagged redirect after every successful sign-in
+        sends an unverified user to <code>/signup/phone?next=…</code> when SMS is available.
+        <a href="01-placement.html" style="color:var(--accent-color)">See 01</a>.</li>
+      <li><b>Honest copy.</b> The screens promise only what <code>/verify/phone</code> does: confirm a contact number. They
+        don't claim it enables text-message sign-in codes or account recovery. SMS MFA enrolment is a separate flow.</li>
       <li><b>No enumeration.</b> <code>/start</code> returns 202 for any well-formed number. "Number can't be used"
         (409) comes only from <code>/confirm</code>, <i>after a correct code</i>, so only the phone's owner ever sees it.</li>
       <li><b>Honest degrade.</b> If <code>AuthMethods.verification.sms</code> is <code>false</code>, the step is never
@@ -121,7 +130,7 @@
       <div>
         <h3>DS primitives to add first <span class="pv-tag">frontend-engineer</span></h3>
         <ul>
-          <li><code>OtpInput</code>. Already named as missing by mfa-management and mfa-stepup-mobile; build it <b>once</b></li>
+          <li><code>OtpInput</code> (44×52 cells). Already named as missing by mfa-management and mfa-stepup-mobile; build it <b>once</b></li>
           <li><code>PhoneInput</code> / <code>CountryCodeSelect</code> (flag + dial code, 44px target)</li>
           <li><code>Alert</code> <code>info</code>/<code>warning</code> variants (if still missing)</li>
         </ul>
@@ -146,7 +155,9 @@
         account with that number as verified.</li>
       <li data-delta="pending-phone"><code>/start</code> must not write <code>users.phone</code> before the user proves they
         have the phone. It should hold a pending number, promote it on confirm, and accept a confirm body of <code>{ code }</code>.</li>
-      <li data-delta="start-ack"><code>202</code> body <code>PhoneVerifyStartAck { maskedPhone, expiresInSeconds, resendAfterSeconds }</code>.</li>
+      <li data-delta="start-ack"><code>202</code> body <code>PhoneVerifyStartAck { maskedPhone, expiresInSeconds, resendAfterSeconds }</code>.
+        On a resend, <code>expiresInSeconds</code> is the code's <b>actual remaining</b> lifetime. The provider may re-send the
+        same unexpired code without extending it.</li>
       <li data-delta="start-errors"><code>/start</code> errors: <code>400 PHONE_INVALID</code> · <code>429 RATE_LIMITED</code>+<code>Retry-After</code>
         (no limiter exists today) · <code>502 SMS_SEND_FAILED</code> · <code>503 SMS_UNAVAILABLE</code>. Today these fall
         through to <code>401 UNKNOWN "Authentication failed"</code>, so a failed send looks like a lost session.</li>
@@ -158,8 +169,12 @@
       <li data-delta="policy"><code>AuthMethods.verification.phoneAtSignup: "off" | "optional" | "required"</code>.</li>
       <li data-delta="pending-status"><code>VerificationStatus.phonePending?: { maskedPhone, expiresInSeconds, resendAfterSeconds }</code>
         so the step can resume after a reload.</li>
-      <li data-delta="signup-route">Routing: when the step applies, 01-signup's submit goes to <code>/signup/phone</code>
-        instead of <code>/signup/verify</code>. This only happens behind the flag. No approved frame changes.</li>
+      <li data-delta="signup-route">Routing: when the step applies, 01-signup's submit goes to <code>/signup/phone</code>.
+        Otherwise it goes through <code>nextAfterPhone()</code>: <code>/signup/verify</code> only if an email is pending,
+        else the app. Behind the flag; no approved frame changes.</li>
+      <li data-delta="signin-reprompt">Routing: after a successful sign-in in auth-experience's <code>signin</code> flow,
+        redirect to <code>/signup/phone?next=…</code> when <code>phoneAtSignup === "required"</code>, <code>phoneVerified</code>
+        is false and SMS is available. Behind the flag; no approved frame changes.</li>
     </ol>
   </section>
 
@@ -171,7 +186,8 @@
         and the same state and action vocabulary (<code>enter-phone · sending · enter-code · error-invalid · error-send ·
         verified</code>; <code>send-code · verify-contact · resend · skip</code>), adds <code>data-context="signup"</code>,
         and adds the states that frame lacks (expired, locked/429, rate-limited, unavailable, number-unavailable,
-        loading, session, generic). The same OtpInput geometry applies (42×52, 44px+). The implementation should be
+        loading, session, generic). It uses the same OtpInput, but with cells widened to <b>44×52</b> so both dimensions meet
+        the 44px tap target; mfa-stepup-mobile's 42px-wide cells should adopt this. The implementation should be
         <b>one</b> <code>ContactVerifyPanel</code> + state machine used in both places, not two parallel trees.
         If this is approved first, mfa-stepup-mobile's 03 should gain these states when it is next revised.</li>
       <li><b>auth-experience</b> (approved). 01-signup, 03-check-inbox and 04-verify-landing are <b>unchanged</b>. Email

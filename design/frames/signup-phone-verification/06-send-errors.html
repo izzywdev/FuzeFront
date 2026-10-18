@@ -25,7 +25,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-unavailable" data-http-status="503" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-unavailable" data-http-status="503">
 <div class="pv-center">
       <div class="pv-hero pv-hero--neutral" aria-hidden="true">⊘</div>
       <h2 class="pv-title">Text messages aren't available right now</h2>
@@ -34,6 +34,7 @@
     <div class="pv-actions">
       <button type="button" class="pv-btn pv-btn--primary" data-action="continue-without-phone">Continue</button>
     </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div></div>
     </div>
@@ -53,7 +54,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-unavailable" data-http-status="503" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-unavailable" data-http-status="503">
 <div class="pv-center">
       <div class="pv-hero pv-hero--neutral" aria-hidden="true">⊘</div>
       <h2 class="pv-title">Text messages aren't available right now</h2>
@@ -62,6 +63,7 @@
     <div class="pv-actions">
       <button type="button" class="pv-btn pv-btn--primary" data-action="continue-without-phone">Continue</button>
     </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -86,7 +88,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-send" data-http-status="502" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-send" data-http-status="502" data-policy="optional">
 <div class="pv-center">
       <div class="pv-hero pv-hero--error" aria-hidden="true">⚠</div>
       <h2 class="pv-title">We couldn't send the code</h2>
@@ -97,14 +99,15 @@
       <button type="button" class="pv-btn pv-btn--secondary" data-action="change-number">Use a different number</button>
       <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
     </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
   </div>
     </div>
     <div class="pv-state">
-      <p class="pv-state__label"><b>error-rate-limited</b> · too many sends (429)</p>
-      <p class="pv-state__note"><code>429 RATE_LIMITED</code> + <code>Retry-After</code> on <code>/start</code>. A code sent earlier still works, so "I already have a code" goes back to enter-code.</p>
+      <p class="pv-state__label"><b>error-send</b> · send failed under <code>required</code></p>
+      <p class="pv-state__note">Same screen, but Skip is replaced by <b>Continue for now</b> (a deferral; re-prompted at next sign-in). Every failure state in 05, 06 and 08 follows this swap.</p>
       <div data-viewport="375">
     <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
     <div class="pv-device">
@@ -120,17 +123,88 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-rate-limited" data-http-status="429" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-send" data-http-status="502" data-policy="required">
+<div class="pv-center">
+      <div class="pv-hero pv-hero--error" aria-hidden="true">⚠</div>
+      <h2 class="pv-title">We couldn't send the code</h2>
+      <p class="pv-sub">Something went wrong sending a text to <b>+44 •••• •• 0123</b>. Check the number and try again.</p>
+    </div>
+    <div class="pv-actions">
+      <button type="button" class="pv-btn pv-btn--primary" data-action="send-code">Try again</button>
+      <button type="button" class="pv-btn pv-btn--secondary" data-action="change-number">Use a different number</button>
+      <button type="button" class="pv-btn pv-btn--link" data-action="continue-without-phone">Continue for now</button>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>error-rate-limited</b> · 429 on a resend (code pending)</p>
+      <p class="pv-state__note"><code>429 RATE_LIMITED</code> + <code>Retry-After</code> on <code>/start</code> while <code>phonePending</code> is true. The earlier code still works, so "I already have a code" goes back to enter-code.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
+      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
+      <span class="pv-progress__sep"></span>
+      <span class="pv-progress__step" data-step="phone" data-step-state="current"><span class="pv-progress__dot"></span>Phone</span>
+      <span class="pv-progress__sep"></span>
+      <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
+    </div>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-rate-limited" data-http-status="429" data-pending="true">
 <div class="pv-center">
       <div class="pv-hero pv-hero--warning" aria-hidden="true">⏳</div>
       <h2 class="pv-title">Please wait a moment</h2>
-      <p class="pv-sub">You've asked for several codes in a short time. You can request another in <b class="pv-count" data-countdown="retry-after">4:59</b>.</p>
+      <p class="pv-sub">You've asked for several codes in a short time. The code we already sent still works. You can request another in <b class="pv-count" data-countdown="retry-after">4:59</b>.</p>
     </div>
     <div class="pv-actions">
       <button type="button" class="pv-btn pv-btn--primary" data-action="enter-code">I already have a code</button>
       <button type="button" class="pv-btn pv-btn--secondary" data-action="send-code" disabled>Send a new code in 4:59</button>
       <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
     </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite">Please wait before requesting another code.</p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>error-rate-limited</b> · 429 on the first send (no code)</p>
+      <p class="pv-state__note">The same 429 when no challenge exists yet (<code>phonePending</code> absent: per-IP or per-number limit). There is <b>no</b> "I already have a code", because nothing was sent. The only options are to wait or skip.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
+      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
+      <span class="pv-progress__sep"></span>
+      <span class="pv-progress__step" data-step="phone" data-step-state="current"><span class="pv-progress__dot"></span>Phone</span>
+      <span class="pv-progress__sep"></span>
+      <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
+    </div>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-rate-limited" data-http-status="429" data-pending="false">
+<div class="pv-center">
+      <div class="pv-hero pv-hero--warning" aria-hidden="true">⏳</div>
+      <h2 class="pv-title">Please wait a moment</h2>
+      <p class="pv-sub">Too many codes have been requested for this number or from this device. You can request a code in <b class="pv-count" data-countdown="retry-after">4:59</b>.</p>
+    </div>
+    <div class="pv-actions">
+
+      <button type="button" class="pv-btn pv-btn--primary" data-action="send-code" disabled>Send the code in 4:59</button>
+      <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+    </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite">Please wait before requesting a code.</p>
   </section>
       </div>
     </div>
@@ -138,7 +212,7 @@
     </div>
     <div class="pv-state">
       <p class="pv-state__label"><b>error-unavailable</b> · SMS channel unavailable (503)</p>
-      <p class="pv-state__note"><code>503 SMS_UNAVAILABLE</code> mid-flow (transport went down after <code>/methods</code> said <code>sms: true</code>). This is an honest degrade: Continue goes to the email step under <i>both</i> policies. If <code>/methods</code> says <code>sms: false</code> up front, the step is never shown (08).</p>
+      <p class="pv-state__note"><code>503 SMS_UNAVAILABLE</code> mid-flow (transport went down after <code>/methods</code> said <code>sms: true</code>). This is an honest degrade: Continue exits via <code>nextAfterPhone()</code> under <i>both</i> policies. If <code>/methods</code> says <code>sms: false</code> up front, the step is never shown (08).</p>
       <div data-viewport="375">
     <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
     <div class="pv-device">
@@ -154,7 +228,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-unavailable" data-http-status="503" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-unavailable" data-http-status="503">
 <div class="pv-center">
       <div class="pv-hero pv-hero--neutral" aria-hidden="true">⊘</div>
       <h2 class="pv-title">Text messages aren't available right now</h2>
@@ -163,6 +237,7 @@
     <div class="pv-actions">
       <button type="button" class="pv-btn pv-btn--primary" data-action="continue-without-phone">Continue</button>
     </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -186,7 +261,7 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-number-unavailable" data-http-status="409" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="error-number-unavailable" data-http-status="409">
 <div class="pv-center">
       <div class="pv-hero pv-hero--warning" aria-hidden="true">☎</div>
       <h2 class="pv-title">This number can't be used here</h2>
@@ -196,6 +271,7 @@
       <button type="button" class="pv-btn pv-btn--primary" data-action="change-number">Use a different number</button>
       <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
     </div>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
@@ -219,11 +295,11 @@
       <span class="pv-progress__sep"></span>
       <span class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot"></span>Email</span>
     </div>
-    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-validation="server-invalid" data-http-status="400" aria-live="polite">
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-validation="server-invalid" data-http-status="400">
 <div class="pv-center">
       <div class="pv-hero" aria-hidden="true">📱</div>
       <h2 class="pv-title">Add your phone number</h2>
-      <p class="pv-sub">We'll text you a 6-digit code to confirm it's yours. A verified phone helps you get back into your account and lets you use text-message sign-in codes.</p>
+      <p class="pv-sub">We'll text you a 6-digit code to confirm this number is yours. It's saved to your account as a verified contact number.</p>
     </div>
 
     <form class="pv-form" data-form="phone" novalidate>
@@ -241,8 +317,9 @@
         <button type="submit" class="pv-btn pv-btn--primary" data-action="send-code">Send code</button>
         <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
       </div>
-      <p class="pv-help pv-center">Message and data rates may apply. We only use this number for your account's security.</p>
+      <p class="pv-help pv-center">Message and data rates may apply.</p>
     </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
   </section>
       </div>
     </div>
