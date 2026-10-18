@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Verified — signup phone verification frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="phone-verify.css" />
+</head>
+<body>
+<main class="pv-page" data-frame="04-verified" data-flow="signup-phone">
+  <div class="pv-crumb"><a href="index.html">← All frames</a> · Frame 04 · Verified</div>
+  <h1 class="pv-h1">Phone verified → continue</h1>
+  <p class="pv-lead">Rendered only after <code>POST /verify/phone/confirm</code> returns <b>200</b> with <code>phoneVerified: true</code>. Nothing is shown optimistically. <b>Continue</b> goes to the approved check-inbox screen, or straight into the app if email verification is off (<code>verification.email === false</code>). The progress rail marks Phone done.</p>
+  <div class="pv-pair">
+  <div data-viewport="desktop">
+    <p class="pv-viewport-label">Desktop · AuthCard 420px · /signup/phone</p>
+    <div class="pv-stage">
+      <div class="pv-card"><div class="pv-card__seam"></div><div class="pv-card__body">
+    <div class="pv-brand"><span class="pv-brand__mark" aria-hidden="true">F</span><span class="pv-brand__word">FuzeFront</span></div>
+    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
+      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
+      <span class="pv-progress__sep"></span>
+      <span class="pv-progress__step" data-step="phone" data-step-state="done"><span class="pv-progress__dot"></span>Phone</span>
+      <span class="pv-progress__sep"></span>
+      <span class="pv-progress__step" data-step="email" data-step-state="current"><span class="pv-progress__dot"></span>Email</span>
+    </div>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="verified" aria-live="polite">
+<div class="pv-center" data-result="verified">
+      <div class="pv-hero pv-hero--success" aria-hidden="true">✓</div>
+      <h2 class="pv-title">Phone verified</h2>
+      <p class="pv-sub"><b>+44 •••• •• 0123</b> is confirmed. You can use it to get back into your account and for text-message sign-in codes.</p>
+    </div>
+    <div class="pv-alert pv-alert--info" role="note"><span class="pv-alert__icon" aria-hidden="true">✉</span>
+      <span><b>One more step.</b> We've sent a link to <b>ada@lovelace.io</b> — confirm your email next.</span></div>
+    <div class="pv-actions">
+      <a class="pv-btn pv-btn--primary" href="../auth-experience/03-check-inbox.html" data-action="continue">Continue</a>
+    </div>
+  </section>
+      </div></div>
+    </div>
+  </div>
+  <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <div class="pv-progress" data-component="signup-progress" aria-label="Sign-up progress">
+      <span class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot"></span>Account</span>
+      <span class="pv-progress__sep"></span>
+      <span class="pv-progress__step" data-step="phone" data-step-state="done"><span class="pv-progress__dot"></span>Phone</span>
+      <span class="pv-progress__sep"></span>
+      <span class="pv-progress__step" data-step="email" data-step-state="current"><span class="pv-progress__dot"></span>Email</span>
+    </div>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="verified" aria-live="polite">
+<div class="pv-center" data-result="verified">
+      <div class="pv-hero pv-hero--success" aria-hidden="true">✓</div>
+      <h2 class="pv-title">Phone verified</h2>
+      <p class="pv-sub"><b>+44 •••• •• 0123</b> is confirmed. You can use it to get back into your account and for text-message sign-in codes.</p>
+    </div>
+    <div class="pv-alert pv-alert--info" role="note"><span class="pv-alert__icon" aria-hidden="true">✉</span>
+      <span><b>One more step.</b> We've sent a link to <b>ada@lovelace.io</b> — confirm your email next.</span></div>
+    <div class="pv-actions">
+      <a class="pv-btn pv-btn--primary" href="../auth-experience/03-check-inbox.html" data-action="continue">Continue</a>
+    </div>
+  </section>
+      </div>
+    </div>
+  </div>
+  </div>
+
+<nav class="pv-nav" aria-label="Frame navigation">
+  <span class="pv-nav__caption"><b>04 / 08 · Verified → continue</b> — phoneVerified: true → Continue to /signup/verify</span>
+  <span class="pv-nav__links">
+    <a class="pv-btn pv-btn--secondary" href="index.html" data-nav="index">Index</a>
+    <a class="pv-btn pv-btn--secondary" href="03-enter-code.html" data-nav="03-enter-code">← Enter code</a>
+    <a class="pv-btn pv-btn--primary" href="05-code-errors.html" data-nav="05-code-errors">Next: Code errors →</a>
+  </span>
+</nav>
+</body>
+</html>

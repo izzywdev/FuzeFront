@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Where the step sits — signup phone verification frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="phone-verify.css" />
+</head>
+<body>
+<main class="pv-page" data-frame="01-placement" data-flow="signup-phone">
+  <div class="pv-crumb"><a href="index.html">← All frames</a> · Frame 01 · Placement in signup</div>
+  <h1 class="pv-h1">Where phone verification sits in signup</h1>
+  <p class="pv-lead">The phone step runs <b>immediately after the account is created, in parallel with email verification</b> — not after it. Signup (<code>POST /v1/security/signup</code> → 201 <code>LoginResponse</code>) already establishes a session, and every phone-verify endpoint is a session-bound call, so the step can run the moment signup returns. The email link is already on its way while the user enters their phone code.</p>
+
+  <div class="pv-flow" data-flow-diagram>
+    <a class="pv-flow__node" data-node-kind="existing" data-node="signup" href="../auth-experience/01-signup.html">
+      <span class="pv-flow__kind">approved · auth-experience</span>
+      <p class="pv-flow__title">01 Create account</p>
+      <p class="pv-flow__desc"><code>POST /signup</code> → 201, session issued. Email verification starts here too (<code>POST /verify/email/start</code>).</p>
+    </a>
+    <span class="pv-flow__arrow" aria-hidden="true">→</span>
+    <a class="pv-flow__node" data-node-kind="new" data-node="phone" href="02-enter-phone.html">
+      <span class="pv-flow__kind">new · this feature</span>
+      <p class="pv-flow__title">Verify phone · /signup/phone</p>
+      <p class="pv-flow__desc">Enter phone → code → verified. Shown only when the flag is ON, the policy isn't <code>off</code>, and SMS is available.</p>
+    </a>
+    <span class="pv-flow__arrow" aria-hidden="true">→</span>
+    <a class="pv-flow__node" data-node-kind="existing" data-node="check-inbox" href="../auth-experience/03-check-inbox.html">
+      <span class="pv-flow__kind">approved · auth-experience</span>
+      <p class="pv-flow__title">03 Check your inbox</p>
+      <p class="pv-flow__desc">Unchanged. Reached by Continue, Skip, or an honest degrade. Never by a dead end.</p>
+    </a>
+    <span class="pv-flow__arrow" aria-hidden="true">→</span>
+    <a class="pv-flow__node" data-node-kind="existing" data-node="verify-landing" href="../auth-experience/04-verify-landing.html">
+      <span class="pv-flow__kind">approved · auth-experience</span>
+      <p class="pv-flow__title">04 Verify link landing</p>
+      <p class="pv-flow__desc">Unchanged, and independent of the phone step: either one can finish first.</p>
+    </a>
+  </div>
+
+  <section class="pv-section" data-decision="placement">
+    <h2>Why here, and why in parallel</h2>
+    <ul>
+      <li><b>The session exists already.</b> <code>/verify/phone/start</code> and <code>/verify/status</code> call <code>requireBearer</code> in <code>backend/security/src/routes/security.ts</code>. Signup returns a session, so the step needs no extra sign-in. If it ran <i>after</i> email verification, a user who opens the email link on another device would land there with no session and would have to sign in again.</li>
+      <li><b>Email verification doesn't block, so the phone step shouldn't wait for it.</b> The approved check-inbox screen already says "you can keep working". If the phone step waited behind the email link, a slow mail service would hold up SMS too, even though SMS doesn't depend on email at all.</li>
+      <li><b>Phone first, inbox screen second.</b> The user has their phone in hand and the code arrives in seconds. By the time they finish, the email link is usually waiting. If the order were reversed, the user would sit on the "check your inbox" screen first and then have to come back for the phone step.</li>
+      <li><b>Approved flows stay unchanged.</b> 01-signup's submit now routes to <code>/signup/phone</code> instead of <code>/signup/verify</code> when the step applies. No approved frame is edited. The route change is a delta noted in the manifest, and it only happens behind the flag.</li>
+    </ul>
+  </section>
+
+  <section class="pv-section" data-routing-table>
+    <h2>Routing after <code>POST /signup</code> → 201 (decided client-side from <code>GET /methods</code> + <code>GET /verify/status</code>)</h2>
+    <table class="pv-table">
+      <thead><tr><th>Condition</th><th>Goes to</th><th>Frame</th></tr></thead>
+      <tbody>
+        <tr data-route-case="flag-off"><td>Flag <code>fuzefront.auth.signup-phone-verification</code> OFF, or <code>verification.phoneAtSignup = "off"</code> (Δ)</td><td><code>/signup/verify</code>. The step doesn't exist</td><td>auth-experience 03</td></tr>
+        <tr data-route-case="sms-unavailable"><td><code>AuthMethods.verification.sms === false</code> (no <code>SMS_SERVICE_URL</code>)</td><td><code>/signup/verify</code>. The step is <b>not shown</b> because we don't open a flow we can't finish. Under <code>required</code>, the user is re-prompted at next sign-in.</td><td>08 · sms-off-preflight</td></tr>
+        <tr data-route-case="already-verified"><td><code>VerificationStatus.phoneVerified === true</code></td><td><code>/signup/verify</code> (skip silently)</td><td>08 · already-verified</td></tr>
+        <tr data-route-case="pending"><td><code>VerificationStatus.phonePending</code> present (Δ, e.g. after a reload)</td><td><code>/signup/phone</code> resumes at <b>enter code</b></td><td>08 · resumed</td></tr>
+        <tr data-route-case="default"><td>Otherwise</td><td><code>/signup/phone</code> → enter phone</td><td>02</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+<nav class="pv-nav" aria-label="Frame navigation">
+  <span class="pv-nav__caption"><b>01 / 08 · Where the step sits</b> — signup → <b>phone</b> → check inbox · in parallel with the email link</span>
+  <span class="pv-nav__links">
+    <a class="pv-btn pv-btn--secondary" href="index.html" data-nav="index">Index</a>
+    <a class="pv-btn pv-btn--primary" href="02-enter-phone.html" data-nav="02-enter-phone">Next: Enter phone →</a>
+  </span>
+</nav>
+</body>
+</html>
