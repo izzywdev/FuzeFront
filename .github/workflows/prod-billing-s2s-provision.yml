@@ -205,14 +205,8 @@ jobs:
           print('[provision-s2s] Credentials written to /tmp (masked in logs)')
           PYEOF
 
-          # Mask both values immediately after the Python script writes them
-          CLIENT_ID=$(cat /tmp/s2s_client_id)
-          CLIENT_SECRET=$(cat /tmp/s2s_client_secret)
-          rm -f /tmp/s2s_client_id /tmp/s2s_client_secret
-          echo "::add-mask::$CLIENT_ID"
-          echo "::add-mask::$CLIENT_SECRET"
-          echo "client_id=$CLIENT_ID"         >> "$GITHUB_OUTPUT"
-          echo "client_secret=$CLIENT_SECRET" >> "$GITHUB_OUTPUT"
+          # Leave tmp files in place for the seal step to consume directly —
+          # never materialise credentials in GITHUB_OUTPUT (accessible via Actions REST API).
 
       - name: Install kubeseal
         run: |
@@ -232,11 +226,16 @@ jobs:
 
       - name: Seal credentials
         id: seal
-        env:
-          CLIENT_ID:     ${{ steps.provision.outputs.client_id }}
-          CLIENT_SECRET: ${{ steps.provision.outputs.client_secret }}
         run: |
           set -euo pipefail
+          # Read credentials from the tmp files written by the provision step;
+          # mask immediately before any other use, then delete to minimise exposure.
+          CLIENT_ID=$(cat /tmp/s2s_client_id)
+          CLIENT_SECRET=$(cat /tmp/s2s_client_secret)
+          rm -f /tmp/s2s_client_id /tmp/s2s_client_secret
+          echo "::add-mask::$CLIENT_ID"
+          echo "::add-mask::$CLIENT_SECRET"
+
           _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
           _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
@@ -285,8 +284,8 @@ jobs:
           path = 'deploy/contabo/sealed/billing-secrets.yaml'
           content = open(path).read()
 
-          sealed_id     = os.environ['SEALED_ID']
-          sealed_secret = os.environ['SEALED_SECRET']
+          sealed_id     = os.environ['SEALED_ID'].replace('\n', '')
+          sealed_secret = os.environ['SEALED_SECRET'].replace('\n', '')
 
           # Insert the two new keys before the `template:` section
           injection = (

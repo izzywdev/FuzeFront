@@ -300,9 +300,11 @@ async function syncCustomer(stripeCustomer, priceTierMap, stats) {
       subCount++;
     }
     if (!subPage.has_more) break;
+    const subLast = subPage.data.at(-1);
+    if (!subLast) throw new Error('Stripe subscriptions: has_more=true with empty page');
     subPage = await stripe.subscriptions.list({
       customer: stripeId, status: 'all', limit: 100, expand: ['data.items'],
-      starting_after: subPage.data[subPage.data.length - 1].id,
+      starting_after: subLast.id,
     });
   }
   stats.subscriptionsUpserted += subCount;
@@ -321,9 +323,11 @@ async function syncCustomer(stripeCustomer, priceTierMap, stats) {
       invCount++;
     }
     if (!invPage.has_more) break;
+    const invLast = invPage.data.at(-1);
+    if (!invLast) throw new Error('Stripe invoices: has_more=true with empty page');
     invPage = await stripe.invoices.list({
       customer: stripeId, limit: 100,
-      starting_after: invPage.data[invPage.data.length - 1].id,
+      starting_after: invLast.id,
     });
   }
   stats.invoicesUpserted += invCount;
@@ -375,9 +379,11 @@ async function syncCustomer(stripeCustomer, priceTierMap, stats) {
       console.log('');
     }
     if (!page.has_more) break;
+    const pageLast = page.data.at(-1);
+    if (!pageLast) throw new Error('Stripe customers: has_more=true with empty page');
     page = await stripe.customers.list({
       limit: 100,
-      starting_after: page.data[page.data.length - 1].id,
+      starting_after: pageLast.id,
     });
   }
 
