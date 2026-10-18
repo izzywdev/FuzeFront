@@ -84,6 +84,14 @@ spec:
               # default-deny egress and break its Postgres and Security API
               # calls.
               value: {{ .Values.configService.kafkaBrokers | quote }}
+            # @fuzefront/telemetry (initTelemetry() in src/index.ts) reads this
+            # standard OTel env var for its OTLP exporter target. Without it the
+            # package falls back to packages/telemetry's docker-compose default
+            # (`otel-collector:4317`), which has no in-cluster DNS entry — spans
+            # fail to export silently and nothing reaches Tempo/Grafana. See
+            # values.yaml's configService.otel.endpoint comment.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.configService.otel.endpoint | quote }}
           readinessProbe:
             # /health/ready pings the DB; /health (liveness, below) does not.
             # Splitting them means a database outage takes this pod OUT OF THE
