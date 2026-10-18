@@ -23,7 +23,9 @@ import {
 } from '../src/providers/authentik/AuthentikIdentityProvider'
 import type { IdentityProvider } from '../src/providers/IdentityProvider'
 
-const SECRET = 'test-secret'
+// Test-only JWT signing secret (same convention as authentik-provider.test.ts):
+// overridable via TEST_JWT_SECRET, the fallback is not a credential.
+const SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret'
 process.env.JWT_SECRET = SECRET
 
 jest.mock('../src/services/organizationProvisioning', () => ({
