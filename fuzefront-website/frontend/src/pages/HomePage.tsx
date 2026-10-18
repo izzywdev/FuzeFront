@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, HeroPatternOverlay } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -165,13 +165,7 @@ export const HomePage: React.FC = () => {
     <div className="overflow-x-hidden">
       {/* ── Hero ── */}
       <section className="relative min-h-screen flex items-center bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden">
-        {/* `hero-pattern` sets `background-image` too — combining it with the
-            gradient classes above on one element makes the browser drop the
-            gradient entirely (last background-image wins, they don't layer),
-            leaving the section transparent and the white/light hero text
-            unreadable. Rendered as its own overlay div instead, exactly like
-            the Pricing Teaser section below does it. */}
-        <div className="absolute inset-0 hero-pattern pointer-events-none" />
+        <HeroPatternOverlay />
         {/* Background orbs */}
         <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-20 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
