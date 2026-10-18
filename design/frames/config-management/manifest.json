@@ -348,9 +348,9 @@
           "09-audit-history"
         ],
         "contractStatus": "partly anticipated — secret reveal and history/revert are FF-EPIC-18-S1/S2/S3 and are commissioned by these frames; the masked/isSet secret field itself is already in the frozen contract",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-18T14:34:18.157Z"
       }
     ],
     "components": [
