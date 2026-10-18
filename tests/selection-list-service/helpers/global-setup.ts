@@ -16,9 +16,10 @@
  */
 import { getDbClient, closeDb } from './db';
 import { FORK_BIG_ORG_ID, FORK_QUOTA_ITEMS_ORG_ID, FORK_QUOTA_LISTS_ORG_ID, PLATFORM_ORG_ID } from './sl9-constants';
+import { testOrg } from './ids';
 
 /** The org contract/quota.test.ts acts as (its ORG_ID constant). */
-export const QUOTA_TEST_ORG_ID = 'org_01test00000000quota0000000';
+export const QUOTA_TEST_ORG_ID = testOrg('quota');
 
 /**
  * Review M-4 orgs (contract/quota-enforcement.test.ts), each seeded with the override row the service
@@ -30,10 +31,10 @@ export const QUOTA_TEST_ORG_ID = 'org_01test00000000quota0000000';
  * walks every mutating route on fresh lists and never purges them). `user_lists` is enforced now (review M-4),
  * so they get a generous per-user override row instead of an exemption in the service.
  */
-export const HIGH_CHURN_TEST_ORG_IDS = ['org_01test0000000outbox00000000', 'org_01test0000000outbox00000001'];
+export const HIGH_CHURN_TEST_ORG_IDS = [testOrg('outbox'), testOrg('outbox00000001')];
 
-export const QUOTA_USER_TEST_ORG_ID = 'org_01test00000000qusrl0000000';
-export const QUOTA_STORAGE_TEST_ORG_ID = 'org_01test00000000storag000000';
+export const QUOTA_USER_TEST_ORG_ID = testOrg('qusrl');
+export const QUOTA_STORAGE_TEST_ORG_ID = testOrg('storag');
 
 export default async function globalSetup(): Promise<void> {
   const orgLists = parseInt(process.env['TEST_QUOTA_ORG_LISTS'] ?? '3', 10);

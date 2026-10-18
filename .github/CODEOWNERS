@@ -1,22 +1,34 @@
 # CODEOWNERS — required reviewers for changes that reach the cluster or cloud.
 #
-# The "Protect Master" ruleset has require_code_owner_review: true, but that only
-# bites on paths listed here. These paths are the deploy surface:
+# POLICY (owner ruling, 2026-10-05): bot-approved ships. The gate set — the full
+# CI matrix plus gate-* (ds-conformance, frames-first, authz, identifier, …) — is
+# the production guard. Once those gates pass and the PR is bot-approved,
+# ordinary code ships without a human in the loop. This matches the hardening
+# model in governance/hardening-convention.md §6 ("a bot-authored, bot-approved
+# PR that clears every gate ships to prod — this is deliberate").
+#
+# Code-owner review therefore does NOT apply to ordinary code. There is no
+# catch-all owner here: a `* @izzywdev` entry made every change wait on a human,
+# which contradicted the bot-approved-ships model and silently stalled otherwise
+# green, gate-passing PRs. It was removed deliberately — do not reinstate it.
+#
+# Code-owner review is reserved for the DEPLOY + GOVERNANCE surface, where the
+# merge approval IS the deploy/apply/policy approval and a bad change bypasses the
+# gates above:
 #   - deploy/terraform/** : out-of-cluster IaC, applied by FuzeInfra (Cloudflare,
 #     nodes, cloud). A bad change here can alter prod infrastructure.
 #   - deploy/argocd/**    : Argo Applications (pull-reconciled onto the cluster).
 #   - deploy/helm/**      : the prod chart + values-prod (image tags, ingress) that
 #     Argo deploys — changes here ship to prod.
-#   - .github/workflows/** : CI/CD incl. the infra-dispatch + release pipelines.
-# Requiring the infra owner's review on these is the gate that makes "merge = ship"
-# safe (the merge approval IS the deploy/apply approval).
-
-# Catch-all: every change requires the owner's review (contribution-ready default,
-# from #93). The path-specific entries below are redundant under this but kept to
-# document the highest-risk deploy surface explicitly.
-* @izzywdev
+#   - .github/workflows/** : CI/CD incl. the infra-dispatch + release pipelines,
+#     and the gate workflows that ARE the production guard.
+#   - .github/CODEOWNERS   : this review policy itself stays owner-gated, so the
+#     guard surface can't be narrowed on a bot approval.
+# The "Protect Master" ruleset keeps require_code_owner_review: true; with no
+# catch-all it now bites only on the paths below.
 
 /deploy/terraform/    @izzywdev
 /deploy/argocd/       @izzywdev
 /deploy/helm/         @izzywdev
 /.github/workflows/   @izzywdev
+/.github/CODEOWNERS   @izzywdev

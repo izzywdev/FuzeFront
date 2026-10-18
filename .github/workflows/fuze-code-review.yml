@@ -18,8 +18,8 @@ name: Fuze Code Review
 # fallover chain as every other LLM-driven workflow in this fleet
 # (./.github/actions/fuze-code-action — LiteLLM-in-cluster-or-direct-Anthropic on a
 # classified AVAILABILITY failure only, never on a real task failure; the OpenAI and
-# Gemini API coding rungs are DISABLED for this caller; the isolated Codex
-# subscription reviewer remains available, see the READ-ONLY note below).
+# Gemini API coding rungs are DISABLED for this caller, and `review-only: 'true'`
+# turns the Codex/OpenAI/Gemini fallover ladder off entirely, see the READ-ONLY note below).
 # The one new thing here is what happens to a CLEAN result:
 # `gh pr review --approve` actually gets called.
 #
@@ -54,7 +54,8 @@ name: Fuze Code Review
 #       Gemini rung: DISABLED for this workflow, same mechanism (no GEMINI_API_KEY
 #         passed, the rung only runs when it is non-empty). run-gemini-cli hard-codes `gemini --yolo` (auto-approve every
 #         tool call including shell) and exposes no tool allow-list input.
-#     When Anthropic and the isolated Codex reviewer are unavailable the chain is exhausted; that
+#     `review-only: 'true'` also disables the Codex subscription rung, so the chain is Anthropic
+#     only (OAuth, LiteLLM, direct API key). When Anthropic is unavailable the chain is exhausted; that
 #     classifies as an availability outage (non-blocking, never an approval), the
 #     fail-closed direction. Re-enabling either vendor here needs a demonstrated
 #     tool-level read-only mode, enforced by
@@ -390,6 +391,14 @@ jobs:
         timeout-minutes: 12
         uses: ./.github/actions/fuze-code-action
         with:
+          # review-only: the multi-vendor fallover ladder is OFF for this caller. No
+          # Codex subscription, OpenAI or Gemini rung runs, no vendor CLI is installed, and
+          # the read-only tool policy below is never bypassed by a fallover vendor. An
+          # Anthropic AVAILABILITY failure ends as availability=true, which
+          # scripts/fuze_code_review_verdict.py treats as an outage (non-blocking, or
+          # outage_blocking on a sensitive path). codex-auth-json below is therefore unused
+          # while this is 'true'.
+          review-only: 'true'
           # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
           # path. Omitting it does not fail loudly -- the rung is skipped by name
           # and the chain silently falls through to per-token billing, which is

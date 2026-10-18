@@ -324,8 +324,55 @@ describe('contact verification', () => {
     const db = makeFakeDb()
     db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15551234567', roles: '["user"]' })
     const p = newProvider(db)
-    const status = await p.confirmPhoneVerification('+15551234567', '123456')
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    const status = await p.confirmPhoneVerification(session.token, '+15551234567', '123456')
     expect(status.phoneVerified).toBe(true)
     expect(db.__tables.users[0].phone_verified).toBe(true)
+  })
+
+  it('phone confirm verifies ONLY the caller, not another account holding the same number', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15551234567', roles: '["user"]' })
+    db.__tables.users.push({ id: 'u2', email: 'victim@e.com', phone: '+15551234567', roles: '["user"]' })
+    const p = newProvider(db)
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    await p.confirmPhoneVerification(session.token, '+15551234567', '123456')
+    expect(db.__tables.users.find((u: any) => u.id === 'u1').phone_verified).toBe(true)
+    expect(db.__tables.users.find((u: any) => u.id === 'u2').phone_verified).toBeFalsy()
+  })
+
+  it('phone confirm rejects a number that is not the caller\'s current number', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15550000000', roles: '["user"]' })
+    db.__tables.users.push({ id: 'u2', email: 'victim@e.com', phone: '+15551234567', roles: '["user"]' })
+    const p = newProvider(db)
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    await expect(p.confirmPhoneVerification(session.token, '+15551234567', '123456')).rejects.toBeInstanceOf(UnauthorizedError)
+    expect(db.__tables.users.find((u: any) => u.id === 'u2').phone_verified).toBeFalsy()
+    expect(db.__tables.users.find((u: any) => u.id === 'u1').phone_verified).toBeFalsy()
+  })
+
+  it('phone confirm does not verify a number swapped in while the OTP check was in flight', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15550000000', roles: '["user"]' })
+    const p = newProvider(db)
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    ;(notifications.checkSmsOtp as jest.Mock).mockImplementationOnce(async () => {
+      // A concurrent /start for a new number lands mid-check.
+      Object.assign(db.__tables.users[0], { phone: '+15559999999', phone_verified: false })
+      return true
+    })
+    await expect(p.confirmPhoneVerification(session.token, '+15550000000', '123456')).rejects.toBeInstanceOf(UnauthorizedError)
+    expect(db.__tables.users[0].phone_verified).toBe(false)
+  })
+
+  it('changing the phone via start resets phone_verified', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15550000000', phone_verified: true, roles: '["user"]' })
+    const p = newProvider(db)
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    await p.startPhoneVerification(session.token, '+15559999999')
+    expect(db.__tables.users[0].phone).toBe('+15559999999')
+    expect(db.__tables.users[0].phone_verified).toBe(false)
   })
 })
