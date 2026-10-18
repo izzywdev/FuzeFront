@@ -169,11 +169,11 @@ export class UnleashFlagSyncService {
     const url = `${this.cfg.adminUrl}/api/admin/projects/${this.cfg.project}/features/${flagName}/environments/${this.cfg.environment}/strategies`;
     const headers = { Authorization: this.cfg.adminToken, 'Content-Type': 'application/json' };
 
-    // GET existing strategies
-    const resp = await axios.get<Array<{ id: string; name: string; parameters: { userIds?: string } }>>(
-      url, { headers, timeout: 5000 },
-    );
-    const existing = resp.data.find((s) => s.name === 'userWithId');
+    // GET existing strategies — Unleash v4 returns a bare array; v5+ wraps it as { strategies: [] }.
+    const resp = await axios.get<unknown>(url, { headers, timeout: 5000 });
+    const list: Array<{ id: string; name: string; parameters: { userIds?: string } }> =
+      Array.isArray(resp.data) ? resp.data : ((resp.data as any).strategies ?? []);
+    const existing = list.find((s) => s.name === 'userWithId');
     if (existing) return existing;
 
     // No userWithId strategy yet — create one with empty userIds.
