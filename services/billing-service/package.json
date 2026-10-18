@@ -19,6 +19,7 @@
     "@fuzefront/auth": "file:../../packages/auth",
     "@fuzefront/billing-types": "file:../../packages/billing-types",
     "@fuzefront/shared": "file:../../shared",
+    "@fuzefront/telemetry": "file:../../packages/telemetry",
     "axios": "^1.7.0",
     "express": "4.19.2",
     "kafkajs": "2.2.4",

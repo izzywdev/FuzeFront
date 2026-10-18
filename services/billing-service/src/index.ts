@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import {
   createKafkaClient,
   TypedProducer,
@@ -33,6 +34,20 @@ import { HandlerContext } from './handlers/types';
 
 const FLUSH_INTERVAL_SEC = parseInt(process.env.BILLING_METER_FLUSH_INTERVAL_SEC || '60', 10);
 
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'billing-service',
+  serviceVersion: SERVICE_VERSION,
+});
+
 async function main() {
   const config = loadConfig();
 
@@ -48,11 +63,22 @@ async function main() {
     }
   }
 
-  // Without DB or Stripe we can only serve /health (degraded mode).
+  // Without DB or Stripe we can only serve /health (degraded mode). Still
+  // register a shutdown hook here: without it, SIGTERM/SIGINT in this mode
+  // exits without ever calling telemetry.shutdown(), discarding every
+  // buffered health-request span on each restart in this supported mode.
   if (!pool || !config.stripeSecretKey) {
     console.warn('[billing-service] DATABASE_URL or STRIPE_SECRET_KEY missing — serving /health only');
     const app = createApp();
-    startHttp(app, config.port);
+    const server = startHttp(app, config.port);
+    const degradedShutdown = () => {
+      console.log('[billing-service] Shutting down (degraded mode)...');
+      server.close(() => {
+        telemetry.shutdown().catch(() => {}).finally(() => process.exit(0));
+      });
+    };
+    process.on('SIGTERM', degradedShutdown);
+    process.on('SIGINT', degradedShutdown);
     return;
   }
 
@@ -203,6 +229,11 @@ async function main() {
     } catch (err) {
       console.error('[billing-service] shutdown teardown error:', err);
     }
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch((err) =>
+      console.error('[billing-service] telemetry shutdown error:', err),
+    );
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);
