@@ -204,6 +204,56 @@ describe('AuthPanel', () => {
     expect((container.firstElementChild as HTMLElement).style.minHeight).toBe('100vh')
   })
 
+  // FFRNT-309 — Facebook sign-up for invitees. The frozen contract's
+  // SocialProvider enum is still `google`, so Facebook renders ONLY when the
+  // server advertises it (fail-closed hidden otherwise).
+  it('shows the Facebook button only when the server advertises it, and starts that provider', async () => {
+    const transport = makeTransport({
+      startSocial: vi.fn().mockResolvedValue(undefined),
+      getAuthMethods: vi
+        .fn()
+        .mockResolvedValue(baseMethods({ social: ['google', 'facebook'] as unknown as AuthMethods['social'] })),
+    })
+    render(<AuthPanel variant="compact" transport={transport} onAuthenticated={vi.fn()} />)
+    const fb = await screen.findByRole('button', { name: /sign in with facebook/i })
+    expect(fb).toHaveAttribute('data-action', 'social-facebook')
+    fireEvent.click(fb)
+    await waitFor(() => expect(transport.startSocial).toHaveBeenCalledWith('facebook'))
+  })
+
+  it('hides the Facebook button when only Google is advertised', async () => {
+    const transport = makeTransport({
+      startSocial: vi.fn().mockResolvedValue(undefined),
+      getAuthMethods: vi.fn().mockResolvedValue(baseMethods({ social: ['google'] })),
+    })
+    render(<AuthPanel variant="compact" transport={transport} onAuthenticated={vi.fn()} />)
+    await screen.findByRole('button', { name: /sign in with google/i })
+    expect(screen.queryByRole('button', { name: /facebook/i })).not.toBeInTheDocument()
+  })
+
+  it('forwards the invitation bindToken on signup and can hide the mode toggle', async () => {
+    const transport = makeTransport()
+    render(
+      <AuthPanel
+        variant="compact"
+        mode="signup"
+        transport={transport}
+        onAuthenticated={vi.fn()}
+        bindToken="bind_abc"
+        hideModeToggle
+        emailHint="Use the address this invite was sent to."
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'Back to sign in' })).not.toBeInTheDocument()
+    expect(screen.getByText('Use the address this invite was sent to.')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'ada@ex.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'S3cret!!!!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+    await waitFor(() =>
+      expect(transport.signup).toHaveBeenCalledWith(expect.objectContaining({ email: 'ada@ex.com', bindToken: 'bind_abc' })),
+    )
+  })
+
   it('applies label overrides', () => {
     render(
       <AuthPanel
