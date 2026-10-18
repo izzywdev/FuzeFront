@@ -83,9 +83,24 @@ export interface TracingMiddlewareOptions {
 // (one name per route REGISTRATION, not per request) name instead of the
 // nonsensical comma-joined string a bare template interpolation of the
 // array would silently produce via Array.prototype.toString().
-function selectRoutePath(path: string | string[], req: Request): string {
+//
+// Express also supports a bare RegExp (`app.get(/^\/files\//, ...)`) — a
+// single pattern, not an array — which `route.path` then holds directly.
+// Checked explicitly (not just "not a string") because RegExp has no
+// `.find`/`.join`: treating it as an array crashed this setter before the
+// request handler ever ran. `.toString()` gives a deterministic, bounded
+// name for it, same philosophy as the array fallback. A RegExp MIXED into
+// an array of candidates falls through to `.join()` below, which already
+// stringifies each element correctly via its own `.toString()`.
+// The full set of shapes Express assigns to `route.path`: a plain string,
+// a bare RegExp (`app.get(/^\/files\//, ...)`), or an array mixing either
+// (`app.get(['/ready', /^\/api\/ready$/], ...)`).
+type RoutePath = string | RegExp | Array<string | RegExp>;
+
+function selectRoutePath(path: RoutePath, req: Request): string {
   if (typeof path === 'string') return path;
-  return path.find((candidate) => candidate === req.path) ?? path.join('|');
+  if (path instanceof RegExp) return path.toString();
+  return path.find((candidate) => candidate === req.path)?.toString() ?? path.join('|');
 }
 
 function matchedRoutePath(req: Request): string | undefined {
@@ -103,7 +118,7 @@ function matchedRoutePath(req: Request): string | undefined {
   // nested router — exactly where accurate attribution matters most.
   const snapshot = (req as { __fuzefrontMatchedRoute?: string }).__fuzefrontMatchedRoute;
   if (snapshot) return snapshot;
-  const routePath = (req as { route?: { path?: string | string[] } }).route?.path;
+  const routePath = (req as { route?: { path?: RoutePath } }).route?.path;
   if (!routePath) return undefined;
   const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
   const full = `${baseUrl}${selectRoutePath(routePath, req)}`.replace(/\/{2,}/g, '/');
@@ -158,9 +173,9 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
     // req.route before this function ever ran, and installing the
     // accessor with a bare `undefined` initial value would discard that
     // already-matched route out from under every downstream handler.
-    const existingRoute = (req as { route?: { path?: string | string[] } }).route;
-    let matchedRoute: { path?: string | string[] } | undefined = existingRoute;
-    const snapshotRoute = (value: { path?: string | string[] } | undefined) => {
+    const existingRoute = (req as { route?: { path?: RoutePath } }).route;
+    let matchedRoute: { path?: RoutePath } | undefined = existingRoute;
+    const snapshotRoute = (value: { path?: RoutePath } | undefined) => {
       if (value?.path) {
         const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
         const full = `${baseUrl}${selectRoutePath(value.path, req)}`.replace(/\/{2,}/g, '/');
@@ -171,10 +186,10 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
     Object.defineProperty(req, 'route', {
       configurable: true,
       enumerable: true,
-      get(): { path?: string | string[] } | undefined {
+      get(): { path?: RoutePath } | undefined {
         return matchedRoute;
       },
-      set(value: { path?: string | string[] } | undefined) {
+      set(value: { path?: RoutePath } | undefined) {
         matchedRoute = value;
         snapshotRoute(value);
       },

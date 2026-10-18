@@ -3,6 +3,24 @@
 All notable changes to this package are documented here. Versioned
 independently — bump on every interface change (SemVer).
 
+## 0.1.6 — a bare RegExp route.path no longer crashes the req.route setter
+
+### Fixed
+
+- Express also supports a single `RegExp` as a route pattern (`app.get(/^\/files\//,
+  ...)`), assigning it directly to `req.route.path` — not wrapped in an array.
+  0.1.5's `selectRoutePath()` treated anything that wasn't a string as an
+  array and called `.find()`/`.join()` on it, which crashed the `req.route`
+  setter (and therefore the request) for any RegExp-registered route before
+  its handler ever ran. Caught by a Codex review on PR #1489, immediately
+  after 0.1.5 shipped. Fixed by checking for `instanceof RegExp` explicitly
+  and using its own `.toString()` as a deterministic, bounded span name —
+  same philosophy as the array fallback. A RegExp mixed into an array of
+  candidates already stringified correctly via `.join()`, so only the
+  bare-RegExp (non-array) case needed the extra check. Verified against a
+  real Express app with a genuine `app.get(/^\/files\//, ...)` route (confirmed
+  it crashes without the fix, returns 200 with it) plus a new regression test.
+
 ## 0.1.5 — array route paths (Express multi-path registration) no longer coerce to a comma-joined string
 
 ### Fixed

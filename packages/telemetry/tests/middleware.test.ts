@@ -251,6 +251,32 @@ describe('tracingMiddleware', () => {
     expect(span.name).toBe('GET /users/:id|/people/:id');
   });
 
+  it('does not crash on a bare RegExp route.path (Express also supports app.get(/regex/, ...))', () => {
+    const middleware = tracingMiddleware();
+    // A RegExp is a SINGLE pattern, not an array — treating "not a string"
+    // as "must be an array" and calling .find()/.join() on it crashed the
+    // req.route setter before the handler ever ran. Caught by a Codex
+    // review on PR #1489.
+    const req = { ...fakeReq(), path: '/files/abc' } as Request & {
+      route?: { path?: string | RegExp };
+    };
+    const res = fakeRes();
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    expect(() => {
+      req.route = { path: /^\/files\// };
+    }).not.toThrow();
+    res._finish();
+
+    // The trailing `//` in the regex's own string form gets deduplicated by
+    // the same baseUrl+path slash-collapse this helper already applies —
+    // harmless here, since this is just a deterministic naming string, not
+    // a literal path.
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('GET /^\\/files\\/');
+    expect(span.attributes['http.route']).toBe('/^\\/files\\/');
+  });
+
   it('preserves the matched baseUrl+route snapshot across Express restoring req.baseUrl during error-forwarding out of a nested router', () => {
     const middleware = tracingMiddleware();
     const req = fakeReq() as Request & { route?: { path?: string }; baseUrl?: string };
