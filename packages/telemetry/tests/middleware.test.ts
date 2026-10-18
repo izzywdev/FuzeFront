@@ -208,6 +208,49 @@ describe('tracingMiddleware', () => {
     expect(span.name).toBe('GET /v1/selection-lists/items/:itemId');
   });
 
+  it('selects the matching entry when req.route.path is an array (Express multi-path registration)', () => {
+    const middleware = tracingMiddleware();
+    // Express sets route.path to the ARRAY as given when a handler is
+    // registered with multiple patterns in one call (e.g. this PR's own
+    // `app.get(['/ready', '/api/ready'], ...)`) — not whichever one matched.
+    // A bare template-string interpolation of that array would silently
+    // produce the nonsensical 'GET /ready,/api/ready' via
+    // Array.prototype.toString() for EITHER request.
+    const req = { ...fakeReq(), path: '/api/ready' } as Request & {
+      route?: { path?: string | string[] };
+    };
+    const res = fakeRes();
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    req.route = { path: ['/ready', '/api/ready'] };
+    res._finish();
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('GET /api/ready');
+    expect(span.attributes['http.route']).toBe('/api/ready');
+  });
+
+  it('falls back to a joined, bounded-cardinality name when no array entry exactly matches a parameterized alternate', () => {
+    const middleware = tracingMiddleware();
+    // A concrete request path never exactly equals a parameterized pattern
+    // like '/users/:id', so the exact-match selection can't recover which
+    // alternate matched without a path-to-regexp dependency. Joining keeps
+    // the result deterministic and bounded (one name per route
+    // REGISTRATION, not per request) rather than reproducing the original
+    // comma-joined-array bug.
+    const req = { ...fakeReq(), path: '/users/42' } as Request & {
+      route?: { path?: string | string[] };
+    };
+    const res = fakeRes();
+
+    middleware(req, res, jest.fn() as unknown as NextFunction);
+    req.route = { path: ['/users/:id', '/people/:id'] };
+    res._finish();
+
+    const [span] = exporter.getFinishedSpans();
+    expect(span.name).toBe('GET /users/:id|/people/:id');
+  });
+
   it('preserves the matched baseUrl+route snapshot across Express restoring req.baseUrl during error-forwarding out of a nested router', () => {
     const middleware = tracingMiddleware();
     const req = fakeReq() as Request & { route?: { path?: string }; baseUrl?: string };

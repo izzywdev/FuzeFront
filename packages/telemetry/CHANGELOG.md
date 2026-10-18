@@ -3,6 +3,27 @@
 All notable changes to this package are documented here. Versioned
 independently — bump on every interface change (SemVer).
 
+## 0.1.5 — array route paths (Express multi-path registration) no longer coerce to a comma-joined string
+
+### Fixed
+
+- `req.route.path` is the raw ARRAY as given when a handler is registered
+  with multiple patterns in one call (e.g. `app.get(['/ready', '/api/ready'],
+  ...)` — the host backend's own pattern), not whichever entry actually
+  matched the request; confirmed empirically against a real Express app that
+  it stays the full array for either matching request. The span-naming and
+  `http.route` code interpolated this value into a template string, which
+  silently coerced the array via `Array.prototype.toString()` into the
+  nonsensical `GET /ready,/api/ready` — an invalid route for either actual
+  endpoint — for EVERY request to either path. Caught by a Codex review on
+  PR #1489. Fixed by selecting the array entry that exactly matches `req.path`
+  (the same router-local scope every other array entry lives in); a
+  parameterized alternate with no exact match falls back to a `|`-joined
+  name, which stays deterministic and bounded (one name per route
+  REGISTRATION, not per request) without adding a path-to-regexp dependency.
+  Verified with two new regression tests (the static-array exact-match case
+  mirroring the reported bug, and the parameterized-fallback case).
+
 ## 0.1.4 — two regressions from 0.1.3's req.route accessor, both caught by Codex
 
 ### Fixed

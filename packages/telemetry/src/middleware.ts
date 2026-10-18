@@ -72,6 +72,22 @@ export interface TracingMiddlewareOptions {
 // combining them is required: using route.path alone collapsed distinct
 // mounted routers' endpoints (e.g. `GET /docs/` and `GET /v1/selection-lists/`)
 // down to the same span name `GET /`.
+// Express allows registering several patterns in one call (e.g. this PR's
+// own `app.get(['/ready', '/api/ready'], ...)`); when it does, `route.path`
+// is the ARRAY as given, not whichever entry actually matched this request.
+// `req.path` is local to the current router scope — the same scope as each
+// array entry — so an exact match against it recovers the real match for
+// the (common) case of static alternates. A parameterized alternate that
+// doesn't match exactly (no path-to-regexp here, to avoid a new dependency
+// for a naming nicety) still collapses to one deterministic, bounded
+// (one name per route REGISTRATION, not per request) name instead of the
+// nonsensical comma-joined string a bare template interpolation of the
+// array would silently produce via Array.prototype.toString().
+function selectRoutePath(path: string | string[], req: Request): string {
+  if (typeof path === 'string') return path;
+  return path.find((candidate) => candidate === req.path) ?? path.join('|');
+}
+
 function matchedRoutePath(req: Request): string | undefined {
   // Prefer the snapshot `tracingMiddleware()` captures the INSTANT Express
   // sets `req.route` (see the `Object.defineProperty` below) over
@@ -87,10 +103,10 @@ function matchedRoutePath(req: Request): string | undefined {
   // nested router — exactly where accurate attribution matters most.
   const snapshot = (req as { __fuzefrontMatchedRoute?: string }).__fuzefrontMatchedRoute;
   if (snapshot) return snapshot;
-  const routePath = (req as { route?: { path?: string } }).route?.path;
+  const routePath = (req as { route?: { path?: string | string[] } }).route?.path;
   if (!routePath) return undefined;
   const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
-  const full = `${baseUrl}${routePath}`.replace(/\/{2,}/g, '/');
+  const full = `${baseUrl}${selectRoutePath(routePath, req)}`.replace(/\/{2,}/g, '/');
   return full === '' ? '/' : full;
 }
 
@@ -142,12 +158,12 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
     // req.route before this function ever ran, and installing the
     // accessor with a bare `undefined` initial value would discard that
     // already-matched route out from under every downstream handler.
-    const existingRoute = (req as { route?: { path?: string } }).route;
-    let matchedRoute: { path?: string } | undefined = existingRoute;
-    const snapshotRoute = (value: { path?: string } | undefined) => {
+    const existingRoute = (req as { route?: { path?: string | string[] } }).route;
+    let matchedRoute: { path?: string | string[] } | undefined = existingRoute;
+    const snapshotRoute = (value: { path?: string | string[] } | undefined) => {
       if (value?.path) {
         const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
-        const full = `${baseUrl}${value.path}`.replace(/\/{2,}/g, '/');
+        const full = `${baseUrl}${selectRoutePath(value.path, req)}`.replace(/\/{2,}/g, '/');
         (req as { __fuzefrontMatchedRoute?: string }).__fuzefrontMatchedRoute = full === '' ? '/' : full;
       }
     };
@@ -155,10 +171,10 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
     Object.defineProperty(req, 'route', {
       configurable: true,
       enumerable: true,
-      get(): { path?: string } | undefined {
+      get(): { path?: string | string[] } | undefined {
         return matchedRoute;
       },
-      set(value: { path?: string } | undefined) {
+      set(value: { path?: string | string[] } | undefined) {
         matchedRoute = value;
         snapshotRoute(value);
       },
