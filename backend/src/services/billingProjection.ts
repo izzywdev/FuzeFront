@@ -40,6 +40,8 @@ export async function applySubscriptionChanged(
   payload: BillingSubscriptionChangedPayloadV1
 ): Promise<number> {
   const table = payload.entityType === 'user' ? 'users' : 'organizations'
+  // planTier written here uses canonical values: free | starter | growth | enterprise.
+  // Legacy values (professional, scale) are normalized by billing-service before emit.
   const updated = await db(table)
     .where({ id: payload.entityId })
     .update({

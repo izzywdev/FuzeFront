@@ -192,37 +192,43 @@ export const FLAG_KEYS = {
   // Owner: feature-flags-engineer (billing domain).
 
   /**
+   * fuzefront.billing.plan-free
+   * Type: permission. Default: TRUE (all orgs can use Free-tier features).
+   * Gates: single application, community support only.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire only if the Free tier is removed from the product.
+   */
+  BILLING_PLAN_FREE: 'fuzefront.billing.plan-free',
+  /**
    * fuzefront.billing.plan-starter
-   * Type: permission. Default: TRUE (every org on the lowest tier gets starter features).
-   * Gates: basic features, up to 5 members.
+   * Type: permission. Default: TRUE (every org on the base paid tier gets Starter features).
+   * Gates: core features, up to 5 users, 1 workspace, email support.
    * Owner: feature-flags-engineer.
    * Removal criterion: retire only if the Starter tier is removed from the product.
    */
   BILLING_PLAN_STARTER: 'fuzefront.billing.plan-starter',
   /**
-   * fuzefront.billing.plan-professional
-   * Type: permission. Default: FALSE (gate Pro features; enabled per-org by billing sync).
-   * Gates: advanced features, SSO, API access, up to 25 members.
+   * fuzefront.billing.plan-growth
+   * Type: permission. Default: FALSE (gate Growth features; enabled per-org by billing sync).
+   * Gates: up to 25 users, 3 workspaces, API access, priority support.
    * Owner: feature-flags-engineer.
-   * Removal criterion: retire only if Professional tier is removed from the product.
+   * Removal criterion: retire only if the Growth tier is removed from the product.
    */
-  BILLING_PLAN_PROFESSIONAL: 'fuzefront.billing.plan-professional',
-  /**
-   * fuzefront.billing.plan-scale
-   * Type: permission. Default: FALSE (gate Scale features; enabled per-org by billing sync).
-   * Gates: full platform, all products, up to 100 members.
-   * Owner: feature-flags-engineer.
-   * Removal criterion: retire only if Scale tier is removed from the product.
-   */
-  BILLING_PLAN_SCALE: 'fuzefront.billing.plan-scale',
+  BILLING_PLAN_GROWTH: 'fuzefront.billing.plan-growth',
   /**
    * fuzefront.billing.plan-enterprise
    * Type: permission. Default: FALSE (gate Enterprise features; enabled per-org by billing sync).
-   * Gates: unlimited members, on-premise option, custom SLA.
+   * Gates: unlimited members, custom SLAs, SSO/SAML, compliance exports, dedicated CSM.
    * Owner: feature-flags-engineer.
    * Removal criterion: retire only if Enterprise tier is removed from the product.
    */
   BILLING_PLAN_ENTERPRISE: 'fuzefront.billing.plan-enterprise',
+  // Deprecated aliases — kept for zero-downtime migration; remove after all consumers
+  // are updated to use BILLING_PLAN_GROWTH.
+  /** @deprecated Use BILLING_PLAN_GROWTH */
+  BILLING_PLAN_PROFESSIONAL: 'fuzefront.billing.plan-growth',
+  /** @deprecated Use BILLING_PLAN_GROWTH */
+  BILLING_PLAN_SCALE: 'fuzefront.billing.plan-growth',
   /**
    * fuzefront.billing.sso-enabled
    * Type: permission. Default: FALSE.
@@ -324,13 +330,13 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   // surfaces (upgrade prompts, locked nav items). Real authorization always
   // lives in Permit on the server — these flags are convenience only.
   //
-  // plan-starter defaults TRUE: every org can access Starter-tier features by
-  // default (fail-open for the base tier).
+  // plan-free and plan-starter default TRUE: every org can access Free/Starter-tier
+  // features by default (fail-open for the base tiers).
+  { key: FLAG_KEYS.BILLING_PLAN_FREE, type: 'permission', default: true },
   { key: FLAG_KEYS.BILLING_PLAN_STARTER, type: 'permission', default: true },
   // All other plan flags default FALSE: higher-tier features are locked until
   // the billing sync enables them per-org in Unleash.
-  { key: FLAG_KEYS.BILLING_PLAN_PROFESSIONAL, type: 'permission', default: false },
-  { key: FLAG_KEYS.BILLING_PLAN_SCALE, type: 'permission', default: false },
+  { key: FLAG_KEYS.BILLING_PLAN_GROWTH, type: 'permission', default: false },
   { key: FLAG_KEYS.BILLING_PLAN_ENTERPRISE, type: 'permission', default: false },
   // Capability flags (also gated by plan; Permit enforces server-side).
   { key: FLAG_KEYS.BILLING_SSO_ENABLED, type: 'permission', default: false },
