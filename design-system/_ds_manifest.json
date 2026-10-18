@@ -62,6 +62,10 @@
       "sourcePath": "components/data/DataTable.jsx"
     },
     {
+      "name": "QrCode",
+      "sourcePath": "components/data/QrCode.jsx"
+    },
+    {
       "name": "SortableList",
       "sourcePath": "components/data/SortableList.jsx"
     },
@@ -134,8 +138,16 @@
       "sourcePath": "components/forms/Input.jsx"
     },
     {
+      "name": "OtpInput",
+      "sourcePath": "components/forms/OtpInput.jsx"
+    },
+    {
       "name": "PasswordChecklist",
       "sourcePath": "components/forms/PasswordChecklist.jsx"
+    },
+    {
+      "name": "PasswordStrengthMeter",
+      "sourcePath": "components/forms/PasswordStrengthMeter.jsx"
     },
     {
       "name": "SearchField",
