@@ -86,8 +86,7 @@ jobs:
           PERMIT_API_KEY: 'ci-no-real-permit-calls'
           PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
-          echo "Setting up test database..."
-          npm run db:init || echo "Database initialization completed"
+          echo "Test DB schema is applied by the Jest global setup (tests/setup.ts) against the Postgres service — no separate init step (sqlite db:init removed)."
 
       - name: Run authentication tests
         working-directory: ./backend
@@ -276,7 +275,7 @@ jobs:
           FRONTEND_URL: http://localhost:3000
           PERMIT_API_KEY: ${{ secrets.PERMIT_API_KEY || 'ci-offline-pdp-key' }}
           PERMIT_PDP_URL: 'http://localhost:7766'
-        run: npm run db:init || echo "Database initialization completed"
+        run: echo "Test DB schema is applied by the Jest global setup (tests/setup.ts) against the Postgres service — no separate init step (sqlite db:init removed)."
 
       - name: Diagnose PDP container health
         run: |
