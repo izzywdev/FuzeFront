@@ -35,7 +35,7 @@ async function main() {
   );
 
   // --- HTTP ---
-  const app = createApp();
+  const app = createApp({ provider, from: config.email.from, authSecret: config.authSecret });
   app.listen(config.port, () => {
     console.log(`[email-service] Listening on port ${config.port}`);
   });
