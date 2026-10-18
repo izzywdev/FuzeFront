@@ -71,7 +71,7 @@ RUN npm ci --workspace=services/chat-service --omit=dev --ignore-scripts
 # instead. An empty directory is the correct outcome when everything hoisted; if a
 # future resolution stops hoisting, the real contents land here and get copied without
 # anyone having to remember why.
-RUN mkdir -p packages/auth/node_modules packages/feature-flags/node_modules
+RUN mkdir -p packages/auth/node_modules packages/feature-flags/node_modules packages/telemetry/node_modules
 
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
@@ -127,6 +127,7 @@ COPY packages/auth/ ./packages/auth/
 COPY packages/security/ ./packages/security/
 COPY packages/service-auth/ ./packages/service-auth/
 COPY packages/feature-flags/ ./packages/feature-flags/
+COPY packages/telemetry/ ./packages/telemetry/
 COPY services/chat-service/ ./services/chat-service/
 
 # Copy the product docs corpus the chat-doc-indexer Job indexes (RAG source).
@@ -142,6 +143,12 @@ RUN cd packages/auth && npm install --ignore-scripts && npm run build
 RUN cd packages/security && npm install --ignore-scripts && npm run build
 RUN cd packages/service-auth && npm run build
 RUN cd packages/feature-flags && npm install --ignore-scripts && npm run build
+# @fuzefront/telemetry (index.ts's initTelemetry(), app.ts's tracingMiddleware())
+# — same no-local-install treatment as packages/service-auth above: its
+# @opentelemetry/* runtime deps hoist cleanly from the scoped workspace `npm ci`
+# at the top of this stage (no version conflicts), so `npm run build` resolves
+# tsup from the root node_modules without needing its own local install.
+RUN cd packages/telemetry && npm run build
 RUN cd services/chat-service && npm run build
 
 # ---------- production ----------
@@ -201,7 +208,22 @@ COPY --from=build /app/packages/feature-flags/dist ./packages/feature-flags/dist
 # resolution happens to hoist. Copied from `base` (--omit=dev), not `build`,
 # for the same reason as packages/auth/node_modules above.
 COPY --from=base /app/packages/feature-flags/node_modules ./packages/feature-flags/node_modules
+# @fuzefront/telemetry (index.ts's initTelemetry(), app.ts's
+# tracingMiddleware()) is the same kind of `file:`-linked symlink target —
+# package.json + dist populate it, same as @fuzefront/auth above.
+COPY --from=build /app/packages/telemetry/package.json ./packages/telemetry/package.json
+COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
+# ...AND its runtime dependencies (the @opentelemetry/* SDK packages). Same
+# reasoning as packages/auth/node_modules above: copied from `base` (the
+# empty-or-real directory guaranteed to exist by the `mkdir -p` safety net),
+# not `build`, so a production image never carries tsup/jest/typescript.
+COPY --from=base /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 COPY --from=build /app/services/chat-service/dist ./services/chat-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/chat-service/package.json ./services/chat-service/package.json
 # Product docs corpus for the chat-doc-indexer Job.
 COPY --from=build /app/services/chat-service/docs ./services/chat-service/docs
 

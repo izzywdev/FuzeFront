@@ -71,7 +71,7 @@ RUN npm ci --workspace=services/selection-list-service --omit=dev --ignore-scrip
 # empty directory is the correct outcome when everything hoisted; if a future
 # resolution stops hoisting, the real contents land here and get copied without
 # anyone having to remember why. (Same treatment as services/chat-service.)
-RUN mkdir -p packages/auth/node_modules packages/feature-flags/node_modules
+RUN mkdir -p packages/auth/node_modules packages/feature-flags/node_modules packages/telemetry/node_modules
 
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
@@ -121,6 +121,7 @@ COPY packages/auth/ ./packages/auth/
 COPY packages/security/ ./packages/security/
 COPY packages/service-auth/ ./packages/service-auth/
 COPY packages/feature-flags/ ./packages/feature-flags/
+COPY packages/telemetry/ ./packages/telemetry/
 COPY shared/ ./shared/
 COPY services/selection-list-service/ ./services/selection-list-service/
 
@@ -160,6 +161,12 @@ RUN cd packages/service-auth && npm run build
 # lazily, so nothing fails at tsc time, but without dist/ in the image the
 # `require` throws, the client resolves to null and the flag is OFF forever.
 RUN cd packages/feature-flags && npm install --ignore-scripts && npm run build
+# @fuzefront/telemetry (index.ts's initTelemetry(), app.ts's
+# tracingMiddleware(), lib/logger.ts's withTraceContext()) -- same reasoning
+# as packages/auth above: the --workspace filter only installs
+# selection-list-service's own devDeps, so telemetry needs its own install +
+# build here.
+RUN cd packages/telemetry && npm install --ignore-scripts && npm run build
 RUN cd services/selection-list-service && npm run build
 
 # ---------- production ----------
@@ -172,6 +179,11 @@ RUN apk add --no-cache dumb-init && \
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/services/selection-list-service/node_modules ./services/selection-list-service/node_modules
 COPY --from=build /app/services/selection-list-service/dist ./services/selection-list-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/selection-list-service/package.json ./services/selection-list-service/package.json
 # @fuzefront/auth is a workspace dependency, so npm LINKS it --
 # node_modules/@fuzefront/auth is a symlink to /app/packages/auth. The base
 # stage above ships packages/auth/package.json (workspace manifest list) so
@@ -226,6 +238,15 @@ COPY --from=base /app/packages/feature-flags/node_modules ./packages/feature-fla
 # target with the built output so the Kafka consumer resolves at runtime.
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
+# @fuzefront/telemetry: same kind of `file:`-linked symlink target
+# (node_modules/@fuzefront/telemetry -> /app/packages/telemetry). index.ts
+# calls initTelemetry() and app.ts calls tracingMiddleware() at module load.
+COPY --from=build /app/packages/telemetry/package.json ./packages/telemetry/package.json
+COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
+# ...AND its runtime dependencies (the @opentelemetry/* SDK packages). Same
+# reasoning as feature-flags' node_modules above: copied from `base`
+# (--omit=dev), not `build`, so tsup/typescript/jest stay out.
+COPY --from=base /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 # Copy openapi.yaml so the docs route can serve swagger-ui-express at runtime
 COPY --from=build /app/services/selection-list-service/openapi.yaml ./services/selection-list-service/openapi.yaml
 # Seeding assets (docs/planning/selection-lists-events.md sections 8 and 10): the reviewed

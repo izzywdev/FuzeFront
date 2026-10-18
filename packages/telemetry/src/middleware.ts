@@ -65,9 +65,68 @@ export interface TracingMiddlewareOptions {
   spanName?: (req: Request) => string;
 }
 
+// `req.route.path` is only the pattern matched by the ROUTER THAT MATCHED IT —
+// for a router mounted with `app.use('/v1/selection-lists', itemsRouter)`,
+// an inner route `/:itemId` reports route.path as just `/:itemId`, dropping
+// the mount prefix entirely. `req.baseUrl` carries exactly that prefix, so
+// combining them is required: using route.path alone collapsed distinct
+// mounted routers' endpoints (e.g. `GET /docs/` and `GET /v1/selection-lists/`)
+// down to the same span name `GET /`.
+// Express allows registering several patterns in one call (e.g. this PR's
+// own `app.get(['/ready', '/api/ready'], ...)`); when it does, `route.path`
+// is the ARRAY as given, not whichever entry actually matched this request.
+// `req.path` is local to the current router scope — the same scope as each
+// array entry — so an exact match against it recovers the real match for
+// the (common) case of static alternates. A parameterized alternate that
+// doesn't match exactly (no path-to-regexp here, to avoid a new dependency
+// for a naming nicety) still collapses to one deterministic, bounded
+// (one name per route REGISTRATION, not per request) name instead of the
+// nonsensical comma-joined string a bare template interpolation of the
+// array would silently produce via Array.prototype.toString().
+//
+// Express also supports a bare RegExp (`app.get(/^\/files\//, ...)`) — a
+// single pattern, not an array — which `route.path` then holds directly.
+// Checked explicitly (not just "not a string") because RegExp has no
+// `.find`/`.join`: treating it as an array crashed this setter before the
+// request handler ever ran. `.toString()` gives a deterministic, bounded
+// name for it, same philosophy as the array fallback. A RegExp MIXED into
+// an array of candidates falls through to `.join()` below, which already
+// stringifies each element correctly via its own `.toString()`.
+// The full set of shapes Express assigns to `route.path`: a plain string,
+// a bare RegExp (`app.get(/^\/files\//, ...)`), or an array mixing either
+// (`app.get(['/ready', /^\/api\/ready$/], ...)`).
+type RoutePath = string | RegExp | Array<string | RegExp>;
+
+function selectRoutePath(path: RoutePath, req: Request): string {
+  if (typeof path === 'string') return path;
+  if (path instanceof RegExp) return path.toString();
+  return path.find((candidate) => candidate === req.path)?.toString() ?? path.join('|');
+}
+
+function matchedRoutePath(req: Request): string | undefined {
+  // Prefer the snapshot `tracingMiddleware()` captures the INSTANT Express
+  // sets `req.route` (see the `Object.defineProperty` below) over
+  // recomputing from the CURRENT `req.route`/`req.baseUrl`: when a handler
+  // inside a mounted Router calls `next(err)`, Express restores
+  // `req.baseUrl` to the OUTER router's value while unwinding — but leaves
+  // `req.route` pointing at the INNER router's (now stale-paired) route.
+  // Recombining them live at response-end (this function's fallback path,
+  // for a request that somehow never went through the setter — e.g. this
+  // middleware mounted after the router already set req.route) would then
+  // pair an unwound baseUrl with a route.path from a different scope,
+  // under-reporting the route for every 5xx that error-forwards out of a
+  // nested router — exactly where accurate attribution matters most.
+  const snapshot = (req as { __fuzefrontMatchedRoute?: string }).__fuzefrontMatchedRoute;
+  if (snapshot) return snapshot;
+  const routePath = (req as { route?: { path?: RoutePath } }).route?.path;
+  if (!routePath) return undefined;
+  const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
+  const full = `${baseUrl}${selectRoutePath(routePath, req)}`.replace(/\/{2,}/g, '/');
+  return full === '' ? '/' : full;
+}
+
 function defaultSpanName(req: Request): string {
-  const routePath = (req as { route?: { path?: string } }).route?.path;
-  return `${req.method} ${routePath ?? req.path}`;
+  return `${req.method} ${matchedRoutePath(req) ?? req.path}`;
 }
 
 /**
@@ -99,17 +158,99 @@ export function tracingMiddleware(options: TracingMiddlewareOptions = {}): Reque
     req.traceId = spanContext.traceId;
     req.spanId = spanContext.spanId;
 
+    // Intercept Express's own `req.route = route` assignment (a plain
+    // property set, deep inside Router/Layer dispatch) to snapshot
+    // `req.baseUrl + route.path` the INSTANT a route actually matches,
+    // rather than recomputing it later from whatever `req.baseUrl` and
+    // `req.route` happen to hold when the response ends — see
+    // `matchedRoutePath()`'s comment for why those can disagree by then.
+    // `configurable: true` so nothing downstream that re-defines this
+    // property throws.
+    //
+    // Seed from whatever `req.route` ALREADY holds: this middleware is
+    // documented as mountable per-router, after matching (see
+    // TracingMiddlewareOptions.spanName above) — in that case Express set
+    // req.route before this function ever ran, and installing the
+    // accessor with a bare `undefined` initial value would discard that
+    // already-matched route out from under every downstream handler.
+    const existingRoute = (req as { route?: { path?: RoutePath } }).route;
+    let matchedRoute: { path?: RoutePath } | undefined = existingRoute;
+    const snapshotRoute = (value: { path?: RoutePath } | undefined) => {
+      if (value?.path) {
+        const baseUrl = (req as { baseUrl?: string }).baseUrl ?? '';
+        const full = `${baseUrl}${selectRoutePath(value.path, req)}`.replace(/\/{2,}/g, '/');
+        (req as { __fuzefrontMatchedRoute?: string }).__fuzefrontMatchedRoute = full === '' ? '/' : full;
+      }
+    };
+    snapshotRoute(existingRoute);
+    Object.defineProperty(req, 'route', {
+      configurable: true,
+      enumerable: true,
+      get(): { path?: RoutePath } | undefined {
+        return matchedRoute;
+      },
+      set(value: { path?: RoutePath } | undefined) {
+        matchedRoute = value;
+        snapshotRoute(value);
+      },
+    });
+
     const requestContext = trace.setSpan(parentContext, span);
 
-    res.on('finish', () => {
+    // Idempotent: `finish` AND `close` can both fire for the same response
+    // (and `close` fires EVEN AFTER `finish` on some Node versions), so a
+    // bare boolean guard — not two independent `span.end()` calls — is what
+    // keeps this from double-ending the span.
+    let ended = false;
+    const endSpan = () => {
+      if (ended) return;
+      ended = true;
+      // `req.route` is only populated by Express AFTER its router matches a
+      // path pattern — which hasn't happened yet when this middleware starts
+      // the span (mounted ahead of the router). By the time the response
+      // finishes, matching has happened, so re-derive the name here and
+      // rename the span: without this, every parameterized route (e.g.
+      // `/:listId/items/:itemId`) keeps the raw, UUID-bearing `req.path` as
+      // its permanent span name, fragmenting Tempo's operation list and
+      // trace-index cardinality per id instead of collapsing to one name.
+      const routePath = matchedRoutePath(req);
+      if (routePath) {
+        // Express sets `req.route`/`req.baseUrl` in place on the same request
+        // object, so re-invoking `spanName` now (vs. at span-start time)
+        // picks them up.
+        span.updateName(spanName(req));
+        span.setAttribute('http.route', routePath);
+      } else if (spanName === defaultSpanName) {
+        // No route ever matched — rejected before the router ran (e.g. a
+        // body-parser failure on malformed JSON) or a genuine 404. req.path
+        // is attacker-controlled and unbounded (adversarial/scanning
+        // requests), so falling back to it here would reintroduce, for every
+        // UNMATCHED request, the exact per-path cardinality problem
+        // matchedRoutePath() exists to collapse for MATCHED ones. Use a
+        // fixed name instead, and omit http.route entirely rather than
+        // echoing the raw path into it. Only for the DEFAULT naming
+        // function, though — a caller-supplied `options.spanName` owns
+        // this decision for every request per the documented contract, so
+        // its own low-cardinality scheme (if any) for the unmatched case
+        // must not be overridden here.
+        span.updateName(`${req.method} (unmatched)`);
+      } else {
+        span.updateName(spanName(req));
+      }
       span.setAttribute('http.status_code', res.statusCode);
       span.setAttribute('http.method', req.method);
-      span.setAttribute('http.route', (req as { route?: { path?: string } }).route?.path ?? req.path);
       if (res.statusCode >= 500) {
         span.setAttribute('error', true);
       }
       span.end();
-    });
+    };
+    res.on('finish', endSpan);
+    // `finish` fires only when the response is fully sent. A long-lived
+    // connection that the CLIENT drops first (an SSE `/stream` route; any
+    // route whose handler never calls `res.end()`) never emits `finish` —
+    // only `close`. Without this, that span is never ended/exported, and
+    // the request silently disappears from the trace.
+    res.on('close', endSpan);
 
     // Run the rest of the request inside the span's context so any code that
     // starts a CHILD span downstream (e.g. `HttpInstrumentation`'s outbound
