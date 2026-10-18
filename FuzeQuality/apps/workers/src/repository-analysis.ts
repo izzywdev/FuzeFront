@@ -15,6 +15,24 @@ function evaluationBatches(evaluations: PolicyGateEvaluation[]) {
 export const repositoryQualityArtifactsPath = (repositoryId: string, revision: string) =>
   `/api/v1/internal/repositories/${encodeURIComponent(repositoryId)}/quality-artifacts?revision=${encodeURIComponent(revision)}`
 
+export async function withAnalysisHeartbeat<T>(
+  operation: () => Promise<T>,
+  heartbeat?: () => Promise<void>,
+  intervalMs = 3_000,
+) {
+  if (!heartbeat) return operation()
+  const beat = () => {
+    void heartbeat().catch(() => undefined)
+  }
+  beat()
+  const timer = setInterval(beat, intervalMs)
+  try {
+    return await operation()
+  } finally {
+    clearInterval(timer)
+  }
+}
+
 export async function runRepositoryInventoryAnalysis(
   repository: Repository,
   revision: string,
@@ -47,6 +65,8 @@ export async function runTrackedRepositoryInventoryAnalysis(
   artifacts: QualityArtifact[],
   dependencies: Parameters<typeof runRepositoryInventoryAnalysis>[3] & {
     persistStatus: (status: RepositoryAnalysisStatus) => Promise<void>
+    heartbeat?: () => Promise<void>
+    heartbeatIntervalMs?: number
     now?: () => string
   },
 ) {
@@ -54,7 +74,11 @@ export async function runTrackedRepositoryInventoryAnalysis(
   const startedAt = now()
   await dependencies.persistStatus({ revision, status: 'running', startedAt })
   try {
-    const counts = await runRepositoryInventoryAnalysis(repository, revision, artifacts, dependencies)
+    const counts = await withAnalysisHeartbeat(
+      () => runRepositoryInventoryAnalysis(repository, revision, artifacts, dependencies),
+      dependencies.heartbeat,
+      dependencies.heartbeatIntervalMs,
+    )
     await dependencies.persistStatus({ revision, status: 'complete', startedAt, finishedAt: now(), counts })
     return counts
   } catch (error) {
