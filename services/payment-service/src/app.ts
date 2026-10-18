@@ -1,4 +1,5 @@
-import express, { Application, Request, Response } from 'express';
+import express, { Application, Request, RequestHandler, Response } from 'express';
+import { tracingMiddleware } from '@fuzefront/telemetry';
 import type { MachineTokenVerifier } from '@fuzefront/service-auth';
 import { createInternalAuth } from './middleware/auth';
 import { createPaymentsRouter, createWebhookRouter } from './routes/payments';
@@ -33,6 +34,15 @@ const API_BASE = '/api/v1/payments';
  */
 export function createApp(deps?: AppDeps): Application {
   const app = express();
+
+  // Starts/continues a per-request span, exposing req.traceId/req.spanId for
+  // log correlation. Mounted before any other middleware so the span wraps
+  // the whole request lifecycle (OTLP export to FuzeInfra's Collector, never
+  // Tempo/Loki directly — see @fuzefront/telemetry's docs/TRACE_CONTRACT.md).
+  // Cast needed because @fuzefront/telemetry's RequestHandler type is built
+  // against Express 4 types while this service is on Express 5 — same
+  // mismatch (and same fix) as middleware/auth.ts's requireMachineAuth() cast.
+  app.use(tracingMiddleware() as unknown as RequestHandler);
 
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', service: 'payment-service' });
