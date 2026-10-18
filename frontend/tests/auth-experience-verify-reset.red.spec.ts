@@ -40,7 +40,8 @@ const json = (route: Route, status: number, body?: unknown) =>
 /** Unauthenticated boot: the session probe answers 401, flag forced ON/OFF pre-auth. */
 async function boot(page: Page, flag: boolean) {
   await page.addInitScript(on => {
-    (window as unknown as { __FF_AUTH_EXPERIENCE__?: boolean }).__FF_AUTH_EXPERIENCE__ = on
+    const w = window as unknown as { __FF_AUTH_EXPERIENCE__?: boolean }
+    w.__FF_AUTH_EXPERIENCE__ = on
   }, flag)
   await page.route(`${SEC}/session`, route =>
     route.request().method() === 'GET'
