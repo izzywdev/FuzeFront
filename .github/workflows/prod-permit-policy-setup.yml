@@ -84,9 +84,10 @@ jobs:
           PERMIT_API_KEY: ${{ env.PERMIT_API_KEY }}
           PERMIT_PROJECT: ${{ env.PERMIT_PROJECT }}
           PERMIT_ENVIRONMENT: ${{ inputs.environment }}
+          SETUP_MODE: ${{ inputs.mode }}
         run: |
           ARGS=""
-          if [ "${{ inputs.mode }}" = "apply" ]; then
+          if [ "$SETUP_MODE" = "apply" ]; then
             ARGS="--apply"
           fi
           node scripts/setup-permit-policies.mjs $ARGS

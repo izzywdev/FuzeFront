@@ -222,15 +222,13 @@ async function step(label, fn) {
 
 console.log(`\nPermit ABAC policy setup — project=${PROJECT_KEY} env=${ENV_KEY} mode=${DRY_RUN ? 'dry-run' : 'APPLY'}\n`);
 
+// Always verify credentials — GET is read-only and safe in dry-run mode.
+// A dry-run that exits 0 with an invalid key gives false confidence.
 console.log('Verifying Permit credentials...');
-if (DRY_RUN) {
-  console.log('[dry-run] GET /v2/api-key/scope (skipping in dry-run)');
-} else {
-  await step('credentials valid', () => permitGet('/v2/api-key/scope'));
-  if (errors > 0) {
-    console.error('\nCredential check failed — aborting.');
-    process.exit(1);
-  }
+await step('credentials valid', () => permitGet('/v2/api-key/scope'));
+if (errors > 0) {
+  console.error('\nCredential check failed — aborting.');
+  process.exit(1);
 }
 
 console.log('\nCreating resources...');
