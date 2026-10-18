@@ -40,7 +40,9 @@
     "packages/selection-lists-ui",
     "packages/config-ui",
     "packages/fuzepicker-ui",
-    "selection-list-client"
+    "selection-list-client",
+    "packages/billing-types",
+    "services/billing-service"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",

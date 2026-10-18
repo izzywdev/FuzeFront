@@ -22,6 +22,10 @@ COPY packages/identity/package.json ./packages/identity/
 # the same package). Without this manifest the symlink dangles and the pod
 # crashloops on "Cannot find module '@fuzefront/auth'".
 COPY packages/auth/package.json ./packages/auth/
+# @fuzefront/billing-types is a `file:` dependency — npm must see the manifest
+# here so the symlink in node_modules resolves to /app/packages/billing-types
+# rather than dangling. The production stage populates it with the built dist.
+COPY packages/billing-types/package.json ./packages/billing-types/
 # Same reasoning as packages/auth below — telemetry's `main` points at dist/
 # and declares its own RUNTIME dependencies (the OTel SDK packages), so its
 # production node_modules must be populated the same way.
@@ -54,6 +58,7 @@ COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY services/billing-service/package.json ./services/billing-service/
 COPY packages/auth/package.json ./packages/auth/
+COPY packages/billing-types/package.json ./packages/billing-types/
 COPY packages/telemetry/package.json ./packages/telemetry/
 
 # Install billing-service deps (including devDeps for tsc)
@@ -65,19 +70,21 @@ RUN cd shared && npm install --ignore-scripts
 COPY shared/ ./shared/
 COPY packages/identity/ ./packages/identity/
 COPY packages/auth/ ./packages/auth/
+COPY packages/billing-types/ ./packages/billing-types/
 COPY packages/telemetry/ ./packages/telemetry/
 COPY services/billing-service/ ./services/billing-service/
 
 # Build the shared kafka + identity sub-trees first (avoids socket.io-client /
 # React dep), then @fuzefront/auth (src/services/authz.ts imports
 # createAuthzClient() at module load — mirrors services/selection-list-service/
-# Dockerfile's identical treatment of the same package), then @fuzefront/
-# telemetry (app.ts calls tracingMiddleware() at module load — same reasoning),
-# then billing-service. identity supplies the graph-create middleware app.ts
-# mounts; without it the image starts and fails on import.
+# Dockerfile's identical treatment of the same package), then
+# @fuzefront/billing-types (file: dep whose `main` points to dist/), then
+# @fuzefront/telemetry (app.ts calls tracingMiddleware() at module load), then
+# billing-service. identity supplies the graph-create middleware app.ts mounts.
 RUN cd shared && npm run build:kafka
 RUN cd packages/identity && npm install --ignore-scripts && npm run build
 RUN cd packages/auth && npm install --ignore-scripts && npm run build
+RUN cd packages/billing-types && npm install --ignore-scripts && npm run build
 RUN cd packages/telemetry && npm install --ignore-scripts && npm run build
 RUN cd services/billing-service && npm run build
 # tsc does NOT copy non-TS assets. runMigrations reads
@@ -151,6 +158,12 @@ COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 # copied from `base` (installed --omit=dev, so only jose, not tsup/typescript)
 # rather than `build` (which installs devDeps for tsup).
 COPY --from=base /app/packages/auth/node_modules ./packages/auth/node_modules
+# @fuzefront/billing-types is a `file:` dependency whose `main` points to
+# dist/index.js. The base stage ships packages/billing-types/package.json so
+# the symlink resolves; here we populate the target with the compiled output.
+# billing-types has no runtime deps of its own so no node_modules copy needed.
+COPY --from=build /app/packages/billing-types/package.json ./packages/billing-types/package.json
+COPY --from=build /app/packages/billing-types/dist ./packages/billing-types/dist
 # @fuzefront/telemetry is a `file:` dependency, so npm LINKS it —
 # node_modules/@fuzefront/telemetry is a symlink to /app/packages/telemetry.
 # The base stage ships packages/telemetry/package.json so that link resolves
