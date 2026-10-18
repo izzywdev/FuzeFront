@@ -2,7 +2,7 @@ import request from 'supertest';
 import { createApp } from '../src/app';
 import { renderTemplate } from '../src/templates';
 
-const SECRET = 'internal-secret-123';
+const SECRET = 'test-secret';
 
 function makeApp(overrides: { send?: jest.Mock; authSecret?: string | undefined } = {}) {
   const send = overrides.send ?? jest.fn().mockResolvedValue({ messageId: 'm-1' });
