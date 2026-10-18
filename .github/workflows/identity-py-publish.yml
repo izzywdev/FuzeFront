@@ -40,6 +40,7 @@ jobs:
         with: { python-version: '3.12' }
 
       - name: Verify the tag matches pyproject version
+        id: version
         # A tag that disagrees with pyproject produces a wheel whose filename
         # and metadata contradict the release it is attached to — the kind of
         # mismatch that is only discovered by a consumer, months later.
@@ -65,6 +66,8 @@ jobs:
           fi
           echo "pyproject=$PY_VER  tag=$TAG_VER"
           [ "$PY_VER" = "$TAG_VER" ] || { echo "::error::pyproject version $PY_VER != tag $TAG_VER"; exit 1; }
+          echo "version=$PY_VER" >> "$GITHUB_OUTPUT"
+          echo "tag=identity-py-v$PY_VER" >> "$GITHUB_OUTPUT"
 
       - name: Test before publishing
         # The package is dependency-free, so the suite needs no services. There
@@ -89,12 +92,32 @@ jobs:
           pip install -q build
           python -m build
 
+      - name: Refuse to overwrite an existing release tag from a different commit
+        # workflow_dispatch can run on any branch. If the canonical tag already
+        # exists it must point at the commit being published, or the Release
+        # step would replace immutable assets consumers install.
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          BUILT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          REFS=$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
+          # Peeled (^{}) line is the commit for annotated tags; else the tag line.
+          TAG_SHA=$(echo "$REFS" | awk '/\^\{\}$/{print $1; exit}')
+          [ -n "$TAG_SHA" ] || TAG_SHA=$(echo "$REFS" | awk 'NR==1{print $1}')
+          if [ -n "$TAG_SHA" ] && [ "$TAG_SHA" != "$BUILT_SHA" ]; then
+            echo "::error::Tag $TAG already exists at $TAG_SHA, not $BUILT_SHA -- refusing to overwrite its release assets"
+            exit 1
+          fi
+
       - name: Attach to the Release
         uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7  # v2
         with:
           files: packages/identity-py/dist/*
-          tag_name: ${{ github.ref_name }}
-          name: fuzefront-identity ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: fuzefront-identity ${{ steps.version.outputs.tag }}
           body: |
             Python identity package for FuzeFront microservices —
             server-owned entity identifiers + graph-create ASGI middleware.
@@ -103,6 +126,6 @@ jobs:
             Node peer: `@izzywdev/fuzefront-identity`
 
             ```bash
-            pip install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fuzefront_identity-${{ github.ref_name }}-py3-none-any.whl
+            pip install https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/fuzefront_identity-${{ steps.version.outputs.version }}-py3-none-any.whl
             ```
           fail_on_unmatched_files: true
