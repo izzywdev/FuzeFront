@@ -111,6 +111,7 @@ jobs:
 
           # Percent-encode password so URL-special chars (@, #, /, %) don't break parsing
           ENCODED_PASS=$(python3 -c "import urllib.parse, os; print(urllib.parse.quote(os.environ['DB_PASS'], safe=''))")
+          echo "::add-mask::$ENCODED_PASS"
           export DATABASE_URL="postgresql://${DB_USER}:${ENCODED_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
           ARGS=""
