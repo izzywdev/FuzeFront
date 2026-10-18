@@ -34,6 +34,7 @@ import {
   SocialLinkStart,
 } from '../../src/providers/IdentityProvider'
 import { randomUUID } from 'crypto'
+import { TokenError } from '../../src/providers/errors'
 
 /** Provider errors carry a neutral, fail-closed error code (see spec ErrorBody). */
 export class ProviderError extends Error {
@@ -378,7 +379,7 @@ export class MockIdentityProvider implements IdentityProvider {
     code?: string
   }): Promise<VerificationStatus> {
     if (input.token !== 'valid-email-token' && input.code !== OTP) {
-      throw new ProviderError('INVALID_CODE', 'bad token/code', 400)
+      throw new TokenError('TOKEN_INVALID', 'bad token/code')
     }
     return { emailVerified: true, phoneVerified: false }
   }
@@ -408,7 +409,7 @@ export class MockIdentityProvider implements IdentityProvider {
 
   async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
     const email = this.resetTokens.get(token)
-    if (!email) throw new ProviderError('TOKEN_INVALID', 'invalid reset token', 400)
+    if (!email) throw new TokenError('TOKEN_INVALID', 'invalid reset token')
     this.resetTokens.delete(token)
     const u = this.users.get(email)
     if (u) u.password = newPassword

@@ -170,14 +170,46 @@ describe('requestPasswordReset', () => {
   it('supersedes an outstanding challenge so only one token stays live', async () => {
     const db = makeFakeDb()
     seedUser(db)
-    const provider = newProvider(db)
+    let clock = Date.now()
+    const provider = newProvider(db, { now: () => clock })
 
     await provider.requestPasswordReset('user@example.com')
+    clock += 61_000 // past the resend cooldown
     await provider.requestPasswordReset('user@example.com')
 
     const live = db.__tables.password_resets.filter((r: any) => !r.consumed)
     expect(db.__tables.password_resets).toHaveLength(2)
     expect(live).toHaveLength(1)
+  })
+
+  it('coalesces a repeat request inside the cooldown: nothing minted, nothing sent, still resolves', async () => {
+    const db = makeFakeDb()
+    seedUser(db)
+    const notifications = makeNotifications()
+    let clock = Date.now()
+    const provider = newProvider(db, { notifications, now: () => clock })
+
+    await provider.requestPasswordReset('user@example.com')
+    clock += 10_000
+    await expect(provider.requestPasswordReset('user@example.com')).resolves.toBeUndefined()
+    expect(notifications.sendPasswordReset).toHaveBeenCalledTimes(1)
+    expect(db.__tables.password_resets).toHaveLength(1)
+
+    clock += 60_000 // cooldown elapsed -> a fresh mail is allowed again
+    await provider.requestPasswordReset('user@example.com')
+    expect(notifications.sendPasswordReset).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes the tenant mail origin (from the registry) to the notification client', async () => {
+    const { runWithTenant } = require('../src/providers/authentik/tenants')
+    const db = makeFakeDb()
+    seedUser(db)
+    const notifications = makeNotifications()
+    const provider = newProvider(db, { notifications })
+    await runWithTenant({ appBaseUrl: 'https://acme.example.com/' } as any, () =>
+      provider.requestPasswordReset('user@example.com'),
+    )
+    expect(notifications.sendPasswordReset.mock.calls[0][2]).toBe('https://acme.example.com')
   })
 
   it('gracefully degrades (mints nothing, still resolves) when no email channel is wired', async () => {

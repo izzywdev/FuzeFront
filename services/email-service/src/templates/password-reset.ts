@@ -5,7 +5,7 @@ import { appBaseUrl } from '../utils/app-url';
 /** Self-service password reset. `data.token` is the single-use reset token. */
 export function renderPasswordReset(vars: Record<string, unknown>): TemplateResult {
   const token = String(vars.token || '');
-  const link = `${appBaseUrl()}/reset?token=${encodeURIComponent(token)}`;
+  const link = `${appBaseUrl(vars.appBaseUrl)}/reset?token=${encodeURIComponent(token)}`;
   const safeLink = validateAndEscapeUrl(link);
 
   return {

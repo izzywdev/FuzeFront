@@ -38,6 +38,7 @@ import {
 } from '../../src/providers/IdentityProvider'
 import { ProviderError } from './mockIdentityProvider'
 import { randomUUID } from 'crypto'
+import { TokenError } from '../../src/providers/errors'
 
 /** A deliberately different second implementation of the SAME swap contract. */
 class AltIdentityProvider implements IdentityProvider {
@@ -138,7 +139,9 @@ class AltIdentityProvider implements IdentityProvider {
     throw new ProviderError('INVALID_CODE', 'n/a', 401)
   }
   async startEmailVerification(): Promise<void> {}
-  async confirmEmailVerification(): Promise<VerificationStatus> {
+  async confirmEmailVerification(i: { token?: string; code?: string }): Promise<VerificationStatus> {
+    if (i.token === 'expired') throw new TokenError('TOKEN_EXPIRED')
+    if (i.token === 'bad') throw new TokenError('TOKEN_INVALID')
     return { emailVerified: true, phoneVerified: false }
   }
   async startPhoneVerification(): Promise<void> {}
@@ -156,7 +159,7 @@ class AltIdentityProvider implements IdentityProvider {
   }
   async requestPasswordReset(): Promise<void> {}
   async confirmPasswordReset(): Promise<void> {
-    throw new ProviderError('TOKEN_INVALID', 'n/a', 400)
+    throw new TokenError('TOKEN_INVALID', 'n/a')
   }
   async listSessions(): Promise<SessionDevice[]> {
     return []

@@ -89,6 +89,17 @@ spec:
             # inline value is empty and the real key lives in the SealedSecret.
             # `optional: true` so the pod still starts on the SMTP provider path,
             # where SENDGRID_API_KEY is legitimately absent from the secret.
+            # Bearer required on the internal POST /send (security-service -> here).
+            # `optional: true` so a rollout that predates the sealed key does not
+            # CrashLoop the pod; with the key absent /send fails CLOSED (401) and
+            # only the Kafka path keeps working. Same key feeds security.yaml's
+            # EMAIL_SERVICE_TOKEN.
+            - name: EMAIL_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: EMAIL_AUTH_SECRET
+                  optional: true
             {{- if or .Values.secret.existingSecret .Values.secret.sendgridApiKey }}
             - name: SENDGRID_API_KEY
               valueFrom:

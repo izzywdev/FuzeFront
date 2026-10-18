@@ -15,10 +15,10 @@ import express, { Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { getIdentityProvider } from '../providers/factory'
+import { TokenError } from '../providers/errors'
 import {
   MfaRequiredError,
   ConflictError,
-  TokenError,
   InvalidInputError,
   UnauthorizedError,
   NotFoundError,
@@ -131,6 +131,27 @@ const emailAvailableRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later', code: 'RATE_LIMITED' },
+})
+
+// ── Public mail-sending rate limiter ─────────────────────────────────────────
+//
+// `POST /session/password/reset-request` and `POST /verify/email/start` are
+// unauthenticated and trigger outbound mail. Without a cap anyone could mail-bomb
+// a known address and burn provider quota / sender reputation. Per-IP here
+// (same express-rate-limit + `trust proxy` keying as /email-available); a
+// per-address cooldown lives in the provider and coalesces repeats into the
+// live challenge. A THROTTLED request answers the SAME 202 with no body, so
+// throttling is not an enumeration or state oracle — it just sends nothing.
+// One limiter instance PER ROUTE (separate counters). In-memory store: the cap is per pod; the per-address cooldown is DB-backed.
+const publicSendRateLimiter = () => rateLimit({
+  windowMs: 60_000,
+  limit: Number(process.env.PUBLIC_SEND_RATE_LIMIT) > 0 ? Number(process.env.PUBLIC_SEND_RATE_LIMIT) : 10,
+  standardHeaders: false,
+  legacyHeaders: false,
+  handler: (req: Request, res: Response) => {
+    console.warn(`[security] public send throttled for ${req.path}`)
+    res.status(202).end()
+  },
 })
 
 // RFC-5322-lite: one @, no whitespace, a dotted domain. Deliberately simple —
@@ -366,7 +387,7 @@ router.post('/session/exchange', async (req: Request, res: Response) => {
 
 // ── Self-service password reset ────────────────────────────────────────────
 // POST /v1/security/session/password/reset-request — ALWAYS 202
-router.post('/session/password/reset-request', async (req: Request, res: Response) => {
+router.post('/session/password/reset-request', publicSendRateLimiter(), async (req: Request, res: Response) => {
   try {
     if (!req.body?.email || typeof req.body.email !== 'string') {
       // Only a MALFORMED body earns a 400; a well-formed unknown address does
@@ -851,7 +872,7 @@ router.post('/mfa/verify', async (req: Request, res: Response) => {
 })
 
 // ── Contact verification: email ─────────────────────────────────────────────
-router.post('/verify/email/start', async (req: Request, res: Response) => {
+router.post('/verify/email/start', publicSendRateLimiter(), async (req: Request, res: Response) => {
   try {
     await getIdentityProvider().startEmailVerification(bearer(req), req.body?.email)
     res.status(202).end()

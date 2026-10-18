@@ -104,6 +104,16 @@ describe('verify-email / password-reset templates', () => {
     expect(r.text).toContain('token=a%20b%26c');
   });
 
+  it('prefers the tenant origin from the payload, re-validated; bad values fall back to APP_BASE_URL', () => {
+    expect(renderTemplate('password-reset', { token: 't', appBaseUrl: 'https://acme.example.com' }).text).toContain(
+      'https://acme.example.com/reset?token=t',
+    );
+    expect(renderTemplate('verify-email', { token: 't', appBaseUrl: 'javascript:alert(1)' }).text).toContain(
+      'https://app.fuzefront.com/verify/email?token=t',
+    );
+    expect(renderTemplate('password-reset', { token: 't', appBaseUrl: 42 }).text).toContain('https://app.fuzefront.com/reset');
+  });
+
   it('honours APP_BASE_URL', () => {
     process.env.APP_BASE_URL = 'https://stage.example.com/';
     try {

@@ -11,6 +11,7 @@ import request from 'supertest'
 process.env.REQUIRE_EMAIL_VERIFICATION = 'true'
 process.env.EMAIL_SERVICE_URL = 'http://email-service:3000'
 process.env.PERMIT_API_KEY = process.env.PERMIT_API_KEY || 'test'
+process.env.PUBLIC_SEND_RATE_LIMIT = '2' // per-IP cap exercised in the route tests below
 
 import {
   AuthentikIdentityProvider,
@@ -142,12 +143,48 @@ describe('startEmailVerification — target binding', () => {
   })
 
   it('anonymous dispatch failure is swallowed (no enumeration oracle) but authenticated is surfaced', async () => {
-    const db = makeFakeDb(); seed(db)
     const n = makeNotifications()
     n.sendEmailVerification.mockRejectedValue(new Error('boom'))
+    const db1 = makeFakeDb(); seed(db1)
+    await expect(newProvider(db1, n).startEmailVerification(null, 'victim@example.com')).resolves.toBeUndefined()
+    await new Promise(r => setImmediate(r)) // let the fire-and-forget rejection be handled
+    const db2 = makeFakeDb(); seed(db2)
+    await expect(newProvider(db2, n).startEmailVerification('tok-u1')).rejects.toThrow('boom')
+  })
+
+  it('anonymous start does not wait on the mail send (no known-vs-unknown timing gap)', async () => {
+    const db = makeFakeDb(); seed(db)
+    const n = makeNotifications()
+    n.sendEmailVerification.mockReturnValue(new Promise(() => undefined)) // never settles
+    await expect(newProvider(db, n).startEmailVerification(null, 'victim@example.com')).resolves.toBeUndefined()
+    expect(n.sendEmailVerification).toHaveBeenCalledTimes(1)
+  })
+
+  it('cooldown coalesces a repeat start into the live challenge (one row, one mail), then allows a resend', async () => {
+    const db = makeFakeDb(); seed(db)
+    const n = makeNotifications()
+    let clock = Date.now()
+    const p = newProvider(db, n, () => clock)
+    await p.startEmailVerification('tok-u1')
+    clock += 5_000
+    await p.startEmailVerification('tok-u1')
+    await p.startEmailVerification(null, 'victim@example.com')
+    expect(n.sendEmailVerification).toHaveBeenCalledTimes(1)
+    expect(db.__tables.email_verifications).toHaveLength(1)
+    clock += 61_000
+    await p.startEmailVerification('tok-u1')
+    expect(n.sendEmailVerification).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes the tenant mail origin from the registry, never from the request', async () => {
+    const { runWithTenant } = require('../src/providers/authentik/tenants')
+    const db = makeFakeDb(); seed(db)
+    const n = makeNotifications()
     const p = newProvider(db, n)
-    await expect(p.startEmailVerification(null, 'victim@example.com')).resolves.toBeUndefined()
-    await expect(p.startEmailVerification('tok-u1')).rejects.toThrow('boom')
+    await runWithTenant({ appBaseUrl: 'https://acme.example.com' } as any, () =>
+      p.startEmailVerification('tok-u1', 'attacker@evil.test'),
+    )
+    expect(n.sendEmailVerification.mock.calls[0][3]).toBe('https://acme.example.com')
   })
 })
 
@@ -211,6 +248,20 @@ describe('confirmEmailVerification', () => {
     expect(db.__tables.users[0].email_verified).toBe(false)
   })
 
+  it('OTP: a spent row with the same code does not shadow the live one', async () => {
+    const db = makeFakeDb(); seed(db)
+    const p = newProvider(db, makeNotifications())
+    const base = { user_id: 'u1', email: 'victim@example.com', code_hash: sha256('424242'), expires_at: new Date(Date.now() + 60_000) }
+    db.__tables.email_verifications.push(
+      { id: 'old', ...base, token_hash: sha256('a'), consumed: true },
+      { id: 'live', ...base, token_hash: sha256('b'), consumed: false },
+    )
+    await expect(p.confirmEmailVerification({ code: '424242' })).resolves.toMatchObject({ emailVerified: true })
+    expect(db.__tables.users[0].email_verified).toBe(true)
+    // now only spent rows remain -> expired, not invalid
+    await expect(p.confirmEmailVerification({ code: '424242' })).rejects.toMatchObject({ code: 'TOKEN_EXPIRED' })
+  })
+
   it('unknown -> TOKEN_INVALID; reused -> TOKEN_EXPIRED; past TTL -> TOKEN_EXPIRED', async () => {
     const db = makeFakeDb(); seed(db)
     const n = makeNotifications()
@@ -243,6 +294,24 @@ describe('verify/email routes — error mapping', () => {
     a.use('/v1/security', router)
     return a
   }
+
+  it('per-IP limiter: throttled requests get the SAME 202 and send nothing', async () => {
+    routeProvider.startEmailVerification.mockReset().mockResolvedValue(undefined)
+    routeProvider.requestPasswordReset = jest.fn().mockResolvedValue(undefined)
+    const a = app()
+    const statuses: number[] = []
+    for (let i = 0; i < 4; i++) {
+      statuses.push((await request(a).post('/v1/security/verify/email/start').send({ email: 'a@b.co' })).status)
+    }
+    expect(statuses).toEqual([202, 202, 202, 202])
+    expect(routeProvider.startEmailVerification).toHaveBeenCalledTimes(2) // cap=2, rest throttled
+    const reset: number[] = []
+    for (let i = 0; i < 4; i++) {
+      reset.push((await request(a).post('/v1/security/session/password/reset-request').send({ email: 'a@b.co' })).status)
+    }
+    expect(reset).toEqual([202, 202, 202, 202])
+    expect(routeProvider.requestPasswordReset).toHaveBeenCalledTimes(2)
+  })
 
   it.each(['TOKEN_EXPIRED', 'TOKEN_INVALID'])('confirm maps %s to 400 (not 401)', async code => {
     routeProvider.confirmEmailVerification.mockRejectedValueOnce(new TokenError(code as any))
