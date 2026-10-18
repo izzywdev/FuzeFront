@@ -178,6 +178,15 @@ describe('changePassword — provider', () => {
     expect(db.__tables.sessions.map((s: any) => s.id)).toEqual(['s-cur', 's-other', 's-else'])
   })
 
+  it.each([[undefined], [{}], [{ id: 'someone-else', email: 'x@e.com', roles: [] }]])(
+    'login resolving without the caller\'s id (%p) fails closed, nothing set',
+    async resolved => {
+      const { provider, token, setPasswordFn } = setup({ passwordLoginFn: jest.fn().mockResolvedValue(resolved) })
+      await expect(provider.changePassword(token, 'cur', 'N3w-Passw0rd!')).rejects.toBeInstanceOf(CurrentPasswordInvalidError)
+      expect(setPasswordFn).not.toHaveBeenCalled()
+    },
+  )
+
   it('provider outage while verifying is NOT reported as a wrong password', async () => {
     const down = Object.assign(new Error('down'), { name: 'AuthentikUnavailableError' })
     const { provider, token } = setup({ passwordLoginFn: jest.fn().mockRejectedValue(down) })

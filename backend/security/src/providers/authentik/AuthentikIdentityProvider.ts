@@ -1562,7 +1562,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
     try {
       const verified = await this.passwordLoginFn(user.email, currentPassword)
-      if (verified?.id && verified.id !== user.id) throw new CurrentPasswordInvalidError()
+      // Fail closed: a resolved value with no id (or someone else's) is not proof of the current password.
+      if (!verified?.id || verified.id !== user.id) throw new CurrentPasswordInvalidError()
     } catch (err) {
       if (err instanceof CurrentPasswordInvalidError) throw err
       if ((err as Error)?.name === 'InvalidCredentialsError') throw new CurrentPasswordInvalidError()
