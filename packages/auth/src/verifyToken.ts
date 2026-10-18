@@ -150,7 +150,9 @@ function createLegacyVerifier(config: LegacyHs256Config): Verifier {
       }
       if (sessionId !== undefined) {
         if (!config.sessionValidator) {
-          if (!config.allowUnvalidatedSessions) {
+          // Literal `true` only: this is a security escape hatch, and an untyped caller
+          // feeding "false" / 1 / "0" from env or JSON must not silently disable revocation.
+          if (config.allowUnvalidatedSessions !== true) {
             // Fail closed. A deployment misconfiguration, not a bad credential: a 500
             // is loud and names the fix where a 401 would send the user to re-login.
             throw new AuthError(

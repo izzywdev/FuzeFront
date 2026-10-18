@@ -26,7 +26,7 @@ import threading
 import time
 import urllib.error
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import jwt
@@ -64,7 +64,9 @@ Resolver = Callable[[str], dict[str, Any]]
 # (user_id, session_id, claims) -> True while the session is still active. The token
 # alone cannot say whether the user has since logged out or had the device revoked;
 # only the session store can. The host supplies this (e.g. a call to FuzeFront).
-SessionValidator = Callable[[str, "str | None", dict[str, Any]], bool]
+# Called only for a token that NAMES a session; a token without a `sessionId` (e.g. the
+# OIDC-callback token) has nothing to validate and never reaches it.
+SessionValidator = Callable[[str, str, dict[str, Any]], bool]
 
 
 @dataclass(frozen=True)
@@ -73,16 +75,17 @@ class LegacyHs256Config:
     subject_claim: str = "userId"
     resolver: Resolver | None = None
     session_validator: SessionValidator | None = None
-    # FuzeFront session tokens carry a `sessionId`, and only the session store knows whether
-    # that session has since been logged out or revoked. A token that names a session is
-    # therefore REFUSED unless a `session_validator` can check it. A service that genuinely
-    # cannot reach the session store may accept the revocation gap EXPLICITLY with this flag;
-    # it is never the default.
-    allow_unvalidated_sessions: bool = False
     clock_tolerance_sec: int = 0
     issuer: str | None = None
     audience: str | list[str] | None = None
     mode: AuthMode = "legacy-hs256"
+    # FuzeFront session tokens carry a `sessionId`, and only the session store knows whether
+    # that session has since been logged out or revoked. A token that names a session is
+    # therefore REFUSED unless a `session_validator` can check it. A service that genuinely
+    # cannot reach the session store may accept the revocation gap EXPLICITLY with this flag;
+    # it is never the default. Keyword-only so it can never shift the established positional
+    # fields above (a positional `30` meant for `clock_tolerance_sec` must not become an opt-out).
+    allow_unvalidated_sessions: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -265,7 +268,7 @@ class _LegacyVerifier:
                 "(set one, or allow_unvalidated_sessions=True to accept the revocation gap)",
                 500,
             )
-        if cfg.session_validator is not None:
+        if session_id is not None and cfg.session_validator is not None:
             # Revocation: a signed token stays valid until `exp`, but the session it
             # names may have been ended. Only `True` keeps it alive; anything else is a
             # denial. A validator that cannot answer is a retryable 503, not a 401.

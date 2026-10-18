@@ -288,3 +288,26 @@ def test_the_explicit_opt_out_does_not_bypass_a_configured_validator():
 
 def test_tokens_that_name_no_session_are_unaffected():
     assert verifier().verify(make_token(SECRET, claims={"sub": "u-2"})).user_id == "u-2"
+
+
+def test_the_validator_is_not_called_for_a_token_that_names_no_session():
+    # e.g. the OIDC-callback token: nothing to validate, and a session-store validator
+    # asked about `None` would wrongly deny it.
+    seen = []
+    v = verifier(session_validator=lambda *a: seen.append(a) or False)
+    assert v.verify(make_token(SECRET, claims={"sub": "u-2"})).user_id == "u-2"
+    assert seen == []
+
+
+def test_the_opt_out_is_keyword_only_and_cannot_be_hit_by_a_positional_argument():
+    import dataclasses
+
+    from fuzefront_auth import LegacyHs256Config
+
+    # Positional order of the established fields is unchanged: the fifth is the clock tolerance.
+    cfg = LegacyHs256Config(SECRET, "userId", None, None, 30)
+    assert cfg.clock_tolerance_sec == 30 and cfg.allow_unvalidated_sessions is False
+    field = next(f for f in dataclasses.fields(LegacyHs256Config) if f.name == "allow_unvalidated_sessions")
+    assert field.kw_only is True
+    with pytest.raises(AuthError):  # still fail-closed with that positional config
+        create_verifier(cfg).verify(make_token(SECRET, claims={"userId": "u", "sessionId": "s-1"}))

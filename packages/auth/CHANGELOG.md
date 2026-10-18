@@ -25,7 +25,12 @@ the contract-stability guarantee consumers may assert on).
   and the `SessionValidator` type. Only `true` keeps a session alive (anything else
   is 401 `EXPIRED`); a throwing/rejecting validator is a retryable 503
   `VERIFIER_UNAVAILABLE` with a fixed message. It runs before the resolver.
-- `Identity.sessionId` (optional) carries the validated session id.
+- `Identity.sessionId` (optional) carries the validated session id. The validator runs
+  only for a token that names a session. `allowUnvalidatedSessions` opts out only for
+  a literal `true`.
+- `requireAuth({ optional: true })` now degrades only client credential failures (4xx)
+  to anonymous. A 5xx (session-validator / resolver outage, misconfigured verifier)
+  is surfaced instead of silently becoming an anonymous request.
 - A present-but-malformed `sessionId` claim is `MALFORMED` rather than being
   treated as "no session".
 - `AUTH_CONTRACT_VERSION` 0.2.0 → 0.3.0. The Python peer `fuzefront-auth` 0.2.0

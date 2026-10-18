@@ -81,6 +81,8 @@ import { createVerifier, requireAuth } from '@izzywdev/fuzefront-auth';
 const verifier = createVerifier({
   mode: 'legacy-hs256',
   secret: process.env.JWT_SECRET!,      // same secret the identity service signs with
+  // Required for session tokens (see above): true while the session is still active.
+  sessionValidator: async (userId, sessionId) => sessionIsActive(sessionId),
   subjectClaim: 'userId',               // default
   resolver: {                           // optional hydration
     async resolve(userId) {

@@ -118,6 +118,17 @@ describe('legacy-hs256', () => {
       expect((await v.verify(await tokenWithSession())).userId).toBe('u-1')
     })
 
+    it.each(['true', 'false', '0', 1, {}, []])('only a literal `true` opts out; %p does not', async (flag) => {
+      const v = createVerifier({
+        mode: 'legacy-hs256',
+        secret: SECRET,
+        allowUnvalidatedSessions: flag as never,
+      })
+      const err = await v.verify(await tokenWithSession()).catch((e) => e)
+      expect(err).toBeInstanceOf(AuthError)
+      expect(err.code).toBe('VERIFIER_UNAVAILABLE')
+    })
+
     it('the explicit opt-out does not switch off a configured validator', async () => {
       const v = createVerifier({
         mode: 'legacy-hs256',

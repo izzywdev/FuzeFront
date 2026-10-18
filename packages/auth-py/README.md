@@ -122,7 +122,9 @@ session store can accept the revocation gap, deliberately and visibly:
 LegacyHs256Config(secret=..., allow_unvalidated_sessions=True)   # or FUZEFRONT_ALLOW_UNVALIDATED_SESSIONS=true
 ```
 
-That flag only waives the *requirement* for a validator; a configured validator still runs.
+That flag only waives the *requirement* for a validator; a configured validator still runs
+(and only for a token that names a session). It is keyword-only, so a positional argument can
+never turn it on by accident.
 Without one, a logged-out session keeps authenticating until the token expires. Tokens that
 name no session (for example an OIDC `sub` token) are unaffected. The Node peer
 [`@izzywdev/fuzefront-auth`](../auth) has the same rule from 0.4.0
