@@ -41,6 +41,12 @@ import AcceptInvitePage from './pages/AcceptInvitePage'
 import BillingPage from './pages/BillingPage'
 import AccountSecurityPage from './pages/AccountSecurityPage'
 import AccountConnectionsPage from './pages/AccountConnectionsPage'
+import AccountPasswordPage from './pages/AccountPasswordPage'
+import AccountMfaPage from './pages/AccountMfaPage'
+import AccountVerifyPhonePage from './pages/AccountVerifyPhonePage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+import { isPreAuthFlagEnabled } from './platform/preAuthFlags'
+import { ACCOUNT_SECURITY_FLAGS } from './components/account-security/FlaggedSurface'
 import PortalsDirectory from './pages/PortalsDirectory'
 import PortalBillingPage from './pages/PortalBillingPage'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
@@ -301,6 +307,16 @@ function AppContent() {
     return <AcceptInvitePage />
   }
 
+  // Public password-reset route (FFRNT-140). Pre-auth, so the flag resolves through
+  // the pre-auth override (platform/preAuthFlags.ts), default OFF — flag OFF falls
+  // through to today's unauthenticated experience, completely unchanged.
+  if (
+    (currentPath === '/reset' || currentPath.startsWith('/reset/')) &&
+    isPreAuthFlagEnabled(ACCOUNT_SECURITY_FLAGS.passwordReset)
+  ) {
+    return <ResetPasswordPage />
+  }
+
   // Public picker harness — embeddable component demo/test surface.
   // Must be accessible without authentication (Playwright tests navigate here directly).
   if (currentPath.startsWith('/embed/selection-list-picker')) {
@@ -386,6 +402,12 @@ function AppContent() {
             <Route path="/profile" element={<UserProfileManagement />} />
             <Route path="/account/security" element={<AccountSecurityPage />} />
             <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
+            <Route path="/account/security/password" element={<AccountPasswordPage />} />
+            <Route path="/account/security/mfa" element={<AccountMfaPage view="overview" />} />
+            <Route path="/account/security/mfa/add/authenticator" element={<AccountMfaPage view="authenticator" />} />
+            <Route path="/account/security/mfa/add/phone" element={<AccountMfaPage view="phone" />} />
+            <Route path="/account/security/mfa/recovery-codes" element={<AccountMfaPage view="recovery-codes" />} />
+            <Route path="/account/security/verify/phone" element={<AccountVerifyPhonePage />} />
             <Route path="/connectors" element={<ConnectorsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />

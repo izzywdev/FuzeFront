@@ -1,8 +1,9 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AccountSecurityHub } from '@fuzefront/account-security-ui'
+import { AccountSecurityHub, SecurityStatusMobileFlow } from '@fuzefront/account-security-ui'
 import { useFlag } from '../platform/featureFlags'
 import { getActiveAuthToken } from '../lib/accounts'
+import { ACCOUNT_SECURITY_FLAGS } from '../components/account-security/FlaggedSurface'
 
 /**
  * Feature-flag gate for the account-security hub
@@ -19,6 +20,23 @@ function useAccountSecurityHubFlag(): boolean {
   return useFlag('fuzefront.account-security.hub', false)
 }
 
+/** Small-screen (Android TWA / phone) viewport, kept in sync with the media query. */
+function useCompactViewport(): boolean {
+  const query = '(max-width: 640px)'
+  const [compact, setCompact] = useState(
+    () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(query).matches
+  )
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mql = window.matchMedia(query)
+    const onChange = () => setCompact(mql.matches)
+    onChange()
+    mql.addEventListener?.('change', onChange)
+    return () => mql.removeEventListener?.('change', onChange)
+  }, [])
+  return compact
+}
+
 /**
  * Host route wrapper for `/account/security`. Mounts the design-system-first
  * @fuzefront/account-security-ui hub, wiring host navigation + the same-origin
@@ -27,6 +45,10 @@ function useAccountSecurityHubFlag(): boolean {
 export default function AccountSecurityPage() {
   const navigate = useNavigate()
   const enabled = useAccountSecurityHubFlag()
+  // FFRNT-141 / FFRNT-362 — both default OFF. Flag OFF = the hub exactly as before.
+  const mfaManagement = useFlag(ACCOUNT_SECURITY_FLAGS.mfaManagement, false)
+  const mfaStepUpMobile = useFlag(ACCOUNT_SECURITY_FLAGS.mfaStepUpMobile, false)
+  const compact = useCompactViewport()
 
   const onNavigate = useCallback(
     (route: string) => {
@@ -49,10 +71,18 @@ export default function AccountSecurityPage() {
 
   return (
     <div style={{ padding: 'var(--space-8)' }}>
+      {/* Mobile combined 2FA + contact-verification status — additive to the hub,
+          small screens only, behind fuzefront.security.mfa-stepup-mobile. */}
+      {mfaStepUpMobile && compact && (
+        <div style={{ marginBottom: 'var(--space-6)' }}>
+          <SecurityStatusMobileFlow getToken={getToken} onNavigate={onNavigate} />
+        </div>
+      )}
       <AccountSecurityHub
         getToken={getToken}
         onNavigate={onNavigate}
         onSetPassword={() => navigate('/account/security/password')}
+        routes={mfaManagement ? { twoFactor: '/account/security/mfa' } : undefined}
       />
     </div>
   )

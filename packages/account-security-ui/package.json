@@ -1,11 +1,11 @@
 {
   "name": "@fuzefront/account-security-ui",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
   },
-  "description": "Account security hub UI (posture summary + password / two-factor / devices / API-tokens / connected-accounts cards) for FuzeFront, on the fuse-seam design system",
+  "description": "Account security UI (hub + connected accounts, password reset/change/set, MFA management, step-up and mobile security status) for FuzeFront, on the fuse-seam design system",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
