@@ -3979,19 +3979,29 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setLoadingMoreArtifacts(true)
     setArtifactPaginationError(undefined)
     try {
-      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+      const results = await Promise.allSettled(cursors.map(async ([repositoryId, cursor]) => ({
         repositoryId,
         page: normalizeHistoryPage(await api.qualityArtifacts(repositoryId, undefined, cursor)),
       })))
       if (artifactQueryRef.current !== query) return
+      const groups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
       setArtifacts(current => [...new Map(
         [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
       ).values()])
-      setArtifactNextCursors(Object.fromEntries(
-        groups.flatMap(group => group.page.page.nextCursor
-          ? [[group.repositoryId, group.page.page.nextCursor]]
-          : [])
-      ))
+      setArtifactNextCursors(current => {
+        const next = { ...current }
+        for (const group of groups) {
+          if (group.page.page.nextCursor) next[group.repositoryId] = group.page.page.nextCursor
+          else delete next[group.repositoryId]
+        }
+        return next
+      })
+      const failed = results.filter(result => result.status === 'rejected').length
+      if (failed) {
+        setArtifactPaginationError(
+          `Unable to load more repository evidence for ${failed} ${failed === 1 ? 'repository' : 'repositories'}. Successful evidence remains visible.`
+        )
+      }
     } catch (cause) {
       if (artifactQueryRef.current === query) {
         setArtifactPaginationError(cause instanceof Error ? cause.message : 'Unable to load more repository evidence.')
