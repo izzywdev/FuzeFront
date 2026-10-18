@@ -211,7 +211,7 @@ function SecurityStatusInner({ client, getToken, onNavigate, routes }: SecurityS
       : 0
 
   return (
-    <section dir={dir} data-frame="04-security-status" data-viewport="375" style={{ fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
+    <section dir={dir} data-frame="04-security-status" data-viewport="375" style={{ fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', textAlign: 'start' }}>
       <h2
         style={{
           margin: '0 0 var(--space-2)',

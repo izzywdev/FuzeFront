@@ -23,6 +23,7 @@
  * Run: BASE_URL=http://fuzefront.dev.local npx playwright test password-change.red
  */
 import { test, expect, type Page } from '@playwright/test'
+import { installShellMocks, KNOWN_SHELL_NOISE_RE, seedAuth } from './support/mock-shell'
 
 const PASSWORD_ROUTE = '/account/security/password'
 const RESET_ROUTE = '/reset'
@@ -30,24 +31,13 @@ const FLAG = 'fuzefront.account-security.password-reset'
 const FORBIDDEN_VENDORS = ['Authentik', 'authentik', 'Permit', 'permit.io']
 const STRONG = 'Correct-Horse-Battery-9!'
 
-/** Seed an authenticated browser session (same keys as frontend/src/lib/accounts.ts). */
+/** Authenticated browser session + the shell's boot mocks (support/mock-shell.ts). */
 async function seedSession(page: Page) {
-  await page.addInitScript(() => {
-    const id = 'usr_test'
-    localStorage.setItem('ff.accounts', JSON.stringify([{ id, email: 'jordan@example.com', name: 'Jordan' }]))
-    localStorage.setItem('ff.activeAccountId', id)
-    localStorage.setItem(`ff.acct.${id}.authToken`, 'test-token')
-  })
+  await seedAuth(page)
 }
 
 async function mockFlags(page: Page, on: boolean) {
-  await page.route('**/api/flags', route =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ flags: { [FLAG]: on, 'fuzefront.account-security.hub': true } }),
-    }),
-  )
+  await installShellMocks(page, { [FLAG]: on, 'fuzefront.account-security.hub': true })
 }
 
 async function mockConnections(page: Page, hasPassword: boolean | null) {
@@ -267,6 +257,7 @@ test.describe('Password reset — unauthenticated (frames 01-04, 06-states)', ()
     await expect(page.locator("[data-panel='reset-confirm'][data-token-state='valid']")).toBeVisible()
     await page.locator("[data-input='new-password']").fill(STRONG)
     await expect(page.locator('[data-meter]')).toBeVisible()
+    await page.locator("[data-input='confirm-password']").fill(STRONG)
     await page.locator("[data-action='set-new-password']").click()
     await expect(page.locator("[data-panel='reset-done']")).toBeVisible()
     await expect(page.locator("[data-security-note='sessions-revoked']")).toBeVisible()
@@ -280,6 +271,7 @@ test.describe('Password reset — unauthenticated (frames 01-04, 06-states)', ()
     )
     await page.goto(`${RESET_ROUTE}/confirm?token=tok_old`, { waitUntil: 'domcontentloaded' })
     await page.locator("[data-input='new-password']").fill(STRONG)
+    await page.locator("[data-input='confirm-password']").fill(STRONG)
     await page.locator("[data-action='set-new-password']").click()
     await expect(page.locator("[data-token-state='invalid']")).toBeVisible()
     await expect(page.locator("[data-action='request-again']")).toBeVisible()
@@ -298,6 +290,6 @@ test.describe('Password — product boundary + console gate', () => {
     await expect(page.locator("[data-variant='set']")).toBeVisible()
     const text = await page.locator('body').innerText()
     for (const v of FORBIDDEN_VENDORS) expect(text).not.toContain(v)
-    expect(consoleErrors).toEqual([])
+    expect(consoleErrors.filter(e => !KNOWN_SHELL_NOISE_RE.test(e))).toEqual([])
   })
 })

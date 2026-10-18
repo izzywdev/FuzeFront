@@ -40,7 +40,9 @@ export class HttpClient {
   constructor(opts: HttpClientOptions = {}) {
     this.baseUrl = opts.baseUrl ?? ''
     this.getToken = opts.getToken
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch
+    // Bound to globalThis: a bare `window.fetch` reference invoked as a method of
+    // this instance (`this.fetchImpl(...)`) throws "Illegal invocation" in browsers.
+    this.fetchImpl = opts.fetchImpl ?? ((input, init) => globalThis.fetch(input, init))
   }
 
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {

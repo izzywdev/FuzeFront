@@ -62,7 +62,17 @@ export function FlowPage({
 } & Omit<React.HTMLAttributes<HTMLElement>, 'title'>) {
   const { dir } = useAccountSecurityI18n()
   return (
-    <main dir={dir} style={{ maxWidth, fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }} {...rest}>
+    <main
+      dir={dir}
+      style={{
+        maxWidth,
+        fontFamily: 'var(--font-sans)',
+        color: 'var(--text-primary)',
+        // The host shell centres its content area; the approved frames are start-aligned.
+        textAlign: 'start',
+      }}
+      {...rest}
+    >
       {title && (
         <h1
           style={{

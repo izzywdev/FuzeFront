@@ -22,6 +22,7 @@
  * Run: BASE_URL=http://fuzefront.dev.local npx playwright test mfa-management.red
  */
 import { test, expect, type Page } from '@playwright/test'
+import { installShellMocks, KNOWN_SHELL_NOISE_RE, seedAuth } from './support/mock-shell'
 
 const FLAG = 'fuzefront.security.mfa-management'
 const OVERVIEW = '/account/security/mfa'
@@ -41,18 +42,11 @@ function methods(types: string[]) {
 }
 
 async function seedSession(page: Page) {
-  await page.addInitScript(() => {
-    const id = 'usr_test'
-    localStorage.setItem('ff.accounts', JSON.stringify([{ id, email: 'amara@rowan.co', name: 'Amara' }]))
-    localStorage.setItem('ff.activeAccountId', id)
-    localStorage.setItem(`ff.acct.${id}.authToken`, 'test-token')
-  })
+  await seedAuth(page)
 }
 
 async function mockFlags(page: Page, on: boolean) {
-  await page.route('**/api/flags', route =>
-    route.fulfill(json(200, { flags: { [FLAG]: on, 'fuzefront.account-security.hub': true } })),
-  )
+  await installShellMocks(page, { [FLAG]: on, 'fuzefront.account-security.hub': true })
 }
 
 async function mockMethods(page: Page, types: string[]) {
@@ -113,13 +107,14 @@ test.describe('MFA overview (frame 01-mfa-overview)', () => {
 
   test('load error offers retry and the retry recovers', async ({ page }) => {
     await mockMethods(page, ['totp'])
-    let n = 0
-    await page.route('**/v1/security/mfa/factors', route => {
-      n += 1
-      return n === 1 ? route.fulfill(json(500, { error: 'boom' })) : route.fulfill(json(200, { items: [TOTP] }))
-    })
+    // State-based (not call-counted): dev-mode StrictMode double-invokes the mount effect.
+    let failing = true
+    await page.route('**/v1/security/mfa/factors', route =>
+      failing ? route.fulfill(json(500, { error: 'boom' })) : route.fulfill(json(200, { items: [TOTP] })),
+    )
     await page.goto(OVERVIEW, { waitUntil: 'domcontentloaded' })
     await expect(page.locator("[data-panel='mfa-overview'][data-state='error']")).toBeVisible()
+    failing = false
     await page.locator("[data-action='retry']").click()
     await expect(page.locator("[data-panel='mfa-overview'][data-state='loaded']")).toBeVisible()
   })
@@ -173,8 +168,9 @@ test.describe('TOTP enrolment (frame 02-totp-enroll)', () => {
   })
 
   test('wrong code (400) fails closed: inline error, factor NOT activated, stays on screen', async ({ page }) => {
+    // Real backend: a wrong / expired factor code is 401 NOT_ACTIVE (the contract also allows 400).
     await page.route('**/v1/security/mfa/factors/*/activate', route =>
-      route.fulfill(json(400, { error: 'Invalid code', code: 'MALFORMED' })),
+      route.fulfill(json(401, { error: 'invalid code', code: 'NOT_ACTIVE' })),
     )
     await page.goto('/account/security/mfa/add/authenticator', { waitUntil: 'domcontentloaded' })
     const otp = page.locator("[data-component='otp-input']")
@@ -245,8 +241,9 @@ test.describe('SMS enrolment (frame 03-sms-enroll) — leads with channel-unavai
       }
       return route.fulfill(json(200, { items: [] }))
     })
+    // Real backend: a wrong / expired factor code is 401 NOT_ACTIVE (the contract also allows 400).
     await page.route('**/v1/security/mfa/factors/*/activate', route =>
-      route.fulfill(json(400, { error: 'Invalid code', code: 'MALFORMED' })),
+      route.fulfill(json(401, { error: 'invalid code', code: 'NOT_ACTIVE' })),
     )
     await page.goto('/account/security/mfa/add/phone', { waitUntil: 'domcontentloaded' })
     await page.locator("[data-field='phone']").fill('+44 7700 900471')
@@ -403,7 +400,11 @@ test.describe('MFA step-up at sign-in (frame 05-step-up-challenge) — pre-auth'
     await page.goto('/login', { waitUntil: 'domcontentloaded' })
     await page.getByLabel(/email/i).first().fill('amara@rowan.co')
     await page.getByLabel(/password/i).first().fill('Correct-Horse-Battery-9!')
-    await page.locator("button[type='submit']").first().click()
+    // Wait for the sign-in POST to settle so the step-up has been handed the challenge.
+    await Promise.all([
+      page.waitForResponse(r => r.url().includes('/v1/security/session') && r.request().method() === 'POST'),
+      page.locator("button[type='submit']").first().click(),
+    ])
   }
 
   test('mfa_required renders the challenge card with a factor picker', async ({ page }) => {
@@ -435,6 +436,8 @@ test.describe('MFA step-up at sign-in (frame 05-step-up-challenge) — pre-auth'
       route.fulfill(json(503, { error: 'Delivery failed', code: 'PROVIDER_UNAVAILABLE' })),
     )
     await reachChallenge(page)
+    // Desktop lands on the authenticator prompt; switch method to reach the SMS option.
+    await page.locator("[data-action='choose-factor']").click()
     await page.locator("[data-factor='sms'][data-action='challenge']").click()
     await expect(page.locator("[data-state='error-delivery']")).toBeVisible()
     await expect(page.locator("[data-action='choose-factor']")).toBeVisible()
@@ -454,6 +457,6 @@ test.describe('MFA — product boundary + console gate', () => {
     await expect(page.locator("[data-panel='mfa-overview'][data-state='loaded']")).toBeVisible()
     const text = await page.locator('body').innerText()
     for (const v of FORBIDDEN_VENDORS) expect(text).not.toContain(v)
-    expect(consoleErrors).toEqual([])
+    expect(consoleErrors.filter(e => !KNOWN_SHELL_NOISE_RE.test(e))).toEqual([])
   })
 })

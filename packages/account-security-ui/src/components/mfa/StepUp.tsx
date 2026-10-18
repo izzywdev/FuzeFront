@@ -333,7 +333,12 @@ function StepUpInner({
   const [factorsState, setFactorsState] = useState<FactorsState>(
     challenge.factors ? { status: 'ready', factors: challenge.factors } : { status: 'loading' }
   )
-  const [step, setStep] = useState<Step>({ name: 'choose' })
+  // Desktop frame: land directly on the authenticator prompt when TOTP is enrolled.
+  // Computed synchronously so there is no flash of the picker before it.
+  const initialTotp = !mobile ? challenge.factors?.find((f) => f.type === 'totp') : undefined
+  const [step, setStep] = useState<Step>(
+    initialTotp ? { name: 'code', factor: initialTotp, delivered: false, code: 'idle' } : { name: 'choose' }
+  )
   const inFlight = useRef(false)
   const alive = useRef(true)
 
@@ -359,8 +364,8 @@ function StepUpInner({
     }
   }, [challenge.factors, loadList])
 
-  // Desktop frame: land directly on the authenticator prompt when TOTP is enrolled.
-  const startedRef = useRef(false)
+  // Factors that arrive later (loadFactors): same desktop landing rule, once.
+  const startedRef = useRef(Boolean(initialTotp))
   useEffect(() => {
     if (startedRef.current || mobile || factorsState.status !== 'ready') return
     const totp = factorsState.factors.find((f) => f.type === 'totp')
