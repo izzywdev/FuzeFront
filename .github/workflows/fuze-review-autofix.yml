@@ -134,18 +134,36 @@ jobs:
             echo "findings-file=${REVIEW_FILE}"
           } >> "$out"
 
-      - name: Checkout PR head branch
+      # TRUST BOUNDARY (semgrep workflow-run-target-code-checkout). This job holds repository
+      # secrets, so nothing it EXECUTES may come from the PR branch. Two checkouts:
+      #   1. the repository's default branch at the workspace root: this is where
+      #      `./.github/actions/fuze-code-action` is resolved from and run, so the action code
+      #      is always trusted master code, never the PR's;
+      #   2. the PR head branch into `pr/`: treated purely as DATA the agent reads and edits.
+      # The agent is also given no command that executes PR code (no npm/node/python/test
+      # runners, see its allowlist): CI re-checks the pushed fix and the next review round
+      # handles anything that fails, so the loop never needs to run attacker-controlled code
+      # next to the LLM credential.
+      - name: Checkout trusted base (runs the action)
+        if: steps.review.outputs.proceed == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout PR head branch (data only)
         if: steps.review.outputs.proceed == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.event.workflow_run.head_branch }}
+          path: pr
           fetch-depth: 0
           # No credential is left in .git/config: the agent step below cannot push.
           persist-credentials: false
 
       - name: Set commit identity
         if: steps.review.outputs.proceed == 'true'
+        working-directory: pr
         run: |
           git config user.name "fuzeoneagent"
           git config user.email "330369996+fuzeoneagent@users.noreply.github.com"
@@ -172,9 +190,9 @@ jobs:
           allowed-bots: "fuzeone-bot,github-actions,fuze-agent,claude"
           claude-args: >-
             --max-turns 40
-            --allowedTools "Read,Glob,Grep,LS,Edit,MultiEdit,Write,Bash(git add:*),Bash(git commit:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*),Bash(npm run:*),Bash(npm test:*),Bash(npx vitest:*),Bash(npx tsc:*),Bash(npx eslint:*),Bash(npx prettier:*),Bash(node:*),Bash(python3 -m pytest:*),Bash(python3 -m unittest:*),Bash(python3 scripts/*)"
+            --allowedTools "Read,Glob,Grep,LS,Edit,MultiEdit,Write,Bash(git -C pr add:*),Bash(git -C pr commit:*),Bash(git -C pr diff:*),Bash(git -C pr status:*),Bash(git -C pr log:*),Bash(git -C pr show:*)"
           task-prompt: |
-            An automated code review of pull request #${{ steps.review.outputs.pr }} in ${{ github.repository }} requested changes. You are checked out on the PR's head branch (${{ github.event.workflow_run.head_branch }}), at the commit that was reviewed.
+            An automated code review of pull request #${{ steps.review.outputs.pr }} in ${{ github.repository }} requested changes. The PR's head branch (${{ github.event.workflow_run.head_branch }}) is checked out, at the commit that was reviewed, in the directory `pr/` of the current working directory. Read and edit files only under `pr/`, and run git as `git -C pr ...`.
 
             The reviewer's findings are in this file. Read it first:
               ${{ steps.review.outputs.findings-file }}
@@ -186,15 +204,16 @@ jobs:
             2. If it is real, make the smallest change that fixes it, plus a test that fails without the fix where this repo has a test layer for that code.
             3. Do not touch unrelated code. Do not disable or skip tests, add `|| true` or `continue-on-error`, bypass a gate, edit .github/workflows/fuze-review-autofix.yml, or print secrets.
 
-            Then run the repo's own fast checks for what you changed (lint, format, typecheck, the changed package's unit tests) and fix what they report.
+            You cannot run builds, linters or tests here (that would execute code from the PR next to a credential); CI re-checks your fix after the push, so reason carefully about correctness instead, and keep each change minimal.
 
-            Commit locally with `git add` and `git commit`. The commit message must end with the line `Co-Authored-By: Claude <noreply@anthropic.com>` and contain no model identifier. You cannot push and must not try: the workflow pushes after checking your commits.
+            Commit locally with `git -C pr add` and `git -C pr commit`. The commit message must end with the line `Co-Authored-By: Claude <noreply@anthropic.com>` and contain no model identifier. You cannot push and must not try: the workflow pushes after checking your commits.
 
             Finally write a short plain-language summary to ${{ runner.temp }}/fuze-autofix-summary.md: for each finding, whether you fixed it, rejected it as wrong (with the reason), or could not fix it (with exactly what is needed). The workflow posts this file on the PR.
 
       - name: Push the fix
         id: push
         if: always() && steps.review.outputs.proceed == 'true'
+        working-directory: pr
         env:
           CODER_TOKEN: ${{ secrets.FUZEONEAGENT_TOKEN }}
           GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
