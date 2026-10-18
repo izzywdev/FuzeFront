@@ -57,11 +57,11 @@ jobs:
             "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/fuzefront-secrets")
 
           PERMIT_API_KEY=$(echo "$_SECRET" | python3 -c "
-import sys,json,base64
-d=json.load(sys.stdin)
-v=d.get('data',{}).get('PERMIT_API_KEY')
-print(base64.b64decode(v).decode().strip() if v else '')
-" 2>/dev/null || echo "")
+          import sys,json,base64
+          d=json.load(sys.stdin)
+          v=d.get('data',{}).get('PERMIT_API_KEY')
+          print(base64.b64decode(v).decode().strip() if v else '')
+          " 2>/dev/null || echo "")
           if [ -z "$PERMIT_API_KEY" ]; then
             echo "::error::PERMIT_API_KEY not found in k8s secret fuzefront-secrets/fuzefront"
             exit 1
@@ -70,11 +70,11 @@ print(base64.b64decode(v).decode().strip() if v else '')
           echo "PERMIT_API_KEY=$PERMIT_API_KEY" >> "$GITHUB_ENV"
 
           PERMIT_PROJECT=$(echo "$_SECRET" | python3 -c "
-import sys,json,base64
-d=json.load(sys.stdin)
-v=d.get('data',{}).get('PERMIT_PROJECT')
-print(base64.b64decode(v).decode().strip() if v else '')
-" 2>/dev/null || echo "")
+          import sys,json,base64
+          d=json.load(sys.stdin)
+          v=d.get('data',{}).get('PERMIT_PROJECT')
+          print(base64.b64decode(v).decode().strip() if v else '')
+          " 2>/dev/null || echo "")
           PERMIT_PROJECT="${PERMIT_PROJECT:-fuzefront}"
           echo "PERMIT_PROJECT=$PERMIT_PROJECT" >> "$GITHUB_ENV"
 
