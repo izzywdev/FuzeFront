@@ -296,7 +296,13 @@ api.interceptors.response.use(
     }
     console.groupEnd()
 
-    if (error.response?.status === 401) {
+    // A 401 from a TOKEN-redemption call (an expired/used verify link or reset
+    // token, 401 NOT_ACTIVE) says nothing about the caller's SESSION — it must
+    // not sign a signed-in user out. The auth-ui flows render it as "expired".
+    const failedUrl = String(error.config?.url ?? '')
+    const isTokenRedemption = /\/(verify\/email\/confirm|session\/password\/reset-confirm)$/.test(failedUrl)
+
+    if (error.response?.status === 401 && !isTokenRedemption) {
       console.log('🔐 Unauthorized - clearing the active account session')
       // Clear only the ACTIVE account. Other signed-in accounts keep their
       // sessions — one expiring must not sign the user out of the rest.
@@ -472,10 +478,10 @@ export const authAPI = {
   // Thin 1:1 wrappers over the frozen contract; the auth-ui flows classify the
   // axios error shapes themselves (429 / EXPIRED / INVALID_CODE / 400).
 
-  // POST /verify/email/start → 202. `email` for the signup-scoped case; the
-  // interceptor adds the bearer token when a session exists.
-  async startEmailVerification(email?: string): Promise<void> {
-    await api.post(`${SECURITY_BASE}/verify/email/start`, email ? { email } : {})
+  // POST /verify/email/start → 202. Needs a session (the interceptor adds the bearer).
+  async startEmailVerification(): Promise<void> {
+    // No body: the server derives the target address from the session.
+    await api.post(`${SECURITY_BASE}/verify/email/start`, {})
   },
 
   // POST /verify/email/confirm → 200 VerificationStatus (idempotent for an

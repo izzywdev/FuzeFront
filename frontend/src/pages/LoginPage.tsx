@@ -112,6 +112,15 @@ function LoginPage() {
     if (current.startsWith('/fuzepicker/mentions')) {
       window.sessionStorage.setItem('fuzepicker:return-path', current)
     }
+    // fuzefront.auth.experience: an expired verify link sends a signed-out user
+    // here with `?next=/signup/verify`. EXACT-match allowlist (never a generic
+    // redirect param) so this cannot become an open redirect.
+    if (
+      isAuthExperienceEnabled() &&
+      new URLSearchParams(window.location.search).get('next') === '/signup/verify'
+    ) {
+      window.sessionStorage.setItem('auth:return-path', '/signup/verify')
+    }
   }, [])
 
   // Page-load social-callback outcome (the OAuth provider redirecting back
@@ -141,9 +150,13 @@ function LoginPage() {
       setUser(user)
       const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
       window.sessionStorage.removeItem('fuzepicker:return-path')
+      const authReturn = window.sessionStorage.getItem('auth:return-path')
+      window.sessionStorage.removeItem('auth:return-path')
       window.location.href = returnPath?.startsWith('/fuzepicker/mentions')
         ? returnPath
-        : '/dashboard'
+        : authReturn === '/signup/verify'
+          ? authReturn
+          : '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
       setCallbackError('Signed in, but failed to load your profile. Please retry.')

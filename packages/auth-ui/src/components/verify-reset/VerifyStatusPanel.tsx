@@ -14,6 +14,10 @@ export interface VerifyStatusPanelProps {
   signInHref?: string
   onBackToSignIn?: () => void
   resending?: boolean
+  /** Only a signed-in user may request a new link (the server binds it to the session). Default true. */
+  canResend?: boolean
+  /** Where "sign in to get a new link" goes (signed-out expired state). */
+  signInForLinkHref?: string
   /** Extra content under the actions (e.g. a "new link sent" confirmation or a rate-limit alert). */
   children?: React.ReactNode
   /** Detail copy for the generic error state. */
@@ -30,6 +34,8 @@ export function VerifyStatusPanel({
   signInHref = '/login',
   onBackToSignIn,
   resending = false,
+  canResend = true,
+  signInForLinkHref = '/login',
   children,
   errorText,
   labels: overrides,
@@ -64,12 +70,16 @@ export function VerifyStatusPanel({
       centered
       icon="error"
       title={expired ? labels.expiredTitle : labels.genericError}
-      subtitle={expired ? labels.expiredText : errorText}
+      subtitle={expired ? (canResend ? labels.expiredText : labels.signInForNewLinkText) : errorText}
       data-state={expired ? 'expired' : 'error'}
     >
-      {expired ? (
+      {expired && canResend ? (
         <Button type="button" variant="primary" fullWidth data-action="resend" disabled={resending} onClick={onResend}>
           {resending ? labels.resending : labels.sendNewLink}
+        </Button>
+      ) : expired ? (
+        <Button variant="primary" fullWidth data-action="sign-in-for-link" href={signInForLinkHref}>
+          {labels.signInForNewLink}
         </Button>
       ) : (
         <Button type="button" variant="primary" fullWidth data-action="retry" onClick={onRetry}>

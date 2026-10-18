@@ -14,14 +14,18 @@ export interface EmailVerificationFlowProps {
   transport: VerifyResetTransport
   /** `check-inbox` = /signup/verify (post-signup); `landing` = /verify/email (the emailed link). */
   view: 'check-inbox' | 'landing'
-  /** The address the link was sent to (check-inbox) / used for "send a new link" (landing). */
+  /** Display only (check-inbox): the address the link was sent to. NEVER sent to the API — the server derives the target from the session. */
   email?: string
   /** The link token (landing). */
   token?: string
   /** Called from the verified state's "Continue" button. */
   onContinue?: () => void
-  /** Where "Go back and edit it" goes (check-inbox). Default `/signup`. */
-  editAddressHref?: string
+  /** Check-inbox "Continue to FuzeFront" link target. Omit to hide it. */
+  continueHref?: string
+  /** Landing: is the visitor signed in? Only then can a new link be requested. Default false. */
+  canResend?: boolean
+  /** Landing: where "Sign in to get a new link" goes. */
+  signInForLinkHref?: string
   signInHref?: string
   onBackToSignIn?: () => void
   /** Resend cooldown in seconds. Default 60. */
@@ -51,7 +55,7 @@ function NoticeAlert({ notice }: { notice: Notice }) {
 function CheckInbox({
   transport,
   email,
-  editAddressHref = '/signup',
+  continueHref,
   cooldownSeconds,
   labels: overrides,
 }: EmailVerificationFlowProps) {
@@ -61,7 +65,7 @@ function CheckInbox({
   const resend = useCallback(async () => {
     setNotice(null)
     try {
-      await transport.startEmailVerification(email)
+      await transport.startEmailVerification()
     } catch (err) {
       const kind = classifyAuthError(err)
       if (kind === 'rate-limited') {
@@ -72,7 +76,7 @@ function CheckInbox({
       setNotice({ kind: 'error', text: kind === 'unavailable' ? labels.unavailable : labels.genericError })
       throw err
     }
-  }, [transport, email, labels.rateLimited, labels.unavailable, labels.genericError])
+  }, [transport, labels.rateLimited, labels.unavailable, labels.genericError])
 
   return (
     <div data-frame="03-check-inbox" data-flow="verify-email">
@@ -87,9 +91,13 @@ function CheckInbox({
           <ResendCooldownButton onResend={resend} cooldownSeconds={cooldownSeconds} labels={overrides} />
         </div>
         <NoticeAlert notice={notice} />
-        <p className="fzf-vr-help">
-          {labels.editAddressPrompt} <a href={editAddressHref}>{labels.editAddressCta}</a>.
-        </p>
+        {continueHref && (
+          <p className="fzf-vr-help">
+            <a href={continueHref} data-action="continue">
+              {labels.continueToApp}
+            </a>
+          </p>
+        )}
         <Alert tone="info" className="fzf-vr-alert fzf-vr-alert--left" role="note">
           {labels.spamNote}
         </Alert>
@@ -100,8 +108,9 @@ function CheckInbox({
 
 function VerifyLanding({
   transport,
-  email,
   token,
+  canResend = false,
+  signInForLinkHref,
   onContinue,
   signInHref,
   onBackToSignIn,
@@ -142,7 +151,7 @@ function VerifyLanding({
       })
       .catch(err => {
         if (!mounted.current) return
-        const kind = classifyAuthError(err, { badRequestIsExpired: true })
+        const kind = classifyAuthError(err, { badRequestIsExpired: true, notActiveIsExpired: true })
         if (kind === 'expired') {
           setStatus('expired')
           return
@@ -159,7 +168,7 @@ function VerifyLanding({
     setNotice(null)
     setResending(true)
     try {
-      await transport.startEmailVerification(email)
+      await transport.startEmailVerification()
       setNotice({ kind: 'sent', text: labels.newLinkSent })
     } catch (err) {
       const kind = classifyAuthError(err)
@@ -181,6 +190,8 @@ function VerifyLanding({
         onResend={sendNewLink}
         onRetry={() => setAttempt(a => a + 1)}
         resending={resending}
+        canResend={canResend}
+        signInForLinkHref={signInForLinkHref}
         signInHref={signInHref}
         onBackToSignIn={onBackToSignIn}
         errorText={errorText || undefined}

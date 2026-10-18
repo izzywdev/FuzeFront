@@ -55,6 +55,7 @@ export function PasswordResetFlow({
   const [confirm, setConfirm] = useState('')
   const [pending, setPending] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
+  const [policyError, setPolicyError] = useState('')
 
   const noticeFor = (err: unknown): NonNullable<Notice> => {
     const kind = classifyAuthError(err)
@@ -122,16 +123,20 @@ export function PasswordResetFlow({
     if (!canSubmit || !token) return
     setPending(true)
     setNotice(null)
+    setPolicyError('')
     try {
       await transport.confirmPasswordReset({ token, newPassword: password })
       setPassword('')
       setConfirm('')
       setStep('confirm-done')
     } catch (err) {
-      const kind = classifyAuthError(err, { badRequestIsExpired: true })
+      const kind = classifyAuthError(err, { malformedIsPolicy: true, notActiveIsExpired: true })
       if (kind === 'expired') {
-        // Invalid, expired or already-used token (the API returns 400 for all three).
+        // Explicit invalid / expired / used token (TOKEN_EXPIRED, TOKEN_INVALID, ...).
         setStep('confirm-expired')
+      } else if (kind === 'policy') {
+        // Password rejected by policy: the token is still good — keep the form.
+        setPolicyError(labels.passwordPolicy)
       } else {
         setNotice(noticeFor(err))
       }
@@ -213,7 +218,11 @@ export function PasswordResetFlow({
                 label={labels.newPasswordLabel}
                 autoComplete="new-password"
                 value={password}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  setPassword(e.target.value)
+                  setPolicyError('')
+                }}
+                error={policyError}
               />
               <PasswordStrengthMeter value={password} rules={policy} labels={overrides} />
             </div>

@@ -35,6 +35,13 @@ describe('classifyAuthError', () => {
     expect(classifyAuthError(httpErr(503, 'PROVIDER_UNAVAILABLE'))).toBe('unavailable')
     expect(classifyAuthError(httpErr(400, 'MALFORMED'))).toBe('unknown')
     expect(classifyAuthError(httpErr(400, 'MALFORMED'), { badRequestIsExpired: true })).toBe('expired')
+    expect(classifyAuthError(httpErr(400, 'TOKEN_EXPIRED'))).toBe('expired')
+    expect(classifyAuthError(httpErr(400, 'TOKEN_INVALID'))).toBe('expired')
+    expect(classifyAuthError(httpErr(400, 'INVALID_TOKEN'))).toBe('expired')
+    expect(classifyAuthError(httpErr(401, 'NOT_ACTIVE'))).toBe('unknown')
+    expect(classifyAuthError(httpErr(401, 'NOT_ACTIVE'), { notActiveIsExpired: true })).toBe('expired')
+    expect(classifyAuthError(httpErr(422, 'PASSWORD_POLICY'))).toBe('policy')
+    expect(classifyAuthError(httpErr(400, 'MALFORMED'), { malformedIsPolicy: true })).toBe('policy')
     expect(classifyAuthError(new Error('network'))).toBe('unknown')
     expect(classifyAuthError(undefined)).toBe('unknown')
   })
@@ -176,7 +183,8 @@ describe('EmailVerificationFlow — check inbox', () => {
       await act(async () => {
         fireEvent.click(btn)
       })
-      expect(transport.startEmailVerification).toHaveBeenCalledWith('ada@lovelace.io')
+      // NEVER sends an address: the server derives the target from the session.
+      expect(transport.startEmailVerification).toHaveBeenCalledWith()
       expect(btn).toHaveAttribute('data-state', 'cooldown')
     } finally {
       vi.useRealTimers()
@@ -252,12 +260,31 @@ describe('EmailVerificationFlow — verify landing', () => {
   it.each(['EXPIRED', 'INVALID_CODE'])('%s → expired, and "send a new link" calls start', async code => {
     const transport = makeTransport({ confirmEmailVerification: vi.fn().mockRejectedValue(httpErr(400, code)) })
     const { container } = render(
-      <EmailVerificationFlow transport={transport} view="landing" token="tok" email="ada@lovelace.io" />,
+      <EmailVerificationFlow transport={transport} view="landing" token="tok" canResend />,
     )
     await waitFor(() => expect(container.querySelector('[data-state="expired"]')).toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: /send a new link/i }))
-    expect(transport.startEmailVerification).toHaveBeenCalledWith('ada@lovelace.io')
+    // NEVER sends an address: the server derives the target from the session.
+      expect(transport.startEmailVerification).toHaveBeenCalledWith()
     expect(await screen.findByText('A new verification link is on its way.')).toBeInTheDocument()
+  })
+
+  it('signed-out expired link offers sign-in, NOT an anonymous resend', async () => {
+    const transport = makeTransport({ confirmEmailVerification: vi.fn().mockRejectedValue(httpErr(400, 'EXPIRED')) })
+    const { container } = render(
+      <EmailVerificationFlow transport={transport} view="landing" token="t" signInForLinkHref="/login?next=/signup/verify" />,
+    )
+    await waitFor(() => expect(container.querySelector('[data-state="expired"]')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /send a new link/i })).not.toBeInTheDocument()
+    const link = screen.getByRole('link', { name: /sign in to get a new link/i })
+    expect(link).toHaveAttribute('href', '/login?next=/signup/verify')
+    expect(transport.startEmailVerification).not.toHaveBeenCalled()
+  })
+
+  it('401 NOT_ACTIVE (expired token) renders expired, not a generic error', async () => {
+    const transport = makeTransport({ confirmEmailVerification: vi.fn().mockRejectedValue(httpErr(401, 'NOT_ACTIVE')) })
+    const { container } = render(<EmailVerificationFlow transport={transport} view="landing" token="t" canResend />)
+    await waitFor(() => expect(container.querySelector('[data-state="expired"]')).toBeInTheDocument())
   })
 
   it('a missing token is expired without calling the API', () => {
@@ -294,7 +321,7 @@ describe('EmailVerificationFlow — verify landing', () => {
       confirmEmailVerification: vi.fn().mockRejectedValue(httpErr(400, 'EXPIRED')),
       startEmailVerification: vi.fn().mockRejectedValue(httpErr(429)),
     })
-    const { container } = render(<EmailVerificationFlow transport={transport} view="landing" token="t" />)
+    const { container } = render(<EmailVerificationFlow transport={transport} view="landing" token="t" canResend />)
     await waitFor(() => expect(container.querySelector('[data-state="expired"]')).toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: /send a new link/i }))
     expect(await screen.findByText(/too many attempts/i)).toBeInTheDocument()
@@ -417,14 +444,35 @@ describe('PasswordResetFlow — confirm', () => {
     await waitFor(() => expect(container.querySelector('[data-step="confirm-done"]')).toBeInTheDocument())
   })
 
-  it('400 (expired/used token) → confirm-expired; restart returns to the request form', async () => {
-    const transport = makeTransport({ confirmPasswordReset: vi.fn().mockRejectedValue(httpErr(400, 'MALFORMED')) })
+  it.each(['TOKEN_EXPIRED', 'TOKEN_INVALID'])('400 %s → confirm-expired; restart returns to the request form', async code => {
+    const transport = makeTransport({ confirmPasswordReset: vi.fn().mockRejectedValue(httpErr(400, code)) })
     const { container } = render(<PasswordResetFlow transport={transport} token="rst" />)
     await fill(container, STRONG, STRONG)
     await userEvent.click(submit(container))
     await waitFor(() => expect(container.querySelector('[data-step="confirm-expired"]')).toBeInTheDocument())
     await userEvent.click(container.querySelector('[data-action="restart"]')!)
     expect(container.querySelector('[data-form="reset-request"]')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['422 PASSWORD_POLICY', httpErr(422, 'PASSWORD_POLICY')],
+    ['legacy 400 MALFORMED', httpErr(400, 'MALFORMED')],
+  ])('%s keeps the form with an inline policy error (not expired)', async (_n, err) => {
+    const transport = makeTransport({ confirmPasswordReset: vi.fn().mockRejectedValue(err) })
+    const { container } = render(<PasswordResetFlow transport={transport} token="rst" />)
+    await fill(container, STRONG, STRONG)
+    await userEvent.click(submit(container))
+    expect(await screen.findByText(/does not meet the password policy/i)).toBeInTheDocument()
+    expect(container.querySelector('[data-step="confirm-expired"]')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-form="reset-confirm"]')).toBeInTheDocument()
+  })
+
+  it('check-inbox has no edit-address action and offers Continue to the app', () => {
+    const { container } = render(
+      <EmailVerificationFlow transport={makeTransport()} view="check-inbox" email="a@b.co" continueHref="/dashboard" />,
+    )
+    expect(screen.queryByText(/go back and edit/i)).not.toBeInTheDocument()
+    expect(container.querySelector('[data-action="continue"]')).toHaveAttribute('href', '/dashboard')
   })
 
   it('429 / outage keep the confirm form with an inline notice', async () => {

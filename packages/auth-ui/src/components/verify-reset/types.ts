@@ -10,8 +10,11 @@ export type VerificationStatus = components['schemas']['VerificationStatus']
  * `response.data.code` are also understood — see `classifyAuthError`).
  */
 export interface VerifyResetTransport {
-  /** POST /v1/security/verify/email/start → 202. `email` for the signup-scoped (unauthenticated) case. */
-  startEmailVerification(email?: string): Promise<void>
+  /**
+   * POST /v1/security/verify/email/start → 202. Takes NO address: the server
+   * derives the target from the authenticated session, so the UI never sends one.
+   */
+  startEmailVerification(): Promise<void>
   /** POST /v1/security/verify/email/confirm → 200 VerificationStatus | 400 EXPIRED/INVALID_CODE. */
   confirmEmailVerification(req: { token: string }): Promise<VerificationStatus>
   /** POST /v1/security/session/password/reset-request → ALWAYS 202 (no enumeration). */
@@ -21,15 +24,14 @@ export interface VerifyResetTransport {
 }
 
 /** Provider-neutral failure classes the flows render distinct states for. */
-export type AuthErrorKind = 'expired' | 'rate-limited' | 'unavailable' | 'unknown'
+export type AuthErrorKind = 'expired' | 'policy' | 'rate-limited' | 'unavailable' | 'unknown'
 
 export interface VerifyResetLabels {
   // check inbox
   checkInboxTitle: string
   checkInboxSent: string
   checkInboxHint: string
-  editAddressPrompt: string
-  editAddressCta: string
+  continueToApp: string
   spamNote: string
   resendIn: (time: string) => string
   resendNow: string
@@ -43,6 +45,8 @@ export interface VerifyResetLabels {
   expiredTitle: string
   expiredText: string
   sendNewLink: string
+  signInForNewLink: string
+  signInForNewLinkText: string
   newLinkSent: string
   backToSignIn: string
   retry: string
@@ -74,6 +78,7 @@ export interface VerifyResetLabels {
   strengthStrong: string
   mismatch: string
   // shared errors
+  passwordPolicy: string
   rateLimited: string
   genericError: string
   unavailable: string
@@ -84,8 +89,7 @@ export const DEFAULT_VERIFY_RESET_LABELS: VerifyResetLabels = {
   checkInboxSent: 'We sent a verification link to',
   checkInboxHint:
     'Click the link in that email to activate your account. The link expires in 30 minutes.',
-  editAddressPrompt: 'Wrong address?',
-  editAddressCta: 'Go back and edit it',
+  continueToApp: 'Continue to FuzeFront',
   spamNote:
     "Didn't get it? Check spam, or wait for the timer and resend. You can keep working — we'll ask you to verify before inviting teammates or going live.",
   resendIn: time => `Resend email in ${time}`,
@@ -100,6 +104,8 @@ export const DEFAULT_VERIFY_RESET_LABELS: VerifyResetLabels = {
   expiredText:
     "Verification links are good for 30 minutes. Request a fresh one and we'll send it right over.",
   sendNewLink: 'Send a new link',
+  signInForNewLink: 'Sign in to get a new link',
+  signInForNewLinkText: 'For your security, sign in first and we will send a fresh verification link.',
   newLinkSent: 'A new verification link is on its way.',
   backToSignIn: 'Back to sign in',
   retry: 'Try again',
@@ -129,6 +135,7 @@ export const DEFAULT_VERIFY_RESET_LABELS: VerifyResetLabels = {
   strengthGood: 'Good',
   strengthStrong: 'Strong',
   mismatch: "Passwords don't match yet.",
+  passwordPolicy: 'That password does not meet the password policy. Choose a different one.',
   rateLimited: 'Too many attempts. Please wait a moment before trying again.',
   genericError: 'Something went wrong. Please try again.',
   unavailable: 'The service is temporarily unavailable. Please try again in a moment.',

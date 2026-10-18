@@ -1,7 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { EmailVerificationFlow, PasswordResetFlow } from '@fuzefront/auth-ui'
 import type { VerifyResetTransport } from '@fuzefront/auth-ui'
 import { authAPI } from '../services/api'
+import { useCurrentUser } from '../lib/shared'
+import { takeSingleUseParam } from '../lib/singleUseParams'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 
 /**
@@ -16,28 +18,11 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
  */
 
 const transport: VerifyResetTransport = {
-  startEmailVerification: email => authAPI.startEmailVerification(email),
+  // No address is ever sent: the server derives it from the session.
+  startEmailVerification: () => authAPI.startEmailVerification(),
   confirmEmailVerification: req => authAPI.confirmEmailVerification(req),
   requestPasswordReset: email => authAPI.requestPasswordReset(email),
   confirmPasswordReset: req => authAPI.confirmPasswordReset(req),
-}
-
-/**
- * Read a query param once, then strip the secret from the address bar/history so
- * a single-use token can't leak via Referer, screenshots or a reload re-submit.
- */
-function useSingleUseParam(name: string): string | undefined {
-  const [value] = useState<string | undefined>(
-    () => new URLSearchParams(window.location.search).get(name) ?? undefined
-  )
-  useEffect(() => {
-    const url = new URL(window.location.href)
-    if (url.searchParams.has(name)) {
-      url.searchParams.delete(name)
-      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash)
-    }
-  }, [name])
-  return value
 }
 
 function PageChrome({ children }: { children: ReactNode }) {
@@ -65,29 +50,32 @@ function PageChrome({ children }: { children: ReactNode }) {
 }
 
 export function VerifyCheckInboxPage() {
-  const email = new URLSearchParams(window.location.search).get('email') ?? undefined
+  const { user } = useCurrentUser()
+  // Display only: prefer the session's own address over the (spoofable) query.
+  const email = user?.email ?? new URLSearchParams(window.location.search).get('email') ?? undefined
   return (
     <PageChrome>
       <EmailVerificationFlow
         view="check-inbox"
         transport={transport}
         email={email}
-        editAddressHref="/signup"
+        continueHref="/dashboard"
       />
     </PageChrome>
   )
 }
 
 export function VerifyLandingPage() {
-  const token = useSingleUseParam('token')
-  const email = new URLSearchParams(window.location.search).get('email') ?? undefined
+  const token = takeSingleUseParam('token')
+  const { isAuthenticated } = useCurrentUser()
   return (
     <PageChrome>
       <EmailVerificationFlow
         view="landing"
         transport={transport}
         token={token}
-        email={email}
+        canResend={isAuthenticated}
+        signInForLinkHref="/login?next=/signup/verify"
         signInHref="/login"
         onContinue={() => {
           window.location.href = '/dashboard'
@@ -98,7 +86,7 @@ export function VerifyLandingPage() {
 }
 
 export function ResetPage() {
-  const token = useSingleUseParam('token')
+  const token = takeSingleUseParam('token')
   return (
     <PageChrome>
       <PasswordResetFlow transport={transport} token={token} signInHref="/login" />
