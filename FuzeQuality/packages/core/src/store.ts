@@ -89,8 +89,7 @@ export type TestExecutionQuery = {
   status?: TestExecution['status']
   provider?: TestExecution['provider']
   name?: string
-  evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
-  evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status']
+  evidenceKind?: TestExecution['evidenceLinks'][number]['kind']; evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status']
   thresholdOutcome?: 'passed' | 'failed'
   gateOutcome?: TestExecution['status']
   externalRunId?: string
