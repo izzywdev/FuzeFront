@@ -67,8 +67,14 @@ function attachErrorCollectors(page: Page) {
   page.on('pageerror', (err: Error) => pageErrors.push(err.message))
   page.on('requestfailed', req => {
     const url = req.url()
+    const failure = req.failure()?.errorText ?? 'failed'
+    // Navigating away closes the notification SSE/poll requests by design.
+    // Do not turn that browser cancellation into a false product regression.
+    if (failure === 'net::ERR_ABORTED' && /\/api\/v1\/notifications\/(?:unread-count|stream)/.test(url)) {
+      return
+    }
     if (/\/api\/organizations|\/api\/|remoteEntry|\.js(\?|$)/i.test(url)) {
-      failedRequests.push(`${req.method()} ${url} :: ${req.failure()?.errorText ?? 'failed'}`)
+      failedRequests.push(`${req.method()} ${url} :: ${failure}`)
     }
   })
   return { pageErrors, failedRequests }
