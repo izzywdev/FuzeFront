@@ -2409,7 +2409,7 @@ function RepositoryAdministrationCard({
     setSaved(false)
     try {
       await api.updateRepositoryAdministration(repository.id, {
-        ownership: team ? { team, contact: contact || undefined } : undefined,
+        ownership: team ? { team, contact: contact || undefined } : null,
         jiraBindings: jiraProject
           ? [
               {
@@ -2418,7 +2418,7 @@ function RepositoryAdministrationCard({
               },
             ]
           : [],
-        storybookBaseUrl: storybookBaseUrl || undefined,
+        storybookBaseUrl: storybookBaseUrl || null,
       })
       setSaved(true)
       await reload()
@@ -2506,9 +2506,7 @@ function OrganizationSettings({
     setLoading(true)
     try {
       const result = await api.organizationMembers()
-      setMembers(
-        Array.isArray(result) ? result : (result.items ?? result.members ?? [])
-      )
+      setMembers(result)
       setError('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))

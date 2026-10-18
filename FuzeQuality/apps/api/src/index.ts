@@ -136,12 +136,12 @@ const repositoryAdministrationSchema = z.object({
   ownership: z.object({
     team: z.string().trim().min(1).max(100),
     contact: z.string().trim().email().optional(),
-  }).optional(),
+  }).nullable().optional(),
   jiraBindings: z.array(z.object({
     project: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,19}$/),
     component: z.string().trim().min(1).max(255).optional(),
   })).max(100),
-  storybookBaseUrl: z.string().trim().url().refine(value => new URL(value).protocol === 'https:').optional(),
+  storybookBaseUrl: z.string().trim().url().refine(value => new URL(value).protocol === 'https:').nullable().optional(),
 }).strict()
 const identityLifecycleEventSchema = z.discriminatedUnion('type', [
   z.object({

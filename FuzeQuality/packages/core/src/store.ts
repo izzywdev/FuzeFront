@@ -240,7 +240,7 @@ export interface CatalogStore {
   updateRepositoryAdministration(
     id: string,
     tenantId: string,
-    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+    value: { ownership?: RepositoryInput['ownership'] | null; jiraBindings: RepositoryInput['jiraBindings']; storybookBaseUrl?: RepositoryInput['storybookBaseUrl'] | null }
   ): Promise<Repository | undefined>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
   setRepositoryScanFailure(id: string, failure: NonNullable<Repository['lastScanFailure']>): Promise<void>
@@ -706,11 +706,11 @@ export class MemoryCatalogStore implements CatalogStore {
   async updateRepositoryAdministration(
     id: string,
     tenantId: string,
-    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+    value: { ownership?: RepositoryInput['ownership'] | null; jiraBindings: RepositoryInput['jiraBindings']; storybookBaseUrl?: RepositoryInput['storybookBaseUrl'] | null }
   ) {
     const repository = await this.repository(id, tenantId)
     if (!repository) return undefined
-    Object.assign(repository, value)
+    Object.assign(repository, { ...value, ownership: value.ownership ?? undefined, storybookBaseUrl: value.storybookBaseUrl ?? undefined })
     return repository
   }
 
@@ -2074,11 +2074,11 @@ export class PostgresCatalogStore implements CatalogStore {
   async updateRepositoryAdministration(
     id: string,
     tenantId: string,
-    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+    value: { ownership?: RepositoryInput['ownership'] | null; jiraBindings: RepositoryInput['jiraBindings']; storybookBaseUrl?: RepositoryInput['storybookBaseUrl'] | null }
   ) {
     const result = await this.pool.query(
       `UPDATE fuzequality.repositories
-       SET config = config || $3::jsonb, updated_at = now()
+       SET config = (config || $3::jsonb) - ARRAY(SELECT key FROM jsonb_each($3::jsonb) WHERE value = 'null'::jsonb), updated_at = now()
        WHERE id = $1 AND tenant_id = $2 AND enabled = true
        RETURNING id`,
       [id, tenantId, JSON.stringify(value)]

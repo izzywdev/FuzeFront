@@ -62,6 +62,20 @@ describe('FuzeQuality portal API identity context', () => {
     expect(headers.get('x-fuzefront-tenant-id')).toBe('standalone-tenant')
   })
 
+  it('normalizes nested FuzeFront member identities for organization administration', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: 'membership-1', role: 'admin', status: 'active',
+        user: { id: 'user-1', email: 'owner@example.com', firstName: 'Quality', lastName: 'Owner' },
+      }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.organizationMembers()).resolves.toEqual([expect.objectContaining({
+      id: 'membership-1', role: 'admin', email: 'owner@example.com', displayName: 'Quality Owner', userId: 'user-1',
+    })])
+  })
+
   it('sends the current flow-review timestamp as an optimistic precondition', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), {
       status: 200,

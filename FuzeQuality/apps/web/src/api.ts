@@ -9,7 +9,12 @@ import type {
 import type { Identity } from '@fuzefront/security-client'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | 'viewer'
-export type OrganizationMember = { id: string; email?: string; name?: string; displayName?: string; userId?: string; user_id?: string; role: OrganizationRole; status?: string }
+export type OrganizationMember = { id: string; email?: string; name?: string; displayName?: string; userId?: string; user_id?: string; role: OrganizationRole; status?: string; user?: { id?: string; email?: string; name?: string; displayName?: string; firstName?: string; lastName?: string } }
+
+export function normalizeOrganizationMember(member: OrganizationMember): OrganizationMember {
+  const nestedName = member.user ? [member.user.firstName, member.user.lastName].filter(Boolean).join(' ') : ''
+  return { ...member, email: member.email ?? member.user?.email, displayName: member.displayName ?? member.user?.displayName ?? (nestedName || undefined), userId: member.userId ?? member.user_id ?? member.user?.id }
+}
 
 
 // Standalone access stays same-origin. A federated remote is rendered at
@@ -185,7 +190,10 @@ export const api = {
     request<TestImplementationRequest>('/api/v1/test-implementations', { method: 'POST', body: JSON.stringify(value) }),
   testImplementation: (id: string) =>
     request<TestImplementationRequest>(`/api/v1/test-implementations/${id}`),
-  organizationMembers: () => request<{ items?: OrganizationMember[]; members?: OrganizationMember[] } | OrganizationMember[]>('/api/v1/organization/members'),
+  organizationMembers: async () => {
+    const result = await request<{ items?: OrganizationMember[]; members?: OrganizationMember[] } | OrganizationMember[]>('/api/v1/organization/members')
+    return (Array.isArray(result) ? result : (result.items ?? result.members ?? [])).map(normalizeOrganizationMember)
+  },
   inviteOrganizationMember: (email: string, role: OrganizationRole) =>
     request('/api/v1/organization/invitations', { method: 'POST', body: JSON.stringify({ email, role }) }),
   updateOrganizationMember: (id: string, role: OrganizationRole) =>
