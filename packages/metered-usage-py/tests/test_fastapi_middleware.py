@@ -16,7 +16,6 @@ from fastapi.testclient import TestClient
 from fuzefront_metered_usage import UsageEvent
 from fuzefront_metered_usage.fastapi_middleware import MeteringMiddleware
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
