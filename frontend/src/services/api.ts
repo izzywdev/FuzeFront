@@ -508,8 +508,15 @@ export const authAPI = {
 
   // GET /verify/status — authenticated; used right after signup to decide
   // whether the user must verify their email before continuing.
-  async getVerificationStatus(): Promise<{ emailVerified: boolean; phoneVerified: boolean }> {
-    const response = await api.get(`${SECURITY_BASE}/verify/status`)
+  // `token` pins the call to a specific session (e.g. the one a signup just
+  // returned) instead of whatever the vault currently resolves as active.
+  async getVerificationStatus(
+    token?: string
+  ): Promise<{ emailVerified: boolean; phoneVerified: boolean }> {
+    const response = await api.get(
+      `${SECURITY_BASE}/verify/status`,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    )
     return response.data
   },
 

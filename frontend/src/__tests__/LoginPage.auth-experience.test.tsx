@@ -98,6 +98,7 @@ describe('LoginPage — fuzefront.auth.experience', () => {
       await waitFor(() =>
         expect(window.location.href).toBe('/signup/verify?email=ada%40lovelace.io')
       )
+      expect(authAPI.getVerificationStatus).toHaveBeenCalledWith('t')
     })
 
     it('carries a saved fuzepicker deep link through the verification detour and clears the stash', async () => {

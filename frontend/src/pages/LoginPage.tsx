@@ -235,7 +235,9 @@ function LoginPage() {
     try {
       const methods = await authAPI.getAuthMethods()
       if (methods.verification?.email) {
-        const status = await authAPI.getVerificationStatus()
+        // Ask with the session this signup just returned, so the check never
+        // depends on which account the vault resolves as active.
+        const status = await authAPI.getVerificationStatus(session.token)
         if (!status.emailVerified) {
           // Carry the saved deep link (fuzepicker mention) THROUGH the verification
           // detour as an allowlisted `next=`, and clear the stash so it can't
