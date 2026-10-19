@@ -55,6 +55,7 @@ COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
 COPY packages/billing-types/package.json ./packages/billing-types/
+COPY packages/metered-usage/package.json ./packages/metered-usage/
 COPY services/billing-service/package.json ./services/billing-service/
 
 # Install only production deps for selection-list-service
@@ -115,6 +116,7 @@ COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
 COPY packages/billing-types/package.json ./packages/billing-types/
+COPY packages/metered-usage/package.json ./packages/metered-usage/
 COPY services/billing-service/package.json ./services/billing-service/
 
 RUN npm ci --workspace=services/selection-list-service --ignore-scripts
