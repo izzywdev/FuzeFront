@@ -1,0 +1,23 @@
+<!-- @dsCard group="Feedback" height=150 -->
+<style>
+  body { margin: 0; padding: 28px; background: var(--bg-primary); display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .pill { display: inline-flex; align-items: center; gap: var(--space-1); padding: 2px var(--space-3); border: 1px solid transparent; border-radius: var(--radius-pill); font-family: var(--font-sans); font-size: 0.75rem; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+  .pill .dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: currentColor; flex: none; }
+  .success { color: var(--success-color); background: var(--success-soft); }
+  .warning { color: var(--warning-color); background: var(--warning-soft); }
+  .error   { color: var(--error-color); background: var(--error-soft); }
+  .neutral { color: var(--text-secondary); background: var(--bg-quaternary); }
+</style>
+<div class="row">
+  <span class="pill success"><span class="dot"></span>Active</span>
+  <span class="pill success"><span class="dot"></span>Verified</span>
+  <span class="pill warning"><span class="dot"></span>Pending</span>
+  <span class="pill warning"><span class="dot"></span>In progress</span>
+</div>
+<div class="row">
+  <span class="pill error"><span class="dot"></span>Suspended</span>
+  <span class="pill error"><span class="dot"></span>Offline</span>
+  <span class="pill neutral"><span class="dot"></span>Disabled</span>
+  <span class="pill neutral"><span class="dot"></span>Not started</span>
+</div>

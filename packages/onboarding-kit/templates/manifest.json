@@ -32,6 +32,11 @@
     "path": "/app/myapp",
     "host": "myapp.fuzefront.com"
   },
+  "distribution": {
+    "appleAppStoreUrl": "https://apps.apple.com/app/id123456789",
+    "googlePlayUrl": "https://play.google.com/store/apps/details?id=com.example.myapp",
+    "apkUrl": "https://github.com/example/myapp/releases/latest/download/myapp-android-latest.apk"
+  },
   "visibility": "organization",
   "roles": []
 }
