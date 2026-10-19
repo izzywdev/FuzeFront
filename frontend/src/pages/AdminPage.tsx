@@ -5,6 +5,7 @@ import { useAppContext, App } from '../lib/shared'
 import { useFlag } from '../platform/featureFlags'
 import {
   createApp,
+  updateApp,
   updateAppStatus,
   deleteApp,
   fetchApps,
@@ -68,9 +69,8 @@ export default function AdminPage() {
 
     try {
       if (editingApp) {
-        // Update existing app (implement PUT endpoint)
-        console.log('Update app:', editingApp.id, formData)
-        // For now, just refresh the list
+        // Persist the edited fields via PUT /api/apps/:id, then refresh.
+        await updateApp(editingApp.id, formData)
         await loadApps()
       } else {
         // Create new app
