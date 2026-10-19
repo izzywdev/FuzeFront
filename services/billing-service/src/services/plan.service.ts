@@ -1,4 +1,5 @@
 import type Stripe from 'stripe';
+import { normalizeTier } from '@fuzefront/billing-types';
 import { Plan, PlanTier } from '../types';
 import { PlanRepository } from '../repositories/plan.repository';
 
@@ -26,32 +27,18 @@ export const STATIC_DEFAULT_PLANS: Plan[] = [
     sortOrder: 1,
   },
   {
-    priceId: 'price_professional_monthly_placeholder',
-    productId: 'prod_professional',
-    tierName: 'professional',
-    displayName: 'Professional',
+    priceId: 'price_growth_monthly_placeholder',
+    productId: 'prod_growth',
+    tierName: 'growth',
+    displayName: 'Growth',
     billingInterval: 'month',
     unitAmount: 9900,
     currency: 'usd',
     seatBased: false,
     meteredMeterName: null,
-    features: ['Everything in Starter', 'Up to 25 users', '3 workspaces', 'API access', 'Priority support'],
+    features: ['Everything in Starter', 'Unlimited applications', 'SSO / OIDC', 'API keys', 'Module Federation hosting', 'Priority support'],
     isActive: true,
     sortOrder: 2,
-  },
-  {
-    priceId: 'price_scale_monthly_placeholder',
-    productId: 'prod_scale',
-    tierName: 'scale',
-    displayName: 'Scale',
-    billingInterval: 'month',
-    unitAmount: 29900,
-    currency: 'usd',
-    seatBased: false,
-    meteredMeterName: null,
-    features: ['Everything in Professional', 'Unlimited users', 'Unlimited workspaces', 'Advanced analytics', 'Dedicated support'],
-    isActive: true,
-    sortOrder: 3,
   },
   {
     priceId: 'contact_sales',
@@ -63,9 +50,9 @@ export const STATIC_DEFAULT_PLANS: Plan[] = [
     currency: 'usd',
     seatBased: true,
     meteredMeterName: null,
-    features: ['Everything in Scale', 'Custom SLAs', 'SSO / SAML', 'Compliance exports', 'Dedicated CSM', 'Custom contracts'],
+    features: ['Everything in Growth', 'Custom SLAs', 'Custom domain', 'Compliance exports', 'Dedicated CSM', 'Custom contracts'],
     isActive: true,
-    sortOrder: 4,
+    sortOrder: 3,
   },
 ];
 
@@ -79,20 +66,22 @@ export const STATIC_DEFAULT_PLANS: Plan[] = [
  * (`getActivePlans`) before use so a stale/disabled price can never be charged
  * (MEDIUM-1).
  *
- * The starter/professional/scale values below are PLACEHOLDERS. Configure the
- * real Stripe price IDs via environment variables before going live:
- *   STRIPE_PRICE_STARTER       — Starter plan ($29/mo)
- *   STRIPE_PRICE_PROFESSIONAL  — Professional plan ($99/mo)
- *   STRIPE_PRICE_SCALE         — Scale plan ($299/mo)
+ * The starter/growth values below are PLACEHOLDERS. Configure the real Stripe
+ * price IDs via environment variables before going live:
+ *   STRIPE_PRICE_STARTER  — Starter plan ($29/mo)
+ *   STRIPE_PRICE_GROWTH   — Growth plan ($99/mo)
  * When an env var is set, resolvePriceId uses it in preference to the
  * placeholder below. Enterprise uses a contact-sales flow (no Stripe price).
+ * Legacy keys (professional, scale) are kept as aliases so existing checkout
+ * sessions in flight still resolve during the migration window.
  */
 export const PLAN_ID_TO_PRICE_ID: Record<string, string> = {
-  starter: 'price_starter_monthly_placeholder',      // Starter $29/mo — set STRIPE_PRICE_STARTER
-  professional: 'price_professional_monthly_placeholder', // Professional $99/mo — set STRIPE_PRICE_PROFESSIONAL
-  scale: 'price_scale_monthly_placeholder',          // Scale $299/mo — set STRIPE_PRICE_SCALE
-  enterprise: 'contact_sales',                       // Enterprise — no Stripe price, contact sales
-  // Legacy
+  starter: 'price_starter_monthly_placeholder',  // Starter $29/mo — set STRIPE_PRICE_STARTER
+  growth: 'price_growth_monthly_placeholder',    // Growth $99/mo — set STRIPE_PRICE_GROWTH
+  enterprise: 'contact_sales',                   // Enterprise — contact sales
+  // Legacy aliases — kept for in-flight checkout sessions
+  professional: 'price_growth_monthly_placeholder',
+  scale: 'price_growth_monthly_placeholder',
   basic: 'price_1TnCqVDaNn3aKLEz05TbFbFQ',
 };
 
@@ -103,8 +92,10 @@ export const PLAN_ID_TO_PRICE_ID: Record<string, string> = {
 function resolveEnvPriceOverride(planId: string): string | undefined {
   const overrides: Record<string, string | undefined> = {
     starter: process.env.STRIPE_PRICE_STARTER,
-    professional: process.env.STRIPE_PRICE_PROFESSIONAL,
-    scale: process.env.STRIPE_PRICE_SCALE,
+    growth: process.env.STRIPE_PRICE_GROWTH,
+    // Legacy aliases so STRIPE_PRICE_PROFESSIONAL / STRIPE_PRICE_SCALE still work during transition
+    professional: process.env.STRIPE_PRICE_GROWTH ?? process.env.STRIPE_PRICE_PROFESSIONAL,
+    scale: process.env.STRIPE_PRICE_GROWTH ?? process.env.STRIPE_PRICE_SCALE,
   };
   return overrides[planId];
 }
@@ -141,7 +132,7 @@ export class PlanService {
       const plan: Plan = {
         priceId: price.id,
         productId: typeof price.product === 'string' ? price.product : product.id,
-        tierName: ((md.tier_name || product.name || 'unknown') as PlanTier),
+        tierName: normalizeTier(md.tier_name || product.name || 'unknown') as PlanTier,
         displayName: product.name || md.tier_name || price.id,
         billingInterval: price.recurring?.interval ?? 'month',
         unitAmount: price.unit_amount ?? 0,

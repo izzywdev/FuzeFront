@@ -107,6 +107,30 @@ describe('requireAuth', () => {
     expect(req.identity).toBeUndefined()
   })
 
+  it('optional:true does NOT turn a server-side outage (5xx) into an anonymous request', async () => {
+    // A session token whose validator is down: the verifier answers a retryable 503.
+    const v = createVerifier({
+      mode: 'legacy-hs256',
+      secret: SECRET,
+      sessionValidator: async () => { throw new Error('session store down') },
+    })
+    const res = mkRes()
+    const req = mkReq({ authorization: `Bearer ${await token({ userId: 'u-1', sessionId: 's-1' })}` })
+    const { nexted } = await run(requireAuth({ verifier: v, optional: true }), req, res)
+    expect(nexted).toBe(false)
+    expect(res.status).toHaveBeenCalledWith(503)
+    expect(req.identity).toBeUndefined()
+  })
+
+  it('optional:true does NOT hide a misconfigured verifier (500) behind anonymous access', async () => {
+    const v = createVerifier({ mode: 'legacy-hs256', secret: SECRET })
+    const res = mkRes()
+    const req = mkReq({ authorization: `Bearer ${await token({ userId: 'u-1', sessionId: 's-1' })}` })
+    const { nexted } = await run(requireAuth({ verifier: v, optional: true }), req, res)
+    expect(nexted).toBe(false)
+    expect(res.status).toHaveBeenCalledWith(500)
+  })
+
   it('throws at wiring time without a verifier (not on first request)', () => {
     expect(() => requireAuth({} as any)).toThrow()
   })
