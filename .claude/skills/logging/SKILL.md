@@ -55,7 +55,7 @@ req.log = logger.child({ reqId });
 
 - **One request = one greppable thread.** `grep reqId=abc123` returns the entire lifecycle across every hop in order. This is the difference between reading a story and staring at interleaved noise.
 - **Carry the correlation id across hops** — propagate `reqId` as an outbound header (`x-request-id`) on every external call so the downstream service's logs join the same thread. Bind stable request-scoped context too (`userId`, `orgId`/tenant, route) once on the child so you don't repeat it on every line.
-- **`reqId` correlates one service's own logs. It does not, by itself, link a log line to a distributed trace.** For that — following a request across services in Tempo, or jumping from a Loki log line to the exact span that produced it — see §9 (`trace_id`/`span_id` via `@izzywdev/fuzefront-telemetry`). The two ids are complementary, bound on the SAME child logger, never one replacing the other.
+- **`reqId` correlates one service's own logs. It does not, by itself, link a log line to a distributed trace.** For that — following a request across services in Tempo, or jumping from a Loki log line to that request's span — see §9 (`trace_id`/`span_id` via `@izzywdev/fuzefront-telemetry`). The two ids are complementary, bound on the SAME child logger, never one replacing the other. Note the granularity: `withTraceContext` reads `req.spanId` once, when it builds the child logger, so `span_id` identifies the **request's** span, not whichever child span happened to be active when a given line was emitted. `trace_id` always gets you to the right trace; do not expect `span_id` to pinpoint the span inside it.
 
 ## 5. Secret redaction — MANDATORY, non-negotiable
 
@@ -129,9 +129,13 @@ export const logger = pino({
 // traceparent (or starts a new trace) — it never touches x-request-id or
 // req.reqId, so it is additive to this middleware, not a header-precedence
 // fight. This module only exports the logger and requestLogger; it does NOT
-// import `app`. Mount both in the application bootstrap, tracing FIRST (see §9):
+// import `app`. Mount both in the application bootstrap, tracing FIRST, and
+// call initTelemetry() once per process before either (see §9):
+//   initTelemetry({ serviceName: 'my-service' });   // once, before anything
 //   app.use(tracingMiddleware());   // before requestLogger
 //   app.use(requestLogger);
+// Without initTelemetry() the OTel SDK never starts, so nothing is exported and
+// the ids bound here are the all-zero invalid ones (see §9).
 import { withTraceContext } from '@izzywdev/fuzefront-telemetry';
 
 // request middleware — bind a per-request child logger with a correlation id
@@ -189,7 +193,13 @@ if (user.hasPassword === null) {
 
 ```ts
 // app bootstrap (where `app` is created) — NOT in the logger module
-import { tracingMiddleware, withTraceContext } from '@izzywdev/fuzefront-telemetry';
+import { initTelemetry, tracingMiddleware, withTraceContext } from '@izzywdev/fuzefront-telemetry';
+
+// FIRST, once per process, before anything is mounted. Without it OpenTelemetry
+// stays on its no-op provider: nothing is exported to the Collector, and the
+// ids the middleware binds are the all-zero invalid ones — which still LOOK
+// like ids on a log line, so this is silent when it's wrong.
+initTelemetry({ serviceName: 'my-service' });
 
 app.use(tracingMiddleware());                 // FIRST: sets req.traceId / req.spanId
 

@@ -1,4 +1,4 @@
-# fuze:managed template=fuze-auto-pr.yml baseline=v1 digest=sha256:1fa8f3ddf46840ad5e0bbb47673bc91994c88cc71e06ccf234c3267cd8983ebe
+# fuze:managed template=fuze-auto-pr.yml baseline=v1 digest=sha256:b41c93ea64f3974a5bd1e7c50cec0b2add7f168f27b8314e7718e14c2e0e7dd4
 name: Auto-PR from agent branches
 
 # RENAMED from `claude-auto-pr.yml` (and `name:` from "Auto-PR from claude branches") for
@@ -64,14 +64,29 @@ jobs:
           BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
           GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # A token that is SET is not a token that WORKS (a suspended or revoked coder
+          # account leaves the secret populated). Use it only if GitHub accepts it now;
+          # otherwise warn and continue down the ladder: App -> bot PAT -> GITHUB_TOKEN.
+          coder_ok=false
           if [ -n "${CODER_TOKEN:-}" ]; then
+            probe=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+              -H "Authorization: Bearer ${CODER_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/user" 2>/dev/null || true)
+            if [ "${probe:-}" = "200" ]; then
+              coder_ok=true
+            else
+              echo "::warning title=agent-identity::FUZEONEAGENT_TOKEN is set but GitHub rejected it (HTTP ${probe:-none}; the account may be suspended or the token revoked) — falling back down the identity ladder. Replace or remove the secret to clear this warning."
+            fi
+          fi
+          if [ "$coder_ok" = "true" ]; then
             tok="$CODER_TOKEN"; who="fuzeoneagent (FUZEONEAGENT_TOKEN — least-privilege coder)"
           elif [ -n "${APP_TOKEN:-}" ]; then
             tok="$APP_TOKEN"; who="fuze-agent (App installation token)"
-            echo "::warning title=agent-identity::FUZEONEAGENT_TOKEN unset — opening this PR as the fuze-agent App identity (today's fallback), not the coder role. Set FUZEONEAGENT_TOKEN to author agent PRs as fuzeoneagent (docs/identity-and-roles.md)."
+            echo "::warning title=agent-identity::FUZEONEAGENT_TOKEN unset or rejected — opening this PR as the fuze-agent App identity (today's fallback), not the coder role. Set FUZEONEAGENT_TOKEN to author agent PRs as fuzeoneagent (docs/identity-and-roles.md)."
           elif [ -n "${BOT_PAT:-}" ]; then
             tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"
-            echo "::warning title=agent-identity::FUZEONEAGENT_TOKEN unset — opening this PR as GH_RELEASE_PAT (today's fallback), not the coder role. Set FUZEONEAGENT_TOKEN to author agent PRs as fuzeoneagent (docs/identity-and-roles.md)."
+            echo "::warning title=agent-identity::FUZEONEAGENT_TOKEN unset or rejected — opening this PR as GH_RELEASE_PAT (today's fallback), not the coder role. Set FUZEONEAGENT_TOKEN to author agent PRs as fuzeoneagent (docs/identity-and-roles.md)."
           else
             tok="$GH_DEFAULT"; who="GITHUB_TOKEN"
             echo "::warning title=agent-identity::No FUZEONEAGENT_TOKEN, no FUZE_AGENT_APP_* App secrets and no GH_RELEASE_PAT on this repo — opening this PR as GITHUB_TOKEN, whose head gets NO CI (hardening-convention.md §8). Set FUZEONEAGENT_TOKEN (docs/identity-and-roles.md) or the fuze-agent App secrets to fix."
