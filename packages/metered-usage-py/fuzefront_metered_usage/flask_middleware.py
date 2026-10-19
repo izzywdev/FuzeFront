@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Callable, Optional
+from collections.abc import Callable
 
 try:
     from flask import Flask
@@ -44,7 +44,7 @@ def register_metering(
     organization_id: Callable,
     entity_type: EntityType = "organization",
     meter: str = "api_calls",
-    skip: Optional[Callable] = None,
+    skip: Callable | None = None,
 ) -> None:
     """Register an ``after_request`` hook that emits a usage event for every
     request not explicitly skipped.
@@ -75,7 +75,7 @@ def register_metering(
     @app.after_request
     def _emit_usage(response):
         try:
-            req = flask_request._get_current_object()  # noqa: SLF001
+            req = flask_request._get_current_object()
 
             if skip is not None and skip(req):
                 return response

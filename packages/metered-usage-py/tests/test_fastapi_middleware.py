@@ -10,12 +10,9 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
-import json
-from typing import Any
-
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from fuzefront_metered_usage import MeteringClient, UsageEvent
+from fuzefront_metered_usage import UsageEvent
 from fuzefront_metered_usage.fastapi_middleware import MeteringMiddleware
 
 

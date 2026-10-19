@@ -7,9 +7,7 @@ constructor override -- no real Kafka broker is required.
 from __future__ import annotations
 
 import json
-import os
 
-import pytest
 from fuzefront_metered_usage import MeteringClient, UsageEvent
 
 
@@ -127,7 +125,7 @@ def test_emit_uses_configured_topic():
 
 
 def test_producer_config_receives_brokers():
-    client, producer = make_client(brokers=["broker1:9092", "broker2:9092"])
+    _, producer = make_client(brokers=["broker1:9092", "broker2:9092"])
     assert producer.config["bootstrap.servers"] == "broker1:9092,broker2:9092"
 
 

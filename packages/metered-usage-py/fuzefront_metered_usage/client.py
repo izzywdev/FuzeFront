@@ -22,7 +22,8 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable, Literal, Optional
+from collections.abc import Callable
+from typing import Literal
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class MeteringClient:
         topic: str = "billing.usage",
         service_name: str = "",
         *,
-        _producer_factory: Optional[Callable] = None,
+        _producer_factory: Callable | None = None,
     ) -> None:
         """
         Args:
@@ -107,7 +108,7 @@ class MeteringClient:
             )
 
     @classmethod
-    def from_env(cls, service_name: str = "") -> "MeteringClient":
+    def from_env(cls, service_name: str = "") -> MeteringClient:
         """Construct a client from environment variables.
 
         Reads ``KAFKA_BROKERS`` (comma-separated broker list).  Falls back to
