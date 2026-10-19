@@ -25,8 +25,5 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["fuzefront_metered_usage*"]
 
-[tool.ruff.lint.isort]
-known-first-party = ["fuzefront_metered_usage"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
