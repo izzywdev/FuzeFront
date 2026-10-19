@@ -438,7 +438,7 @@ export function OrganizationSettings({
               padding: '1.5rem',
               border: '1px solid var(--error-color)',
               borderRadius: '8px',
-              backgroundColor: 'rgba(255, 68, 68, 0.05)',
+              backgroundColor: 'var(--error-soft)',
             }}
           >
             <h3 style={{ marginTop: 0, color: 'var(--error-color)' }}>
