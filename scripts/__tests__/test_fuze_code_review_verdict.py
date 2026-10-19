@@ -17,11 +17,10 @@ import json
 import os
 import sys
 import unittest
+from typing import ClassVar
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-
-from typing import ClassVar
 
 import fuze_code_review_verdict as V
 

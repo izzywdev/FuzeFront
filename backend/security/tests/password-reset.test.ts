@@ -21,7 +21,7 @@ import type { NotificationClient } from '../src/providers/authentik/notification
 
 process.env.JWT_SECRET = 'test-secret'
 // A deliverable email channel — the enabled path. The degrade path clears this.
-process.env.EMAIL_SERVICE_URL = 'http://email-service:3000'
+process.env.EMAIL_SERVICE_URL = 'http://email-service:3003'
 
 jest.mock('../src/services/organizationProvisioning', () => ({
   runInternalProvision: jest.fn().mockResolvedValue(undefined),
@@ -170,14 +170,46 @@ describe('requestPasswordReset', () => {
   it('supersedes an outstanding challenge so only one token stays live', async () => {
     const db = makeFakeDb()
     seedUser(db)
-    const provider = newProvider(db)
+    let clock = Date.now()
+    const provider = newProvider(db, { now: () => clock })
 
     await provider.requestPasswordReset('user@example.com')
+    clock += 61_000 // past the resend cooldown
     await provider.requestPasswordReset('user@example.com')
 
     const live = db.__tables.password_resets.filter((r: any) => !r.consumed)
     expect(db.__tables.password_resets).toHaveLength(2)
     expect(live).toHaveLength(1)
+  })
+
+  it('coalesces a repeat request inside the cooldown: nothing minted, nothing sent, still resolves', async () => {
+    const db = makeFakeDb()
+    seedUser(db)
+    const notifications = makeNotifications()
+    let clock = Date.now()
+    const provider = newProvider(db, { notifications, now: () => clock })
+
+    await provider.requestPasswordReset('user@example.com')
+    clock += 10_000
+    await expect(provider.requestPasswordReset('user@example.com')).resolves.toBeUndefined()
+    expect(notifications.sendPasswordReset).toHaveBeenCalledTimes(1)
+    expect(db.__tables.password_resets).toHaveLength(1)
+
+    clock += 60_000 // cooldown elapsed -> a fresh mail is allowed again
+    await provider.requestPasswordReset('user@example.com')
+    expect(notifications.sendPasswordReset).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes the tenant mail origin (from the registry) to the notification client', async () => {
+    const { runWithTenant } = require('../src/providers/authentik/tenants')
+    const db = makeFakeDb()
+    seedUser(db)
+    const notifications = makeNotifications()
+    const provider = newProvider(db, { notifications })
+    await runWithTenant({ appBaseUrl: 'https://acme.example.com/' } as any, () =>
+      provider.requestPasswordReset('user@example.com'),
+    )
+    expect(notifications.sendPasswordReset.mock.calls[0][2]).toBe('https://acme.example.com')
   })
 
   it('gracefully degrades (mints nothing, still resolves) when no email channel is wired', async () => {
@@ -254,9 +286,10 @@ describe('confirmPasswordReset', () => {
 
     clock += 31 * 60_000 // past the 30-minute TTL
 
-    await expect(provider.confirmPasswordReset(raw, 'N3wPassw0rd!')).rejects.toThrow(
-      /invalid or expired/i
-    )
+    await expect(provider.confirmPasswordReset(raw, 'N3wPassw0rd!')).rejects.toMatchObject({
+      name: 'TokenError',
+      code: 'TOKEN_EXPIRED',
+    })
     expect(setPasswordFn).not.toHaveBeenCalled()
     expect(db.__tables.sessions).toHaveLength(1)
   })
@@ -275,9 +308,10 @@ describe('confirmPasswordReset', () => {
     expect(setPasswordFn).toHaveBeenCalledTimes(1)
 
     // Single-use: the second presentation must fail closed.
-    await expect(provider.confirmPasswordReset(raw, 'SecondPassw0rd!')).rejects.toThrow(
-      /invalid or expired/i
-    )
+    await expect(provider.confirmPasswordReset(raw, 'SecondPassw0rd!')).rejects.toMatchObject({
+      name: 'TokenError',
+      code: 'TOKEN_EXPIRED',
+    })
     expect(setPasswordFn).toHaveBeenCalledTimes(1)
   })
 
@@ -291,7 +325,7 @@ describe('confirmPasswordReset', () => {
 
     await expect(
       provider.confirmPasswordReset('deadbeef'.repeat(8), 'N3wPassw0rd!')
-    ).rejects.toThrow(/invalid or expired/i)
+    ).rejects.toMatchObject({ name: 'TokenError', code: 'TOKEN_INVALID' })
     expect(setPasswordFn).not.toHaveBeenCalled()
   })
 
@@ -413,6 +447,28 @@ describe('password-reset routes', () => {
       .post('/v1/security/session/password/reset-confirm')
       .send({ token: 'bad', newPassword: 'N3wPassw0rd!' })
       .expect(400)
+  })
+
+  it('reset-confirm maps TokenError to 400 TOKEN_EXPIRED / TOKEN_INVALID (never 401)', async () => {
+    const { TokenError } = require('../src/providers/authentik/AuthentikIdentityProvider')
+    for (const code of ['TOKEN_EXPIRED', 'TOKEN_INVALID']) {
+      provider.confirmPasswordReset.mockRejectedValueOnce(new TokenError(code))
+      const res = await request(app())
+        .post('/v1/security/session/password/reset-confirm')
+        .send({ token: 'bad', newPassword: 'N3wPassw0rd!' })
+        .expect(400)
+      expect(res.body.code).toBe(code)
+    }
+  })
+
+  it('reset-confirm returns 422 PASSWORD_POLICY when the identity provider rejects the password', async () => {
+    const policyError = Object.assign(new Error('too weak'), { name: 'PasswordPolicyError' })
+    provider.confirmPasswordReset.mockRejectedValueOnce(policyError)
+    const res = await request(app())
+      .post('/v1/security/session/password/reset-confirm')
+      .send({ token: 'tok', newPassword: 'weak' })
+      .expect(422)
+    expect(res.body.code).toBe('PASSWORD_POLICY')
   })
 
   it('reset-confirm 400s on a missing field', async () => {

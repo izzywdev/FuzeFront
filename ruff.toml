@@ -1,9 +1,0 @@
-# Repo-owned ruff config. Deliberately adds nothing but the one exemption below, so
-# ruff's default rule set (which harden-gate pins by version) is unchanged.
-
-[lint.extend-per-file-ignores]
-# .github/actions/fuze-code-action/ is synced verbatim from the FuzeSDLC canonical by
-# governance-sync, which overwrites any local edit. The canonical's test uses
-# percent-format (UP031) at test_rung_gating.py:437, so the finding cannot be fixed
-# here. Remove this entry once FuzeSDLC `v1` ships the f-string form.
-".github/actions/fuze-code-action/__tests__/*" = ["UP031"]

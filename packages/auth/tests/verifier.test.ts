@@ -43,10 +43,113 @@ describe('legacy-hs256', () => {
 
   it('verifies a plain session token (no `kind`) even with a resolver wired', async () => {
     const resolve = jest.fn(async () => ({ tenantId: 't-1', roles: ['admin'] }))
-    const v = createVerifier({ mode: 'legacy-hs256', secret: SECRET, resolver: { resolve } })
+    const v = createVerifier({
+      mode: 'legacy-hs256',
+      secret: SECRET,
+      resolver: { resolve },
+      allowUnvalidatedSessions: true,
+    })
     const id = await v.verify(await hs256({ userId: 'u-1', sessionId: 's-1' }))
     expect(id.userId).toBe('u-1')
+    expect(id.sessionId).toBe('s-1')
     expect(resolve).toHaveBeenCalledTimes(1)
+  })
+
+  describe('session revocation (reject by default)', () => {
+    const tokenWithSession = () => hs256({ userId: 'u-1', sessionId: 's-1' })
+
+    it('REFUSES a token that names a session when nothing can validate it, and never hydrates', async () => {
+      const resolve = jest.fn(async () => ({ tenantId: 't-1', roles: ['admin'] }))
+      const v = createVerifier({ mode: 'legacy-hs256', secret: SECRET, resolver: { resolve } })
+      const token = await tokenWithSession()
+      const err = await v.verify(token).catch((e) => e)
+      expect(err).toBeInstanceOf(AuthError)
+      // A misconfiguration, not a bad credential: loud 500, not a 401 re-login.
+      expect(err.code).toBe('VERIFIER_UNAVAILABLE')
+      expect(err.status).toBe(500)
+      expect(err.message).not.toContain(token)
+      expect(err.message).not.toContain('s-1')
+      expect(resolve).not.toHaveBeenCalled()
+    })
+
+    it('accepts the session when the validator says it is active, and passes it the context', async () => {
+      const sessionValidator = jest.fn(async () => true)
+      const v = createVerifier({ mode: 'legacy-hs256', secret: SECRET, sessionValidator })
+      const id = await v.verify(await tokenWithSession())
+      expect(id.sessionId).toBe('s-1')
+      expect(sessionValidator).toHaveBeenCalledWith('u-1', 's-1', expect.objectContaining({ userId: 'u-1' }))
+    })
+
+    it.each([false, undefined, null, 'true', 1])('treats a validator answer of %p as revoked (only `true` keeps it)', async (answer) => {
+      const v = createVerifier({
+        mode: 'legacy-hs256',
+        secret: SECRET,
+        sessionValidator: (async () => answer) as never,
+      })
+      await expectCode(v.verify(await tokenWithSession()), 'EXPIRED')
+    })
+
+    it('reports a validator that throws as a retryable 503, without echoing its error text', async () => {
+      const v = createVerifier({
+        mode: 'legacy-hs256',
+        secret: SECRET,
+        sessionValidator: async () => { throw new Error('redis password hunter2 down') },
+      })
+      const err = await v.verify(await tokenWithSession()).catch((e) => e)
+      expect(err.code).toBe('VERIFIER_UNAVAILABLE')
+      expect(err.status).toBe(503)
+      expect(err.message).not.toContain('hunter2')
+    })
+
+    it('runs the validator before the resolver hydrates anything', async () => {
+      const resolve = jest.fn(async () => ({ roles: ['admin'] }))
+      const v = createVerifier({
+        mode: 'legacy-hs256',
+        secret: SECRET,
+        resolver: { resolve },
+        sessionValidator: async () => false,
+      })
+      await expectCode(v.verify(await tokenWithSession()), 'EXPIRED')
+      expect(resolve).not.toHaveBeenCalled()
+    })
+
+    it('lets the revocation gap be accepted ONLY explicitly', async () => {
+      const v = createVerifier({ mode: 'legacy-hs256', secret: SECRET, allowUnvalidatedSessions: true })
+      expect((await v.verify(await tokenWithSession())).userId).toBe('u-1')
+    })
+
+    it.each(['true', 'false', '0', 1, {}, []])('only a literal `true` opts out; %p does not', async (flag) => {
+      const v = createVerifier({
+        mode: 'legacy-hs256',
+        secret: SECRET,
+        allowUnvalidatedSessions: flag as never,
+      })
+      const err = await v.verify(await tokenWithSession()).catch((e) => e)
+      expect(err).toBeInstanceOf(AuthError)
+      expect(err.code).toBe('VERIFIER_UNAVAILABLE')
+    })
+
+    it('the explicit opt-out does not switch off a configured validator', async () => {
+      const v = createVerifier({
+        mode: 'legacy-hs256',
+        secret: SECRET,
+        allowUnvalidatedSessions: true,
+        sessionValidator: async () => false,
+      })
+      await expectCode(v.verify(await tokenWithSession()), 'EXPIRED')
+    })
+
+    it.each([5, ['s-1'], '', true, null])('rejects a malformed sessionId %p instead of treating it as "no session"', async (bad) => {
+      const validator = jest.fn(async () => true)
+      const v = createVerifier({ mode: 'legacy-hs256', secret: SECRET, sessionValidator: validator })
+      await expectCode(v.verify(await hs256({ userId: 'u-1', sessionId: bad })), 'MALFORMED')
+      expect(validator).not.toHaveBeenCalled()
+    })
+
+    it('does not affect tokens that name no session', async () => {
+      const v = createVerifier({ mode: 'legacy-hs256', secret: SECRET })
+      expect((await v.verify(await hs256({ sub: 'u-2' }))).userId).toBe('u-2')
+    })
   })
 
   it.each(['fuze-org-session', 'fuze-workload', 'fuze-delegation'])(

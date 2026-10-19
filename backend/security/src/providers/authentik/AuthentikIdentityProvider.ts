@@ -24,7 +24,8 @@ import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db as defaultDb } from '../../config/database'
 import { logger } from '../../lib/logger'
 import { getOidcService, type OIDCServiceLike } from '../../services/oidc'
-import { currentTenant } from './tenants'
+import { currentTenant, currentTenantOrUndefined } from './tenants'
+import { TokenError } from '../errors'
 import { assertAmbientTenant, sessionTenantId } from '../../middleware/tenant-context'
 import { authentikPasswordLogin as defaultPasswordLogin } from '../../services/authentikPassword'
 import { runInternalProvision } from '../../services/organizationProvisioning'
@@ -126,6 +127,9 @@ export class UnauthorizedError extends Error {
   }
 }
 
+// TokenError lives in the provider-neutral layer; re-exported for existing importers.
+export { TokenError }
+
 /**
  * Thrown when an addressed resource does not exist for the CALLER (maps to 404).
  *
@@ -190,6 +194,35 @@ const CHALLENGE_TTL_MS = 5 * 60_000
 const EMAIL_VERIFY_TTL_MS = 30 * 60_000
 /** Reset tokens are short-lived — they are a credential-change capability. */
 const PASSWORD_RESET_TTL_MS = 30 * 60_000
+
+/**
+ * Per-address resend cooldown for the PUBLIC send endpoints. A repeat request
+ * inside this window coalesces into the live challenge and sends nothing, so
+ * the endpoints cannot be used to mail-bomb an account or burn provider quota.
+ * Derived from the live row's expiry (created = expires_at - TTL), so it needs
+ * no schema change and holds across pods.
+ */
+function resendCooldownMs(): number {
+  const n = Number(process.env.EMAIL_RESEND_COOLDOWN_SEC)
+  return (Number.isFinite(n) && n >= 0 ? n : 60) * 1000
+}
+
+/**
+ * The CURRENT tenant's public origin for links in outbound mail. Taken from the
+ * server-side tenant registry only (never client input); `undefined` when there
+ * is no tenant context or the value is not an http(s) origin, in which case
+ * email-service falls back to its own APP_BASE_URL.
+ */
+function tenantMailOrigin(): string | undefined {
+  const raw = currentTenantOrUndefined()?.appBaseUrl
+  if (!raw) return undefined
+  try {
+    const u = new URL(raw)
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.origin : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * Password reset needs only a deliverable email channel — unlike registration
@@ -1020,6 +1053,21 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       return
     }
 
+    // Cooldown: a live challenge minted inside the window coalesces this request
+    // (nothing sent, nothing minted). Silent, so the caller's 202 is identical.
+    const live = await this.db('password_resets')
+      .where({ user_id: user.id, consumed: false })
+      .first()
+    if (
+      live &&
+      new Date(live.expires_at).getTime() > this.now() + PASSWORD_RESET_TTL_MS - resendCooldownMs()
+    ) {
+      logger.info({ contact: maskContact(user.email) }, 'authentik: password reset coalesced (cooldown)')
+      return
+    }
+
+    const mailOrigin = tenantMailOrigin()
+
     // Invalidate any outstanding challenge for this user, so a reset request
     // supersedes its predecessors rather than leaving several live tokens.
     await this.db('password_resets')
@@ -1037,7 +1085,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     })
 
     try {
-      await this.notifications.sendPasswordReset(user.email, resetToken)
+      await this.notifications.sendPasswordReset(user.email, resetToken, mailOrigin)
     } catch (err) {
       // Dispatch failure must not become an enumeration oracle (a 5xx for real
       // accounts only). Burn the token and resolve; the user can retry.
@@ -1045,7 +1093,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
         .where({ token_hash: sha256(resetToken) })
         .update({ consumed: true })
       logger.error(
-        { contact: maskContact(user.email), err },
+        { contact: maskContact(user.email), userId: user.id, err: (err as Error)?.message },
         'authentik: password reset dispatch failed'
       )
     }
@@ -1066,15 +1114,16 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     }
 
     const row = await this.db('password_resets')
-      .where({ token_hash: sha256(token), consumed: false })
+      .where({ token_hash: sha256(token) })
       .first()
-    // Unknown, already-consumed, and expired all fail identically.
-    if (!row || new Date(row.expires_at).getTime() < this.now()) {
-      throw new InvalidInputError('invalid or expired reset token')
+    if (!row) throw new TokenError('TOKEN_INVALID', 'invalid reset token')
+    // Already-consumed and expired share a remedy for the user: request a new link.
+    if (row.consumed || new Date(row.expires_at).getTime() < this.now()) {
+      throw new TokenError('TOKEN_EXPIRED', 'reset token expired or already used')
     }
 
     const user = await this.db('users').where({ id: row.user_id }).first()
-    if (!user) throw new InvalidInputError('invalid or expired reset token')
+    if (!user) throw new TokenError('TOKEN_INVALID', 'invalid reset token')
 
     // Set the credential in the identity store FIRST. If this throws (policy
     // rejection / store unavailable) the token stays live so a valid retry with
@@ -1094,31 +1143,33 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
   // ── Contact-ownership verification ────────────────────────────────────────
   async startEmailVerification(token: string | null, email?: string): Promise<void> {
-    let userId: string | null = null
-    let target = email
+    // The verification TARGET is never client-chosen. With a bearer it is the
+    // authenticated account's own email (a body `email` is ignored — otherwise a
+    // user could "verify" their account through any mailbox they control). With
+    // no bearer the user is resolved server-side from the supplied address; an
+    // unknown address is a silent no-op so the 202 leaks nothing (no enumeration).
+    let user: { id: string; email: string } | undefined
     if (token) {
-      const { user } = await this.getUserInfo(token)
-      userId = user.id
-      target = target || user.email
+      user = (await this.getUserInfo(token)).user
+    } else {
+      if (!email || typeof email !== 'string') throw new InvalidInputError('email is required')
+      user = await this.db('users').whereRaw('LOWER(email) = ?', [email.trim().toLowerCase()]).first()
+      if (!user) {
+        logger.warn(
+          { contact: maskContact(email) },
+          'authentik: email verification requested for unknown address — no-op',
+        )
+        return
+      }
     }
-    if (!target) throw new InvalidInputError('email is required')
+    const target = user.email
+    if (!target) throw new InvalidInputError('account has no email')
 
     // Degrade mode: verification not required (flag off) or no email-service
     // wired — auto-verify the local projection and log. Never strand the user on
     // an undeliverable challenge.
     if (!emailVerificationEnabled()) {
-      // Resolve by EMAIL when there is no token: the signup path calls this with
-      // an address and no session, so `userId` is null there. Gating the update
-      // on `userId` meant that path updated NOTHING while still logging
-      // "auto-verified" — the account stayed unverified and the log said
-      // otherwise. Harmless while the flag is off, but it strands exactly those
-      // accounts the moment REQUIRE_EMAIL_VERIFICATION is switched on.
-      const updated = userId
-        ? await this.db('users').where({ id: userId }).update({ email_verified: true })
-        : await this.db('users').where({ email: target }).update({ email_verified: true })
-
-      // Log what actually happened. `updated === 0` is legitimate (the user row
-      // may not be synced yet mid-signup) but it must not read as success.
+      const updated = await this.db('users').where({ id: user.id }).update({ email_verified: true })
       console.warn(
         updated
           ? `[security] email verification degraded (auto-verified ${maskContact(
@@ -1126,37 +1177,83 @@ export class AuthentikIdentityProvider implements IdentityProvider {
             )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`
           : `[security] email verification degraded and NO user row matched ${maskContact(
               target,
-            )} — left unverified; it will be promoted on first login via the OIDC email_verified claim.`,
+            )} — left unverified.`,
       )
       return
     }
 
+    // Cooldown: coalesce a repeat request into the live challenge (send nothing).
+    const liveRows = await this.db('email_verifications').where({ user_id: user.id, consumed: false })
+    const cooling = (liveRows as any[]).some(
+      r => new Date(r.expires_at).getTime() > this.now() + EMAIL_VERIFY_TTL_MS - resendCooldownMs(),
+    )
+    if (cooling) {
+      logger.info({ contact: maskContact(target) }, 'authentik: email verification coalesced (cooldown)')
+      return
+    }
+
+    const mailOrigin = tenantMailOrigin() // captured before any async hop (ALS context)
     const linkToken = crypto.randomBytes(32).toString('hex')
     const code = ('' + crypto.randomInt(0, 1_000_000)).padStart(6, '0')
     await this.db('email_verifications').insert({
       id: uuidv4(),
-      user_id: userId,
+      user_id: user.id,
       email: target,
       token_hash: sha256(linkToken),
       code_hash: sha256(code),
       expires_at: new Date(this.now() + EMAIL_VERIFY_TTL_MS),
       consumed: false,
     })
-    await this.notifications.sendEmailVerification(target, linkToken, code)
+    const logFailure = (err: unknown) =>
+      logger.error(
+        { contact: maskContact(target), userId: user!.id, err: (err as Error)?.message },
+        'authentik: email verification dispatch failed',
+      )
+    if (token) {
+      // An authenticated caller owns the account and may be told about a failure.
+      try {
+        await this.notifications.sendEmailVerification(target, linkToken, code, mailOrigin)
+      } catch (err) {
+        logFailure(err)
+        throw err
+      }
+    } else {
+      // Anonymous: dispatch is fire-and-forget so a known address does not wait
+      // on the mail send while an unknown one returns at once (timing oracle),
+      // and a failure cannot become a 5xx-for-real-accounts oracle.
+      void this.notifications
+        .sendEmailVerification(target, linkToken, code, mailOrigin)
+        .catch(logFailure)
+    }
   }
 
   async confirmEmailVerification(input: { token?: string; code?: string }): Promise<VerificationStatus> {
     if (!input.token && !input.code) throw new InvalidInputError('token or code is required')
-    const q = this.db('email_verifications').where({ consumed: false })
-    if (input.token) q.andWhere({ token_hash: sha256(input.token) })
-    else q.andWhere({ code_hash: sha256(input.code as string) })
-    const row = await q.first()
-    if (!row || new Date(row.expires_at).getTime() < this.now()) {
-      throw new UnauthorizedError('invalid or expired verification')
+    const hash = input.token ? sha256(input.token) : sha256(input.code as string)
+    const matches = (await this.db('email_verifications').where(
+      input.token ? { token_hash: hash } : { code_hash: hash },
+    )) as any[]
+    // Prefer a LIVE (unconsumed, unexpired) row: a spent row with the same OTP
+    // must not shadow it. Only when none is live do we pick the error.
+    const row = matches.find(r => !r.consumed && new Date(r.expires_at).getTime() >= this.now())
+    if (!row) {
+      if (matches.length === 0) throw new TokenError('TOKEN_INVALID', 'invalid verification token')
+      throw new TokenError('TOKEN_EXPIRED', 'verification expired or already used')
     }
+    // A challenge with no owning user can never verify anyone.
+    if (!row.user_id) throw new TokenError('TOKEN_INVALID', 'invalid verification token')
+
     await this.db('email_verifications').where({ id: row.id }).update({ consumed: true })
-    if (row.user_id) {
-      await this.db('users').where({ id: row.user_id }).update({ email_verified: true })
+
+    // Only verify if the challenge's target is STILL the account's email: the
+    // address that received the link must be the one being marked verified.
+    const updated = await this.db('users')
+      .where({ id: row.user_id })
+      .whereRaw('LOWER(email) = ?', [String(row.email).toLowerCase()])
+      .update({ email_verified: true })
+    if (!updated) {
+      logger.warn({ userId: row.user_id }, 'authentik: email verification target no longer matches account — not verified')
+      throw new TokenError('TOKEN_INVALID', 'invalid verification token')
     }
     return { emailVerified: true, phoneVerified: false }
   }

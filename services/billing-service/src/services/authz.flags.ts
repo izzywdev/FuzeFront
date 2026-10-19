@@ -31,6 +31,11 @@ export const FLAGS = {
    *  billing.subscription.changed projection are unaffected either way —
    *  this flag only gates the Permit ABAC attribute sync). */
   AUTHZ_ENABLED: 'fuzefront.billing.authz-enabled',
+  /** Release flag — gates whether syncPlanFlags calls the Unleash Admin API
+   *  to maintain per-org plan-tier permission flag states.
+   *  Default: false (OFF) — dark deploy; flip via prod-unleash-ops.yml.
+   *  Env var: FUZEFRONT_BILLING_PLAN_FLAG_SYNC_ENABLED */
+  PLAN_FLAG_SYNC_ENABLED: 'fuzefront.billing.plan-flag-sync-enabled',
 } as const;
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS];
