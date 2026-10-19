@@ -99,6 +99,29 @@ const toColorValue = (v) => {
   return m ? `{${m[1].slice(2)}}` : v.trim()
 }
 
+// The responsive breakpoint scale lives as the authoritative reference comment in
+// spacing.css (it drives hand-written @media queries, not a token). Parse it so the
+// Mobile & responsiveness guideline is derived from the source and cannot drift:
+// change the comment and the brand book changes with it, or the drift gate fails.
+// Static regexes only (no `new RegExp(var)`) per the Semgrep non-literal-regexp rule.
+function parseBreakpoints(rawSpacingCss) {
+  const block = /Breakpoints \(reference values for @media queries\)([\s\S]*?)\*\//.exec(rawSpacingCss)
+  if (!block) throw new Error('responsive: breakpoint reference comment not found in spacing.css')
+  const lineRe = /^\s*(xs|sm|md|lg|xl)\s+(<?\s*\d+px)\s+—\s+([^→\n]+?)(?:\s+→\s+(.+?))?\s*$/gm
+  const rows = []
+  let m
+  while ((m = lineRe.exec(block[1]))) {
+    rows.push({
+      name: m[1],
+      value: m[2].replace(/\s+/g, ' ').trim(),
+      device: m[3].trim(),
+      shell: (m[4] || '').trim(),
+    })
+  }
+  if (rows.length < 3) throw new Error(`responsive: parsed only ${rows.length} breakpoints from spacing.css comment`)
+  return rows
+}
+
 /* ============================================================
    tokens.json  — values parsed from CSS, prose curated here
    ============================================================ */
@@ -453,7 +476,58 @@ function specimenPreview(name, group, dir) {
 /* ============================================================
    assemble
    ============================================================ */
-function buildReadme(componentsByGroup, tokenCount) {
+function buildResponsive(componentsByGroup, breakpoints) {
+  const bpRows = breakpoints
+    .map((b) => `| \`${b.name}\` | ${b.value} | ${b.device}${b.shell ? ` | ${b.shell}` : ' | —'} |`)
+    .join('\n')
+  const mobile = (componentsByGroup.mobile || []).map((n) => `\`${n}\``).join(', ') || '—'
+  return `## Mobile & responsiveness
+
+FuzeFront is one shell rendered from phone to wide desktop; it is **mobile-first**. Build the
+narrow (\`xs\`) layout from the base tokens, then layer wider layouts with \`min-width\` media
+queries at the breakpoints below. The breakpoints are not tokens — they are the reference
+scale for hand-written \`@media\` queries (and are mirrored in the shell's layout logic).
+
+| Breakpoint | Min width | Device | Shell change |
+|---|---|---|---|
+${bpRows}
+
+### Navigation adapts at \`md\`
+Below \`md\` (tablet) the persistent left \`side-panel\` is replaced by a **bottom nav**
+(\`BottomNav\`, height \`bottom-nav-height\`) plus a slide-in **drawer** (\`Drawer\`, width
+\`drawer-width\`), and the top bar collapses to \`top-bar-height-mobile\`. At \`md\` and up the
+side panel returns and the bottom nav is hidden. Secondary actions that are a popover/menu on
+desktop become a **bottom sheet** (\`BottomSheet\`, max height \`sheet-max-h\`) on touch.
+
+### Touch & reach
+- **Tap targets are ≥ \`touch-target\` (44px, WCAG 2.5.5)** on every interactive element on
+  touch viewports — buttons, nav items, list rows, icon-only controls. Spacing between adjacent
+  targets comes from the \`space-*\` scale, never a hand-tuned px gap.
+- Put primary actions within thumb reach (bottom of the viewport) on phones — this is what the
+  bottom nav and bottom sheet are for; a top-right action bar is desktop-only.
+
+### Safe areas & viewport
+- Honour device insets with the \`safe-area-*\` tokens (\`safe-area-top\`/\`-bottom\`/\`-left\`/\`-right\`,
+  backed by \`env(safe-area-inset-*)\`) on any element that reaches a screen edge — the top bar,
+  the bottom nav, and a full-height drawer or sheet — so content clears the notch and home
+  indicator. These resolve to \`0\` on non-notched devices, so they are always safe to apply.
+- Use dynamic-viewport units (the bottom sheet caps at \`sheet-max-h\` = \`80dvh\`) rather than
+  \`vh\`, so mobile browser chrome collapsing does not clip the UI.
+- Respect \`prefers-reduced-motion\`: drawer/sheet transitions use the token motion scale and
+  collapse to an instant change when the user has asked for reduced motion.
+
+### Fluid layout, not fixed
+Compose pages from \`Container\` (content max-widths \`container-2xl\`…\`container-7xl\`),
+\`ResponsiveGrid\`, \`Stack\` and \`Wrap\` so a layout reflows by itself instead of switching on a
+pixel width. Reach for a breakpoint only for a genuine structural change (nav, multi-column →
+single column), not for sizing a single element.
+
+Mobile primitives: ${mobile}. They encode these rules — prefer them over re-implementing a
+drawer, bottom nav or sheet in feature code.
+`
+}
+
+function buildReadme(componentsByGroup, tokenCount, responsiveSection) {
   const rows = Object.entries(componentsByGroup)
     .map(([g, names]) => `| ${GROUP_LABEL[g] || g} | ${names.map((n) => `\`${n}\``).join(', ')} |`)
     .join('\n')
@@ -494,6 +568,7 @@ Three families, each with a job: **Space Grotesk** (\`display\`) carries the per
 - **Shadows** are deep and soft, tuned for the dark shell; \`shadow-accent\` is the indigo glow reserved for a primary button.
 - **Z-index** is one ladder (\`z-base\` → \`z-tooltip\`) so overlays never collide.
 
+${responsiveSection}
 ## Components
 
 ${total} primitives across ${Object.keys(componentsByGroup).length} groups, each styled entirely with tokens — no raw hex, px or font outside the token set. Guideline docs are generated from each component's source \`.prompt.md\` / \`.d.ts\`; a curated set carries a rich visual preview (the rest show a usage specimen). The authoritative implementations ship as the private npm package \`@fuzefront/design-system\`.
@@ -604,7 +679,8 @@ function generate() {
   if (existsSync(coverSrc)) emit('components/Cover/preview.html', withFonts(read(coverSrc)))
 
   // README (brand book) + index — after components so counts are known
-  emit('README.md', buildReadme(byGroup, tokens.color.tokens.length))
+  const breakpoints = parseBreakpoints(read(join(DS_ROOT, 'tokens/spacing.css')))
+  emit('README.md', buildReadme(byGroup, tokens.color.tokens.length, buildResponsive(byGroup, breakpoints)))
   emit('design-system.json', JSON.stringify(buildIndex(), null, 2))
 
   return { componentCount: compFiles.length, groupCount: Object.keys(byGroup).length }

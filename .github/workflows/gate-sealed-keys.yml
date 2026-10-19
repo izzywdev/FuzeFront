@@ -10,6 +10,12 @@ name: gate-sealed-keys
 on:
   pull_request:
     branches: [master]
+  # Manual escape hatch: `pull_request` carries no base ref/labels, so a
+  # workflow_dispatch run falls back to diffing against `master` with no
+  # label-based removal allowance — same reasoning as gate-required-checks.yml's
+  # own workflow_dispatch (a required context that only ever fires on
+  # `pull_request` has no recovery path if that event stops being delivered).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,8 +31,8 @@ jobs:
 
       - name: Check for SealedSecret key regressions
         env:
-          BASE_REF: ${{ github.base_ref }}
-          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          BASE_REF: ${{ github.base_ref || 'master' }}
+          LABELS: ${{ github.event.pull_request && toJson(github.event.pull_request.labels.*.name) || '[]' }}
         run: |
           set -euo pipefail
           git fetch origin "$BASE_REF" --quiet

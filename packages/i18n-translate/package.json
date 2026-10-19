@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/i18n-translate",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -45,7 +45,7 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run --passWithNoTests src",
     "test:watch": "vitest --watch",
-    "clean": "rimraf dist",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {

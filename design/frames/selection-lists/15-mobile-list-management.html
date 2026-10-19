@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — List management at 375 px, LTR and RTL (he)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<link rel="stylesheet" href="mobile.css" />
+</head>
+<body>
+<div class="content" data-frame="15-mobile-list-management" style="padding-top: var(--space-12);">
+
+  <h1 class="page-title">List management — 375 px, English · עברית</h1>
+  <p class="page-sub">Frames 1a–1f at a phone width. Same components, same data, same hooks as desktop; tables become one card per row,
+    row actions move into a sheet, dialogs become the design system's <b>BottomSheet</b>, and a quota-blocked button explains itself in text
+    because a phone has no hover to show a tooltip.</p>
+
+  <div class="sl-devices">
+
+    <!-- ===== 1 · EN · index ready ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · index</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen" data-panel="list-index-mobile" data-state="ready">
+          <h2 class="page-title">Selection Lists</h2>
+          <p class="page-sub">Reference data your organization owns.</p>
+          <a class="btn btn-primary sl-block" href="02-new-list.html" data-action="new-list">+ New list</a>
+          <div class="sl-field" style="margin-top: var(--space-3);">
+            <input class="sl-input" type="search" data-filter="search" placeholder="Search name or key…" aria-label="Search name or key" />
+          </div>
+          <div class="sl-field">
+            <select class="sl-input" data-filter="status" aria-label="Status filter">
+              <option value="active" selected>Active</option><option value="archived">Archived</option><option value="all">All</option>
+            </select>
+          </div>
+          <div class="sl-mlist" role="list">
+            <a class="sl-mrow" role="listitem" href="03-list-detail.html" data-list="countries">
+              <span class="sl-mrow__title">Countries</span>
+              <span class="sl-mrow__end"><span class="sl-mrow__chev" aria-hidden="true">›</span></span>
+              <span class="sl-mrow__meta"><span class="sl-key">countries</span> 249 items <span class="sl-pill sl-pill--active" data-status="active">active</span></span>
+            </a>
+            <a class="sl-mrow" role="listitem" href="03-list-detail.html" data-list="ticket-priorities">
+              <span class="sl-mrow__title">Ticket priorities</span>
+              <span class="sl-mrow__end"><span class="sl-mrow__chev" aria-hidden="true">›</span></span>
+              <span class="sl-mrow__meta"><span class="sl-key">ticket-priorities</span> 5 items <span class="sl-pill sl-pill--active" data-status="active">active</span></span>
+            </a>
+            <a class="sl-mrow" role="listitem" href="03-list-detail.html" data-list="lead-status">
+              <span class="sl-mrow__title">Statut du prospect <span class="sl-pill sl-pill--machine" data-machine="true" title="Machine-translated from en">M</span></span>
+              <span class="sl-mrow__end"><span class="sl-mrow__chev" aria-hidden="true">›</span></span>
+              <span class="sl-mrow__meta"><span class="sl-key">lead-status</span> 8 items <span class="sl-pill sl-pill--active" data-status="active">active</span></span>
+            </a>
+            <a class="sl-mrow sl-mrow--archived" role="listitem" href="03-list-detail.html" data-list="legacy-segments">
+              <span class="sl-mrow__title">Legacy segments</span>
+              <span class="sl-mrow__end"><span class="sl-mrow__chev" aria-hidden="true">›</span></span>
+              <span class="sl-mrow__meta"><span class="sl-key">legacy-segments</span> 0 items <span class="sl-pill sl-pill--archived" data-status="archived">archived</span></span>
+            </a>
+          </div>
+          <p class="sl-field__hint">Showing 4 of 12 · owner and last-updated move into the list's detail.</p>
+          <button class="btn btn-ghost sl-block" data-action="load-more">Load more</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 2 · HE · RTL · list detail ===== -->
+    <div>
+      <p class="sl-device__label">he · rtl · 375 · list detail</p>
+      <div class="sl-device" dir="rtl" lang="he" data-device="375" data-locale="he" data-dir="rtl">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="פתיחת ניווט" data-action="open-drawer">☰</button><div class="wordmark" dir="ltr"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen" data-panel="value-editor-mobile" data-state="ready">
+          <div class="sl-crumb"><a href="01-list-index.html">רשימות בחירה</a> · מדינות</div>
+          <h2 class="page-title">מדינות</h2>
+          <p class="page-sub"><span class="sl-key" dir="ltr">countries</span> <span class="sl-pill sl-pill--source">source: en</span></p>
+          <div class="sl-tabs" role="tablist" data-tabs="list-detail">
+            <a class="sl-tab" role="tab" aria-selected="true" href="03-list-detail.html" data-tab="values">ערכים</a>
+            <a class="sl-tab" role="tab" aria-selected="false" href="16-mobile-translation-workbench.html" data-tab="translations">תרגומים</a>
+            <a class="sl-tab" role="tab" aria-selected="false" href="17-mobile-access-control.html" data-tab="access">הרשאות</a>
+            <a class="sl-tab" role="tab" aria-selected="false" href="#" data-tab="audit">יומן ביקורת</a>
+          </div>
+          <a class="btn btn-primary sl-block" href="04-value-modal.html" data-action="add-value">+ הוספת ערך</a>
+          <div class="sl-mlist" role="list" data-reorderable="true" style="margin-top: var(--space-3);">
+            <div class="sl-mrow sl-mrow--lead" role="listitem" data-item="sli_01h455vb4pex5vsknk084sn02q" data-sort-order="1">
+              <button class="sl-iconbtn" data-drag-handle aria-label="שינוי מיקום: ארצות הברית">⠿</button>
+              <span class="sl-mrow__title">ארצות הברית</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="value-actions" aria-label="פעולות נוספות: ארצות הברית">⋯</button></span>
+              <span class="sl-mrow__meta"><span class="sl-key" dir="ltr">US</span> <span class="sl-pill sl-pill--active" data-status="active">פעיל</span></span>
+            </div>
+            <div class="sl-mrow sl-mrow--lead" role="listitem" data-item="sli_02h455vb4pex5vsknk084sn02q" data-sort-order="2">
+              <button class="sl-iconbtn" data-drag-handle aria-label="שינוי מיקום: קנדה">⠿</button>
+              <span class="sl-mrow__title">קנדה</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="value-actions" aria-label="פעולות נוספות: קנדה">⋯</button></span>
+              <span class="sl-mrow__meta"><span class="sl-key" dir="ltr">CA</span> <span class="sl-pill sl-pill--active" data-status="active">פעיל</span></span>
+            </div>
+            <div class="sl-mrow sl-mrow--lead" role="listitem" data-item="sli_03h455vb4pex5vsknk084sn02q" data-sort-order="3">
+              <button class="sl-iconbtn" data-drag-handle aria-label="שינוי מיקום: הממלכה המאוחדת">⠿</button>
+              <span class="sl-mrow__title">הממלכה המאוחדת</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="value-actions" aria-label="פעולות נוספות: הממלכה המאוחדת">⋯</button></span>
+              <span class="sl-mrow__meta"><span class="sl-key" dir="ltr">GB</span> <span class="sl-pill sl-pill--active" data-status="active">פעיל</span></span>
+            </div>
+            <div class="sl-mrow sl-mrow--lead sl-mrow--archived" role="listitem" data-item="sli_04h455vb4pex5vsknk084sn02q" data-sort-order="4" data-archived="true">
+              <span class="sl-iconbtn" aria-hidden="true" style="opacity: 0.4;">⠿</span>
+              <span class="sl-mrow__title">יוגוסלביה</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="value-actions" aria-label="פעולות נוספות: יוגוסלביה">⋯</button></span>
+              <span class="sl-mrow__meta"><span class="sl-key" dir="ltr">YU</span> <span class="sl-pill sl-pill--archived" data-status="archived">בארכיון</span></span>
+            </div>
+          </div>
+          <p class="sl-field__hint">מציג 4 מתוך 249</p>
+          <button class="btn btn-ghost sl-block" data-action="load-more">טעינת עוד</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 3 · EN · edit value as a bottom sheet ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · edit value</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen sl-device__screen--sheet">
+          <div class="sl-device__behind" aria-hidden="true"><h2 class="page-title">Countries</h2></div>
+          <div class="sl-sheet" role="dialog" aria-modal="true" aria-labelledby="m3-t" data-dialog="value" data-presentation="bottom-sheet" data-mode="edit" data-state="idle">
+            <div class="sl-sheet__grab" aria-hidden="true"></div>
+            <div class="sl-modal__head"><h3 class="sl-modal__title" id="m3-t">Edit value</h3>
+              <p class="sl-modal__sub">Countries · source locale en</p></div>
+            <div class="sl-modal__body">
+              <div class="sl-field">
+                <label class="sl-field__label" for="m3-label">Label (en)</label>
+                <input class="sl-input" id="m3-label" value="United Kingdom" data-field="label" />
+              </div>
+              <div class="sl-field">
+                <span class="sl-field__label">Code <span class="sl-field__lock">locked after create</span></span>
+                <input class="sl-input mono" value="GB" disabled aria-label="Code (locked)" data-field="code" />
+              </div>
+              <div class="sl-persist" data-item-id>
+                <div class="sl-persist__label">What consuming apps store</div>
+                <code>sli_03h455vb4pex5vsknk084sn02q</code>
+              </div>
+            </div>
+            <div class="sl-modal__foot">
+              <button class="btn btn-ghost" data-action="archive-value">Archive</button>
+              <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+              <button class="btn btn-primary" data-action="save-value">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 4 · EN · touch reorder ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · reorder (touch)</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen" data-panel="value-editor-mobile" data-state="dragging">
+          <h2 class="page-title">Countries</h2>
+          <p class="page-sub">Long-press a handle to lift a row, then drag — or use the buttons. Either way the drop sends the full permutation.</p>
+          <div class="sl-mlist" role="list" data-reorderable="true" aria-live="polite">
+            <div class="sl-mrow sl-mrow--lead" role="listitem" data-item="sli_01h455vb4pex5vsknk084sn02q" data-sort-order="1">
+              <button class="sl-iconbtn" data-drag-handle aria-label="Reorder United States">⠿</button>
+              <span class="sl-mrow__title">United States</span><span class="sl-mrow__end"></span>
+              <span class="sl-mrow__meta"><span class="sl-key">US</span></span>
+            </div>
+            <div class="sl-mrow sl-mrow--lead sl-mrow--lifted" role="listitem" data-item="sli_03h455vb4pex5vsknk084sn02q" data-dragging="true" aria-grabbed="true">
+              <button class="sl-iconbtn" data-drag-handle aria-pressed="true" aria-label="Reorder United Kingdom, lifted, position 2 of 4">⠿</button>
+              <span class="sl-mrow__title">United Kingdom</span><span class="sl-mrow__end"></span>
+              <span class="sl-mrow__meta"><span class="sl-key">GB</span> position 2 of 4</span>
+              <div class="sl-movebar" data-control="touch-reorder">
+                <button class="btn btn-ghost" data-action="move-up" aria-label="Move up">↑ Up</button>
+                <button class="btn btn-ghost" data-action="move-down" aria-label="Move down">↓ Down</button>
+                <button class="btn btn-primary" data-action="drop">Done</button>
+              </div>
+            </div>
+            <div class="sl-mrow sl-mrow--lead sl-mrow--ghost" role="listitem" data-item="sli_02h455vb4pex5vsknk084sn02q">
+              <span class="sl-iconbtn" aria-hidden="true">⠿</span>
+              <span class="sl-mrow__title">Canada</span><span class="sl-mrow__end"></span>
+              <span class="sl-mrow__meta"><span class="sl-key">CA</span></span>
+            </div>
+          </div>
+          <p class="sl-mcase">Saving</p>
+          <div class="sl-banner sl-banner--warn" data-state="saving" style="margin-bottom: var(--space-2);">
+            <span class="sl-banner__ico" aria-hidden="true">⟳</span>
+            <div class="sl-banner__body"><p class="sl-banner__title">Saving new order…</p><p>Other handles are locked until it settles.</p></div>
+          </div>
+          <div class="sl-banner sl-banner--error" data-state="error" data-error="reorder-failed" style="margin-bottom: 0;">
+            <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+            <div class="sl-banner__body"><p class="sl-banner__title">Couldn't save the new order</p><p>Rows were put back. <button class="btn btn-ghost sl-btn-sm" data-action="retry">Retry</button></p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 5 · EN · quota wall ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · quota wall</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen" data-panel="quota-mobile">
+          <h2 class="page-title">Selection Lists</h2>
+          <div class="sl-banner sl-banner--warn" data-banner="quota-near" data-quota-state="near">
+            <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+            <div class="sl-banner__body"><p class="sl-banner__title">Approaching your organization's list limit</p>
+              <p><code class="sl-code">org_lists</code> — <b>84 of 100</b> used.</p></div>
+          </div>
+          <button class="btn btn-primary sl-block" data-action="new-list" disabled aria-disabled="true" aria-describedby="m5-why">+ New list</button>
+          <p class="sl-reason" id="m5-why" data-reason="quota" data-quota-state="at-limit"><span aria-hidden="true">⛔</span>
+            <span><b>You've reached 20 of 20 lists you own</b> (<code class="sl-code">user_lists</code>). Transfer or archive a list, or ask an org admin to raise the limit.</span></p>
+          <div class="sl-quota" data-panel="quota" style="margin-top: var(--space-4);">
+            <div class="sl-quota__cell" data-quota-scope="org_lists" data-quota-state="near">
+              <div class="sl-quota__scope">org_lists · per organization</div>
+              <div class="sl-quota__num">84 <small>/ 100</small></div>
+              <div class="sl-meter"><div class="sl-meter__fill sl-meter__fill--warn" style="width: 84%;"></div></div>
+            </div>
+            <div class="sl-quota__cell" data-quota-scope="user_lists" data-quota-state="at-limit">
+              <div class="sl-quota__scope">user_lists · per user</div>
+              <div class="sl-quota__num">20 <small>/ 20</small></div>
+              <div class="sl-meter"><div class="sl-meter__fill sl-meter__fill--full" style="width: 100%;"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 6 · EN · archived value actions sheet ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · value actions</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen sl-device__screen--sheet">
+          <div class="sl-device__behind" aria-hidden="true"><h2 class="page-title">Countries</h2></div>
+          <div class="sl-sheet" role="dialog" aria-modal="true" aria-labelledby="m6-t" data-dialog="value-actions" data-presentation="bottom-sheet">
+            <div class="sl-sheet__grab" aria-hidden="true"></div>
+            <div class="sl-modal__head"><h3 class="sl-modal__title" id="m6-t">Yugoslavia <span class="sl-pill sl-pill--archived">archived</span></h3>
+              <p class="sl-modal__sub">Hidden from every picker; stored ids still resolve.</p></div>
+            <div class="sl-modal__foot">
+              <button class="btn btn-ghost" data-action="restore-value">Restore</button>
+              <a class="btn sl-btn-danger" href="04-value-modal.html" data-action="purge-value">Delete… (typed confirmation)</a>
+              <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section" style="margin-top: var(--space-10);">
+    <h2>States at 375 px</h2>
+    <p class="sl-caption">Same states as frames 1a and 1c, same copy; only the layout changes.</p>
+    <div class="sl-devices">
+      <div>
+        <p class="sl-device__label">loading</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="list-index-mobile" data-state="loading" aria-busy="true">
+          <div class="sl-mlist"><div class="sl-mrow"><span class="sl-skel" style="width: 60%;"></span></div><div class="sl-mrow"><span class="sl-skel" style="width: 72%;"></span></div><div class="sl-mrow"><span class="sl-skel" style="width: 54%;"></span></div></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">empty</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="list-index-mobile" data-state="empty">
+          <div class="sl-state"><div class="sl-state__ico" aria-hidden="true">☰</div><h3 class="sl-state__title">No selection lists yet</h3>
+            <p class="sl-state__body">Define your first list and every app in this organization can use it.</p>
+            <a class="btn btn-primary sl-block" href="02-new-list.html" data-action="new-list">+ New list</a></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">error</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="list-index-mobile" data-state="error">
+          <div class="sl-state"><div class="sl-state__ico" aria-hidden="true">⚠</div><h3 class="sl-state__title">Couldn't load selection lists</h3>
+            <p class="sl-state__body">Your lists are safe — nothing has been changed.</p>
+            <button class="btn btn-ghost sl-block" data-action="retry">Retry</button></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">404 — list not found</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="value-editor-mobile" data-state="not-found">
+          <div class="sl-state"><div class="sl-state__ico" aria-hidden="true">∅</div><h3 class="sl-state__title">List not found</h3>
+            <p class="sl-state__body" data-error="NOT_FOUND">No list with that id, or you don't have access to it.</p>
+            <a class="btn btn-ghost sl-block" href="01-list-index.html">Back to all lists</a></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section">
+    <h2>Rules the implementation must keep</h2>
+    <ul class="sl-mrules" data-rules="mobile-list-management">
+      <li><b>At ≤ 40em</b> (≈ 640 CSS px) the shell's side navigation collapses to the menu button (DS <b>Drawer</b>), and
+        every table in this flow renders as one card per row: name first, then key, count and status. Owner and last-updated
+        are not dropped — they live on the list's detail.</li>
+      <li><b>Touch targets are at least the DS <code class="sl-code">--touch-target</code> (44 px)</b> — buttons, inputs, tabs,
+        drag handles and the row-actions button. No horizontal scroll at 375 px; the tab bar may scroll sideways on its own.</li>
+      <li><b>Row actions move into a “More actions” sheet</b> with exactly the desktop actions for that row — Edit / Archive for
+        active values, Restore / Delete… for archived ones. Delete still opens the typed-confirmation dialog of frame 1d; a
+        phone never gets a shorter path to a purge.</li>
+      <li><b>Reorder works without a keyboard and without precise dragging.</b> Long-press lifts a row (pointer drag), and a
+        lifted row shows <b>Up / Down / Done</b> buttons that do what ↑ / ↓ / Space do on desktop. Each move is announced in
+        the live region; the drop sends the full permutation; a failed save puts rows back.</li>
+      <li><b>Dialogs become the DS BottomSheet</b> (max height <code class="sl-code">--sheet-max-h</code>) with stacked
+        full-width actions, primary action last (nearest the thumb). Code stays locked on edit and the
+        <code class="sl-code">sli_…</code> id is still shown.</li>
+      <li><b>A disabled CTA explains itself in visible text</b> directly under the button (<code class="sl-code">aria-describedby</code>),
+        because a tooltip cannot be hovered on touch. Quota failing open (frame 1f) is unchanged.</li>
+      <li><b>RTL</b> (<code class="sl-code">he</code>, <code class="sl-code">ar</code>): direction comes from the locale, layout uses logical
+        properties, keys and codes are LTR islands, and the row chevron mirrors; the drag-handle glyph does not.</li>
+    </ul>
+  </div>
+
+  <p class="sl-notes">
+    <b>Test hooks:</b> <code>[data-frame='15-mobile-list-management']</code> · <code>[data-device='375']</code> · <code>[data-panel='list-index-mobile']</code> · <code>[data-panel='value-editor-mobile']</code> · <code>[data-locale='he'][data-dir='rtl']</code> · <code>[data-action='open-drawer']</code> · <code>[data-action='new-list']</code> · <code>[data-action='value-actions']</code> · <code>[data-drag-handle]</code> · <code>[data-control='touch-reorder']</code> · <code>[data-action='move-up']</code> · <code>[data-action='move-down']</code> · <code>[data-dialog='value'][data-presentation='bottom-sheet']</code> · <code>[data-dialog='value-actions']</code> · <code>[data-reason='quota']</code> · <code>[data-state='loading']</code> · <code>[data-state='empty']</code> · <code>[data-state='error']</code> · <code>[data-state='not-found']</code> · <code>[data-rules='mobile-list-management']</code><br />
+    Playwright drives the real flow at <code>{ viewport: 375×812, locale: en | he-IL }</code> and asserts no horizontal scroll, every
+    interactive box ≥ 44 px tall, and that the disabled New list button has a visible <code>aria-describedby</code> reason.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code> / <code>mobile.css</code>.
+  </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="14-picker-archived.html" data-nav="prev">← Picker — archived value</a>
+  <span class="caption"><b>(1g) List management — 375 px</b> · Flow 1 · List management · frame 15 of 18</span>
+  <a class="btn btn-primary" href="16-mobile-translation-workbench.html" data-nav="next">Translations — 375 px →</a>
+</nav>
+</body>
+</html>

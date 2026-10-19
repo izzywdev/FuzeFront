@@ -1,4 +1,5 @@
 import express, { Application, Request, Response } from 'express';
+import { tracingMiddleware } from '@fuzefront/telemetry';
 import { Pool } from 'pg';
 import { PgNamespaceRepository } from './repositories/namespace.repository';
 import { PgKeyDefinitionRepository } from './repositories/key-definition.repository';
@@ -8,6 +9,7 @@ import { createConfigReadRouter } from './routes/config-read.routes';
 import { createWriteRouter } from './routes/write.router';
 import { createDocsRouter } from './routes/docs.routes';
 import { isConfigManagementEnabled } from './flags';
+import { ConfigChangeNotifier } from './events/publisher';
 
 /**
  * Optional, DB-backed dependencies. Omitted -> the HEALTH-CHECK-ONLY skeleton
@@ -16,6 +18,8 @@ import { isConfigManagementEnabled } from './flags';
  */
 export interface AppDeps {
   pool: Pool;
+  /** `config.changed` publisher; absent/null when no broker is configured. */
+  events?: ConfigChangeNotifier | null;
 }
 
 /**
@@ -27,6 +31,11 @@ export interface AppDeps {
  */
 export function createApp(deps?: AppDeps): Application {
   const app = express();
+  // Starts/continues a per-request span, exposing req.traceId/req.spanId for
+  // log correlation. Mounted before any other middleware so the span wraps
+  // the whole request lifecycle (OTLP export to FuzeInfra's Collector, never
+  // Tempo/Loki directly — see @fuzefront/telemetry's docs/TRACE_CONTRACT.md).
+  app.use(tracingMiddleware());
   app.use(express.json());
 
   // `configManagementEnabled` (FFRNT-255 / FF-EPIC-17-S8): this service's own
@@ -106,7 +115,7 @@ export function createApp(deps?: AppDeps): Application {
     app.use('/v1', createConfigReadRouter({ namespaceRepo, keyDefinitionRepo, valueRepo, historyRepo })); // FFRNT-157 + FFRNT-280 (GET routes, incl. GET /v1/config/history)
     // Shares deps.pool rather than letting createWriteRouter() open its own —
     // one pool per process, not one per story's router.
-    app.use(createWriteRouter(deps.pool)); // FFRNT-158 + FFRNT-280 (POST/PUT write routes, incl. POST /v1/config/secrets/reveal)
+    app.use(createWriteRouter(deps.pool, deps.events)); // FFRNT-158 + FFRNT-280 (POST/PUT write routes, incl. POST /v1/config/secrets/reveal)
   }
 
   return app;

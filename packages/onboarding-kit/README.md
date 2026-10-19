@@ -64,6 +64,25 @@ env var. This kit replaces all four.
 
 4. **Deploy.** The init container registers the app before your container starts.
 
+## Mobile store and APK links
+
+If your product has a native mobile build, declare only the public destinations
+that are live in `registration/manifest.json`:
+
+```jsonc
+"distribution": {
+  "appleAppStoreUrl": "https://apps.apple.com/app/id123456789",
+  "googlePlayUrl": "https://play.google.com/store/apps/details?id=com.example.myapp",
+  "apkUrl": "https://github.com/example/myapp/releases/latest/download/myapp-android-latest.apk"
+}
+```
+
+FuzeFront shows every declared link on the Applications page. On a mobile web
+browser it also offers an app-specific **Install the app** banner, preferring
+the matching store and using the APK as the Android fallback. Do not add a
+placeholder: an omitted field is intentionally hidden until its real public
+listing exists.
+
 ## Why an init container, and why it hard-fails
 
 The app depends on FuzeFront for AuthN, AuthZ, org/user context, and billing. An

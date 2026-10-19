@@ -12,6 +12,8 @@ export const TOPICS = {
   IDENTITY_ORG_DELETED: 'identity.org.deleted',
   IDENTITY_MEMBERSHIP_ADDED: 'identity.membership.added',
   IDENTITY_MEMBERSHIP_REMOVED: 'identity.membership.removed',
+  IDENTITY_INVITATION_CREATED: 'identity.invitation.created',
+  IDENTITY_INVITATION_ACCEPTED: 'identity.invitation.accepted',
   /**
    * A tenant authorization decision changed. Consumers use this to invalidate
    * derived grants/caches; it intentionally never carries a policy document.
@@ -28,6 +30,7 @@ export const TOPICS = {
   BILLING_PAYMENT_METHOD_UPDATED: 'billing.payment_method.updated',
   PORTAL_CREATED: 'portal.created',
   CHAT_RESPONSE_CHUNK: 'chat.response.chunk',
+  CONFIG_CHANGED: 'config.changed',
   // selection-list-service (docs/planning/selection-lists-events.md). Produced
   // ONLY by selection-list-service, except SEED_REQUESTED, which allowlisted
   // services produce and selection-list-service consumes.

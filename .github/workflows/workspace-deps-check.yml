@@ -23,6 +23,7 @@ name: Workspace deps
 on:
   pull_request:
     branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: read

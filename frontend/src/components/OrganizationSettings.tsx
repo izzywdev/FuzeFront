@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PermissionGate } from './PermissionGate'
+import { ROOT_ORG_ID } from '../lib/shared'
 
 interface Organization {
   id: string
@@ -32,6 +33,9 @@ export function OrganizationSettings({
   onDelete,
 }: OrganizationSettingsProps) {
   const [isEditing, setIsEditing] = useState(false)
+  // The platform root org cannot be deleted; hide the whole Danger Zone for it.
+  const isProtectedOrg =
+    organization.id === ROOT_ORG_ID || organization.type === 'platform'
   const [formData, setFormData] = useState({
     name: organization.name,
     description: organization.description || '',
@@ -424,38 +428,42 @@ export function OrganizationSettings({
         </div>
       </div>
 
-      {/* Danger Zone */}
-      <PermissionGate requiredPermissions={['Organization:delete']}>
-        <div
-          style={{
-            padding: '1.5rem',
-            border: '1px solid var(--error-color)',
-            borderRadius: '8px',
-            backgroundColor: 'rgba(255, 68, 68, 0.05)',
-          }}
-        >
-          <h3 style={{ marginTop: 0, color: 'var(--error-color)' }}>
-            ⚠️ Danger Zone
-          </h3>
-          <p style={{ color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
-            Permanently delete this organization and all of its data.
-          </p>
-
-          <button
-            onClick={() => setShowDeleteModal(true)}
+      {/* Danger Zone — never shown for the platform root organization, which
+          the API also refuses to delete (ROOT_ORG_PROTECTED). Gate by the
+          well-known id and by type so any platform/system org is covered. */}
+      {!isProtectedOrg && (
+        <PermissionGate requiredPermissions={['Organization:delete']}>
+          <div
             style={{
-              padding: '0.75rem 1.5rem',
-              backgroundColor: 'var(--error-color)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
+              padding: '1.5rem',
+              border: '1px solid var(--error-color)',
+              borderRadius: '8px',
+              backgroundColor: 'var(--error-soft)',
             }}
           >
-            🗑️ Delete Organization
-          </button>
-        </div>
-      </PermissionGate>
+            <h3 style={{ marginTop: 0, color: 'var(--error-color)' }}>
+              ⚠️ Danger Zone
+            </h3>
+            <p style={{ color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
+              Permanently delete this organization and all of its data.
+            </p>
+
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              style={{
+                padding: '0.75rem 1.5rem',
+                backgroundColor: 'var(--error-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              🗑️ Delete Organization
+            </button>
+          </div>
+        </PermissionGate>
+      )}
 
       {showDeleteModal && (
         <div

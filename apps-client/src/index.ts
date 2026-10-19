@@ -21,6 +21,7 @@ export type {
   BillingProfile,
   Routing,
   Infra,
+  Distribution,
   Icon,
   Visibility,
   RegisterAppRequest,
