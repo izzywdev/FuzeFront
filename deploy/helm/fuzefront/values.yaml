@@ -179,6 +179,11 @@ secret:
   twilioApiKeySecret: "" # preferred: Twilio API Key secret
   twilioVerifyServiceSid: ""
   smsAuthSecret: "dev-sms-secret-change-me"
+  # Shared bearer between security-service (sends it as EMAIL_SERVICE_TOKEN) and
+  # email-service (requires it as EMAIL_AUTH_SECRET on POST /send). ONE Secret key
+  # (EMAIL_AUTH_SECRET) feeds both. Dev default only; in prod it lives in the
+  # existingSecret (SealedSecret) and this stays empty.
+  emailAuthSecret: "dev-email-secret-change-me"
   # Google OAuth2 source creds. Leave empty to disable the Google source
   # (inert — Authentik skips sources whose consumer_key resolves to "").
   # Override via --set or a gitignored values file. NEVER commit real creds.
