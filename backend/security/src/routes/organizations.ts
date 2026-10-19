@@ -650,30 +650,40 @@ router.put(
   }
 )
 
+// The platform root organization is the anchor for every portal-scope check
+// and every user's baseline membership — it can never be deleted by anyone.
+// This guard runs BEFORE the permission middleware (and before the owner check,
+// transaction and outbox emit) so the answer is a consistent ROOT_ORG_PROTECTED
+// regardless of the caller's role. Guard by the well-known id AND by
+// type='platform' so any future platform/system org is covered too.
+async function protectRootOrganization(req: any, res: any, next: any) {
+  try {
+    const { id } = req.params
+    const targetOrg = await db('organizations').where('id', id).first()
+    if (!targetOrg) {
+      return res.status(404).json({ error: 'Organization not found' })
+    }
+    if (id === ROOT_ORG_ID || targetOrg.type === 'platform') {
+      return res.status(403).json({
+        error: 'The platform root organization cannot be deleted',
+        code: 'ROOT_ORG_PROTECTED',
+      })
+    }
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
+
 // DELETE /api/organizations/:id - Deactivate organization
 router.delete(
   '/:id',
   authenticateToken,
+  protectRootOrganization,
   PermissionMiddleware.canDeleteOrganization,
   async (req: any, res) => {
     try {
       const { id } = req.params
-
-      // The platform root organization is the anchor for every portal-scope
-      // check and every user's baseline membership — it can never be deleted.
-      // Guard by the well-known id AND by type='platform' so any future
-      // platform/system org is covered too. This runs before the owner check
-      // and before the transaction/outbox emit.
-      const targetOrg = await db('organizations').where('id', id).first()
-      if (!targetOrg) {
-        return res.status(404).json({ error: 'Organization not found' })
-      }
-      if (id === ROOT_ORG_ID || targetOrg.type === 'platform') {
-        return res.status(403).json({
-          error: 'The platform root organization cannot be deleted',
-          code: 'ROOT_ORG_PROTECTED',
-        })
-      }
 
       // Check if user is owner of this organization
       const membership = await db('organization_memberships')
