@@ -305,7 +305,7 @@ mcp:
   replicas: 1
   image:
     repository: ghcr.io/izzywdev/fuze-mcp-gateway
-    tag: "1abe510f5981"
+    tag: "d5f2f29e3431"
     pullPolicy: IfNotPresent
   ingress:
     enabled: true
@@ -316,7 +316,7 @@ configMcp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuze-mcp-gateway
-    tag: "1abe510f5981"
+    tag: "d5f2f29e3431"
     pullPolicy: IfNotPresent
 
 # FuzeFront's per-product A2A pod (owner decision: one pod per product, not a
