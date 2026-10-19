@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Fork confirmation dialog</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher" aria-label="App launcher">▦</div>
+    <div class="avatar" title="Sam Ortiz · member of Globex Freight">SO</div>
+  </header>
+  <div class="body">
+    <nav class="side" aria-label="Primary">
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Applications</a>
+      <div class="section-label">Organization</div>
+      <a class="nav-item" href="#"><span class="ico">☺</span> Members</a>
+      <a class="nav-item active" href="01-shared-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">⚙</span> Settings</a>
+    </nav>
+    <main class="content" data-frame="05-fork-dialog">
+
+      <div class="sl-crumb"><a href="01-shared-index.html">Selection Lists</a> · <a href="02-common-detail.html">Priority</a> · Fork</div>
+
+      <div class="sl-backdrop">
+        <!-- ForkListDialog = DS Modal (≥ 40em) / DS BottomSheet (< 40em, frame 12). Focus is trapped; initial focus on the
+             selected visibility option; Esc and Cancel close it while idle. -->
+        <div class="sl-modal" role="dialog" aria-modal="true" aria-labelledby="fork-title" aria-describedby="fork-sub" data-dialog="fork" data-presentation="modal" data-state="idle">
+          <div class="sl-modal__seam"></div>
+          <div class="sl-modal__head">
+            <h2 class="sl-modal__title" id="fork-title">Fork “Priority” for Globex Freight</h2>
+            <p class="sl-modal__sub" id="fork-sub">Your organization gets its own copy that you can change. The common list itself does not change.</p>
+          </div>
+          <div class="sl-modal__body">
+            <dl class="sl-facts" data-fork-summary>
+              <dt>Copy of</dt>
+              <dd><span class="sl-vis sl-vis--platform" data-badge="common">◎ Common list</span> Priority</dd>
+              <dt>Key</dt>
+              <dd><span class="sl-key" data-fork-key="priority">priority</span> — kept. A fork always has the same key, so forms don't need to change.</dd>
+              <dt>Copied</dt>
+              <dd data-fork-copied>5 values (4 active, 1 archived) with their codes and order, and every translation (9 languages besides English)</dd>
+              <dt>You become</dt>
+              <dd>Owner of the fork — you can edit it and give others roles on it</dd>
+              <dt>Then</dt>
+              <dd data-fork-shadows>Forms in Globex Freight that use <span class="sl-code">priority</span> show your version instead of the common
+                list. Values already saved in records keep showing correctly.</dd>
+            </dl>
+
+            <div class="sl-field">
+              <span class="sl-field__label" id="vis-label">Who should use your version?</span>
+              <!-- RadioCardGroup (DS addition). Exactly two options: the contract's SelectionListForkRequest.visibility
+                   is enum [private, org]. A fork can never be platform, so no third option exists — not even disabled. -->
+              <div class="sl-choice" role="radiogroup" aria-labelledby="vis-label" data-control="fork-visibility">
+                <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="org">
+                  <span class="sl-choice__radio" aria-hidden="true"></span>
+                  <div>
+                    <div class="sl-choice__title">Everyone in Globex Freight <span class="sl-vis sl-vis--org">◉ Organization</span> <span class="sl-pill">Recommended</span></div>
+                    <p class="sl-choice__desc">Every member sees and picks from your version. It replaces the common list in every form, for everyone.</p>
+                  </div>
+                </div>
+                <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private">
+                  <span class="sl-choice__radio" aria-hidden="true"></span>
+                  <div>
+                    <div class="sl-choice__title">Only people I give a role — a draft <span class="sl-vis sl-vis--private">○ Private</span></div>
+                    <p class="sl-choice__desc">Prepare changes first. Everyone else keeps using the common list, and saved values keep their common
+                      labels, until you switch it to Organization.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sl-banner sl-banner--info" data-note="no-sync" style="margin-bottom: var(--space-4);">
+              <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
+              <div class="sl-banner__body">
+                <p class="sl-banner__title">Your fork won't follow the common list</p>
+                <p>Later changes to the common list are not copied into your fork, and there is no automatic merge. Your fork remembers
+                  which version it copied, so its page can tell you when the common list has changed since.</p>
+              </div>
+            </div>
+
+            <!-- QuotaPreview: only when GET /quota succeeds. It needs read_quota, which an editor (a plain member) does
+                 not hold — then this block is simply absent, never an error. -->
+            <div data-quota-preview="org_lists">
+              <div class="sl-head" style="margin-bottom: var(--space-2);">
+                <span class="sl-field__lock">Organization lists</span>
+                <span class="sl-muted" style="font-size: var(--text-sm);">37 → 38 of 100</span>
+              </div>
+              <div class="sl-meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="38" aria-label="Organization lists after forking"><div class="sl-meter__fill" style="width: 38%;"></div></div>
+            </div>
+          </div>
+          <div class="sl-modal__foot">
+            <a class="btn btn-ghost" href="02-common-detail.html" data-action="cancel">Cancel</a>
+            <a class="btn btn-primary" href="06-fork-results.html" data-action="confirm-fork">Fork list</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="sl-section">
+        <h2>Dialog states</h2>
+        <div class="sl-grid2">
+          <div>
+            <p class="sl-case">Submitting — <code class="sl-code">POST …/fork {"visibility":"org"}</code> in flight</p>
+            <div class="sl-modal" role="dialog" aria-modal="true" aria-label="Forking" data-dialog="fork" data-state="submitting" aria-busy="true">
+              <div class="sl-modal__seam"></div>
+              <div class="sl-modal__head"><h3 class="sl-modal__title">Fork “Priority” for Globex Freight</h3></div>
+              <div class="sl-modal__body">
+                <p class="sl-muted" style="margin: 0;">Copying 5 values and their translations… Options are locked; the dialog can't be dismissed until the
+                  service answers — a dialog that closes and then creates a list anyway is a surprise.</p>
+              </div>
+              <div class="sl-modal__foot">
+                <button class="btn btn-ghost" data-action="cancel" disabled>Cancel</button>
+                <button class="btn btn-primary" disabled aria-busy="true" data-action="confirm-fork"><span class="sl-spinner" aria-hidden="true"></span> Forking…</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p class="sl-case">Body sent — and what is never sent</p>
+            <div class="sl-persist" data-persisted data-fork-request>
+              <div class="sl-persist__label">Request</div>
+              <code class="sl-ltr">POST /v1/selection-lists/front_sl_01jf8k2m3n4p5q6r7s8t9v0w1x/fork</code><br />
+              <code class="sl-ltr">{ "visibility": "org" }</code>
+              <p>No <code>id</code>, no <code>key</code>, no name — the service mints every id and the fork keeps the key
+                (<code>additionalProperties: false</code>; a body carrying an id is a <code>400</code>). The source id comes from the page's list, or
+                from <code>source_list_id</code> when the dialog was opened from a <code>409 fork_required</code>.</p>
+            </div>
+            <p class="sl-field__hint">Double-submit is harmless — the service is idempotent per (organization, source) and a repeat answers
+              <code class="sl-code">200</code> with the same fork — but both buttons carry native <code class="sl-code">disabled</code> while in flight
+              (not only <code class="sl-code">aria-disabled</code>), so a second activation cannot send a concurrent request.</p>
+          </div>
+        </div>
+        <p class="sl-field__hint" style="margin-top: var(--space-5);">Flag OFF: the dialog is never mounted (no CTA leads to it), and the service
+          answers <code class="sl-code">404</code> on <code class="sl-code">…/fork</code> anyway. Mobile and RTL presentation: frame 12.</p>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='05-fork-dialog']</code> · <code>[data-dialog='fork'][data-state='idle']</code> · <code>[data-presentation='modal']</code> · <code>[data-dialog='fork'][data-state='submitting']</code> · <code>[data-dialog='fork'][data-state='submitting'] [data-action='confirm-fork'][disabled]</code> · <code>[data-fork-summary]</code> · <code>[data-fork-key='priority']</code> · <code>[data-fork-copied]</code> · <code>[data-fork-shadows]</code> · <code>[data-control='fork-visibility']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='private']</code> · <code>[data-note='no-sync']</code> · <code>[data-quota-preview='org_lists']</code> · <code>[data-fork-request]</code> · <code>[data-action='confirm-fork']</code> · <code>[data-action='cancel']</code><br />
+        Contract: <code>POST /v1/selection-lists/{listId}/fork</code> with <code>SelectionListForkRequest {visibility: org|private}</code> (default <code>org</code>) ·
+        <code>GET /v1/selection-lists/quota</code> (optional preview; absent on <code>403</code>). Copy counts come from the source list's items
+        (<code>status=all</code>), already loaded by the detail page.<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="04-fork-required.html" data-nav="prev">← Fork required</a>
+  <span class="caption"><b>(2b) Fork confirmation</b> · Flow 2 · Fork to edit · frame 5 of 15</span>
+  <a class="btn btn-primary" href="06-fork-results.html" data-nav="next">Fork results →</a>
+</nav>
+</body>
+</html>
