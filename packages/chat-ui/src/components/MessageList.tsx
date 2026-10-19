@@ -36,6 +36,8 @@ export interface MessageListProps {
   onCodeAction?: (code: string, language: string) => void;
   /** Action label override for query code blocks. */
   codeActionLabel?: string;
+  /** Extensible tool card renderer. */
+  renderCustomCard?: (card: import('../hooks/types').CustomToolCard) => import('react').ReactNode;
 }
 
 /**
@@ -60,6 +62,7 @@ export function MessageList({
   onSendPrompt,
   onCodeAction,
   codeActionLabel,
+  renderCustomCard,
 }: MessageListProps) {
   const { strings } = useChatI18n();
   const listRef = useRef<HTMLDivElement>(null);
@@ -183,6 +186,7 @@ export function MessageList({
             onFeedback={onFeedback}
             onCodeAction={onCodeAction}
             codeActionLabel={codeActionLabel}
+            renderCustomCard={renderCustomCard}
           />
         ))
       )}

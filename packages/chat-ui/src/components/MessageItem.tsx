@@ -1,5 +1,6 @@
+import type React from 'react';
 import { useChatI18n } from '../i18n';
-import type { UiMessage } from '../hooks/types';
+import type { UiMessage, CustomToolCard } from '../hooks/types';
 import { Citations } from './Citations';
 import { ConfirmationCard } from './ConfirmationCard';
 import { FeedbackButtons } from './FeedbackButtons';
@@ -12,6 +13,7 @@ export interface MessageItemProps {
   onFeedback: (messageId: string, rating: 'positive' | 'negative') => void;
   onCodeAction?: (code: string, language: string) => void;
   codeActionLabel?: string;
+  renderCustomCard?: (card: CustomToolCard) => React.ReactNode;
 }
 
 /** Slack/WhatsApp-style short local time, e.g. "10:42 AM". Undefined if unparseable. */
@@ -30,6 +32,7 @@ export function MessageItem({
   onFeedback,
   onCodeAction,
   codeActionLabel,
+  renderCustomCard,
 }: MessageItemProps) {
   const { strings } = useChatI18n();
   const isAssistant = message.role === 'assistant';
@@ -51,12 +54,48 @@ export function MessageItem({
         ) : null}
       </div>
 
+      {message.thoughts && message.thoughts.length > 0 ? (
+        <details className="ffc-thought-box" open={message.streaming}>
+          <summary className="ffc-thought-box__summary">
+            <span className="ffc-thought-box__icon" aria-hidden="true">💭</span>
+            <span>Reasoning Chain ({message.thoughts.length} step{message.thoughts.length > 1 ? 's' : ''})</span>
+          </summary>
+          <div className="ffc-thought-box__content">
+            {message.thoughts.map((step, idx) => (
+              <div key={idx} className="ffc-thought-box__step">
+                {step}
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
       <div className="ffc-bubble">
         {renderMessageMarkdown(message.content, { onCodeAction, codeActionLabel })}
         {message.streaming ? (
           <span className="ffc-caret" aria-hidden="true" data-testid="ffc-caret" />
         ) : null}
       </div>
+
+      {message.cards?.map((card, idx) => (
+        <div key={idx} className="ffc-custom-card-slot" data-card-type={card.cardType}>
+          {renderCustomCard ? (
+            renderCustomCard(card)
+          ) : (
+            <div className="ffc-default-card">
+              <span className="ffc-default-card__badge">{card.cardType}</span>
+              <pre className="ffc-default-card__data">{JSON.stringify(card.data, null, 2)}</pre>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {message.rawToolOutput ? (
+        <details className="ffc-tool-output">
+          <summary>Terminal / Tool Execution Log</summary>
+          <pre>{message.rawToolOutput}</pre>
+        </details>
+      ) : null}
 
       {message.sources && message.sources.length > 0 ? (
         <Citations sources={message.sources} />

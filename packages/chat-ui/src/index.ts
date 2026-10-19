@@ -12,6 +12,10 @@
 export { ChatWidget } from './components/ChatWidget';
 export type { ChatWidgetProps } from './components/ChatWidget';
 
+// Standalone full-viewport chat workspace (OpenWebUI / Claude / Codex layout).
+export { ChatWorkspace } from './components/ChatWorkspace';
+export type { ChatWorkspaceProps, ActionChip } from './components/ChatWorkspace';
+
 // Presentational + composite components (for custom layouts).
 export { ChatPanel } from './components/ChatPanel';
 export type { ChatPanelProps } from './components/ChatPanel';
@@ -41,7 +45,13 @@ export { useChat } from './hooks/useChat';
 export type { UseChatOptions, UseChatResult, InjectedChatEvent } from './hooks/useChat';
 export { chatReducer, initialModel } from './hooks/chatReducer';
 export type { ChatModel, ChatAction } from './hooks/chatReducer';
-export type { UiMessage, PendingConfirmation, RagSource } from './hooks/types';
+export type {
+  UiMessage,
+  PendingConfirmation,
+  RagSource,
+  CustomToolCard,
+  ThreadSummary,
+} from './hooks/types';
 
 // i18n / direction.
 export { ChatI18nProvider, useChatI18n } from './i18n';

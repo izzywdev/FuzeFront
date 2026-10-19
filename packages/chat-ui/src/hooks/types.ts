@@ -19,6 +19,21 @@ export interface PendingConfirmation {
   summary?: string;
 }
 
+/** Extensible custom tool card payload (e.g. TimeInZone, TerminalLog, SandboxStatus). */
+export interface CustomToolCard {
+  cardType: string;
+  data: Record<string, unknown>;
+}
+
+/** Conversation thread item for workspace sidebar. */
+export interface ThreadSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+  active?: boolean;
+  preview?: string;
+}
+
 export interface UiMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -30,6 +45,12 @@ export interface UiMessage {
   sources?: RagSource[];
   /** Mutating-tool confirmations raised during this assistant turn. */
   confirmations?: PendingConfirmation[];
+  /** Custom extensible tool cards (TimeInZoneCard, SandboxStatusBadge, TerminalLogWindow). */
+  cards?: CustomToolCard[];
+  /** Agent internal reasoning/thought chain steps. */
+  thoughts?: string[];
+  /** Raw tool execution logs or terminal output. */
+  rawToolOutput?: string;
   /** Local feedback selection (optimistic). */
   feedback?: 'positive' | 'negative';
   /** Error message if the turn failed. */
