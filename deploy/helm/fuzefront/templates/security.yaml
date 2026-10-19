@@ -138,6 +138,15 @@ spec:
             {{- if .Values.emailService.enabled }}
             - name: EMAIL_SERVICE_URL
               value: "http://fuzefront-email-service:{{ .Values.emailService.port }}"
+            # Bearer for email-service POST /send: the SAME Secret key email-service
+            # reads as EMAIL_AUTH_SECRET. optional so a missing sealed key does not
+            # block the security pod; without it dispatch is rejected (401) and logged.
+            - name: EMAIL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: EMAIL_AUTH_SECRET
+                  optional: true
             {{- end }}
             {{- if .Values.smsService.enabled }}
             - name: SMS_SERVICE_URL

@@ -34,6 +34,7 @@ import {
   SocialLinkStart,
 } from '../../src/providers/IdentityProvider'
 import { randomUUID } from 'crypto'
+import { TokenError } from '../../src/providers/errors'
 
 /** Provider errors carry a neutral, fail-closed error code (see spec ErrorBody). */
 export class ProviderError extends Error {
@@ -186,7 +187,7 @@ export class MockIdentityProvider implements IdentityProvider {
     const url = new URL('https://app.fuzefront.com/api/auth/idp/authorize')
     url.searchParams.set('state', state)
     if (redirectTo) url.searchParams.set('redirectTo', redirectTo)
-    return { redirectUrl: url.toString(), state, codeVerifier: "mock-verifier" }
+    return { redirectUrl: url.toString(), state, codeVerifier: `cv_${randomUUID()}` }
   }
 
   async brokerCallback(input: SocialCallbackInput): Promise<SocialCallbackResult> {
@@ -378,7 +379,7 @@ export class MockIdentityProvider implements IdentityProvider {
     code?: string
   }): Promise<VerificationStatus> {
     if (input.token !== 'valid-email-token' && input.code !== OTP) {
-      throw new ProviderError('INVALID_CODE', 'bad token/code', 400)
+      throw new TokenError('TOKEN_INVALID', 'bad token/code')
     }
     return { emailVerified: true, phoneVerified: false }
   }
@@ -402,48 +403,70 @@ export class MockIdentityProvider implements IdentityProvider {
     const u = this.userByToken(token)
     return { emailVerified: u.emailVerified, phoneVerified: u.phoneVerified, phone: u.phone }
   }
+  // ── Self-service password reset (in-memory; single-use token) ──
+  private resetTokens = new Map<string, string>() // token -> user email
 
-  // ── Minimal fixtures for the account/session/password surface (not exercised
-  // by the provider-agnostic contract suite; present so the mock satisfies the
-  // IdentityProvider interface). ──
-  async requestPasswordReset(_email: string): Promise<void> {}
-
-  async confirmPasswordReset(_token: string, _newPassword: string): Promise<void> {
-    throw new ProviderError('MALFORMED', 'invalid or expired reset token', 400)
+  async requestPasswordReset(email: string): Promise<void> {
+    if (!email) throw new ProviderError('MALFORMED', 'email required', 400)
+    // Always resolves: an unknown address is indistinguishable from a known one.
+    if (this.users.has(email.toLowerCase())) this.resetTokens.set(`reset-${randomUUID()}`, email.toLowerCase())
   }
 
+  async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+    const email = this.resetTokens.get(token)
+    if (!email) throw new TokenError('TOKEN_INVALID', 'invalid reset token')
+    this.resetTokens.delete(token)
+    const u = this.users.get(email)
+    if (u) u.password = newPassword
+  }
+
+  // ── Manage devices ──
   async listSessions(token: string): Promise<SessionDevice[]> {
-    this.userByToken(token)
-    return [{ id: 'mock-session', current: true }]
+    const u = this.userByToken(token)
+    return [...this.sessions.entries()]
+      .filter(([, userId]) => userId === u.id)
+      .map(([t]) => ({ id: t, current: t === token }))
   }
 
-  async revokeSession(token: string, _sessionId: string): Promise<void> {
-    this.userByToken(token)
+  async revokeSession(token: string, sessionId: string): Promise<void> {
+    const u = this.userByToken(token)
+    if (this.sessions.get(sessionId) === u.id) this.sessions.delete(sessionId)
   }
 
   async revokeOtherSessions(token: string): Promise<void> {
     const u = this.userByToken(token)
-    for (const [t, id] of [...this.sessions]) if (id === u.id && t !== token) this.sessions.delete(t)
+    for (const [t, userId] of [...this.sessions.entries()]) {
+      if (userId === u.id && t !== token) this.sessions.delete(t)
+    }
   }
+
+  // ── Sign-in connections ──
+  private links = new Map<string, Set<string>>() // userId -> providers
 
   async getIdentityConnections(token: string): Promise<IdentityConnections> {
-    this.userByToken(token)
-    return { providers: [], hasPassword: true }
+    const u = this.userByToken(token)
+    return {
+      providers: [...(this.links.get(u.id) ?? [])].map(provider => ({ provider })),
+      hasPassword: !!u.password,
+    }
   }
 
-  async startSocialLink(token: string, _provider: string): Promise<SocialLinkStart> {
+  async startSocialLink(token: string, provider: string): Promise<SocialLinkStart> {
     this.userByToken(token)
-    return { redirectUrl: '/mock-link', state: 'mock-state', codeVerifier: 'mock-verifier' }
+    if (provider !== 'google') throw new ProviderError('MALFORMED', 'unsupported provider', 400)
+    return { redirectUrl: `/v1/security/social/${provider}/link`, state: randomUUID(), codeVerifier: randomUUID() }
   }
 
-  async unlinkSocial(token: string, _provider: string): Promise<IdentityConnections> {
-    this.userByToken(token)
-    return { providers: [], hasPassword: true }
+  async unlinkSocial(token: string, provider: string): Promise<IdentityConnections> {
+    const u = this.userByToken(token)
+    this.links.get(u.id)?.delete(provider)
+    return this.getIdentityConnections(token)
   }
 
-  async setPassword(token: string, _newPassword: string): Promise<IdentityConnections> {
-    this.userByToken(token)
-    throw new ProviderError('CONFLICT', 'password already exists', 409)
+  async setPassword(token: string, newPassword: string): Promise<IdentityConnections> {
+    const u = this.userByToken(token)
+    u.password = newPassword
+    return this.getIdentityConnections(token)
   }
 
   async changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
