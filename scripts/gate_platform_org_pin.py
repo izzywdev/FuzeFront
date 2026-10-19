@@ -135,7 +135,7 @@ def _load_yaml_file(path: Path):
     if not path.is_file():
         raise GateError(f"{path} does not exist")
     try:
-        return yaml.load(path.read_text(encoding="utf-8"), Loader=_StrictLoader)  # noqa: S506 (safe loader subclass)
+        return yaml.load(path.read_text(encoding="utf-8"), Loader=_StrictLoader)
     except GateError as e:
         raise GateError(f"{path}: {e}")
     except (yaml.YAMLError, OSError, UnicodeDecodeError) as e:
@@ -223,7 +223,7 @@ def describe_mismatch(value: str, pin: str, pin_uuid: str) -> str:
 def helm_template(chart: Path, overlay: Path, helm: str, extra: list[str]) -> list[dict]:
     cmd = [helm, "template", "fuzefront", str(chart), "-f", str(overlay), *HELM_BASE_ARGS, *extra]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=False)
     except FileNotFoundError:
         raise GateError(f"{helm!r} not found: cannot render the chart (fail closed, not skipped)")
     except subprocess.TimeoutExpired:
