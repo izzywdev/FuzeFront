@@ -31,6 +31,7 @@ on:
             authz-enabled       — fuzefront.billing.authz-enabled (100%) — run AFTER prod-billing-s2s-provision succeeds
             root-membership     — fuzefront.identity.root-membership (100%): new signups take the root-membership path instead of a personal org (FF-EPIC-17-S1/S2; the S2 backfill is #1095, deployed)
             selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + fuzefront.selection-lists.seed-defaults, left OFF
+            config-management   — fuzefront.config.management-console + .key-catalog + .secrets-audit (100%): Configuration Management Console UI (EPIC-19). Web-exposed; requires the catalog-registering build (#1571) deployed.
         required: true
         default: billing-portal
         type: choice
@@ -45,6 +46,7 @@ on:
           - root-membership
           - selection-lists-create
           - billing-plan-flag-sync
+          - config-management
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
         required: false
@@ -306,6 +308,26 @@ jobs:
               "Release flag (FF-EPIC-17-S1/S2, backend). ON = signup/auth self-heal upserts a root membership(role=member) instead of a personal org. S2 backfill = #1095 (deployed). GA per owner decision 2026-10-05 (izzy). Owner: platform team. Removal: drop the type=personal provisioning branch once 100% of signups take the root-membership path."
           }
 
+          # ── Configuration Management Console (EPIC-19) ─────────────────────
+          # Three web-exposed release flags (packages/feature-flags: FLAG_KEYS +
+          # WEB_EXPOSED_FLAGS, registered in #1571). ON at 100% surfaces the
+          # top-level "Configuration" left-nav item + /config settings editor,
+          # the /admin/config/catalog* catalog surface, and the
+          # /admin/config/keys/:key/history secret+audit surface. Web-exposed, so
+          # the browser only sees them once the catalog-registering build (#1571)
+          # has deployed (frontend + backend rebuilt); enabling before that is
+          # harmless (the key is absent from /api/flags, useFlag() reads its OFF
+          # default). GA per owner decision 2026-10-19 (izzy). Owner:
+          # feature-flags-engineer. Removal: console GA at 100% for 30 days.
+          apply_config_management() {
+            enable_ga "fuzefront.config.management-console" \
+              "Release flag (EPIC-19, web-exposed). ON surfaces the top-level Configuration nav item + /config settings editor. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
+            enable_ga "fuzefront.config.key-catalog" \
+              "Release flag (EPIC-19, web-exposed). ON surfaces the /admin/config/catalog + /admin/config/catalog/:key admin surfaces. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
+            enable_ga "fuzefront.config.secrets-audit" \
+              "Release flag (EPIC-19, web-exposed). ON surfaces the /admin/config/keys/:key/history secret + audit-history surface. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
+          }
+
           # ── Selection Lists (CREATE ONLY) ───────────────────────────────────
           # Release flags, default OFF (packages/feature-flags/flag-registry.yaml).
           # Reuses create_only: creates the flags if absent (409 = already exists,
@@ -334,6 +356,7 @@ jobs:
             authz-enabled)       apply_authz_enabled ;;
             root-membership)     apply_root_membership ;;
             selection-lists-create) apply_selection_lists_create ;;
+            config-management)   apply_config_management ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
@@ -403,6 +426,10 @@ jobs:
               check_flag "fuzefront.billing.authz-enabled" ;;
             root-membership)
               check_flag "fuzefront.identity.root-membership" ;;
+            config-management)
+              check_flag "fuzefront.config.management-console"
+              check_flag "fuzefront.config.key-catalog"
+              check_flag "fuzefront.config.secrets-audit" ;;
             selection-lists-create)
               check_flag "fuzefront.selection-lists.service"
               check_flag "fuzefront.selection-lists.seed-defaults"
