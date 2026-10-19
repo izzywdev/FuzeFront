@@ -22,6 +22,10 @@ import {
   InvalidInputError,
   UnauthorizedError,
   NotFoundError,
+  LastFactorError,
+  NoPasswordError,
+  CurrentPasswordInvalidError,
+  PasswordPolicyRejectedError,
   emailVerificationEnabled,
 } from '../providers/authentik/AuthentikIdentityProvider'
 import { appBaseUrl } from '../providers/authentik/config'
@@ -133,6 +137,18 @@ const emailAvailableRateLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later', code: 'RATE_LIMITED' },
 })
 
+// Change-password brute-force limiter. Verifying `currentPassword` is a
+// password-guessing oracle for anyone holding a stolen bearer, so failures are
+// counted per client IP (successes are not): 10 failed attempts / 15 min.
+const changePasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later', code: 'RATE_LIMITED' },
+})
+
 // ── Public mail-sending rate limiter ─────────────────────────────────────────
 //
 // `POST /session/password/reset-request` and `POST /verify/email/start` are
@@ -205,6 +221,22 @@ function authenticatedSession(session: BrokeredSession) {
 
 /** Map a thrown provider error to a fail-closed HTTP response. */
 function sendError(res: Response, err: unknown): void {
+  if (err instanceof LastFactorError) {
+    res.status(409).json({ error: err.message, code: 'LAST_FACTOR' })
+    return
+  }
+  if (err instanceof NoPasswordError) {
+    res.status(409).json({ error: err.message, code: 'NO_PASSWORD' })
+    return
+  }
+  if (err instanceof CurrentPasswordInvalidError) {
+    res.status(400).json({ error: err.message, code: 'INVALID_CREDENTIALS' })
+    return
+  }
+  if (err instanceof PasswordPolicyRejectedError) {
+    res.status(422).json({ error: err.message, code: 'PASSWORD_POLICY' })
+    return
+  }
   if (err instanceof InvalidInputError) {
     res.status(400).json({ error: err.message, code: 'MALFORMED' })
     return
@@ -1032,6 +1064,27 @@ router.post('/password', async (req: Request, res: Response) => {
     if (!req.body?.newPassword) throw new InvalidInputError('newPassword is required')
     const conns = await getIdentityProvider().setPassword(token, req.body.newPassword)
     res.status(200).json(conns)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// POST /v1/security/password/change — change an existing password
+router.post('/password/change', changePasswordRateLimiter, async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const body = req.body ?? {}
+    const extra = Object.keys(body).filter(k => k !== 'currentPassword' && k !== 'newPassword')
+    if (extra.length > 0) throw new InvalidInputError('unexpected properties')
+    if (!body.currentPassword || typeof body.currentPassword !== 'string') {
+      throw new InvalidInputError('currentPassword is required')
+    }
+    if (!body.newPassword || typeof body.newPassword !== 'string') {
+      throw new InvalidInputError('newPassword is required')
+    }
+    await getIdentityProvider().changePassword(token, body.currentPassword, body.newPassword)
+    res.status(204).end()
   } catch (err) {
     sendError(res, err)
   }

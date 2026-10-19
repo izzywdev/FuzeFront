@@ -63,6 +63,8 @@ class AltIdentityProvider implements IdentityProvider {
       user: { id: this.users[email].id, email, roles: ['member'] },
     }
   }
+  // Change-password stub (not exercised by the swap contract).
+  async changePassword(): Promise<void> { throw new ProviderError('INVALID_CREDENTIALS', 'nope', 400) }
   async passwordLogin(i: PasswordLoginInput): Promise<BrokeredSession> {
     const u = this.users[i.email]
     if (!u || u.pw !== i.password) throw new ProviderError('INVALID_CREDENTIALS', 'nope', 401)

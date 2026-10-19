@@ -49,7 +49,7 @@ describe('AuthPanel', () => {
     await waitFor(() =>
       expect(transport.login).toHaveBeenCalledWith({ email: 'a@b.com', password: 'hunter2' }),
     )
-    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED)
+    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED, { mode: 'signin', email: 'a@b.com' })
   })
 
   it('submits signup with first/last name only in signup mode', async () => {
@@ -76,7 +76,7 @@ describe('AuthPanel', () => {
         lastName: 'Lovelace',
       }),
     )
-    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED)
+    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED, { mode: 'signup', email: 'ada@ex.com' })
   })
 
   it('does not render first/last name fields in sign-in mode', () => {
@@ -214,5 +214,42 @@ describe('AuthPanel', () => {
       />,
     )
     expect(screen.getByRole('button', { name: 'Enter' })).toBeInTheDocument()
+  })
+
+  describe('Forgot password? link (fuzefront.auth.experience)', () => {
+    it("is absent by default - flag OFF is today's panel", () => {
+      render(<AuthPanel variant="compact" transport={makeTransport()} onAuthenticated={vi.fn()} />)
+      expect(screen.queryByRole('link', { name: /forgot password/i })).not.toBeInTheDocument()
+    })
+
+    it('renders in sign-in mode when forgotPasswordHref is set, and calls the SPA handler', () => {
+      const onForgot = vi.fn()
+      render(
+        <AuthPanel
+          variant="compact"
+          transport={makeTransport()}
+          onAuthenticated={vi.fn()}
+          forgotPasswordHref="/reset"
+          onForgotPassword={onForgot}
+        />,
+      )
+      const link = screen.getByRole('link', { name: /forgot password/i })
+      expect(link).toHaveAttribute('href', '/reset')
+      fireEvent.click(link)
+      expect(onForgot).toHaveBeenCalled()
+    })
+
+    it('is hidden in sign-up mode', () => {
+      render(
+        <AuthPanel
+          variant="compact"
+          mode="signup"
+          transport={makeTransport()}
+          onAuthenticated={vi.fn()}
+          forgotPasswordHref="/reset"
+        />,
+      )
+      expect(screen.queryByRole('link', { name: /forgot password/i })).not.toBeInTheDocument()
+    })
   })
 })

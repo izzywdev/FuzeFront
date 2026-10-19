@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.11.0
+  version: 0.12.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -265,8 +265,11 @@ paths:
         Exchanges the FuzeFront-minted opaque `code` issued by
         `GET /v1/security/social/callback` for a session. The code is single-use
         and short-lived. Returns a `SessionResult`: an authenticated session, or
-        an `mfa_required` challenge when the account requires step-up.
-        Fail-closed on an unknown/expired code.
+        an `mfa_required` challenge when the account has an active MFA factor.
+        Social sign-in never bypasses MFA: no session is minted until the
+        challenge is completed via `POST /mfa/verify`, and the challenge is
+        bound to the user who signed in. Fail-closed on an unknown/expired or
+        already-redeemed code.
       requestBody:
         required: true
         content:
@@ -393,6 +396,59 @@ paths:
                 $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton set-password action; no collection.
+  /v1/security/password/change:
+    post:
+      tags: [account]
+      summary: Change the password of an account that already has one
+      operationId: changePassword
+      description: >-
+        Verifies `currentPassword`, applies the password policy to
+        `newPassword`, sets it, and revokes every OTHER session of the account
+        (the calling session survives), matching the reset-confirm posture.
+        Accounts with no password get `409 NO_PASSWORD` — send the user to
+        `POST /v1/security/password` (set-first). Failed attempts are
+        rate-limited (`429 RATE_LIMITED`).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed; other sessions revoked.
+        '400':
+          description: >-
+            Malformed body (`MALFORMED`), or `currentPassword` is wrong
+            (`INVALID_CREDENTIALS`). Sessions are untouched.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The account has no password (`NO_PASSWORD`); use set-first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '422':
+          description: '`PASSWORD_POLICY` — the new password fails the password policy.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Too many failed attempts (`RATE_LIMITED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      x-pagination: exempt
+      x-pagination-reason: Singleton change-password action; no collection.
   # ─────────────────────── Sessions: device management ──────────────────────
   /v1/security/sessions:
     get:
@@ -1759,7 +1815,9 @@ paths:
       tags: [mfa]
       summary: Remove an MFA factor
       operationId: removeMfaFactor
-      description: Removes an enrolled factor. Idempotent.
+      description: >-
+        Removes an enrolled factor. Idempotent. Refused with `409 LAST_FACTOR`
+        when it is the user's last active factor.
       security:
         - bearerAuth: []
       parameters:
@@ -1771,6 +1829,17 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: >-
+            `LAST_FACTOR` — this is the user's last ACTIVE factor, so removing it
+            would silently disable two-factor for the account. The factor is NOT
+            removed. Add another method first. The count-and-delete is atomic, so
+            two concurrent removals cannot both succeed. Pending (unactivated)
+            factors can always be removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton mutation.
   /v1/security/mfa/recovery-codes:
@@ -3952,6 +4021,18 @@ components:
           type: string
           description: The password to set; must satisfy the account password policy.
       required: [newPassword]
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      description: Change the password of an account that already has one.
+      properties:
+        currentPassword:
+          type: string
+          description: The account's current password (verified before the change).
+        newPassword:
+          type: string
+          description: The new password; must satisfy the account password policy.
+      required: [currentPassword, newPassword]
     # ── Sessions: device-management shapes ──
     SessionDevice:
       type: object
@@ -4443,5 +4524,8 @@ components:
             - TOKEN_EXPIRED
             - TOKEN_INVALID
             - PASSWORD_POLICY
+            - LAST_FACTOR
+            - NO_PASSWORD
+            - RATE_LIMITED
             - UNKNOWN
       required: [error, code]

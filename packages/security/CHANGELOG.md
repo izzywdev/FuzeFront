@@ -1,5 +1,26 @@
 # Changelog — @fuzefront/security-client
 
+## 0.12.0 — Account: change password; MFA last-factor guard (unreleased)
+
+`info.version` 0.11.0 -> 0.12.0, `SECURITY_CONTRACT_VERSION` 0.11.0 -> 0.12.0.
+Builds on 0.11.0 (#1552); `PASSWORD_POLICY` already exists there.
+
+### Added
+
+- `POST /v1/security/password/change` (`changePassword`), body
+  `ChangePasswordRequest { currentPassword, newPassword }`
+  (`additionalProperties: false`), bearer required. `204` on success and every
+  OTHER session is revoked; `400 INVALID_CREDENTIALS` wrong current password
+  (sessions untouched); `400 MALFORMED`; `401`; `409 NO_PASSWORD` (use set-first);
+  `422 PASSWORD_POLICY`; `429 RATE_LIMITED` (failed attempts).
+- `ErrorBody.code`: `LAST_FACTOR`, `NO_PASSWORD`, `RATE_LIMITED`.
+
+### Changed
+
+- `DELETE /v1/security/mfa/factors/{factorId}` documents `409 LAST_FACTOR`:
+  removing the user's last ACTIVE factor is refused (atomically) and the factor
+  survives. Pending factors can always be removed.
+
 ## 0.11.0 — Auth: distinct token/password error codes for email verification and password reset (minor, unreleased)
 
 `info.version` 0.10.1 -> 0.11.0, `SECURITY_CONTRACT_VERSION` 0.10.1 -> 0.11.0.
