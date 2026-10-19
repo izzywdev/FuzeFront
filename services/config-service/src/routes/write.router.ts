@@ -22,14 +22,15 @@ import { createNamespacesWriteRouter } from './namespaces.write';
 import { createKeyDefinitionsWriteRouter } from './keys.write';
 import { createConfigWriteRouter } from './config.write';
 import { createSecretsWriteRouter } from './secrets.write';
+import { ConfigChangeNotifier } from '../events/publisher';
 
-export function createWriteRouter(pool?: Pool): Router {
+export function createWriteRouter(pool?: Pool, events?: ConfigChangeNotifier | null): Router {
   const resolvedPool = pool ?? createPool(loadConfig().databaseUrl ?? process.env.DATABASE_URL ?? '');
 
   const router = Router();
   router.use(createNamespacesWriteRouter(resolvedPool));
   router.use(createKeyDefinitionsWriteRouter(resolvedPool));
-  router.use(createConfigWriteRouter(resolvedPool));
+  router.use(createConfigWriteRouter(resolvedPool, events));
   router.use(createSecretsWriteRouter(resolvedPool));
   return router;
 }

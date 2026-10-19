@@ -140,7 +140,11 @@ export function requireAuth(
         next();
       })
       .catch((err: unknown) => {
-        if (optional) return next();
+        // `optional` degrades CLIENT credential failures (4xx) to anonymous. A 5xx
+        // (resolver / session-validator outage, misconfiguration) is the SERVER's
+        // failure: continuing anonymously would turn an outage into a successful
+        // anonymous request. Anything that is not a plain AuthError also denies.
+        if (optional && err instanceof AuthError && err.status < 500) return next();
         deny(res, err);
       });
   };

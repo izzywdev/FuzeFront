@@ -65,9 +65,26 @@ import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 import { startChatResponseConsumer, stopChatResponseConsumer } from './kafka/chat-response.consumer'
+import { initTelemetry, tracingMiddleware, type TelemetryHandle } from '@fuzefront/telemetry'
 
 // Load environment variables
 dotenv.config()
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below — see
+// backend/security/src/index.ts for the full rationale (HttpInstrumentation/
+// ExpressInstrumentation patch shared module/prototype state looked up at CALL
+// time, but request handling must not start first). Sends OTLP to FuzeInfra's
+// Collector; endpoint/protocol/sampling default from OTEL_* env vars.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'backend',
+  serviceVersion: SERVICE_VERSION,
+})
 
 // Prometheus metrics (Phase E). Scraped at /metrics; gracefully degrades to a
 // 503 if prom-client is not installed.
@@ -87,6 +104,10 @@ const app = express()
 // trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
 // the real client from X-Forwarded-For.
 app.set('trust proxy', 1)
+// Starts/continues a per-request span, exposing req.traceId/req.spanId for
+// log correlation (see @fuzefront/telemetry's withTraceContext). Mounted
+// before any other middleware so the span wraps the whole request lifecycle.
+app.use(tracingMiddleware())
 const httpServer = createServer(app)
 const PORT = process.env.PORT || 3001
 
@@ -518,6 +539,18 @@ app.use((req, res) => {
 function gracefulShutdown(signal: string) {
   console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`)
 
+  // `httpServer.close()` only invokes its callback once every connection —
+  // INCLUDING an upgraded Socket.IO websocket, which the HTTP server still
+  // tracks as an open connection — has ended. `io.close()` is what actively
+  // disconnects those clients, so it must run unnested (not inside
+  // httpServer.close()'s own callback) or the two deadlock: httpServer.close()
+  // waits forever for connections that only io.close() would terminate, and
+  // io.close() never runs because it's waiting for that callback to fire
+  // first. Verified empirically: with io.close() nested inside, the callback
+  // never fires while a client is connected; calling it unnested instead
+  // (so both close concurrently) lets httpServer.close() complete normally.
+  io.close()
+
   httpServer.close(err => {
     if (err) {
       console.error('❌ Error during server shutdown:', err)
@@ -525,11 +558,9 @@ function gracefulShutdown(signal: string) {
     }
 
     console.log('✅ HTTP server closed')
+    console.log('✅ Socket.IO server closed')
 
-    // Close Socket.IO connections
-    io.close(async () => {
-      console.log('✅ Socket.IO server closed')
-
+    ;(async () => {
       // Close database connections
       try {
         await closeDatabase()
@@ -558,9 +589,17 @@ function gracefulShutdown(signal: string) {
         console.error('❌ Error stopping chat response consumer:', error)
       }
 
+      // Flush any spans still buffered before the process exits — otherwise
+      // the last few requests before shutdown silently never reach Tempo.
+      try {
+        await telemetry.shutdown()
+      } catch (error) {
+        console.error('❌ Error shutting down telemetry:', error)
+      }
+
       console.log('🎯 Graceful shutdown complete')
       process.exit(0)
-    })
+    })()
   })
 
   // Force exit after 30 seconds if graceful shutdown fails

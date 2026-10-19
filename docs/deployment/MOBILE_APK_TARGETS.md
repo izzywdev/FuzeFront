@@ -29,6 +29,14 @@ This contract can be replaced per product when that product ships a genuinely
 native Flutter frontend. Until then, the standalone web application is a
 runtime dependency of every APK.
 
+## Android SDK baseline
+
+Every product TWA must declare `minSdkVersion: 24` in `android/twa-manifest.json`.
+The release workflow also forces Android API 24 into Bubblewrap's generated Gradle project:
+Bubblewrap can otherwise scaffold its obsolete API 21 default, which is incompatible with
+`androidbrowserhelper:2.7.4`. The compatibility fix is the API-24 baseline, not an Android
+manifest-merger override.
+
 ## Production acceptance
 
 A product is ready only when all of the following are true:

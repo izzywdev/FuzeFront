@@ -28,7 +28,10 @@ on:
             org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
             selection-lists     — fuzefront.selection-lists.service (staged ramp via `rollout`; rollback via `action: disable`)
             app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
+            authz-enabled       — fuzefront.billing.authz-enabled (100%) — run AFTER prod-billing-s2s-provision succeeds
+            root-membership     — fuzefront.identity.root-membership (100%): new signups take the root-membership path instead of a personal org (FF-EPIC-17-S1/S2; the S2 backfill is #1095, deployed)
             selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + fuzefront.selection-lists.seed-defaults, left OFF
+            config-management   — fuzefront.config.management-console + .key-catalog + .secrets-audit (100%): Configuration Management Console UI (EPIC-19). Web-exposed; requires the catalog-registering build (#1571) deployed.
         required: true
         default: billing-portal
         type: choice
@@ -39,7 +42,11 @@ on:
           - org-context-gating
           - selection-lists
           - app-builder
+          - authz-enabled
+          - root-membership
           - selection-lists-create
+          - billing-plan-flag-sync
+          - config-management
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
         required: false
@@ -150,6 +157,17 @@ jobs:
           apply_billing() {
             enable_ga "fuzefront.billing.invoice-history" \
               "Release flag. Gates the Invoices tab in the billing portal (PR #1044). GA per billing portal deploy 2026-09-14. Owner: platform team. Removal: once invoice history is GA for >= 2 sprints."
+          }
+
+          # ── Billing plan-flag-sync (CREATE ONLY, dark deploy) ─────────────
+          # Release flag, default OFF. Created so billing-service can gate the
+          # Unleash Admin API flag-sync calls behind it. Flip to ON separately
+          # after verifying UNLEASH_ADMIN_TOKEN is provisioned in billing-service
+          # and the plan tiers are canonical in the DB (migration 005 has run).
+          # Re-running this set on an already-created flag is safe (409 = ok).
+          apply_billing_plan_flag_sync() {
+            create_only "fuzefront.billing.plan-flag-sync-enabled" \
+              "Release flag, default OFF. Gates whether billing-service's UnleashFlagSyncService calls the Unleash Admin API to maintain per-org plan-tier permission flags (fuzefront.billing.plan-{starter,growth,enterprise}) after a subscription change (FFRNT-364). Dark deploy — flip ON once UNLEASH_ADMIN_TOKEN is provisioned and migration 005 has run. Owner: feature-flags-engineer (billing). Removal criterion: after 2 sprints with no regression in per-org flag states; delete flag and dead OFF-path."
           }
 
           # ── Portals Directory flags ────────────────────────────────────────
@@ -271,6 +289,45 @@ jobs:
               "Release flag, default OFF. Gates the marketplace publication-request endpoints (submit/approve/reject/get) and the Publish to marketplace UI. Owner: backend-engineer. Removal: once the marketplace flow is rolled out and stable."
           }
 
+          # ── Billing authz-enabled (run AFTER prod-billing-s2s-provision) ──────
+          apply_authz_enabled() {
+            enable_ga "fuzefront.billing.authz-enabled" \
+              "Release flag. Gates PermitSyncService.syncPlanToPermit() in billing-service — syncs plan tier to the Security API on every subscription change. Run prod-billing-s2s-provision first to seal AUTHENTIK_CLIENT_ID/SECRET. GA when S2S credentials are verified in prod. Owner: platform team. Removal: once authz sync is GA and stable."
+          }
+
+          # ── Root membership (FF-EPIC-17-S1/S2) ─────────────────────────────
+          # Backend release flag (web_exposed:false). ON = signup / auth
+          # self-heal upserts a root organization_memberships(role='member')
+          # row instead of creating a type='personal' org. Only changes NEW
+          # signup behaviour; existing users were handled by the S2 backfill
+          # (#1095 migrations 029/020, deployed). GA per owner decision
+          # 2026-10-05 (izzy). Removal: drop the type='personal' branch once
+          # 100% of signups take this path.
+          apply_root_membership() {
+            enable_ga "fuzefront.identity.root-membership" \
+              "Release flag (FF-EPIC-17-S1/S2, backend). ON = signup/auth self-heal upserts a root membership(role=member) instead of a personal org. S2 backfill = #1095 (deployed). GA per owner decision 2026-10-05 (izzy). Owner: platform team. Removal: drop the type=personal provisioning branch once 100% of signups take the root-membership path."
+          }
+
+          # ── Configuration Management Console (EPIC-19) ─────────────────────
+          # Three web-exposed release flags (packages/feature-flags: FLAG_KEYS +
+          # WEB_EXPOSED_FLAGS, registered in #1571). ON at 100% surfaces the
+          # top-level "Configuration" left-nav item + /config settings editor,
+          # the /admin/config/catalog* catalog surface, and the
+          # /admin/config/keys/:key/history secret+audit surface. Web-exposed, so
+          # the browser only sees them once the catalog-registering build (#1571)
+          # has deployed (frontend + backend rebuilt); enabling before that is
+          # harmless (the key is absent from /api/flags, useFlag() reads its OFF
+          # default). GA per owner decision 2026-10-19 (izzy). Owner:
+          # feature-flags-engineer. Removal: console GA at 100% for 30 days.
+          apply_config_management() {
+            enable_ga "fuzefront.config.management-console" \
+              "Release flag (EPIC-19, web-exposed). ON surfaces the top-level Configuration nav item + /config settings editor. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
+            enable_ga "fuzefront.config.key-catalog" \
+              "Release flag (EPIC-19, web-exposed). ON surfaces the /admin/config/catalog + /admin/config/catalog/:key admin surfaces. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
+            enable_ga "fuzefront.config.secrets-audit" \
+              "Release flag (EPIC-19, web-exposed). ON surfaces the /admin/config/keys/:key/history secret + audit-history surface. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
+          }
+
           # ── Selection Lists (CREATE ONLY) ───────────────────────────────────
           # Release flags, default OFF (packages/feature-flags/flag-registry.yaml).
           # Reuses create_only: creates the flags if absent (409 = already exists,
@@ -289,13 +346,17 @@ jobs:
 
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
-            billing-portal)      apply_billing ;;
-            portals-directory)   apply_portals_directory ;;
+            billing-portal)           apply_billing ;;
+            billing-plan-flag-sync)   apply_billing_plan_flag_sync ;;
+            portals-directory)        apply_portals_directory ;;
             portal-console)      apply_portal_console ;;
             org-context-gating)  apply_org_context_gating ;;
             selection-lists)     apply_selection_lists ;;
             app-builder)         apply_app_builder ;;
+            authz-enabled)       apply_authz_enabled ;;
+            root-membership)     apply_root_membership ;;
             selection-lists-create) apply_selection_lists_create ;;
+            config-management)   apply_config_management ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
@@ -361,6 +422,14 @@ jobs:
               check_flag "fuzefront.apps.build-with-agent"
               check_flag "fuzefront.apps.creator-ownership"
               check_flag "fuzefront.apps.marketplace-publishing" ;;
+            authz-enabled)
+              check_flag "fuzefront.billing.authz-enabled" ;;
+            root-membership)
+              check_flag "fuzefront.identity.root-membership" ;;
+            config-management)
+              check_flag "fuzefront.config.management-console"
+              check_flag "fuzefront.config.key-catalog"
+              check_flag "fuzefront.config.secrets-audit" ;;
             selection-lists-create)
               check_flag "fuzefront.selection-lists.service"
               check_flag "fuzefront.selection-lists.seed-defaults"
