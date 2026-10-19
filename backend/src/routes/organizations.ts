@@ -13,6 +13,7 @@ import { resolvePortalScopeDecision, applyPortalScope, normalizePortalId } from 
 import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
+import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 const router = express.Router()
 
@@ -542,6 +543,22 @@ router.delete(
   async (req: any, res) => {
     try {
       const { id } = req.params
+
+      // The platform root organization is the anchor for every portal-scope
+      // check and every user's baseline membership — it can never be deleted.
+      // Guard by the well-known id AND by type='platform' so any future
+      // platform/system org is covered too. This runs before the owner check so
+      // the answer is the same regardless of who asks.
+      const targetOrg = await db('organizations').where('id', id).first()
+      if (!targetOrg) {
+        return res.status(404).json({ error: 'Organization not found' })
+      }
+      if (id === ROOT_ORG_ID || targetOrg.type === 'platform') {
+        return res.status(403).json({
+          error: 'The platform root organization cannot be deleted',
+          code: 'ROOT_ORG_PROTECTED',
+        })
+      }
 
       // Check if user is owner of this organization
       const membership = await db('organization_memberships')

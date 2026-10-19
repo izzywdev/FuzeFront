@@ -653,6 +653,22 @@ router.delete(
     try {
       const { id } = req.params
 
+      // The platform root organization is the anchor for every portal-scope
+      // check and every user's baseline membership — it can never be deleted.
+      // Guard by the well-known id AND by type='platform' so any future
+      // platform/system org is covered too. This runs before the owner check
+      // and before the transaction/outbox emit.
+      const targetOrg = await db('organizations').where('id', id).first()
+      if (!targetOrg) {
+        return res.status(404).json({ error: 'Organization not found' })
+      }
+      if (id === ROOT_ORG_ID || targetOrg.type === 'platform') {
+        return res.status(403).json({
+          error: 'The platform root organization cannot be deleted',
+          code: 'ROOT_ORG_PROTECTED',
+        })
+      }
+
       // Check if user is owner of this organization
       const membership = await db('organization_memberships')
         .where('user_id', req.user.id)
