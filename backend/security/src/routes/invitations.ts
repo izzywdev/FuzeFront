@@ -11,6 +11,17 @@ import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 import { withReqId } from '../lib/logger'
+import { authenticateToken } from '../middleware/auth'
+import { isInviteV2Enabled } from '../utils/inviteV2Flag'
+import {
+  bindInvitation,
+  checkIdentityMatch,
+  errorBody,
+  issueBindToken,
+  maskEmail as maskEmailV2,
+  maskPhone,
+  wireIds,
+} from '../services/invitationsV2'
 
 const router = express.Router()
 
@@ -25,6 +36,133 @@ export function maskEmail(email: string): string {
   return email[0] + '***' + email.slice(atIndex)
 }
 
+
+/**
+ * FFRNT-307 - optional authentication for POST /:token/accept, v2 ONLY.
+ *
+ * Historically nothing populated `req.user` on this router, so every accept fell
+ * into the unauthenticated `202` branch and the post-signup bind never ran. With
+ * `fuzefront.identity.invite-v2` ON, a request that PRESENTS a bearer token is
+ * authenticated (an invalid/revoked token is a hard 401, never silently
+ * downgraded to anonymous); a request with none stays anonymous (-> 202 + bindToken).
+ * Flag OFF: untouched (legacy behavior is byte-identical).
+ */
+async function optionalAuthForAcceptV2(req: any, res: any, next: any) {
+  try {
+    if (!req.headers['authorization']) return next()
+    const inv = await db('organization_invitations').where('token', req.params.token).first()
+    if (!inv) return next() // handler answers 404
+    req.invitationRow = inv
+    if (!(await isInviteV2Enabled({ organizationId: inv.organization_id }))) return next()
+    return authenticateToken(req, res, next)
+  } catch (error: any) {
+    withReqId(req.requestId, req).error({ err: error }, 'optional auth for invitation accept failed')
+    return res.status(500).json({ error: 'Failed to accept invitation' })
+  }
+}
+
+const effectiveInvitationState = (inv: any): 'pending' | 'accepted' | 'gone' =>
+  inv.status === 'accepted'
+    ? 'accepted'
+    : inv.status !== 'pending' || new Date(inv.expires_at).getTime() < Date.now()
+      ? 'gone'
+      : 'pending'
+
+// v2: public masked resolve (contract `InvitationResolveResult`).
+async function resolveV2(req: any, res: any, invitation: any) {
+  if (invitation.status !== 'pending' || new Date(invitation.expires_at) < new Date()) {
+    return res.status(410).json(errorBody(410, 'This invitation has expired or been revoked'))
+  }
+  const organization = await db('organizations').where('id', invitation.organization_id).first()
+  const wire = wireIds(await isPrefixedIdsEnabled({ orgId: invitation.organization_id }))
+  return res.json({
+    invitation: {
+      id: wire('invitation', invitation.id),
+      maskedContact:
+        invitation.channel === 'whatsapp' ? maskPhone(invitation.phone ?? '') : maskEmailV2(invitation.email ?? ''),
+      channel: invitation.channel,
+      role: invitation.role,
+      memberType: invitation.member_type,
+      status: invitation.status,
+      expiresAt: new Date(invitation.expires_at).toISOString(),
+    },
+    organization: {
+      id: wire('organization', organization?.id),
+      name: organization?.name,
+      slug: organization?.slug,
+    },
+  })
+}
+
+// v2: accept (contract `acceptInvitation`).
+async function acceptV2(req: any, res: any, invitation: any) {
+  const rlog = withReqId(req.requestId, req)
+  const state = effectiveInvitationState(invitation)
+  if (state === 'accepted') {
+    return res.status(409).json(errorBody(409, 'Invitation has already been accepted'))
+  }
+  if (state === 'gone') {
+    return res.status(410).json(errorBody(410, 'This invitation has expired or been revoked'))
+  }
+
+  // Anonymous / no account yet: hand back the single-use bindToken that carries
+  // this invite THROUGH signup (SignupRequest.bindToken). Only its digest is stored.
+  if (!req.user) {
+    const bindToken = await issueBindToken(invitation)
+    const enrollUrl = `${currentTenant('invitation enrollment URL').issuerUrl}/if/flow/enrollment/`
+    rlog.info({ invitationId: invitation.id, channel: invitation.channel }, 'invitation accept: enroll (bindToken issued)')
+    return res.status(202).json({
+      action: 'enroll',
+      enrollUrl,
+      bindToken,
+      message: 'Please create an account or sign in to accept this invitation',
+    })
+  }
+
+  // Authenticated: the accepting identity must BE the invited identity. The
+  // token (a lookup key) is never sufficient on its own.
+  const match = await checkIdentityMatch(invitation, req.user.id, { requireVerifiedEmail: true })
+  if (!match.ok) {
+    rlog.warn({ invitationId: invitation.id, userId: req.user.id }, 'invitation accept: identity mismatch (fail-closed)')
+    return res.status(403).json(errorBody(403, match.message, 'IDENTITY_MISMATCH'))
+  }
+
+  const result = await bindInvitation(invitation, req.user.id)
+  if (result.outcome === 'conflict') {
+    return res.status(409).json(errorBody(409, 'Invitation has already been accepted'))
+  }
+  if (result.outcome === 'expired') {
+    return res.status(410).json(errorBody(410, 'This invitation has expired or been revoked'))
+  }
+  if (result.outcome === 'forbidden') {
+    rlog.warn({ invitationId: invitation.id, userId: req.user.id, code: result.code }, 'invitation accept: forbidden')
+    return res.status(403).json(errorBody(403, result.message, result.code))
+  }
+
+  // Permit role assignment is non-blocking: an outage must not undo the accept.
+  try {
+    await assignOrganizationRole(
+      req.user.id,
+      invitation.organization_id,
+      invitation.role as 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
+    )
+  } catch (permitErr) {
+    rlog.error(
+      { err: permitErr, userId: req.user.id, organizationId: invitation.organization_id },
+      'permit role assignment failed after invitation accept (non-fatal)'
+    )
+  }
+
+  const wire = wireIds(await isPrefixedIdsEnabled({ userId: req.user.id, orgId: invitation.organization_id }))
+  return res.json({
+    action: 'bound',
+    organizationId: wire('organization', result.organizationId),
+    userId: wire('user', result.userId),
+    role: result.role,
+    memberType: result.memberType,
+  })
+}
+
 // GET /api/invitations/:token — public, no auth
 router.get('/:token', async (req: any, res) => {
   try {
@@ -36,6 +174,11 @@ router.get('/:token', async (req: any, res) => {
 
     if (!invitation) {
       return res.status(404).json({ error: 'Invitation not found' })
+    }
+
+    // FFRNT-307: contract-shaped masked resolve behind the release flag (default OFF).
+    if (await isInviteV2Enabled({ organizationId: invitation.organization_id })) {
+      return resolveV2(req, res, invitation)
     }
 
     // Expired by status or by time
@@ -69,16 +212,23 @@ router.get('/:token', async (req: any, res) => {
 })
 
 // POST /api/invitations/:token/accept — accept (auth optional via req.user)
-router.post('/:token/accept', async (req: any, res) => {
+router.post('/:token/accept', optionalAuthForAcceptV2, async (req: any, res) => {
   try {
     const { token } = req.params
 
-    const invitation = await db('organization_invitations')
-      .where('token', token)
-      .first()
+    const invitation =
+      req.invitationRow ??
+      (await db('organization_invitations')
+        .where('token', token)
+        .first())
 
     if (!invitation) {
       return res.status(404).json({ error: 'Invitation not found' })
+    }
+
+    // FFRNT-307: Org invitations v2 (bindToken signup flow) behind the release flag, default OFF.
+    if (await isInviteV2Enabled({ userId: req.user?.id, organizationId: invitation.organization_id })) {
+      return acceptV2(req, res, invitation)
     }
 
     // Not authenticated: direct to enroll

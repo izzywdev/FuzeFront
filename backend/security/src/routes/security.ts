@@ -40,6 +40,9 @@ import { authenticateToken } from '../middleware/auth'
 import { db } from '../config/database'
 import { resolveEmployeeStatus } from '../services/employeeRole'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
+import { isInviteV2Enabled } from '../utils/inviteV2Flag'
+import { redeemBindToken } from '../services/invitationsV2'
+import { withReqId } from '../lib/logger'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import { authenticateKubernetesWorkload } from '../services/workload-identity'
 
@@ -593,11 +596,41 @@ router.post('/signup', async (req: Request, res: Response) => {
       },
       sessionContext(req)
     )
+    // FFRNT-307: external-invitee signup binding (behind `fuzefront.identity.invite-v2`,
+    // default OFF). A single-use bindToken from the 202 accept response rides the
+    // signup; once the account exists the server verifies the signup identity
+    // matches the invited channel identity and auto-binds the membership (role +
+    // memberType). Fail-closed and NON-fatal to signup: a bad/expired/mismatched
+    // token binds nothing, the account is still created, and the reason is only
+    // logged (never returned — the token is not an oracle).
+    const bindToken = req.body?.bindToken
+    if (bindToken !== undefined && session?.user?.id) {
+      await redeemBindTokenAfterSignup(req, bindToken, session.user.id)
+    }
     res.status(201).json({ token: session.token, sessionId: session.sessionId, user: toApiUser(session.user) })
   } catch (err) {
     sendError(res, err)
   }
 })
+
+async function redeemBindTokenAfterSignup(req: Request, bindToken: unknown, userId: string): Promise<void> {
+  const rlog = withReqId((req as any).requestId, req as any)
+  try {
+    if (typeof bindToken !== 'string' || bindToken.length === 0 || bindToken.length > 256) {
+      rlog.warn({ userId }, 'signup bindToken ignored: malformed')
+      return
+    }
+    if (!(await isInviteV2Enabled({ userId }))) return
+    const outcome = await redeemBindToken(bindToken, { id: userId })
+    if (outcome.bound) {
+      rlog.info({ userId, organizationId: outcome.organizationId, memberType: outcome.memberType }, 'signup bindToken redeemed: membership bound')
+    } else {
+      rlog.warn({ userId, reason: outcome.reason }, 'signup bindToken not redeemed (fail-closed)')
+    }
+  } catch (err) {
+    rlog.error({ err, userId }, 'signup bindToken redeem failed (non-fatal)')
+  }
+}
 
 // ── Public email availability ─────────────────────────────────────────────
 // GET /v1/security/email-available?email=<addr>
