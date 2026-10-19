@@ -62,6 +62,9 @@ export class MeteringClient {
         ],
       });
     } catch (err) {
+      // Reset so the next emit() can attempt a fresh connection rather than
+      // re-awaiting the same rejected promise indefinitely.
+      this.connectPromise = null;
       // Metering MUST NOT fail requests — swallow and log only.
       // eslint-disable-next-line no-console
       console.error(

@@ -123,6 +123,20 @@ describe('MeteringClient.emit()', () => {
 
     await expect(client.emit(sampleEvent)).resolves.toBeUndefined();
   });
+
+  it('resets connectPromise after a connect failure so subsequent emits can retry', async () => {
+    // First connect() fails — emit swallows it
+    mockConnect.mockRejectedValueOnce(new Error('transient error'));
+    const client = makeClient();
+    await client.emit(sampleEvent);
+    expect(mockSend).not.toHaveBeenCalled();
+
+    // Second connect() succeeds — emit should now produce a message
+    mockConnect.mockResolvedValueOnce(undefined);
+    await client.emit(sampleEvent);
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+    expect(mockSend).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
