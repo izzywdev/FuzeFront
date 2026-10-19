@@ -400,3 +400,478 @@
   padding-block: var(--space-2);
   background: var(--bg-secondary);
 }
+
+/* ---- Thought / Reasoning Accordion -------------------------- */
+.ffc-thought-box {
+  margin-block-end: var(--space-2);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+.ffc-thought-box__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  padding-inline: var(--space-3);
+  padding-block: var(--space-2);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: start;
+}
+.ffc-thought-box__toggle:hover {
+  background: var(--bg-quaternary);
+  color: var(--text-primary);
+}
+.ffc-thought-box__icon {
+  color: var(--accent-color);
+}
+.ffc-thought-box__title {
+  flex: 1;
+  font-weight: var(--weight-medium);
+}
+.ffc-thought-box__chevron {
+  font-size: var(--text-sm);
+}
+.ffc-thought-box__content {
+  padding-inline: var(--space-3);
+  padding-block: var(--space-2);
+  border-block-start: var(--border-width) solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ffc-thought-box__step-title {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+.ffc-thought-box__step-body {
+  white-space: pre-wrap;
+}
+
+/* ---- Custom Tool Cards -------------------------------------- */
+.ffc-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+.ffc-card-host {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.ffc-card-default {
+  padding: var(--space-3);
+  background: var(--bg-secondary);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   Standalone Chat Workspace (OpenWebUI / Claude / Codex Style)
+   ============================================================ */
+.ffc-workspace {
+  display: flex;
+  inline-size: 100vw;
+  block-size: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  position: relative;
+}
+
+/* ---- Left Threads Sidebar ----------------------------------- */
+.ffc-workspace__sidebar {
+  inline-size: 260px;
+  min-inline-size: 260px;
+  background: var(--bg-secondary);
+  border-inline-end: var(--border-width) solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  transition: inline-size var(--duration-fast) var(--ease-standard),
+              min-inline-size var(--duration-fast) var(--ease-standard),
+              opacity var(--duration-fast) var(--ease-standard);
+  overflow: hidden;
+}
+.ffc-workspace__sidebar--collapsed {
+  inline-size: 0;
+  min-inline-size: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.ffc-workspace__sidebar-header {
+  padding: var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+.ffc-workspace__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-bold);
+  font-size: var(--text-md);
+  color: var(--text-primary);
+}
+.ffc-workspace__brand-icon {
+  color: var(--accent-color);
+}
+.ffc-workspace__new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  padding-block: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--seam);
+  color: var(--primary-foreground);
+  border: none;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.ffc-workspace__new-btn:hover {
+  opacity: 0.9;
+}
+.ffc-workspace__model-picker {
+  padding-inline: var(--space-3);
+  padding-block: var(--space-2);
+  border-block-end: var(--border-width) solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ffc-workspace__model-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ffc-workspace__model-select {
+  background: var(--bg-tertiary);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding-inline: var(--space-2);
+  padding-block: var(--space-1);
+  font-size: var(--text-xs);
+  font-family: inherit;
+  outline: none;
+}
+.ffc-workspace__model-select:focus-visible {
+  border-color: var(--accent-color);
+}
+.ffc-workspace__threads {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ffc-workspace__threads-section {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  padding-inline: var(--space-2);
+  padding-block: var(--space-1);
+}
+.ffc-workspace__no-threads {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  padding: var(--space-3);
+  text-align: center;
+}
+.ffc-workspace__thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ffc-workspace__thread-item {
+  display: flex;
+  align-items: center;
+  position: relative;
+  border-radius: var(--radius-md);
+}
+.ffc-workspace__thread-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: var(--space-2);
+  padding-block: var(--space-2);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ffc-workspace__thread-btn:hover {
+  background: var(--bg-quaternary);
+  color: var(--text-primary);
+}
+.ffc-workspace__thread-btn--active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+}
+.ffc-workspace__thread-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.ffc-workspace__thread-badge {
+  background: var(--accent-color);
+  color: var(--primary-foreground);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  padding-inline: var(--space-1);
+}
+.ffc-workspace__thread-del {
+  display: none;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding-inline: var(--space-1);
+  font-size: var(--text-sm);
+}
+.ffc-workspace__thread-item:hover .ffc-workspace__thread-del {
+  display: block;
+}
+.ffc-workspace__thread-del:hover {
+  color: var(--error-color);
+}
+
+/* ---- Main Canvas -------------------------------------------- */
+.ffc-workspace__canvas {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+.ffc-workspace__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: var(--space-4);
+  padding-block: var(--space-2);
+  border-block-end: var(--border-width) solid var(--border-color);
+  background: var(--bg-secondary);
+  min-block-size: 48px;
+}
+.ffc-workspace__header-start {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.ffc-workspace__header-titles {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.ffc-workspace__title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+.ffc-workspace__subtitle {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.ffc-workspace__status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--accent-color);
+  background: var(--bg-tertiary);
+  padding-inline: var(--space-2);
+  padding-block: 2px;
+  border-radius: var(--radius-pill);
+  border: var(--border-width) solid var(--border-color);
+}
+.ffc-workspace__status-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-color);
+  animation: ffc-pulse 1.5s infinite;
+}
+@keyframes ffc-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+.ffc-workspace__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.ffc-iconbtn--active {
+  background: var(--bg-quaternary);
+  color: var(--accent-color);
+}
+
+.ffc-workspace__messages {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.ffc-workspace__messages .ffc-list {
+  max-inline-size: 800px;
+  margin-inline: auto;
+  inline-size: 100%;
+}
+
+/* ---- Floating Workspace Composer ---------------------------- */
+.ffc-workspace__composer-wrapper {
+  padding-inline: var(--space-4);
+  padding-block-end: var(--space-4);
+  background: linear-gradient(to top, var(--bg-primary) 80%, transparent 100%);
+  display: flex;
+  justify-content: center;
+}
+.ffc-workspace__composer-box {
+  inline-size: 100%;
+  max-inline-size: 800px;
+  background: var(--bg-secondary);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.ffc-workspace__composer-box:focus-within {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 var(--border-width) var(--accent-color);
+}
+.ffc-workspace__pills {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-x: auto;
+}
+.ffc-workspace__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  padding-block: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  border: var(--border-width) solid var(--border-color);
+}
+.ffc-workspace__pill--accent {
+  background: var(--bg-quaternary);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+.ffc-workspace__input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.ffc-workspace__textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  resize: none;
+  min-block-size: 40px;
+  max-block-size: 160px;
+}
+.ffc-workspace__textarea::placeholder {
+  color: var(--text-tertiary);
+}
+.ffc-workspace__send-btn {
+  inline-size: var(--space-8);
+  block-size: var(--space-8);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--seam);
+  color: var(--primary-foreground);
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.ffc-workspace__send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ffc-workspace__composer-hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* ---- Right Inspector Drawer --------------------------------- */
+.ffc-workspace__inspector {
+  inline-size: 320px;
+  min-inline-size: 320px;
+  background: var(--bg-secondary);
+  border-inline-start: var(--border-width) solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ffc-workspace__inspector-header {
+  padding: var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+.ffc-workspace__inspector-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+.ffc-workspace__inspector-body {
+  padding: var(--space-3);
+  overflow-y: auto;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}

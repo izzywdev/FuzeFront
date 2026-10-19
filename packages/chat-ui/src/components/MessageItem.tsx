@@ -1,8 +1,10 @@
+import type { ReactNode } from 'react';
 import { useChatI18n } from '../i18n';
-import type { UiMessage } from '../hooks/types';
+import type { CustomToolCard, UiMessage } from '../hooks/types';
 import { Citations } from './Citations';
 import { ConfirmationCard } from './ConfirmationCard';
 import { FeedbackButtons } from './FeedbackButtons';
+import { ThoughtBox } from './ThoughtBox';
 import { renderInlineMarkdown } from '../lib/markdown';
 
 export interface MessageItemProps {
@@ -10,6 +12,7 @@ export interface MessageItemProps {
   onApprove: (confirmationId: string) => void;
   onCancel: (confirmationId: string) => void;
   onFeedback: (messageId: string, rating: 'positive' | 'negative') => void;
+  renderCustomCard?: (card: CustomToolCard) => ReactNode;
 }
 
 /** Slack/WhatsApp-style short local time, e.g. "10:42 AM". Undefined if unparseable. */
@@ -20,8 +23,14 @@ function formatMessageTime(createdAt?: string): string | undefined {
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date);
 }
 
-/** A single chat turn: bubble, streaming caret, citations, confirmations, feedback. */
-export function MessageItem({ message, onApprove, onCancel, onFeedback }: MessageItemProps) {
+/** A single chat turn: bubble, streaming caret, citations, confirmations, thoughts, custom cards, feedback. */
+export function MessageItem({
+  message,
+  onApprove,
+  onCancel,
+  onFeedback,
+  renderCustomCard,
+}: MessageItemProps) {
   const { strings } = useChatI18n();
   const isAssistant = message.role === 'assistant';
   const roleLabel = isAssistant ? strings.assistantRole : strings.userRole;
@@ -42,12 +51,33 @@ export function MessageItem({ message, onApprove, onCancel, onFeedback }: Messag
         ) : null}
       </div>
 
+      {message.thoughts && message.thoughts.length > 0 ? (
+        <ThoughtBox thoughts={message.thoughts} />
+      ) : null}
+
       <div className="ffc-bubble">
         {renderInlineMarkdown(message.content)}
         {message.streaming ? (
           <span className="ffc-caret" aria-hidden="true" data-testid="ffc-caret" />
         ) : null}
       </div>
+
+      {message.cards && message.cards.length > 0 ? (
+        <div className="ffc-cards-container">
+          {message.cards.map((card) => (
+            <div key={card.id} className="ffc-card-host" data-card-type={card.type}>
+              {renderCustomCard ? (
+                renderCustomCard(card)
+              ) : (
+                <div className="ffc-card-default">
+                  <strong>{card.title || card.type}</strong>
+                  <pre>{JSON.stringify(card.data, null, 2)}</pre>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {message.sources && message.sources.length > 0 ? (
         <Citations sources={message.sources} />
@@ -78,3 +108,4 @@ export function MessageItem({ message, onApprove, onCancel, onFeedback }: Messag
     </article>
   );
 }
+

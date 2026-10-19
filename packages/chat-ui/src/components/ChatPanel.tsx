@@ -1,5 +1,6 @@
+import type { ReactNode } from 'react';
 import { useChatI18n } from '../i18n';
-import type { UiMessage } from '../hooks/types';
+import type { CustomToolCard, UiMessage } from '../hooks/types';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
 
@@ -10,6 +11,7 @@ export interface ChatPanelProps {
   onApprove: (confirmationId: string) => void;
   onCancel: (confirmationId: string) => void;
   onFeedback: (messageId: string, rating: 'positive' | 'negative') => void;
+  renderCustomCard?: (card: CustomToolCard) => ReactNode;
   onClose?: () => void;
   /** True while the initial history page is loading (composer disabled). */
   loadingHistory?: boolean;
@@ -36,6 +38,7 @@ export function ChatPanel({
   onApprove,
   onCancel,
   onFeedback,
+  renderCustomCard,
   onClose,
   loadingHistory = false,
   hasMoreBefore = false,
@@ -73,6 +76,7 @@ export function ChatPanel({
         onApprove={onApprove}
         onCancel={onCancel}
         onFeedback={onFeedback}
+        renderCustomCard={renderCustomCard}
         loadingHistory={loadingHistory}
         hasMoreBefore={hasMoreBefore}
         hasMoreAfter={hasMoreAfter}
@@ -85,3 +89,4 @@ export function ChatPanel({
     </aside>
   );
 }
+

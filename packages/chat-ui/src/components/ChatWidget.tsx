@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ChatServiceClient } from '@fuzefront/chat-client';
 import { ChatI18nProvider, useChatI18n, type ChatStrings, type Direction } from '../i18n';
 import { useChat } from '../hooks/useChat';
 import type { InjectedChatEvent } from '../hooks/useChat';
+import type { CustomToolCard } from '../hooks/types';
 import { ChatPanel } from './ChatPanel';
 
 export interface ChatWidgetProps {
@@ -30,6 +31,8 @@ export interface ChatWidgetProps {
   dir?: Direction;
   /** Optional string overrides (e.g. localized copy from the host). */
   strings?: Partial<ChatStrings>;
+  /** Optional custom card renderer for domain-specific tool cards. */
+  renderCustomCard?: (card: CustomToolCard) => ReactNode;
   /** Surface errors to the host (toasts, logging). */
   onError?: (message: string) => void;
   /** Subscribe to persisted Kafka/WebSocket assistant response chunks. */
@@ -47,6 +50,7 @@ export function ChatWidget({
   defaultOpen = false,
   dir = 'ltr',
   strings,
+  renderCustomCard,
   onError,
   subscribeInjected,
 }: ChatWidgetProps) {
@@ -60,6 +64,7 @@ export function ChatWidget({
         resume={resume}
         pageSize={pageSize}
         defaultOpen={defaultOpen}
+        renderCustomCard={renderCustomCard}
         onError={onError}
         subscribeInjected={subscribeInjected}
       />
@@ -75,11 +80,21 @@ function ChatWidgetInner({
   resume,
   pageSize,
   defaultOpen,
+  renderCustomCard,
   onError,
   subscribeInjected,
 }: Pick<
   ChatWidgetProps,
-  'client' | 'orgId' | 'appId' | 'conversationId' | 'resume' | 'pageSize' | 'defaultOpen' | 'onError' | 'subscribeInjected'
+  | 'client'
+  | 'orgId'
+  | 'appId'
+  | 'conversationId'
+  | 'resume'
+  | 'pageSize'
+  | 'defaultOpen'
+  | 'renderCustomCard'
+  | 'onError'
+  | 'subscribeInjected'
 >) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   const { strings, dir } = useChatI18n();
@@ -109,6 +124,7 @@ function ChatWidgetInner({
       onLoadOlder={chat.loadOlder}
       onLoadNewer={chat.loadNewer}
       sendSignal={chat.sendCount}
+      renderCustomCard={renderCustomCard}
       onSend={chat.send}
       onApprove={chat.confirm}
       onCancel={chat.cancel}
@@ -117,3 +133,4 @@ function ChatWidgetInner({
     />
   );
 }
+

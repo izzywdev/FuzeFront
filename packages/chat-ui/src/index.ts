@@ -12,6 +12,10 @@
 export { ChatWidget } from './components/ChatWidget';
 export type { ChatWidgetProps } from './components/ChatWidget';
 
+// High-level standalone workspace (OpenWebUI / Claude / Codex style)
+export { ChatWorkspace } from './components/ChatWorkspace';
+export type { ChatWorkspaceProps, ChatModelOption } from './components/ChatWorkspace';
+
 // Presentational + composite components (for custom layouts).
 export { ChatPanel } from './components/ChatPanel';
 export type { ChatPanelProps } from './components/ChatPanel';
@@ -19,6 +23,8 @@ export { MessageList } from './components/MessageList';
 export type { MessageListProps } from './components/MessageList';
 export { MessageItem } from './components/MessageItem';
 export type { MessageItemProps } from './components/MessageItem';
+export { ThoughtBox } from './components/ThoughtBox';
+export type { ThoughtBoxProps } from './components/ThoughtBox';
 export { Composer } from './components/Composer';
 export type { ComposerProps } from './components/Composer';
 export { Citations } from './components/Citations';
@@ -33,8 +39,16 @@ export { useChat } from './hooks/useChat';
 export type { UseChatOptions, UseChatResult, InjectedChatEvent } from './hooks/useChat';
 export { chatReducer, initialModel } from './hooks/chatReducer';
 export type { ChatModel, ChatAction } from './hooks/chatReducer';
-export type { UiMessage, PendingConfirmation, RagSource } from './hooks/types';
+export type {
+  UiMessage,
+  PendingConfirmation,
+  RagSource,
+  CustomToolCard,
+  ThoughtStep,
+  ChatThread,
+} from './hooks/types';
 
 // i18n / direction.
 export { ChatI18nProvider, useChatI18n } from './i18n';
 export type { ChatI18nProviderProps, ChatStrings, Direction, I18nContextValue } from './i18n';
+

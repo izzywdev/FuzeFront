@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useChatI18n } from '../i18n';
-import type { UiMessage } from '../hooks/types';
+import type { CustomToolCard, UiMessage } from '../hooks/types';
 import { MessageItem } from './MessageItem';
 
 /** Distance (px) from an edge that counts as "at" that edge. */
@@ -11,6 +11,7 @@ export interface MessageListProps {
   onApprove: (confirmationId: string) => void;
   onCancel: (confirmationId: string) => void;
   onFeedback: (messageId: string, rating: 'positive' | 'negative') => void;
+  renderCustomCard?: (card: CustomToolCard) => ReactNode;
   /** True while the initial history page is loading. */
   loadingHistory?: boolean;
   /** Older history exists above the window — scroll-up paging enabled. */
@@ -41,6 +42,7 @@ export function MessageList({
   onApprove,
   onCancel,
   onFeedback,
+  renderCustomCard,
   loadingHistory = false,
   hasMoreBefore = false,
   hasMoreAfter = false,
@@ -160,6 +162,7 @@ export function MessageList({
             onApprove={onApprove}
             onCancel={onCancel}
             onFeedback={onFeedback}
+            renderCustomCard={renderCustomCard}
           />
         ))
       )}

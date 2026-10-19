@@ -19,6 +19,31 @@ export interface PendingConfirmation {
   summary?: string;
 }
 
+export interface CustomToolCard {
+  id: string;
+  type: string;
+  title?: string;
+  data: Record<string, unknown>;
+  createdAt?: string;
+}
+
+export interface ThoughtStep {
+  id: string;
+  title: string;
+  durationMs?: number;
+  content: string;
+  expanded?: boolean;
+}
+
+export interface ChatThread {
+  id: string;
+  title: string;
+  lastMessageSnippet?: string;
+  updatedAt: string;
+  model?: string;
+  unreadCount?: number;
+}
+
 export interface UiMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -36,4 +61,8 @@ export interface UiMessage {
   error?: string;
   /** ISO-8601 timestamp the message was created (server-persisted or locally stamped on send). */
   createdAt?: string;
+  /** Custom interactive tool cards rendered inline or stacked with the turn. */
+  cards?: CustomToolCard[];
+  /** Collapsible thought process / chain-of-thought steps. */
+  thoughts?: ThoughtStep[];
 }
