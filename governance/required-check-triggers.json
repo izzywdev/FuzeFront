@@ -29,6 +29,18 @@
     {
       "context": "gate-sealed-keys",
       "file": ".github/workflows/gate-sealed-keys.yml"
+    },
+    {
+      "context": "gate-frames-schema",
+      "file": ".github/workflows/gate-frames-schema.yml"
+    },
+    {
+      "context": "gate-ds-artifact",
+      "file": ".github/workflows/gate-ds-artifact.yml"
+    },
+    {
+      "context": "Playwright sign-in flow",
+      "file": ".github/workflows/e2e.yml"
     }
   ]
 }
