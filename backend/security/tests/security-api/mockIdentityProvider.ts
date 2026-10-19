@@ -468,4 +468,13 @@ export class MockIdentityProvider implements IdentityProvider {
     u.password = newPassword
     return this.getIdentityConnections(token)
   }
+
+  async changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+    const u = this.userByToken(token)
+    if (u.password !== currentPassword) {
+      throw new ProviderError('INVALID_CREDENTIALS', 'current password is incorrect', 400)
+    }
+    u.password = newPassword
+    await this.revokeOtherSessions(token)
+  }
 }

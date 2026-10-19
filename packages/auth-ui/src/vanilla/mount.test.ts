@@ -54,7 +54,7 @@ describe('vanilla mount()', () => {
 
     await new Promise((r) => setTimeout(r, 0))
     expect(transport.login).toHaveBeenCalledWith({ email: 'a@b.com', password: 'hunter2' })
-    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED)
+    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED, { mode: 'signin', email: 'a@b.com' })
   })
 
   it('defaults social to OFF even when startSocial is provided', async () => {
@@ -110,5 +110,47 @@ describe('vanilla mount()', () => {
     expect(container.querySelector('.fzf-auth-panel')).toBeTruthy()
     handle.unmount()
     expect(container.querySelector('.fzf-auth-panel')).toBeFalsy()
+  })
+  it('renders no Forgot password? link by default (flag OFF = today)', () => {
+    mount(container, { transport: makeTransport(), onAuthenticated: vi.fn() })
+    expect(container.querySelector('.fzf-auth-panel__forgot')).toBeNull()
+  })
+
+  it('renders a sign-in-only Forgot password? link and calls the SPA handler', () => {
+    const onForgotPassword = vi.fn()
+    mount(container, {
+      transport: makeTransport(),
+      onAuthenticated: vi.fn(),
+      forgotPasswordHref: '/reset',
+      onForgotPassword,
+    })
+    const link = container.querySelector<HTMLAnchorElement>('.fzf-auth-panel__forgot')!
+    expect(link.getAttribute('href')).toBe('/reset')
+    expect(link.textContent).toBe('Forgot password?')
+    expect(link.style.display).not.toBe('none')
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(onForgotPassword).toHaveBeenCalled()
+    // toggle to sign-up: the link is hidden
+    container.querySelector<HTMLButtonElement>('.fzf-auth-panel__toggle button')!.click()
+    expect(link.style.display).toBe('none')
+  })
+
+  it('reports the SUBMITTED email even if the field changes while the request is in flight', async () => {
+    let release!: (v: AuthenticatedSession) => void
+    const transport = makeTransport({
+      login: vi.fn(() => new Promise<AuthenticatedSession>((res) => (release = res))),
+    })
+    const onAuthenticated = vi.fn()
+    mount(container, { transport, onAuthenticated })
+    const email = container.querySelector<HTMLInputElement>('#fzf-auth-vanilla-email')!
+    email.value = 'first@b.com'
+    container.querySelector<HTMLInputElement>('#fzf-auth-vanilla-password')!.value = 'pw'
+    container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await new Promise((r) => setTimeout(r, 0))
+    email.value = 'changed@b.com' // edited mid-flight
+    release(AUTHENTICATED)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(transport.login).toHaveBeenCalledWith({ email: 'first@b.com', password: 'pw' })
+    expect(onAuthenticated).toHaveBeenCalledWith(AUTHENTICATED, { mode: 'signin', email: 'first@b.com' })
   })
 })

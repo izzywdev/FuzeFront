@@ -144,6 +144,42 @@ export class NotFoundError extends Error {
   }
 }
 
+/**
+ * Thrown when removing a factor would leave a user who has MFA enabled (>=1
+ * ACTIVE factor) with none (maps to 409 LAST_FACTOR). Removing the last active
+ * factor would silently turn two-factor off for the account.
+ */
+export class LastFactorError extends Error {
+  constructor(message = 'Two-factor is required for this account; add another method before removing your last one') {
+    super(message)
+    this.name = 'LastFactorError'
+  }
+}
+
+/** Thrown by changePassword when the account has no password to change (maps to 409 NO_PASSWORD). */
+export class NoPasswordError extends Error {
+  constructor(message = 'This account has no password; set one first') {
+    super(message)
+    this.name = 'NoPasswordError'
+  }
+}
+
+/** Thrown by changePassword when the supplied current password is wrong (maps to 400 INVALID_CREDENTIALS). */
+export class CurrentPasswordInvalidError extends Error {
+  constructor(message = 'Current password is incorrect') {
+    super(message)
+    this.name = 'CurrentPasswordInvalidError'
+  }
+}
+
+/** Thrown by changePassword when the new password fails policy (maps to 422 PASSWORD_POLICY). */
+export class PasswordPolicyRejectedError extends Error {
+  constructor(message = 'New password does not meet the password policy') {
+    super(message)
+    this.name = 'PasswordPolicyRejectedError'
+  }
+}
+
 type Db = typeof defaultDb
 
 interface SocialState {
@@ -610,10 +646,23 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       )) as BrokeredUser
     }
 
-    // Mint the session now and hand back a single-use opaque code (never a token
-    // in the URL). Social sign-in does not re-gate MFA at the browser hop.
-    const session = await this.mintSession(user, ctx)
+    // Hand back a single-use opaque code (never a token in the URL). Social
+    // sign-in MUST honour MFA exactly like password login: a user with an active
+    // factor gets NO session here. The code carries only the user, and redemption
+    // (`exchangeCode`) answers with an `mfa_required` challenge bound to that
+    // user. Otherwise a linked social account would bypass the second factor.
     const code = crypto.randomBytes(32).toString('hex')
+    const activeFactors = await this.loadActiveFactors(user.id)
+    if (activeFactors.length > 0) {
+      putBrokerCode(code, {
+        mfaPendingUser: user,
+        ctx: ctx ? { ip: ctx.ip ?? null, userAgent: ctx.userAgent ?? null } : undefined,
+        expiresAt: this.now() + CODE_TTL_MS,
+      })
+      console.warn(`[security] social sign-in for user ${user.id} deferred to MFA step-up`)
+      return { code, redirectTo: st.redirectTo || '/', returnOrigin: st.returnOrigin }
+    }
+    const session = await this.mintSession(user, ctx)
     // Shared store: a code minted here OR by the legacy /api/auth/oidc/callback
     // is redeemable by the SPA's /api/v1/security/session/exchange.
     putBrokerCode(code, {
@@ -641,7 +690,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     if (!entry) {
       throw new UnauthorizedError('invalid or expired code')
     }
-    return { token: entry.token, sessionId: entry.sessionId, user: entry.user }
+    if (entry.mfaPendingUser) {
+      // Re-checks factors at redemption: throws MfaRequiredError (challenge
+      // bound to this user) or mints a session if the factors were since removed.
+      return this.sessionOrChallenge(entry.mfaPendingUser, entry.ctx)
+    }
+    return { token: entry.token!, sessionId: entry.sessionId!, user: entry.user! }
   }
 
   // ── Signup (server-brokered against Authentik enrollment) ─────────────────
@@ -959,7 +1013,26 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
   async removeFactor(token: string, factorId: string): Promise<void> {
     const { user } = await this.getUserInfo(token)
-    await this.db('mfa_factors').where({ id: factorId, user_id: user.id }).del()
+    // Atomic last-factor guard. The user row is locked FOR UPDATE for the
+    // duration of the transaction, so two concurrent removals for the same user
+    // serialize: the second re-counts AFTER the first commits and is refused.
+    // Without the lock, two parallel deletes of the last two factors could each
+    // see "2 active" and both succeed, leaving MFA silently disabled.
+    await this.db.transaction(async (trx: any) => {
+      await trx('users').where({ id: user.id }).forUpdate().first()
+      const target = await trx('mfa_factors').where({ id: factorId, user_id: user.id }).first()
+      if (!target) return // idempotent
+      if (target.status === 'active') {
+        const rows = await trx('mfa_factors').where({ user_id: user.id, status: 'active' }).select('id')
+        if (rows.length <= 1) {
+          console.warn(
+            `[security] removeFactor blocked (LAST_FACTOR) for user ${user.id}: factor ${factorId} is the last active factor`
+          )
+          throw new LastFactorError()
+        }
+      }
+      await trx('mfa_factors').where({ id: factorId, user_id: user.id }).del()
+    })
   }
 
   async regenerateRecoveryCodes(token: string): Promise<string[]> {
@@ -1579,6 +1652,49 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     }
     await this.markHasPassword(user.id, true)
     return this.connectionsForUser(user)
+  }
+
+  // ── Change password (account already has one) ─────────────────────────────
+  //
+  // Verifies the CURRENT password against the identity store (the sole
+  // credential authority) before setting the new one, then signs out every
+  // other session — same posture as reset-confirm, but the caller keeps the
+  // session they changed it from.
+  async changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+    if (!currentPassword || typeof currentPassword !== 'string') {
+      throw new InvalidInputError('currentPassword is required')
+    }
+    if (!newPassword || typeof newPassword !== 'string') {
+      throw new InvalidInputError('newPassword is required')
+    }
+    const { user } = await this.getUserInfo(token)
+    const row = await this.db('users').where({ id: user.id }).first()
+    // Fail-closed: only a PROVEN password can be changed. Unknown (NULL) is
+    // treated like absent, matching how hasPassword is reported to the UI.
+    if (row?.has_password !== true) {
+      throw new NoPasswordError()
+    }
+
+    try {
+      const verified = await this.passwordLoginFn(user.email, currentPassword)
+      // Fail closed: a resolved value with no id (or someone else's) is not proof of the current password.
+      if (!verified?.id || verified.id !== user.id) throw new CurrentPasswordInvalidError()
+    } catch (err) {
+      if (err instanceof CurrentPasswordInvalidError) throw err
+      if ((err as Error)?.name === 'InvalidCredentialsError') throw new CurrentPasswordInvalidError()
+      throw err // provider outage etc. -> 503 via sendError, never a false "wrong password"
+    }
+
+    try {
+      await this.setPasswordFn(user.email, newPassword)
+    } catch (err) {
+      if ((err as Error)?.name === 'PasswordPolicyError' || err instanceof PasswordPolicyError) {
+        throw new PasswordPolicyRejectedError((err as Error).message)
+      }
+      throw err
+    }
+    await this.markHasPassword(user.id, true)
+    await this.revokeOtherSessions(token)
   }
 }
 
