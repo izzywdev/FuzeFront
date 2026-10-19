@@ -83,7 +83,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm a password reset with a token (unauthenticated)
-         * @description Completes password reset by presenting the single-use `token` from the reset message together with a `newPassword`. Fail-closed on an unknown/expired/consumed token or a password that fails policy.
+         * @description Completes password reset by presenting the single-use `token` from the reset message together with a `newPassword`. Fail-closed: an expired/already-used token is `400 TOKEN_EXPIRED`, an unknown token is `400 TOKEN_INVALID`, and a password rejected by the identity provider is `422 PASSWORD_POLICY` (the token is NOT consumed, so the caller may retry with a compliant password).
          */
         post: operations["confirmPasswordReset"];
         delete?: never;
@@ -868,7 +868,7 @@ export interface paths {
         put?: never;
         /**
          * Send an email verification link/code
-         * @description Sends a verification link/code. Targets the current user's email when authenticated, or a signup-scoped address supplied in the body.
+         * @description Sends a verification link/code. When authenticated, the target is ALWAYS the current user's own email; a body `email` is ignored. When unauthenticated, the account is resolved server-side from the body `email`; an unknown address is a silent no-op. Always 202 for an unauthenticated caller (no account enumeration).
          */
         post: operations["startEmailVerification"];
         delete?: never;
@@ -888,7 +888,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm email ownership
-         * @description Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed on invalid/expired.
+         * @description Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed: an expired/already-used challenge is `400 TOKEN_EXPIRED`; an unknown challenge (or one that no longer matches the account's email) is `400 TOKEN_INVALID`. Never reports `emailVerified: true` unless a user was actually updated.
          */
         post: operations["confirmEmailVerification"];
         delete?: never;
@@ -1761,7 +1761,7 @@ export interface components {
         EmailVerifyStartRequest: {
             /**
              * Format: email
-             * @description Signup-scoped address to verify when unauthenticated.
+             * @description Address used to look up the account when unauthenticated. Ignored when a bearer token is present (the account's own email is used).
              */
             email?: string;
         };
@@ -2021,11 +2021,11 @@ export interface components {
             items: components["schemas"]["Portal"][];
             page: components["schemas"]["PageInfo"];
         };
-        /** @description Stable error body. Fail-closed; provider-neutral codes. */
+        /** @description Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED (past TTL or already used) and TOKEN_INVALID (matches nothing) are returned as 400 by the email-verify and password-reset confirm operations; they are NOT session failures and clients must not treat them as 401 session expiry. PASSWORD_POLICY (422) is returned by reset-confirm when the identity provider rejects the new password; the reset token stays live so a compliant retry succeeds. */
         ErrorBody: {
             error: string;
             /** @enum {string} */
-            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "UNKNOWN";
+            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "TOKEN_EXPIRED" | "TOKEN_INVALID" | "PASSWORD_POLICY" | "UNKNOWN";
         };
     };
     responses: {
@@ -2280,7 +2280,24 @@ export interface operations {
                     "application/json": components["schemas"]["PasswordResetResult"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Malformed body (`MALFORMED`), or the token is expired/already used (`TOKEN_EXPIRED`) or unknown (`TOKEN_INVALID`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The identity provider rejected the new password (`PASSWORD_POLICY`). The token remains live. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     setPassword: {
@@ -3556,7 +3573,15 @@ export interface operations {
                     "application/json": components["schemas"]["VerificationStatus"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Malformed body (`MALFORMED`), or the challenge is expired/already used (`TOKEN_EXPIRED`) or unknown/mismatched (`TOKEN_INVALID`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     startPhoneVerification: {

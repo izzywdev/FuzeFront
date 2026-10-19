@@ -25,6 +25,11 @@ COPY packages/identity/package.json ./packages/identity/
 # installs from its OWN lockfile per the note above, so its manifest must be
 # copied here explicitly like identity's, in EVERY stage that installs.
 COPY packages/auth/package.json ./packages/auth/
+# Same file: dependency shape for @fuzefront/telemetry (src/app.ts's
+# tracingMiddleware(), src/index.ts's initTelemetry()) — manifest must be
+# present in EVERY stage that installs, or npm creates a dangling symlink
+# exactly as the identity note above describes.
+COPY packages/telemetry/package.json ./packages/telemetry/
 # Same shape again for @fuzefront/shared (file:../../shared) — src/events/
 # consumer.ts imports @fuzefront/shared/kafka for the identity lifecycle
 # consumers. Manifest must be present in EVERY stage that installs, or npm
@@ -39,6 +44,7 @@ FROM node:24-alpine AS build
 WORKDIR /app
 COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
+COPY packages/telemetry/package.json ./packages/telemetry/
 # Same shape again for @fuzefront/shared (file:../../shared) — src/events/
 # consumer.ts imports @fuzefront/shared/kafka for the identity lifecycle
 # consumers. Manifest must be present in EVERY stage that installs, or npm
@@ -51,6 +57,7 @@ RUN cd services/config-service && npm ci --ignore-scripts
 # Copy source
 COPY packages/identity/ ./packages/identity/
 COPY packages/auth/ ./packages/auth/
+COPY packages/telemetry/ ./packages/telemetry/
 COPY shared/ ./shared/
 COPY services/config-service/ ./services/config-service/
 
@@ -58,7 +65,8 @@ COPY services/config-service/ ./services/config-service/
 # import them at module load — graphCreate-style middleware is not mounted
 # yet, but mintId/toUuid/assertRef are used by the repositories, and
 # createAuthzClient() is constructed at authz.ts's module scope), then
-# config-service.
+# telemetry (app.ts calls tracingMiddleware() at module load, same reasoning),
+# then config-service.
 RUN cd packages/identity && npm install --ignore-scripts && npm run build
 RUN cd packages/auth && npm install --ignore-scripts && npm run build
 # packages/auth has a RUNTIME dependency (jose) that must reach the production
@@ -66,6 +74,11 @@ RUN cd packages/auth && npm install --ignore-scripts && npm run build
 # the build needs them; prune them here so the node_modules copied below is
 # production-only.
 RUN cd packages/auth && npm prune --omit=dev
+RUN cd packages/telemetry && npm install --ignore-scripts && npm run build
+# Same reasoning as packages/auth above: prune devDeps (tsup/jest/typescript)
+# so the node_modules copied into production carries only the @opentelemetry/*
+# SDK runtime packages.
+RUN cd packages/telemetry && npm prune --omit=dev
 # @fuzefront/shared: build ONLY the kafka entrypoint (tsconfig.kafka.json).
 # `npm run build` would compile the whole package, whose React/socket.io-client
 # surface config-service neither imports nor installs types for. Mirrors
@@ -93,6 +106,11 @@ RUN apk add --no-cache dumb-init && \
 
 COPY --from=base /app/services/config-service/node_modules ./services/config-service/node_modules
 COPY --from=build /app/services/config-service/dist ./services/config-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/config-service/package.json ./services/config-service/package.json
 # src/routes/docs.routes.ts (FFRNT-258) resolves openapi.yaml relative to its
 # OWN compiled location — dist/routes/../../openapi.yaml — i.e. the service
 # ROOT, not under dist/. tsc only emits dist/, so the committed contract has
@@ -131,6 +149,14 @@ COPY --from=build /app/packages/auth/node_modules ./packages/auth/node_modules
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/shared/node_modules ./shared/node_modules
+# @fuzefront/telemetry, same three-part shape as @fuzefront/auth above and for
+# the same reason: manifest (so the symlink resolves), dist (the built
+# output), and node_modules (its RUNTIME deps — the @opentelemetry/* SDK
+# packages — which config-service's own lockfile records only as a link entry
+# with no transitive deps).
+COPY --from=build /app/packages/telemetry/package.json ./packages/telemetry/package.json
+COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
+COPY --from=build /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 
 # Remove declaration files from production image
 RUN find ./services/config-service/dist -name "*.d.ts" -type f -delete
