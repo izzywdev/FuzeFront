@@ -36,6 +36,7 @@ const SOURCES = [
   { service: 'portal-service', specPath: 'services/portal-service/openapi.yaml' },
   { service: 'selection-list-service', specPath: 'services/selection-list-service/openapi.yaml' },
   { service: 'sms-service', specPath: 'services/sms-service/openapi.yaml' },
+  { service: 'email-service', specPath: 'services/email-service/openapi.yaml' },
   { service: 'devportal-service', specPath: 'services/devportal-service/openapi.yaml' },
   { service: 'auth', specPath: 'packages/auth/openapi.yaml' },
   { service: 'security', specPath: 'packages/security/openapi.yaml' },

@@ -1,0 +1,20 @@
+{
+  "name": "@fuzefront/billing-types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Canonical billing plan tier types shared across billing-service, backend, and frontend",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^5.0.0"
+  }
+}

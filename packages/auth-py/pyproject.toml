@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fuzefront-auth"
-version = "0.1.0"
+version = "0.2.0"
 description = "Consumable authN middleware for Python FuzeFront-family services -- stable Identity shape with a fail-closed token verifier (legacy-hs256 / federated-jwks), Flask decorator and FastAPI dependency. Python peer of @fuzefront/auth. Verifies only; never mints tokens."
 readme = "README.md"
 requires-python = ">=3.10"
