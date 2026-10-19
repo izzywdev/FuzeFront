@@ -22,7 +22,7 @@ const DEFAULT_TOPIC = 'billing.usage';
 export class MeteringClient {
   private readonly producer: Producer;
   private readonly topic: string;
-  private connected = false;
+  private connectPromise: Promise<void> | null = null;
 
   constructor(private readonly config: MeteringClientConfig) {
     this.topic = config.topic ?? DEFAULT_TOPIC;
@@ -44,10 +44,10 @@ export class MeteringClient {
    */
   async emit(event: UsageEvent): Promise<void> {
     try {
-      if (!this.connected) {
-        await this.producer.connect();
-        this.connected = true;
+      if (!this.connectPromise) {
+        this.connectPromise = this.producer.connect();
       }
+      await this.connectPromise;
       await this.producer.send({
         topic: this.topic,
         messages: [
@@ -81,9 +81,15 @@ export class MeteringClient {
    * Disconnect the Kafka producer.  Call during graceful shutdown.
    */
   async flush(): Promise<void> {
-    if (this.connected) {
+    if (this.connectPromise) {
+      try {
+        await this.connectPromise;
+      } catch {
+        this.connectPromise = null;
+        return;
+      }
       await this.producer.disconnect();
-      this.connected = false;
+      this.connectPromise = null;
     }
   }
 
