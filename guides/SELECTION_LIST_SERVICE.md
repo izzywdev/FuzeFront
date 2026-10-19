@@ -327,6 +327,15 @@ Seeding needs **both** flags ON for the organization; either OFF means nothing i
 **not** behind either seeding flag. Both flags are OFF everywhere today and fail closed (no flag
 client or an evaluation error reads as OFF).
 
+A **third** flag, `fuzefront.selection-lists.shared-lists` (release, default OFF, server **and**
+web-exposed), gates all shared/common-list behaviour of 4.1.0 (see
+[Shared lists, common lists and forks](#shared-lists-common-lists-and-forks-410)). It is created OFF
+by the same `prod-unleash-ops` `flags=selection-lists-create` dispatch and additionally requires the
+master flag; the platform org is configured by Helm `selectionListService.platformOrgId`
+(`SELECTION_LIST_PLATFORM_ORG_ID`, empty by default; production may only carry the root platform
+org id derived from `ROOT_ORG_ID` (currently `org_0000000000000000000000000g`), enforced by the `gate-platform-org-pin` CI job, see
+`docs/runbooks/selection-lists-rollout.md` section 2.4).
+
 Rollout/rollback procedure: `docs/runbooks/selection-lists-flag-rollout.md` (master flag) and
 `docs/runbooks/selection-lists-seeding-operations.md` (seeding).
 
