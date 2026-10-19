@@ -19,6 +19,7 @@ COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
+COPY packages/billing-types/package.json ./packages/billing-types/
 COPY packages/telemetry/package.json ./packages/telemetry/
 COPY packages/service-auth/package.json ./packages/service-auth/
 COPY api-client/package.json ./api-client/
@@ -57,6 +58,8 @@ COPY packages/feature-flags/ ./packages/feature-flags/
 COPY packages/identity/ ./packages/identity/
 COPY packages/security/ ./packages/security/
 COPY packages/service-auth/ ./packages/service-auth/
+COPY packages/billing-types/ ./packages/billing-types/
+COPY packages/telemetry/ ./packages/telemetry/
 COPY custom-hostname-client/ ./custom-hostname-client/
 COPY backend/ ./backend/
 
@@ -82,7 +85,12 @@ RUN cd custom-hostname-client && npm run build
 # @fuzefront/core's `main` points at dist/ and backend/src imports enqueueEvent
 # STATICALLY; build it (after shared, whose kafka barrel it consumes) or the
 # workspace symlink resolves to an empty package and the container crashloops.
+RUN cd packages/billing-types && npm run build
 RUN cd backend/core && npm run build
+# @fuzefront/telemetry's `main` points at dist/ too — index.ts calls
+# initTelemetry()/tracingMiddleware() at module load, so an unbuilt telemetry
+# package crashloops the container the same way as the packages above.
+RUN cd packages/telemetry && npm run build
 RUN cd backend && npm run build
 
 # ---------- production ----------
@@ -112,6 +120,10 @@ COPY --from=build --chown=backend:nodejs /app/packages/identity/dist ./packages/
 COPY --from=build --chown=backend:nodejs /app/packages/identity/package.json ./packages/identity/package.json
 COPY --from=build --chown=backend:nodejs /app/packages/service-auth/dist ./packages/service-auth/dist
 COPY --from=build --chown=backend:nodejs /app/packages/service-auth/package.json ./packages/service-auth/package.json
+COPY --from=build --chown=backend:nodejs /app/packages/billing-types/dist ./packages/billing-types/dist
+COPY --from=build --chown=backend:nodejs /app/packages/billing-types/package.json ./packages/billing-types/package.json
+COPY --from=build --chown=backend:nodejs /app/packages/telemetry/dist ./packages/telemetry/dist
+COPY --from=build --chown=backend:nodejs /app/packages/telemetry/package.json ./packages/telemetry/package.json
 COPY --from=build --chown=backend:nodejs /app/custom-hostname-client/dist ./custom-hostname-client/dist
 COPY --from=build --chown=backend:nodejs /app/custom-hostname-client/package.json ./custom-hostname-client/package.json
 COPY --from=build --chown=backend:nodejs /app/backend/dist ./backend/dist
