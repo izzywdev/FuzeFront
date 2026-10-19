@@ -15,9 +15,9 @@ export interface NotificationClient {
   /** Check an SMS OTP against the delivery provider. Returns true when approved. */
   checkSmsOtp(phone: string, code: string): Promise<boolean>
   /** Send an email verification message (link or code) to an address. */
-  sendEmailVerification(email: string, token: string, code: string): Promise<void>
+  sendEmailVerification(email: string, token: string, code: string, appBaseUrl?: string): Promise<void>
   /** Send a self-service password-reset message carrying the single-use token. */
-  sendPasswordReset(email: string, token: string): Promise<void>
+  sendPasswordReset(email: string, token: string, appBaseUrl?: string): Promise<void>
 }
 
 function smsServiceBase(): string {
@@ -37,7 +37,7 @@ function smsServiceToken(): string | undefined {
 
 function emailServiceBase(): string {
   return (
-    process.env.EMAIL_SERVICE_URL || 'http://email-service:3000'
+    process.env.EMAIL_SERVICE_URL || 'http://email-service:3003'
   ).replace(/\/$/, '')
 }
 
@@ -105,7 +105,7 @@ export class HttpNotificationClient implements NotificationClient {
     return body.verified === true
   }
 
-  async sendEmailVerification(email: string, token: string, code: string): Promise<void> {
+  async sendEmailVerification(email: string, token: string, code: string, appBaseUrl?: string): Promise<void> {
     // email-service consumes an `email.requested` intent; we post it over HTTP.
     // Fail-closed on transport error so the caller can surface a 5xx.
     const res = await postJson(
@@ -113,7 +113,7 @@ export class HttpNotificationClient implements NotificationClient {
       {
         to: email,
         template: 'verify-email',
-        data: { token, code },
+        data: { token, code, ...(appBaseUrl ? { appBaseUrl } : {}) },
       },
       emailServiceToken()
     )
@@ -122,7 +122,7 @@ export class HttpNotificationClient implements NotificationClient {
     }
   }
 
-  async sendPasswordReset(email: string, token: string): Promise<void> {
+  async sendPasswordReset(email: string, token: string, appBaseUrl?: string): Promise<void> {
     // Same `email.requested` intent as verification, different template. The raw
     // token leaves the service ONLY here — the DB holds just its SHA-256.
     const res = await postJson(
@@ -130,7 +130,7 @@ export class HttpNotificationClient implements NotificationClient {
       {
         to: email,
         template: 'password-reset',
-        data: { token },
+        data: { token, ...(appBaseUrl ? { appBaseUrl } : {}) },
       },
       emailServiceToken()
     )

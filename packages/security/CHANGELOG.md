@@ -1,5 +1,58 @@
 # Changelog — @fuzefront/security-client
 
+## 0.12.0 — Account: change password; MFA last-factor guard (unreleased)
+
+`info.version` 0.11.0 -> 0.12.0, `SECURITY_CONTRACT_VERSION` 0.11.0 -> 0.12.0.
+Builds on 0.11.0 (#1552); `PASSWORD_POLICY` already exists there.
+
+### Added
+
+- `POST /v1/security/password/change` (`changePassword`), body
+  `ChangePasswordRequest { currentPassword, newPassword }`
+  (`additionalProperties: false`), bearer required. `204` on success and every
+  OTHER session is revoked; `400 INVALID_CREDENTIALS` wrong current password
+  (sessions untouched); `400 MALFORMED`; `401`; `409 NO_PASSWORD` (use set-first);
+  `422 PASSWORD_POLICY`; `429 RATE_LIMITED` (failed attempts).
+- `ErrorBody.code`: `LAST_FACTOR`, `NO_PASSWORD`, `RATE_LIMITED`.
+
+### Changed
+
+- `DELETE /v1/security/mfa/factors/{factorId}` documents `409 LAST_FACTOR`:
+  removing the user's last ACTIVE factor is refused (atomically) and the factor
+  survives. Pending factors can always be removed.
+
+## 0.11.0 — Auth: distinct token/password error codes for email verification and password reset (minor, unreleased)
+
+`info.version` 0.10.1 -> 0.11.0, `SECURITY_CONTRACT_VERSION` 0.10.1 -> 0.11.0.
+Additive: new `ErrorBody.code` values and a new `422` response. Existing
+success shapes are unchanged. (PR #1543 separately bumps to 0.10.2 on another
+branch; this release is minor because it adds codes and a status, so it takes
+0.11.0 and supersedes that patch number on merge.)
+
+### Added
+
+- `ErrorBody.code`: `TOKEN_EXPIRED`, `TOKEN_INVALID`, `PASSWORD_POLICY`.
+- `POST /v1/security/session/password/reset-confirm`: `422 PASSWORD_POLICY`
+  when the identity provider rejects the new password (the token stays live).
+
+### Changed (behaviour behind an unchanged shape)
+
+- `POST /v1/security/verify/email/confirm` and `.../reset-confirm`: an
+  expired or already-used token is now `400 TOKEN_EXPIRED` and an unknown token
+  `400 TOKEN_INVALID`. Previously verify-confirm answered `401 NOT_ACTIVE`,
+  which clients read as session expiry; reset-confirm answered `400 MALFORMED`.
+- `POST /v1/security/verify/email/start`: when authenticated, the target is
+  always the account's own email (a body `email` is ignored); unauthenticated
+  start resolves the account server-side and is always `202`.
+- `confirmEmailVerification` never returns `emailVerified: true` unless a user
+  row was actually updated (and the challenge email still matches the account).
+
+### Consumers
+
+UI packages still pin 0.10.x of this client and are deliberately not touched
+here; they should bump and branch on `TOKEN_EXPIRED` / `TOKEN_INVALID` /
+`PASSWORD_POLICY` instead of the HTTP status alone.
+
 ## 0.10.3 — Security: `POST /v1/security/verify/phone/confirm` now requires a session (security fix, unreleased)
 
 `info.version` 0.10.2 -> 0.10.3, `SECURITY_CONTRACT_VERSION` 0.10.2 -> 0.10.3.

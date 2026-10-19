@@ -79,6 +79,16 @@ jobs:
         working-directory: packages/auth
         run: npm install --ignore-scripts && npm run build
 
+      # @fuzefront/telemetry: billing-service's src/app.ts mounts
+      # tracingMiddleware(). Unlike identity/auth, telemetry's package.json
+      # has no jest moduleNameMapper entry — its tsup build emits a real CJS
+      # dist/index.js (not ESM-only), so ts-jest can require it directly once
+      # built. dist/ is gitignored, so this must run before the billing
+      # install resolves the file: dependency.
+      - name: Build @fuzefront/telemetry (dist for the billing install)
+        working-directory: packages/telemetry
+        run: npm install --ignore-scripts && npm run build
+
       - name: Install billing-service dependencies
         working-directory: services/billing-service
         # Matches the service Dockerfile (`npm install --ignore-scripts`): this

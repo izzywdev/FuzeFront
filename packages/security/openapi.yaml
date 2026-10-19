@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.10.3
+  version: 0.12.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -265,8 +265,11 @@ paths:
         Exchanges the FuzeFront-minted opaque `code` issued by
         `GET /v1/security/social/callback` for a session. The code is single-use
         and short-lived. Returns a `SessionResult`: an authenticated session, or
-        an `mfa_required` challenge when the account requires step-up.
-        Fail-closed on an unknown/expired code.
+        an `mfa_required` challenge when the account has an active MFA factor.
+        Social sign-in never bypasses MFA: no session is minted until the
+        challenge is completed via `POST /mfa/verify`, and the challenge is
+        bound to the user who signed in. Fail-closed on an unknown/expired or
+        already-redeemed code.
       requestBody:
         required: true
         content:
@@ -319,8 +322,11 @@ paths:
       operationId: confirmPasswordReset
       description: >-
         Completes password reset by presenting the single-use `token` from the
-        reset message together with a `newPassword`. Fail-closed on an
-        unknown/expired/consumed token or a password that fails policy.
+        reset message together with a `newPassword`. Fail-closed: an
+        expired/already-used token is `400 TOKEN_EXPIRED`, an unknown token is
+        `400 TOKEN_INVALID`, and a password rejected by the identity provider
+        is `422 PASSWORD_POLICY` (the token is NOT consumed, so the caller may
+        retry with a compliant password).
       requestBody:
         required: true
         content:
@@ -335,7 +341,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/PasswordResetResult'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >-
+            Malformed body (`MALFORMED`), or the token is expired/already used
+            (`TOKEN_EXPIRED`) or unknown (`TOKEN_INVALID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '422':
+          description: >-
+            The identity provider rejected the new password (`PASSWORD_POLICY`).
+            The token remains live.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton reset-confirm action; no collection.
   # ─────────────────────── Account: set/add password ────────────────────────
@@ -376,6 +396,59 @@ paths:
                 $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton set-password action; no collection.
+  /v1/security/password/change:
+    post:
+      tags: [account]
+      summary: Change the password of an account that already has one
+      operationId: changePassword
+      description: >-
+        Verifies `currentPassword`, applies the password policy to
+        `newPassword`, sets it, and revokes every OTHER session of the account
+        (the calling session survives), matching the reset-confirm posture.
+        Accounts with no password get `409 NO_PASSWORD` — send the user to
+        `POST /v1/security/password` (set-first). Failed attempts are
+        rate-limited (`429 RATE_LIMITED`).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed; other sessions revoked.
+        '400':
+          description: >-
+            Malformed body (`MALFORMED`), or `currentPassword` is wrong
+            (`INVALID_CREDENTIALS`). Sessions are untouched.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The account has no password (`NO_PASSWORD`); use set-first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '422':
+          description: '`PASSWORD_POLICY` — the new password fails the password policy.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Too many failed attempts (`RATE_LIMITED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      x-pagination: exempt
+      x-pagination-reason: Singleton change-password action; no collection.
   # ─────────────────────── Sessions: device management ──────────────────────
   /v1/security/sessions:
     get:
@@ -1742,7 +1815,9 @@ paths:
       tags: [mfa]
       summary: Remove an MFA factor
       operationId: removeMfaFactor
-      description: Removes an enrolled factor. Idempotent.
+      description: >-
+        Removes an enrolled factor. Idempotent. Refused with `409 LAST_FACTOR`
+        when it is the user's last active factor.
       security:
         - bearerAuth: []
       parameters:
@@ -1754,6 +1829,17 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: >-
+            `LAST_FACTOR` — this is the user's last ACTIVE factor, so removing it
+            would silently disable two-factor for the account. The factor is NOT
+            removed. Add another method first. The count-and-delete is atomic, so
+            two concurrent removals cannot both succeed. Pending (unactivated)
+            factors can always be removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton mutation.
   /v1/security/mfa/recovery-codes:
@@ -1840,8 +1926,11 @@ paths:
       summary: Send an email verification link/code
       operationId: startEmailVerification
       description: >-
-        Sends a verification link/code. Targets the current user's email when
-        authenticated, or a signup-scoped address supplied in the body.
+        Sends a verification link/code. When authenticated, the target is ALWAYS
+        the current user's own email; a body `email` is ignored. When
+        unauthenticated, the account is resolved server-side from the body
+        `email`; an unknown address is a silent no-op. Always 202 for an
+        unauthenticated caller (no account enumeration).
       requestBody:
         required: false
         content:
@@ -1860,7 +1949,12 @@ paths:
       tags: [verify]
       summary: Confirm email ownership
       operationId: confirmEmailVerification
-      description: Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed on invalid/expired.
+      description: >-
+        Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed: an
+        expired/already-used challenge is `400 TOKEN_EXPIRED`; an unknown
+        challenge (or one that no longer matches the account's email) is
+        `400 TOKEN_INVALID`. Never reports `emailVerified: true` unless a user
+        was actually updated.
       requestBody:
         required: true
         content:
@@ -1875,7 +1969,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/VerificationStatus'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >-
+            Malformed body (`MALFORMED`), or the challenge is expired/already
+            used (`TOKEN_EXPIRED`) or unknown/mismatched (`TOKEN_INVALID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton confirmation action.
   # ──────────────────────── Contact verification: phone ─────────────────────
@@ -3846,7 +3946,9 @@ components:
         email:
           type: string
           format: email
-          description: Signup-scoped address to verify when unauthenticated.
+          description: >-
+            Address used to look up the account when unauthenticated. Ignored
+            when a bearer token is present (the account's own email is used).
     PhoneVerifyStartRequest:
       type: object
       properties:
@@ -3919,6 +4021,18 @@ components:
           type: string
           description: The password to set; must satisfy the account password policy.
       required: [newPassword]
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      description: Change the password of an account that already has one.
+      properties:
+        currentPassword:
+          type: string
+          description: The account's current password (verified before the change).
+        newPassword:
+          type: string
+          description: The new password; must satisfy the account password policy.
+      required: [currentPassword, newPassword]
     # ── Sessions: device-management shapes ──
     SessionDevice:
       type: object
@@ -4376,7 +4490,14 @@ components:
     # ── Errors ──
     ErrorBody:
       type: object
-      description: Stable error body. Fail-closed; provider-neutral codes.
+      description: >-
+        Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED
+        (past TTL or already used) and TOKEN_INVALID (matches nothing) are
+        returned as 400 by the email-verify and password-reset confirm
+        operations; they are NOT session failures and clients must not treat
+        them as 401 session expiry. PASSWORD_POLICY (422) is returned by
+        reset-confirm when the identity provider rejects the new password; the
+        reset token stays live so a compliant retry succeeds.
       properties:
         error:
           type: string
@@ -4400,5 +4521,11 @@ components:
             - FORBIDDEN
             - NOT_FOUND
             - PROVIDER_UNAVAILABLE
+            - TOKEN_EXPIRED
+            - TOKEN_INVALID
+            - PASSWORD_POLICY
+            - LAST_FACTOR
+            - NO_PASSWORD
+            - RATE_LIMITED
             - UNKNOWN
       required: [error, code]

@@ -223,6 +223,41 @@ for anything the ruleset requires."*
 
 Then add those contexts to `governance/required-status-checks.json` and re-run step 3.
 
+## 4a. Block-now additions — desktop + mobile UX gates (2026-10-18)
+
+Three contexts were added to this repo's desired set
+([`required-status-checks.json`](../../governance/required-status-checks.json)) and to the
+regression guard ([`required-check-triggers.json`](../../governance/required-check-triggers.json))
+to enforce desktop **and mobile** UX adherence, per owner decision to block merges on them:
+
+| Context | Workflow | What it guards | Pre-reqs met here |
+|---|---|---|---|
+| `gate-frames-schema` | `gate-frames-schema.yml` | manifests match the schema; a **changed** feature's flows declare mobile coverage | unconditional; unit-tested; changed-scope so it never retro-fails the backlog |
+| `gate-ds-artifact` | `gate-ds-artifact.yml` | the published design-system mirror cannot drift from source | unconditional; hard-fail |
+| `Playwright sign-in flow` | `e2e.yml` | the **mobile-layout** spec (iPhone 12): drawer, 44px touch targets, content width | already in the desired set; unconditional; hard-fails within its job |
+
+All three are unconditional on `pull_request` (verified: `node scripts/check-required-check-triggers.mjs` lists five green) and able to fail, so they satisfy §2's "a required check must run on every PR and be able to fail".
+
+**What is NOT done from here, and why.** Making these *live*-required is a change to **FuzeSDLC's**
+`governance/required-checks.json` → `repos.FuzeFront.required_now`, applied by FuzeSDLC's
+`apply-ruleset.yml` under `GOVERNANCE_TOKEN` — a cross-repo, admin-scoped action this repo's
+sessions cannot perform (CLAUDE.md: a consuming repo never edits the governance repo; delegate
+via `@fuze`). It is also gated on **Stage 0** (§3): the existing required set is still >50%
+vacuous, and policy is de-vacuum before widen. So the exact, ordered hand-off is:
+
+1. Land Stage 0 (de-vacuum the already-required gates) — see §3.
+2. `@fuze` platform-governance: add `gate-frames-schema`, `gate-ds-artifact`, and
+   `Playwright sign-in flow` to `repos.FuzeFront.required_now` in **FuzeSDLC**.
+3. Dispatch FuzeSDLC `apply-ruleset.yml` with `repo: izzywdev/FuzeFront` (it MERGES onto the
+   live set, matches by target+condition — safe).
+4. Confirm: `gh api repos/izzywdev/FuzeFront/rulesets/17974934 --jq '…required_status_checks|length'`
+   reflects the three new contexts.
+
+Until step 3 lands, these gates **run and report on every PR and are red when violated** — they
+simply do not yet *block* auto-merge. The gate code, the desired set, and the regression-guard
+wiring are all in place here; only the FuzeSDLC `required_now` flip remains, and it is owned by
+platform-governance.
+
 ## 5. Merge queue — do NOT enable it yet
 
 Merge queue is the right fix for a separate problem: `strict_required_status_checks_policy`
