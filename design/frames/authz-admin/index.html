@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Access administration — Approval Frames</title>
+<title>Access &amp; Roles — Approval Frames</title>
 <link rel="stylesheet" href="tokens.css" />
 <link rel="stylesheet" href="frame.css" />
 <style>
@@ -40,37 +40,46 @@
 <body>
 <div class="wrap">
   <div class="eyebrow">Contract-freeze · UX approval</div>
-  <h1>Access administration · Approval Frames</h1>
-  <p class="lead">The consumer surface for administering who is in an organization and what they can
-    do — members, roles, invitations, removals. Backed by FuzeFront's own Security API; no identity
-    or policy vendor name appears anywhere in the UI. These frames freeze the flow, its states, and
-    the build inventory before any UI is written. Walk each frame below.</p>
+  <h1>Access &amp; Roles · Approval Frames</h1>
+  <p class="lead">The per-organization admin console at <code>/settings/access</code>: an owner or admin
+    sees who has access to the organization and what role each member holds, and can change a member's
+    role or remove their access. Authorization is <b>Permit-backed</b> — the UI never decides who may do
+    what; it reflects decisions the Security service makes against Permit and writes back into Permit.
+    Membership is one row per <code>organization_memberships</code>. <b>Invitations are a separate
+    feature</b> (<code>design/frames/org-invitations-v2</code>): this console links to it, it does not
+    duplicate it. These frames freeze the flow, its states, and the build inventory before any UI is
+    written. Walk each frame below.</p>
 
   <div class="grid" data-nav="frames">
     <a href="01-members.html" class="frame-link" data-frame-link="01-members">
       <div class="seam"></div><div class="step">Frame (a) · /settings/access</div>
       <h3>Members &amp; roles</h3>
-      <p>The list: people in the org, their role pill, per-row change-role / remove. Cursor "Load more".</p>
+      <p>The list: people with direct access, their role pill (owner / admin / member / viewer), per-row
+        change-role / remove, and "Invite" linking out to org-invitations. Cursor "Load more".</p>
     </a>
-    <a href="02-add-member.html" class="frame-link" data-frame-link="02-add-member">
+    <a href="02-change-role.html" class="frame-link" data-frame-link="02-change-role">
       <div class="seam"></div><div class="step">Frame (b) · /settings/access</div>
-      <h3>Add member</h3>
-      <p>Email + required role in one step. Roles come from the tenant catalogue, never hard-coded.</p>
-    </a>
-    <a href="03-change-role.html" class="frame-link" data-frame-link="03-change-role">
-      <div class="seam"></div><div class="step">Frame (c) · /settings/access</div>
       <h3>Change role</h3>
-      <p>Ordinary change, plus the refusal: the org's last admin cannot be demoted.</p>
+      <p>Ordinary promote/demote, plus the two refusals: the org's last admin cannot be demoted, and the
+        last owner cannot be demoted.</p>
     </a>
-    <a href="04-remove-member.html" class="frame-link" data-frame-link="04-remove-member">
-      <div class="seam"></div><div class="step">Frame (d) · /settings/access</div>
+    <a href="03-remove-member.html" class="frame-link" data-frame-link="03-remove-member">
+      <div class="seam"></div><div class="step">Frame (c) · /settings/access</div>
       <h3>Remove member</h3>
-      <p>Confirm removal, plus the refusal: the org's last admin cannot be removed.</p>
+      <p>Confirm removal, plus the two refusals: the org's last admin and the last owner cannot be
+        removed.</p>
+    </a>
+    <a href="04-read-only.html" class="frame-link" data-frame-link="04-read-only">
+      <div class="seam"></div><div class="step">Frame (d) · /settings/access</div>
+      <h3>Read-only (non-admin)</h3>
+      <p>A member/viewer can see who's in the org, but holds no manage permission — the list renders with
+        every mutating affordance absent, not merely disabled.</p>
     </a>
     <a href="05-states.html" class="frame-link" data-frame-link="05-states">
       <div class="seam"></div><div class="step">Frame (e) · /settings/access</div>
       <h3>States</h3>
-      <p>Loading, single-member org, load error, empty role catalogue, and 403 (never a sign-in redirect).</p>
+      <p>Loading, single-member org, load error+retry, an unauthorized action denied in place (403), the
+        non-member state, and the root-is-member reconciliation — never a sign-in redirect.</p>
     </a>
   </div>
 
@@ -95,17 +104,18 @@
           <li><code>MemberList</code></li>
           <li><code>MemberRow</code></li>
           <li><code>RolePill</code></li>
-          <li><code>AddMemberDialog</code></li>
           <li><code>ChangeRoleDialog</code></li>
           <li><code>RemoveMemberDialog</code></li>
           <li><code>RolePicker</code></li>
+          <li><code>ReadOnlyNotice</code></li>
           <li><code>AccessDeniedNotice</code></li>
+          <li><code>InviteMemberLink</code></li>
         </ul>
       </div>
       <div class="inv-col" data-inv="packages">
         <h4>Packages</h4>
         <ul>
-          <li><code>@fuzefront/access-admin-ui</code></li>
+          <li><code>@fuzefront/identity-ui</code></li>
         </ul>
       </div>
     </div>
@@ -116,9 +126,13 @@
   <p class="note">
     Design system: <code>@fuzefront/design-system</code> (fuse-seam, tokens only) ·
     Contract: <code>packages/security/openapi.yaml</code> → <code>@fuzefront/security-client</code> ·
-    Component: <code>@fuzefront/access-admin-ui → AccessAdminFlow</code>.<br />
-    <b>Commissioned by approval:</b> a <code>409 LAST_ADMIN</code> guard on demote/remove (frames c2,
-    d2) — it does not exist in the contract today. Reached from the <code>account-security</code> hub.
+    Component: <code>@fuzefront/identity-ui → AccessAdminFlow</code> ·
+    Flag: <code>fuzefront.security.access-admin</code> (default OFF).<br />
+    <b>Commissioned by approval:</b> a <code>409 LAST_ADMIN</code> guard AND a <code>409 LAST_OWNER</code>
+    guard on demote/remove (frames b &amp; c) — neither exists in the contract today; the last-owner
+    guard aligns with the one org-invitations-v2 also commissions. Role is the real
+    <code>organization_memberships.role</code> enum (owner / admin / member / viewer), not a dynamic
+    catalogue. Every write reflects into <b>Permit</b> via the Security service.<br />
     Approve per-flow by setting <code>approved: true</code> in <code>manifest.json</code>, or reply
     <code>@claude approve</code> / <code>@claude reject: &lt;reason&gt;</code>.
   </p>
