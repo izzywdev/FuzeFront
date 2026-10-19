@@ -76,41 +76,19 @@ const getDatabaseConfig = (): Knex.Config => {
         loadExtensions: [isProduction ? '.js' : '.ts'],
       },
     }
-  } else {
-    // SQLite configuration (fallback)
-    return {
-      client: 'sqlite3',
-      connection: {
-        filename: path.join(__dirname, '../database.sqlite'),
-      },
-      useNullAsDefault: true,
-      migrations: {
-        tableName: 'knex_migrations',
-        directory: path.join(
-          __dirname,
-          isProduction ? '../migrations' : '../migrations'
-        ),
-        extension: isProduction ? 'js' : 'ts',
-        // Only load the compiled .js (or .ts in dev). Without this, knex's
-        // default loadExtensions also matches the emitted .d.ts declaration
-        // files in dist/migrations and require()s them -> "Unexpected token
-        // 'export'", which broke migrations on server startup in CI.
-        loadExtensions: [isProduction ? '.js' : '.ts'],
-        // Backend, security, and applications share this `knex_migrations` table on
-        // fuzefront_platform but each image ships only its own migration chain.
-        // knex's default validateMigrationList aborts when the table records a
-        // migration absent from this image's dir (e.g. security's
-        // 010_create_api_tokens / 011_add_billing_to_entities) — which crashlooped
-        // backend replicas after security migrated. Migrations are idempotent;
-        // skip the strict check so each service tolerates the others' recorded rows.
-        disableMigrationsListValidation: true,
-      },
-      seeds: {
-        directory: path.join(__dirname, isProduction ? '../seeds' : '../seeds'),
-        loadExtensions: [isProduction ? '.js' : '.ts'],
-      },
-    }
   }
+
+  // Postgres is the only supported datastore. The former on-disk sqlite
+  // fallback was removed (FFRNT-175 follow-up): it is a different SQL dialect
+  // from production, so anything it verified could diverge from prod, and it
+  // was unmaintained. This branch is only reachable in production without
+  // USE_POSTGRES — a misconfiguration — so fail loudly rather than silently
+  // booting an ephemeral database.
+  throw new Error(
+    'Database misconfigured: Postgres is required. Set USE_POSTGRES=true and the ' +
+      'DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD connection variables ' +
+      '(NODE_ENV=production disables the non-Postgres path).'
+  )
 }
 
 // Create database instance

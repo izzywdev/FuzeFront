@@ -350,6 +350,66 @@ export interface ListKeyDefinitionsParams extends PageParams {
   includeHidden?: boolean
 }
 
+/** TypeID of one change-history entry, prefixed `cvh_`. */
+export type ConfigHistoryEntryId = `cvh_${string}`
+
+/** What a history entry recorded. `reveal` is read-time and never changes the value. */
+export type ConfigHistoryAction = 'set' | 'unset' | 'lock' | 'unlock' | 'reveal'
+
+/** Who performed one recorded change or reveal. */
+export interface Actor {
+  actorType: 'user' | 'system' | (string & {})
+  /** Null for `system` actors, or when the user was erased (`actorRedacted`). */
+  actorId?: string | null
+  /** True when the acting user was hard-deleted and their id erased. */
+  actorRedacted: boolean
+}
+
+/** One append-only row in a key's change trail at one exact scope. */
+export interface ConfigHistoryEntry {
+  id: ConfigHistoryEntryId
+  namespace: NamespaceName
+  key: KeyName
+  scope: Scope
+  action: ConfigHistoryAction
+  /** Always null when `redacted` (isSecret key). */
+  oldValue?: unknown
+  /** Always null when `redacted` (isSecret key). */
+  newValue?: unknown
+  redacted: boolean
+  actor: Actor
+  reason?: string | null
+  revertOf?: ConfigHistoryEntryId | null
+  occurredAt: string
+}
+
+/** Parameters for {@link ConfigClient.listConfigHistory}. */
+export interface ListConfigHistoryParams extends PageParams {
+  namespace: NamespaceName
+  scope: Scope
+  /** The key whose change trail to list. */
+  key: KeyName
+}
+
+/** Body of {@link ConfigClient.revealSecret}. */
+export interface RevealSecretRequest {
+  namespace: NamespaceName
+  scope: Scope
+  key: KeyName
+  /** Required (1-500 chars); recorded verbatim on the `reveal` history entry. */
+  reason: string
+}
+
+/** The plaintext, returned exactly once. Never cache or log it. */
+export interface RevealSecretResult {
+  namespace: NamespaceName
+  scope: Scope
+  key: KeyName
+  value: string
+  revealedAt: string
+  historyEntryId: ConfigHistoryEntryId
+}
+
 /** Machine-readable failure reason from the contract's error envelope. */
 export type ConfigErrorCode =
   | 'VALIDATION_ERROR'

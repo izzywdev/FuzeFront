@@ -434,7 +434,7 @@ class TestRungGating(unittest.TestCase):
             # pins against. Require the positive-guard form and reject the inverted one.
             self.assertEqual(
                 expr,
-                "${{ inputs.review-only != 'true' && inputs.%s-api-key || '' }}" % vendor,
+                f"${{{{ inputs.review-only != 'true' && inputs.{vendor}-api-key || '' }}}}",
                 f"fallback-{vendor}-key must suppress under review-only",
             )
             self.assertNotIn("== 'true' && ''", expr,

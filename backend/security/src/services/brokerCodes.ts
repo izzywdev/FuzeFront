@@ -20,10 +20,19 @@ import type { BrokeredUser } from '../providers/IdentityProvider'
 import { logger } from '../lib/logger'
 
 export interface BrokerCodeEntry {
-  token: string
-  sessionId: string
+  /** Minted session. ABSENT when `mfaPendingUser` is set: no session exists until step-up. */
+  token?: string
+  sessionId?: string
+  /**
+   * Set when the brokered user has an active MFA factor. No session was minted;
+   * redemption must route through the MFA gate (challenge) instead of returning
+   * an authenticated session. Binds the eventual challenge to THIS user.
+   */
+  mfaPendingUser?: BrokeredUser
+  /** Device context captured at the callback, used if a session is minted at redemption. */
+  ctx?: { ip?: string | null; userAgent?: string | null }
   /** Full user projection carried through so redemption needs no DB read. */
-  user: BrokeredUser
+  user?: BrokeredUser
   expiresAt: number
 }
 
