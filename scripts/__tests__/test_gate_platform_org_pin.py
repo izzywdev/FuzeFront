@@ -21,7 +21,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import gate_platform_org_pin as gate  # noqa: E402
+import gate_platform_org_pin as gate
 
 REPO = Path(__file__).resolve().parents[2]
 PIN = "org_0000000000000000000000000g"
