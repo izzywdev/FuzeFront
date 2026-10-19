@@ -15,7 +15,7 @@
   "scripts": {
     "build": "tsup",
     "type-check": "tsc --noEmit",
-    "clean": "rimraf dist",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "gen:types": "openapi-typescript ../services/app-registry-service/openapi.yaml -o src/schema.ts",
     "lint:contract": "spectral lint ../services/app-registry-service/openapi.yaml --ruleset ../services/app-registry-service/.spectral.yaml",
     "prepublishOnly": "npm run clean && npm run build"

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Stored values across a fork</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="content" data-frame="10-picker-stored-values" style="padding-top: var(--space-12);">
+
+  <h1 class="page-title" style="text-align:center;">Stored values keep rendering across a fork</h1>
+  <p class="page-sub" style="text-align:center;">A record saved last month holds a <b>common</b> item id. Acme has since forked the list.</p>
+
+  <div class="sl-banner sl-banner--info" style="max-width: calc(var(--space-16) * 12); margin: 0 auto var(--space-8);" data-note="resolve-redirect">
+    <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
+    <div class="sl-banner__body">
+      <p class="sl-banner__title">Resolve follows the fork; the picker shows the fork's answer</p>
+      <p>Forked items get new ids. <code class="sl-code">POST /v1/resolve</code> resolves common ids from every organization and, when the
+        caller's organization holds an <b>organization-visible, active</b> fork with an item whose <code class="sl-code">origin_item_id</code> is
+        that id, returns the fork item's label and names it in <code class="sl-code">effective_item_id</code>. The picker renders that label
+        and selects the matching fork option. One request, as before.</p>
+    </div>
+  </div>
+
+  <div class="sl-host sl-host--center" data-panel="picker" data-mode="single" data-state="redirected">
+    <h2 class="sl-host__title">Ticket #4182</h2>
+    <p class="sl-host__sub">Helpdesk · editing a record saved before Acme forked <b>Priority</b></p>
+    <div class="sl-field" data-picker="priority" style="margin-bottom: 0;">
+      <label class="sl-field__label" for="r1">Priority</label>
+      <div class="sl-combo__control" id="r1" role="combobox" aria-expanded="false" tabindex="0" data-combo-control>
+        <span class="sl-combo__value" data-selected-label data-redirected="true">Medium</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+      </div>
+      <p class="sl-field__hint">Shows the fork's label (“Medium”, renamed by Acme from the common “Normal”) and, when opened, the menu marks
+        the fork's “Medium” option as selected. <b>No visible change</b> beyond the label Acme chose: no badge, no notice, no flicker, no
+        dirty-form marker — to the user it is simply the current value.</p>
+    </div>
+    <div class="sl-persist" data-persisted>
+      <div class="sl-persist__label">Stored vs submitted</div>
+      <code>stored:    front_sli_01jf8k2m3n4p5q6r7s8t9v0wa2  (common “Normal”)</code><br />
+      <code>effective: front_sli_01jfq3w8z6y5x4c3b2a1n9m8b2  (fork “Medium”)</code><br />
+      <code>submits:   front_sli_01jf8k2m3n4p5q6r7s8t9v0wa2  (unchanged unless the user picks)</code>
+      <p data-migration="host-opt-in">The picker's <code>value</code> is <b>not</b> rewritten: the host gave it the stored id and gets the same id
+        back unless the user picks something else (the picker's contract with its host is unchanged). Both ids keep resolving, so that is always
+        correct. A host that wants to migrate stored values passes <code>onEffectiveValue(stored, effective)</code>; the picker calls it once
+        per redirected id after a successful resolve, and the host may write the effective id on its own next save — lazily, as the
+        contract intends. If the user picks a value, the picker emits that option's (fork) id, as for any pick.</p>
+    </div>
+  </div>
+
+  <div class="sl-section" style="max-width: calc(var(--space-16) * 18); margin-left: auto; margin-right: auto;">
+    <h2>Every resolve outcome a stored value can have</h2>
+    <p class="sl-caption">Each id renders independently. A batch with a mix of outcomes (some redirected, some missing) is a normal
+      response, not a partial failure.</p>
+    <div class="sl-panel sl-panel--scroll" data-panel="resolve-matrix">
+      <div class="sl-panel__seam"></div>
+      <table class="sl-table">
+        <thead><tr><th scope="col">Stored id</th><th scope="col">Situation</th><th scope="col">Resolve answers</th><th scope="col">Picker renders</th></tr></thead>
+        <tbody>
+          <tr data-resolve-case="redirect">
+            <td class="sl-uuid">front_sli_…v0wa2</td>
+            <td>Common item; Acme has an <b>org</b> fork</td>
+            <td>fork label + <code class="sl-code">effective_item_id</code></td>
+            <td class="name">Medium</td>
+          </tr>
+          <tr data-resolve-case="private-fork">
+            <td class="sl-uuid">front_sli_…v0wa2</td>
+            <td>Common item; Acme's fork is <b>private</b> (draft)</td>
+            <td>common label, no redirect</td>
+            <td class="name">Normal</td>
+          </tr>
+          <tr data-resolve-case="fork-item-purged">
+            <td class="sl-uuid">front_sli_…v0wa3</td>
+            <td>Common item; the fork's copy was <b>deleted</b></td>
+            <td>falls back to the common item</td>
+            <td class="name">High</td>
+          </tr>
+          <tr data-resolve-case="fork-archived">
+            <td class="sl-uuid">front_sli_…m8b6</td>
+            <td>Fork-only item (added by Acme); the <b>fork</b> was archived (reverted)</td>
+            <td>Acme's own item — still resolves, with the item's own <code class="sl-code">status</code></td>
+            <td class="name">Blocker <span class="sl-field__hint" style="display:inline;">(styled by the returned <code class="sl-code">status</code>; archived → greyed + badge)</span></td>
+          </tr>
+          <tr data-resolve-case="common-archived-redirect">
+            <td class="sl-uuid">front_sli_…v0wa4</td>
+            <td>Common item archived by the platform <b>after</b> Acme forked; Acme's active <b>org</b> fork still holds its copy</td>
+            <td>redirected: fork item's label + <b>fork item's</b> <code class="sl-code">status</code> + <code class="sl-code">effective_item_id</code></td>
+            <td class="name">Urgent <span class="sl-field__hint" style="display:inline;">(fork copy still active — the source's archive does not reach it)</span></td>
+          </tr>
+          <tr data-resolve-case="common-archived">
+            <td class="sl-uuid">front_sli_…v0wa5</td>
+            <td>Common item archived by the platform; <b>no</b> redirect applies (no active org fork, or the fork has no non-purged copy of it)</td>
+            <td><code class="sl-code">status: archived</code></td>
+            <td class="name"><span style="color: var(--text-tertiary);">Critical (legacy)</span> <span class="sl-pill sl-pill--archived">archived</span></td>
+          </tr>
+          <tr data-resolve-case="missing">
+            <td class="sl-uuid">front_sli_…zz09</td>
+            <td>Another customer organization's item, or purged</td>
+            <td>in <code class="sl-code">missing</code></td>
+            <td class="name" data-missing="true"><span style="color: var(--text-tertiary);">Unknown value</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sl-field__hint">Archived and missing rendering is unchanged from the approved 4.0.0 picker frame
+      <code class="sl-code">selection-lists/14-picker-archived</code>: read but not newly selectable; “Unknown value” keeps the id in the form.</p>
+  </div>
+
+  <div class="sl-section" style="max-width: calc(var(--space-16) * 18); margin-left: auto; margin-right: auto;">
+    <h2>States</h2>
+    <div class="sl-grid2">
+      <div class="sl-host" data-panel="picker" data-state="resolving">
+        <p class="sl-case">Resolving a stored value</p>
+        <label class="sl-field__label">Priority</label>
+        <div class="sl-combo__control" aria-busy="true"><span class="sl-skel" style="width: 38%;"></span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
+        <p class="sl-field__hint">The stored id is never shown as a label placeholder, and the control is not editable until resolve settles
+          — choosing a value mid-resolve would race the label (and the host's <code class="sl-code">onEffectiveValue</code>) against the user's pick.</p>
+      </div>
+      <div class="sl-host" data-panel="picker" data-state="resolve-error">
+        <p class="sl-case">Resolve failed</p>
+        <label class="sl-field__label">Priority</label>
+        <div class="sl-combo__control sl-combo__control--invalid"><span class="sl-combo__value sl-combo__value--ph">Couldn't load the saved value</span><button class="btn btn-ghost sl-btn-sm" data-action="retry">Retry</button></div>
+        <p class="sl-field__err" data-error="resolve-failed"><span aria-hidden="true">⚠</span><span>The stored id stays in the form
+          untouched — <code class="sl-code">onEffectiveValue</code> is only ever called from a successful resolve.
+          Saving the form re-submits the original id.</span></p>
+      </div>
+    </div>
+  </div>
+
+  <p class="sl-notes" style="max-width: calc(var(--space-16) * 18); margin-left: auto; margin-right: auto;">
+    <b>Test hooks:</b> <code>[data-frame='10-picker-stored-values']</code> · <code>[data-panel='picker'][data-state='redirected']</code> · <code>[data-selected-label][data-redirected='true']</code> · <code>[data-migration='host-opt-in']</code> · <code>[data-persisted]</code> · <code>[data-panel='resolve-matrix']</code> · <code>[data-resolve-case='redirect']</code> · <code>[data-resolve-case='private-fork']</code> · <code>[data-resolve-case='fork-item-purged']</code> · <code>[data-resolve-case='fork-archived']</code> · <code>[data-resolve-case='common-archived-redirect']</code> · <code>[data-resolve-case='common-archived']</code> · <code>[data-resolve-case='missing']</code> · <code>[data-missing='true']</code> · <code>[data-state='resolving']</code> · <code>[data-state='resolve-error']</code> · <code>[data-error='resolve-failed']</code> · <code>[data-action='retry']</code><br />
+    Contract: <code>POST /v1/resolve</code> (<code>ResolvedSelectionListItem.effective_item_id</code>, 4.1.0) · <code>SelectionListItem.origin_item_id</code>.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+  </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="09-picker-effective.html" data-nav="prev">← Picker — effective list</a>
+  <span class="caption"><b>(5b) Stored values across a fork</b> · Flow 5 · Effective picker · frame 10 of 15</span>
+  <a class="btn btn-primary" href="11-rtl-mobile-detail.html" data-nav="next">RTL + mobile: list detail →</a>
+</nav>
+</body>
+</html>
