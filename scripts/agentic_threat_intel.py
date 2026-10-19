@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "security" / "agentic"
 UTC = dt.timezone.utc
-RELEVANT = re.compile(r"\b(prompt injection|jailbreak|agentic|ai agent|llm|mcp|multimodal)\b", re.I)
+RELEVANT = re.compile(r"\b(prompt injection|jailbreak|agentic|ai agent|llm|mcp|multimodal)\b", re.IGNORECASE)
 CONTROL_ID = re.compile(r"^AGENT-\d{3}$")
 
 
