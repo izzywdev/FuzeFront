@@ -665,6 +665,10 @@ export const updateAppStatus = async (id: string, isActive: boolean) => {
   const res = await api.put(`/apps/${id}/activate`, { isActive })
   return res.data
 }
+export const updateApp = async (id: string, app: Partial<App>) => {
+  const res = await api.put(`/apps/${id}`, app)
+  return res.data
+}
 export const deleteApp = async (id: string) => {
   const res = await api.delete(`/apps/${id}`)
   return res.data
