@@ -361,10 +361,14 @@ router.get('/', authenticateToken, async (req: any, res) => {
           )
       })
       .where(function () {
-        // User can see organizations they are members of, or public organizations
+        // A user sees orgs they are an active member of, plus the single
+        // canonical platform root (every user has a baseline membership there,
+        // but new users may not yet — so keep it visible by id). Scoping to
+        // ROOT_ORG_ID, not type='platform', stops any other/legacy platform org
+        // leaking into every user's switcher as a phantom "Guest" tile.
         this.whereNotNull('organization_memberships.id').orWhere(
-          'organizations.type',
-          'platform'
+          'organizations.id',
+          ROOT_ORG_ID
         )
       })
 
@@ -492,10 +496,12 @@ router.get(
         })
         .where('organizations.id', id)
         .where(function () {
-          // User can see organizations they are members of, or public organizations
+          // Visible if the caller is an active member, or it is the canonical
+          // platform root. Scoped to ROOT_ORG_ID (not type='platform') so a
+          // legacy/phantom platform org is not readable by non-members.
           this.whereNotNull('organization_memberships.id').orWhere(
-            'organizations.type',
-            'platform'
+            'organizations.id',
+            ROOT_ORG_ID
           )
         })
         .first()
