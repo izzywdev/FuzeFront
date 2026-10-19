@@ -25,7 +25,7 @@ on:
             billing-portal      — fuzefront.billing.invoice-history (100%)
             portals-directory   — fuzefront.platform.portals-directory + multi-tenant-portals (100%)
             portal-console      — fuzefront.identity.portal-scoped-users + fuzefront.apps.portal-catalog + fuzefront.billing.reseller-connect (100%)
-            org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
+            org-context-gating  — fuzefront.apps.org-context-disabled (100%) + fuzefront.apps.org-context-hidden (100%; owner decision 2026-10-19: HIDE org apps in personal context)
             selection-lists     — fuzefront.selection-lists.service (staged ramp via `rollout`; rollback via `action: disable`)
             app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
             authz-enabled       — fuzefront.billing.authz-enabled (100%) — run AFTER prod-billing-s2s-provision succeeds
@@ -197,20 +197,16 @@ jobs:
 
           # ── Org context gating flags ───────────────────────────────────────
           apply_org_context_gating() {
+            # Owner decision 2026-10-19: org-only apps are HIDDEN in personal
+            # context, not shown-disabled. In frontend/src/components/SidePanel.tsx
+            # org-context-hidden takes precedence over org-context-disabled (gated
+            # apps return null before the disabled check), so enabling hidden is
+            # the operative "hide" switch; disabled stays ON as its healthy default
+            # (dead code for gated apps once hidden wins, harmless otherwise).
             enable_ga "fuzefront.apps.org-context-disabled" \
               "Release flag. Gates showing org-context required apps as disabled in non-org personal context. Default ON in prod. Owner: frontend-engineer."
-
-            local FLAG="fuzefront.apps.org-context-hidden"
-            local DESC="Release flag. Gates completely hiding org-context required apps in non-org context. Default OFF in prod. Owner: frontend-engineer."
-            echo "=== $FLAG (Created, OFF in prod) ==="
-            curl -sS -o /tmp/resp_hidden.json -w '%{http_code}' -X POST \
-              "$UNLEASH/api/admin/projects/$PROJECT/features" \
-              -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-              -d "{\"name\":\"$FLAG\",\"type\":\"release\",\"description\":\"$DESC\"}" || true
-
-            curl -sfX POST \
-              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/off" \
-              -H "Authorization: $TOKEN" || true
+            enable_ga "fuzefront.apps.org-context-hidden" \
+              "Release flag. Completely hides org-context required apps in non-org personal context. ON in prod per owner decision 2026-10-19 (HIDE, not show-disabled); takes precedence over org-context-disabled in SidePanel.tsx. Owner: frontend-engineer."
           }
 
           # ── Selection Lists (staged ramp / rollback) ───────────────────────
