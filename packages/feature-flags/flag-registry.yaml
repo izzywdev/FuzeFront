@@ -120,6 +120,35 @@ flags:
     web_exposed: true
 
   # ---------------------------------------------------------------------------
+  # fuzefront.auth.*
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.auth.experience
+    type: release
+    default: false
+    description: >
+      FFRNT-360 — gates the auth-experience UI (approved frames
+      design/frames/auth-experience): the public /signup/verify, /verify/email
+      and /reset routes, the "Forgot password?" link on sign-in, and the
+      post-signup redirect to the check-inbox screen. OFF = today's LoginPage
+      for every unauthenticated path, unchanged. Read PRE-AUTH by the browser
+      (no session exists yet, so GET /api/flags cannot serve it) via
+      isAuthExperienceEnabled() in @fuzefront/auth-ui: build-time default OFF
+      (VITE_FF_AUTH_EXPERIENCE=true to enable) plus a same-origin runtime
+      override (window.__FF_AUTH_EXPERIENCE__). Rollout convenience only — the
+      password-reset and verification endpoints are authorised/rate-limited
+      server-side regardless of this flag.
+    owner: frontend-engineer
+    removal_criterion: >
+      Delete once the auth-experience flows are GA for 100% of environments;
+      remove the flag, isAuthExperienceEnabled() and the flag-OFF branch in
+      frontend/src/App.tsx + LoginPage.tsx in the same PR.
+    gates:
+      - "frontend App.tsx unauthenticated routes /signup/verify, /verify/email, /reset"
+      - "AuthPanel Forgot password? link and post-signup verify redirect (LoginPage.tsx)"
+    web_exposed: false
+    jira: FFRNT-360
+
+  # ---------------------------------------------------------------------------
   # fuzefront.authz.*
   # ---------------------------------------------------------------------------
   - key: fuzefront.authz.chat-agent-security-api

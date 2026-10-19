@@ -2,6 +2,16 @@ name: Fuze Code Review
 
 # THE CANONICAL LLM CODE REVIEW + APPROVAL GATE.
 #
+# FUZEFRONT NOTE (agentic SDLC / software factory -- no human in the dev or release
+# loop): on THIS repo the `master` ruleset requires 0 approving reviews, and
+# auto-merge.yml arms the merge (and approves) for every `auto-merge`-labelled PR, so
+# the gate set (required checks) is the production guard, not a person. The
+# "Human review required -- a human merges" wording this workflow posts for a
+# CI/governance-touching PR is therefore informational: it withholds THIS job's own
+# approval (the approval machinery should not self-approve), it does not hold the merge.
+# The wording itself comes from scripts/fuze_code_review_verdict.py, a FuzeSDLC-managed
+# file, so the text is corrected upstream, not edited here.
+#
 # WHY THIS EXISTS. Every consuming repo's branch-protection ruleset sets BOTH
 # `required_approving_review_count: 1` AND `require_last_push_approval: true`
 # (governance/ruleset.json). A bot-authored PR can never satisfy that on its own —

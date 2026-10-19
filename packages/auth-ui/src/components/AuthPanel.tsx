@@ -46,6 +46,8 @@ export function AuthPanel({
   onAuthenticated,
   onMfaRequired,
   social = true,
+  forgotPasswordHref,
+  onForgotPassword,
   labels: labelOverrides,
 }: AuthPanelProps) {
   const labels = { ...DEFAULT_AUTH_LABELS, ...labelOverrides }
@@ -99,7 +101,7 @@ export function AuthPanel({
           firstName: firstName || undefined,
           lastName: lastName || undefined,
         })
-        onAuthenticated(session)
+        onAuthenticated(session, { mode: 'signup', email })
         return
       }
 
@@ -109,7 +111,7 @@ export function AuthPanel({
         onMfaRequired?.(result)
         return
       }
-      onAuthenticated(result)
+      onAuthenticated(result, { mode: 'signin', email })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : undefined
       setError(message || labels.genericError)
@@ -192,6 +194,21 @@ export function AuthPanel({
             autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
             required
           />
+
+          {mode === 'signin' && forgotPasswordHref && (
+            <a
+              className="fzf-auth-panel__forgot"
+              href={forgotPasswordHref}
+              onClick={(e) => {
+                if (onForgotPassword) {
+                  e.preventDefault()
+                  onForgotPassword()
+                }
+              }}
+            >
+              {labels.forgotPassword}
+            </a>
+          )}
 
           <Button type="submit" variant="primary" fullWidth disabled={loading}>
             {pending === 'credentials'
