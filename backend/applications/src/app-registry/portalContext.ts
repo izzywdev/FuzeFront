@@ -108,10 +108,29 @@ export async function resolvePortalCatalogContext(
   }
 
   const tokenPortalId = resolveTokenPortalId(req)
-  if (tokenPortalId === 'invalid' || tokenPortalId === null) {
-    // Missing portal context (no claim, or no verifiable token at all) — FAIL
-    // CLOSED, never fall back to the unscoped global list (S2 AC4).
+  if (tokenPortalId === 'invalid') {
+    // No verifiable token at all — FAIL CLOSED (the route's auth middleware
+    // normally rejects these before here; this is defense in depth).
     return { mode: 'denied', portalId: null }
+  }
+  if (tokenPortalId === null) {
+    // Validly-signed token with NO `portalId` claim. The live session issuer
+    // (the security service) does not mint a `portalId` claim today — its
+    // tokens are { userId, sessionId, tid } — so EVERY current session lands
+    // here. Failing closed empties the catalog for every authenticated user
+    // (the "all apps disappeared" regression once this flag went GA). An
+    // unbound session is the PLATFORM ROOT context: resolve to the root portal
+    // (unconditional public/own-org visibility — identical SQL to 'off' and to
+    // the pre-epic behavior), NOT 'denied'. Sessions that DO carry a tenant
+    // `portalId` are still scoped below. Catalog visibility is not
+    // authorization (Permit governs access/install) and public/marketplace
+    // apps are public by definition, so this widens no real capability.
+    // Re-close this to 'denied' only once the issuer mints `portalId` on every
+    // session (then every valid token carries a claim and null means tampering).
+    const rootId = await getRootPortalId()
+    return rootId
+      ? { mode: 'root', portalId: rootId }
+      : { mode: 'off', portalId: null }
   }
 
   // AC3 — the root portal's catalog behavior must not regress: if the

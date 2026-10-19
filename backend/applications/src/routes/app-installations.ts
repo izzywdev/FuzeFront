@@ -37,7 +37,13 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
-import { assertRefExists, parseId, toUuid } from '@izzywdev/fuzefront-identity'
+import {
+  assertRefExists,
+  parseId,
+  toUuid,
+  IdentityError,
+  RefIndexError,
+} from '@izzywdev/fuzefront-identity'
 import { isRefEnforceEnabled } from '../app-registry/flags'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 import { isPrefixedIdsEnabled } from '../identity/flags'
@@ -537,12 +543,31 @@ router.post(
           await assertRefExists(getRefStore(), 'organization', organizationId, {
             mode: refMode,
           })
-        } catch {
-          return res.status(422).json({
-            error: 'unprocessable_entity',
-            message: 'Organization not found',
-            code: 'ORG_REF_MISSING',
-          })
+        } catch (err) {
+          // Discriminate — a blanket catch here flattened three different
+          // failures into one misleading 422:
+          //  - IdentityError (L0): the id is the wrong SHAPE (e.g. a bare UUID
+          //    while prefixed-only). That is a bad request, 400 — NOT a missing
+          //    org. (Guarded against by the dual-accept window in index.ts, but
+          //    reported honestly if one still slips through.)
+          //  - RefIndexError (L1, enforce mode only): the org is genuinely
+          //    unknown to the projection → 422 ORG_REF_MISSING.
+          //  - anything else (e.g. a DB error from the ref-index repo) must
+          //    surface as a 500, not a fake "Organization not found".
+          if (err instanceof IdentityError) {
+            return res.status(400).json({
+              error: 'invalid organizationId',
+              code: err.code,
+            })
+          }
+          if (err instanceof RefIndexError) {
+            return res.status(422).json({
+              error: 'unprocessable_entity',
+              message: 'Organization not found',
+              code: 'ORG_REF_MISSING',
+            })
+          }
+          throw err
         }
         // Normalize TypeID → bare UUID for all DB operations below.
         organizationId = toUuid(parseId('organization', organizationId))

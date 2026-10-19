@@ -13,6 +13,7 @@ import { resolvePortalScopeDecision, applyPortalScope, normalizePortalId } from 
 import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
+import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 const router = express.Router()
 
@@ -280,10 +281,14 @@ router.get('/', authenticateToken, async (req: any, res) => {
         [req.user.id, 'active']
       )
       .where(function () {
-        // User can see organizations they are members of, or public organizations
+        // A user sees orgs they are an active member of, plus the single
+        // canonical platform root (every user has a baseline membership there,
+        // but new users may not yet — so keep it visible by id). Scoping to
+        // ROOT_ORG_ID, not type='platform', stops any other/legacy platform org
+        // leaking into every user's switcher as a phantom "Guest" tile.
         this.whereNotNull('organization_memberships.id').orWhere(
-          'organizations.type',
-          'platform'
+          'organizations.id',
+          ROOT_ORG_ID
         )
       })
 
@@ -424,10 +429,12 @@ router.get(
         )
         .where('organizations.id', id)
         .where(function () {
-          // User can see organizations they are members of, or public organizations
+          // Visible if the caller is an active member, or it is the canonical
+          // platform root. Scoped to ROOT_ORG_ID (not type='platform') so a
+          // legacy/phantom platform org is not readable by non-members.
           this.whereNotNull('organization_memberships.id').orWhere(
-            'organizations.type',
-            'platform'
+            'organizations.id',
+            ROOT_ORG_ID
           )
         })
         .first()
@@ -556,10 +563,38 @@ router.put(
   }
 )
 
+// The platform root organization is the anchor for every portal-scope check
+// and every user's baseline membership — it can never be deleted by anyone.
+// This guard runs BEFORE the permission middleware so the answer is a
+// consistent ROOT_ORG_PROTECTED regardless of the caller's role (a non-owner
+// would otherwise be rejected with the generic permission error first, which
+// would not communicate that the org is structurally undeletable). Guard by the
+// well-known id AND by type='platform' so any future platform/system org is
+// covered too.
+async function protectRootOrganization(req: any, res: any, next: any) {
+  try {
+    const { id } = req.params
+    const targetOrg = await db('organizations').where('id', id).first()
+    if (!targetOrg) {
+      return res.status(404).json({ error: 'Organization not found' })
+    }
+    if (id === ROOT_ORG_ID || targetOrg.type === 'platform') {
+      return res.status(403).json({
+        error: 'The platform root organization cannot be deleted',
+        code: 'ROOT_ORG_PROTECTED',
+      })
+    }
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
+
 // DELETE /api/organizations/:id - Deactivate organization
 router.delete(
   '/:id',
   authenticateToken,
+  protectRootOrganization,
   PermissionMiddleware.canDeleteOrganization,
   async (req: any, res) => {
     try {
