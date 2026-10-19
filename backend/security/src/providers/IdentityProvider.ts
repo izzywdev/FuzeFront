@@ -374,7 +374,11 @@ export interface IdentityProvider {
   /** Activate a pending factor with a one-time code. Rejects on bad/expired code. */
   activateFactor(token: string, factorId: string, code: string): Promise<MfaFactor>;
 
-  /** Remove an enrolled factor. Idempotent. */
+  /**
+   * Remove an enrolled factor. Idempotent. Rejects with LastFactorError when it
+   * is the user's last ACTIVE factor (atomic with the delete). Pending factors
+   * may always be removed.
+   */
   removeFactor(token: string, factorId: string): Promise<void>;
 
   /** (Re)generate one-time recovery codes; returns them once. */
@@ -470,4 +474,13 @@ export interface IdentityProvider {
    * identity store; FuzeFront never stores one.
    */
   setPassword(token: string, newPassword: string): Promise<IdentityConnections>;
+
+  /**
+   * Change the password of an account that already has one. Verifies
+   * `currentPassword` first, applies the new-password policy, and revokes every
+   * session EXCEPT the caller's. Rejects: InvalidInput (malformed), NoPassword
+   * (no password sign-in method), CurrentPasswordInvalid (wrong current
+   * password), PasswordPolicyRejected (new password fails policy).
+   */
+  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void>;
 }

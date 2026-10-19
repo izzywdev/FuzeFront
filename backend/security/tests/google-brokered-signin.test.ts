@@ -225,3 +225,57 @@ describe('server-brokered Google — return-origin threading', () => {
     expect(provider.peekSocialReturnOrigin('never-issued')).toBeUndefined()
   })
 })
+
+describe('social sign-in honours MFA (no second-factor bypass)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const MfaErr = () => require('../src/providers/authentik/AuthentikIdentityProvider').MfaRequiredError
+
+  async function signIn(provider: any) {
+    const { state } = await provider.startSocialLogin('google', '/')
+    return provider.brokerCallback({ code: 'goog-auth-code', state }, { ip: '1.2.3.4', userAgent: 'ua' })
+  }
+
+  it('user WITH an active factor: no session minted; exchange returns an mfa_required challenge bound to that user', async () => {
+    const { provider, db } = newProvider()
+    db.__tables.mfa_factors.push({ id: 'f1', user_id: 'user-gina@example.com', type: 'totp', status: 'active', secret: 'S' })
+    const { code } = await signIn(provider)
+    expect(db.__tables.sessions).toHaveLength(0) // nothing minted at the callback
+
+    const err: any = await provider.exchangeCode(code).catch((e: any) => e)
+    expect(err).toBeInstanceOf(MfaErr())
+    expect(err.challengeId).toBeTruthy()
+    expect(err.factors).toEqual([{ factorId: 'f1', type: 'totp' }])
+    expect(db.__tables.sessions).toHaveLength(0) // still no session before step-up
+  })
+
+  it('a pending (non-active) factor does not trigger MFA', async () => {
+    const { provider, db } = newProvider()
+    db.__tables.mfa_factors.push({ id: 'p1', user_id: 'user-gina@example.com', type: 'totp', status: 'pending' })
+    const { code } = await signIn(provider)
+    const session = await provider.exchangeCode(code)
+    expect(session.token).toBeTruthy()
+  })
+
+  it('user WITHOUT factors still gets a session', async () => {
+    const { provider, db } = newProvider()
+    const { code } = await signIn(provider)
+    const session = await provider.exchangeCode(code)
+    expect(session.user.email).toBe('gina@example.com')
+    expect(db.__tables.sessions).toHaveLength(1)
+  })
+
+  it('the broker code is single-use for an MFA-pending user (replay rejected)', async () => {
+    const { provider, db } = newProvider()
+    db.__tables.mfa_factors.push({ id: 'f1', user_id: 'user-gina@example.com', type: 'totp', status: 'active', secret: 'S' })
+    const { code } = await signIn(provider)
+    await expect(provider.exchangeCode(code)).rejects.toBeInstanceOf(MfaErr())
+    await expect(provider.exchangeCode(code)).rejects.toBeInstanceOf(UnauthorizedError)
+  })
+
+  it('the broker code is single-use for a no-factor user (replay rejected)', async () => {
+    const { provider } = newProvider()
+    const { code } = await signIn(provider)
+    await provider.exchangeCode(code)
+    await expect(provider.exchangeCode(code)).rejects.toBeInstanceOf(UnauthorizedError)
+  })
+})

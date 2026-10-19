@@ -32,9 +32,13 @@ import {
   MfaEnrollResult,
   MfaChallengeAck,
   VerificationStatus,
+  SessionDevice,
+  IdentityConnections,
+  SocialLinkStart,
 } from '../../src/providers/IdentityProvider'
 import { ProviderError } from './mockIdentityProvider'
 import { randomUUID } from 'crypto'
+import { TokenError } from '../../src/providers/errors'
 
 /** A deliberately different second implementation of the SAME swap contract. */
 class AltIdentityProvider implements IdentityProvider {
@@ -59,6 +63,8 @@ class AltIdentityProvider implements IdentityProvider {
       user: { id: this.users[email].id, email, roles: ['member'] },
     }
   }
+  // Change-password stub (not exercised by the swap contract).
+  async changePassword(): Promise<void> { throw new ProviderError('INVALID_CREDENTIALS', 'nope', 400) }
   async passwordLogin(i: PasswordLoginInput): Promise<BrokeredSession> {
     const u = this.users[i.email]
     if (!u || u.pw !== i.password) throw new ProviderError('INVALID_CREDENTIALS', 'nope', 401)
@@ -66,7 +72,7 @@ class AltIdentityProvider implements IdentityProvider {
   }
   async startSocialLogin(provider: string): Promise<SocialLoginStart> {
     if (provider !== 'google') throw new ProviderError('MALFORMED', 'bad provider', 400)
-    return { redirectUrl: 'https://app.fuzefront.com/api/auth/idp/authorize?x=1', state: 's' }
+    return { redirectUrl: 'https://app.fuzefront.com/api/auth/idp/authorize?x=1', state: 's', codeVerifier: 'cv' }
   }
   async brokerCallback(i: SocialCallbackInput): Promise<SocialCallbackResult> {
     const code = `ALTCODE-${this.n++}`
@@ -135,7 +141,9 @@ class AltIdentityProvider implements IdentityProvider {
     throw new ProviderError('INVALID_CODE', 'n/a', 401)
   }
   async startEmailVerification(): Promise<void> {}
-  async confirmEmailVerification(): Promise<VerificationStatus> {
+  async confirmEmailVerification(i: { token?: string; code?: string }): Promise<VerificationStatus> {
+    if (i.token === 'expired') throw new TokenError('TOKEN_EXPIRED')
+    if (i.token === 'bad') throw new TokenError('TOKEN_INVALID')
     return { emailVerified: true, phoneVerified: false }
   }
   async startPhoneVerification(): Promise<void> {}
@@ -145,6 +153,32 @@ class AltIdentityProvider implements IdentityProvider {
   async getVerificationStatus(t: string): Promise<VerificationStatus> {
     if (!this.live.has(t)) throw new ProviderError('INVALID_SIGNATURE', 'bad', 401)
     return { emailVerified: false, phoneVerified: false }
+  }
+  // ── Surface added to the swap contract after this fixture was written; the
+  // alt provider implements it minimally (the proof exercises login/MFA/tokens).
+  async emailExists(): Promise<boolean> {
+    return false
+  }
+  async requestPasswordReset(): Promise<void> {}
+  async confirmPasswordReset(): Promise<void> {
+    throw new TokenError('TOKEN_INVALID', 'n/a')
+  }
+  async listSessions(): Promise<SessionDevice[]> {
+    return []
+  }
+  async revokeSession(): Promise<void> {}
+  async revokeOtherSessions(): Promise<void> {}
+  async getIdentityConnections(): Promise<IdentityConnections> {
+    return { providers: [], hasPassword: true }
+  }
+  async startSocialLink(): Promise<SocialLinkStart> {
+    throw new ProviderError('UNKNOWN', 'n/a', 500)
+  }
+  async unlinkSocial(): Promise<IdentityConnections> {
+    return { providers: [], hasPassword: true }
+  }
+  async setPassword(): Promise<IdentityConnections> {
+    return { providers: [], hasPassword: true }
   }
 }
 
