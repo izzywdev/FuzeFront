@@ -25,6 +25,8 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["fuzefront_metered_usage*"]
 
+[tool.ruff]
+
 [tool.ruff.lint.isort]
 known-first-party = ["fuzefront_metered_usage"]
 
