@@ -17,6 +17,7 @@ import {
   integrationTypeOf,
   appHref,
 } from '../platform/appManifest'
+import { MobileDistributionLinks } from '../components/MobileDistributionLinks'
 
 /**
  * The application menu (frame 01-app-menu): a launcher grid of registered AND
@@ -357,6 +358,7 @@ function ApplicationsLauncher({
                 {app.status}
               </Badge>
             </div>
+            <MobileDistributionLinks app={app} />
           </div>
         ))}
 

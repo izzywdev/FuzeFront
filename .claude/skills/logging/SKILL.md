@@ -1,6 +1,6 @@
 ---
 name: logging
-description: Use when writing or reviewing ANY service/backend/frontend code that runs a request path, calls an external system, or makes a decision that could fail in prod — the family structured-logging standard. Covers pino JSON logging, the ERROR/WARN/INFO/DEBUG level semantics + env-flippable LOG_LEVEL, boundary logging (every external call logs start/end/elapsed ms), per-request correlation IDs (reqId child logger), MANDATORY secret redaction, critical-path-first incremental migration off raw console.*, and the implementer + reviewer definition-of-done. Owned by backend-engineer/frontend-engineer (implement) + the reviewer (enforce).
+description: Use when writing or reviewing ANY service/backend/frontend code that runs a request path, calls an external system, or makes a decision that could fail in prod — the family structured-logging standard. Covers pino JSON logging, the ERROR/WARN/INFO/DEBUG level semantics + env-flippable LOG_LEVEL, boundary logging (every external call logs start/end/elapsed ms), per-request correlation IDs (reqId child logger), distributed-trace correlation (trace_id/span_id via @izzywdev/fuzefront-telemetry, OTel traces to FuzeInfra's Collector), MANDATORY secret redaction, critical-path-first incremental migration off raw console.*, and the implementer + reviewer definition-of-done. Owned by backend-engineer/frontend-engineer (implement) + the reviewer (enforce).
 ---
 
 # logging / observability-logging
@@ -55,6 +55,7 @@ req.log = logger.child({ reqId });
 
 - **One request = one greppable thread.** `grep reqId=abc123` returns the entire lifecycle across every hop in order. This is the difference between reading a story and staring at interleaved noise.
 - **Carry the correlation id across hops** — propagate `reqId` as an outbound header (`x-request-id`) on every external call so the downstream service's logs join the same thread. Bind stable request-scoped context too (`userId`, `orgId`/tenant, route) once on the child so you don't repeat it on every line.
+- **`reqId` correlates one service's own logs. It does not, by itself, link a log line to a distributed trace.** For that — following a request across services in Tempo, or jumping from a Loki log line to the exact span that produced it — see §9 (`trace_id`/`span_id` via `@izzywdev/fuzefront-telemetry`). The two ids are complementary, bound on the SAME child logger, never one replacing the other.
 
 ## 5. Secret redaction — MANDATORY, non-negotiable
 
@@ -95,6 +96,7 @@ You do **not** need a big-bang rewrite to adopt this. Order the work by blast ra
 - [ ] Requests carry a **`reqId`** child-logger binding, propagated to downstream calls.
 - [ ] pino **`redact`** covers passwords/tokens/codes/cookies/`client_secret`/`authorization`; I logged no credential values (shape only).
 - [ ] Critical paths (auth/payment/data) instrumented first; any legacy `console.*` I couldn't migrate is captured in a cleanup ticket.
+- [ ] Where `@izzywdev/fuzefront-telemetry` is wired for this service (rollout is per-service, not fleet-wide yet — see §9): `trace_id`/`span_id` are bound alongside `reqId` via `withTraceContext`.
 
 **Reviewer checklist (enforce, don't fix):**
 - [ ] No new critical path ships **silent** (no boundary/decision logs) — REPORT if so.
@@ -123,12 +125,26 @@ export const logger = pino({
   timestamp: pino.stdTimeFunctions.isoTime,
 });
 
+// §9: tracingMiddleware() sets req.traceId/req.spanId from an inbound
+// traceparent (or starts a new trace) — it never touches x-request-id or
+// req.reqId, so it is additive to this middleware, not a header-precedence
+// fight. This module only exports the logger and requestLogger; it does NOT
+// import `app`. Mount both in the application bootstrap, tracing FIRST (see §9):
+//   app.use(tracingMiddleware());   // before requestLogger
+//   app.use(requestLogger);
+import { withTraceContext } from '@izzywdev/fuzefront-telemetry';
+
 // request middleware — bind a per-request child logger with a correlation id
 import { randomUUID } from 'crypto';
 export function requestLogger(req, res, next) {
   const reqId = (req.headers['x-request-id'] as string) ?? randomUUID();
   req.reqId = reqId;
-  req.log = logger.child({ reqId, route: req.path, method: req.method });
+  // withTraceContext binds trace_id (+ span_id) alongside reqId when
+  // tracingMiddleware() ran earlier and set req.traceId; when it did not (middleware
+  // not mounted on this route) it returns the reqId-only child logger unchanged —
+  // never throws, never drops the reqId binding. It does NOT validate the ids: see
+  // §9 "Initialization" for the all-zero id you get if initTelemetry() was skipped.
+  req.log = withTraceContext(logger.child({ reqId, route: req.path, method: req.method }), req);
   req.log.info('request received');
   res.on('finish', () =>
     req.log.info({ status: res.statusCode }, 'request completed'));
@@ -161,7 +177,47 @@ if (user.hasPassword === null) {
 }
 ```
 
+## 9. Distributed trace correlation — `trace_id`/`span_id` via `@izzywdev/fuzefront-telemetry`
+
+`reqId` (§4) correlates one service's own logs. It does **not**, by itself, let you jump from a Loki log line to the Tempo trace that produced it, or follow a request as it crosses service boundaries — that needs a real distributed trace, and FuzeInfra runs one (Grafana Tempo + an OTel Collector). **`@izzywdev/fuzefront-telemetry`** is the family package that sends it: OpenTelemetry tracing for both Node services and the browser, built specifically to extend this skill rather than compete with it. This is the **standard, required** way to add OTel instrumentation in any Fuze product repo — don't hand-roll a different OTel setup per repo.
+
+**The three-pillar contract this closes:** every log line emitted during a traced request must carry that request's OTel `trace_id` (and ideally `span_id`), so Loki lines link to their Tempo trace and back. `trace_id`/`span_id` are **snake_case** — the OTel log-correlation convention — deliberately distinct from the family's own camelCase `reqId`; the two fields coexist on the same child logger rather than one renaming the other:
+
+```json
+{"level":30,"time":1735000000000,"reqId":"a1b2c3d4","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7","msg":"request completed"}
+```
+
+```ts
+// app bootstrap (where `app` is created) — NOT in the logger module
+import { tracingMiddleware, withTraceContext } from '@izzywdev/fuzefront-telemetry';
+
+app.use(tracingMiddleware());                 // FIRST: sets req.traceId / req.spanId
+
+app.use((req, res, next) => {
+  const reqId = (req.headers['x-request-id'] as string) ?? randomUUID();
+  req.log = withTraceContext(logger.child({ reqId }), req);   // now every line carries trace_id too
+  next();
+});
+```
+
+**Why this doesn't fight the `reqId` convention above.** `tracingMiddleware()` owns exactly one header (`traceparent`, W3C format) and exactly two fields (`req.traceId`/`req.spanId`) — it never reads or writes `req.reqId`, `req.requestId`, or `x-request-id`. If a caller sends both `x-request-id` and `traceparent`, both are honored independently; there is no precedence question because neither middleware inspects the other's header. Mount **`tracingMiddleware()` BEFORE** any logger that calls `withTraceContext()`, as in §8's reference implementation — order DOES matter here: `withTraceContext()` reads `req.traceId`/`req.spanId` off the request at the moment it's called to bind them onto the child logger, so if the logger middleware runs first, it sees neither field yet and produces an uncorrelated logger that `tracingMiddleware()` populating those fields afterward cannot retrofit.
+
+**Backend (Node/Express):** `initTelemetry({ serviceName })` once per process (bootstraps the OTel SDK, OTLP export to FuzeInfra's Collector — never Tempo/Loki directly), then `tracingMiddleware()` + `withTraceContext()` as above. **Browser:** `initBrowserTelemetry({ serviceName })` in the app's bootstrap entry point — it also stamps outgoing `fetch`/`XHR` calls with `traceparent` so the backend's `tracingMiddleware()` continues the SAME trace (see "Cross-origin calls" below for the one condition), and `tagWithTraceContext()`/`getActiveTraceId()` let you tag a client-side error log with the active trace id, mirroring `withTraceContext` for the browser.
+
+**Initialization — what has to be true for the fields to be real.**
+- **`initTelemetry()` must run before the modules it instruments are loaded.** Its `http`/`express` auto-instrumentation patches modules at require time, so a call placed in the entrypoint *after* `import express from 'express'` (static ESM imports execute first) silently misses spans. Use a preload (`node --require ./telemetry-bootstrap.js server.js`) or a tiny bootstrap entrypoint that calls `initTelemetry()` and only then `await import('./app')`. "Once per process" is necessary but not sufficient.
+- **Do not mount `tracingMiddleware()` without `initTelemetry()`.** Without an SDK the no-op tracer returns an all-zero, invalid trace id; `tracingMiddleware()` still assigns it to `req.traceId`, and `withTraceContext()` only checks that the string is non-empty, so every log line is stamped with a `trace_id`/`span_id` that resolves to nothing in Tempo and hides the missing initialization. `isValidTraceId` from `@opentelemetry/api` is how to check one.
+- **`span_id` is the request's server span, not the active span.** `withTraceContext()` copies `req.spanId` once, when the request logger is built. A line emitted inside a manual or instrumented child span still carries the parent request span's `span_id`. Use `trace_id` to jump from Loki to Tempo; treat `span_id` as "which request span", not span-level correlation inside a handler.
+- **Expect two server spans per request today.** `initTelemetry()` registers `HttpInstrumentation`, which already creates an inbound server span, and `tracingMiddleware()` then starts its own `SERVER` span (the one whose ids are logged). This is a known property of the package, not something a service can avoid by following this recipe; account for it when reading Tempo topology or counting request spans.
+
+**Cross-origin calls (browser).** `initBrowserTelemetry()` stamps `traceparent` only on requests to `propagateTraceHeaderCorsUrls`, which defaults to **`window.location.origin` alone**. A browser calling an API on another origin does not propagate the trace by default, and the backend starts a separate one. For a cross-origin API pass its origin(s) — `initBrowserTelemetry({ serviceName, propagateTraceHeaderCorsUrls: [apiOrigin] })` — and allow the `traceparent` request header in that API's CORS config (`Access-Control-Allow-Headers`), or the preflight will fail.
+
+**Package naming:** the canonical source lives in `izzywdev/FuzeFront`'s `packages/telemetry/` as `@fuzefront/telemetry` (that repo's internal workspace scope); it publishes to GitHub Packages as **`@izzywdev/fuzefront-telemetry`** via FuzeFront's own scope-rename publish step — install the published name in any OTHER repo: `npm install @izzywdev/fuzefront-telemetry`. Full contract (transport, env resolution, sampling, reference implementation): `izzywdev/FuzeFront`'s `packages/telemetry/README.md` and `packages/telemetry/docs/TRACE_CONTRACT.md`.
+
+**Known gap — not yet wired into onboarding.** `sdlc-bootstrap` (steps 1–10) does not yet install `@izzywdev/fuzefront-telemetry` or mount `tracingMiddleware()` for a newly onboarded repo; a fresh repo gets `reqId` correlation from this skill but no trace correlation until someone adds it by hand. Adding that as a bootstrap step is a real design decision (every onboarded repo must actually reach FuzeInfra's Collector, and the step would need its own env-resolution default) rather than a one-line addition, so it's recorded here as a gap rather than guessed at — a follow-up to `sdlc-bootstrap` should close it once a rollout owner is assigned.
+
 ## Related
+- `@izzywdev/fuzefront-telemetry` (§9) — distributed tracing correlated with this skill's `reqId`/pino standard; FuzeInfra's `docs/consuming-repos/OBSERVABILITY_DASHBOARDS.md` is the upstream app-side contract it implements.
 - `ui-runtime-validation` — browser **console-cleanliness** at runtime (leftover errors/noise), complementary to deliberate app logging.
 - `endpoint-authorization` — auth/authz on endpoints; boundary logging + redaction are strongest exactly on these paths.
 - `verification-protocol` — the honest scoped-done discipline this skill's DoD plugs into.

@@ -60,13 +60,20 @@ const PLANS = [
     features: ['1 application', 'Community support', 'Core platform'] },
   { id: 'test',       name: 'FuzeFront Test ($1)',  amount: 100,  sort: 1, testOnly: true,
     features: ['End-to-end billing test plan — not for production sale'] },
-  { id: 'builder',    name: 'FuzeFront Builder',    amount: 2900, sort: 2,
-    features: ['Unlimited applications', 'AI chat assistant', 'Email support'] },
-  { id: 'business',   name: 'FuzeFront Business',   amount: 9900, sort: 3,
-    features: ['Everything in Builder', 'SSO / OIDC', 'Priority support', 'Advanced analytics'] },
+  { id: 'starter',    name: 'FuzeFront Starter',    amount: 2900, sort: 2,
+    features: ['Up to 5 applications', 'Email support', 'Core platform + integrations'] },
+  { id: 'growth',     name: 'FuzeFront Growth',     amount: 9900, sort: 3,
+    features: ['Unlimited applications', 'SSO / OIDC', 'API keys', 'Module Federation hosting', 'Priority support'] },
   { id: 'enterprise', name: 'FuzeFront Enterprise', amount: 0,    sort: 4, contactSales: true,
-    features: ['Everything in Business', 'Custom limits & SLA', 'Dedicated support', 'Custom contracts'] },
+    features: ['Everything in Growth', 'Custom domain', 'Custom limits & SLA', 'Dedicated support', 'Custom contracts'] },
 ];
+
+/**
+ * Legacy Stripe product keys (tier_name metadata) to archive after the canonical
+ * catalog has been created. These are the pre-FFRNT-363 names; the migration SQL
+ * (005_canonical_plan_tiers.sql) normalizes them in the DB.
+ */
+const LEGACY_PLAN_IDS = ['builder', 'business'];
 
 async function findProduct(id) {
   const res = await stripe.products.search({ query: `metadata['fuzefront_plan_id']:'${id}'`, limit: 1 });
@@ -130,9 +137,23 @@ async function ensurePlan(p) {
     `\nFuzeFront → Stripe plan setup  [${IS_LIVE ? 'LIVE' : 'TEST'} account]  ` +
       `${APPLY ? 'APPLY (writing)' : 'DRY-RUN (no writes — pass --apply to write)'}\n`,
   );
+  console.log('── Canonical plans ──');
   for (const p of PLANS) await ensurePlan(p);
+
+  console.log('\n── Legacy plan archival ──');
+  for (const legacyId of LEGACY_PLAN_IDS) {
+    const product = await findProduct(legacyId);
+    if (!product) {
+      console.log(`  ${legacyId.padEnd(11)} not found in Stripe — skipping`);
+      continue;
+    }
+    const action = product.active ? (APPLY ? 'archive' : 'would-archive') : 'already-inactive';
+    if (APPLY && product.active) await stripe.products.update(product.id, { active: false });
+    console.log(`  ${legacyId.padEnd(11)} product:${action}`);
+  }
+
   console.log(
-    `\n${APPLY ? 'Applied' : 'Would apply'} ${PLANS.length} plans. ` +
+    `\n${APPLY ? 'Applied' : 'Would apply'} ${PLANS.length} canonical plans; archived ${LEGACY_PLAN_IDS.length} legacy plans.\n` +
       `billing-service picks these up via PlanService.syncPlans() (Stripe = source of truth).\n` +
       `Next: register the webhook endpoint and POST /api/v1/billing (internal) once deployed.\n`,
   );

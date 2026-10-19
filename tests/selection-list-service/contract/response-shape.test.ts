@@ -16,10 +16,11 @@
 import { mintTestToken } from '../helpers/auth';
 import { rawFetch } from '../helpers/client';
 import { assertResponse, assertSchema, schemaErrors, specVersion } from '../helpers/openapi';
+import { testOrg, testUser } from '../helpers/ids';
 
-const ORG = 'org_01test0000000shape000000000';
-const USER = 'usr_01test0000000shapeusera0000';
-const USER_B = 'usr_01test0000000shapeuserb0000';
+const ORG = testOrg('shape');
+const USER = testUser('shapeusera');
+const USER_B = testUser('shapeuserb');
 const token = () => mintTestToken({ userId: USER, organizationId: ORG });
 const call = (method: string, path: string, body?: unknown, tok = token()) =>
   rawFetch(path, { method, token: tok, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

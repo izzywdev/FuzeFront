@@ -68,6 +68,12 @@
           "label": { "type": "string", "minLength": 1, "description": "Short label, e.g. '(a) Invoice history'." },
           "route": { "type": "string", "description": "The app route this frame lands on, e.g. '/billing'." },
           "flow": { "type": "string", "description": "The build.flows[].id this frame belongs to, when a flow spans several frames." },
+          "viewport": {
+            "type": "string",
+            "enum": ["mobile", "tablet", "desktop", "responsive"],
+            "description": "Which viewport this frame specifies. 'mobile' = phone (~375px), 'tablet' = ~768px, 'desktop' = wide, 'responsive' = one frame that demonstrates its own reflow across breakpoints. FuzeFront declares mobile required (.fuze/manifest.json), so a flow must have mobile coverage — a 'mobile' or 'responsive' frame — not desktop frames alone. Optional for back-compat; flows without it are reported by the responsive-coverage check (see build.flows[].responsive).",
+            "default": "desktop"
+          },
           "summary": { "type": "string", "minLength": 1, "description": "What the frame shows." },
           "acceptanceNotes": {
             "type": "string",
@@ -137,6 +143,22 @@
                 "type": "boolean",
                 "description": "Per-flow approval. Written by the design-approval workflow onto the frames PR head branch — never hand-set on master. Excluded from the stamp (see scripts/stamp-frames.mjs APPROVAL_KEYS) so approving does not invalidate the stamp it binds to."
               },
+              "responsive": {
+                "type": "object",
+                "description": "How this flow covers mobile. FuzeFront declares mobile required (.fuze/manifest.json), so a flow is not fully designed until a mobile layout is frozen. gate-frames-schema's responsive-coverage check (changed-features scope, per the block-now ramp) expects a flow to either point at a mobile/responsive frame here or state why it is exempt. Optional structurally for back-compat; the check reports flows that omit it.",
+                "properties": {
+                  "mobileFrame": { "type": "string", "description": "The frames[].id of the mobile (or responsive) frame that specifies this flow at phone width. Must resolve to a frame whose viewport is 'mobile' or 'responsive'." },
+                  "coveredViewports": {
+                    "type": "array",
+                    "description": "The viewports this flow freezes, e.g. ['mobile','desktop']. Mobile-first flows list 'mobile' first.",
+                    "items": { "type": "string", "enum": ["mobile", "tablet", "desktop", "responsive"] }
+                  },
+                  "exempt": { "type": "boolean", "description": "Set true only for a flow with no mobile surface (e.g. a desktop-only admin console behind a gate). Requires exemptReason." },
+                  "exemptReason": { "type": "string", "minLength": 1, "description": "Why this flow has no mobile frame. Required when exempt is true." }
+                },
+                "if": { "properties": { "exempt": { "const": true } }, "required": ["exempt"] },
+                "then": { "required": ["exemptReason"] }
+              },
               "approvedBy": { "type": ["string", "null"], "description": "GitHub login of the approver (must be owner/CODEOWNER). null while unapproved." },
               "approvedAt": {
                 "type": ["string", "null"],
@@ -157,7 +179,7 @@
         },
         "packages": {
           "type": "array",
-          "description": "npm packages to be created/extended. Private: publishConfig → GitHub Packages, access restricted. Scope is @fuzefront/* or @fuzeone/* — the latter by owner decision for packages published under the `fuzeone` GitHub org (GitHub Packages requires the npm scope to equal the owning org; see docs/planning/epics/EPIC-17-selection-lists.md).",
+          "description": "npm packages to be created/extended. Private: publishConfig → GitHub Packages, access restricted. Scopes in use across the family: @fuzefront (base) and @fuzeone (e.g. selection-lists clients).",
           "items": { "type": "string", "pattern": "^@(fuzefront|fuzeone)/" }
         }
       }

@@ -21,10 +21,11 @@ import {
   mintSessionToken,
   mintTestToken,
 } from '../helpers/auth';
+import { testOrg, testUser } from '../helpers/ids';
 
-const ORG = 'org_01test00000000tokshape0000';
-const ORG_OTHER = 'org_01test00000000tokother0000';
-const USER = 'usr_01test00000000tokshape0000';
+const ORG = testOrg('tokshape');
+const ORG_OTHER = testOrg('tokother');
+const USER = testUser('tokshape');
 
 const LIST = '/v1/selection-lists';
 

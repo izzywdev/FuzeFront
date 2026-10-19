@@ -6,6 +6,7 @@ import { PaymentRepository } from '../repositories/payment.repository';
 import { InvoiceRepository } from '../repositories/invoice.repository';
 import { PaymentProvider } from '../providers/payment-provider';
 import { PermitSyncService } from '../services/permit.service';
+import { UnleashFlagSyncService } from '../services/unleash-flag-sync.service';
 import { BillingEventEmitter } from '../kafka/producer';
 
 /**
@@ -26,6 +27,9 @@ export interface HandlerContext {
   invoiceRepo?: InvoiceRepository;
   provider?: PaymentProvider;
   permit: PermitSyncService;
+  /** Optional: syncs per-org plan-tier flags in Unleash. Absent when
+   *  UNLEASH_ADMIN_TOKEN is unset (dark deploy — defaults OFF). */
+  unleashFlagSync?: UnleashFlagSyncService;
   emitter: BillingEventEmitter;
   /**
    * Retrieves a full Stripe Subscription by id. Used by the

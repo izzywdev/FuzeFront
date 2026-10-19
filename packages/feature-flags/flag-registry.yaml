@@ -120,6 +120,35 @@ flags:
     web_exposed: true
 
   # ---------------------------------------------------------------------------
+  # fuzefront.auth.*
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.auth.experience
+    type: release
+    default: false
+    description: >
+      FFRNT-360 — gates the auth-experience UI (approved frames
+      design/frames/auth-experience): the public /signup/verify, /verify/email
+      and /reset routes, the "Forgot password?" link on sign-in, and the
+      post-signup redirect to the check-inbox screen. OFF = today's LoginPage
+      for every unauthenticated path, unchanged. Read PRE-AUTH by the browser
+      (no session exists yet, so GET /api/flags cannot serve it) via
+      isAuthExperienceEnabled() in @fuzefront/auth-ui: build-time default OFF
+      (VITE_FF_AUTH_EXPERIENCE=true to enable) plus a same-origin runtime
+      override (window.__FF_AUTH_EXPERIENCE__). Rollout convenience only — the
+      password-reset and verification endpoints are authorised/rate-limited
+      server-side regardless of this flag.
+    owner: frontend-engineer
+    removal_criterion: >
+      Delete once the auth-experience flows are GA for 100% of environments;
+      remove the flag, isAuthExperienceEnabled() and the flag-OFF branch in
+      frontend/src/App.tsx + LoginPage.tsx in the same PR.
+    gates:
+      - "frontend App.tsx unauthenticated routes /signup/verify, /verify/email, /reset"
+      - "AuthPanel Forgot password? link and post-signup verify redirect (LoginPage.tsx)"
+    web_exposed: false
+    jira: FFRNT-360
+
+  # ---------------------------------------------------------------------------
   # fuzefront.authz.*
   # ---------------------------------------------------------------------------
   - key: fuzefront.authz.chat-agent-security-api
@@ -377,6 +406,89 @@ flags:
     # { orgId: 'org_...', userId: 'usr_...', app: 'selection-list-service' }
     # (canonical wire TypeIDs, see services/selection-list-service/src/flags.ts
     # buildFlagContext) -- write any orgId/userId constraint in that form.
+    unleash:
+      project: default
+      type: release
+      environments:
+        production:
+          enabled: false
+          strategies: []
+
+  - key: fuzefront.config.management-console
+    type: release
+    default: false
+    description: >
+      Configuration Management Console UI (EPIC-19-S3/S4). Gates the
+      top-level "Configuration" left-nav item (SidePanel) and the /config
+      settings-editor route (App.tsx route guard, redirects to /dashboard
+      while OFF). Read in the browser via useFlag(); web_exposed so
+      GET /api/flags discloses it. Distinct from the server-only
+      fuzefront.platform.config-management (consumers reading FROM
+      config-service), which this flag does NOT affect.
+    owner: feature-flags-engineer
+    removal_criterion: >
+      When the console is GA for 100% of orgs for 30 days; delete the flag
+      and the SidePanel + App.tsx useFlag guards in one cleanup PR.
+    gates:
+      - '"Configuration" shell left-sidebar nav entry (SidePanel, UI-side)'
+      - '/config settings-editor route (App.tsx, UI-side)'
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-19
+    story: S3
+    unleash:
+      project: default
+      type: release
+      environments:
+        production:
+          enabled: false
+          strategies: []
+
+  - key: fuzefront.config.key-catalog
+    type: release
+    default: false
+    description: >
+      Config key catalog admin surface (EPIC-19-S4). Gates the
+      /admin/config/catalog and /admin/config/catalog/:key routes and the
+      catalog entry on AdminPage. Read in the browser via useFlag();
+      web_exposed so GET /api/flags discloses it. Default OFF (release).
+    owner: feature-flags-engineer
+    removal_criterion: >
+      When the catalog admin surface is GA for 100% of orgs for 30 days;
+      delete the flag and its App.tsx/AdminPage useFlag guards.
+    gates:
+      - '/admin/config/catalog + /admin/config/catalog/:key routes (App.tsx, UI-side)'
+      - 'config-catalog entry on AdminPage (UI-side)'
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-19
+    story: S4
+    unleash:
+      project: default
+      type: release
+      environments:
+        production:
+          enabled: false
+          strategies: []
+
+  - key: fuzefront.config.secrets-audit
+    type: release
+    default: false
+    description: >
+      Config secret + audit-history surface (EPIC-19-S4). Gates the
+      /admin/config/keys/:key/history route (App.tsx route guard). Read in
+      the browser via useFlag(); web_exposed so GET /api/flags discloses it.
+      Default OFF (release).
+    owner: feature-flags-engineer
+    removal_criterion: >
+      When the secret/audit surface is GA for 100% of orgs for 30 days;
+      delete the flag and its App.tsx useFlag guard.
+    gates:
+      - '/admin/config/keys/:key/history route (App.tsx, UI-side)'
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-19
+    story: S4
     unleash:
       project: default
       type: release
