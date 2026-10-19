@@ -132,6 +132,11 @@ jobs:
         # both fail with "Cannot find module '@fuzeone/selection-lists-ui'".
         run: npm run -w @fuzeone/selection-lists-ui build
 
+      - name: Build @fuzefront/billing-types (d.ts for backend type-check)
+        # backend/src/services/billingProjection.ts imports @fuzefront/billing-types;
+        # without a built dist/ the backend tsc --noEmit fails with TS2307.
+        run: npm run -w @fuzefront/billing-types build
+
       - name: Type checking
         run: |
           cd backend && npm run type-check
@@ -302,6 +307,21 @@ jobs:
           npm run -w @fuzefront/shared build
           npm run -w @fuzefront/service-auth build
 
+      - name: Build @fuzefront/telemetry (for backend build + frontend bundle)
+        # backend/src/index.ts now mounts tracingMiddleware()/initTelemetry()
+        # (@fuzefront/telemetry), and frontend imports
+        # @fuzefront/telemetry/browser at its bootstrap (main.tsx); both
+        # resolve through its uncommitted dist/. Must precede the backend
+        # build below — moved here from just before "Build frontend", where
+        # it ran AFTER backend and left backend's own build failing with
+        # TS2307 "Cannot find module '@fuzefront/telemetry'".
+        run: npm run -w @fuzefront/telemetry build
+
+      - name: Build @fuzefront/billing-types (for backend build)
+        # backend/src/services/billingProjection.ts imports @fuzefront/billing-types;
+        # without a built dist/ the backend tsc fails with TS2307.
+        run: npm run -w @fuzefront/billing-types build
+
       - name: Build backend
         run: cd backend && npm run build
 
@@ -316,11 +336,6 @@ jobs:
       # resolve the package entry until it has been built.
       - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
         run: npm run -w @fuzeone/selection-lists-ui build
-
-      - name: Build @fuzefront/telemetry (for frontend bundle)
-        # frontend imports @fuzefront/telemetry/browser at its bootstrap
-        # (main.tsx); its `exports` map points at dist/, unbuilt by default.
-        run: npm run -w @fuzefront/telemetry build
 
       - name: Build frontend
         run: cd frontend && npm run build
@@ -399,6 +414,14 @@ jobs:
           npm run -w @fuzefront/security-client build
           npm run -w @fuzefront/service-auth build
 
+      - name: Build @fuzefront/telemetry (d.ts for chat-service type-check)
+        # chat-service now mounts tracingMiddleware() from @fuzefront/telemetry
+        # (src/app.ts, src/index.ts). Its `types` points at dist/index.d.ts
+        # (not committed; built via tsup), so tsc/ts-jest fail with TS2307
+        # "Cannot find module '@fuzefront/telemetry'" until this runs — same
+        # pattern as the sibling-package builds above.
+        run: npm run -w @fuzefront/telemetry build
+
       - name: Type-check chat-service
         run: npm run -w @fuzefront/chat-service build
 
@@ -428,9 +451,16 @@ jobs:
           cache: 'npm'
 
       # notification-service is a root workspace, so `npm ci` installs its deps.
-      # It depends on no other workspace package, so nothing needs building first.
       - name: Install workspace
         run: npm ci
+
+      - name: Build @fuzefront/telemetry (d.ts for notification-service type-check)
+        # notification-service now mounts tracingMiddleware() from
+        # @fuzefront/telemetry (src/app.ts, src/index.ts). Its `types` points
+        # at dist/index.d.ts (not committed; built via tsup), so tsc fails
+        # with TS2307 "Cannot find module '@fuzefront/telemetry'" until this
+        # runs.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Type-check notification-service
         run: npm run -w @fuzefront/notification-service build
@@ -507,6 +537,14 @@ jobs:
         run: |
           npm run -w @fuzefront/security-client build
           npm run -w @fuzefront/service-auth build
+
+      - name: Build @fuzefront/telemetry (d.ts for selection-list-service type-check)
+        # selection-list-service now mounts tracingMiddleware() and binds
+        # withTraceContext() in lib/logger.ts. @fuzefront/telemetry's `types`
+        # points at dist/index.d.ts (not committed; built via tsup), so tsc
+        # fails with TS2307 "Cannot find module '@fuzefront/telemetry'" until
+        # this runs.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Type-check selection-list-service
         run: npm run -w selection-list-service build
@@ -697,6 +735,11 @@ jobs:
         # the real client path and needs it. (Prod images already build it for
         # the Unleash path.)
         run: npm run -w @fuzefront/feature-flags build
+      - name: Build @fuzefront/telemetry (d.ts for selection-list-service type-check)
+        # Same reason as the unit-test job above: tracingMiddleware() +
+        # withTraceContext() resolve through @fuzefront/telemetry's
+        # uncommitted dist/.
+        run: npm run -w @fuzefront/telemetry build
       - name: Build selection-list-service
         run: npm run -w selection-list-service build
       - name: Run DB migrations
@@ -889,6 +932,13 @@ jobs:
       - name: Build @fuzefront/core
         run: npm run -w @fuzefront/core build
 
+      - name: Build @fuzefront/telemetry (d.ts for applications-service type-check)
+        # applications-service now mounts tracingMiddleware() from
+        # @fuzefront/telemetry (src/index.ts). Its `types` points at
+        # dist/index.d.ts (not committed; built via tsup), so tsc fails with
+        # TS2307 "Cannot find module '@fuzefront/telemetry'" until this runs.
+        run: npm run -w @fuzefront/telemetry build
+
       - name: Type-check applications-service
         run: npm run -w @fuzefront/applications-service build
 
@@ -950,6 +1000,12 @@ jobs:
         # '@fuzefront/auth'" — 9 of the 21 suites fail to compile. Verified by
         # reproducing exactly that failure before adding this step.
         run: npm run -w @fuzefront/auth build
+
+      - name: Build @fuzefront/telemetry (d.ts for config-service type-check)
+        # config-service now mounts tracingMiddleware() from
+        # @fuzefront/telemetry (src/app.ts, src/index.ts). Same dist/index.d.ts
+        # pattern as @fuzefront/auth above.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Install config-service
         working-directory: services/config-service
@@ -1055,6 +1111,14 @@ jobs:
           mkdir -p services/email-service/node_modules/@fuzefront
           ln -sf "$(pwd)/shared" services/email-service/node_modules/@fuzefront/shared
           cd services/email-service && npm install --ignore-scripts
+
+      - name: Build @fuzefront/telemetry (d.ts for email-service type-check)
+        # email-service now mounts tracingMiddleware() from
+        # @fuzefront/telemetry (src/app.ts, src/index.ts). Its `types` points
+        # at dist/index.d.ts (not committed; built via tsup), so tsc fails
+        # with TS2307 "Cannot find module '@fuzefront/telemetry'" until this
+        # runs — must precede the build below.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Build email-service
         run: cd services/email-service && npm run build

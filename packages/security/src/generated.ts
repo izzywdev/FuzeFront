@@ -43,7 +43,7 @@ export interface paths {
         put?: never;
         /**
          * Exchange an opaque broker code for a session
-         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session. The code is single-use and short-lived. Returns a `SessionResult`: an authenticated session, or an `mfa_required` challenge when the account requires step-up. Fail-closed on an unknown/expired code.
+         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session. The code is single-use and short-lived. Returns a `SessionResult`: an authenticated session, or an `mfa_required` challenge when the account has an active MFA factor. Social sign-in never bypasses MFA: no session is minted until the challenge is completed via `POST /mfa/verify`, and the challenge is bound to the user who signed in. Fail-closed on an unknown/expired or already-redeemed code.
          */
         post: operations["exchangeSessionCode"];
         delete?: never;
@@ -83,7 +83,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm a password reset with a token (unauthenticated)
-         * @description Completes password reset by presenting the single-use `token` from the reset message together with a `newPassword`. Fail-closed on an unknown/expired/consumed token or a password that fails policy.
+         * @description Completes password reset by presenting the single-use `token` from the reset message together with a `newPassword`. Fail-closed: an expired/already-used token is `400 TOKEN_EXPIRED`, an unknown token is `400 TOKEN_INVALID`, and a password rejected by the identity provider is `422 PASSWORD_POLICY` (the token is NOT consumed, so the caller may retry with a compliant password).
          */
         post: operations["confirmPasswordReset"];
         delete?: never;
@@ -106,6 +106,26 @@ export interface paths {
          * @description Adds a password sign-in method to the authenticated account (e.g. an account created via social login that has no password yet). Returns 409 if a password already exists — use the reset flow to change an existing one. Fail-closed on a password that fails policy.
          */
         post: operations["setPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/password/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change the password of an account that already has one
+         * @description Verifies `currentPassword`, applies the password policy to `newPassword`, sets it, and revokes every OTHER session of the account (the calling session survives), matching the reset-confirm posture. Accounts with no password get `409 NO_PASSWORD` — send the user to `POST /v1/security/password` (set-first). Failed attempts are rate-limited (`429 RATE_LIMITED`).
+         */
+        post: operations["changePassword"];
         delete?: never;
         options?: never;
         head?: never;
@@ -789,7 +809,7 @@ export interface paths {
         post?: never;
         /**
          * Remove an MFA factor
-         * @description Removes an enrolled factor. Idempotent.
+         * @description Removes an enrolled factor. Idempotent. Refused with `409 LAST_FACTOR` when it is the user's last active factor.
          */
         delete: operations["removeMfaFactor"];
         options?: never;
@@ -868,7 +888,7 @@ export interface paths {
         put?: never;
         /**
          * Send an email verification link/code
-         * @description Sends a verification link/code. Targets the current user's email when authenticated, or a signup-scoped address supplied in the body.
+         * @description Sends a verification link/code. When authenticated, the target is ALWAYS the current user's own email; a body `email` is ignored. When unauthenticated, the account is resolved server-side from the body `email`; an unknown address is a silent no-op. Always 202 for an unauthenticated caller (no account enumeration).
          */
         post: operations["startEmailVerification"];
         delete?: never;
@@ -888,7 +908,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm email ownership
-         * @description Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed on invalid/expired.
+         * @description Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed: an expired/already-used challenge is `400 TOKEN_EXPIRED`; an unknown challenge (or one that no longer matches the account's email) is `400 TOKEN_INVALID`. Never reports `emailVerified: true` unless a user was actually updated.
          */
         post: operations["confirmEmailVerification"];
         delete?: never;
@@ -928,7 +948,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm phone ownership
-         * @description Confirms `{ phone, code }`. Fail-closed on invalid/expired code.
+         * @description Confirms `{ phone, code }` for the **calling session's own account only**. Requires a bearer session; the number is marked verified solely for the account resolved from the token, and only when `phone` is that account's current number (set by `startPhoneVerification`). Other accounts holding the same number are never affected. Fail-closed on invalid/expired code or a number that is not the caller's.
          */
         post: operations["confirmPhoneVerification"];
         delete?: never;
@@ -1761,7 +1781,7 @@ export interface components {
         EmailVerifyStartRequest: {
             /**
              * Format: email
-             * @description Signup-scoped address to verify when unauthenticated.
+             * @description Address used to look up the account when unauthenticated. Ignored when a bearer token is present (the account's own email is used).
              */
             email?: string;
         };
@@ -1802,6 +1822,13 @@ export interface components {
         /** @description Set/add a password on an account that has no password sign-in method yet. */
         SetPasswordRequest: {
             /** @description The password to set; must satisfy the account password policy. */
+            newPassword: string;
+        };
+        /** @description Change the password of an account that already has one. */
+        ChangePasswordRequest: {
+            /** @description The account's current password (verified before the change). */
+            currentPassword: string;
+            /** @description The new password; must satisfy the account password policy. */
             newPassword: string;
         };
         /** @description One active session for the current user, describing the device/agent it was established from. `current: true` marks the session making the request. */
@@ -2021,11 +2048,11 @@ export interface components {
             items: components["schemas"]["Portal"][];
             page: components["schemas"]["PageInfo"];
         };
-        /** @description Stable error body. Fail-closed; provider-neutral codes. */
+        /** @description Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED (past TTL or already used) and TOKEN_INVALID (matches nothing) are returned as 400 by the email-verify and password-reset confirm operations; they are NOT session failures and clients must not treat them as 401 session expiry. PASSWORD_POLICY (422) is returned by reset-confirm when the identity provider rejects the new password; the reset token stays live so a compliant retry succeeds. */
         ErrorBody: {
             error: string;
             /** @enum {string} */
-            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "UNKNOWN";
+            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "TOKEN_EXPIRED" | "TOKEN_INVALID" | "PASSWORD_POLICY" | "LAST_FACTOR" | "NO_PASSWORD" | "RATE_LIMITED" | "UNKNOWN";
         };
     };
     responses: {
@@ -2280,7 +2307,24 @@ export interface operations {
                     "application/json": components["schemas"]["PasswordResetResult"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Malformed body (`MALFORMED`), or the token is expired/already used (`TOKEN_EXPIRED`) or unknown (`TOKEN_INVALID`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The identity provider rejected the new password (`PASSWORD_POLICY`). The token remains live. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     setPassword: {
@@ -2309,6 +2353,65 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /** @description A password sign-in method already exists on this account. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed; other sessions revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed body (`MALFORMED`), or `currentPassword` is wrong (`INVALID_CREDENTIALS`). Sessions are untouched. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The account has no password (`NO_PASSWORD`); use set-first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description `PASSWORD_POLICY` — the new password fails the password policy. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many failed attempts (`RATE_LIMITED`). */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3436,6 +3539,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description `LAST_FACTOR` — this is the user's last ACTIVE factor, so removing it would silently disable two-factor for the account. The factor is NOT removed. Add another method first. The count-and-delete is atomic, so two concurrent removals cannot both succeed. Pending (unactivated) factors can always be removed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     regenerateRecoveryCodes: {
@@ -3556,7 +3668,15 @@ export interface operations {
                     "application/json": components["schemas"]["VerificationStatus"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Malformed body (`MALFORMED`), or the challenge is expired/already used (`TOKEN_EXPIRED`) or unknown/mismatched (`TOKEN_INVALID`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     startPhoneVerification: {
@@ -3606,6 +3726,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     getVerificationStatus: {

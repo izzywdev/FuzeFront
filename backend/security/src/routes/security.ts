@@ -15,12 +15,17 @@ import express, { Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { getIdentityProvider } from '../providers/factory'
+import { TokenError } from '../providers/errors'
 import {
   MfaRequiredError,
   ConflictError,
   InvalidInputError,
   UnauthorizedError,
   NotFoundError,
+  LastFactorError,
+  NoPasswordError,
+  CurrentPasswordInvalidError,
+  PasswordPolicyRejectedError,
   emailVerificationEnabled,
 } from '../providers/authentik/AuthentikIdentityProvider'
 import { appBaseUrl } from '../providers/authentik/config'
@@ -135,6 +140,39 @@ const emailAvailableRateLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later', code: 'RATE_LIMITED' },
 })
 
+// Change-password brute-force limiter. Verifying `currentPassword` is a
+// password-guessing oracle for anyone holding a stolen bearer, so failures are
+// counted per client IP (successes are not): 10 failed attempts / 15 min.
+const changePasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later', code: 'RATE_LIMITED' },
+})
+
+// ── Public mail-sending rate limiter ─────────────────────────────────────────
+//
+// `POST /session/password/reset-request` and `POST /verify/email/start` are
+// unauthenticated and trigger outbound mail. Without a cap anyone could mail-bomb
+// a known address and burn provider quota / sender reputation. Per-IP here
+// (same express-rate-limit + `trust proxy` keying as /email-available); a
+// per-address cooldown lives in the provider and coalesces repeats into the
+// live challenge. A THROTTLED request answers the SAME 202 with no body, so
+// throttling is not an enumeration or state oracle — it just sends nothing.
+// One limiter instance PER ROUTE (separate counters). In-memory store: the cap is per pod; the per-address cooldown is DB-backed.
+const publicSendRateLimiter = () => rateLimit({
+  windowMs: 60_000,
+  limit: Number(process.env.PUBLIC_SEND_RATE_LIMIT) > 0 ? Number(process.env.PUBLIC_SEND_RATE_LIMIT) : 10,
+  standardHeaders: false,
+  legacyHeaders: false,
+  handler: (req: Request, res: Response) => {
+    console.warn(`[security] public send throttled for ${req.path}`)
+    res.status(202).end()
+  },
+})
+
 // RFC-5322-lite: one @, no whitespace, a dotted domain. Deliberately simple —
 // the goal is to reject obvious garbage (400), not to fully validate deliver-
 // ability (that is the verification flow's job).
@@ -186,6 +224,22 @@ function authenticatedSession(session: BrokeredSession) {
 
 /** Map a thrown provider error to a fail-closed HTTP response. */
 function sendError(res: Response, err: unknown): void {
+  if (err instanceof LastFactorError) {
+    res.status(409).json({ error: err.message, code: 'LAST_FACTOR' })
+    return
+  }
+  if (err instanceof NoPasswordError) {
+    res.status(409).json({ error: err.message, code: 'NO_PASSWORD' })
+    return
+  }
+  if (err instanceof CurrentPasswordInvalidError) {
+    res.status(400).json({ error: err.message, code: 'INVALID_CREDENTIALS' })
+    return
+  }
+  if (err instanceof PasswordPolicyRejectedError) {
+    res.status(422).json({ error: err.message, code: 'PASSWORD_POLICY' })
+    return
+  }
   if (err instanceof InvalidInputError) {
     res.status(400).json({ error: err.message, code: 'MALFORMED' })
     return
@@ -196,6 +250,10 @@ function sendError(res: Response, err: unknown): void {
   }
   if (err instanceof NotFoundError) {
     res.status(404).json({ error: err.message, code: 'NOT_FOUND' })
+    return
+  }
+  if (err instanceof TokenError) {
+    res.status(400).json({ error: err.message, code: err.code })
     return
   }
   if (err instanceof UnauthorizedError) {
@@ -364,7 +422,7 @@ router.post('/session/exchange', async (req: Request, res: Response) => {
 
 // ── Self-service password reset ────────────────────────────────────────────
 // POST /v1/security/session/password/reset-request — ALWAYS 202
-router.post('/session/password/reset-request', async (req: Request, res: Response) => {
+router.post('/session/password/reset-request', publicSendRateLimiter(), async (req: Request, res: Response) => {
   try {
     if (!req.body?.email || typeof req.body.email !== 'string') {
       // Only a MALFORMED body earns a 400; a well-formed unknown address does
@@ -393,11 +451,16 @@ router.post('/session/password/reset-confirm', async (req: Request, res: Respons
     await getIdentityProvider().confirmPasswordReset(req.body.token, req.body.newPassword)
     res.status(200).json({ reset: true })
   } catch (err) {
-    // Per contract this surface is 400-or-200: an invalid/expired/consumed token
-    // and a policy-rejected password are all fail-closed 400s.
+    // 400 TOKEN_EXPIRED/TOKEN_INVALID for an unredeemable token, 422 PASSWORD_POLICY
+    // for a rejected password (token stays live); anything else fails closed as 400.
     const name = (err as Error)?.name
+    if (err instanceof TokenError) {
+      res.status(400).json({ error: err.message, code: err.code })
+      return
+    }
     if (name === 'PasswordPolicyError') {
-      res.status(400).json({ error: (err as Error).message, code: 'MALFORMED' })
+      // 422, not 400: the token is still live, only the password was rejected.
+      res.status(422).json({ error: (err as Error).message, code: 'PASSWORD_POLICY' })
       return
     }
     if (err instanceof InvalidInputError) {
@@ -874,7 +937,7 @@ router.post('/mfa/verify', async (req: Request, res: Response) => {
 })
 
 // ── Contact verification: email ─────────────────────────────────────────────
-router.post('/verify/email/start', async (req: Request, res: Response) => {
+router.post('/verify/email/start', publicSendRateLimiter(), async (req: Request, res: Response) => {
   try {
     await getIdentityProvider().startEmailVerification(bearer(req), req.body?.email)
     res.status(202).end()
@@ -912,9 +975,12 @@ router.post('/verify/phone/start', async (req: Request, res: Response) => {
 })
 
 router.post('/verify/phone/confirm', async (req: Request, res: Response) => {
+  // Session-bound: the number is verified for the CALLER's account only.
+  const token = requireBearer(req, res)
+  if (!token) return
   try {
     if (!req.body?.phone || !req.body?.code) throw new InvalidInputError('phone and code are required')
-    const status = await getIdentityProvider().confirmPhoneVerification(req.body.phone, req.body.code)
+    const status = await getIdentityProvider().confirmPhoneVerification(token, req.body.phone, req.body.code)
     res.status(200).json(status)
   } catch (err) {
     sendError(res, err)
@@ -1031,6 +1097,27 @@ router.post('/password', async (req: Request, res: Response) => {
     if (!req.body?.newPassword) throw new InvalidInputError('newPassword is required')
     const conns = await getIdentityProvider().setPassword(token, req.body.newPassword)
     res.status(200).json(conns)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// POST /v1/security/password/change — change an existing password
+router.post('/password/change', changePasswordRateLimiter, async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const body = req.body ?? {}
+    const extra = Object.keys(body).filter(k => k !== 'currentPassword' && k !== 'newPassword')
+    if (extra.length > 0) throw new InvalidInputError('unexpected properties')
+    if (!body.currentPassword || typeof body.currentPassword !== 'string') {
+      throw new InvalidInputError('currentPassword is required')
+    }
+    if (!body.newPassword || typeof body.newPassword !== 'string') {
+      throw new InvalidInputError('newPassword is required')
+    }
+    await getIdentityProvider().changePassword(token, body.currentPassword, body.newPassword)
+    res.status(204).end()
   } catch (err) {
     sendError(res, err)
   }
