@@ -27,9 +27,10 @@ import { mintTestToken } from '../helpers/auth';
 import { rawFetch, SERVICE_BASE_URL } from '../helpers/client';
 import { assertSchema, requestBodyErrors } from '../helpers/openapi';
 import { closeDb } from '../helpers/db';
+import { testOrg, testUser } from '../helpers/ids';
 
-const ORG = 'org_01test0000000reqval000000000';
-const USER = 'usr_01test0000000reqvaluser00000';
+const ORG = testOrg('reqval');
+const USER = testUser('reqvaluser');
 const tok = () => mintTestToken({ userId: USER, organizationId: ORG });
 const call = (method: string, path: string, body?: unknown) =>
   rawFetch(path, { method, token: tok(), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });

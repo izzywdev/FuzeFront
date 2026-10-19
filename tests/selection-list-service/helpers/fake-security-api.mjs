@@ -79,6 +79,17 @@
  * like the real gate, a human cannot revoke for a DEPARTED member (no active
  * membership), which is what the cleanup scope's fallback path exists for.
  *
+ * ID FORMS (tenant and subject are canonicalised to the BARE UUID)
+ *   Permit keys tenants and users by their bare UUID, and the real Security API hands `tenant` / `subject`
+ *   to Permit unchanged. Depending on the service build under test, a request names the same org / user as
+ *   a TypeID (`org_…` / `usr_…`) or as that TypeID's UUID. This stand-in therefore canonicalises EVERY
+ *   tenant and subject it receives (decision queries, grant writes and reads, fixture calls, and the JWT
+ *   claims it compares them with) to the bare UUID before it keys, compares or stores anything, so it
+ *   answers identically whichever rendering arrives. Non-user principals (`svc:…`, `service:…`,
+ *   `svc_token:…`, anything containing ':') are left as they are. Grants it returns carry the UUID, like
+ *   Permit. A TypeID that is not codec-valid is NOT canonicalised (it names a principal nothing else can
+ *   name), which is what makes a service that sends one fail its own checks instead of silently matching.
+ *
  * FIXTURE ENDPOINTS (`/__fixture/*`, unauthenticated, CI-localhost only, never
  * product behaviour): let a suite act as the operator who changes the authority
  * behind the service's back (direct grant/revoke) and who deactivates a user or
@@ -87,6 +98,11 @@
  * has no such surface.
  */
 import http from 'node:http';
+// The identity package is the one codec for TypeID <-> UUID (resolved through the root workspace link, like
+// helpers/seed-harness.ts). CommonJS, hence the default import.
+import identity from '@izzywdev/fuzefront-identity';
+
+const { toUuid, isUuid } = identity;
 
 const PORT = Number(process.env.PORT ?? 3002);
 
@@ -96,8 +112,24 @@ const OWNER_GRANT_SCOPE = 'selection-list:owner-grant';
 const GRANT_CLEANUP_SCOPE = 'selection-list:grant-cleanup';
 const MACHINE_TOKEN_PREFIX = 'fake-machine-token:';
 
-/** `${tenant}|${userId}` pairs that are NOT members of that tenant. */
-/** `${tenant}|${userId}` -> 'deactivated' | 'departed' (set through /__fixture/gone). */
+/**
+ * The bare UUID of an `org_…` / `usr_…` TypeID (or of a UUID, lower-cased); anything else (a namespaced
+ * non-user principal such as `svc:ci`, or a malformed TypeID) comes back unchanged. See "ID FORMS" above.
+ */
+function canon(id) {
+  if (typeof id !== 'string') return id;
+  if (isUuid(id)) return id.toLowerCase();
+  if (/^(org|usr)_[0-9a-z]+$/.test(id)) {
+    try {
+      return toUuid(id);
+    } catch {
+      return id; // not codec-valid: names nothing else
+    }
+  }
+  return id;
+}
+
+/** `${tenant}|${subject}` (canonical) -> 'deactivated' | 'departed' (set through /__fixture/gone). */
 const gone = new Map();
 
 /**
@@ -105,13 +137,16 @@ const gone = new Map();
  * `SelectionListCatalog:publish_platform` is effective (contract 4.1.0, D5).
  * Declared by env or by the /__fixture/platform-org hook; null = declared nowhere.
  */
-let platformOrgId = process.env.FAKE_PLATFORM_ORG_ID || null;
+let platformOrgId = process.env.FAKE_PLATFORM_ORG_ID ? canon(process.env.FAKE_PLATFORM_ORG_ID) : null;
 /** Tenants switched to bare-Permit behaviour for publish_platform (/__fixture/publish-anywhere). */
 const publishAnywhere = new Set();
 
-const NON_MEMBERS = new Set([
-  'org_01test00000000access000000|usr_01test00000000accessout000',
-]);
+/**
+ * Canonical `${tenant}|${subject}` pairs that are NOT members of that tenant. Declared by the suite that needs
+ * an "outsider" through `POST /__fixture/non-member` {tenant, subject} (contract/access.test.ts), never guessed
+ * from id shapes; everyone else is a member of the tenant they are asked about.
+ */
+const NON_MEMBERS = new Set();
 
 /** role -> actions, verbatim from the openapi §Authorization table. */
 const ROLE_ACTIONS = {
@@ -141,7 +176,7 @@ const grants = new Map();
 let grantSeq = 0;
 
 function grantKey(tenant, resource, subject) {
-  return `${tenant}|${resource?.type ?? ''}:${resource?.key ?? ''}|${subject}`;
+  return `${canon(tenant)}|${resource?.type ?? ''}:${resource?.key ?? ''}|${canon(subject)}`;
 }
 
 /** Scopes of a machine token minted by THIS process, else null (humans / garbage). */
@@ -166,7 +201,7 @@ function claimsOf(req) {
 }
 
 function isMember(tenant, subject) {
-  return !NON_MEMBERS.has(`${tenant}|${subject}`);
+  return !NON_MEMBERS.has(`${canon(tenant)}|${canon(subject)}`);
 }
 
 /**
@@ -183,32 +218,18 @@ function orgOf(claims) {
   return claims?.orgId ?? claims?.organization_id ?? claims?.organizationId;
 }
 
-/**
- * An organization id in its `org_<base32>` TypeID rendering. Production tokens carry the bare UUID of the same org
- * (the service accepts either), and a sane policy backend treats the two as ONE tenant, so every tenant comparison here
- * goes through this (TypeID suffix = 128-bit UUID, 2 zero bits, 26 Crockford-base32 chars). Anything else is returned as is.
- */
-const B32 = '0123456789abcdefghjkmnpqrstvwxyz';
-function canonOrg(x) {
-  if (typeof x !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x)) return x;
-  let n = BigInt('0x' + x.replace(/-/g, ''));
-  let out = '';
-  for (let i = 0; i < 26; i++) {
-    out = B32[Number(n & 31n)] + out;
-    n >>= 5n;
-  }
-  return `org_${out}`;
-}
-
 /** The caller's tenant role, from the JWT `roles` claim (see header). */
 function tenantRoleOf(claims, subject, tenant) {
-  if (!(claims && subjectOf(claims) === subject && canonOrg(orgOf(claims)) === canonOrg(tenant))) return 'developer'; // unknowable -> least
+  // Compared by canonical UUID: the token may carry either rendering, and so may the request.
+  if (!(claims && canon(subjectOf(claims)) === canon(subject) && canon(orgOf(claims)) === canon(tenant))) return 'developer'; // unknowable -> least
   const roles = Array.isArray(claims.roles) ? claims.roles.map((r) => (r === 'org-admin' ? 'admin' : r)) : [];
   return TENANT_ROLE_ORDER.find((r) => roles.includes(r)) ?? 'admin';
 }
 
 function decide(q, claims) {
-  const { subject, tenant, resource, action } = q;
+  const { resource, action } = q;
+  const subject = canon(q.subject);
+  const tenant = canon(q.tenant);
   if (!subject || !tenant || !resource?.type || !action) return false;
 
   if (resource.type === 'Organization') {
@@ -221,7 +242,7 @@ function decide(q, claims) {
     if (resource.key) return false; // the catalog has no instances
     if (!TENANT_ROLE_ACTIONS[tenantRoleOf(claims, subject, tenant)].includes(action)) return false;
     // publish_platform is granted to tenant `admin` but only EFFECTIVE in the platform org's tenant (D5).
-    if (action === 'publish_platform') return (platformOrgId !== null && canonOrg(tenant) === canonOrg(platformOrgId)) || publishAnywhere.has(canonOrg(tenant));
+    if (action === 'publish_platform') return tenant === platformOrgId || publishAnywhere.has(tenant);
     return true;
   }
 
@@ -277,19 +298,25 @@ const server = http.createServer(async (req, res) => {
   if (path === '/__fixture/gone' && req.method === 'POST') {
     const b = await readBody(req);
     if (!b?.tenant || !b?.subject) return send(res, 400, { code: 'MALFORMED' });
-    gone.set(`${b.tenant}|${b.subject}`, b.kind === 'departed' ? 'departed' : 'deactivated');
+    gone.set(`${canon(b.tenant)}|${canon(b.subject)}`, b.kind === 'departed' ? 'departed' : 'deactivated');
     return send(res, 204);
   }
   if (path === '/__fixture/platform-org' && req.method === 'POST') {
     const b = await readBody(req);
-    if (!b || typeof b.orgId !== 'string' || !/^org_[0-9a-z]+$/.test(b.orgId)) return send(res, 400, { code: 'MALFORMED' });
-    platformOrgId = b.orgId;
+    if (!b || typeof b.orgId !== 'string' || !(/^org_[0-9a-z]+$/.test(b.orgId) || isUuid(b.orgId))) return send(res, 400, { code: 'MALFORMED' });
+    platformOrgId = canon(b.orgId);
+    return send(res, 204);
+  }
+  if (path === '/__fixture/non-member' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (!b || typeof b.tenant !== 'string' || typeof b.subject !== 'string') return send(res, 400, { code: 'MALFORMED' });
+    NON_MEMBERS.add(`${canon(b.tenant)}|${canon(b.subject)}`);
     return send(res, 204);
   }
   if (path === '/__fixture/publish-anywhere' && req.method === 'POST') {
     const b = await readBody(req);
     if (!b || typeof b.tenant !== 'string') return send(res, 400, { code: 'MALFORMED' });
-    publishAnywhere.add(b.tenant);
+    publishAnywhere.add(canon(b.tenant));
     return send(res, 204);
   }
   if (path === '/__fixture/grants' && (req.method === 'POST' || req.method === 'DELETE')) {
@@ -352,8 +379,8 @@ const server = http.createServer(async (req, res) => {
       grants.set(k, roles);
       return send(res, 201, {
         id: `grant_${++grantSeq}`,
-        subject: b.subject,
-        tenant: b.tenant,
+        subject: canon(b.subject),
+        tenant: canon(b.tenant),
         role: b.role,
         resource: b.resource,
         createdAt: Date.now(),
@@ -363,9 +390,9 @@ const server = http.createServer(async (req, res) => {
       const b = await readBody(req);
       const scopes = machineScopesOf(req);
       // Cleanup workload: revoke-only, and only for a principal that is gone.
-      const cleanup = scopes?.includes(GRANT_CLEANUP_SCOPE) && gone.has(`${b?.tenant}|${b?.subject}`);
+      const cleanup = scopes?.includes(GRANT_CLEANUP_SCOPE) && gone.has(`${canon(b?.tenant)}|${canon(b?.subject)}`);
       // Human: exact-instance manage_access, and (like the real gate) no revoke for a departed member.
-      const manager = !scopes && b?.resource && gone.get(`${b.tenant}|${b.subject}`) !== 'departed' &&
+      const manager = !scopes && b?.resource && gone.get(`${canon(b.tenant)}|${canon(b.subject)}`) !== 'departed' &&
         decide({ subject: subjectOf(claims), tenant: b.tenant, resource: b.resource, action: 'manage_access' }, claims);
       if (!cleanup && !manager) return send(res, 403, { code: 'FORBIDDEN' });
 
@@ -383,9 +410,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET') {
       // The caller's (or, with ?subject=, another subject's) grants in a tenant, instance-scoped ones
       // carrying their `resource`, like the real GET /authz/grants. Single page.
-      const tenant = url.searchParams.get('tenant');
-      if (!tenant) return send(res, 400, { error: 'tenant is required', code: 'MALFORMED' });
-      const subject = url.searchParams.get('subject') || subjectOf(claims);
+      const rawTenant = url.searchParams.get('tenant');
+      if (!rawTenant) return send(res, 400, { error: 'tenant is required', code: 'MALFORMED' });
+      const tenant = canon(rawTenant);
+      const subject = canon(url.searchParams.get('subject') || subjectOf(claims));
       const items = [];
       for (const [k, roles] of grants) {
         const [t, res_, s] = k.split('|');

@@ -14,6 +14,12 @@ module.exports = {
   // sub-tree of shared, the narrower mapping is intentional — not a partial-import trap.
   moduleNameMapper: {
     '^@fuzefront/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
+    // @fuzefront/telemetry's dist is gitignored — map straight to TS source
+    // for RUNTIME resolution (app.ts's tracingMiddleware()). ts-jest's
+    // type-check still resolves the package's declared `types`
+    // (dist/index.d.ts), so CI additionally builds it first (see
+    // .github/workflows/ci.yml's email-service job).
+    '^@fuzefront/telemetry$': '<rootDir>/../../packages/telemetry/src/index.ts',
   },
   testTimeout: 60000,
 };

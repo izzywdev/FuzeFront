@@ -115,7 +115,7 @@ For complex enterprise tools that require their own distinct, full-height naviga
    ```json
    {
      "chrome": {
-       "mode": "substituted",
+       "menu": "substitute",
        "items": [
          { "id": "dash", "label": "Dashboard", "route": "/dashboard", "order": 1 },
          { "id": "reports", "label": "Reports", "route": "/reports", "order": 2 }

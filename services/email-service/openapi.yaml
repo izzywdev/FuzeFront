@@ -1,0 +1,125 @@
+openapi: 3.0.3
+info:
+  title: email-service
+  version: 1.0.0
+  description: >-
+    Transactional email delivery. Most mail is sent asynchronously from the
+    `notify.email.requested` Kafka event; this contract covers the one HTTP
+    endpoint, a synchronous send for service-to-service callers that need a
+    message delivered now (security-service: verify-email, password-reset).
+
+servers:
+  - url: '{baseUrl}'
+    description: >-
+      Cluster-internal base URL. This service is NOT ingress-exposed: it is
+      called by security-service with a shared secret, never by a browser.
+    variables:
+      baseUrl:
+        default: http://email-service:3003
+        description: Cluster-internal base URL of the email-service.
+
+tags:
+  - name: delivery
+    description: Synchronous transactional send.
+
+security:
+  - sharedSecret: []
+
+paths:
+  /send:
+    post:
+      operationId: sendTransactionalEmail
+      tags: [delivery]
+      summary: Render a template and deliver it to one recipient
+      description: >-
+        Renders `template` with `data` and hands it to the configured provider.
+        `data` can carry single-use tokens, so it is never logged; the recipient
+        is logged masked.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [to, template]
+              properties:
+                to:
+                  type: string
+                  format: email
+                  description: Recipient address.
+                template:
+                  type: string
+                  enum:
+                    - welcome
+                    - org-invite
+                    - membership-change
+                    - fuzepicker-mention
+                    - fuzepicker-reply
+                    - verify-email
+                    - password-reset
+                data:
+                  type: object
+                  additionalProperties: true
+                  description: Template variables. Defaults to an empty object.
+      responses:
+        '202':
+          description: The provider accepted the message.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: { type: boolean, enum: [true] }
+                  messageId: { type: string }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          description: The provider rejected or failed the send.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, code]
+                properties:
+                  error: { type: string }
+                  code:
+                    type: string
+                    description: Stable classification of the provider error.
+        '503':
+          description: No email provider is configured.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+components:
+  securitySchemes:
+    sharedSecret:
+      type: http
+      scheme: bearer
+      description: >-
+        A single shared secret (`EMAIL_AUTH_SECRET`), compared in constant time.
+        When no secret is configured the service rejects every /send request
+        with 401, so a misconfigured deploy cannot become an open mail relay.
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+  responses:
+    ValidationError:
+      description: The body failed schema validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing, malformed, or incorrect shared secret.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

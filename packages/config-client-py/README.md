@@ -120,6 +120,28 @@ if is_not_modified(result):
 resolved = result
 ```
 
+### Cache invalidation -- `config.changed`
+
+config-service publishes a `config.changed` event (namespace + scope + changed key
+**names**, never values) after each committed write. `ConfigCache` honours it;
+bring your own Kafka consumer and pass each decoded message to `handle_event`:
+
+```python
+cache = ConfigCache(client, max_age_seconds=60)
+cache.handle_event(json.loads(message.value()))  # topic: CONFIG_CHANGED_TOPIC
+cfg = cache.get("fuzefront.chat", org_scope)
+```
+
+Events are best-effort: an entry older than `max_age_seconds` is revalidated with
+`If-None-Match`, so a missed event is bounded. Handle both -- see
+`docs/guides/CONFIG_SERVICE_INTEGRATION_GUIDE.md` section 8.
+
+### History and secret reveal
+
+`list_config_history(namespace, scope, key)` (audit grant required; secret keys
+come back `redacted`) and `reveal_secret(namespace, scope, key, reason)`
+(once-only plaintext, audited; never cache or log the result).
+
 ### Cursor pagination
 
 Every collection endpoint returns `{ items, page_info: { has_next_page,

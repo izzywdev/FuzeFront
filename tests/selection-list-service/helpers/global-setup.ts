@@ -16,9 +16,10 @@
  */
 import { getDbClient, closeDb } from './db';
 import { DECOY_PLATFORM_ORG_ID, FORK_BIG_ORG_ID, FORK_QUOTA_ITEMS_ORG_ID, FORK_QUOTA_LISTS_ORG_ID, PLATFORM_ORG_ID } from './sl9-constants';
+import { canonicalUuid, testOrg } from './ids';
 
 /** The org contract/quota.test.ts acts as (its ORG_ID constant). */
-export const QUOTA_TEST_ORG_ID = 'org_01test00000000quota0000000';
+export const QUOTA_TEST_ORG_ID = testOrg('quota');
 
 /**
  * Review M-4 orgs (contract/quota-enforcement.test.ts), each seeded with the override row the service
@@ -30,10 +31,10 @@ export const QUOTA_TEST_ORG_ID = 'org_01test00000000quota0000000';
  * walks every mutating route on fresh lists and never purges them). `user_lists` is enforced now (review M-4),
  * so they get a generous per-user override row instead of an exemption in the service.
  */
-export const HIGH_CHURN_TEST_ORG_IDS = ['org_01test0000000outbox00000000', 'org_01test0000000outbox00000001'];
+export const HIGH_CHURN_TEST_ORG_IDS = [testOrg('outbox'), testOrg('outbox00000001')];
 
-export const QUOTA_USER_TEST_ORG_ID = 'org_01test00000000qusrl0000000';
-export const QUOTA_STORAGE_TEST_ORG_ID = 'org_01test00000000storag000000';
+export const QUOTA_USER_TEST_ORG_ID = testOrg('qusrl');
+export const QUOTA_STORAGE_TEST_ORG_ID = testOrg('storag');
 
 export default async function globalSetup(): Promise<void> {
   const orgLists = parseInt(process.env['TEST_QUOTA_ORG_LISTS'] ?? '3', 10);
@@ -109,10 +110,9 @@ export default async function globalSetup(): Promise<void> {
       // (selection_list_ref_index - the table the service itself reads, fed in production by identity.org.created)
       // shows an ACTIVE row, is_active = true, org_type = 'platform' for it. Plain SQL, not a service back door.
       // The decoy is projected as a platform org too but is NOT the configured id: it must get nothing.
-      for (const [entityId, wire] of [
-        ['0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7c00', PLATFORM_ORG_ID],
-        ['0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7d02', DECOY_PLATFORM_ORG_ID],
-      ] as const) {
+      // entity_id is the org's bare UUID (what identity.org.created projects), wire_id its TypeID.
+      for (const wire of [PLATFORM_ORG_ID, DECOY_PLATFORM_ORG_ID]) {
+        const entityId = canonicalUuid(wire);
         await client.query(
           `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, org_type, is_active, updated_at)
            VALUES ('organization', $1, 'active', $2, 'platform', true, NOW())

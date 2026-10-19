@@ -26,41 +26,41 @@
  * running the feature. A red result caused by "feature not implemented / flag off" is therefore
  * recognisable as such.
  */
-import { randomUUID } from 'crypto';
 import { mintTestToken } from './auth';
 import { rawFetch, SERVICE_BASE_URL } from './client';
+import { canonicalUuid, testOrg, testUser } from './ids';
+import { FAKE_SECURITY_URL } from './security-url';
 import { PLATFORM_ORG_ID } from './sl9-constants';
 
 export { PLATFORM_ORG_ID };
 
-export const FAKE_SECURITY_URL: string = process.env['FAKE_SECURITY_URL'] ?? 'http://localhost:3002';
+// Resolved in helpers/security-url.ts (SECURITY_SERVICE_URL by default; FAKE_SECURITY_URL only as an explicit override).
+export { FAKE_SECURITY_URL };
 
 /** Base URL of a second service instance running with the shared-lists flag OFF (see header). */
 export const FLAG_OFF_BASE_URL: string | undefined = process.env['SHARED_LISTS_FLAG_OFF_URL'];
 
 export const rnd = (): string => Math.random().toString(36).slice(2, 8).padEnd(6, '0');
 
-/** A fresh, per-run org id (so reruns against one database never accumulate state in an org). */
-export const newOrg = (tag: string): string => `org_01sl9${tag}${rnd()}${rnd()}`.toLowerCase();
-export const newUser = (tag: string): string => `usr_01sl9${tag}${rnd()}${rnd()}`.toLowerCase();
+/**
+ * A fresh, per-run, codec-valid org / user TypeID (so reruns against one database never accumulate state in
+ * an org). Minted through the identity package (helpers/ids.ts) from the tag plus a random part: a service
+ * that names tenants and users to the Security API by their bare UUID refuses an id that does not decode.
+ */
+export const newOrg = (tag: string): string => testOrg(`sl9:${tag}:${rnd()}${rnd()}`);
+export const newUser = (tag: string): string => testUser(`sl9:${tag}:${rnd()}${rnd()}`);
 
 /**
  * Both renderings of ONE organization: its `org_…` TypeID and the bare UUID production tokens carry (the service accepts
- * either as the token's org claim). Needs codec-valid ids, so a fresh random org is minted through the identity package.
+ * either as the token's org claim). A fresh random org, minted codec-valid (helpers/ids.ts).
  */
 export function newCodecOrg(): { wire: string; uuid: string } {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { fromUuid } = require('@izzywdev/fuzefront-identity') as { fromUuid: (type: string, uuid: string) => string };
-  const uuid = randomUUID();
-  return { wire: fromUuid('organization', uuid), uuid };
+  const wire = newOrg('codec');
+  return { wire, uuid: canonicalUuid(wire) };
 }
 
 /** The bare-UUID rendering of an `org_…` TypeID. */
-export function orgUuidOf(wire: string): string {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { toUuid } = require('@izzywdev/fuzefront-identity') as { toUuid: (id: string) => string };
-  return toUuid(wire);
-}
+export const orgUuidOf = (wire: string): string => canonicalUuid(wire);
 
 export type TenantRole = 'admin' | 'editor' | 'viewer' | 'developer';
 
@@ -114,6 +114,10 @@ async function fixture(path: string, body: unknown): Promise<void> {
 /** Tell the stand-in Security API which organization is the platform org (idempotent). */
 export const declarePlatformOrg = (orgId: string = PLATFORM_ORG_ID): Promise<void> =>
   fixture('/__fixture/platform-org', { orgId });
+
+/** Declare `subject` a non-member of `tenant` (answers `Organization:read` false), in either id rendering. */
+export const declareNonMember = (tenant: string, subject: string): Promise<void> =>
+  fixture('/__fixture/non-member', { tenant, subject });
 
 /** Make the stand-in behave like bare Permit for `publish_platform` in ONE tenant (see its header). */
 export const permitPublishAnywhere = (tenant: string): Promise<void> =>

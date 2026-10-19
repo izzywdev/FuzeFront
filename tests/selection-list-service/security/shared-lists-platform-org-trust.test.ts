@@ -23,7 +23,7 @@
  *
  * HOW THE HARNESS RUNS THIS: SHARED_LISTS_PLATFORM_DISABLED_URLS="unset=<url>,unconfirmed=<url>,deactivated=<url>" -
  * three service instances on the same database as the main one, differing only in SELECTION_LIST_PLATFORM_ORG_ID:
- * unset / org_01test0000unconfirmedplat00 / org_01test00000deactivatedplat00 (helpers/sl9-constants.ts). A missing
+ * unset / UNCONFIRMED_PLATFORM_ORG_ID / DEACTIVATED_PLATFORM_ORG_ID (helpers/sl9-constants.ts). A missing
  * entry fails the suite with an explicit PRECONDITION message (never a skip).
  */
 import {
@@ -32,6 +32,7 @@ import {
 } from '../helpers/shared-lists';
 import { DEACTIVATED_PLATFORM_ORG_ID, DECOY_PLATFORM_ORG_ID, UNCONFIRMED_PLATFORM_ORG_ID } from '../helpers/sl9-constants';
 import { closeDb, dbQuery } from '../helpers/db';
+import { canonicalUuid } from '../helpers/ids';
 
 const ORG_Y = newOrg('trty');
 const reader = actor('rd', ORG_Y, 'viewer');
@@ -118,9 +119,9 @@ const SCENARIOS: Scenario[] = [
     confirm: async () =>
       void (await dbQuery(
         `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, org_type, is_active, updated_at)
-         VALUES ('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7d03', 'active', $1, 'platform', true, NOW())
+         VALUES ('organization', $2, 'active', $1, 'platform', true, NOW())
          ON CONFLICT (entity_type, entity_id) DO UPDATE SET status = 'active', org_type = 'platform', is_active = true, updated_at = NOW()`,
-        [UNCONFIRMED_PLATFORM_ORG_ID],
+        [UNCONFIRMED_PLATFORM_ORG_ID, canonicalUuid(UNCONFIRMED_PLATFORM_ORG_ID)],
       )),
   },
   {
@@ -129,9 +130,9 @@ const SCENARIOS: Scenario[] = [
     reset: async () =>
       void (await dbQuery(
         `INSERT INTO selection_list_ref_index (entity_type, entity_id, status, wire_id, org_type, is_active, updated_at)
-         VALUES ('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7d04', 'active', $1, 'platform', false, NOW())
+         VALUES ('organization', $2, 'active', $1, 'platform', false, NOW())
          ON CONFLICT (entity_type, entity_id) DO UPDATE SET status = 'active', org_type = 'platform', is_active = false, updated_at = NOW()`,
-        [DEACTIVATED_PLATFORM_ORG_ID],
+        [DEACTIVATED_PLATFORM_ORG_ID, canonicalUuid(DEACTIVATED_PLATFORM_ORG_ID)],
       )),
     confirm: async () => void (await dbQuery(`UPDATE selection_list_ref_index SET is_active = true, updated_at = NOW() WHERE wire_id = $1`, [DEACTIVATED_PLATFORM_ORG_ID])),
   },
