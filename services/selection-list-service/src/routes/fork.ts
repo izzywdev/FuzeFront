@@ -28,7 +28,7 @@ import { QuotaExceededError } from '../services/quota.service';
 import { sendQuotaExceeded } from '../middleware/quota';
 import { forkList, FORK_MAX_ITEMS } from '../services/fork.service';
 import { restoreAuthority } from '../services/authority';
-import { renderingWinnerOrder } from '../services/sharedReads';
+import { pickWinner, readableIds, type DupRow } from '../services/sharedReads';
 import { eventContextFromRequest } from '../events/emitters';
 import { formatList, LIST_COLUMNS, singleCtx, type ListRow } from './listShape';
 
@@ -97,15 +97,7 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
     // Idempotent repeat FIRST: the organization's existing fork of this source (any rendering of the org id),
     // authorized as the caller's own org's list, wins even if the source has since been purged or is no longer
     // readable (a purged common list leaves its forks behind with `forked_from` still naming it).
-    const existingFork = await db('selection_lists')
-      .whereIn('organization_id', orgRenderings(orgId))
-      .where({ forked_from_list_id: sourceId })
-      .orderByRaw(renderingWinnerOrder('', orgId).sql, renderingWinnerOrder('', orgId).params)
-      .first('id');
-    if (existingFork) {
-      await answerExisting(req, res, existingFork.id);
-      return;
-    }
+    if (await answerExistingFork(req, res, orgId, sourceId)) return;
 
     // The source must be readable by the caller (grant or shared read) — else it does not exist for them.
     const source = await lookupList(req, sourceId);
@@ -154,7 +146,9 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
         return;
       }
       case 'exists':
-        await answerExisting(req, res, outcome.listId);
+        if (!(await answerExistingFork(req, res, orgId, sourceId))) {
+          res.status(409).json({ code: 'CONFLICT', reason: 'fork_exists', message: 'Your organization already has a fork of this list.' });
+        }
         return;
       case 'own-org':
         res.status(409).json({
@@ -211,15 +205,7 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
     if (pg?.code === '23505') {
       if (pg.constraint === 'ux_sl_fork_per_org') {
         // Lost a race with a concurrent fork of the same source: answer as the idempotent repeat.
-        const winner = await db('selection_lists')
-          .whereIn('organization_id', orgRenderings(orgId))
-          .where({ forked_from_list_id: sourceId })
-          .orderByRaw(renderingWinnerOrder('', orgId).sql, renderingWinnerOrder('', orgId).params)
-          .first('id');
-        if (winner) {
-          await answerExisting(req, res, winner.id);
-          return;
-        }
+        if (await answerExistingFork(req, res, orgId, sourceId)) return;
       }
       res.status(409).json({ code: 'CONFLICT', message: 'A list with that key already exists in your organization.' });
       return;
@@ -232,23 +218,39 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
   }
 });
 
-/** The organization already holds a fork of this source: 200 with it if the caller can read it, else 409 fork_exists. */
-async function answerExisting(req: Request, res: Response, existingId: string): Promise<void> {
-  const access = await lookupList(req, existingId);
-  if (!access || !(await canRead(req, access))) {
+/**
+ * The organization already holds a fork of this source (under ANY rendering of its id): answer 200 with the one the
+ * caller can READ - the winner among the readable candidates (sharedReads `pickWinner`: active, the caller's exact
+ * rendering, oldest, smallest id), so an unreadable fork never hides a readable duplicate - else 409 fork_exists.
+ * Returns false (nothing sent) when the organization holds no fork of this source. A Security API failure throws
+ * (fails closed). Used for the pre-check, the in-transaction 'exists' outcome and the lost-race path alike.
+ */
+async function answerExistingFork(req: Request, res: Response, orgId: string, sourceId: string): Promise<boolean> {
+  const candidates: DupRow[] = await db('selection_lists')
+    .whereIn('organization_id', orgRenderings(orgId))
+    .where({ forked_from_list_id: sourceId })
+    .select('id', 'organization_id', 'key', 'status', 'visibility', 'created_at');
+  if (candidates.length === 0) return false;
+  const readable = await readableIds(req, candidates, { shared: true, includeShared: true, platformOrg: await resolvePlatformOrgId() });
+  const winner = pickWinner(
+    candidates.filter((c) => readable.has(c.id)),
+    orgId,
+  );
+  if (!winner) {
     res.status(409).json({
       code: 'CONFLICT',
       reason: 'fork_exists',
       message: 'Your organization already has a fork of this list that you cannot read; ask its owner for a role.',
     });
-    return;
+    return true;
   }
-  const row = await readFork(existingId);
+  const row = await readFork(winner.id);
   if (!row) {
     res.status(409).json({ code: 'CONFLICT', reason: 'fork_exists', message: 'Your organization already has a fork of this list.' });
-    return;
+    return true;
   }
   res.status(200).json(formatList(row, await singleCtx(req, row)));
+  return true;
 }
 
 export default router;

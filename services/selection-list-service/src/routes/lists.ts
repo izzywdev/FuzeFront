@@ -64,7 +64,7 @@ import {
   requirePublishWhenBodyIsPlatform,
 } from '../middleware/listAccess';
 import { sameUser, canonicalOrgId, isVisibility, orgForms, orgIs, orgRenderings, writeOrgs, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
-import { editableIds, getReadScope, notOutrankedByRendering, readableByOrg } from '../services/sharedReads';
+import { editableIds, getReadScope, notOutrankedByRendering, readableByOrg, readableWinners } from '../services/sharedReads';
 import { formatList, LIST_COLUMNS, singleCtx, type ListRow } from './listShape';
 import { lockOrgOutbox, wireUserId } from '../events/outbox';
 import { refreshListUserModified } from '../seed/content';
@@ -188,11 +188,10 @@ async function shadowedPlatformKeys(
   platformOrg: string,
   keyFilter: string | undefined,
 ): Promise<string[]> {
-  // Only the rendering WINNER of each key can shadow: the listing keeps exactly that row per key (the same
-  // `notOutrankedByRendering` predicate), so a losing duplicate - which the listing drops - must not hide the common
-  // list. (If the winner itself is unreadable for the caller it is simply not a candidate below, the common list
-  // stays visible and no key is left without an effective row.)
-  const winner = notOutrankedByRendering('o', orgRenderings(orgId), orgId);
+  // Candidates are the caller's own active non-platform lists with the key (any rendering of its org id). Only the
+  // READABLE ones can shadow, and the listing shows the winner AMONG the readable candidates (sharedReads
+  // `readableWinners`), so "some readable candidate exists" is exactly "the listing has an effective own row for
+  // this key": an unreadable private duplicate neither shadows nor hides anything.
   const res = await db.raw<{ rows: Array<{ id: string; organization_id: string; key: string; visibility: string }> }>(
     `
     SELECT o.id, o.organization_id, o.key, o.visibility
@@ -200,14 +199,13 @@ async function shadowedPlatformKeys(
      WHERE o.organization_id = ANY(?)
        AND o.status = 'active'
        AND o.visibility <> 'platform'
-       AND ${winner.sql}
        ${keyFilter ? 'AND o.key = ?' : ''}
        AND EXISTS (
          SELECT 1 FROM selection_lists p
           WHERE p.visibility = 'platform' AND p.status = 'active' AND p.key = o.key AND p.organization_id = ANY(?)
        )
     `,
-    [orgRenderings(orgId), ...winner.params, ...(keyFilter ? [keyFilter] : []), orgForms(platformOrg)],
+    [orgRenderings(orgId), ...(keyFilter ? [keyFilter] : []), orgForms(platformOrg)],
   );
   const candidates = res.rows ?? [];
   if (candidates.length === 0) return [];
@@ -324,19 +322,21 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
     const params: (string | number | boolean | null | Date | string[])[] = [...scope.params] as never[];
 
     // Shared lists ON merges the renderings of the caller's org (and of the platform org): when the same key exists
-    // under several of them, exactly ONE row per key is effective (sharedReads.renderingWinnerOrder). Applies to every
-    // listing, so `key=` returns at most one row and a picker never sees two lists for one key.
+    // under several of them, exactly ONE row per key is effective - the winner among the rows the caller can READ
+    // (sharedReads `readableWinners`, applied to the page below). The `total` (reported only when authz is not
+    // enforced, i.e. when every row is readable) counts the same effective rows with the equivalent SQL predicate.
+    const dedupeSql: string[] = [];
+    const dedupeParams: Array<string | string[]> = [];
     if (shared) {
       const own = notOutrankedByRendering('sl', orgRenderings(req.orgId as string), req.orgId as string);
-      whereClause.push(own.sql);
-      params.push(...own.params);
+      dedupeSql.push(own.sql);
+      dedupeParams.push(...own.params);
       // The common-list group is the platform org's renderings. When the caller IS the platform org the two groups are
-      // the SAME set of rows: a second predicate (a different claim, so a different winner) would be ANDed with the
-      // first and reject both rows of a duplicated key. One scope, one winner rule: the caller's claim decides.
+      // the SAME set of rows: one scope, one winner rule (the caller's claim decides).
       if (includeShared && platformOrg && !sameOrg(req.orgId, platformOrg)) {
         const common = notOutrankedByRendering('sl', orgForms(platformOrg), platformOrg);
-        whereClause.push(common.sql);
-        params.push(...common.params);
+        dedupeSql.push(common.sql);
+        dedupeParams.push(...common.params);
       }
     }
 
@@ -365,8 +365,9 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
       }
     }
 
-    const countWhere = [...whereClause];
-    const countParams = [...params];
+    // (the COUNT inserts the dedupe predicates right after the scope, where they used to sit)
+    const countWhere = [whereClause[0], ...dedupeSql, ...whereClause.slice(1)];
+    const countParams = [...params.slice(0, scope.params.length), ...dedupeParams, ...params.slice(scope.params.length)];
 
     if (cursor) {
       whereClause.push('(sl.created_at < ? OR (sl.created_at = ? AND sl.id < ?))');
@@ -418,18 +419,11 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
     // never a 403. The cursor still follows the DB order, so a page may be shorter than `limit` but the
     // walk stays gap- and dupe-free.
     let items: ListRow[];
-    if (shared && includeShared && (await isAuthzEnabled(req))) {
-      // include_shared: admit a row by the shared read (data predicate + `read_shared`, one memoised
-      // catalog decision per request) OR by an instance role (bulk). A row of another organization can only
-      // ever be admitted by the shared read: instance roles live in the owning tenant.
-      const sharedRows = pageRows.filter((r) => sharedPredicate(r, req.orgId as string, platformOrg));
-      const sharedOk = sharedRows.length > 0 && (await catalogAllowed(req, 'read_shared'));
-      const admitted = new Set<string>(sharedOk ? sharedRows.map((r) => r.id) : []);
-      const needInstance = pageRows.filter((r) => !admitted.has(r.id) && sameOrg(r.organization_id, req.orgId));
-      for (const r of needInstance.length > 0 ? await filterReadable(req, needInstance) : []) admitted.add(r.id);
-      items = pageRows.filter((r) => admitted.has(r.id));
-    } else if (shared && includeShared) {
-      items = pageRows; // authz not enforced (non-production dev switch): like filterReadable, everything passes
+    if (shared) {
+      // Flag ON: the rows the caller can read (instance role; with include_shared also the shared read), then ONE
+      // winner per key among the readable duplicates of the same organization. A Security API failure throws -> 500,
+      // nothing is shown.
+      items = await readableWinners(req, pageRows, { shared, includeShared, platformOrg });
     } else {
       items = await filterReadable(req, pageRows);
     }
@@ -588,11 +582,14 @@ router.post('/', requireCatalogCheck('create'), requirePublishWhenBodyIsPlatform
         await checkListQuota(req.orgId as string, trx, req.userId);
       }
 
-      // Shared lists ON: (organization_id, key) is unique per ORG, not per rendering of its id. The DB
-      // constraint is exact on the stored text, so a bare-UUID claim and an `org_...` claim of the same org
-      // could each create the same key; check every rendering of the owning org (any visibility, any status),
-      // under the canonical org lock taken above. OFF: nothing extra (the 4.0.0 exact constraint only).
-      if (shared) {
+      // (organization_id, key) is unique per ORG, not per rendering of its id - WHATEVER the shared-lists flag says.
+      // The DB constraint is exact on the stored text, so a bare-UUID claim and an `org_...` claim of the same org
+      // could each create the same key (and, once shared lists are enabled, the listing would have two effective
+      // lists for one key). Check every rendering of the owning org (any visibility, any status) under the canonical
+      // org lock taken above (the same lock flag ON and OFF): a second rendering of an existing key is the usual
+      // 409. Deliberate change to the flag-OFF create path (the service had never been enabled); nothing else
+      // about that path differs.
+      {
         const taken = await trx.raw(`SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ?`, [orgRenderings(ownerOrg), key.trim()]);
         if ((taken as { rows?: unknown[] }).rows?.length) {
           throw Object.assign(new Error('list key taken'), { code: '23505' });
@@ -906,7 +903,7 @@ router.patch('/:listId', requireListMutation('update'), requireArchiveAuthzOnSta
       const newKey = body.key !== undefined ? body.key.trim() : current.key;
       const promoting = visibilityChanging && wantsVisibility === 'platform';
       let keyTakenByCommon = false;
-      if (shared && (promoting || newKey !== current.key)) {
+      if (promoting || newKey !== current.key) {
         const owners = new Set<string>(orgRenderings(current.organization_id as string));
         if (promoting || currentVisibility === 'platform') {
           const platformOrg = await resolvePlatformOrgId(trx);

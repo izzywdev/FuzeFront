@@ -509,12 +509,21 @@ event can therefore at worst pause platform publishing; recovery steps are in
 org owning a `visibility = 'platform'` row (the fallback when unconfigured); never the projection's user-controllable
 `org_type`.
 
-**One effective list per key.** `(organization_id, key)` is unique per *stored string*, so one org can hold a key under both
-renderings of its id (possible while the flag is OFF). With the flag ON every key-resolving consumer (the listing /
-effective-key lookup, the resolve fork redirect, the fork idempotency lookup, shadowing) picks the same single row: an
-active row over an archived one, then the row stored under the caller's claim, then the oldest, then the smallest id.
-Flag-OFF create behaviour is unchanged; the pre-enable audit and reconciliation are in
-`docs/runbooks/selection-lists-rollout.md` §10.1–10.2.
+**One effective list per key.** `(organization_id, key)` is unique per *stored string*, so one org could hold a key under both
+renderings of its id. Two rules close that:
+- *Creation is blocked, flag ON or OFF.* Creating or renaming a list is a 409 (the usual key-taken code) when the key exists
+  for the same org under ANY rendering of its id, checked under the per-org outbox lock (so concurrent creates through
+  different renderings admit exactly one). This is a deliberate change to the flag-OFF create path (the service had never
+  been enabled in production); every other flag-OFF behaviour and response shape is unchanged. Data that already holds a
+  duplicate is handled by the audit and reconciliation in `docs/runbooks/selection-lists-rollout.md` §10.1–10.2.
+- *Reads pick ONE row, Permit-aware.* With the flag ON every key-resolving consumer (the listing and its `?key=` lookup,
+  the fork lookups, the resolve fork redirect, shadowing) applies the same rule to the rows the caller can actually READ:
+  an active row over an archived one, then the row stored under the caller's claim, then the oldest, then the smallest id
+  (`pickWinner` / `readableWinners` in `services/sharedReads.ts`). An unreadable private winner therefore never hides a
+  readable duplicate under the other rendering, and a key with no readable candidate has no effective row and does not
+  suppress a common list. The decision for a row depends only on that row and its (few: one per rendering) duplicates, so a
+  paged walk shows each effective list once; readability is checked once per request (bulk, chunked); a Security API failure
+  fails closed (nothing is shown).
 
 ## 9. Rollout and migration of existing data
 
@@ -613,3 +622,18 @@ Every stream gates on this contract PR being **merged**.
 - **Platform org identification** is configuration; a wrong
   `SELECTION_LIST_PLATFORM_ORG_ID` would let that org publish — the boot check
   must confirm the configured org's projection type is `platform`.
+- **Forged identity events (ACCEPTED RESIDUAL; broker ACLs are the control).** Owner decision: the service does NOT
+  authenticate the producer of `identity.*` / seed topics in-process (no first-writer-wins owner hardening, no Security-API
+  confirmation before a destructive org cascade). Producer authentication is an infrastructure control: broker ACLs on the
+  `identity.*` topics (FuzeInfra#1394) are a **hard prerequisite before the service is enabled in production**
+  (`docs/runbooks/selection-lists-rollout.md` P6). Until they are verified, a principal that can publish to the broker can:
+  (1) `identity.org.deleted` for an ORDINARY org (soft or hard cascade): archive or purge that tenant's lists, items,
+  translations and grants (the platform org is immune: it is suspended, never deleted); (2) `identity.user.deleted`:
+  anonymise a user's authorship and revoke that user's list grants; (3) `identity.org.created`: project an organization
+  with a chosen owner, so the owner id used for seeded-list owner grants can be swapped (a later `org.created` replaces the recorded owner:
+  there is no first-writer-wins hardening); (4) `selection-lists.seed.requested`: amplify writes up to
+  the per-source caps and quotas (requests carry a bearer attestation that is verified, but a flood of valid-looking
+  requests is bounded only by those caps); (5) plain flooding of any consumed topic (retry budgets and the DLQ bound the
+  damage, not the volume). Mitigations that DO exist in-service: the platform org can only be suspended (writes) never
+  deleted, future-dated envelopes are rejected, deactivation is ordered by envelope time, all consumers are idempotent. Those
+  five stay accepted until the broker ACLs are verified.

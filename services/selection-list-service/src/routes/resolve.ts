@@ -39,7 +39,7 @@ import { requireCatalogCheck } from '../middleware/authz';
 import { acceptOnlyBodyProps, isItemId } from '../middleware/validateInput';
 import { ENTITY_PREFIXES } from '@izzywdev/fuzefront-identity';
 import { orgForms, orgRenderings } from '../lib/sharedLists';
-import { getReadScope } from '../services/sharedReads';
+import { getReadScope, pickWinner, readableIds, type DupRow } from '../services/sharedReads';
 
 const router = createRouter();
 
@@ -159,6 +159,37 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
   }> = [];
 
   const scope = await getReadScope(req);
+
+  // Duplicate forks of one common list under SEVERAL renderings of the org id: the redirect target is the winner AMONG
+  // THE FORKS THE CALLER CAN READ (sharedReads `pickWinner`: active, exact claim, oldest, smallest id), never an
+  // unreadable one. One tiny query that is empty unless some source is forked under two renderings; the Permit check
+  // runs only then (memoised per request). Sources with duplicates restrict the SQL below to the chosen fork (or to
+  // none when no duplicate is readable); every other source keeps the single-fork path untouched.
+  let dupSources: string[] = [];
+  let preferredForks: string[] = [];
+  if (scope.shared) {
+    const dups: Array<DupRow & { forked_from_list_id: string }> = (
+      await db.raw(
+        `SELECT f.id, f.organization_id, f.key, f.status, f.visibility, f.created_at, f.forked_from_list_id
+           FROM selection_lists f
+          WHERE f.organization_id = ANY(?) AND f.visibility = 'org' AND f.status = 'active'
+            AND f.forked_from_list_id IN (
+              SELECT g.forked_from_list_id FROM selection_lists g
+               WHERE g.organization_id = ANY(?) AND g.visibility = 'org' AND g.status = 'active' AND g.forked_from_list_id IS NOT NULL
+               GROUP BY g.forked_from_list_id HAVING count(*) > 1)`,
+        [orgRenderings(orgId), orgRenderings(orgId)],
+      )
+    ).rows;
+    if (dups.length > 0) {
+      const readable = await readableIds(req, dups, { shared: true, includeShared: true, platformOrg: scope.platformOrg });
+      dupSources = [...new Set(dups.map((d) => d.forked_from_list_id))];
+      for (const src of dupSources) {
+        const winner = pickWinner(dups.filter((d) => d.forked_from_list_id === src && readable.has(d.id)), orgId);
+        if (winner) preferredForks.push(winner.id);
+      }
+    }
+  }
+
   const result = scope.shared
     // Common lists + fork redirect (see the header).
     ? await db.raw<{ rows: typeof dbRows }>(
@@ -187,6 +218,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
          AND f.organization_id = ANY(?)
          AND f.visibility = 'org'
          AND f.status = 'active'
+         AND (f.forked_from_list_id <> ALL(?) OR f.id = ANY(?))
        ORDER BY (f.organization_id = ?) DESC, f.created_at ASC, f.id ASC
        LIMIT 1
     ) fl ON TRUE
@@ -201,7 +233,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
     WHERE sli.id = ANY(?)
       AND (sl.organization_id = ANY(?) OR (sl.visibility = 'platform' AND sl.organization_id = ANY(?)))
     `,
-        [effectiveLocale, orgRenderings(orgId), orgId, effectiveLocale, validIds, orgRenderings(orgId), scope.platformOrg ? orgForms(scope.platformOrg) : []],
+        [effectiveLocale, orgRenderings(orgId), dupSources, preferredForks, orgId, effectiveLocale, validIds, orgRenderings(orgId), scope.platformOrg ? orgForms(scope.platformOrg) : []],
       )
     : await db.raw<{ rows: typeof dbRows }>(
     `

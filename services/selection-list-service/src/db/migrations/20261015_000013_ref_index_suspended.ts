@@ -9,8 +9,10 @@
 //
 // Two columns:
 //   suspended_at        when (wall clock) the suspension was recorded. NULL = not suspended.
-//   suspended_event_at  the envelope `occurredAt` (clamped to now) of the deactivation that suspended it - the ORDERING
-//                       clock of the suspend/resume state machine: an activation resumes only if it is not older than
+//   suspended_event_at  the envelope `occurredAt` of the deactivation that suspended it, AS RECEIVED (never clamped or
+//                       altered: a future-dated envelope beyond the skew tolerance is rejected by the handlers, see
+//                       events/orgProjection.ts `isFutureDated`, so the value is stable across redeliveries) - the
+//                       ORDERING clock of the suspend/resume state machine: an activation resumes only if it is not older than
 //                       this, and a deactivation suspends only if it is strictly newer than the newest snapshot
 //                       already applied (`snapshot_at`). The lifecycle topics have separate consumer groups, so events
 //                       arrive out of order; without this a stale deactivation could suspend writes forever.

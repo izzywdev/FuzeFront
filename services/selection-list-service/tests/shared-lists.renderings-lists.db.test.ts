@@ -42,7 +42,7 @@ dbDescribe('lists under two renderings of one org id (real Postgres)', () => {
 
   /** An org with a user per rendering; both hold the catalog actions in their own tenant string. */
   const orgWorld = (n: number) => {
-    const typeId = fromUuid('organization', `0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7c${n}0`);
+    const typeId = fromUuid('organization', `0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7c${n.toString(16)}0`);
     const uuid = toUuid(typeId as never);
     const byType: Principal = { userId: mkUsr(`rendlst${n}a`), orgId: typeId };
     const byUuid: Principal = { userId: mkUsr(`rendlst${n}b`), orgId: uuid };
@@ -175,12 +175,76 @@ dbDescribe('lists under two renderings of one org id (real Postgres)', () => {
       expect(rename.body.message).toMatch(/common list/);
     });
 
-    it('flag OFF: byte-identical to 4.0.0 - each stored text is its own namespace (no cross-rendering check)', async () => {
-      const x = orgWorld(8);
-      await off(async () => {
-        expect((await w.api(x.byType).post('/v1/selection-lists', { key: 'uk-off', name: 'T' })).status).toBe(201);
-        expect((await w.api(x.byUuid).post('/v1/selection-lists', { key: 'uk-off', name: 'U' })).status).toBe(201); // distinct stored text
-        expect((await w.api(x.byType).post('/v1/selection-lists', { key: 'uk-off', name: 'T2' })).status).toBe(409); // the exact constraint
+    describe('flag OFF ("dark create"): the same rule - a key is unique per org across renderings', () => {
+      it('create, in BOTH id orders: the other rendering of an existing key is a 409 (the existing code), the exact repeat too; another org may reuse the key', async () => {
+        const x = orgWorld(8);
+        await off(async () => {
+          const key = 'uk-off';
+          const first = await w.api(x.byType).post('/v1/selection-lists', { key, name: 'T' });
+          expect(first.status).toBe(201);
+          expect(first.body.organization_id).toBe(x.typeId); // stored under the claim as presented (4.0.0)
+          const dup = await w.api(x.byUuid).post('/v1/selection-lists', { key, name: 'U' });
+          expect(dup.status).toBe(409);
+          expect(dup.body).toEqual({ code: 'CONFLICT', message: `A list with key '${key}' already exists.` });
+          expect((await w.api(x.byType).post('/v1/selection-lists', { key, name: 'T2' })).status).toBe(409);
+          // the reverse order
+          expect((await w.api(x.byUuid).post('/v1/selection-lists', { key: `${key}-r`, name: 'R' })).status).toBe(201);
+          expect((await w.api(x.byType).post('/v1/selection-lists', { key: `${key}-r`, name: 'R2' })).status).toBe(409);
+          expect(await w.db('selection_lists').whereIn('organization_id', [x.typeId, x.uuid]).whereIn('key', [key, `${key}-r`])).toHaveLength(2);
+          // a different org is a different namespace
+          expect((await w.api(P.bMember).post('/v1/selection-lists', { key, name: 'B' })).status).toBe(201);
+        });
+      });
+
+      it('create: a legacy row under the OTHER rendering (even an archived one) blocks the key', async () => {
+        const x = orgWorld(9);
+        await w.db('selection_lists').insert({ id: 'front_sl_legacyrend00002', organization_id: x.uuid, key: 'uk-off-legacy', created_by: 'usr_x', status: 'archived' });
+        await off(async () => {
+          expect((await w.api(x.byType).post('/v1/selection-lists', { key: 'uk-off-legacy', name: 'L' })).status).toBe(409);
+        });
+      });
+
+      it('create: concurrent creates of one key through different renderings admit exactly one (the org outbox lock serialises them)', async () => {
+        const x = orgWorld(10);
+        await off(async () => {
+          const results = await Promise.all([
+            w.api(x.byType).post('/v1/selection-lists', { key: 'uk-off-race', name: 'A' }),
+            w.api(x.byUuid).post('/v1/selection-lists', { key: 'uk-off-race', name: 'B' }),
+            w.api(x.byType).post('/v1/selection-lists', { key: 'uk-off-race', name: 'C' }),
+            w.api(x.byUuid).post('/v1/selection-lists', { key: 'uk-off-race', name: 'D' }),
+          ]);
+          expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409, 409]);
+          expect(await w.db('selection_lists').whereIn('organization_id', [x.typeId, x.uuid]).where({ key: 'uk-off-race' })).toHaveLength(1);
+        });
+      });
+
+      it('rename: onto a key taken under the other rendering is a 409 in both directions; a free key and the own key are fine', async () => {
+        const x = orgWorld(11);
+        await off(async () => {
+          const a = await w.api(x.byType).post('/v1/selection-lists', { key: 'rn-off-a', name: 'A' });
+          const b = await w.api(x.byUuid).post('/v1/selection-lists', { key: 'rn-off-b', name: 'B' }); // stored under the UUID
+          expect([a.status, b.status]).toEqual([201, 201]);
+          w.authz.give(x.typeId, x.byType.userId, a.body.id, 'list-owner');
+          w.authz.give(x.uuid, x.byUuid.userId, b.body.id, 'list-owner');
+          const r1 = await w.api(x.byUuid).patch(`/v1/selection-lists/${b.body.id}`, { key: 'rn-off-a' });
+          expect(r1).toMatchObject({ status: 409 });
+          expect(r1.body).toEqual({ code: 'CONFLICT', message: 'A list with that key already exists.' });
+          expect((await w.api(x.byType).patch(`/v1/selection-lists/${a.body.id}`, { key: 'rn-off-b' })).status).toBe(409);
+          expect((await w.db('selection_lists').where({ id: b.body.id }).first()).key).toBe('rn-off-b');
+          expect((await w.api(x.byUuid).patch(`/v1/selection-lists/${b.body.id}`, { key: 'rn-off-b', name: 'B2' })).status).toBe(200);
+          expect((await w.api(x.byUuid).patch(`/v1/selection-lists/${b.body.id}`, { key: 'rn-off-free' })).status).toBe(200);
+        });
+      });
+
+      it('everything ELSE about the flag-OFF path is unchanged: exact org scoping (the other rendering cannot read or list the row) and the response shape', async () => {
+        const x = orgWorld(12);
+        await off(async () => {
+          const made = await w.api(x.byType).post('/v1/selection-lists', { key: 'scope-off', name: 'S' });
+          expect(made.status).toBe(201);
+          expect(made.body.visibility).toBe('private'); // while OFF every list reports private (unchanged)
+          expect((await w.api(x.byUuid).get(`/v1/selection-lists/${made.body.id}`)).status).toBe(404); // the other rendering is another tenant
+          expect(keys(await w.api(x.byUuid).get('/v1/selection-lists'))).not.toContain('scope-off');
+        });
       });
     });
   });
