@@ -1045,7 +1045,13 @@ notificationService:
 # bump step only rewrites a tag: found on the line directly following a matched
 # repository: anchor.
 selectionListService:
-  enabled: false
+  # Enabled for prod go-live (FF-EPIC-17 / FFRNT-200). The SealedSecret
+  # `selection-list-secrets` (DB_PASSWORD) is provisioned; the pre-sync Job
+  # `fuzefront-svcdb-selection-list-service` creates role selection_list_svc +
+  # database fuzefront_selection_list on this sync, then the Deployment runs its
+  # knex migrations as the owner. The release flag fuzefront.selection-lists.service
+  # remains the visibility gate (ramped separately via prod-unleash-ops).
+  enabled: true
   # Authorization is ALWAYS enforced in production (code-level, review H-1); the
   # explicit true keeps the rendered manifest honest. Do not set false.
   authzEnabled: true
