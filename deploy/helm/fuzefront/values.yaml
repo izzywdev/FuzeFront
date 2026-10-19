@@ -965,6 +965,33 @@ selectionListService:
   # at all). Declared true so the rendered manifest states the real posture; the
   # key only has an effect outside production (dev/test).
   authzEnabled: true
+  # The platform organization's wire id (`org_...` TypeID), env
+  # SELECTION_LIST_PLATFORM_ORG_ID (SL9 shared/common lists; docs/planning/
+  # selection-lists-shared-and-fork.md D2/D5). Common (`platform`) lists are
+  # owned by this organization and only an operator acting in it may publish
+  # one. OPTIONAL and EMPTY by default, declared here explicitly (never absorbed
+  # by a template default/cast): empty makes the service fail CLOSED on every
+  # platform feature (no common lists served or created), so shared lists stay
+  # dark. There is deliberately NO fallback to an org typed `platform` in the
+  # org projection: that type is client-suppliable on org creation. Shared lists
+  # are additionally gated by the release flag fuzefront.selection-lists.shared-lists
+  # (default OFF).
+  #
+  # CONFIGURABLE per environment, ENFORCED in production. Local and any other
+  # overlay may use any id. The PRODUCTION overlay (values-prod.yaml) may only
+  # ever be "" (service disabled, fail closed) or the immutable root platform
+  # organization. CI job `gate-platform-org-pin` (scripts/gate_platform_org_pin.py)
+  # DERIVES that id from the code (ROOT_ORG_ID in backend/security/src/
+  # migrations/014_seed_root_platform_organization.ts, currently
+  # 00000000-0000-0000-0000-000000000010, TypeID "org_0000000000000000000000000g")
+  # rather than from any typed-in value or repo variable, cross-checks every other
+  # ROOT_ORG_ID copy, and enforces it against values-prod.yaml, the Helm-merged
+  # values and the rendered Deployment env. It fails when
+  # selectionListService.enabled is true in production with any other value
+  # (including empty). Details: docs/runbooks/selection-lists-rollout.md 2.4.
+  # Never coerce or default this value in a template (CLAUDE.md "Helm values
+  # hygiene"): the comparison is strict string equality.
+  platformOrgId: ""
   # @fuzefront/feature-flags client wiring (UNLEASH_URL/APP_NAME/CLIENT_TOKEN).
   # Empty unleashUrl (base default) renders no UNLEASH_* env -> in-code fail-safe
   # OFF. The CLIENT token is a SECRET (sealed) -- referenced, never inline.

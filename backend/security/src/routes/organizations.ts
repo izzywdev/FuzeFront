@@ -84,6 +84,17 @@ function validateOrganizationInput(data: any) {
   return errors
 }
 
+// Organization types a client may NOT request on create. `platform` is the
+// operator-owned root org marker; it is seeded by migration only.
+const RESERVED_ORGANIZATION_TYPES = ['platform']
+
+function isReservedOrganizationType(type: unknown): boolean {
+  return (
+    typeof type === 'string' &&
+    RESERVED_ORGANIZATION_TYPES.includes(type.trim().toLowerCase())
+  )
+}
+
 function sanitizeInput(data: any) {
   return {
     name: data.name?.trim(),
@@ -115,6 +126,17 @@ async function requireOrgAdminOrOwner(userId: string, orgId: string): Promise<bo
 // POST /api/organizations - Create a new organization
 router.post('/', authenticateToken, async (req: any, res) => {
   try {
+    // `type: 'platform'` is a trust marker downstream (org projection
+    // `org_type`) and must only ever be minted by a migration/operator path
+    // (see the root platform organization seed migration) — never by an
+    // authenticated caller over HTTP. Reject BEFORE any lookup/insert/event so
+    // nothing is persisted and no identity.org.created is emitted.
+    if (isReservedOrganizationType(req.body?.type)) {
+      return res.status(403).json({
+        error: 'Organization type "platform" is reserved and cannot be set via this endpoint',
+      })
+    }
+
     const input = sanitizeInput(req.body)
     const validationErrors = validateOrganizationInput(input)
 

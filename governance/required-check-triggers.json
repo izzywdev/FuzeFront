@@ -31,6 +31,10 @@
       "file": ".github/workflows/gate-sealed-keys.yml"
     },
     {
+      "context": "gate-platform-org-pin",
+      "file": ".github/workflows/gate-platform-org-pin.yml"
+    },
+    {
       "context": "gate-frames-schema",
       "file": ".github/workflows/gate-frames-schema.yml"
     },
