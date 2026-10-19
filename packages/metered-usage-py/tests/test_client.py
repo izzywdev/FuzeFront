@@ -7,9 +7,7 @@ constructor override -- no real Kafka broker is required.
 from __future__ import annotations
 
 import json
-import os
 
-import pytest
 from fuzefront_metered_usage import MeteringClient, UsageEvent
 
 
@@ -53,13 +51,13 @@ def make_client(brokers: list[str] | None = None) -> tuple[MeteringClient, FakeP
 
 
 def make_event(**kwargs) -> UsageEvent:
-    defaults = dict(
-        meter_event_name="api_calls",
-        quantity=1.0,
-        entity_type="organization",
-        entity_id="org_abc",
-        timestamp="2026-01-01T00:00:00+00:00",
-    )
+    defaults = {
+        "meter_event_name": "api_calls",
+        "quantity": 1.0,
+        "entity_type": "organization",
+        "entity_id": "org_abc",
+        "timestamp": "2026-01-01T00:00:00+00:00",
+    }
     defaults.update(kwargs)
     return UsageEvent(**defaults)
 
@@ -127,7 +125,7 @@ def test_emit_uses_configured_topic():
 
 
 def test_producer_config_receives_brokers():
-    client, producer = make_client(brokers=["broker1:9092", "broker2:9092"])
+    _client, producer = make_client(brokers=["broker1:9092", "broker2:9092"])
     assert producer.config["bootstrap.servers"] == "broker1:9092,broker2:9092"
 
 

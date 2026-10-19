@@ -20,8 +20,8 @@ Usage::
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Callable, Optional
 
 try:
     from starlette.middleware.base import BaseHTTPMiddleware
@@ -77,7 +77,7 @@ class MeteringMiddleware(BaseHTTPMiddleware):
         organization_id: Callable,
         entity_type: EntityType = "organization",
         meter: str = "api_calls",
-        skip: Optional[Callable] = None,
+        skip: Callable | None = None,
     ) -> None:
         super().__init__(app)
         self._client = client
