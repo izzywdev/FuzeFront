@@ -102,4 +102,30 @@ describe('runAgentTurn', () => {
     expect(events.some((e) => e.type === 'error')).toBe(true);
     expect(events[events.length - 1].type).toBe('done');
   });
+
+  it('emits thought_delta when an agent persona is mentioned or appId is fuzeagent', async () => {
+    const events: any[] = [];
+    await runAgentTurn(
+      { llm: fakeLlm(['ok']) as any, searchTool: fakeSearchTool([]) as any, registry: { list: () => [] } as any },
+      { messages: [{ role: 'user', content: 'Hey @python-dev optimize asyncpg' }], ...ctx },
+      { emit: (e) => events.push(e), onUsage: () => {} },
+    );
+    const thoughtEvt = events.find((e) => e.type === 'thought_delta');
+    expect(thoughtEvt).toBeDefined();
+    expect(thoughtEvt.delta).toContain('Python FastAPI & Backend Specialist');
+  });
+
+  it('emits tool_card for time queries', async () => {
+    const events: any[] = [];
+    await runAgentTurn(
+      { llm: fakeLlm(['The time is 3pm']) as any, searchTool: fakeSearchTool([]) as any, registry: { list: () => [] } as any },
+      { messages: [{ role: 'user', content: 'what is the time in Los Angeles?' }], ...ctx },
+      { emit: (e) => events.push(e), onUsage: () => {} },
+    );
+    const cardEvt = events.find((e) => e.type === 'tool_card');
+    expect(cardEvt).toBeDefined();
+    expect(cardEvt.cardType).toBe('time-in-zone');
+    expect(cardEvt.data.zone).toBe('America/Los_Angeles');
+  });
 });
+

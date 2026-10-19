@@ -53,10 +53,12 @@ export interface AgentTurnInput {
   appId?: string;
 }
 
-/** Events emitted by a turn — matches the chat-client SSE union. */
+/** Events emitted by a turn — matches the chat-client SSE & WebSocket union. */
 export type AgentEvent =
   | { type: 'rag_sources'; sources: RagSource[] }
   | { type: 'text_delta'; delta: string }
+  | { type: 'thought_delta'; delta: string }
+  | { type: 'tool_card'; cardType: string; data: Record<string, unknown> }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -79,7 +81,30 @@ export async function runAgentTurn(
   const lastUser = [...sanitizedMessages].reverse().find((m) => m.role === 'user');
   const query = lastUser?.content ?? '';
 
-  // 2. RAG retrieval (read-only). Emit citations if any.
+  // 2. Multi-agent persona and brain hierarchy reasoning emission
+  const persona = resolveMentionPersona(query);
+  if (persona) {
+    cb.emit({ type: 'thought_delta', delta: `Routing request to specialized agent persona. Directives:\n${persona}` });
+  } else if (input.appId === 'fuzeagent') {
+    cb.emit({ type: 'thought_delta', delta: `Resolving 4-tier Brain hierarchy (Org, Cross-Functional, Team, Agent) and sandbox pods.` });
+  }
+
+  // 3. Extensible tool card generation for live system queries
+  const lower = query.toLowerCase();
+  if (lower.includes('time in') || lower.includes('la time') || lower.includes('time now')) {
+    const now = new Date();
+    const laTime = now.toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit' });
+    cb.emit({
+      type: 'tool_card',
+      cardType: 'time-in-zone',
+      data: {
+        timeString: `${laTime} PDT`,
+        zone: 'America/Los_Angeles'
+      }
+    });
+  }
+
+  // 4. RAG retrieval (read-only). Emit citations if any.
   let contextBlock = '';
   try {
     const { chunks, sources } = await deps.searchTool.execute(
@@ -95,14 +120,14 @@ export async function runAgentTurn(
     contextBlock = '';
   }
 
-  // 3. Assemble the system prompt + context + agent persona mention routing.
+  // 5. Assemble the system prompt + context + agent persona mention routing.
   const baseAppPrompt = resolveAppPrompt(input.appId);
-  const persona = resolveMentionPersona(query);
   const basePrompt = persona ? `${baseAppPrompt}\n\n${persona}` : baseAppPrompt;
   const system =
     contextBlock.length > 0
       ? `${basePrompt}\n\nReference documents:\n${contextBlock}`
       : basePrompt;
+
 
   // 4. Stream the completion.
   try {

@@ -132,7 +132,18 @@ export const APP_DOMAIN_PROMPTS: Record<string, string> = {
   fuzemarket: [
     'You are the FuzeMarket B2B Commerce & Catalog Assistant. You help users navigate products, suppliers, orders, and pricing.',
   ].join('\n'),
+
+  fuzeagent: [
+    'You are the FuzeAgent Multi-Agent Orchestrator Co-Pilot. You assist developers and platform engineers with deploying autonomous agent pods, executing unprivileged Kubernetes sandboxes, managing multi-tier Brain memory (Organization Global, Cross-Functional Domains, Team Platform, and Agent Persona tiers), and coordinating agent swarms.',
+    '',
+    'FuzeAgent Capabilities & Directives:',
+    '- Multi-Tier Brain Hierarchy: Organization global wiki, Cross-Functional domain memory (frontend, devops, backend), Team platform brains, and individual Agent persona memory.',
+    '- Sandbox & Tool Execution: Live container sandbox executions (/dev/tty, pytest, kubectl, world_clock, git).',
+    '- Persona Mentions: Route specialist queries when the user specifies @python-dev, @react-dev, or @devops-lead.',
+    '- Structured Outputs: When providing live system metrics or tool executions, formulate structured tool cards so UI frontends can render rich interactive widgets.',
+  ].join('\n'),
 };
+
 
 export function resolveAppPrompt(appId?: string): string {
   if (appId && APP_DOMAIN_PROMPTS[appId.toLowerCase()]) {

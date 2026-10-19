@@ -137,4 +137,37 @@ describe('parseSSEStream', () => {
     expect(events[0]).toEqual({ type: 'text_delta', delta: 'Hello' });
     expect(events[1]).toEqual({ type: 'done' });
   });
+
+  it('yields thought_delta and tool_card events', async () => {
+    const thoughtLine = `data: ${JSON.stringify({ type: 'thought_delta', delta: 'Planning response...' })}\n\n`;
+    const cardLine = `data: ${JSON.stringify({
+      type: 'tool_card',
+      cardType: 'time-in-zone',
+      data: { timeString: '03:45 AM PDT' },
+    })}\n\n`;
+
+    const events = await collect(chunksToIterable([thoughtLine, cardLine, DONE_LINE]));
+    expect(events[0]).toEqual({ type: 'thought_delta', delta: 'Planning response...' });
+    expect(events[1]).toEqual({
+      type: 'tool_card',
+      cardType: 'time-in-zone',
+      data: { timeString: '03:45 AM PDT' },
+    });
+    expect(events[2]).toEqual({ type: 'done' });
+  });
 });
+
+import { SseTransport, WebSocketTransport } from '../src/streaming';
+
+describe('StreamingTransport implementations', () => {
+  it('instantiates SseTransport and WebSocketTransport', () => {
+    const sse = new SseTransport();
+    expect(sse).toBeDefined();
+    expect(typeof sse.stream).toBe('function');
+
+    const ws = new WebSocketTransport();
+    expect(ws).toBeDefined();
+    expect(typeof ws.stream).toBe('function');
+  });
+});
+

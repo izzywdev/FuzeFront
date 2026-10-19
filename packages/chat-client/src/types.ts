@@ -29,12 +29,13 @@ export interface RagSource {
 }
 
 /**
- * Union of all SSE events emitted by the chat-service stream endpoint.
+ * Union of all SSE & WebSocket events emitted by the chat-service stream endpoint.
  * Each variant carries a discriminant `type` field.
  */
 export type ChatStreamEvent =
   | { type: 'conversation'; conversationId: string }
   | { type: 'text_delta'; delta: string }
+  | { type: 'thought_delta'; delta: string }
   | {
       type: 'tool_pending';
       confirmationId: string;
@@ -44,9 +45,27 @@ export type ChatStreamEvent =
     }
   | { type: 'tool_result'; confirmationId: string; success: boolean; summary: string }
   | { type: 'tool_denied'; toolName: string; reason: string }
+  | {
+      type: 'tool_card';
+      cardType: string;
+      data: Record<string, unknown>;
+    }
   | { type: 'rag_sources'; sources: RagSource[] }
   | { type: 'done' }
   | { type: 'error'; message: string };
+
+/**
+ * Transport abstraction for streaming chat events.
+ * Supports HTTP SSE or bidirectional WebSockets.
+ */
+export interface StreamingTransport {
+  stream(
+    req: ChatStreamRequest,
+    endpointUrl: string,
+    headers: Record<string, string>,
+  ): AsyncIterable<ChatStreamEvent>;
+}
+
 
 /** Conversation metadata (without messages). */
 export interface Conversation {

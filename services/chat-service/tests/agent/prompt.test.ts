@@ -94,3 +94,27 @@ describe('buildContextBlock', () => {
     expect(buildContextBlock([])).toBe('');
   });
 });
+
+import { resolveAppPrompt, resolveMentionPersona } from '../../src/agent/prompt';
+
+describe('resolveAppPrompt & resolveMentionPersona', () => {
+  it('resolves fuzeagent app domain prompt', () => {
+    const prompt = resolveAppPrompt('fuzeagent');
+    expect(prompt).toContain('FuzeAgent Multi-Agent Orchestrator');
+    expect(prompt).toContain('Multi-Tier Brain Hierarchy');
+  });
+
+  it('resolves mention persona from query', () => {
+    const python = resolveMentionPersona('Can you ask @python-dev to review this?');
+    expect(python).toContain('Python FastAPI & Backend Specialist');
+
+    const react = resolveMentionPersona('Ping @react-dev for the modal');
+    expect(react).toContain('React & Frontend UI Specialist');
+
+    const devops = resolveMentionPersona('Tell @devops-lead to check the pods');
+    expect(devops).toContain('DevOps & Infrastructure Lead');
+
+    expect(resolveMentionPersona('No mentions here')).toBeNull();
+  });
+});
+

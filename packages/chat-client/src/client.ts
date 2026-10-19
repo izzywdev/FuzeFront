@@ -16,10 +16,11 @@
  * is surfaced as a thrown error (or yielded error event for streamChat).
  */
 
-import { parseSSEStream } from './streaming';
+import { SseTransport, WebSocketTransport } from './streaming';
 import type {
   ChatStreamRequest,
   ChatStreamEvent,
+  StreamingTransport,
   Conversation,
   ConversationWithMessages,
   GetConversationOptions,
@@ -31,16 +32,27 @@ export interface ChatServiceClientConfig {
   baseUrl: string;
   /** Returns the current bearer token, or `null` if not authenticated. */
   getToken: () => string | null;
+  /** Optional streaming transport override ('sse' | 'ws' | custom StreamingTransport instance). */
+  transport?: 'sse' | 'ws' | StreamingTransport;
 }
 
 export class ChatServiceClient {
   private readonly baseUrl: string;
   private readonly getToken: () => string | null;
+  private readonly defaultTransport: StreamingTransport;
 
   constructor(config: ChatServiceClientConfig) {
     // Strip trailing slash for consistent URL construction
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
     this.getToken = config.getToken;
+
+    if (!config.transport || config.transport === 'sse') {
+      this.defaultTransport = new SseTransport();
+    } else if (config.transport === 'ws') {
+      this.defaultTransport = new WebSocketTransport();
+    } else {
+      this.defaultTransport = config.transport;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -77,41 +89,30 @@ export class ChatServiceClient {
   // ---------------------------------------------------------------------------
 
   /**
-   * Open a streaming chat session.  Yields typed `ChatStreamEvent` objects as they arrive.
+   * Open a streaming chat session. Yields typed `ChatStreamEvent` objects as they arrive.
    *
    * On network or HTTP error, yields a final `{type:'error', message}` event instead of
    * throwing, so the caller's `for await` loop sees the error without needing try/catch.
    */
-  async *streamChat(req: ChatStreamRequest): AsyncIterable<ChatStreamEvent> {
-    let res: Response;
-    try {
-      res = await fetch(`${this.baseUrl}/chat/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-          ...this.authHeaders(),
-        },
-        body: JSON.stringify(req),
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      yield { type: 'error', message };
-      return;
+  async *streamChat(
+    req: ChatStreamRequest,
+    options?: { transport?: 'sse' | 'ws' | StreamingTransport },
+  ): AsyncIterable<ChatStreamEvent> {
+    let transport = this.defaultTransport;
+    if (options?.transport) {
+      if (options.transport === 'sse') {
+        transport = new SseTransport();
+      } else if (options.transport === 'ws') {
+        transport = new WebSocketTransport();
+      } else {
+        transport = options.transport;
+      }
     }
 
-    if (!res.ok) {
-      yield { type: 'error', message: `HTTP ${res.status}: ${res.statusText}` };
-      return;
-    }
-
-    if (!res.body) {
-      yield { type: 'error', message: 'Response body is null' };
-      return;
-    }
-
-    yield* parseSSEStream(res.body);
+    const endpointUrl = `${this.baseUrl}/chat/stream`;
+    yield* transport.stream(req, endpointUrl, this.authHeaders());
   }
+
 
   /**
    * Confirm (approve) a pending tool call.
