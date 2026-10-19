@@ -75,6 +75,7 @@ export class PlanService {
     });
 
     let count = 0;
+    const syncedPriceIds: string[] = [];
     for (const price of result.data) {
       const product = price.product as Stripe.Product;
       const md = product.metadata ?? {};
@@ -96,7 +97,15 @@ export class PlanService {
         sortOrder: Number.parseInt(md.sort_order ?? '0', 10) || 0,
       };
       await this.repo.upsert(plan);
+      syncedPriceIds.push(price.id);
       count++;
+    }
+
+    // Deactivate seed-placeholder rows (and any retired prices) not returned by
+    // this Stripe sync, so listActive() never surfaces stale placeholders
+    // alongside the real Stripe-sourced rows.
+    if (syncedPriceIds.length > 0) {
+      await this.repo.deactivateNotIn(syncedPriceIds);
     }
 
     // Invalidate the read cache so getActivePlans reflects the fresh sync.

@@ -75,7 +75,7 @@ INSERT INTO billing.plans (
     TRUE,
     2
   ),
-  -- Enterprise: contact-sales; unit_amount = -1 signals no self-serve Stripe price.
+  -- Enterprise: contact-sales; unit_amount = 0 (contact sales, no self-serve Stripe price).
   -- price ID 'contact_sales' matches PLAN_ID_TO_PRICE_ID['enterprise'] so that
   -- resolvePriceId can identify this row when validating an enterprise checkout path.
   (
@@ -84,7 +84,7 @@ INSERT INTO billing.plans (
     'enterprise',
     'Enterprise',
     'month',
-    -1,
+    0,
     'usd',
     TRUE,
     NULL,

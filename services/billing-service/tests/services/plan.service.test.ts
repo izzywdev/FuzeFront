@@ -20,6 +20,11 @@ class FakePlanRepo implements PlanRepository {
   async findByPriceId(id: string) {
     return this.plans.find((p) => p.priceId === id) ?? null;
   }
+  async deactivateNotIn(activePriceIds: string[]) {
+    for (const p of this.plans) {
+      if (!activePriceIds.includes(p.priceId)) p.isActive = false;
+    }
+  }
 }
 
 function stripeWithPrices(data: any[]) {
@@ -161,6 +166,34 @@ describe('PlanService.getActivePlans', () => {
       dbError,
     );
     errorSpy.mockRestore();
+  });
+
+  it('deactivates seed-placeholder rows not returned by Stripe after sync', async () => {
+    const repo = new FakePlanRepo();
+    // Seed placeholder rows as migration 006 would insert them
+    repo.plans = [
+      { priceId: 'price_starter_monthly_placeholder', productId: 'prod_placeholder_starter', tierName: 'starter', displayName: 'Starter', billingInterval: 'month', unitAmount: 2900, currency: 'usd', seatBased: false, meteredMeterName: null, features: [], isActive: true, sortOrder: 1 },
+      { priceId: 'price_growth_monthly_placeholder',  productId: 'prod_placeholder_growth',  tierName: 'growth',   displayName: 'Growth',   billingInterval: 'month', unitAmount: 9900, currency: 'usd', seatBased: false, meteredMeterName: null, features: [], isActive: true, sortOrder: 2 },
+    ];
+    const stripe = stripeWithPrices([
+      {
+        id: 'price_1RealStarter',
+        active: true,
+        unit_amount: 2900,
+        currency: 'usd',
+        recurring: { interval: 'month', usage_type: 'licensed' },
+        product: { id: 'prod_real_starter', name: 'Starter', metadata: { tier_name: 'starter', sort_order: '1' } },
+      },
+    ]);
+    const svc = new PlanService(stripe, repo);
+
+    await svc.syncPlans();
+
+    // Real Stripe row inserted
+    expect(repo.plans.find((p) => p.priceId === 'price_1RealStarter')?.isActive).toBe(true);
+    // Placeholder rows deactivated
+    expect(repo.plans.find((p) => p.priceId === 'price_starter_monthly_placeholder')?.isActive).toBe(false);
+    expect(repo.plans.find((p) => p.priceId === 'price_growth_monthly_placeholder')?.isActive).toBe(false);
   });
 
   it('invalidates cache after a sync', async () => {
