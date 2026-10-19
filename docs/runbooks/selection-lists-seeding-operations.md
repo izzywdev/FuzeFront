@@ -20,7 +20,7 @@ design is [`../planning/selection-lists-events.md`](../planning/selection-lists-
 
 | Piece | Where | Notes |
 |---|---|---|
-| Two release flags (both default OFF, fail closed) | Unleash | `fuzefront.selection-lists.service` (master) **and** `fuzefront.selection-lists.seed-defaults`. Seeding needs **both** ON **for the org**; evaluated **per message**. Both are created OFF in Unleash by dispatching `prod-unleash-ops` with `flags=selection-lists-create` (create-only; see §3). |
+| Two release flags (both default OFF, fail closed) | Unleash | `fuzefront.selection-lists.service` (master) **and** `fuzefront.selection-lists.seed-defaults`. Seeding needs **both** ON **for the org**; evaluated **per message**. Both are created OFF in Unleash by dispatching `prod-unleash-ops` with `flags=selection-lists-create` (create-only; see §3). That same dispatch also creates the third selection-lists flag `fuzefront.selection-lists.shared-lists` (SL9 shared/common lists + forks, OFF; it gates seed-list `visibility` being honoured, not seeding itself; see `selection-lists-flag-rollout.md`). |
 | Platform seeding | consumer of `identity.org.created` | Always records the org in the projection (`selection_list_ref_index`); seeds `platform-defaults` v1 (`yes-no`, `priority`, `work-status`) only if both flags are ON and the org is active and of type `organization`/`personal`. |
 | App seeding | consumer of `selection-lists.seed.requested` | Attested (token with scope `selection-lists:seed`), allowlisted (`seed-sources.json`), namespaced, capped, quota-checked, atomic. |
 | Outcomes | `selection-lists.seed.completed` / `.failed` | Published through the transactional outbox (`event_outbox`). |
@@ -340,8 +340,8 @@ workflow (`flags=selection-lists`). Record the owner decision (who, target orgs,
 **Two facts shape the ramp, both from code:**
 
 1. **`prod-unleash-ops` can now CREATE `fuzefront.selection-lists.seed-defaults`, but not enable it.**
-   Dispatch it with `flags=selection-lists-create`: that set creates **both** selection-list flags
-   as `release` flags, OFF (environment disabled, no strategy), and is idempotent (an existing flag is
+   Dispatch it with `flags=selection-lists-create`: that set creates **all three** selection-list flags (`service`, `seed-defaults`,
+   `shared-lists`) as `release` flags, OFF (environment disabled, no strategy), and is idempotent (an existing flag is
    left untouched). The `selection-lists` set (staged ramp, `rollout` / `action`) still covers only
    the master flag and is percentage-only, so **enabling `seed-defaults` still needs the raw
    per-org procedure in the `unleash-flag-enable` skill** (an `orgId IN [org_…]` constraint). Run the
