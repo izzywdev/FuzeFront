@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:0ef72b7a2a8803f7812a771503d26afda5beccd44bae662397be76a19989dcaf
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:b8ac1c0b3e484de74d3381d0d2b834d67e2289c316076d17052c51c24e33710e
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -232,7 +232,23 @@ jobs:
           GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
+          # A token that is SET is not a token that WORKS: a suspended or revoked coder
+          # account still leaves the secret populated, and every run would then die at
+          # claude-code-action's GitHub permission precheck. Use the coder token only if
+          # GitHub accepts it right now; otherwise warn and fall back to GITHUB_TOKEN.
+          coder_ok=false
           if [ -n "${CODER_TOKEN:-}" ]; then
+            probe=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+              -H "Authorization: Bearer ${CODER_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/user" 2>/dev/null || true)
+            if [ "${probe:-}" = "200" ]; then
+              coder_ok=true
+            else
+              echo "::warning title=coder-identity::FUZEONEAGENT_TOKEN is set but GitHub rejected it (HTTP ${probe:-none}; the account may be suspended or the token revoked). Falling back to the default GITHUB_TOKEN identity. Replace or remove the secret to clear this warning."
+            fi
+          fi
+          if [ "$coder_ok" = "true" ]; then
             tok="$CODER_TOKEN"
             who="fuzeoneagent (FUZEONEAGENT_TOKEN — least-privilege coder)"
             git config user.name "fuzeoneagent"
@@ -243,8 +259,8 @@ jobs:
           else
             bot_name="claude[bot]"; bot_id="41898282"   # claude-code-action's own defaults
             tok="$GH_DEFAULT"
-            who="GITHUB_TOKEN (default — FUZEONEAGENT_TOKEN unset)"
-            echo "::warning title=coder-identity::FUZEONEAGENT_TOKEN is unset on this repo — @fuze codes/commits/pushes under the default GITHUB_TOKEN identity, exactly as before. Set FUZEONEAGENT_TOKEN to author as the least-privilege coder account (docs/identity-and-roles.md)."
+            who="GITHUB_TOKEN (default — FUZEONEAGENT_TOKEN unset or rejected)"
+            [ -z "${CODER_TOKEN:-}" ] && echo "::warning title=coder-identity::FUZEONEAGENT_TOKEN is unset on this repo — @fuze codes/commits/pushes under the default GITHUB_TOKEN identity, exactly as before. Set FUZEONEAGENT_TOKEN to author as the least-privilege coder account (docs/identity-and-roles.md)."
           fi
           echo "::add-mask::$tok"
           {
