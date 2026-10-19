@@ -12,16 +12,18 @@
   <a class="back" href="index.html">← All frames</a>
   <div class="eyebrow">Frame (a) · route /settings/access</div>
   <h1>Members &amp; roles</h1>
-  <p class="lead">The administration surface for one organization. Roles come from the tenant's
-    role catalogue — a bounded, policy-defined set, not free text.</p>
+  <p class="lead">The Access &amp; Roles console for one organization, seen by an owner or admin. Each
+    row is a direct membership; the role is the fixed <code>organization_memberships.role</code> enum —
+    owner, admin, member, or viewer — not free text and not a per-tenant catalogue.</p>
 
-  <div class="panel" data-panel="member-list">
+  <div class="panel" data-panel="member-list" data-state="loaded">
     <div class="panel-head">
       <div>
         <h2>Members</h2>
         <p class="sub"><span data-count="members">4</span> people in Northwind</p>
       </div>
-      <button class="btn btn-accent" data-action="add-member">Add member</button>
+      <a class="btn btn-accent" href="../org-invitations-v2/index.html" data-action="invite-member"
+         data-links-to="org-invitations-v2">Invite a member</a>
     </div>
 
     <table class="tbl">
@@ -29,11 +31,11 @@
         <tr><th>Person</th><th>Role</th><th class="right">Actions</th></tr>
       </thead>
       <tbody>
-        <tr data-member="u_1001" data-role="admin" data-self="true">
+        <tr data-member="u_1001" data-role="owner" data-self="true">
           <td>
             <div class="who">ada@northwind.example <span class="tag">You</span></div>
           </td>
-          <td><span class="pill pill-accent" data-role-pill="admin">Admin</span></td>
+          <td><span class="pill pill-accent" data-role-pill="owner">Owner</span></td>
           <td class="right">
             <button class="btn btn-ghost" data-action="change-role" data-target="u_1001">Change role</button>
             <button class="btn btn-ghost btn-danger" data-action="remove-member" data-target="u_1001">Remove</button>
@@ -47,9 +49,9 @@
             <button class="btn btn-ghost btn-danger" data-action="remove-member" data-target="u_1002">Remove</button>
           </td>
         </tr>
-        <tr data-member="u_1003" data-role="editor">
-          <td><div class="who">linus@northwind.example</div></td>
-          <td><span class="pill" data-role-pill="editor">Editor</span></td>
+        <tr data-member="u_1003" data-role="member">
+          <td><div class="who">rhea@northwind.example</div></td>
+          <td><span class="pill" data-role-pill="member">Member</span></td>
           <td class="right">
             <button class="btn btn-ghost" data-action="change-role" data-target="u_1003">Change role</button>
             <button class="btn btn-ghost btn-danger" data-action="remove-member" data-target="u_1003">Remove</button>
@@ -77,20 +79,28 @@
     parent org, the platform root, or a reseller portal) are <b>ReBAC-derived and have no membership row
     here</b>, so they do <b>not</b> appear — by omission, satisfying the "access from above is hidden"
     requirement. Platform staff (Employee) are never listed here; their inherited access is surfaced only
-    in the separate, labelled staff console (<code>design/frames/employee-console</code>). If a future admin
-    surface ever needs to show inherited access, it must be a clearly separated, labelled panel — never
-    merged into this direct-member list.
+    in the separate, labelled staff console (<code>design/frames/employee-console</code>). For the
+    <b>root/portal</b> org — where "members = everyone" — this small-team list is replaced by the
+    paginated, searchable <b>member directory</b> (<code>design/frames/member-directory</code>).
   </p>
   <p class="note">
     <b>Contract.</b> Rows come from <code>GET /v1/security/tenants/{tenantId}/members</code>
-    (<code>MemberPage</code> — cursor-paginated; "Load more" advances <code>page.cursor</code>).
-    Role pills are keyed to <code>GET /v1/security/tenants/{tenantId}/roles</code>
-    (<code>Role.key</code> → <code>Role.name</code>). A member with no roles renders no pill, never a blank cell.
-    For the <b>root/portal</b> org — where "members = everyone" — this small-team list is replaced by the
-    paginated, searchable <b>member directory</b> (<code>design/frames/member-directory</code>).
+    (<code>MemberPage</code> — cursor-paginated; "Load more" advances <code>page.cursor</code>). Each
+    member carries exactly one <code>role</code> from the <code>OrgRole</code> enum, rendered by
+    <code>RolePill</code>; an unrecognised value renders a neutral pill with its raw key, never a blank
+    cell. The self-row is tagged <b>You</b>. <b>Invitations are not here</b> — the <i>Invite a member</i>
+    action routes to the org-invitations feature (<code>design/frames/org-invitations-v2</code>, the
+    invite modal at this same route), so this console never re-implements invite/add.
+    <br /><br />
+    <b>Who sees the actions.</b> <i>Viewing</i> the member list requires only membership;
+    <i>changing a role</i> or <i>removing</i> a member requires the Permit permission
+    <code>organization:manage-members</code> (held by owner/admin). The per-row actions render only for a
+    caller who holds it — a member/viewer gets the read-only view in frame (d), and a caller who lost the
+    permission mid-session gets the in-place 403 in frame (e). The rendered affordance is never the
+    guard: the Security service checks Permit on every write.
   </p>
 
-  <nav class="pager"><a href="index.html">Index</a><a href="02-add-member.html">Next: Add member →</a></nav>
+  <nav class="pager"><a href="index.html">Index</a><a href="02-change-role.html">Next: Change role →</a></nav>
 </div>
 </body>
 </html>
