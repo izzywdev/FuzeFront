@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzefront-metered-usage"
+version = "1.0.0"
+description = "Metered usage Kafka producer for Python FuzeFront-family services -- emits billing.usage events consumed by the billing-service Stripe Meter flush. FastAPI ASGI middleware and Flask after_request helper included."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+dependencies = ["confluent-kafka>=2.3.0"]
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.100", "starlette>=0.27"]
+flask = ["flask>=2.3"]
+dev = [
+    "pytest>=8.0",
+    "fastapi>=0.100",
+    "httpx>=0.24",
+    "flask>=2.3",
+    "starlette>=0.27",
+]
+
+[tool.setuptools.packages.find]
+include = ["fuzefront_metered_usage*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
