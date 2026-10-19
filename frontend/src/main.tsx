@@ -1,3 +1,5 @@
+// FIRST: lifts a single-use ?token= out of the URL before any request/telemetry.
+import './bootCapture'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'

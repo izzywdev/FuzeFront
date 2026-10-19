@@ -53,8 +53,14 @@ COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
+COPY packages/billing-types/package.json ./packages/billing-types/
+COPY services/billing-service/package.json ./services/billing-service/
 
-RUN npm ci --workspace=services/notification-service --omit=dev --ignore-scripts
+RUN npm ci --workspace=services/notification-service --omit=dev --ignore-scripts && \
+    mkdir -p packages/telemetry/node_modules
+# npm may hoist every telemetry runtime dependency into /app/node_modules.
+# Keep the optional workspace dependency directory copyable in either
+# locked layout (same pattern as services/devportal-service/Dockerfile).
 
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
@@ -95,11 +101,18 @@ COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
+COPY packages/billing-types/package.json ./packages/billing-types/
+COPY services/billing-service/package.json ./services/billing-service/
 
 RUN npm ci --workspace=services/notification-service --ignore-scripts
 
+COPY packages/telemetry/ ./packages/telemetry/
 COPY services/notification-service/ ./services/notification-service/
 
+# @fuzefront/telemetry (index.ts's initTelemetry(), app.ts's
+# tracingMiddleware()) must be built before notification-service: its
+# package `main` points at dist/, and both call the package at module load.
+RUN cd packages/telemetry && npm install --ignore-scripts && npm run build
 RUN cd services/notification-service && npm run build
 
 # ---------- production ----------
@@ -110,7 +123,22 @@ RUN apk add --no-cache dumb-init && \
     addgroup -S notifsvc && adduser -S notifsvc -G notifsvc -u 1001
 
 COPY --from=base /app/node_modules ./node_modules
+# @fuzefront/telemetry is a `file:` dependency, so npm LINKS it —
+# node_modules/@fuzefront/telemetry is a symlink to /app/packages/telemetry
+# (NOT populated by the root node_modules copy above). package.json + dist
+# populate the symlink target; node_modules carries its RUNTIME deps (the
+# @opentelemetry/* SDK packages) for the case where they do NOT hoist to
+# /app/node_modules — mirrors services/devportal-service/Dockerfile's
+# identical treatment of @fuzefront/auth.
+COPY --from=build /app/packages/telemetry/package.json ./packages/telemetry/package.json
+COPY --from=build /app/packages/telemetry/dist ./packages/telemetry/dist
+COPY --from=base /app/packages/telemetry/node_modules ./packages/telemetry/node_modules
 COPY --from=build /app/services/notification-service/dist ./services/notification-service/dist
+# index.ts reads its own service.version via `require('../package.json').version`
+# (OTel resource attribute — npm_package_version is unset under the bare `node
+# dist/index.js` CMD below). Without this the container dies at boot with
+# "Cannot find module '../package.json'".
+COPY --from=build /app/services/notification-service/package.json ./services/notification-service/package.json
 
 # Declaration files are build output, not runtime input.
 RUN find ./services/notification-service/dist -name "*.d.ts" -type f -delete

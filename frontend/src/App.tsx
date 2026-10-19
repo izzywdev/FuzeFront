@@ -24,6 +24,8 @@ import ApplicationsPage from './pages/ApplicationsPage'
 import AddApplicationPage from './pages/AddApplicationPage'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
+import { VerifyCheckInboxPage, VerifyLandingPage, ResetPage } from './pages/AuthExperiencePages'
+import { isAuthExperienceEnabled } from '@fuzefront/auth-ui'
 import DashboardPage from './pages/DashboardPage'
 import AdminPage from './pages/AdminPage'
 import OrganizationPage from './pages/OrganizationPage'
@@ -299,6 +301,18 @@ function AppContent() {
   // Public route: invitation accept page — handle before auth check
   if (currentPath.startsWith('/invitations/')) {
     return <AcceptInvitePage />
+  }
+
+  // Public auth-experience routes (FFRNT-360) — verify-email + password reset,
+  // behind `fuzefront.auth.experience` (default OFF; pre-auth-safe resolver, see
+  // @fuzefront/auth-ui flags.ts). They run before the auth check on purpose: the
+  // check-inbox screen is reached by a freshly signed-up (already authenticated)
+  // user, a verify link may be clicked while signed in, and /reset has no
+  // session at all. Flag OFF falls through to today's behaviour, unchanged.
+  if (isAuthExperienceEnabled()) {
+    if (currentPath === '/signup/verify') return <VerifyCheckInboxPage />
+    if (currentPath === '/verify/email') return <VerifyLandingPage />
+    if (currentPath === '/reset') return <ResetPage />
   }
 
   // Public picker harness — embeddable component demo/test surface.
