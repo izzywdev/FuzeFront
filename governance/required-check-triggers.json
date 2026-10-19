@@ -29,6 +29,10 @@
     {
       "context": "gate-sealed-keys",
       "file": ".github/workflows/gate-sealed-keys.yml"
+    },
+    {
+      "context": "gate-platform-org-pin",
+      "file": ".github/workflows/gate-platform-org-pin.yml"
     }
   ]
 }

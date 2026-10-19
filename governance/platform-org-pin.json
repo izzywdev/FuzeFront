@@ -1,0 +1,22 @@
+{
+  "$comment": [
+    "Single source of truth for the platform organization id that PRODUCTION may carry in",
+    "selectionListService.platformOrgId (env SELECTION_LIST_PLATFORM_ORG_ID of selection-list-service).",
+    "Read by scripts/gate_platform_org_pin.py (CI job `gate-platform-org-pin`). Local and any other",
+    "overlay stay free to use any id; ONLY the production overlay is pinned.",
+    "",
+    "To change the pin: edit this file in a reviewed PR with explicit owner approval (CODEOWNERS",
+    "owner below). Never edit the chart to dodge the gate, and never loosen the gate's strict",
+    "comparison: the service expects the canonical TypeID, so a bare UUID, a different case or",
+    "surrounding whitespace is a different (wrong) value."
+  ],
+  "environment": "production",
+  "overlay": "deploy/helm/fuzefront/values-prod.yaml",
+  "valuesKey": "selectionListService.platformOrgId",
+  "envVar": "SELECTION_LIST_PLATFORM_ORG_ID",
+  "pinnedPlatformOrgId": "org_0000000000000000000000000g",
+  "pinnedPlatformOrgUuid": "00000000-0000-0000-0000-000000000010",
+  "rationale": "The platform organization is the only tenant in which a selection-list operator may publish a common (global) list to every organization. Its identity must therefore be the immutable root platform organization (ROOT_ORG_ID, seeded by backend/src/migrations/015_seed_root_platform_organization.ts), never an arbitrary org id: a typo or a malicious or mistaken chart edit would otherwise hand global-publish power to an ordinary org. The TypeID form is the wire form the service expects; it is the base32 encoding of the UUID above (the pin and the UUID are cross-checked by the gate).",
+  "source": "backend/src/migrations/015_seed_root_platform_organization.ts (ROOT_ORG_ID)",
+  "owner": "izzywdev"
+}

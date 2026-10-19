@@ -1,0 +1,75 @@
+name: gate-platform-org-pin
+
+# PRODUCTION may only carry the pinned platform organization id.
+#
+# selection-list-service reads SELECTION_LIST_PLATFORM_ORG_ID, rendered from the
+# Helm value selectionListService.platformOrgId. The value stays configurable per
+# environment (local/other overlays may use any id), but the production overlay
+# may only ever be the immutable root platform organization declared in
+# governance/platform-org-pin.json, because that organization can publish a
+# common (global) list to every org. scripts/gate_platform_org_pin.py checks
+# values-prod.yaml, the Helm-merged effective values and the RENDERED Deployment
+# env, and fails closed if it cannot parse or render. Rules + rationale are in
+# the script header and docs/runbooks/selection-lists-rollout.md.
+#
+# NO `paths:` FILTER, deliberately (FuzeFront#286, governance/required-check-triggers.json):
+# a path-filtered workflow never creates its check run on a PR that misses the
+# paths, and GitHub treats a required-but-never-reported context as unsatisfied,
+# so the PR would sit at "Expected" forever once an owner adds this context to the
+# branch ruleset. The job is two `helm template` renders and a few unit tests, so
+# running it on every PR costs seconds. It is still the deploy/helm/**,
+# governance/platform-org-pin.json and gate-script changes that it guards.
+#
+# Required status check context: `gate-platform-org-pin` (the job name below).
+# Adding it to the "Protect Master" ruleset is an OWNER action in branch
+# protection; it is not done by this workflow.
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gate-platform-org-pin:
+    name: gate-platform-org-pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: '3.12' }
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.16.2
+
+      # PyYAML is the only third-party import. ubuntu-latest ships it, but pin the
+      # install here so the gate never depends on a runner image detail.
+      - name: Install PyYAML
+        run: python3 -m pip install --disable-pip-version-check 'PyYAML>=6'
+
+      # The gate's own tests run FIRST, in the same job (mirrors
+      # gate-microservice-events.yml): a gate whose proof-of-failure lives in
+      # another job can rot into a vacuous pass unnoticed. A missing test file
+      # is a failure, not a skip.
+      - name: Self-test the gate (asserts it FAILS on every violation)
+        run: |
+          if [ ! -f scripts/__tests__/test_gate_platform_org_pin.py ]; then
+            echo "::error title=gate-platform-org-pin::self-test file is missing; refusing to run a gate whose proof-of-failure is absent"
+            exit 1
+          fi
+          python3 -m unittest discover -s scripts/__tests__ -p 'test_gate_platform_org_pin.py' -v
+
+      - name: Production platform organization is the pinned id
+        run: python3 scripts/gate_platform_org_pin.py

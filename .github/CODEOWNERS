@@ -32,3 +32,9 @@
 /deploy/helm/         @izzywdev
 /.github/workflows/   @izzywdev
 /.github/CODEOWNERS   @izzywdev
+# The production platform-organization pin and the gate that enforces it. Editing
+# either (or the gate's tests) changes who may hold global-publish power for
+# shared selection lists, so the merge approval IS the owner's approval.
+/governance/platform-org-pin.json                      @izzywdev
+/scripts/gate_platform_org_pin.py                      @izzywdev
+/scripts/__tests__/test_gate_platform_org_pin.py       @izzywdev

@@ -973,12 +973,24 @@ selectionListService:
   # by a template default/cast): empty makes the service fail CLOSED on every
   # platform feature (no common lists served or created), so shared lists stay
   # dark. There is deliberately NO fallback to an org typed `platform` in the
-  # org projection: that type is client-suppliable on org creation. Shared lists are additionally gated by the release flag
-  # fuzefront.selection-lists.shared-lists (default OFF). To enable, set this to
-  # the TypeID of the pinned root platform organization ROOT_ORG_ID
-  # 00000000-0000-0000-0000-000000000010 (backend/src/migrations/
-  # 015_seed_root_platform_organization.ts), i.e. "org_0000000000000000000000000g"
-  # (identical in every environment), in the target overlay.
+  # org projection: that type is client-suppliable on org creation. Shared lists
+  # are additionally gated by the release flag fuzefront.selection-lists.shared-lists
+  # (default OFF).
+  #
+  # CONFIGURABLE per environment, PINNED in production. Local and any other
+  # overlay may use any id. The PRODUCTION overlay (values-prod.yaml) may only
+  # ever be "" (service disabled, fail closed) or the immutable root platform
+  # organization ROOT_ORG_ID 00000000-0000-0000-0000-000000000010
+  # (backend/src/migrations/015_seed_root_platform_organization.ts), whose
+  # TypeID is "org_0000000000000000000000000g". CI job `gate-platform-org-pin`
+  # (scripts/gate_platform_org_pin.py) enforces that against values-prod.yaml,
+  # the Helm-merged values and the rendered Deployment env, and fails when
+  # selectionListService.enabled is true in production with any other value
+  # (including empty). The single source of truth for the pin is
+  # governance/platform-org-pin.json; changing it takes a reviewed PR with
+  # owner approval (docs/runbooks/selection-lists-rollout.md section 2.4).
+  # Never coerce or default this value in a template (CLAUDE.md "Helm values
+  # hygiene"): the comparison is strict string equality.
   platformOrgId: ""
   # @fuzefront/feature-flags client wiring (UNLEASH_URL/APP_NAME/CLIENT_TOKEN).
   # Empty unleashUrl (base default) renders no UNLEASH_* env -> in-code fail-safe

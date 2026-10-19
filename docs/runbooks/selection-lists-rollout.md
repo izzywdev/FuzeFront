@@ -74,6 +74,23 @@ Every row must hold before the final step. Rows marked IN FLIGHT must be re-chec
 | D4 | The MCP gateway (`selectionListsMcp.enabled: false`) points at host `selection-list-service` but the Service is named `fuzefront-selection-list-service` (authz review I-1c) | Keep the gateway **off** until fixed |
 | D5 | `selection_list_access` mirror lags a Security-API-only grant; app-seeded lists get no owner grant | seeding runbook section 6 |
 
+### 2.4 Platform organization: configurable everywhere, pinned in production
+
+`selectionListService.platformOrgId` (Deployment env `SELECTION_LIST_PLATFORM_ORG_ID`) names the organization whose operators may publish a **common (global) list** to every other organization. It stays **configurable per environment** (a local cluster may use any id), but **production may only carry the immutable root platform organization**, so a typo or a mistaken or malicious chart edit cannot hand global-publish power to an ordinary org.
+
+- **The pin** lives in one place: `governance/platform-org-pin.json` (`pinnedPlatformOrgId` `org_0000000000000000000000000g`, the TypeID form of `ROOT_ORG_ID` `00000000-0000-0000-0000-000000000010`, seeded by `backend/src/migrations/015_seed_root_platform_organization.ts`; rationale and owner are in the file).
+- **Empty is the default and means "fail closed"**: every platform feature is off, no common list is served or created. That is the correct state while `selectionListService.enabled` is `false`.
+- **The gate** is the CI job `gate-platform-org-pin` (`scripts/gate_platform_org_pin.py`, tests in `scripts/__tests__/test_gate_platform_org_pin.py`). It reads only the **production** overlay and prints which rule it applied. It fails when:
+  1. `values-prod.yaml` sets `platformOrgId` to anything other than `""` or exactly the pinned id (strict string equality: the bare UUID, other letter case or surrounding whitespace are rejected);
+  2. the Helm-merged effective production values disagree with rule 1 (an inherited or overridden value), or `enabled` is not a real boolean;
+  3. `selectionListService.enabled` is `true` in production while `platformOrgId` is empty or not the pinned id (an enabled production service with no platform org is an explicit failure, never a silent fail-closed deploy);
+  4. the **rendered** production manifests (`helm template` with the production overlay) carry `SELECTION_LIST_PLATFORM_ORG_ID` as anything but the pinned id (when enabled), or a probe render with the service forced on would carry a value other than `""` or the pinned id (a template or override elsewhere cannot smuggle in another org);
+  5. the pin file, a values file or the chart cannot be read, parsed or rendered. It fails closed and never skips.
+- **Enabling it in production** therefore takes two things in the same reviewed change: `selectionListService.enabled: true` (section 8) **and** `selectionListService.platformOrgId: "org_0000000000000000000000000g"` in `values-prod.yaml`, or the gate fails the PR. Shared lists additionally need the release flag `fuzefront.selection-lists.shared-lists`.
+- **Changing the pin** (this should essentially never happen) is a reviewed PR that edits `governance/platform-org-pin.json` with explicit approval of its owner (`izzywdev`; the pin file and gate script are CODEOWNERS-protected). Do not edit the chart, the gate's strict comparison or its tests to get around a failure.
+- **Local and other overlays** are not checked and may set any id.
+- **Branch protection:** adding `gate-platform-org-pin` to the required status checks of "Protect Master" is an owner action; until then the check runs on every PR and on `master` but does not block merging.
+
 ## 3. Readiness checklist (read from the repo; re-verify against live where marked)
 
 ### (a) Container image
@@ -229,13 +246,17 @@ The whole change, in `deploy/helm/fuzefront/values-prod.yaml` (the first key und
  selectionListService:
 -  enabled: false
 +  enabled: true
++  platformOrgId: "org_0000000000000000000000000g"
 ```
 
-Mechanical form (does nothing if the block has already moved; check the diff is exactly one line):
+The second line is **required by the `gate-platform-org-pin` CI job** (section 2.4): with the service enabled, production must carry exactly the pinned root platform organization, and the PR fails otherwise. It is the only value the gate accepts there.
+
+Mechanical form (does nothing if the block has already moved; check the diff is exactly the two lines above):
 
 ```
-sed -i '/^selectionListService:$/{n;s/^  enabled: false$/  enabled: true/}' deploy/helm/fuzefront/values-prod.yaml
-git diff --stat   # expect: 1 file changed, 1 insertion(+), 1 deletion(-)
+sed -i '/^selectionListService:$/{n;s/^  enabled: false$/  enabled: true\n  platformOrgId: "org_0000000000000000000000000g"/}' deploy/helm/fuzefront/values-prod.yaml
+git diff --stat   # expect: 1 file changed, 2 insertions(+), 1 deletion(-)
+python3 scripts/gate_platform_org_pin.py   # expect: PASS, RULE APPLIED enabled-requires-pinned
 ```
 
 Do **not** touch `selectionListsMcp` (it stays `false`), do not change the image tag in the same commit (the release bump owns it), and do not set any flag here.
