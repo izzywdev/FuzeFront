@@ -244,6 +244,8 @@ describe('frame 09 — autofill modal', () => {
     expect(m.getLocaleIndex).toHaveBeenCalledTimes(1)
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
 
+    // Frame 09 requires the run's summary to be readable, so completion refreshes
+    // the index BEHIND the modal and leaves the modal up; Close dismisses it.
     await waitFor(() => expect(m.getLocaleIndex).toHaveBeenCalledTimes(2))
     // the result is on screen and the dialog survived the refresh
     expect(await within(dialog).findByText(/Autofill complete: 3 translated/)).toBeInTheDocument()
@@ -271,7 +273,29 @@ describe('frame 09 — autofill modal', () => {
     const { user, dialog } = await openAutofill()
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
     expect(await screen.findByText(/Autofill complete: 3 translated/)).toBeInTheDocument()
-    expect(q('[data-items-skipped="1"]')).toHaveTextContent('1')
+    expect(q('[data-result="autofill"]', screen.getByRole('dialog'))).toBeInTheDocument()
+    expect(q('[data-items-skipped]', screen.getByRole('dialog'))).toHaveAttribute('data-items-skipped', '1')
+  })
+
+  // Regression: the refresh used to run in the FOREGROUND, so `setLoading(true)`
+  // replaced the whole panel with [data-state="loading"] and unmounted the modal
+  // (and its result state) the instant the run finished. React batched that away
+  // in jsdom with an already-resolved mock, so only a real network round-trip
+  // exposed it — hence the deferred refresh here.
+  it('the post-run refresh does not tear down the modal or flash a loading skeleton', async () => {
+    m.autofillTranslations.mockResolvedValue(RESULT(3, 1))
+    const { user, dialog } = await openAutofill()
+    const refresh = deferred<{ locales: ReturnType<typeof makeLocale>[] }>()
+    m.getLocaleIndex.mockReturnValue(refresh.promise)
+
+    await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
+    expect(await screen.findByText(/Autofill complete: 3 translated/)).toBeInTheDocument()
+    expect(q('[data-state="loading"]')).toBeNull()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    refresh.resolve({ locales: [SOURCE, makeLocale({ locale: 'fr', translated: 4, total: 4 })] })
+    await waitFor(() => expect(screen.getByText(/Autofill complete: 3 translated/)).toBeInTheDocument())
+    expect(q('[data-state="loading"]')).toBeNull()
   })
 
   it('shows "all strings already translated" when nothing was filled', async () => {

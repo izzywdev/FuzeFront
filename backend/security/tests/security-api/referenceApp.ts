@@ -15,6 +15,7 @@
 import express, { Request, Response, NextFunction } from 'express'
 import { IdentityProvider } from '../../src/providers/IdentityProvider'
 import { MockIdentityProvider, ProviderError } from './mockIdentityProvider'
+import { TokenError } from '../../src/providers/errors'
 
 const CODE_TO_STATUS: Record<string, number> = {
   NO_TOKEN: 401,
@@ -43,6 +44,7 @@ function bearer(req: Request): string | null {
 }
 
 function handle(res: Response, e: unknown) {
+  if (e instanceof TokenError) return sendError(res, e.code, e.message, 400)
   if (e instanceof ProviderError) return sendError(res, e.code, e.message, e.httpStatus)
   return sendError(res, 'UNKNOWN', 'unexpected error', 500)
 }

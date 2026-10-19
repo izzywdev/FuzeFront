@@ -70,6 +70,7 @@ export interface AuthLabels {
   toggleToSignInCta: string
   mfaNotice: string
   genericError: string
+  forgotPassword: string
 }
 
 export const DEFAULT_AUTH_LABELS: AuthLabels = {
@@ -94,6 +95,14 @@ export const DEFAULT_AUTH_LABELS: AuthLabels = {
   mfaNotice:
     'Additional verification is required to finish signing in. Please complete the verification step to continue.',
   genericError: 'Authentication failed. Please try again.',
+  forgotPassword: 'Forgot password?',
+}
+
+/** Context passed alongside the session to `onAuthenticated`. */
+export interface AuthenticatedMeta {
+  mode: AuthPanelMode
+  /** The email the user submitted. */
+  email: string
 }
 
 /** Which sign-in action is in flight — per-action so only the clicked control shows its own pending label. */
@@ -106,12 +115,23 @@ export interface AuthPanelProps {
   mode?: AuthPanelMode
   /** The injection seam — see `AuthTransport`. */
   transport: AuthTransport
-  /** Called with the established session once sign-in or sign-up succeeds. */
-  onAuthenticated: (session: AuthenticatedSession) => void
+  /**
+   * Called with the established session once sign-in or sign-up succeeds. The
+   * second argument says which path produced it (and the submitted email), so a
+   * host can route a fresh signup to email verification.
+   */
+  onAuthenticated: (session: AuthenticatedSession, meta?: AuthenticatedMeta) => void
   /** Called when `login` resolves to an MFA challenge instead of a session. */
   onMfaRequired?: (challenge: MfaRequiredChallenge) => void
   /** Show the Google button. Only rendered when this is true AND `transport.startSocial` is present AND `getAuthMethods()` advertises `google` in `social`. Defaults to `true`. */
   social?: boolean
+  /**
+   * When set, sign-in mode shows a "Forgot password?" link to this href
+   * (`fuzefront.auth.experience`). Omit to render no link (today's behaviour).
+   */
+  forgotPasswordHref?: string
+  /** Optional SPA handler for the forgot-password link (the href is still rendered for semantics/middle-click). */
+  onForgotPassword?: () => void
   /** Override any subset of the default copy. */
   labels?: Partial<AuthLabels>
 }

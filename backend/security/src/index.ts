@@ -30,6 +30,7 @@ import { tenantContext } from './middleware/tenant-context'
 import { startOutboxRelayIfConfigured } from './services/outboxRelay'
 import { initFeatureFlags } from './utils/feature-flags'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
+import type { EntityType } from '@izzywdev/fuzefront-identity'
 import type { OutboxRelayHandle } from '@fuzefront/core'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
@@ -156,11 +157,22 @@ async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
 
-    // Step 5 (FFRNT-185): dual-accept windows closed.
-    // All entity types now use mintId() for creation and store bare UUIDs;
-    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
-    // need to be accepted at the request boundary.
-    configureIdentity({ legacyUuidTypes: new Set() })
+    // Dual-accept window for the platform spine types (FFRNT-185 / §8).
+    // The input boundary must track the OUTPUT wire form, governed by the
+    // `fuzefront.identity.prefixed-ids` release flag. That flag defaults OFF
+    // and is NOT force-enabled in prod, so API responses still emit BARE UUIDs.
+    // Closing this window to prefixed-only while output is bare rejects every
+    // id the frontend round-trips. parseId still accepts prefixed ids too, so
+    // listing these is purely additive; EMPTY this set only once prefixed-id
+    // OUTPUT is confirmed GA (governance/identifier-standard.md §8).
+    configureIdentity({
+      legacyUuidTypes: new Set<EntityType>([
+        'organization',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({
