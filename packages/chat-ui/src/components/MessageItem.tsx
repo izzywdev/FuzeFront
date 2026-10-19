@@ -3,13 +3,15 @@ import type { UiMessage } from '../hooks/types';
 import { Citations } from './Citations';
 import { ConfirmationCard } from './ConfirmationCard';
 import { FeedbackButtons } from './FeedbackButtons';
-import { renderInlineMarkdown } from '../lib/markdown';
+import { renderMessageMarkdown } from '../lib/markdown';
 
 export interface MessageItemProps {
   message: UiMessage;
   onApprove: (confirmationId: string) => void;
   onCancel: (confirmationId: string) => void;
   onFeedback: (messageId: string, rating: 'positive' | 'negative') => void;
+  onCodeAction?: (code: string, language: string) => void;
+  codeActionLabel?: string;
 }
 
 /** Slack/WhatsApp-style short local time, e.g. "10:42 AM". Undefined if unparseable. */
@@ -21,7 +23,14 @@ function formatMessageTime(createdAt?: string): string | undefined {
 }
 
 /** A single chat turn: bubble, streaming caret, citations, confirmations, feedback. */
-export function MessageItem({ message, onApprove, onCancel, onFeedback }: MessageItemProps) {
+export function MessageItem({
+  message,
+  onApprove,
+  onCancel,
+  onFeedback,
+  onCodeAction,
+  codeActionLabel,
+}: MessageItemProps) {
   const { strings } = useChatI18n();
   const isAssistant = message.role === 'assistant';
   const roleLabel = isAssistant ? strings.assistantRole : strings.userRole;
@@ -43,7 +52,7 @@ export function MessageItem({ message, onApprove, onCancel, onFeedback }: Messag
       </div>
 
       <div className="ffc-bubble">
-        {renderInlineMarkdown(message.content)}
+        {renderMessageMarkdown(message.content, { onCodeAction, codeActionLabel })}
         {message.streaming ? (
           <span className="ffc-caret" aria-hidden="true" data-testid="ffc-caret" />
         ) : null}
