@@ -23,6 +23,7 @@ export class MeteringClient {
   private readonly producer: Producer;
   private readonly topic: string;
   private connectPromise: Promise<void> | null = null;
+  private connected = false;
 
   constructor(private readonly config: MeteringClientConfig) {
     this.topic = config.topic ?? DEFAULT_TOPIC;
@@ -45,7 +46,9 @@ export class MeteringClient {
   async emit(event: UsageEvent): Promise<void> {
     try {
       if (!this.connectPromise) {
-        this.connectPromise = this.producer.connect();
+        this.connectPromise = this.producer.connect().then(() => {
+          this.connected = true;
+        });
       }
       await this.connectPromise;
       await this.producer.send({
@@ -62,9 +65,11 @@ export class MeteringClient {
         ],
       });
     } catch (err) {
-      // Reset so the next emit() can attempt a fresh connection rather than
-      // re-awaiting the same rejected promise indefinitely.
-      this.connectPromise = null;
+      // Only reset connectPromise when the connection itself failed — if send()
+      // threw, the producer IS connected and flush() must still disconnect it.
+      if (!this.connected) {
+        this.connectPromise = null;
+      }
       // Metering MUST NOT fail requests — swallow and log only.
       // eslint-disable-next-line no-console
       console.error(
@@ -91,7 +96,10 @@ export class MeteringClient {
         this.connectPromise = null;
         return;
       }
+    }
+    if (this.connected) {
       await this.producer.disconnect();
+      this.connected = false;
       this.connectPromise = null;
     }
   }

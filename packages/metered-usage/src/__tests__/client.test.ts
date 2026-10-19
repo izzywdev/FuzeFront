@@ -168,6 +168,15 @@ describe('MeteringClient.flush()', () => {
     await client.flush();
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
+
+  it('still calls disconnect() when send() fails (producer IS connected)', async () => {
+    mockSend.mockRejectedValueOnce(new Error('send failed'));
+    const client = makeClient();
+    await client.emit(sampleEvent); // connect succeeds, send fails — still connected
+    expect(mockDisconnect).not.toHaveBeenCalled();
+    await client.flush();
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
