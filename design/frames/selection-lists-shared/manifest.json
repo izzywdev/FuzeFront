@@ -378,8 +378,9 @@
       "label": "(1d) RTL + 375 px — list detail",
       "route": "/settings/selection-lists/:listId",
       "flow": "shared-read",
+      "viewport": "mobile",
       "summary": "The common-list read-only detail at a 375 CSS-px viewport in English (LTR), Hebrew and Arabic (RTL): collapsed side nav, full-width Fork CTA above the notice, id column dropped, keys/codes as LTR islands, plus the rules the implementation must keep.",
-      "acceptanceNotes": "With locale he or ar the package root has dir=rtl; all layout uses logical properties; keys, codes, ids render dir=ltr with bidi isolation; item codes are never translated; labels come from the service in the requested locale. At ≤ 40em: side nav collapses, item-id column hidden, primary action full-width, touch targets ≥ --space-10, no horizontal scroll at 375 px; the Fork CTA box lies inside the viewport. Non-directional glyphs (◎, ⑂) are not mirrored.",
+      "acceptanceNotes": "With locale he or ar the package root has dir=rtl; all layout uses logical properties; keys, codes, ids render dir=ltr with bidi isolation; item codes are never translated; labels come from the service in the requested locale. At ≤ 40em: side nav collapses, item-id column hidden, primary action full-width, touch targets ≥ the DS --touch-target (44 px), no horizontal scroll at 375 px; the Fork CTA box lies inside the viewport. Non-directional glyphs (◎, ⑂) are not mirrored.",
       "testHooks": [
         "[data-frame='11-rtl-mobile-detail']",
         "[data-panel='common-detail-mobile']",
@@ -400,6 +401,7 @@
       "label": "(2d) RTL + 375 px — fork dialog",
       "route": "/settings/selection-lists/:listId",
       "flow": "fork",
+      "viewport": "mobile",
       "summary": "The fork confirmation as the DS BottomSheet at 375 px in English, Hebrew and Arabic: condensed facts, the visibility choice, the no-sync note and stacked actions, with locale quotation marks and <bdi>-isolated org names and keys.",
       "acceptanceNotes": "Below 40em ForkListDialog renders data-presentation=bottom-sheet with identical content order, hooks and focus rules. At 375×667 the visibility choice, the no-sync note and both actions are visible without scrolling; actions stack with the primary bottom-most and full width (same in RTL). Org names and keys inside RTL sentences are isolated. Swipe-down / scrim dismiss only while idle, never while submitting.",
       "testHooks": [
@@ -415,6 +417,101 @@
         "[data-action='confirm-fork']",
         "[data-action='cancel']",
         "[data-rules='rtl-mobile-fork']"
+      ]
+    },
+    {
+      "id": "13-rtl-mobile-provenance",
+      "file": "13-rtl-mobile-provenance.html",
+      "label": "(3b) RTL + 375 px — provenance & revert",
+      "route": "/settings/selection-lists/:listId",
+      "flow": "fork-provenance",
+      "viewport": "mobile",
+      "summary": "The fork detail at 375 px in English and Hebrew (RTL): the provenance card stacked (behind; comparison unavailable — the only state reachable under 4.1.0), the gated header action as a full-width button, the revert-to-common and archive-fork (source archived) confirmations as bottom sheets, and checking / check failed / source gone / 403 states.",
+      "acceptanceNotes": "At ≤ 40em the provenance card stacks glyph + title, the recorded facts as a two-column definition list, then View common list full-width; badges wrap; no horizontal scroll at 375 px. The header action follows the same gate as frame 3a: 'Revert to common list…' only after the source read returned an active list, 'Archive fork…' when archived or 404, none while checking or failed. Both confirmations are bottom sheets (role=alertdialog) carrying frame 3a's consequence text, actions stacked full-width with the destructive action last and the safe action holding initial focus; swipe-down dismisses only while idle. With locale he/ar dir=rtl; dates, revisions, keys and names are bidi-isolated; ⑂ is not mirrored. Touch targets ≥ the DS --touch-target (44 px).",
+      "testHooks": [
+        "[data-frame='13-rtl-mobile-provenance']",
+        "[data-device='375']",
+        "[data-panel='fork-detail-mobile']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-panel='fork-provenance']",
+        "[data-behind-state='behind']",
+        "[data-behind-state='unknown']",
+        "[data-behind-state='checking']",
+        "[data-behind-state='error']",
+        "[data-behind-state='source-gone']",
+        "[data-revert-gate='source-active']",
+        "[data-revert-gate='source-unavailable']",
+        "[data-revert-gate='source-unknown']",
+        "[data-confirm='revert-to-common'][data-presentation='bottom-sheet']",
+        "[data-confirm='archive-fork-no-common']",
+        "[data-consequence='no-effective-list']",
+        "[data-initial-focus='true']",
+        "[data-case='revert-not-owner']",
+        "[data-action='retry']",
+        "[data-rules='rtl-mobile-provenance']"
+      ]
+    },
+    {
+      "id": "14-rtl-mobile-visibility",
+      "file": "14-rtl-mobile-visibility.html",
+      "label": "(4b) RTL + 375 px — visibility control",
+      "route": "/settings/selection-lists/:listId/access",
+      "flow": "visibility",
+      "viewport": "mobile",
+      "summary": "VisibilityControl at 375 px in English, Hebrew and Arabic (RTL): full-width radio cards at the top of the Access tab, the organization → private confirmation as a bottom sheet (he), the read-only statement plus saving / saved / 403 (ar), the platform-only publish confirmation with the typed key as a bottom sheet, and loading / error / publishing states.",
+      "acceptanceNotes": "At ≤ 40em the visibility options render as full-width radio cards (DS RadioCardGroup) ≥ 44 px; customer organizations never see the platform option. Organization → Private opens a bottom sheet with frame 4a's consequence lines (fork lines only when forked_from is set) and Cancel holding initial focus; Private → Organization saves directly and toasts. Saving locks the options; 403 keeps the previous setting with the owner-only message. Non-owners see a read-only statement, not a disabled form. Platform publish is a bottom sheet whose key input is dir=ltr, monospaced, with autocapitalize/autocorrect/spellcheck off; Publish enables only on an exact key match and both actions disable while publishing. RTL: names and keys bidi-isolated, locale quotation marks. No horizontal scroll at 375 px.",
+      "testHooks": [
+        "[data-frame='14-rtl-mobile-visibility']",
+        "[data-device='375']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-locale='ar'][data-dir='rtl']",
+        "[data-panel='visibility-control']",
+        "[data-control='visibility']",
+        "[data-visibility-option='private']",
+        "[data-visibility-option='org'][aria-checked='true']",
+        "[data-confirm='visibility-to-private'][data-presentation='bottom-sheet']",
+        "[data-consequence='stored-fork']",
+        "[data-initial-focus='true']",
+        "[data-state='read-only']",
+        "[data-state='saving']",
+        "[data-result='visibility-saved']",
+        "[data-case='visibility-not-owner']",
+        "[data-confirm='publish-platform'][data-presentation='bottom-sheet']",
+        "[data-confirm-input='key']",
+        "[data-confirm-state='publishing']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-rules='rtl-mobile-visibility']"
+      ]
+    },
+    {
+      "id": "15-rtl-mobile-picker",
+      "file": "15-rtl-mobile-picker.html",
+      "label": "(5c) RTL + 375 px — picker, effective list",
+      "route": "/embed/selection-list-picker",
+      "flow": "effective-picker",
+      "viewport": "mobile",
+      "summary": "The picker bound by key at 375 px in a consuming form, in English, Hebrew and Arabic (RTL): the org's fork winning with the opt-in source caption, the common list for an org without a fork, a stored common id rendering the fork's label with no visible change, the no-effective-list state, and loading / error / resolving states.",
+      "acceptanceNotes": "Which list a key means is decided by one service lookup at every width; the phone layout never fetches or shows a second list, and a failed lookup never falls back to a different list. Layout follows selection-lists frame 4d (full field width, menu inline under the control, options ≥ 44 px). The opt-in showSource caption wraps under the control and never widens the field; absent without showSource. A redirected stored value shows the fork label with no badge, notice or dirty marker and submits the stored id unless the user picks. No effective list renders 'List unavailable' in place and does not throw. With dir=rtl from the host the picker mirrors; keys and org names are bidi-isolated; ◎ / ⑂ are not mirrored. No horizontal scroll at 375 px.",
+      "testHooks": [
+        "[data-frame='15-rtl-mobile-picker']",
+        "[data-device='375']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-locale='ar'][data-dir='rtl']",
+        "[data-panel='picker']",
+        "[data-effective-source='own']",
+        "[data-effective-source='platform']",
+        "[data-effective-source-caption='own']",
+        "[data-effective-source-caption='platform']",
+        "[data-combo-menu][data-menu-placement='inline']",
+        "[data-redirected='true']",
+        "[data-persisted]",
+        "[data-state='not-found']",
+        "[data-error='NOT_FOUND']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-state='resolving']",
+        "[data-rules='rtl-mobile-picker']"
       ]
     }
   ],
@@ -432,6 +529,13 @@
           "03-readonly-states",
           "11-rtl-mobile-detail"
         ],
+        "responsive": {
+          "mobileFrame": "11-rtl-mobile-detail",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
         "implementation": {
           "paths": [
             "packages/selection-lists-ui/src/shared-lists/core/**",
@@ -463,6 +567,13 @@
           "06-fork-results",
           "12-rtl-mobile-fork"
         ],
+        "responsive": {
+          "mobileFrame": "12-rtl-mobile-fork",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
         "implementation": {
           "paths": [
             "packages/selection-lists-ui/src/shared-lists/core/**",
@@ -487,8 +598,16 @@
         "story": "design-record task 13 → 14 (SL9)",
         "contractDependency": "SelectionList.revision (read-only integer ≥ 1, the event contract's listRevision) is not in contract 4.1.0; until an additive MINOR adds it, only the 'comparison unavailable' state of BehindSourceIndicator is reachable. Owner: contract-designer.",
         "frames": [
-          "07-fork-detail"
+          "07-fork-detail",
+          "13-rtl-mobile-provenance"
         ],
+        "responsive": {
+          "mobileFrame": "13-rtl-mobile-provenance",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
         "implementation": {
           "paths": [
             "packages/selection-lists-ui/src/shared-lists/core/**",
@@ -511,8 +630,16 @@
         "story": "design-record task 13 → 14 (SL9)",
         "orchestratorNote": "Mounted at the top of the existing SelectionListAccessFlow (wiring only).",
         "frames": [
-          "08-visibility-control"
+          "08-visibility-control",
+          "14-rtl-mobile-visibility"
         ],
+        "responsive": {
+          "mobileFrame": "14-rtl-mobile-visibility",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
         "implementation": {
           "paths": [
             "packages/selection-lists-ui/src/shared-lists/core/**",
@@ -535,8 +662,16 @@
         "routeNote": "SelectionListPicker is embeddable; the route is the existing demo/e2e harness. The existing, approved picker is EXTENDED; new logic lives in src/shared-lists/picker/**.",
         "frames": [
           "09-picker-effective",
-          "10-picker-stored-values"
+          "10-picker-stored-values",
+          "15-rtl-mobile-picker"
         ],
+        "responsive": {
+          "mobileFrame": "15-rtl-mobile-picker",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
         "implementation": {
           "paths": [
             "packages/selection-lists-ui/src/shared-lists/core/**",
@@ -621,5 +756,5 @@
       "rule": "core/** is deliberately approval-independent and is the ONLY path every flow claims: approving any one flow unlocks it. It therefore holds no component that renders UI — types, the api wrappers, hooks, the feature provider and their unit tests only. A rendering component placed in core/** is a review defect; it belongs in its flow's directory, which only that flow claims."
     }
   },
-  "stamp": "3b0be59228e4c40f0fe1795e24db73db7736f29f6195c3677af3b8e1597541fd"
+  "stamp": "9d9ffab0e3b288a8eda6e08da301ce3b8b343b15f3b5760e5df6f0528c832aac"
 }

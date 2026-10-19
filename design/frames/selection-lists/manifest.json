@@ -399,6 +399,133 @@
         "[data-locale='ja']",
         "[data-persisted]"
       ]
+    },
+    {
+      "id": "15-mobile-list-management",
+      "file": "15-mobile-list-management.html",
+      "label": "(1g) List management — 375 px",
+      "route": "/settings/selection-lists",
+      "flow": "list-management",
+      "viewport": "mobile",
+      "summary": "Flow 1 at a 375 CSS-px phone viewport in English (LTR) and Hebrew (RTL): the list index and the value editor as one card per row, row actions in a 'More actions' bottom sheet, the add/edit value dialog as the DS BottomSheet, touch reorder (long-press + Up / Down / Done), the quota wall with its reason as visible text, and the loading / empty / error / 404 states.",
+      "acceptanceNotes": "At ≤ 40em the side nav collapses to the menu button (DS Drawer) and every table in the flow renders as one card per row; no horizontal scroll at 375 px; every interactive control is ≥ the DS --touch-target (44 px). Row actions open a sheet listing exactly the desktop actions (Edit / Archive for active, Restore / Delete… for archived); Delete still requires typed confirmation. A lifted row exposes Up / Down / Done buttons equivalent to the keyboard contract; each move is announced; the drop sends the full permutation; a failed save restores the previous order. Dialogs render as a bottom sheet (max height --sheet-max-h) with stacked full-width actions, code locked on edit and the sli_ id shown. A quota-disabled New list has a visible aria-describedby reason under it (no tooltip on touch). With locale he/ar dir=rtl comes from the locale, keys/codes are LTR islands, the row chevron mirrors.",
+      "testHooks": [
+        "[data-frame='15-mobile-list-management']",
+        "[data-device='375']",
+        "[data-panel='list-index-mobile']",
+        "[data-panel='value-editor-mobile']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-action='open-drawer']",
+        "[data-action='new-list']",
+        "[data-action='value-actions']",
+        "[data-drag-handle]",
+        "[data-control='touch-reorder']",
+        "[data-action='move-up']",
+        "[data-action='move-down']",
+        "[data-dialog='value'][data-presentation='bottom-sheet']",
+        "[data-dialog='value-actions']",
+        "[data-reason='quota']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-state='not-found']",
+        "[data-rules='mobile-list-management']"
+      ]
+    },
+    {
+      "id": "16-mobile-translation-workbench",
+      "file": "16-mobile-translation-workbench.html",
+      "label": "(2d) Translation workbench — 375 px",
+      "route": "/settings/selection-lists/:listId/translations",
+      "flow": "translation-workbench",
+      "viewport": "mobile",
+      "summary": "Flow 2 at 375 px in English, Hebrew (RTL chrome) and Arabic (RTL target): the locale index as one column, the bilingual editor with source stacked above translation, the sticky Save all / Autofill bar, the autofill confirmation as a bottom sheet, and loading / autofill running / partial failure / save failed / 403 read-only states.",
+      "acceptanceNotes": "At ≤ 40em the locale grid is one column and each editor row stacks the read-only source above the translation input; the source is never hidden. Save all and Autofill missing sit in a sticky bar above the home-indicator inset; per-row actions are full-width and ≥ 44 px. RTL is per cell: in a Hebrew UI editing Arabic the chrome is rtl, the English source cell is dir=ltr and the target input dir=rtl. The autofill bottom sheet states the count and source locale, guarantees human strings survive (service-enforced), defaults overwrite_machine off, shows determinate progress while running and keeps written rows on partial failure with retry-remaining. A failed save keeps the typed edit marked unsaved; without translate the inputs are disabled with the reason and no save bar. No horizontal scroll at 375 px.",
+      "testHooks": [
+        "[data-frame='16-mobile-translation-workbench']",
+        "[data-device='375']",
+        "[data-panel='translation-index-mobile']",
+        "[data-panel='locale-editor-mobile']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-source-dir='ltr']",
+        "[dir='rtl'][data-locale='ar']",
+        "[data-translation-input='item']",
+        "[data-warning='source-changed']",
+        "[data-control='editor-actions']",
+        "[data-action='save-all']",
+        "[data-action='autofill']",
+        "[data-dialog='autofill'][data-presentation='bottom-sheet']",
+        "[data-guarantee='human-preserved']",
+        "[data-state='running']",
+        "[data-error='autofill-partial']",
+        "[data-error='save-failed']",
+        "[data-error='FORBIDDEN']",
+        "[data-rules='mobile-translation-workbench']"
+      ]
+    },
+    {
+      "id": "17-mobile-access-control",
+      "file": "17-mobile-access-control.html",
+      "label": "(3c) Access control — 375 px",
+      "route": "/settings/selection-lists/:listId/access",
+      "flow": "access-control",
+      "viewport": "mobile",
+      "summary": "Flow 3 at 375 px in English and Hebrew (RTL): one card per grant with a full-width role select and a touch-sized Remove, the 409 last-owner refusal inline on the sole owner's card, the role matrix as one row per role, Add person as a bottom sheet with org-scoped search and role radio cards, and loading / empty / error / 403 read-only states.",
+      "acceptanceNotes": "At ≤ 40em each grant renders as a card (name, email as an LTR island, granted-by/when, full-width role select, Remove ≥ 44 px whose accessible name includes the person). Demoting or removing the sole list-owner returns 409 CONFLICT shown inside that card: select reverted to list-owner, reason linked via aria-describedby and announced with role=alert — never a transient toast, never pre-emptively hidden controls. The role matrix renders as one row per role, no sideways scroll. Add person is a bottom sheet: members of the caller's org only, already-granted members visible but not selectable, roles as a radio list with descriptions (roles never stack), confirm names the person and role. Without manage_access, Add person is disabled with a visible reason and selects are disabled. No horizontal scroll at 375 px.",
+      "testHooks": [
+        "[data-frame='17-mobile-access-control']",
+        "[data-device='375']",
+        "[data-panel='access-mobile']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-grant='usr_01h455vb4pex5vsknk084sn02q']",
+        "[data-sole-owner='true']",
+        "[data-role-select]",
+        "[data-action='revoke-access']",
+        "[data-action='add-access']",
+        "[data-case='last-owner']",
+        "[data-error='CONFLICT']",
+        "[data-panel='role-matrix']",
+        "[data-dialog='add-access'][data-presentation='bottom-sheet']",
+        "[data-already-granted='true']",
+        "[data-control='role']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-error='FORBIDDEN']",
+        "[data-rules='mobile-access-control']"
+      ]
+    },
+    {
+      "id": "18-mobile-picker",
+      "file": "18-mobile-picker.html",
+      "label": "(4d) Picker — 375 px",
+      "route": "/embed/selection-list-picker",
+      "flow": "picker",
+      "viewport": "mobile",
+      "summary": "Flow 4 at 375 px inside a consuming product's form (not the shell) in English and Arabic (RTL): single select with the menu inline under the control, multi select with wrapping chips and a full-width Clear all, archived and purged stored values, and loading / empty / error / 404 states.",
+      "acceptanceNotes": "The picker takes the host field's width and imposes no minimum width that scrolls the host page at 375 px. Below 40em the menu opens inline in the flow under the control (data-menu-placement=inline) so an overflow:hidden host cannot clip it and the on-screen keyboard cannot cover it; the filter keeps focus. Control, filter and options are ≥ the DS --touch-target (44 px); chip remove targets are padded to ≥ --space-6; Clear all is its own full-width button. With dir=rtl from the host, label/value/options align to the start and the caret sits at the inline end; ids stay LTR. The form still submits the item id only; archived stored values render greyed with their real label and are not offered; purged ids render 'Unknown value' and keep the id; no state throws into the host.",
+      "testHooks": [
+        "[data-frame='18-mobile-picker']",
+        "[data-device='375']",
+        "[data-panel='picker-mobile']",
+        "[data-mode='single']",
+        "[data-mode='multi']",
+        "[data-locale='ar'][data-dir='rtl']",
+        "[data-combo-control]",
+        "[data-combo-menu][data-menu-placement='inline']",
+        "[data-combo-search]",
+        "[data-selected-label]",
+        "[data-chips]",
+        "[data-action='clear-all']",
+        "[data-persisted]",
+        "[data-case='archived']",
+        "[data-case='purged']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-state='not-found']",
+        "[data-rules='mobile-picker']"
+      ]
     }
   ],
   "build": {
@@ -414,8 +541,16 @@
           "03-list-detail",
           "04-value-modal",
           "05-reorder",
-          "06-quota"
+          "06-quota",
+          "15-mobile-list-management"
         ],
+        "responsive": {
+          "mobileFrame": "15-mobile-list-management",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
         "approved": true,
         "approvedBy": "izzywdev",
         "approvedAt": "2026-08-18T12:10:06.026Z"
@@ -428,8 +563,16 @@
         "frames": [
           "07-locale-index",
           "08-locale-editor",
-          "09-autofill-modal"
+          "09-autofill-modal",
+          "16-mobile-translation-workbench"
         ],
+        "responsive": {
+          "mobileFrame": "16-mobile-translation-workbench",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
         "approved": true,
         "approvedBy": "izzywdev",
         "approvedAt": "2026-08-18T12:11:53.121Z"
@@ -441,8 +584,16 @@
         "story": "S7 + S9",
         "frames": [
           "10-access-panel",
-          "11-add-access-modal"
+          "11-add-access-modal",
+          "17-mobile-access-control"
         ],
+        "responsive": {
+          "mobileFrame": "17-mobile-access-control",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
         "approved": true,
         "approvedBy": "izzywdev",
         "approvedAt": "2026-08-18T12:11:38.689Z"
@@ -456,8 +607,16 @@
         "frames": [
           "12-picker-single",
           "13-picker-multi",
-          "14-picker-archived"
+          "14-picker-archived",
+          "18-mobile-picker"
         ],
+        "responsive": {
+          "mobileFrame": "18-mobile-picker",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
         "approved": true,
         "approvedBy": "izzywdev",
         "approvedAt": "2026-08-18T12:12:59.463Z"
@@ -488,5 +647,5 @@
     ],
     "designSystemAdditionsNote": "Composed locally in frame.css for the frames ONLY. frontend-engineer is the sole editor of design-system/ and adds these as a foundation PR before or alongside the feature UI — they must not be re-implemented as one-offs in feature code. product-designer specifies the primitives; it does not write them."
   },
-  "stamp": "33b99baadacd5fa728ed3842cc1f73d57f56ca4806b8c9038248fe5d8ab7fc41"
+  "stamp": "a8c6862745e31784dab697cee9fad987e9b62caa2b8444db017ccafc8fc5410d"
 }

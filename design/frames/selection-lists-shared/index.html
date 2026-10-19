@@ -11,7 +11,7 @@
 <div class="ix-wrap" data-frame="index">
   <div class="ix-eyebrow">Design-first gate · UX approval · SL9 · contract 4.1.0 · design-record task 13</div>
   <h1>Selection Lists — shared &amp; common lists, copy-on-write fork</h1>
-  <p class="ix-lead">Twelve navigable frames for what a member sees when their organization reads lists it doesn't own: the common-list
+  <p class="ix-lead">Fifteen navigable frames — every flow at desktop and at 375 px, in English and right-to-left Hebrew / Arabic — for what a member sees when their organization reads lists it doesn't own: the common-list
     badge and read-only detail, the “Fork to edit” path from a <code class="sl-code">409 fork_required</code>, the fork confirmation and every
     answer it can get, the fork's provenance and “behind source” indicator, the owner's visibility control, and the picker resolving the
     <b>effective</b> list by key. Every state is contract — loading, empty, error, the fail-closed refusals, and the flag-OFF absence.
@@ -89,6 +89,8 @@
     <div class="ix-grid">
       <a href="07-fork-detail.html" class="ix-card" data-frame-link><div class="step">Frame 3a</div><h3>Provenance, behind source, revert</h3>
         <p>Behind / up to date / checking / source archived / source gone / check failed / comparison unavailable; archive-to-revert gated on an active source, archive with the no-list consequence, 403.</p></a>
+      <a href="13-rtl-mobile-provenance.html" class="ix-card" data-frame-link data-viewport="mobile"><div class="step">Frame 3b</div><h3>RTL + 375 px — provenance &amp; revert</h3>
+        <p>English and Hebrew at phone width: stacked provenance card, gated full-width action, both archive confirms as bottom sheets.</p></a>
     </div>
   </section>
 
@@ -105,6 +107,8 @@
     <div class="ix-grid">
       <a href="08-visibility-control.html" class="ix-card" data-frame-link><div class="step">Frame 4a</div><h3>Visibility control</h3>
         <p>Private ↔ organization, saving / saved / 403, read-only for non-owners, loading / error, platform publish, locked, flag OFF.</p></a>
+      <a href="14-rtl-mobile-visibility.html" class="ix-card" data-frame-link data-viewport="mobile"><div class="step">Frame 4b</div><h3>RTL + 375 px — visibility control</h3>
+        <p>English, Hebrew and Arabic: radio cards, make-private and publish confirms as bottom sheets, LTR typed key.</p></a>
     </div>
   </section>
 
@@ -123,6 +127,8 @@
         <p>Org with a fork vs one without, private and archived forks, loading / error / no list / flag OFF.</p></a>
       <a href="10-picker-stored-values.html" class="ix-card" data-frame-link><div class="step">Frame 5b</div><h3>Stored values across a fork</h3>
         <p><code>effective_item_id</code> redirect, every resolve outcome, resolving and resolve-failed.</p></a>
+      <a href="15-rtl-mobile-picker.html" class="ix-card" data-frame-link data-viewport="mobile"><div class="step">Frame 5c</div><h3>RTL + 375 px — picker, effective list</h3>
+        <p>English, Hebrew and Arabic: fork vs common list, source caption, redirected stored value, no effective list.</p></a>
     </div>
   </section>
 
@@ -163,6 +169,15 @@
         <span class="ix-chip">SelectionListIndex</span><span class="ix-chip">SelectionListDetail</span><span class="ix-chip">ValueEditor</span>
         <span class="ix-chip">TranslationWorkbench (read-only mode: locale index + read-only locale view; ForkRequiredBanner)</span><span class="ix-chip">AccessPanel</span>
         <span class="ix-chip">SelectionListPicker (getEffectiveList, onEffectiveValue, showSource)</span>
+      </dd>
+      <dt>Viewports — every flow is frozen at desktop and at 375 px (manifest <code>build.flows[].responsive</code>)</dt>
+      <dd>
+        <span class="ix-chip" data-build-viewport="shared-read">shared-read → 11-rtl-mobile-detail</span>
+        <span class="ix-chip" data-build-viewport="fork">fork → 12-rtl-mobile-fork</span>
+        <span class="ix-chip" data-build-viewport="fork-provenance">fork-provenance → 13-rtl-mobile-provenance</span>
+        <span class="ix-chip" data-build-viewport="visibility">visibility → 14-rtl-mobile-visibility</span>
+        <span class="ix-chip" data-build-viewport="effective-picker">effective-picker → 15-rtl-mobile-picker</span>
+        <span class="ix-chip">same components at both widths · reuse BottomSheet, Drawer, --touch-target</span>
       </dd>
       <dt>Packages</dt>
       <dd>

@@ -443,7 +443,8 @@ a.btn { text-decoration: none; display: inline-block; }
 .sl-device .page-title { font-size: var(--text-xl); }
 .sl-device .sl-head__meta { margin-bottom: var(--space-4); }
 .sl-device .sl-table td, .sl-device .sl-table th { padding: var(--space-3); }
-.sl-device .btn { width: 100%; text-align: center; padding-block: var(--space-3); }
+/* touch target: the DS --touch-target (44 px) = 11 × --space-1 */
+.sl-device .btn { width: 100%; text-align: center; padding-block: var(--space-3); min-height: calc(var(--space-1) * 11); }
 .sl-device .sl-head__actions { width: 100%; }
 /* bottom sheet: the fork dialog at <= 40em becomes the DS BottomSheet */
 .sl-device__screen--sheet { display: flex; flex-direction: column; justify-content: flex-end; padding: 0; }
