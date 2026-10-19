@@ -1,0 +1,26 @@
+<!-- @dsCard group="Core" height=140 -->
+<style>
+  body { margin: 0; padding: 28px; background: var(--bg-primary); display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; font-family: var(--font-sans); font-size: 0.75rem; font-weight: 500; letter-spacing: 0.04em; line-height: 1.4; white-space: nowrap; border-radius: var(--radius-pill); text-transform: uppercase; border: 1px solid transparent; }
+  .badge.mono { font-family: var(--font-mono); letter-spacing: 0; text-transform: none; }
+  .neutral { color: var(--text-secondary); background: var(--bg-quaternary); border-color: var(--border-color); }
+  .accent  { color: var(--accent-color); background: var(--accent-soft); }
+  .info    { color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 14%, transparent); }
+  .success { color: var(--success-color); background: color-mix(in srgb, var(--success-color) 14%, transparent); }
+  .warning { color: var(--warning-color); background: color-mix(in srgb, var(--warning-color) 14%, transparent); }
+  .error   { color: var(--error-color); background: color-mix(in srgb, var(--error-color) 14%, transparent); }
+  .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+</style>
+<div class="row">
+  <span class="badge neutral">Neutral</span>
+  <span class="badge accent">Accent</span>
+  <span class="badge info">Signal</span>
+  <span class="badge success"><span class="dot"></span>Success</span>
+  <span class="badge warning">Warning</span>
+  <span class="badge error">Error</span>
+</div>
+<div class="row">
+  <span class="badge mono accent">module-federation</span>
+  <span class="badge mono neutral">scope:read</span>
+</div>

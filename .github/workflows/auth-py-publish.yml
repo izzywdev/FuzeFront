@@ -1,0 +1,125 @@
+name: Publish fuzefront-auth (Python)
+
+# Builds the wheel + sdist for packages/auth-py and attaches them to a GitHub
+# Release, so Python services in other family repos install a PINNED artifact.
+# Mirrors service-auth-py-publish.yml (see its header for why a Release asset
+# and not a registry).
+#
+# Consumers install:
+#   pip install https://github.com/izzywdev/FuzeFront/releases/download/auth-py-vX.Y.Z/fuzefront_auth-X.Y.Z-py3-none-any.whl
+
+on:
+  push:
+    tags: ['auth-py-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (must match pyproject.toml)'
+        required: true
+
+permissions:
+  contents: write # create the Release + upload assets
+
+concurrency:
+  group: auth-py-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with: { python-version: '3.12' }
+
+      - name: Verify the tag matches pyproject version
+        # Dispatch inputs and github.* reach the shell through env, never through
+        # ${{ }} interpolation in `run:` -- an input is attacker-controlled text and
+        # this job holds `contents: write`.
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd packages/auth-py
+          PY_VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG_VER="$INPUT_VERSION"
+          else
+            TAG_VER="${REF_NAME#auth-py-v}"
+          fi
+          echo "pyproject=$PY_VER  tag=$TAG_VER"
+          [ "$PY_VER" = "$TAG_VER" ] || { echo "::error::pyproject version $PY_VER != tag $TAG_VER"; exit 1; }
+          echo "version=$PY_VER" >> "$GITHUB_OUTPUT"
+          # The Release tag is derived from the VALIDATED version, never from
+          # github.ref_name: on a workflow_dispatch that is the branch name
+          # (e.g. `master`), which would publish a non-versioned release.
+          echo "tag=auth-py-v$PY_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse an existing tag that points at different source
+        # The wheel is built from the checked-out commit. If this tag already exists
+        # it must resolve to that same commit, otherwise the Release would attach
+        # this build to a tag that names different source.
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # An annotated tag lists TWO rows: the tag object, then (as `<ref>^{}`) the
+          # commit it points at. github.sha is the commit, so prefer the peeled row and
+          # fall back to the bare row only for a lightweight tag.
+          rows=$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
+          existing=$(printf '%s\n' "$rows" | awk '$2 ~ /\^\{\}$/ {print $1; exit}')
+          if [ -z "$existing" ]; then
+            existing=$(printf '%s\n' "$rows" | awk 'NF {print $1; exit}')
+          fi
+          if [ -n "$existing" ] && [ "$existing" != "$SHA" ]; then
+            echo "::error::tag $TAG already exists at $existing but this run built $SHA"
+            exit 1
+          fi
+
+      - name: Test before publishing
+        run: |
+          cd packages/auth-py
+          pip install -q -e '.[dev]'
+          pytest -q
+
+      - name: Build wheel + sdist
+        run: |
+          cd packages/auth-py
+          pip install -q build
+          python -m build
+
+      - name: Verify dist contents
+        run: |
+          cd packages/auth-py
+          ls -lh dist/
+          if [ -z "$(ls dist/*.whl 2>/dev/null)" ]; then
+            echo "::error::No wheel found in dist/ -- build failed silently."
+            exit 1
+          fi
+
+      - name: Attach to the Release
+        uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7  # v2
+        with:
+          files: packages/auth-py/dist/*
+          tag_name: ${{ steps.version.outputs.tag }}
+          # Create a missing tag at the BUILT commit, not the default branch.
+          target_commitish: ${{ github.sha }}
+          name: fuzefront-auth ${{ steps.version.outputs.tag }}
+          body: |
+            Python authN for FuzeFront-family services: fail-closed token verifier
+            (legacy-hs256 / federated-jwks), Flask decorator, FastAPI dependency.
+
+            Contract: `packages/auth/docs/TOKEN_CONTRACT.md`
+            Node peer: `@fuzefront/auth`
+
+            ```bash
+            pip install https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/fuzefront_auth-${{ steps.version.outputs.version }}-py3-none-any.whl
+            ```
+          fail_on_unmatched_files: true

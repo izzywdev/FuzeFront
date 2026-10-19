@@ -56,3 +56,10 @@ db45b8ea8db4931e4248b57f1df8dcdf13c4cd72:packages/selection-list-client-py/src/f
 # Suppress only these two exact historical records, not arbitrary cache files.
 0cb7b10f1985cf9ecc9e0046786dba774c27dd75:.npm-cache/_cacache/index-v5/01/f0/82513ae0c1c3a0589d7fe59d114d283ca69e14a6ddcf31e71f5d11016f56:generic-api-key:2
 0cb7b10f1985cf9ecc9e0046786dba774c27dd75:.npm-cache/_cacache/index-v5/cc/aa/a0760f45446f35f11a48783706140f28044e3c472eeb4e712b474c7e2696:generic-api-key:2
+# services/email-service/tests/send.test.ts — the bearer secret for the internal
+# POST /send unit tests was the synthetic literal `internal-secret-123`, which
+# gitleaks scores as a generic-api-key. It is a test fixture passed straight to
+# createApp() in the same file; no deployed config reads it (prod uses the sealed
+# EMAIL_AUTH_SECRET). Replaced with `test-secret` in a later commit; this entry
+# covers the one occurrence that remains in history.
+71887a25e33a7e863a28fe228cac31d8f52912d6:services/email-service/tests/send.test.ts:generic-api-key:5

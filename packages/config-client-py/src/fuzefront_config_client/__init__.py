@@ -28,6 +28,12 @@ Quick start::
 """
 
 from ._paginator import paginate
+from .changed import (
+    CONFIG_CHANGED_TOPIC,
+    ConfigCache,
+    ConfigChangedPayload,
+    parse_config_changed_event,
+)
 from .client import (
     NOT_MODIFIED,
     ConditionalEffectiveConfig,
@@ -41,9 +47,12 @@ from .types import (
     KEY_DEFINITION_ID_PREFIX,
     NAMESPACE_ID_PREFIX,
     SCOPE_CHAIN,
+    Actor,
     ConfigErrorBody,
     ConfigErrorCode,
     ConfigErrorDetail,
+    ConfigHistoryAction,
+    ConfigHistoryEntry,
     ConfigOperation,
     ConfigOperationType,
     ConfigWriteRequest,
@@ -59,27 +68,34 @@ from .types import (
     Paged,
     PageInfo,
     Precedence,
+    RevealSecretResult,
     Scope,
     ScopeType,
     ValueType,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
+    "CONFIG_CHANGED_TOPIC",
     "KEY_DEFINITION_ID_PREFIX",
     # Identifier constants
     "NAMESPACE_ID_PREFIX",
     "NOT_MODIFIED",
     "SCOPE_CHAIN",
+    "Actor",
     "ConditionalEffectiveConfig",
     # Errors
     "ConfigApiError",
+    "ConfigCache",
+    "ConfigChangedPayload",
     # Client
     "ConfigClient",
     "ConfigErrorBody",
     "ConfigErrorCode",
     "ConfigErrorDetail",
+    "ConfigHistoryAction",
+    "ConfigHistoryEntry",
     "ConfigOperation",
     "ConfigOperationType",
     "ConfigWriteRequest",
@@ -96,6 +112,7 @@ __all__ = [
     "PageInfo",
     "Paged",
     "Precedence",
+    "RevealSecretResult",
     # Types
     "Scope",
     # Enums
@@ -106,4 +123,5 @@ __all__ = [
     "is_not_modified",
     # Paginator
     "paginate",
+    "parse_config_changed_event",
 ]
