@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:e5197ea8e80c033c4d61491d0eac9de02da387554969c30338d615d03acf5b2b
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:0ef72b7a2a8803f7812a771503d26afda5beccd44bae662397be76a19989dcaf
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -139,6 +139,24 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 1
+          # SECURITY — this checkout is the TRUSTED source the preserve step below copies
+          # from, so it must never be PR-author content. `actions/checkout` defaults to
+          # GITHUB_REF, and GITHUB_REF is NOT the same thing on every trigger this workflow
+          # listens to ("Events that trigger workflows", GITHUB_SHA/GITHUB_REF table):
+          #
+          #   issue_comment               -> Default branch
+          #   issues                      -> Default branch
+          #   pull_request_review         -> PR merge branch refs/pull/N/merge
+          #   pull_request_review_comment -> PR merge branch refs/pull/N/merge
+          #
+          # On the two review triggers the default checkout therefore ALREADY contains the PR
+          # author's `.github/actions`, so the preserve/restore pair below would archive the
+          # attacker's tree out and restore it right back — a no-op mitigation on exactly the
+          # paths it was written for, with FUZEONEAGENT_TOKEN and the LLM credentials in scope.
+          # Pinning the ref makes the preserved tree trusted on every trigger; the PR-head
+          # checkout below still fetches $HEAD_SHA explicitly, so only the action DEFINITIONS
+          # are pinned and the agent still works against the real PR content.
+          ref: ${{ github.event.repository.default_branch }}
 
       # SECURITY — pin the EXECUTED action code to this TRUSTED checkout, before the next
       # step replaces the working tree with a PR head that can be a fork's. `uses:
@@ -219,13 +237,21 @@ jobs:
             who="fuzeoneagent (FUZEONEAGENT_TOKEN — least-privilege coder)"
             git config user.name "fuzeoneagent"
             git config user.email "330369996+fuzeoneagent@users.noreply.github.com"
+            # claude-code-action's configureGitAuth overwrites the git config above, so the
+            # author must ALSO be handed to the action as bot_name/bot_id (below).
+            bot_name="fuzeoneagent"; bot_id="330369996"
           else
+            bot_name="claude[bot]"; bot_id="41898282"   # claude-code-action's own defaults
             tok="$GH_DEFAULT"
             who="GITHUB_TOKEN (default — FUZEONEAGENT_TOKEN unset)"
             echo "::warning title=coder-identity::FUZEONEAGENT_TOKEN is unset on this repo — @fuze codes/commits/pushes under the default GITHUB_TOKEN identity, exactly as before. Set FUZEONEAGENT_TOKEN to author as the least-privilege coder account (docs/identity-and-roles.md)."
           fi
           echo "::add-mask::$tok"
-          echo "token=$tok" >> "$GITHUB_OUTPUT"
+          {
+            echo "token=$tok"
+            echo "bot-name=$bot_name"
+            echo "bot-id=$bot_id"
+          } >> "$GITHUB_OUTPUT"
           echo "Coding identity: $who"
 
       - name: Run Fuze
@@ -240,6 +266,9 @@ jobs:
           # Coder credential: fuzeoneagent when provisioned, else GITHUB_TOKEN (see the
           # Resolve coding identity step — default-safe when FUZEONEAGENT_TOKEN is unset).
           github-token: ${{ steps.coder.outputs.token }}
+          # Commit author. Must be passed here: claude-code-action overwrites `git config`.
+          bot-name: ${{ steps.coder.outputs.bot-name }}
+          bot-id: ${{ steps.coder.outputs.bot-id }}
           # WHERE THE GATEWAY IS, as a repo variable rather than a hardcoded literal.
           #
           # The default is the in-cluster service DNS name, which resolves only from a pod in
@@ -358,15 +387,17 @@ jobs:
           failed=false; reason=""
           case "${SUBSCRIPTION_RUNG:-}" in
             ran)              sub="subscription OAuth rung (1a) WAS attempted" ;;
-            skipped-no-token) sub="subscription OAuth rung (1a) was SKIPPED (CLAUDE_CODE_OAUTH_TOKEN unset) so only the metered Anthropic/LiteLLM rung ran" ;;
+            skipped-no-token) sub="subscription OAuth rung (1a) was SKIPPED (CLAUDE_CODE_OAUTH_TOKEN unset) so the metered Anthropic/LiteLLM rung was the only path left (it too may have been skipped if no metered credential resolved — check its step log)" ;;
             *)                sub="subscription OAuth rung (1a) status unknown (${SUBSCRIPTION_RUNG:-unset})" ;;
           esac
           if [ "${STEP_OUTCOME:-}" = "failure" ] || [ "${CONCLUSION:-}" = "failure" ]; then
             failed=true
             if [ "${AVAILABILITY:-}" = "true" ]; then
               reason="fuze-code-action reported an AVAILABILITY failure (mode=${MODE:-?}); ${sub}. 'Availability' does NOT by itself prove an LLM credit/key outage — a rung that aborts at claude-code-action's GitHub permission precheck (coding-identity token's account suspended or lacking repo access) produces no execution log and is classified identically. READ the 'Rung 1a'/'Rung 1' step logs in the run for the exact error before assuming credits. Candidate causes, in priority order: (1) the coding identity (FUZEONEAGENT_TOKEN, else GITHUB_TOKEN) account suspended or missing repo access; (2) an expired/revoked CLAUDE_CODE_OAUTH_TOKEN; (3) exhausted ANTHROPIC_API_KEY / LITELLM_FUZE_KEY credit."
-            else
+            elif [ "${AVAILABILITY:-}" = "false" ]; then
               reason="fuze-code-action failed with a TASK failure (mode=${MODE:-?}) — a real error from the work itself, not a provider-availability problem; ${sub}. See the run log."
+            else
+              reason="fuze-code-action failed WITHOUT reporting an availability classification (mode=${MODE:-?}) — it likely failed before its classify step ran (action could not initialize, e.g. a bad input or a missing local action), so this is neither a confirmed task failure nor a confirmed provider outage; ${sub}. Read the run log's first failing step."
             fi
           fi
           echo "failed=$failed" >> "$GITHUB_OUTPUT"
