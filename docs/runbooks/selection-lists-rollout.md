@@ -53,6 +53,8 @@ Every row must hold before the final step. Rows marked IN FLIGHT must be re-chec
 | P4 | **All three Unleash flags exist in Unleash, OFF** (`fuzefront.selection-lists.service`, `fuzefront.selection-lists.seed-defaults`, and the SL9 `fuzefront.selection-lists.shared-lists`, the last created by the same `flags=selection-lists-create` dispatch once this lands) | **Creation is wired; verify it ran.** The `selection-lists-create` set of `prod-unleash-ops` (#1296, plus the SL9 third flag) creates all three flags OFF and never enables anything. It has to be dispatched once after the SL9 flag-registration PR merges, so a third flag may be missing until then. **Check the live state; do not assume.** | Unleash prod admin UI or API: **all three** keys (`fuzefront.selection-lists.service`, `fuzefront.selection-lists.seed-defaults`, `fuzefront.selection-lists.shared-lists`) exist, environment `production` disabled. Never create them by hand in the UI if the workflow can. |
 | P5 | **Shared-lists / fork contract** (a list that an org shares with others, and forking a shared list into an org's own copy) | **IN FLIGHT.** A contract PR was reported open but no PR for it was found when this was written, so its number is not recorded here. It changes the API contract, so it is a reason to hold a GA, not a hard blocker for a pilot of the existing contract (4.0.0). **Find the PR and check its merge state before relying on this**; if it lands before the first ramp step, re-read the authz section of this runbook, because sharing changes who can read what. | `services/selection-list-service/openapi.yaml` `info.version` and the contract changelog; `gh pr list --search "selection list shared fork"`. |
 
+**Hard prerequisite:** Broker ACLs on the `identity.*` Kafka topics verified (FuzeInfra#1394) before enabling the service in production.
+
 ### 2.2 Already on master (re-read if master moved)
 
 | # | Prerequisite | State | Evidence |
@@ -74,20 +76,22 @@ Every row must hold before the final step. Rows marked IN FLIGHT must be re-chec
 | D4 | The MCP gateway (`selectionListsMcp.enabled: false`) points at host `selection-list-service` but the Service is named `fuzefront-selection-list-service` (authz review I-1c) | Keep the gateway **off** until fixed |
 | D5 | `selection_list_access` mirror lags a Security-API-only grant; app-seeded lists get no owner grant | seeding runbook section 6 |
 
-### 2.4 Platform organization: configurable everywhere, pinned in production
+### 2.4 Platform organization: configurable everywhere, derived and enforced in production
 
 `selectionListService.platformOrgId` (Deployment env `SELECTION_LIST_PLATFORM_ORG_ID`) names the organization whose operators may publish a **common (global) list** to every other organization. It stays **configurable per environment** (a local cluster may use any id), but **production may only carry the immutable root platform organization**, so a typo or a mistaken or malicious chart edit cannot hand global-publish power to an ordinary org.
 
-- **The pin** lives in one place: `governance/platform-org-pin.json` (`pinnedPlatformOrgId` `org_0000000000000000000000000g`, the TypeID form of `ROOT_ORG_ID` `00000000-0000-0000-0000-000000000010`, seeded by `backend/src/migrations/015_seed_root_platform_organization.ts`; rationale and owner are in the file).
+- **Nobody types the id into the gate.** The gate derives the expected production id from the code: it parses `export const ROOT_ORG_ID = '<uuid>'` in `backend/security/src/migrations/014_seed_root_platform_organization.ts` (currently `00000000-0000-0000-0000-000000000010`, the seeded root org) and converts it to the canonical TypeID with the identity codec (lowercase Crockford base32 of the 128-bit UUID), currently `org_0000000000000000000000000g`. Note the UUID ends in `10` (hex) and the TypeID ends in `0g`: the id is not "...1". If the constant cannot be found or parsed (or is defined more than once there), the gate fails.
+- **Drifted copies fail the gate.** Every other `ROOT_ORG_ID = '<uuid>'` definition in the repo's TS/JS sources and tests (the applications service and migrations, the monolith migration 015, the devportal middleware, the frontend constant, test mocks) must equal the authoritative value. A copy that has drifted is a real hazard and is reported with its file and line.
+- **Why it is not a GitHub Actions repository variable.** A repo variable can be changed by any repo admin with no PR, no review and no audit trail, which defeats a gate whose purpose is to catch mistaken or malicious edits. Deriving the id from reviewed code keeps every change under code review and CODEOWNERS (the gate, its tests, its workflow and the authoritative migration are owner-protected). If the owner ever insists on a variable, it may only be added as an extra must-equal cross-check, never as the source. The id is not a secret (it is a public identifier already present in several services), so secrecy is not the reason.
 - **Empty is the default and means "fail closed"**: every platform feature is off, no common list is served or created. That is the correct state while `selectionListService.enabled` is `false`.
 - **The gate** is the CI job `gate-platform-org-pin` (`scripts/gate_platform_org_pin.py`, tests in `scripts/__tests__/test_gate_platform_org_pin.py`). It reads only the **production** overlay and prints which rule it applied. It fails when:
-  1. `values-prod.yaml` sets `platformOrgId` to anything other than `""` or exactly the pinned id (strict string equality: the bare UUID, other letter case or surrounding whitespace are rejected);
+  1. `values-prod.yaml` sets `platformOrgId` to anything other than `""` or exactly the derived id (strict string equality: the bare UUID, other letter case or surrounding whitespace are rejected);
   2. the Helm-merged effective production values disagree with rule 1 (an inherited or overridden value), or `enabled` is not a real boolean;
-  3. `selectionListService.enabled` is `true` in production while `platformOrgId` is empty or not the pinned id (an enabled production service with no platform org is an explicit failure, never a silent fail-closed deploy);
-  4. the **rendered** production manifests (`helm template` with the production overlay) carry `SELECTION_LIST_PLATFORM_ORG_ID` as anything but the pinned id (when enabled), or a probe render with the service forced on would carry a value other than `""` or the pinned id (a template or override elsewhere cannot smuggle in another org);
-  5. the pin file, a values file or the chart cannot be read, parsed or rendered. It fails closed and never skips.
+  3. `selectionListService.enabled` is `true` in production while `platformOrgId` is empty or not the derived id (an enabled production service with no platform org is an explicit failure, never a silent fail-closed deploy);
+  4. the **rendered** production manifests (`helm template` with the production overlay) carry `SELECTION_LIST_PLATFORM_ORG_ID` as anything but the derived id (when enabled), or a probe render with the service forced on would carry a value other than `""` or the derived id (a template or override elsewhere cannot smuggle in another org);
+  5. the authoritative constant is missing, unparsable or defined twice, any other `ROOT_ORG_ID` definition disagrees with it, or a values file or the chart cannot be read, parsed or rendered. It fails closed and never skips.
 - **Enabling it in production** therefore takes two things in the same reviewed change: `selectionListService.enabled: true` (section 8) **and** `selectionListService.platformOrgId: "org_0000000000000000000000000g"` in `values-prod.yaml`, or the gate fails the PR. Shared lists additionally need the release flag `fuzefront.selection-lists.shared-lists`.
-- **Changing the pin** (this should essentially never happen) is a reviewed PR that edits `governance/platform-org-pin.json` with explicit approval of its owner (`izzywdev`; the pin file and gate script are CODEOWNERS-protected). Do not edit the chart, the gate's strict comparison or its tests to get around a failure.
+- **Changing the expected id** is not an operation on the gate: it only follows the `ROOT_ORG_ID` constant. Changing that constant is a code change to an immutable seeded identity (it orphans every row bound to it) and needs owner review like any CODEOWNERS path. Do not edit the chart, the gate's strict comparison or its tests to get around a failure.
 - **Local and other overlays** are not checked and may set any id.
 - **Branch protection:** adding `gate-platform-org-pin` to the required status checks of "Protect Master" is an owner action; until then the check runs on every PR and on `master` but does not block merging.
 
@@ -249,7 +253,7 @@ The whole change, in `deploy/helm/fuzefront/values-prod.yaml` (the first key und
 +  platformOrgId: "org_0000000000000000000000000g"
 ```
 
-The second line is **required by the `gate-platform-org-pin` CI job** (section 2.4): with the service enabled, production must carry exactly the pinned root platform organization, and the PR fails otherwise. It is the only value the gate accepts there.
+The second line is **required by the `gate-platform-org-pin` CI job** (section 2.4): with the service enabled, production must carry exactly the root platform organization id the gate derives from `ROOT_ORG_ID` (section 2.4), and the PR fails otherwise. It is the only value the gate accepts there.
 
 Mechanical form (does nothing if the block has already moved; check the diff is exactly the two lines above):
 

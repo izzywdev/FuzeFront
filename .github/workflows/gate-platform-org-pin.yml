@@ -1,13 +1,15 @@
 name: gate-platform-org-pin
 
-# PRODUCTION may only carry the pinned platform organization id.
+# PRODUCTION may only carry the root platform organization id.
 #
 # selection-list-service reads SELECTION_LIST_PLATFORM_ORG_ID, rendered from the
 # Helm value selectionListService.platformOrgId. The value stays configurable per
 # environment (local/other overlays may use any id), but the production overlay
-# may only ever be the immutable root platform organization declared in
-# governance/platform-org-pin.json, because that organization can publish a
-# common (global) list to every org. scripts/gate_platform_org_pin.py checks
+# may only ever be the immutable root platform organization, because that
+# organization can publish a common (global) list to every org. The expected id is
+# DERIVED from ROOT_ORG_ID in backend/security/src/migrations/014_seed_root_platform_organization.ts
+# (every other ROOT_ORG_ID copy in the repo is cross-checked); it is not typed into
+# the gate and deliberately not a repo variable (no PR/review/audit trail). scripts/gate_platform_org_pin.py checks
 # values-prod.yaml, the Helm-merged effective values and the RENDERED Deployment
 # env, and fails closed if it cannot parse or render. Rules + rationale are in
 # the script header and docs/runbooks/selection-lists-rollout.md.
@@ -18,7 +20,7 @@ name: gate-platform-org-pin
 # so the PR would sit at "Expected" forever once an owner adds this context to the
 # branch ruleset. The job is two `helm template` renders and a few unit tests, so
 # running it on every PR costs seconds. It is still the deploy/helm/**,
-# governance/platform-org-pin.json and gate-script changes that it guards.
+# ROOT_ORG_ID and gate-script changes that it guards.
 #
 # Required status check context: `gate-platform-org-pin` (the job name below).
 # Adding it to the "Protect Master" ruleset is an OWNER action in branch
@@ -71,5 +73,5 @@ jobs:
           fi
           python3 -m unittest discover -s scripts/__tests__ -p 'test_gate_platform_org_pin.py' -v
 
-      - name: Production platform organization is the pinned id
+      - name: Production platform organization is the derived root org id
         run: python3 scripts/gate_platform_org_pin.py

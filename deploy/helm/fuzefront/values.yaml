@@ -977,18 +977,18 @@ selectionListService:
   # are additionally gated by the release flag fuzefront.selection-lists.shared-lists
   # (default OFF).
   #
-  # CONFIGURABLE per environment, PINNED in production. Local and any other
+  # CONFIGURABLE per environment, ENFORCED in production. Local and any other
   # overlay may use any id. The PRODUCTION overlay (values-prod.yaml) may only
   # ever be "" (service disabled, fail closed) or the immutable root platform
-  # organization ROOT_ORG_ID 00000000-0000-0000-0000-000000000010
-  # (backend/src/migrations/015_seed_root_platform_organization.ts), whose
-  # TypeID is "org_0000000000000000000000000g". CI job `gate-platform-org-pin`
-  # (scripts/gate_platform_org_pin.py) enforces that against values-prod.yaml,
-  # the Helm-merged values and the rendered Deployment env, and fails when
+  # organization. CI job `gate-platform-org-pin` (scripts/gate_platform_org_pin.py)
+  # DERIVES that id from the code (ROOT_ORG_ID in backend/security/src/
+  # migrations/014_seed_root_platform_organization.ts, currently
+  # 00000000-0000-0000-0000-000000000010, TypeID "org_0000000000000000000000000g")
+  # rather than from any typed-in value or repo variable, cross-checks every other
+  # ROOT_ORG_ID copy, and enforces it against values-prod.yaml, the Helm-merged
+  # values and the rendered Deployment env. It fails when
   # selectionListService.enabled is true in production with any other value
-  # (including empty). The single source of truth for the pin is
-  # governance/platform-org-pin.json; changing it takes a reviewed PR with
-  # owner approval (docs/runbooks/selection-lists-rollout.md section 2.4).
+  # (including empty). Details: docs/runbooks/selection-lists-rollout.md 2.4.
   # Never coerce or default this value in a template (CLAUDE.md "Helm values
   # hygiene"): the comparison is strict string equality.
   platformOrgId: ""

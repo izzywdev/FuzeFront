@@ -32,9 +32,10 @@
 /deploy/helm/         @izzywdev
 /.github/workflows/   @izzywdev
 /.github/CODEOWNERS   @izzywdev
-# The production platform-organization pin and the gate that enforces it. Editing
-# either (or the gate's tests) changes who may hold global-publish power for
-# shared selection lists, so the merge approval IS the owner's approval.
-/governance/platform-org-pin.json                      @izzywdev
+# The production platform-organization gate. It derives the only id production may
+# carry from ROOT_ORG_ID in the security migration below, so editing the gate, its
+# tests, its workflow or that constant changes who may hold global-publish power for
+# shared selection lists: the merge approval IS the owner's approval.
 /scripts/gate_platform_org_pin.py                      @izzywdev
 /scripts/__tests__/test_gate_platform_org_pin.py       @izzywdev
+/backend/security/src/migrations/014_seed_root_platform_organization.ts @izzywdev

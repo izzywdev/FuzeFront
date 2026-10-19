@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gate-platform-org-pin — production may only carry the pinned platform org id.
+"""gate-platform-org-pin — production may only carry the root platform org id (derived from code).
 
 WHY THIS EXISTS
 ---------------
@@ -13,13 +13,31 @@ immutable root platform organization. Otherwise a typo, or a mistaken or
 malicious chart edit, hands global-publish power to an ordinary org, and
 nothing in `helm lint` / `kubeconform` can notice: any string is schema-valid.
 
-The single source of truth for the pin is `governance/platform-org-pin.json`
-(NOT a constant in this file). Changing it is a reviewed, owner-approved PR.
+THE EXPECTED ID IS DERIVED FROM CODE, NEVER TYPED IN
+----------------------------------------------------
+There is no hand-maintained id anywhere in this gate. The expected production
+value is derived from the authoritative constant in reviewed code:
+
+    export const ROOT_ORG_ID = '<uuid>'
+    in backend/security/src/migrations/014_seed_root_platform_organization.ts
+
+and converted to the canonical `org_<26 base32>` TypeID with the same codec the
+identity package uses (lowercase Crockford base32 of the 128-bit UUID). The
+constant is the seeded identity of the root platform organization, so
+production can never legitimately point anywhere else. Changing it takes a code
+change under code review (the file is CODEOWNERS-protected). It is deliberately
+NOT read from a GitHub Actions repository variable: a repo admin can change a
+variable with no PR, no review and no audit trail, which would defeat a gate
+whose purpose is to catch mistaken or malicious edits.
+
+Every other `ROOT_ORG_ID = '<uuid>'` definition in the repo's TS/JS sources and
+tests is cross-checked against it; a drifted copy fails the gate.
 
 WHAT IT CHECKS (production overlay only; other overlays are never read)
 -----------------------------------------------------------------------
-  pin-file          the pin file parses, declares the TypeID + UUID, and the two
-                    agree (the TypeID is the base32 encoding of the UUID).
+  derive            the authoritative ROOT_ORG_ID is found (exactly one definition,
+                    a canonical lowercase UUID) and encoded to the TypeID.
+  copies            every other ROOT_ORG_ID definition in the repo equals it.
   overlay-literal   if values-prod.yaml sets selectionListService.platformOrgId
                     it is a string that is "" or EXACTLY the pinned id.
   effective-values  values.yaml deep-merged with values-prod.yaml (Helm merge
@@ -52,20 +70,22 @@ null, or a non-string is a failure, not a silent "".
 
 FAIL CLOSED
 -----------
-A missing/unparsable pin file, values file, or chart; a duplicate YAML key; a
+A missing/unparsable authoritative source (or no / several definitions of the
+constant), values file, or chart; a duplicate YAML key; a
 `helm` that is absent or fails to render; or rendered output that cannot be
 parsed is a FAILURE, never a skip.
 
 Usage (from the repo root):
   python3 scripts/gate_platform_org_pin.py
   python3 scripts/gate_platform_org_pin.py --chart deploy/helm/fuzefront \
-      --pin governance/platform-org-pin.json --overlay values-prod.yaml
+      --source backend/security/src/migrations/014_seed_root_platform_organization.ts \
+      --overlay values-prod.yaml
 Exit status: 0 = pass, 1 = violation(s), 2 = usage error.
 """
 from __future__ import annotations
 
 import argparse
-import json
+import os
 import re
 import subprocess
 import sys
@@ -75,6 +95,10 @@ from pathlib import Path
 import yaml
 
 ENV_VAR = "SELECTION_LIST_PLATFORM_ORG_ID"
+AUTHORITATIVE_SOURCE = "backend/security/src/migrations/014_seed_root_platform_organization.ts"
+# Directories never scanned for ROOT_ORG_ID copies (dependencies, build output, agent worktrees).
+SCAN_SKIP_DIRS = {"node_modules", "dist", "build", "coverage", ".git", ".claude", ".venv", "__pycache__"}
+SCAN_EXTS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
 VALUES_KEY = ("selectionListService", "platformOrgId")
 ENABLED_KEY = ("selectionListService", "enabled")
 SERVICE_BLOCK = "selectionListService"
@@ -153,31 +177,79 @@ def decode_org_typeid(value: str) -> uuid.UUID:
     return uuid.UUID(int=n)
 
 
-# -------------------------------------------------------------------------- pin
-def load_pin(pin_path: Path) -> dict:
-    if not pin_path.is_file():
-        raise GateError(f"pin file {pin_path} is missing")
+# ---------------------------------------------------------------- derivation
+_ROOT_DEF_RE = re.compile(
+    r"""^[ \t]*(?:export[ \t]+)?(?:const|let|var)[ \t]+ROOT_ORG_ID[ \t]*(?::[ \t]*string[ \t]*)?=[ \t]*(['"`])([^'"`\n]*)\1""",
+    re.MULTILINE,
+)
+# Authoritative form: must be exported, so a local non-exported copy can never stand in.
+_AUTH_DEF_RE = re.compile(
+    r"""^export[ \t]+const[ \t]+ROOT_ORG_ID[ \t]*(?::[ \t]*string[ \t]*)?=[ \t]*(['"])([^'"\n]*)\1[ \t]*;?[ \t]*(?://.*)?$""",
+    re.MULTILINE,
+)
+# Object-property form seen in test mocks: `ROOT_ORG_ID: '<uuid>',`
+_PROP_DEF_RE = re.compile(r"""^[ \t]*ROOT_ORG_ID[ \t]*:[ \t]*(['"`])([^'"`\n]*)\1""", re.MULTILINE)
+
+
+def encode_org_typeid(u: uuid.UUID) -> str:
+    """Canonical `org_<26 lowercase Crockford base32>` TypeID of a UUID."""
+    n = u.int
+    chars = []
+    for _ in range(26):
+        chars.append(_CROCKFORD[n & 31])
+        n >>= 5
+    return "org_" + "".join(reversed(chars))
+
+
+def derive_pin(root: Path, source: Path) -> tuple[str, str, list[str]]:
+    """Return (typeid, uuid, notes) derived from the authoritative ROOT_ORG_ID."""
+    if not source.is_file():
+        raise GateError(f"authoritative source {source} is missing; cannot derive the production id")
     try:
-        data = json.loads(pin_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
-        raise GateError(f"pin file {pin_path} is not valid JSON: {e}")
-    if not isinstance(data, dict):
-        raise GateError(f"pin file {pin_path} must be a JSON object")
-    for key in ("pinnedPlatformOrgId", "pinnedPlatformOrgUuid", "owner", "rationale"):
-        v = data.get(key)
-        if not isinstance(v, str) or not v.strip():
-            raise GateError(f"pin file {pin_path}: {key!r} is missing or empty")
-    pin = data["pinnedPlatformOrgId"]
-    pin_uuid = data["pinnedPlatformOrgUuid"]
-    if not _UUID_RE.match(pin_uuid) or pin_uuid != pin_uuid.lower():
-        raise GateError(f"pin file: pinnedPlatformOrgUuid {pin_uuid!r} is not a lowercase UUID")
-    decoded = decode_org_typeid(pin)  # raises on a malformed TypeID
-    if str(decoded) != pin_uuid:
+        text = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise GateError(f"authoritative source {source} is unreadable: {e}")
+    found = _AUTH_DEF_RE.findall(text)
+    if len(found) != 1:
         raise GateError(
-            f"pin file is inconsistent: {pin!r} decodes to {decoded}, "
-            f"but pinnedPlatformOrgUuid is {pin_uuid}"
+            f"{source}: expected exactly one `export const ROOT_ORG_ID = '<uuid>'`, found {len(found)}"
         )
-    return data
+    raw = found[0][1]
+    if not _UUID_RE.match(raw) or raw != raw.lower():
+        raise GateError(f"{source}: ROOT_ORG_ID {raw!r} is not a canonical lowercase UUID")
+    u = uuid.UUID(raw)
+    if str(u) != raw:
+        raise GateError(f"{source}: ROOT_ORG_ID {raw!r} is not in canonical form")
+    typeid = encode_org_typeid(u)
+    if str(decode_org_typeid(typeid)) != raw:  # round-trip: the codec must be self-consistent
+        raise GateError(f"internal codec error: {typeid} does not decode back to {raw}")
+    notes = [f"derived: ROOT_ORG_ID {raw} -> {typeid} (from {source})"]
+    return typeid, raw, notes
+
+
+def find_root_org_copies(root: Path, source: Path) -> list[tuple[Path, int, str]]:
+    """Every other ROOT_ORG_ID = '<value>' definition under root (excluding the source)."""
+    out: list[tuple[Path, int, str]] = []
+    src = source.resolve()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SCAN_SKIP_DIRS]
+        for fn in filenames:
+            if os.path.splitext(fn)[1] not in SCAN_EXTS:
+                continue
+            path = Path(dirpath) / fn
+            if path.resolve() == src:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as e:
+                raise GateError(f"cannot read {path} while scanning for ROOT_ORG_ID copies: {e}")
+            if "ROOT_ORG_ID" not in text:
+                continue
+            for rx in (_ROOT_DEF_RE, _PROP_DEF_RE):
+                for m in rx.finditer(text):
+                    line = text.count("\n", 0, m.start()) + 1
+                    out.append((path, line, m.group(2)))
+    return sorted(out)
 
 
 # ---------------------------------------------------------------- value helpers
@@ -216,7 +288,7 @@ def describe_mismatch(value: str, pin: str, pin_uuid: str) -> str:
         return "differs from the pin only by letter case"
     if value == "":
         return "is empty"
-    return "is not the pinned platform organization"
+    return f"is not the root platform organization (UUID {pin_uuid}, TypeID {pin})"
 
 
 # ------------------------------------------------------------------------ helm
@@ -313,14 +385,20 @@ def check_render(docs, raw, label, pin, pin_uuid, require_pinned, violations, no
 
 
 # ------------------------------------------------------------------------- gate
-def run_gate(chart: Path, pin_path: Path, overlay_name: str, helm: str):
+def run_gate(chart: Path, root: Path, source: Path, overlay_name: str, helm: str):
     violations: list[str] = []
     notes: list[str] = []
 
-    pin_data = load_pin(pin_path)
-    pin = pin_data["pinnedPlatformOrgId"]
-    pin_uuid = pin_data["pinnedPlatformOrgUuid"]
-    notes.append(f"pin: {pin} (UUID {pin_uuid}), owner {pin_data['owner']}, from {pin_path}")
+    pin, pin_uuid, dnotes = derive_pin(root, source)
+    notes.extend(dnotes)
+    copies = find_root_org_copies(root, source)
+    for path, line, value in copies:
+        if value != pin_uuid:
+            violations.append(
+                f"[copies] {path}:{line} defines ROOT_ORG_ID = {value!r}, which disagrees with the "
+                f"authoritative {pin_uuid!r} in {source}; a drifted copy is a real hazard, fix it"
+            )
+    notes.append(f"copies: {len(copies)} other ROOT_ORG_ID definition(s) cross-checked")
 
     defaults_path = chart / "values.yaml"
     overlay_path = chart / overlay_name
@@ -444,7 +522,7 @@ def run_gate(chart: Path, pin_path: Path, overlay_name: str, helm: str):
         )
     notes.append(
         f"rendered-forced: with the service forced on, {len(fentries)} {ENV_VAR} "
-        f"occurrence(s) are '' or the pinned id"
+        f"occurrence(s) are '' or the derived root org id"
     )
 
     return violations, notes
@@ -453,14 +531,19 @@ def run_gate(chart: Path, pin_path: Path, overlay_name: str, helm: str):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--chart", default="deploy/helm/fuzefront")
-    ap.add_argument("--pin", default="governance/platform-org-pin.json")
+    ap.add_argument("--root", default=".", help="repo root scanned for ROOT_ORG_ID copies")
+    ap.add_argument("--source", default=AUTHORITATIVE_SOURCE, help="authoritative ROOT_ORG_ID source (relative to --root unless absolute)")
     ap.add_argument("--overlay", default="values-prod.yaml", help="production overlay file name inside --chart")
     ap.add_argument("--helm", default="helm")
     args = ap.parse_args(argv)
 
-    print("gate-platform-org-pin: production platform organization must be the pinned id")
+    root = Path(args.root)
+    source = Path(args.source)
+    if not source.is_absolute():
+        source = root / source
+    print("gate-platform-org-pin: production platform organization must be the derived root org id")
     try:
-        violations, notes = run_gate(Path(args.chart), Path(args.pin), args.overlay, args.helm)
+        violations, notes = run_gate(Path(args.chart), root, source, args.overlay, args.helm)
     except GateError as e:
         print(f"::error title=gate-platform-org-pin::cannot evaluate (fail closed): {e}")
         print(f"FAIL (fail closed): {e}")
