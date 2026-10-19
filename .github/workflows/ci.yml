@@ -132,6 +132,11 @@ jobs:
         # both fail with "Cannot find module '@fuzeone/selection-lists-ui'".
         run: npm run -w @fuzeone/selection-lists-ui build
 
+      - name: Build @fuzefront/billing-types (d.ts for backend type-check)
+        # backend/src/services/billingProjection.ts imports @fuzefront/billing-types;
+        # without a built dist/ the backend tsc --noEmit fails with TS2307.
+        run: npm run -w @fuzefront/billing-types build
+
       - name: Type checking
         run: |
           cd backend && npm run type-check
@@ -311,6 +316,11 @@ jobs:
         # it ran AFTER backend and left backend's own build failing with
         # TS2307 "Cannot find module '@fuzefront/telemetry'".
         run: npm run -w @fuzefront/telemetry build
+
+      - name: Build @fuzefront/billing-types (for backend build)
+        # backend/src/services/billingProjection.ts imports @fuzefront/billing-types;
+        # without a built dist/ the backend tsc fails with TS2307.
+        run: npm run -w @fuzefront/billing-types build
 
       - name: Build backend
         run: cd backend && npm run build

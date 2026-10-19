@@ -1,5 +1,5 @@
 """Public contract types for ``fuzefront-auth`` -- the Python peer of
-``@fuzefront/auth`` (``packages/auth/src/types.ts``).
+``@izzywdev/fuzefront-auth`` (``packages/auth/src/types.ts``).
 
 ``Identity`` is the single synchronisation point: its shape does not change
 when the token format migrates from today's HS256 shared-secret token to the
@@ -14,8 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-AUTH_CONTRACT_VERSION = "0.2.0"
-"""Contract version shared with ``@fuzefront/auth`` (``AUTH_CONTRACT_VERSION``)."""
+AUTH_CONTRACT_VERSION = "0.3.0"
+"""Contract version shared with ``@izzywdev/fuzefront-auth`` (``AUTH_CONTRACT_VERSION``)."""
 
 AuthMode = Literal["legacy-hs256", "federated-jwks"]
 
