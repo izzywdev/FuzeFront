@@ -1,4 +1,4 @@
-import { PlanService, STATIC_DEFAULT_PLANS } from '../../src/services/plan.service';
+import { PlanService } from '../../src/services/plan.service';
 import { PlanRepository } from '../../src/repositories/plan.repository';
 import { Plan } from '../../src/types';
 
@@ -31,15 +31,15 @@ describe('PlanService.syncPlans', () => {
     const repo = new FakePlanRepo();
     const stripe = stripeWithPrices([
       {
-        id: 'price_pro',
+        id: 'price_growth_1',
         active: true,
-        unit_amount: 2900,
+        unit_amount: 9900,
         currency: 'usd',
         recurring: { interval: 'month', usage_type: 'licensed' },
         product: {
-          id: 'prod_pro',
-          name: 'Pro',
-          metadata: { tier_name: 'pro', seat_based: 'true', sort_order: '2', features: '["a","b"]' },
+          id: 'prod_growth_1',
+          name: 'Growth',
+          metadata: { tier_name: 'growth', seat_based: 'true', sort_order: '2', features: '["a","b"]' },
         },
       },
     ]);
@@ -49,15 +49,39 @@ describe('PlanService.syncPlans', () => {
 
     expect(count).toBe(1);
     expect(repo.plans[0]).toMatchObject({
-      priceId: 'price_pro',
-      productId: 'prod_pro',
-      tierName: 'pro',
+      priceId: 'price_growth_1',
+      productId: 'prod_growth_1',
+      tierName: 'growth',
       seatBased: true,
       billingInterval: 'month',
-      unitAmount: 2900,
+      unitAmount: 9900,
       sortOrder: 2,
       features: ['a', 'b'],
     });
+  });
+
+  it('normalizes legacy tier names to canonical equivalents on sync', async () => {
+    const repo = new FakePlanRepo();
+    const stripe = stripeWithPrices([
+      {
+        id: 'price_legacy_professional',
+        active: true,
+        unit_amount: 9900,
+        currency: 'usd',
+        recurring: { interval: 'month', usage_type: 'licensed' },
+        product: {
+          id: 'prod_legacy',
+          name: 'Professional',
+          metadata: { tier_name: 'professional', sort_order: '2' },
+        },
+      },
+    ]);
+    const svc = new PlanService(stripe, repo);
+
+    await svc.syncPlans();
+
+    // 'professional' is a LEGACY_TIER_MAP entry → normalized to 'growth'
+    expect(repo.plans[0].tierName).toBe('growth');
   });
 
   it('marks metered prices with the meter name from product metadata', async () => {
@@ -96,6 +120,9 @@ describe('PlanService.getActivePlans', () => {
 
   it('refreshes from repo after TTL expiry', async () => {
     const repo = new FakePlanRepo();
+    repo.plans = [
+      { priceId: 'p1', productId: 'pr1', tierName: 'starter', displayName: 'Starter', billingInterval: 'month', unitAmount: 2900, currency: 'usd', seatBased: false, meteredMeterName: null, features: [], isActive: true, sortOrder: 1 },
+    ];
     let t = 0;
     const svc = new PlanService({} as any, repo, 60_000, () => t);
 
@@ -106,20 +133,41 @@ describe('PlanService.getActivePlans', () => {
     expect(repo.listCalls).toBe(2);
   });
 
-  it('returns STATIC_DEFAULT_PLANS when the catalogue is empty', async () => {
+  it('returns empty array and logs a warning when billing.plans is empty', async () => {
     const repo = new FakePlanRepo(); // no plans seeded
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const svc = new PlanService({} as any, repo, 60_000, () => 0);
 
     const plans = await svc.getActivePlans();
 
-    expect(plans).toHaveLength(STATIC_DEFAULT_PLANS.length);
-    expect(plans[0].displayName).toBe('Starter');
-    expect(plans[3].displayName).toBe('Enterprise');
+    expect(plans).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('billing.plans is empty'),
+    );
     expect(repo.listCalls).toBe(1);
+    warnSpy.mockRestore();
+  });
+
+  it('re-throws DB errors without serving a fallback', async () => {
+    const repo = new FakePlanRepo();
+    const dbError = new Error('connection refused');
+    jest.spyOn(repo, 'listActive').mockRejectedValue(dbError);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const svc = new PlanService({} as any, repo, 60_000, () => 0);
+
+    await expect(svc.getActivePlans()).rejects.toThrow('connection refused');
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('DB error reading billing.plans'),
+      dbError,
+    );
+    errorSpy.mockRestore();
   });
 
   it('invalidates cache after a sync', async () => {
     const repo = new FakePlanRepo();
+    repo.plans = [
+      { priceId: 'p1', productId: 'pr1', tierName: 'starter', displayName: 'Starter', billingInterval: 'month', unitAmount: 2900, currency: 'usd', seatBased: false, meteredMeterName: null, features: [], isActive: true, sortOrder: 1 },
+    ];
     const stripe = stripeWithPrices([]);
     let t = 0;
     const svc = new PlanService(stripe, repo, 60_000, () => t);
