@@ -42,7 +42,8 @@
     "packages/fuzepicker-ui",
     "selection-list-client",
     "packages/billing-types",
-    "services/billing-service"
+    "services/billing-service",
+    "packages/metered-usage"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
