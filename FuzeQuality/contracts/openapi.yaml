@@ -880,6 +880,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionGateOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
@@ -1090,6 +1091,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionGateOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
@@ -1146,6 +1148,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionGateOutcome'
         - $ref: '#/components/parameters/ExecutionExternalRunId'
@@ -1307,6 +1310,11 @@ components:
       in: query
       description: Require a provider artifact-discovery outcome, or `not-collected` for executions with no retained collection attempt.
       schema: { type: string, enum: [complete, partial, unavailable, not-collected] }
+    ExecutionEvidenceRequirement:
+      name: evidenceRequirement
+      in: query
+      description: Select executions missing evidence required for a reviewed quality claim.
+      schema: { type: string, enum: [post-production-video-missing] }
     ExecutionThresholdOutcome:
       name: thresholdOutcome
       in: query

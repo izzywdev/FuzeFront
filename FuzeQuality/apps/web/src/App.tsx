@@ -3604,6 +3604,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCollectionStatus, setExecutionEvidenceCollectionStatus] = useState<
     NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected' | ''
   >('')
+  const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
+    'post-production-video-missing' | ''
+  >('')
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
   >('')
@@ -3834,6 +3837,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         provider: executionProvider,
         evidenceKind: executionEvidenceKind,
         evidenceCollectionStatus: executionEvidenceCollectionStatus,
+        evidenceRequirement: executionEvidenceRequirement,
         thresholdOutcome: executionThresholdOutcome,
         gateOutcome: executionGateOutcome,
         externalRunId: executionExternalRunId.trim(),
@@ -3854,7 +3858,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionEvidenceRequirement, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5541,6 +5545,20 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="partial">Partial</option>
                 <option value="unavailable">Unavailable</option>
                 <option value="not-collected">Not collected</option>
+              </select>
+            </label>
+            <label>
+              Required evidence
+              <select
+                value={executionEvidenceRequirement}
+                onChange={event =>
+                  setExecutionEvidenceRequirement(
+                    event.target.value as 'post-production-video-missing' | ''
+                  )
+                }
+              >
+                <option value="">All requirements</option>
+                <option value="post-production-video-missing">Missing post-production video</option>
               </select>
             </label>
             <label>

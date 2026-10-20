@@ -178,6 +178,18 @@ describe('ExecutionThresholdEvidence', () => {
     unmount()
   })
 
+  it('does not present complete post-production evidence without a video as sufficient', () => {
+    const { unmount } = render(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      kind: 'post-production',
+      evidenceLinks: [{ kind: 'report', name: 'Playwright report', url: 'https://evidence.example/report' }],
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-20T08:00:00.000Z' },
+    }} />)
+
+    expect(screen.getByText('Required post-production video evidence is missing')).toBeVisible()
+    unmount()
+  })
+
   it('matches a scanner-verified performance workflow only to its current artifact kind', () => {
     const artifact: QualityArtifact = {
       id: 'performance-workflow',

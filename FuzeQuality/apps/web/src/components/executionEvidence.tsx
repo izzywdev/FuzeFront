@@ -346,6 +346,7 @@ export function ExecutionEvidenceCoverage({
 }) {
   const thresholds = execution.thresholds?.length ?? 0
   const links = (execution.evidenceLinks ?? []).filter(link => !(execution.provider === 'github-actions' && link.kind === 'report' && link.name === 'GitHub Actions artifacts' && link.url.endsWith('#artifacts'))).length
+  const hasVideo = (execution.evidenceLinks ?? []).some(link => link.kind === 'video')
   const gatePairs = execution.gateEvaluations?.length ?? 0
   const missingThresholds = ['load', 'stress'].includes(execution.kind) && !thresholds
   const collection = execution.evidenceCollection
@@ -381,9 +382,14 @@ export function ExecutionEvidenceCoverage({
           Provider result limit reached; showing prioritized evidence, including videos first
         </span>
       )}
-      {collection?.status === 'complete' && !links && (
+      {collection?.status === 'complete' && !links && execution.kind !== 'post-production' && (
         <span className="status-pill status-passed">
           Provider checked; no durable artifacts reported
+        </span>
+      )}
+      {execution.kind === 'post-production' && collection?.status === 'complete' && !hasVideo && (
+        <span className="status-pill status-failed">
+          Required post-production video evidence is missing
         </span>
       )}
       {canRefresh && (

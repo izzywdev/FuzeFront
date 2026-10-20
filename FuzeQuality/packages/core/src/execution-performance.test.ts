@@ -106,6 +106,17 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'unavailable' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'partial' })).toEqual([])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'not-collected' })).toEqual([executions[0]])
+  const postProductionWithoutVideo = {
+    ...executions[0],
+    id: 'post-production-without-video',
+    externalRunId: 'post-production-without-video',
+    kind: 'post-production' as const,
+    evidenceLinks: [{ kind: 'report' as const, name: 'Playwright report', url: 'https://evidence.example/report' }],
+  }
+  expect(filterTestExecutions(
+    [...executions, postProductionWithoutVideo],
+    { evidenceRequirement: 'post-production-video-missing' },
+  )).toEqual([postProductionWithoutVideo])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'failed' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'passed' })).toEqual([])
   expect(filterTestExecutions(executions, { branch: 'feature/load' })).toEqual([executions[1]])

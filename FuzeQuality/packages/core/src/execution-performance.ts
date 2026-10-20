@@ -51,6 +51,7 @@ export type PolicyGatePerformancePage = {
 export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'externalRunId' | 'branch' | 'revision' | 'workflowPath' | 'name'>> & {
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
   evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
+  evidenceRequirement?: 'post-production-video-missing'
   thresholdOutcome?: 'passed' | 'failed'
   gateOutcome?: TestExecution['status']
   policyArtifactId?: string
@@ -120,6 +121,10 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.evidenceKind && !execution.evidenceLinks.some(link => link.kind === filter.evidenceKind)) return false
     if (filter.evidenceCollectionStatus === 'not-collected' && execution.evidenceCollection) return false
     if (filter.evidenceCollectionStatus && filter.evidenceCollectionStatus !== 'not-collected' && execution.evidenceCollection?.status !== filter.evidenceCollectionStatus) return false
+    if (
+      filter.evidenceRequirement === 'post-production-video-missing' &&
+      (execution.kind !== 'post-production' || execution.evidenceLinks.some(link => link.kind === 'video'))
+    ) return false
     if (filter.thresholdOutcome && !execution.thresholds.some(threshold =>
       threshold.passed === (filter.thresholdOutcome === 'passed')
     )) return false

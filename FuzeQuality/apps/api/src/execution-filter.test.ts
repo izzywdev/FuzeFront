@@ -10,6 +10,7 @@ describe('execution evidence filter', () => {
       name: 'Post-production browser suite',
       evidenceKind: 'video',
       evidenceCollectionStatus: 'partial',
+      evidenceRequirement: 'post-production-video-missing',
       thresholdOutcome: 'failed',
       gateOutcome: 'failed',
       externalRunId: '123456789',
@@ -54,6 +55,12 @@ describe('execution evidence filter', () => {
     expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'unavailable' }).evidenceCollectionStatus).toBe('unavailable')
     expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'not-collected' }).evidenceCollectionStatus).toBe('not-collected')
     expect(executionFilterSchema.safeParse({ evidenceCollectionStatus: 'unknown' }).success).toBe(false)
+  })
+
+  it('accepts only explicit required-evidence gaps', () => {
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'post-production-video-missing' }).evidenceRequirement)
+      .toBe('post-production-video-missing')
+    expect(executionPageFilterSchema.safeParse({ evidenceRequirement: 'video-missing' }).success).toBe(false)
   })
 
   it('accepts only evaluated threshold outcomes', () => {
