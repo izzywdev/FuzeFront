@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container, HeroPatternOverlay } from '@fuzefront/design-system'
+import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -265,7 +265,7 @@ export const HomePage: React.FC = () => {
               </p>
             </motion.div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <ResponsiveGrid columns={4} gap="xl">
               {valueProps.map((prop) => {
                 const Icon = prop.icon
                 return (
@@ -278,7 +278,7 @@ export const HomePage: React.FC = () => {
                   </motion.div>
                 )
               })}
-            </div>
+            </ResponsiveGrid>
           </SectionWrapper>
         </Container>
       </section>
