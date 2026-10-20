@@ -755,6 +755,11 @@ paths:
                 oneOf:
                   - { $ref: '#/components/schemas/StalePolicyGateEvaluationError' }
                   - { $ref: '#/components/schemas/StalePolicyGateReviewError' }
+        '422':
+          description: Accepting a policy or gate anomaly remediation requires reviewer rationale.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 
   /api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/history:
     parameters:

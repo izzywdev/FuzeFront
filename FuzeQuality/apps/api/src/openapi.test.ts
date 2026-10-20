@@ -393,6 +393,9 @@ describe('contract discovery', () => {
         { $ref: '#/components/schemas/StalePolicyGateReviewError' },
       ])
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['422'].description
+      ).toContain('requires reviewer rationale')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.requestBody.content[
           'application/json'
         ].schema.properties.expectedReviewedAt

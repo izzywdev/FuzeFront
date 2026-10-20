@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PolicyGateEvaluation, Repository } from '@fuzequality/contracts'
-import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewStateConflict } from './policy-gate-review'
+import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewRationaleConflict, policyGateReviewStateConflict } from './policy-gate-review'
 
 const repository = {
   id: 'repo-1',
@@ -106,5 +106,26 @@ describe('policy-gate review revision guard', () => {
       reviewedEvaluation.reviewedAt,
     )).toBeUndefined()
     expect(policyGateReviewStateConflict(evaluation, undefined)).toBeUndefined()
+  })
+
+  it('requires rationale before accepting an anomaly remediation', () => {
+    expect(policyGateReviewRationaleConflict(evaluation, 'accepted')).toMatchObject({
+      code: 'POLICY_GATE_RATIONALE_REQUIRED',
+      evaluationKind: 'unguarded-policy',
+      remediationAction: 'build-gate',
+    })
+    expect(policyGateReviewRationaleConflict(evaluation, 'accepted', 'no')).toMatchObject({
+      code: 'POLICY_GATE_RATIONALE_REQUIRED',
+    })
+    expect(policyGateReviewRationaleConflict(
+      evaluation,
+      'accepted',
+      'Verified ownership and remediation scope.',
+    )).toBeUndefined()
+    expect(policyGateReviewRationaleConflict(evaluation, 'dismissed')).toBeUndefined()
+    expect(policyGateReviewRationaleConflict({
+      ...evaluation,
+      kind: 'guarded-policy',
+    }, 'accepted')).toBeUndefined()
   })
 })

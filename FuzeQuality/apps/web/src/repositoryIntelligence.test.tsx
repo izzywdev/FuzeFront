@@ -376,6 +376,9 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
+      target: { value: 'Confirmed the missing control and remediation owner.' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Accept recommendation' }))
     await screen.findByText('high · unguarded-policy · accepted')
 
@@ -489,6 +492,9 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(history).not.toBeNull()
     fireEvent.click(within(history!).getByText('Review history'))
     expect(await within(history!).findByText('previous-governance-reviewer')).toBeVisible()
+    fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
+      target: { value: 'Confirmed the remediation against repository evidence.' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Accept recommendation' }))
     expect(await within(history!).findByText('current-governance-reviewer')).toBeVisible()
     expect(api.policyGateReviewHistory).toHaveBeenCalledTimes(2)
@@ -2610,7 +2616,10 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     await screen.findByText(governanceEvaluation.title)
-    fireEvent.change(screen.getByLabelText('Optional governance rationale'), {
+    expect(screen.getByRole('button', { name: 'Accept recommendation' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+    expect(screen.getByText(/Accepting this anomaly creates reviewed remediation evidence/)).toBeVisible()
+    fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
       target: { value: 'Required before release.' },
     })
     fireEvent.click(
@@ -2628,7 +2637,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
     expect(
       screen.getByRole('button', { name: 'Accept recommendation' })
-    ).toBeEnabled()
+    ).toBeDisabled()
     expect(screen.getByText(/This governance decision can be revised/)).toBeVisible()
   })
 
@@ -2656,6 +2665,9 @@ describe('RepositoryIntelligence flow inventory', () => {
         expect.objectContaining({ reviewStatus: 'proposed' })
       )
     )
+    fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
+      target: { value: 'Confirmed the proposed remediation and audit scope.' },
+    })
     fireEvent.click(
       screen.getByRole('button', { name: 'Accept recommendation' })
     )
@@ -2858,7 +2870,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     ).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
     expect(
-      screen.getByLabelText('Optional governance rationale')
+      screen.getByLabelText('Governance rationale required to accept anomaly')
     ).toBeDisabled()
   })
 
@@ -2874,7 +2886,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     await screen.findByText(governanceEvaluation.title)
-    const rationale = screen.getByLabelText('Optional governance rationale')
+    const rationale = screen.getByLabelText('Governance rationale required to accept anomaly')
     fireEvent.change(rationale, { target: { value: 'Needs a named owner.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
 
@@ -2901,7 +2913,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     await screen.findByText(governanceEvaluation.title)
-    const rationale = screen.getByLabelText('Optional governance rationale')
+    const rationale = screen.getByLabelText('Governance rationale required to accept anomaly')
     fireEvent.change(rationale, { target: { value: 'Needs a named owner.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
 
@@ -2972,7 +2984,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     await screen.findByText(/This governance decision can be revised/)
-    const rationale = screen.getByLabelText('Optional governance rationale')
+    const rationale = screen.getByLabelText('Governance rationale required to accept anomaly')
     fireEvent.change(rationale, { target: { value: 'The guard was replaced.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
 

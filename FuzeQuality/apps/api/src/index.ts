@@ -52,7 +52,7 @@ import { repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict,
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
-import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewStateConflict } from './policy-gate-review'
+import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewRationaleConflict, policyGateReviewStateConflict } from './policy-gate-review'
 import { decodeHistoryCursor, decodeUuidHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
 import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
 import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
@@ -734,6 +734,12 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
   if (!existingEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
   const conflict = policyGateReviewConflict(repository, existingEvaluation)
   if (conflict) return response.status(409).json(conflict)
+  const rationaleConflict = policyGateReviewRationaleConflict(
+    existingEvaluation,
+    parsed.data.status,
+    parsed.data.reason,
+  )
+  if (rationaleConflict) return response.status(422).json(rationaleConflict)
   const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, {
     status: parsed.data.status,
     reviewedBy: requestIdentity(request)!.userId,

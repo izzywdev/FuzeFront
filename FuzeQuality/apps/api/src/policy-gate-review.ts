@@ -50,3 +50,23 @@ export function policyGateReviewStateConflict(
     currentReviewedAt: evaluation.reviewedAt ?? null,
   } as const
 }
+
+export function policyGateReviewRationaleConflict(
+  evaluation: PolicyGateEvaluation,
+  status: 'accepted' | 'dismissed',
+  reason?: string,
+) {
+  const requiresRationale = evaluation.kind !== 'guarded-policy'
+  if (
+    status !== 'accepted' ||
+    !requiresRationale ||
+    (reason?.trim().length ?? 0) >= 3
+  ) return undefined
+
+  return {
+    error: 'A reviewer rationale is required to accept a policy or gate anomaly remediation.',
+    code: 'POLICY_GATE_RATIONALE_REQUIRED',
+    evaluationKind: evaluation.kind,
+    remediationAction: evaluation.remediationAction,
+  } as const
+}

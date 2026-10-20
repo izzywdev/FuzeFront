@@ -3189,6 +3189,9 @@ export function PolicyGateReviewControls({
     currentRevision && evaluation.revision === currentRevision
   )
   const isReviewable = isCurrentRevision && !stale
+  const requiresAcceptanceRationale = evaluation.kind !== 'guarded-policy'
+  const acceptanceRationaleMissing =
+    requiresAcceptanceRationale && reason.trim().length < 3
 
   useEffect(() => {
     setStale(false)
@@ -3233,7 +3236,9 @@ export function PolicyGateReviewControls({
             </p>
           )}
           <label>
-            Optional governance rationale
+            {requiresAcceptanceRationale
+              ? 'Governance rationale required to accept anomaly'
+              : 'Optional governance rationale'}
             <input
               value={reason}
               disabled={!isReviewable || busy}
@@ -3241,10 +3246,15 @@ export function PolicyGateReviewControls({
               placeholder="Why should this recommendation be accepted or dismissed?"
             />
           </label>
+          {requiresAcceptanceRationale && (
+            <p className="flow-review-guidance" role="status">
+              Accepting this anomaly creates reviewed remediation evidence and requires a rationale. Dismissal remains available.
+            </p>
+          )}
           <div className="row-actions">
             <QualityAction
               intent="secondary"
-              disabled={busy || !isReviewable}
+              disabled={busy || !isReviewable || acceptanceRationaleMissing}
               onClick={() => void submit('accepted')}
             >
               <Check size={14} /> Accept recommendation
