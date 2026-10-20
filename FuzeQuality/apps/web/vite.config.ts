@@ -52,7 +52,7 @@ export default defineConfig({
     proxy: { '/api': 'http://localhost:4180', '/health': 'http://localhost:4180' },
   },
   build: {
-    outDir: resolve(appRoot, '../../dist/web'),
+    outDir: resolve(appRoot, '../../dist'),
     emptyOutDir: true,
     target: 'esnext',
   },

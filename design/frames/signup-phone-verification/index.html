@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Signup phone verification — approval frames (FFRNT-361)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="phone-verify.css" />
+</head>
+<body>
+<main class="pv-page" data-frame="index" data-flow="index">
+  <div class="pv-brand"><span class="pv-brand__mark" aria-hidden="true">F</span><span class="pv-brand__word">FuzeFront</span></div>
+  <p class="pv-eyebrow">Approval frames · feature: signup-phone-verification · FFRNT-361</p>
+  <h1 class="pv-h1">Phone verification by text message, as a step of sign-up</h1>
+  <p class="pv-lead">After an account is created, the user can confirm a mobile number with a 6-digit text-message code,
+    before going on to the existing "check your inbox" step. These frames show the placement, the happy path, and every state
+    the implementation must render: wrong, expired and locked codes, send failures, rate limits, no SMS channel in this
+    environment, a number that can't be used, both skip policies, loading, resume, session and generic errors. Each is shown
+    on desktop and at 375px. Approving a flow approves the component and package plan below. No UI exists yet.</p>
+
+  <div class="pv-cards" data-flow-walker>
+    <a class="pv-cardlink" href="01-placement.html" data-nav="01-placement">
+      <span class="pv-cardlink__step">01 · placement</span>
+      <h2 class="pv-cardlink__title">Where the step sits</h2>
+      <p class="pv-cardlink__desc">signup → <b>phone</b> → check inbox or the app, in parallel with the email link. The exit rule, the sign-in re-prompt, and a routing table
+        from <code>GET /methods</code> + <code>GET /verify/status</code>.</p>
+    </a>
+    <a class="pv-cardlink" href="02-enter-phone.html" data-nav="02-enter-phone">
+      <span class="pv-cardlink__step">02 · /signup/phone</span>
+      <h2 class="pv-cardlink__title">Enter phone</h2>
+      <p class="pv-cardlink__desc">Country code + national number → E.164 preview, invalid / valid, sending.</p>
+    </a>
+    <a class="pv-cardlink" href="03-enter-code.html" data-nav="03-enter-code">
+      <span class="pv-cardlink__step">03 · /signup/phone</span>
+      <h2 class="pv-cardlink__title">Enter code</h2>
+      <p class="pv-cardlink__desc">6-cell OtpInput that accepts a pasted code and SMS autofill, resend cooldown, expiry, verifying.</p>
+    </a>
+    <a class="pv-cardlink" href="04-verified.html" data-nav="04-verified">
+      <span class="pv-cardlink__step">04 · /signup/phone</span>
+      <h2 class="pv-cardlink__title">Verified → continue</h2>
+      <p class="pv-cardlink__desc">Server-confirmed success only. Continue goes to check-inbox if an email is still pending, otherwise into the app.</p>
+    </a>
+    <a class="pv-cardlink" href="05-code-errors.html" data-nav="05-code-errors">
+      <span class="pv-cardlink__step">05 · fail-closed</span>
+      <h2 class="pv-cardlink__title">Code errors</h2>
+      <p class="pv-cardlink__desc">Wrong code (tries left), expired code, too many attempts / 429 with a countdown.</p>
+    </a>
+    <a class="pv-cardlink" href="06-send-errors.html" data-nav="06-send-errors">
+      <span class="pv-cardlink__step">06 · fail-closed</span>
+      <h2 class="pv-cardlink__title">Send &amp; channel errors</h2>
+      <p class="pv-cardlink__desc">Send failed, rate-limited, SMS unavailable (honest degrade), number can't be used
+        (no enumeration), number rejected by server.</p>
+    </a>
+    <a class="pv-cardlink" href="07-skip-policy.html" data-nav="07-skip-policy">
+      <span class="pv-cardlink__step">07 · policy</span>
+      <h2 class="pv-cardlink__title">Skip policy</h2>
+      <p class="pv-cardlink__desc"><code>optional</code> (recommended) vs <code>required</code>. Neither one ever leaves
+        the user stuck.</p>
+    </a>
+    <a class="pv-cardlink" href="08-states.html" data-nav="08-states">
+      <span class="pv-cardlink__step">08 · states</span>
+      <h2 class="pv-cardlink__title">Loading &amp; edge states</h2>
+      <p class="pv-cardlink__desc">Loading skeleton, already verified, resume after reload, SMS off before the step loads,
+        session expired, generic error.</p>
+    </a>
+  </div>
+
+  <section class="pv-section" data-decisions>
+    <h2>Decisions these frames freeze</h2>
+    <ul>
+      <li><b>Placement.</b> The step comes right after <code>POST /signup</code> (201, session issued) and <b>before</b>
+        the check-inbox screen, running in parallel with email verification. Phone verification <b>does need an
+        authenticated session</b>: <code>/verify/phone/start</code> and <code>/verify/status</code> call
+        <code>requireBearer</code>. Signup issues one, so the step can run immediately. Waiting for email verification
+        first would make a working SMS step depend on email, and a user who opens the link on another device would arrive
+        there without a session. <a href="01-placement.html" style="color:var(--accent-color)">See 01</a>.</li>
+      <li><b>One exit rule.</b> Every way out of the step goes through <code>nextAfterPhone()</code>, using freshly re-fetched
+        status: Continue, Skip, a deferral, and every bypass (flag or policy off, SMS unavailable, already verified).
+        The user sees check-inbox <b>only</b> if an email was sent and isn't confirmed yet. If email verification is off,
+        or the link was confirmed in parallel, they go straight into the app.</li>
+      <li><b>Skip policy.</b> Both outcomes are designed, with one server switch
+        <code>verification.phoneAtSignup</code> (Δ). The recommended default is <code>optional</code>. <code>required</code>
+        removes the user's Skip but still never blocks account creation. <b>Every</b> failure state, including a network
+        error or an unclassified 5xx, offers <i>Continue for now</i> in place of Skip.</li>
+      <li><b>Re-prompt at sign-in.</b> Under <code>required</code>, a flagged redirect after every successful sign-in
+        sends an unverified user to <code>/signup/phone?next=…</code> when SMS is available.
+        <a href="01-placement.html" style="color:var(--accent-color)">See 01</a>.</li>
+      <li><b>Honest copy.</b> The screens promise only what <code>/verify/phone</code> does: confirm a contact number. They
+        don't claim it enables text-message sign-in codes or account recovery. SMS MFA enrolment is a separate flow.</li>
+      <li><b>No enumeration.</b> <code>/start</code> returns 202 for any well-formed number. "Number can't be used"
+        (409) comes only from <code>/confirm</code>, <i>after a correct code</i>, so only the phone's owner ever sees it.</li>
+      <li><b>Honest degrade.</b> If <code>AuthMethods.verification.sms</code> is <code>false</code>, the step is never
+        shown. If SMS fails mid-flow (503), the screen says so plainly and offers Continue. There is no dead end anywhere.</li>
+      <li><b>No vendor names in the UI.</b> The text-message provider is never mentioned.</li>
+    </ul>
+  </section>
+
+  <!-- BUILD INVENTORY — approving these frames approves this plan (mirrors manifest.build 1:1) -->
+  <section class="pv-section" data-build-inventory>
+    <h2>Build inventory <span class="pv-tag">approve = approve this plan</span></h2>
+    <div class="pv-grid">
+      <div>
+        <h3>Flows (orchestrators)</h3>
+        <ul>
+          <li data-build-flow="signup-phone"><code>SignupPhoneVerificationFlow</code> → <code>/signup/phone</code>
+            <span class="pv-pending" data-approval-status="pending">pending</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Components</h3>
+        <ul>
+          <li data-build-component><code>SignupPhoneVerificationFlow</code> <span class="pv-tag pv-tag--new">new</span></li>
+          <li data-build-component><code>ContactVerifyPanel</code> <span class="pv-tag pv-tag--reuse">shared w/ mfa-stepup-mobile</span></li>
+          <li data-build-component><code>PhoneNumberField</code> <span class="pv-tag pv-tag--new">new</span></li>
+          <li data-build-component><code>OtpInput</code> <span class="pv-tag pv-tag--reuse">reuse</span></li>
+          <li data-build-component><code>ResendCooldownButton</code> <span class="pv-tag pv-tag--reuse">reuse · auth-experience</span></li>
+          <li data-build-component><code>SignupProgress</code> <span class="pv-tag pv-tag--new">new</span></li>
+          <li data-build-component><code>AuthCard</code> <span class="pv-tag pv-tag--reuse">reuse · auth-experience</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Packages</h3>
+        <ul>
+          <li data-build-package><code>@fuzefront/auth-ui</code> (extend)</li>
+          <li>implementation: <code>packages/auth-ui/src/components/phone-verification/**</code></li>
+          <li>consumes <code>@fuzefront/security-client</code></li>
+          <li>consumes <code>libphonenumber-js</code> (MIT, E.164 + per-country length. Adopted, not hand-rolled)</li>
+        </ul>
+      </div>
+      <div>
+        <h3>DS primitives to add first <span class="pv-tag">frontend-engineer</span></h3>
+        <ul>
+          <li><code>OtpInput</code> (44×52 cells). Already named as missing by mfa-management and mfa-stepup-mobile; build it <b>once</b></li>
+          <li><code>PhoneInput</code> / <code>CountryCodeSelect</code> (flag + dial code, 44px target)</li>
+          <li><code>Alert</code> <code>info</code>/<code>warning</code> variants (if still missing)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="pv-section" data-contract>
+    <h2>Contract binding &amp; deltas</h2>
+    <p>OpenAPI <code>packages/security/openapi.yaml</code> → <code>@fuzefront/security-client</code> · flag
+      <code>fuzefront.auth.signup-phone-verification</code> (<b>default OFF</b>, builders audience) · endpoints
+      <code>GET /v1/security/methods</code>, <code>GET /v1/security/verify/status</code>,
+      <code>POST /v1/security/verify/phone/start</code>, <code>POST /v1/security/verify/phone/resend</code> (new, Δ),
+      <code>POST /v1/security/verify/phone/confirm</code>.</p>
+    <p><b>AuthMethods does advertise SMS availability</b>: <code>verification.sms</code>, derived from
+      <code>SMS_SERVICE_URL</code> in <code>GET /methods</code>. The step relies on it to decide whether to appear.
+      The contract today is <b>not enough</b> to render these frames honestly. The deltas below are for
+      <code>contract-designer</code> → <code>backend-engineer</code>:</p>
+    <ol>
+      <li data-delta="confirm-auth"><span class="pv-tag pv-tag--delta">security</span> <code>POST /verify/phone/confirm</code>
+        must require <code>bearerAuth</code> and bind to the session user. Today the route has no <code>requireBearer</code>,
+        and the provider runs <code>users.where({ phone }).update({ phone_verified: true })</code>, which marks <i>every</i>
+        account with that number as verified.</li>
+      <li data-delta="pending-phone"><code>/start</code> must not write <code>users.phone</code> before the user proves they
+        have the phone. Today the provider writes <code>users.phone</code> and only <i>then</i> awaits <code>sendSmsOtp</code>.
+        It should hold a pending number, promote it on confirm, and accept a confirm body of <code>{ code }</code>. The pending
+        challenge, and so <code>phonePending</code>, is committed <b>only after the SMS provider accepts the send</b>. On 502, 503
+        or 429 it is rolled back, so a reload never resumes at code entry when no code was sent.</li>
+      <li data-delta="return-path"><span class="pv-tag pv-tag--delta">security</span> Every <code>?next</code> goes through one
+        <code>safeReturnPath()</code> guard, following LoginPage's allowlist approach: a single leading <code>/</code> (never
+        <code>//</code>, never a scheme), same origin, normalized, and on the allowlist of app routes. Anything else goes to the
+        default app. Without it, <code>?next=//evil.example</code> is an open redirect straight after sign-in.</li>
+      <li data-delta="start-ack"><code>202</code> body <code>PhoneVerifyStartAck { maskedPhone, expiresInSeconds, resendAfterSeconds }</code>.
+        On a resend, <code>expiresInSeconds</code> is the code's <b>actual remaining</b> lifetime. The provider may re-send the
+        same unexpired code without extending it.</li>
+      <li data-delta="start-errors"><code>/start</code> errors: <code>400 PHONE_INVALID</code> · <code>429 RATE_LIMITED</code>+<code>Retry-After</code>
+        (no limiter exists today) · <code>502 SMS_SEND_FAILED</code> · <code>503 SMS_UNAVAILABLE</code>. Today these fall
+        through to <code>401 UNKNOWN "Authentication failed"</code>, so a failed send looks like a lost session.</li>
+      <li data-delta="confirm-errors"><code>/confirm</code> errors: <code>422 CODE_INVALID {attemptsRemaining}</code> ·
+        <code>422 CODE_EXPIRED</code> · <code>429 TOO_MANY_ATTEMPTS</code>+<code>Retry-After</code> ·
+        <code>409 PHONE_UNAVAILABLE</code> (only after a correct code). Today all of these come back as <code>401 NOT_ACTIVE</code>.</li>
+      <li data-delta="no-enumeration"><code>/start</code> returns 202 for every well-formed number, whether or not
+        another account already uses it.</li>
+      <li data-delta="policy"><code>AuthMethods.verification.phoneAtSignup: "off" | "optional" | "required"</code>.</li>
+      <li data-delta="pending-status"><code>VerificationStatus.phonePending?: { maskedPhone, expiresInSeconds, resendAfterSeconds }</code>
+        so the step can resume after a reload. Only the <b>masked</b> number ever comes back to the client.</li>
+      <li data-delta="resend-session"><b>New</b> <code>POST /verify/phone/resend</code>: session-bound with an <b>empty body</b>. It
+        resends to the pending number the server holds, so Resend still works after a reload, when the client knows only the
+        masked number. Returns <code>PhoneVerifyStartAck</code>; <code>404 NO_PENDING_VERIFICATION</code> sends the user back to
+        enter-phone. <code>/start</code> remains the only call that takes a full number.</li>
+      <li data-delta="confirm-outage">Confirm-time outage: when sms-service <code>/sms/verify</code> times out or returns
+        non-2xx, the result is <code>503 VERIFY_UNAVAILABLE</code>. It doesn't use an attempt and isn't reported as a wrong code.
+        Today <code>checkSmsOtp</code> turns every failure into <code>false</code>, and <code>/sms/verify</code> returns only a
+        boolean. It should return the provider status, and the client should get a tagged result.</li>
+      <li data-delta="sms-retry-after">Rate-limit pass-through: sms-service <code>/sms/send</code> returns 429 with no
+        <code>Retry-After</code>, and <code>sendSmsOtp</code> discards the response. Both must carry <code>retryAfterSeconds</code>
+        through to <code>429 RATE_LIMITED</code> + <code>Retry-After</code> on <code>/start</code> and <code>/resend</code>.</li>
+      <li data-delta="signup-route">Routing: when the step applies, 01-signup's submit goes to <code>/signup/phone</code>.
+        Otherwise it goes through <code>nextAfterPhone()</code>: <code>/signup/verify</code> only if an email is pending,
+        else the app. Behind the flag; no approved frame changes.</li>
+      <li data-delta="signin-reprompt">Routing: after a successful sign-in in auth-experience's <code>signin</code> flow,
+        redirect to <code>/signup/phone?next=…</code> when <code>phoneAtSignup === "required"</code>, <code>phoneVerified</code>
+        is false and SMS is available. Behind the flag; no approved frame changes.</li>
+    </ol>
+  </section>
+
+  <section class="pv-section" data-reconciliation>
+    <h2>Reconciliation with existing frames</h2>
+    <ul>
+      <li><b>mfa-stepup-mobile · 03-confirm-contact</b> (flow <code>confirm-contact-phone</code>, unapproved). This feature
+        is the sign-up version of the <i>same</i> phone OTP screen. It uses the same <code>data-panel="confirm-contact"</code>
+        and the same state and action vocabulary (<code>enter-phone · sending · enter-code · error-invalid · error-send ·
+        verified</code>; <code>send-code · verify-contact · resend · skip</code>), adds <code>data-context="signup"</code>,
+        and adds the states that frame lacks (expired, locked/429, rate-limited, unavailable, number-unavailable,
+        loading, session, generic). It uses the same OtpInput, but with cells widened to <b>44×52</b> so both dimensions meet
+        the 44px tap target; mfa-stepup-mobile's 42px-wide cells should adopt this. The implementation should be
+        <b>one</b> <code>ContactVerifyPanel</code> + state machine used in both places, not two parallel trees.
+        If this is approved first, mfa-stepup-mobile's 03 should gain these states when it is next revised.</li>
+      <li><b>auth-experience</b> (approved). 01-signup, 03-check-inbox and 04-verify-landing are <b>unchanged</b>. Email
+        stays link-click, as mfa-stepup-mobile's reconciliation also decided. This step is placed between 01 and 03.</li>
+      <li><b>account-security / mfa-stepup-mobile 04</b>. After a skip, the reminder is the existing "Unverified" phone
+        chip in the security status view. No new reminder surface is designed here.</li>
+    </ul>
+    <h3 style="margin-top:var(--space-4)">Open questions for the owner</h3>
+    <ul>
+      <li>Skip-policy default: these frames assume <code>optional</code>.</li>
+      <li>Can one number be used by more than one account? If yes, the 409 state goes away.</li>
+      <li>Package home of the shared <code>ContactVerifyPanel</code>: <code>@fuzefront/auth-ui</code> (assumed here),
+        consumed by <code>@fuzefront/account-security-ui</code>?</li>
+      <li>Gate coverage: auth-experience's <i>approved</i> flows claim <code>packages/auth-ui/src/**</code>, so
+        <code>gate-frames-first</code> would count this feature's code as approved through them and would <b>not</b> block
+        it before these frames are approved. Fixing this means narrowing auth-experience's <code>implementation.paths</code>,
+        which changes its stamp and needs re-approval, or making the gate prefer the most specific claim.</li>
+    </ul>
+  </section>
+
+  <p class="pv-help">Status: <span class="pv-pending" data-approval-status="pending">● awaiting review</span>. The flow is
+    <code>approved: false</code>. No UI, tests, or deploy exist yet; merging the approved frames is the gate that starts them.
+    Re-stamp after any edit: <code>node scripts/stamp-frames.mjs --write --feature signup-phone-verification</code>.</p>
+</main>
+</body>
+</html>

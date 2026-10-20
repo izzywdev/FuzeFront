@@ -7,7 +7,9 @@
 // Both middlewares:
 //   1. Check the fuzefront.selection-lists.service feature flag (404 if OFF).
 //   2. Require req.orgId (populated by authMiddleware from the JWT).
-//   3. Run the relevant quota check (soft limit, not transactional).
+//   3. Run the relevant quota check (soft fast-path; the create handler re-checks
+//      under an advisory lock, which is the exact one). Lists: org_lists,
+//      user_lists and the storage ceiling; items: list_items + storage ceiling.
 //   4. On QuotaExceededError → 403 QUOTA_EXCEEDED (OpenAPI Forbidden response).
 //   5. On any other error → forward to the default Express error handler.
 //
@@ -61,7 +63,7 @@ export const enforceListQuota = async (
   }
 
   try {
-    await checkListQuota(req.orgId);
+    await checkListQuota(req.orgId, undefined, req.userId);
     next();
   } catch (err) {
     if (err instanceof QuotaExceededError) {

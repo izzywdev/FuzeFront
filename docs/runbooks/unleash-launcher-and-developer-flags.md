@@ -218,10 +218,14 @@ client, yet `release.yml` only watched `backend/**`, `shared/**`, `frontend/**`,
 … — a change confined to `packages/**` would merge green and ship nothing. Path
 added.
 
-Local/e2e stacks have no Unleash to target, so the backend accepts
-`FLAGS_FORCE_ON=<comma-separated keys>`, **hard-gated to non-production** so a
-stray env var can never light up dark features in prod. `docker-compose.e2e.yml`
-uses it in place of the removed `VITE_FF_ACCOUNT_SECURITY_HUB` build arg.
+Local/e2e stacks have no Unleash to target, so the backend installs the one
+explicit offline OpenFeature provider in `@fuzefront/feature-flags` when
+`FUZE_FLAGS_PROVIDER=offline` is set (`FUZE_FLAGS_OFFLINE_ON=<comma-separated keys>`
+lists what to force ON). It is **refused in production** and ignored whenever
+Unleash is configured, so a stray env var can never light up dark features in
+prod. `docker-compose.e2e.yml` uses it in place of the removed
+`VITE_FF_ACCOUNT_SECURITY_HUB` build arg. (This replaced the earlier
+`FLAGS_FORCE_ON` env hatch.)
 
 ### Step 1. Create a `developers` segment
 

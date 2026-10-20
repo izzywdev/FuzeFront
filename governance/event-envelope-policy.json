@@ -1,0 +1,77 @@
+{
+  "$comment": [
+    "FuzeFront's own policy, baselined from `--report` on 2026-10-05 (FuzeSDLC v1.23.0 gates). mode=ratchet: knownUnhandled only shrinks. The gate scripts and Harden Gate jobs arrive via governance-sync; this file sits here until then.",
+    "Policy for scripts/gate_event_envelope.py (gate-event-envelope) -- data-consistency-standard.md section 3 (envelope v2) and the TS<->Python registry-parity row of section 11.",
+    "registry.path / topicsPath / schemasDir locate this repo's TS event registry (the values below are FuzeFront's layout, the family convention). A repo that publishes no domain events at all replaces `registry`/`envelope`/`parity` with `notApplicable: { reason }` (>= 40 chars) -- a declared decision, printed on every run; a missing registry with no such declaration FAILS (absence is not permission).",
+    "envelope.v2Markers are regexes: a schema declaration matching ANY is on envelope v2; so is one naming every identifier in envelope.requiredFields (default eventId, aggregateType, aggregateId, aggregateVersion). The static check cannot see a schema built at run time -- widen the markers here rather than weakening the gate.",
+    "minTopics is the EXPECTED topic count and the non-vacuity floor: a registry that parses to fewer topics fails, so a moved/reshaped registry cannot pass by parsing to nothing. Set it to the current count; lower it only in a reviewed PR when topics are genuinely removed.",
+    "parity.pythonMirror is the Python registry file or package directory. If it does not exist the single finding is `parity:python-mirror-missing`: it is neither ignored nor green -- list it in knownUnhandled (inherited debt, shrink-only) or in exempt with a reason (a repo that will never have a Python side). Other parity items are `parity:<topic>` (in TS, absent from Python) and `parity-extra:<topic>` (the reverse).",
+    "knownUnhandled is a RATCHET, not an allowlist. An entry is only ever REMOVED. A new offender fails the gate immediately, and the gate also fails if a listed entry is now compliant (or gone) and has not been removed here in the same PR -- otherwise the list rots into a permanent exemption nobody revisits.",
+    "exempt[] is a declared, reasoned decision (reason >= 40 chars; standard section 13), not a way to make a red gate green. A name that matches nothing fails (stale exemption); a name in both exempt and knownUnhandled fails.",
+    "This file is SEEDED from FuzeSDLC and owned by THIS repo from then on: governance-sync does not overwrite it. Seed the baseline with `--report`, whose last block is a suggested knownUnhandled (replace, do not append).",
+    "knownUnhandled entries here are topic names (schema not yet on envelope v2) and `parity:*` items."
+  ],
+  "owner": "@izzywdev",
+  "mode": "ratchet",
+  "minTopics": 36,
+  "knownUnhandled": [
+    "app.activated",
+    "app.heartbeat",
+    "app.registered",
+    "app.suspended",
+    "billing.llm.usage",
+    "billing.payment.completed",
+    "billing.subscription.changed",
+    "billing.usage.recorded",
+    "chat.response.chunk",
+    "identity.membership.added",
+    "identity.membership.removed",
+    "identity.org.created",
+    "identity.org.deleted",
+    "identity.org.updated",
+    "identity.user.created",
+    "identity.user.deleted",
+    "identity.user.updated",
+    "notify.email.requested",
+    "notify.email.status",
+    "parity:python-mirror-missing",
+    "portal.created",
+    "selection-lists.access.granted",
+    "selection-lists.access.revoked",
+    "selection-lists.item.archived",
+    "selection-lists.item.created",
+    "selection-lists.item.deleted",
+    "selection-lists.item.reordered",
+    "selection-lists.item.updated",
+    "selection-lists.list.archived",
+    "selection-lists.list.created",
+    "selection-lists.list.deleted",
+    "selection-lists.list.updated",
+    "selection-lists.seed.completed",
+    "selection-lists.seed.failed",
+    "selection-lists.seed.requested",
+    "selection-lists.translation.deleted",
+    "selection-lists.translation.upserted"
+  ],
+  "exempt": [],
+  "registry": {
+    "path": "shared/src/kafka/registry.ts",
+    "topicsPath": "shared/src/kafka/types.ts",
+    "schemasDir": "shared/src/kafka/schemas"
+  },
+  "envelope": {
+    "v2Markers": [
+      "\\bEnvelopeV2Schema\\b",
+      "\\bparseEnvelope\\b"
+    ],
+    "requiredFields": [
+      "eventId",
+      "aggregateType",
+      "aggregateId",
+      "aggregateVersion"
+    ]
+  },
+  "parity": {
+    "pythonMirror": "packages/events-py/fuzefront_events"
+  }
+}
