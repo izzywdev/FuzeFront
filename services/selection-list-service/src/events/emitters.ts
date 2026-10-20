@@ -27,6 +27,8 @@ import { TOPICS } from '@fuzefront/shared/kafka';
 import {
   bumpListRevision,
   enqueueEvent,
+  enqueueEvents,
+  EnqueueEventInput,
   EnqueuedEvent,
   OutboxExecutor,
   wireUserId,
@@ -79,6 +81,12 @@ export interface ListRow {
   seed_key: string | null;
   seed_version: number | null;
   seed_user_modified: boolean | null;
+  /** 4.1.0 (migration 11): 'private' | 'org' | 'platform'. */
+  visibility?: string | null;
+  forked_from_list_id?: string | null;
+  forked_from_org_id?: string | null;
+  forked_from_revision?: string | number | null;
+  forked_at?: Date | string | null;
   name: string | null;
   description: string | null;
 }
@@ -94,6 +102,8 @@ export interface ItemRow {
   seed_key: string | null;
   seed_version: number | null;
   seed_user_modified: boolean | null;
+  /** 4.1.0 (migration 11): the source item of a forked item. */
+  origin_item_id?: string | null;
   label: string | null;
   description: string | null;
 }
@@ -120,6 +130,7 @@ export async function readList(trx: OutboxExecutor, listId: string): Promise<Lis
   const res = await trx.raw(
     `SELECT sl.id, sl.key, sl.source_locale, sl.status, sl.revision, sl.created_at, sl.updated_at,
             sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
+            sl.visibility, sl.forked_from_list_id, sl.forked_from_org_id, sl.forked_from_revision, sl.forked_at,
             t.name, t.description
        FROM selection_lists sl
        LEFT JOIN LATERAL (
@@ -139,7 +150,7 @@ export async function readList(trx: OutboxExecutor, listId: string): Promise<Lis
 export async function readItem(trx: OutboxExecutor, itemId: string): Promise<ItemRow> {
   const res = await trx.raw(
     `SELECT i.id, i.code, i.sort_order, i.status, i.created_at, i.updated_at,
-            i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+            i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
             t.label, t.description
        FROM selection_list_items i
        JOIN selection_lists sl ON sl.id = i.list_id
@@ -157,7 +168,18 @@ export async function readItem(trx: OutboxExecutor, itemId: string): Promise<Ite
   return row;
 }
 
-function listSnapshot(r: ListRow) {
+/** `forkedFrom` of a list snapshot (HTTP `forked_from`): null for a list that is not a fork. */
+function forkedFromOf(r: ListRow) {
+  if (!r.forked_from_list_id) return null;
+  return {
+    listId: r.forked_from_list_id,
+    organizationId: r.forked_from_org_id,
+    listRevision: Number(r.forked_from_revision),
+    forkedAt: iso(r.forked_at as Date | string),
+  };
+}
+
+export function listSnapshot(r: ListRow) {
   return {
     listId: r.id,
     key: r.key,
@@ -166,12 +188,15 @@ function listSnapshot(r: ListRow) {
     name: r.name,
     description: r.description ?? null,
     seed: seedOf(r),
+    // Additive in shared 1.3.0: always emitted (the stored truth; a row older than migration 11 is private).
+    visibility: r.visibility ?? 'private',
+    forkedFrom: forkedFromOf(r),
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
   };
 }
 
-function itemSnapshot(r: ItemRow) {
+export function itemSnapshot(r: ItemRow) {
   return {
     itemId: r.id,
     code: r.code,
@@ -180,13 +205,14 @@ function itemSnapshot(r: ItemRow) {
     sortOrder: Number(r.sort_order),
     status: r.status,
     seed: seedOf(r),
+    originItemId: r.origin_item_id ?? null,
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
   };
 }
 
 /** The base every list-scoped payload carries (eventId/organizationId are set by the writer). */
-function listBase(ctx: EventContext, list: ListRow, listRevision: number) {
+export function listBase(ctx: EventContext, list: ListRow, listRevision: number) {
   return { actor: ctx.actor, listId: list.id, listKey: list.key, listRevision };
 }
 
@@ -264,6 +290,27 @@ export async function emitListChanged(
 }
 
 /**
+ * selection-lists.visibility.changed — the list's `visibility` JUST changed in this transaction
+ * (`previous` = the value before). Its own topic and its own listRevision; emit it AFTER `emitListChanged`
+ * for the same request so a combined PATCH yields list.updated (other fields) then this event.
+ */
+export async function emitVisibilityChanged(
+  trx: OutboxExecutor,
+  ctx: EventContext,
+  listId: string,
+  previous: string,
+): Promise<EnqueuedEvent> {
+  const revision = await bumpListRevision(trx, ctx.organizationId, listId);
+  const list = await readList(trx, listId);
+  return send(trx, ctx, TOPICS.SELECTION_LISTS_VISIBILITY_CHANGED, {
+    ...listBase(ctx, list, revision),
+    list: listSnapshot(list),
+    previousVisibility: previous,
+    visibility: list.visibility ?? 'private',
+  });
+}
+
+/**
  * list.deleted (purge tombstone). Call BEFORE the purge deletes the list row:
  * it bumps the revision so the tombstone outranks every earlier event.
  */
@@ -271,6 +318,117 @@ export async function emitListDeleted(trx: OutboxExecutor, ctx: EventContext, li
   const revision = await bumpListRevision(trx, ctx.organizationId, listId);
   const list = await readList(trx, listId);
   return send(trx, ctx, TOPICS.SELECTION_LISTS_LIST_DELETED, listBase(ctx, list, revision));
+}
+
+/**
+ * Every event of a FORK, in one go (design record D11), for a fork that was JUST written in this
+ * transaction: list.created, item.created x n, translation.upserted x m (list-level then item-level, every
+ * non-source locale), access.granted for the owner, then list.forked (provenance + the complete
+ * source -> fork item id map). A fork-unaware consumer therefore builds a correct read model from the
+ * ordinary events alone; list.forked adds what they cannot carry.
+ *
+ * A fork can be thousands of events, so this does NOT go through the one-event-at-a-time emitters (6+
+ * statements each). It reads the fork's content once, assigns the per-list revisions in memory (the list
+ * starts at 1; every event except access.granted takes the next one, exactly as `bumpListRevision` would),
+ * validates and inserts the lot with `enqueueEvents`, and stores the final revision with ONE update.
+ * Returns the number of events written.
+ */
+export async function emitForkEvents(
+  trx: OutboxExecutor,
+  ctx: EventContext,
+  fork: {
+    listId: string;
+    ownerUserId: string;
+    source: { listId: string; organizationId: string; listKey: string; listRevision: number };
+  },
+): Promise<number> {
+  const list = await readList(trx, fork.listId);
+  const itemsRes = await trx.raw(
+    `SELECT i.id, i.code, i.sort_order, i.status, i.created_at, i.updated_at,
+            i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
+            t.label, t.description
+       FROM selection_list_items i
+       LEFT JOIN LATERAL (
+         SELECT x.label, x.description FROM selection_list_item_translations x
+          WHERE x.item_id = i.id
+          ORDER BY (x.locale = ?) DESC, (x.locale = 'en') DESC, x.locale
+          LIMIT 1
+       ) t ON true
+      WHERE i.list_id = ?
+      ORDER BY i.sort_order ASC, i.id ASC`,
+    [list.source_locale, fork.listId],
+  );
+  const items = ((itemsRes as { rows?: ItemRow[] }).rows ?? []) as ItemRow[];
+  const listTransRes = await trx.raw(
+    `SELECT locale, name, description, is_machine FROM selection_list_translations
+      WHERE list_id = ? AND locale <> ? ORDER BY locale`,
+    [fork.listId, list.source_locale],
+  );
+  const listTrans = ((listTransRes as { rows?: Array<{ locale: string; name: string; description: string | null; is_machine: boolean }> }).rows ?? []);
+  const itemTransRes = await trx.raw(
+    `SELECT t.item_id, i.code, t.locale, t.label, t.description, t.is_machine
+       FROM selection_list_item_translations t
+       JOIN selection_list_items i ON i.id = t.item_id
+      WHERE i.list_id = ? AND t.locale <> ?
+      ORDER BY i.sort_order ASC, i.id ASC, t.locale ASC`,
+    [fork.listId, list.source_locale],
+  );
+  const itemTrans = ((itemTransRes as { rows?: Array<{ item_id: string; code: string; locale: string; label: string; description: string | null; is_machine: boolean }> }).rows ?? []);
+
+  const inputs: EnqueueEventInput[] = [];
+  const push = (topic: string, payload: Record<string, unknown>) =>
+    inputs.push({ topic, organizationId: ctx.organizationId, payload, correlationId: ctx.correlationId });
+  const snapshot = listSnapshot(list);
+  let revision = Number(list.revision); // 1: the insert itself is the first revision
+
+  push(TOPICS.SELECTION_LISTS_LIST_CREATED, { ...listBase(ctx, list, revision), list: snapshot });
+  for (const item of items) {
+    revision += 1;
+    push(TOPICS.SELECTION_LISTS_ITEM_CREATED, { ...listBase(ctx, list, revision), item: itemSnapshot(item) });
+  }
+  for (const t of listTrans) {
+    revision += 1;
+    push(TOPICS.SELECTION_LISTS_TRANSLATION_UPSERTED, {
+      ...listBase(ctx, list, revision),
+      locale: t.locale,
+      isMachine: Boolean(t.is_machine),
+      target: { kind: 'list', name: t.name, description: t.description ?? null },
+    });
+  }
+  for (const t of itemTrans) {
+    revision += 1;
+    push(TOPICS.SELECTION_LISTS_TRANSLATION_UPSERTED, {
+      ...listBase(ctx, list, revision),
+      locale: t.locale,
+      isMachine: Boolean(t.is_machine),
+      target: { kind: 'item', itemId: t.item_id, itemCode: t.code, label: t.label, description: t.description ?? null },
+    });
+  }
+  push(TOPICS.SELECTION_LISTS_ACCESS_GRANTED, {
+    actor: ctx.actor,
+    listId: list.id,
+    listKey: list.key,
+    userId: fork.ownerUserId,
+    role: 'list-owner',
+    previousRole: null,
+  });
+  revision += 1;
+  push(TOPICS.SELECTION_LISTS_LIST_FORKED, {
+    ...listBase(ctx, list, revision),
+    list: snapshot,
+    source: {
+      listId: fork.source.listId,
+      organizationId: fork.source.organizationId,
+      listKey: fork.source.listKey,
+      listRevision: fork.source.listRevision,
+    },
+    itemMap: items.map((i) => ({ originItemId: i.origin_item_id, itemId: i.id })),
+  });
+
+  await enqueueEvents(trx, inputs);
+  // The revision counter was assigned in memory above; store where it ended (the DB only enforces >= and never decreasing).
+  await trx.raw('UPDATE selection_lists SET revision = ? WHERE id = ?', [revision, fork.listId]);
+  return inputs.length;
 }
 
 // ---------------------------------------------------------------------------

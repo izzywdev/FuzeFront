@@ -28,6 +28,7 @@ import {
 } from '../src/middleware/authz';
 import { isAuthzEnforced } from '../src/middleware/authz.flags';
 import { authMiddleware } from '../src/middleware/auth';
+import { usr, org } from './helpers/ids';
 
 const ENV_VAR = 'FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED';
 const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-authz-enforcement';
@@ -40,7 +41,7 @@ function setNodeEnv(v: string | undefined): void {
   else process.env.NODE_ENV = v;
 }
 
-const token = () => jwt.sign({ userId: 'usr_tester01', orgId: 'org_acme' }, JWT_SECRET);
+const token = () => jwt.sign({ userId: usr('tester01'), orgId: org('acme') }, JWT_SECRET);
 
 function makeApp(): express.Application {
   const app = express();
@@ -72,7 +73,7 @@ afterEach(() => {
 });
 
 describe('isAuthzEnforced', () => {
-  const ctx = { userId: 'usr_a', orgId: 'org_a' };
+  const ctx = { userId: usr('a'), orgId: org('a') };
 
   describe('NODE_ENV=production — always enforced', () => {
     beforeEach(() => setNodeEnv('production'));
@@ -157,8 +158,8 @@ describe('requireAuthzCheck — production enforces regardless of the env var', 
     const { client } = denyAllClient();
     _setAuthzClientForTesting(client);
     const req = {
-      userId: 'usr_tester01',
-      orgId: 'org_acme',
+      userId: usr('tester01'),
+      orgId: org('acme'),
       headers: { authorization: `Bearer ${token()}` },
     } as unknown as Request;
 
