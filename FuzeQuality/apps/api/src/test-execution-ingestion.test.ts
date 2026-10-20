@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { testExecutionInputSchema, type ScanResult } from '@fuzequality/contracts'
-import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileCompleteExecutionEvidenceLinks, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
   it('requires a safe diagnostic for unavailable evidence collection', () => {
@@ -39,6 +39,18 @@ describe('internal execution ingestion compatibility', () => {
     ])
   })
 
+  it('removes expired GitHub artifacts only after a complete provider inventory', () => {
+    const expiredVideo = { kind: 'video' as const, name: 'Expired video', url: 'https://github.com/acme/app/actions/runs/42/artifacts/7' }
+    const externalReport = { kind: 'report' as const, name: 'External report', url: 'https://evidence.example/run/42' }
+    const runArtifacts = { kind: 'report' as const, name: 'Run artifacts', url: 'https://github.com/acme/app/actions/runs/42#artifacts' }
+    const currentTrace = { kind: 'trace' as const, name: 'Current trace', url: 'https://github.com/acme/app/actions/runs/42/artifacts/8' }
+
+    expect(reconcileCompleteExecutionEvidenceLinks(
+      [expiredVideo, externalReport, runArtifacts],
+      [currentTrace],
+    )).toEqual([externalReport, runArtifacts, currentTrace])
+  })
+
   it('refreshes exact-attempt artifacts and records bounded provider results', async () => {
     const execution = webhookExecutionRecord({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000', provider: 'github-actions',
@@ -56,6 +68,30 @@ describe('internal execution ingestion compatibility', () => {
     })
     expect(refreshed.externalRunId).toBe('42')
     expect(refreshed.attempt).toBe(2)
+  })
+
+  it('reconciles expired provider artifacts when a refresh is complete', async () => {
+    const execution = webhookExecutionRecord({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000', provider: 'github-actions',
+      externalRunId: '42', attempt: 2, revision: 'abc123', kind: 'post-production',
+      status: 'passed', name: 'Production journey', evidenceLinks: [
+        { kind: 'video', name: 'Expired video', url: 'https://github.com/acme/app/actions/runs/42/artifacts/7' },
+        { kind: 'report', name: 'External report', url: 'https://evidence.example/run/42' },
+      ],
+    }, 'tenant-1', { policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
+
+    const refreshed = await refreshExecutionArtifactEvidence(execution, async () => ({
+      links: [{ kind: 'trace', name: 'Current trace', url: 'https://github.com/acme/app/actions/runs/42/artifacts/8' }],
+      truncated: false,
+    }), '2026-10-20T11:00:00.000Z')
+
+    expect(refreshed.evidenceLinks).toEqual([
+      expect.objectContaining({ name: 'External report' }),
+      expect.objectContaining({ name: 'Current trace' }),
+    ])
+    expect(refreshed.evidenceLinks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Expired video' }),
+    ]))
   })
 
   it('retains a safe unavailable state when artifact refresh fails', async () => {

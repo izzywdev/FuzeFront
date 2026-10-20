@@ -566,6 +566,27 @@ describe('test execution evidence', () => {
     ])
   })
 
+  it('removes stale GitHub artifact links when a complete provider inventory replaces them', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '905', attempt: 1, revision: 'abc', kind: 'post-production' as const, status: 'passed' as const, name: 'Post-production', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [] }
+    await store.saveTestExecution({ id: 'first', ...base, evidenceLinks: [
+      { kind: 'video', name: 'Expired video', url: 'https://github.com/acme/app/actions/runs/905/artifacts/7' },
+      { kind: 'report', name: 'External report', url: 'https://evidence.example/run/905' },
+    ], evidenceCollection: { status: 'partial', checkedAt: '2026-10-16T08:00:00.000Z', errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' } })
+    await store.saveTestExecution({ id: 'second', ...base, evidenceLinks: [
+      { kind: 'trace', name: 'Current trace', url: 'https://github.com/acme/app/actions/runs/905/artifacts/8' },
+    ], evidenceCollection: { status: 'complete', checkedAt: '2026-10-20T11:00:00.000Z' } })
+
+    const [saved] = await store.testExecutions('repo-1', 'org-1')
+    expect(saved.evidenceLinks).toEqual([
+      expect.objectContaining({ name: 'External report' }),
+      expect.objectContaining({ name: 'Current trace' }),
+    ])
+    expect(saved.evidenceLinks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Expired video' }),
+    ]))
+  })
+
   it('applies the same partial-evidence precedence in the Postgres upsert', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
@@ -578,6 +599,8 @@ describe('test execution evidence', () => {
     })
 
     expect(String(query.mock.calls[0][0])).toContain("EXCLUDED.evidence_collection->>'status' IN ('complete','partial')")
+    expect(String(query.mock.calls[0][0])).toContain("EXCLUDED.provider='github-actions' AND EXCLUDED.evidence_collection->>'status'='complete'")
+    expect(String(query.mock.calls[0][0])).toContain("existing_link->>'url' !~*")
   })
 
   it('does not regress terminal evidence when a running delivery arrives late', async () => {

@@ -67,6 +67,24 @@ export function mergeExecutionEvidenceLinks(
   ).values()].slice(0, 100)
 }
 
+const githubWorkflowArtifactUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+\/artifacts\/\d+$/i
+
+/**
+ * A complete provider inventory is authoritative for GitHub-owned artifact
+ * download links. Remove links that the provider no longer returns (normally
+ * expired or deleted artifacts), while retaining producer-owned external
+ * evidence and the stable run-level artifacts page.
+ */
+export function reconcileCompleteExecutionEvidenceLinks(
+  existing: WorkflowExecutionCommand['evidenceLinks'],
+  discovered: WorkflowExecutionCommand['evidenceLinks'],
+) {
+  return mergeExecutionEvidenceLinks(
+    existing.filter(link => !githubWorkflowArtifactUrl.test(link.url)),
+    discovered,
+  )
+}
+
 type ArtifactEvidenceResult = {
   links: TestExecution['evidenceLinks']
   truncated: boolean
@@ -94,7 +112,9 @@ export async function refreshExecutionArtifactEvidence<T extends Pick<TestExecut
     const discovered = await collect()
     return {
       ...execution,
-      evidenceLinks: mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered.links),
+      evidenceLinks: discovered.truncated
+        ? mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered.links)
+        : reconcileCompleteExecutionEvidenceLinks(execution.evidenceLinks, discovered.links),
       evidenceCollection: discovered.truncated
         ? { status: 'partial', checkedAt, errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' }
         : { status: 'complete', checkedAt },

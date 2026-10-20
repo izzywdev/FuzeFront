@@ -367,6 +367,12 @@ export function ExecutionEvidenceCoverage({
     <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
       <strong>Evidence coverage</strong>
       <small>{thresholds} thresholds · {links} artifacts · {gatePairs} policy–gate outcomes</small>
+      {collection && (
+        <small>
+          Provider evidence checked{' '}
+          <time dateTime={collection.checkedAt}>{new Date(collection.checkedAt).toLocaleString()}</time>
+        </small>
+      )}
       {!collection && (
         <span className="status-pill status-running">
           Provider artifact discovery has not run; zero artifacts is not a verified result

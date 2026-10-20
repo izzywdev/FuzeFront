@@ -85,6 +85,10 @@ describe('ExecutionThresholdEvidence', () => {
     }} />)
 
     expect(screen.getByText(/artifact lookup timed out/i)).toHaveTextContent('zero artifacts is not a verified result')
+    expect(screen.getByText(/provider evidence checked/i).querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-10-16T08:00:00.000Z',
+    )
 
     rerender(<ExecutionEvidenceCoverage execution={{
       ...execution,
