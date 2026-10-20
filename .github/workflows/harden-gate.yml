@@ -19,6 +19,13 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  # Eight of this workflow's jobs are REQUIRED contexts on the master ruleset. A merge
+  # queue builds its candidate on a `refs/heads/gh-readonly-queue/...` branch and emits
+  # `merge_group`, NOT `pull_request` — so without this trigger those eight contexts are
+  # never created for a queue entry, and GitHub treats a required-but-never-reported
+  # context as unsatisfied. That is FuzeFront#286 all over again, relocated into the
+  # queue: nothing red to click, nothing to re-run, and the entry never merges.
+  merge_group:
   workflow_dispatch:
 
 permissions:
