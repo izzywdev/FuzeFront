@@ -1,4 +1,4 @@
-# fuze:managed template=governance-sync.yml baseline=v1 digest=sha256:2c25882e292c4a7a655e40e9fd1e52b4f0a82301ca4d7fab06ef979afdb7743f
+# fuze:managed template=governance-sync.yml baseline=v1 digest=sha256:a1085e56655667cc57e883939db78ad8317fbc499d0053b45ad14b9b92510777
 name: Governance Sync
 
 # Per-repo, CI-time governance reconciliation (stamped by sdlc-bootstrap).
@@ -731,7 +731,44 @@ jobs:
             cat /tmp/gs-sweep-push.log
             git config --local --unset-all "http.https://github.com/.extraheader" || true
             if [ "$push_rc" -ne 0 ]; then
-              echo "::error::Failed to push the governance reconciliation to ${SWEEP_BRANCH} (git exit ${push_rc}). If the lease was stale, something else wrote the sweep branch between this run's fetch and its push; the next sweep rebuilds it."
+              # CLASSIFY, and carry the server's own words in the ANNOTATION.
+              #
+              # This branch used to emit one fixed sentence blaming a stale lease and
+              # promising "the next sweep rebuilds it". In MendysRobotics that sentence was
+              # wrong on both counts and printed hourly for weeks while the sweep had in fact
+              # NEVER succeeded: 99/99 scheduled runs failed, refs/heads/governance-sync/sweep
+              # was never created, and no sweep PR ever existed (FuzeInfra#1415). Two
+              # separate defects kept that invisible for ~500 runs/day fleet-wide:
+              #
+              #   * The message described a TRANSIENT cause for a DETERMINISTIC failure, so
+              #     every reader concluded it would self-heal and nobody looked again.
+              #   * The server's actual reason reached only the job log. An agent session
+              #     behind a restrictive egress proxy cannot fetch Actions logs at all --
+              #     results-receiver.actions.githubusercontent.com and the sharded
+              #     productionresultssa*.blob.core.windows.net hosts answer 403 to CONNECT.
+              #     Check-run annotations come back from api.github.com, which those sessions
+              #     CAN read, so an annotation that carries the reason is the difference
+              #     between a diagnosable failure and a permanent mystery.
+              #
+              # PR mode above already classifies its own 403 for exactly this reason (and for
+              # exactly this lesson: "a diagnostic that names the wrong cause is worse than
+              # none"). This is sweep mode catching up to it.
+              #
+              # THE EXIT CODE IS LOAD-BEARING in the hint. git exits 1 when the SERVER
+              # rejected a ref -- non-fast-forward, a stale lease, a declining hook -- and
+              # 128 on a FATAL: auth failure, repository not found, a malformed Authorization
+              # header. So a 128 RULES THE LEASE OUT no matter what the lease looked like,
+              # which is why the lease arm below also requires a non-empty OLD_SWEEP_SHA.
+              push_err="$(tail -20 /tmp/gs-sweep-push.log | tr -d '\r' | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+              if grep -qE "Write access to repository not granted|Permission to .* denied|error: 403" /tmp/gs-sweep-push.log; then
+                echo "::error::Cannot push the governance reconciliation to ${SWEEP_BRANCH}: the ${PUSH_IDENTITY} identity has NO WRITE ACCESS (HTTP 403). A permission problem, not a race -- retrying cannot help. Check the fuze-agent App is installed on this repo with contents:write. git said:%0A${push_err}"
+              elif grep -qE "refusing to allow (a|an) (GitHub App|OAuth App|Personal Access Token)" /tmp/gs-sweep-push.log; then
+                echo "::error::Cannot push the governance reconciliation to ${SWEEP_BRANCH}: the push carries .github/workflows changes but ${PUSH_IDENTITY} lacks the workflows permission. The workflows-scoped mint is continue-on-error, so check THAT step's own outcome -- a silent mint failure lands here. git said:%0A${push_err}"
+              elif [ -n "${OLD_SWEEP_SHA:-}" ] && grep -qE "stale info|fetch first|non-fast-forward|\[rejected\]" /tmp/gs-sweep-push.log; then
+                echo "::error::The lease on ${SWEEP_BRANCH} was stale -- something wrote the branch between this run's fetch and its push. THIS one is genuinely transient: the next sweep rebuilds the branch from ${DEFAULT_BRANCH}. git said:%0A${push_err}"
+              else
+                echo "::error::Failed to push the governance reconciliation to ${SWEEP_BRANCH} (git exit ${push_rc}, identity ${PUSH_IDENTITY}, lease ${OLD_SWEEP_SHA:-none}). Do NOT assume this self-heals -- check this workflow's own run history before believing it does. git said:%0A${push_err}"
+              fi
               exit 1
             fi
             echo "::notice::Pushed $COMMITTABLE managed file(s) and $RECONCILED governed workflow file(s) to ${SWEEP_BRANCH} using ${PUSH_IDENTITY}."

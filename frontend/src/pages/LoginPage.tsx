@@ -4,8 +4,9 @@ import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
 import type { SessionResult } from '../services/api'
 import { Alert, AuthCard } from '@fuzefront/design-system'
-import { AuthPanel } from '@fuzefront/auth-ui'
+import { AuthPanel, isAuthExperienceEnabled } from '@fuzefront/auth-ui'
 import type {
+  AuthenticatedMeta,
   AuthTransport,
   AuthPanelMode,
   AuthenticatedSession,
@@ -101,6 +102,27 @@ function LoginPage() {
   )
   const { setUser } = useCurrentUser()
 
+  // A FuzePicker email opens its protected mentions route first. Preserve only
+  // that same-origin path across sign-in/sign-up so a new recipient lands on
+  // the mention they were sent, rather than being dropped on the dashboard.
+  // This is intentionally an allowlist rather than a generic redirect query:
+  // authentication must never become an open-redirect primitive.
+  useEffect(() => {
+    const current = `${window.location.pathname}${window.location.search}`
+    if (current.startsWith('/fuzepicker/mentions')) {
+      window.sessionStorage.setItem('fuzepicker:return-path', current)
+    }
+    // fuzefront.auth.experience: an expired verify link sends a signed-out user
+    // here with `?next=/signup/verify`. EXACT-match allowlist (never a generic
+    // redirect param) so this cannot become an open redirect.
+    if (
+      isAuthExperienceEnabled() &&
+      new URLSearchParams(window.location.search).get('next') === '/signup/verify'
+    ) {
+      window.sessionStorage.setItem('auth:return-path', '/signup/verify')
+    }
+  }, [])
+
   // Page-load social-callback outcome (the OAuth provider redirecting back
   // with `?code=`/`?error=`) is a SEPARATE concern from AuthPanel's own
   // form-submit error/notice — AuthPanel has no prop to surface an
@@ -126,7 +148,15 @@ function LoginPage() {
     try {
       const user = await authAPI.getCurrentUser()
       setUser(user)
-      window.location.href = '/dashboard'
+      const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
+      window.sessionStorage.removeItem('fuzepicker:return-path')
+      const authReturn = window.sessionStorage.getItem('auth:return-path')
+      window.sessionStorage.removeItem('auth:return-path')
+      window.location.href = returnPath?.startsWith('/fuzepicker/mentions')
+        ? returnPath
+        : authReturn === '/signup/verify'
+          ? authReturn
+          : '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
       setCallbackError('Signed in, but failed to load your profile. Please retry.')
@@ -192,7 +222,46 @@ function LoginPage() {
     []
   )
 
-  const handleAuthenticated = (session: AuthenticatedSession) => {
+  // `fuzefront.auth.experience` (default OFF): a fresh signup whose email is not
+  // yet verified is sent to the check-inbox screen instead of straight into the
+  // app. The signup response carries only the session, so "verification pending"
+  // is derived from the contract: AuthMethods.verification.email (the platform
+  // verifies email) AND GET /verify/status → emailVerified:false. Fail-open: any
+  // error here falls through to today's behaviour rather than blocking sign-up.
+  const routeAfterSignup = async (
+    session: AuthenticatedSession,
+    email: string
+  ): Promise<void> => {
+    try {
+      const methods = await authAPI.getAuthMethods()
+      if (methods.verification?.email) {
+        // Ask with the session this signup just returned, so the check never
+        // depends on which account the vault resolves as active.
+        const status = await authAPI.getVerificationStatus(session.token)
+        if (!status.emailVerified) {
+          // Carry the saved deep link (fuzepicker mention) THROUGH the verification
+          // detour as an allowlisted `next=`, and clear the stash so it can't
+          // hijack a later, unrelated sign-in.
+          const saved = window.sessionStorage.getItem('fuzepicker:return-path')
+          window.sessionStorage.removeItem('fuzepicker:return-path')
+          const next = saved?.startsWith('/fuzepicker/mentions')
+            ? `&next=${encodeURIComponent(saved)}`
+            : ''
+          window.location.href = `/signup/verify?email=${encodeURIComponent(email)}${next}`
+          return
+        }
+      }
+    } catch (err) {
+      console.warn('Could not determine email-verification status after signup:', err)
+    }
+    await completeSession(session)
+  }
+
+  const handleAuthenticated = (session: AuthenticatedSession, meta?: AuthenticatedMeta) => {
+    if (isAuthExperienceEnabled() && meta?.mode === 'signup') {
+      void routeAfterSignup(session, meta.email)
+      return
+    }
     void completeSession(session)
   }
 
@@ -242,6 +311,7 @@ function LoginPage() {
         transport={transport}
         onAuthenticated={handleAuthenticated}
         onMfaRequired={handleMfaRequired}
+        forgotPasswordHref={isAuthExperienceEnabled() ? '/reset' : undefined}
         labels={labels}
       />
     </AuthCard>

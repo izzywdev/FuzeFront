@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { App } from '../lib/shared'
 import {
+  getAccountValue,
   getActiveAccountId,
   getActiveAuthToken,
   setActiveValue,
@@ -23,7 +24,9 @@ export type { AuthMethods, SessionResult, SocialProvider }
 // VITE_API_URL still overrides for cross-origin setups.
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
-  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001')
+  (typeof window !== 'undefined'
+    ? window.location.origin
+    : 'http://localhost:3001')
 const API_URL = `${API_BASE_URL}/api`
 
 // Verbose API diagnostics (config dump, per-request console groups, module-load
@@ -203,7 +206,9 @@ api.interceptors.request.use(
       console.groupEnd()
     }
 
-    if (token) {
+    // An explicit Authorization (e.g. startEmailVerification targeting a chosen
+    // signed-in account) wins over the active account's token.
+    if (token && !config.headers.Authorization) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
@@ -224,7 +229,7 @@ api.interceptors.request.use(
  * not redirect away from them. Keep this the single source of truth: LoginPage
  * derives sign-in vs sign-up from the path, so silently rewriting it loses intent.
  */
-const AUTH_ROUTE_RE = /^\/(login|signup)\b/
+const AUTH_ROUTE_RE = /^\/(login|signup|reset|verify)\b/
 
 // Enhanced response logging with timing
 api.interceptors.response.use(
@@ -233,7 +238,8 @@ api.interceptors.response.use(
       const duration = (response.config as any).metadata
         ? Date.now() - (response.config as any).metadata.startTime
         : 0
-      const requestId = (response.config as any).metadata?.requestId || 'unknown'
+      const requestId =
+        (response.config as any).metadata?.requestId || 'unknown'
 
       console.group(`✅ API Response [${requestId}] - ${duration}ms`)
       console.log('Response Details:', {
@@ -293,7 +299,13 @@ api.interceptors.response.use(
     }
     console.groupEnd()
 
-    if (error.response?.status === 401) {
+    // A 401 from a TOKEN-redemption call (an expired/used verify link or reset
+    // token, 401 NOT_ACTIVE) says nothing about the caller's SESSION — it must
+    // not sign a signed-in user out. The auth-ui flows render it as "expired".
+    const failedUrl = String(error.config?.url ?? '')
+    const isTokenRedemption = /\/(verify\/email\/confirm|session\/password\/reset-confirm)$/.test(failedUrl)
+
+    if (error.response?.status === 401 && !isTokenRedemption) {
       console.log('🔐 Unauthorized - clearing the active account session')
       // Clear only the ACTIVE account. Other signed-in accounts keep their
       // sessions — one expiring must not sign the user out of the rest.
@@ -451,7 +463,8 @@ export const authAPI = {
       }
     } catch (err: any) {
       // A cancelled request is not a failure — propagate so the caller ignores it.
-      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') throw err
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError')
+        throw err
       // Fail open: unknown availability, never block the user.
       return { email, available: null }
     }
@@ -462,6 +475,60 @@ export const authAPI = {
   // path; on completion the app is returned to with `?code=` for exchange.
   async startSocialLogin(provider: SocialProvider = 'google'): Promise<void> {
     window.location.href = `${API_URL}${SECURITY_BASE}/social/${provider}/start`
+  },
+
+  // ── Email verification + self-service password reset (FFRNT-360) ───────────
+  // Thin 1:1 wrappers over the frozen contract; the auth-ui flows classify the
+  // axios error shapes themselves (429 / EXPIRED / INVALID_CODE / 400).
+
+  // POST /verify/email/start → 202. Needs a session (the interceptor adds the bearer).
+  async startEmailVerification(accountId?: string): Promise<void> {
+    // No body: the server derives the target address from the session. With
+    // several accounts signed in, `accountId` picks WHICH account's session
+    // (never an address) — omitted means the active account.
+    const token = accountId ? getAccountValue(accountId, 'authToken') : null
+    // A named account with no stored session must fail, not fall through to
+    // the ACTIVE account's token and verify the wrong address.
+    if (accountId && !token) throw new Error('That account is no longer signed in')
+    await api.post(
+      `${SECURITY_BASE}/verify/email/start`,
+      {},
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    )
+  },
+
+  // POST /verify/email/confirm → 200 VerificationStatus (idempotent for an
+  // already-verified token) | 400 EXPIRED / INVALID_CODE.
+  async confirmEmailVerification(req: {
+    token: string
+  }): Promise<{ emailVerified: boolean; phoneVerified: boolean; phone?: string }> {
+    const response = await api.post(`${SECURITY_BASE}/verify/email/confirm`, req)
+    return response.data
+  },
+
+  // GET /verify/status — authenticated; used right after signup to decide
+  // whether the user must verify their email before continuing.
+  // `token` pins the call to a specific session (e.g. the one a signup just
+  // returned) instead of whatever the vault currently resolves as active.
+  async getVerificationStatus(
+    token?: string
+  ): Promise<{ emailVerified: boolean; phoneVerified: boolean }> {
+    const response = await api.get(
+      `${SECURITY_BASE}/verify/status`,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    )
+    return response.data
+  },
+
+  // POST /session/password/reset-request → ALWAYS 202 (no account enumeration).
+  async requestPasswordReset(email: string): Promise<void> {
+    await api.post(`${SECURITY_BASE}/session/password/reset-request`, { email })
+  },
+
+  // POST /session/password/reset-confirm → 200 { reset: true } | 400 (invalid,
+  // expired or already-used token, or a policy-rejected password).
+  async confirmPasswordReset(req: { token: string; newPassword: string }): Promise<void> {
+    await api.post(`${SECURITY_BASE}/session/password/reset-confirm`, req)
   },
 
   // Current identity ("me"). The Security API returns `{ identity, user }`; the
@@ -513,7 +580,11 @@ export const authAPI = {
           persistSession(result.token, result.sessionId)
         }
         // Strip the opaque code from the URL so a reload can't re-exchange it.
-        window.history.replaceState({}, document.title, window.location.pathname)
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname
+        )
         return { result }
       } catch (err: any) {
         const failMessage =
@@ -534,7 +605,7 @@ export const appsAPI = {
   },
 }
 
-// Organizations API  
+// Organizations API
 export const organizationsAPI = {
   async getOrganizations() {
     const response = await api.get('/organizations')
@@ -594,6 +665,10 @@ export const updateAppStatus = async (id: string, isActive: boolean) => {
   const res = await api.put(`/apps/${id}/activate`, { isActive })
   return res.data
 }
+export const updateApp = async (id: string, app: Partial<App>) => {
+  const res = await api.put(`/apps/${id}`, app)
+  return res.data
+}
 export const deleteApp = async (id: string) => {
   const res = await api.delete(`/apps/${id}`)
   return res.data
@@ -629,7 +704,9 @@ export const checkOrganizationSlugAvailable = async (
   slug: string
 ): Promise<{ available: boolean; reason?: 'taken' | 'invalid' }> => {
   try {
-    const res = await api.get('/organizations/slug-available', { params: { slug } })
+    const res = await api.get('/organizations/slug-available', {
+      params: { slug },
+    })
     return { available: !!res.data?.available, reason: res.data?.reason }
   } catch {
     return { available: true }
@@ -699,7 +776,6 @@ export const getUserRoles = async (
   }
 }
 
-
 // ── Invitation types ───────────────────────────────────────────────────────
 export interface OrganizationInvitation {
   id: string
@@ -728,20 +804,36 @@ export const acceptInvitation = async (token: string) => {
 }
 
 /** Create a single invitation for an org. */
-export const createInvitation = async (orgId: string, email: string, role: string) => {
-  const res = await api.post(`/organizations/${orgId}/invitations`, { email, role })
+export const createInvitation = async (
+  orgId: string,
+  email: string,
+  role: string
+) => {
+  const res = await api.post(`/organizations/${orgId}/invitations`, {
+    email,
+    role,
+  })
   return res.data
 }
 
 /** Bulk invite up to 50 emails to an org. */
-export const bulkInvite = async (orgId: string, emails: string[], role: string) => {
-  const res = await api.post(`/organizations/${orgId}/invitations/bulk`, { emails, role })
+export const bulkInvite = async (
+  orgId: string,
+  emails: string[],
+  role: string
+) => {
+  const res = await api.post(`/organizations/${orgId}/invitations/bulk`, {
+    emails,
+    role,
+  })
   return res.data
 }
 
 /** Revoke an invitation. */
 export const revokeInvitation = async (orgId: string, invitationId: string) => {
-  const res = await api.delete(`/organizations/${orgId}/invitations/${invitationId}`)
+  const res = await api.delete(
+    `/organizations/${orgId}/invitations/${invitationId}`
+  )
   return res.data
 }
 
@@ -784,6 +876,7 @@ export interface AppInstallationsResponse {
   scopeLevel: AppScopeLevel
   orgLevelOnly?: boolean
   installMode?: 'self' | 'everyone' | 'both'
+  organizationInstallMode?: 'self' | 'everyone' | 'both'
   installations: AppInstallation[]
 }
 
@@ -846,4 +939,3 @@ export const getInstalledApps = async (organizationId?: string) => {
 }
 
 export default api
-

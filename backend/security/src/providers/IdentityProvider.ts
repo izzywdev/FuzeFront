@@ -276,6 +276,12 @@ export interface SocialLinkStart {
   codeVerifier: string;
 }
 
+/** Options for resolving a presented bearer as a user session. */
+export interface SessionTokenOptions {
+  /** Also accept a `fuze-org-session` token. Authz-decision callers only. */
+  allowOrgSession?: boolean;
+}
+
 /**
  * The AuthN swap contract. Shaped from the current server-brokered behavior in
  * `backend/security/src/routes/auth.ts` (`/oidc/password` :520, `/oidc/login`
@@ -327,8 +333,18 @@ export interface IdentityProvider {
    */
   emailExists(email: string): Promise<boolean>;
 
-  /** Normalized identity + user for a presented session token ("me"). */
-  getUserInfo(token: string): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }>;
+  /**
+   * Normalized identity + user for a presented session token ("me").
+   *
+   * Only a PLAIN session token is accepted by default. `allowOrgSession` also
+   * accepts the org-scoped `fuze-org-session` token (services/orgSessionToken.ts)
+   * and is for the authz decision API ONLY, which org-scoped services call with
+   * that token; account-management operations must never pass it.
+   */
+  getUserInfo(
+    token: string,
+    opts?: SessionTokenOptions
+  ): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }>;
 
   /** Revoke the presented session. Idempotent. */
   logout(token: string): Promise<void>;
@@ -358,7 +374,11 @@ export interface IdentityProvider {
   /** Activate a pending factor with a one-time code. Rejects on bad/expired code. */
   activateFactor(token: string, factorId: string, code: string): Promise<MfaFactor>;
 
-  /** Remove an enrolled factor. Idempotent. */
+  /**
+   * Remove an enrolled factor. Idempotent. Rejects with LastFactorError when it
+   * is the user's last ACTIVE factor (atomic with the delete). Pending factors
+   * may always be removed.
+   */
   removeFactor(token: string, factorId: string): Promise<void>;
 
   /** (Re)generate one-time recovery codes; returns them once. */
@@ -403,8 +423,12 @@ export interface IdentityProvider {
   /** Send an SMS OTP to a phone number. */
   startPhoneVerification(token: string, phone: string): Promise<void>;
 
-  /** Confirm phone ownership via `{ phone, code }`. */
-  confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus>;
+  /**
+   * Confirm phone ownership via `{ phone, code }`. Session-bound: only the
+   * caller's own account (resolved from `token`) is marked verified, and only
+   * when `phone` is that account's pending/current number.
+   */
+  confirmPhoneVerification(token: string, phone: string, code: string): Promise<VerificationStatus>;
 
   /** Current contact-verification status for the user. */
   getVerificationStatus(token: string): Promise<VerificationStatus>;
@@ -450,4 +474,13 @@ export interface IdentityProvider {
    * identity store; FuzeFront never stores one.
    */
   setPassword(token: string, newPassword: string): Promise<IdentityConnections>;
+
+  /**
+   * Change the password of an account that already has one. Verifies
+   * `currentPassword` first, applies the new-password policy, and revokes every
+   * session EXCEPT the caller's. Rejects: InvalidInput (malformed), NoPassword
+   * (no password sign-in method), CurrentPasswordInvalid (wrong current
+   * password), PasswordPolicyRejected (new password fails policy).
+   */
+  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void>;
 }

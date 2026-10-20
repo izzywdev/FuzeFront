@@ -48,7 +48,7 @@ domain: Platform
 - [ ] Feature 1: Secret-typed values — encrypted at rest, masked on read, excluded from bulk export.
 - [ ] Feature 2: Append-only audit history of every set / unset / lock / unlock, with actor and reason.
 - [ ] Feature 3: Revert a key at a scope to any previous value from its history.
-- [ ] Feature 4: `config.changed` events published so consumers invalidate their caches.
+- [x] Feature 4: `config.changed` events published so consumers invalidate their caches.
 - [ ] Feature 5: Version stamp / ETag per `(namespace, scope)` so clients can poll cheaply.
 - [ ] Feature 6: Declarative key-definition registration — apps publish a manifest, upserted idempotently.
 - [ ] Feature 7: Import / export of a scope's configuration (JSON + YAML) with a dry-run diff.
@@ -101,7 +101,7 @@ domain: Platform
 | FF-EPIC-18-S1 | [FFRNT-256](https://fuzefront.atlassian.net/browse/FFRNT-256) | Secret-typed values — encryption, masking, export exclusion | Open |
 | FF-EPIC-18-S2 | [FFRNT-257](https://fuzefront.atlassian.net/browse/FFRNT-257) | Append-only audit history | Open |
 | FF-EPIC-18-S3 | [FFRNT-261](https://fuzefront.atlassian.net/browse/FFRNT-261) | Revert a value to a previous version | Open |
-| FF-EPIC-18-S4 | [FFRNT-262](https://fuzefront.atlassian.net/browse/FFRNT-262) | `config.changed` events for cache invalidation | Open |
+| FF-EPIC-18-S4 | [FFRNT-262](https://fuzefront.atlassian.net/browse/FFRNT-262) | `config.changed` events for cache invalidation | Done |
 | FF-EPIC-18-S5 | [FFRNT-263](https://fuzefront.atlassian.net/browse/FFRNT-263) | Version stamp / ETag per (namespace, scope) | Open |
 | FF-EPIC-18-S6 | [FFRNT-277](https://fuzefront.atlassian.net/browse/FFRNT-277) | Declarative key-definition registration from an app manifest | Open |
 | FF-EPIC-18-S7 | [FFRNT-278](https://fuzefront.atlassian.net/browse/FFRNT-278) | Import / export with dry-run diff | Open |
@@ -316,8 +316,8 @@ than merely limited.
 #### 📋 Sub-Tasks
 | Type | Summary | Assignee | Points | Status |
 |------|---------|----------|--------|--------|
-| Backend | Publish `config.changed` on commit; coalesce bulk writes into one event | — | 4 | Open |
-| Backend | Cache-invalidation support in `@fuzefront/config-client` | — | 2 | Open |
+| Backend | Publish `config.changed` on commit; coalesce bulk writes into one event | — | 4 | Done |
+| Backend | Cache-invalidation support in `@fuzefront/config-client` | — | 2 | Done |
 | QA | Single-event-per-bulk-write, invalidation round-trip, bus-down write-still-succeeds tests | — | 4 | Open |
 
 #### 🔗 Dependencies

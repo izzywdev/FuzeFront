@@ -319,9 +319,9 @@
           "04-save-conflict"
         ],
         "contractStatus": "real — binds to the frozen services/config-service/openapi.yaml",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-18T14:35:31.657Z"
       },
       {
         "id": "key-catalog",
@@ -334,9 +334,9 @@
           "07-catalog-states"
         ],
         "contractStatus": "real — binds to the frozen services/config-service/openapi.yaml",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-18T14:35:20.512Z"
       },
       {
         "id": "secret-audit",
@@ -348,9 +348,9 @@
           "09-audit-history"
         ],
         "contractStatus": "partly anticipated — secret reveal and history/revert are FF-EPIC-18-S1/S2/S3 and are commissioned by these frames; the masked/isSet secret field itself is already in the frozen contract",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-18T14:34:18.157Z"
       }
     ],
     "components": [

@@ -21,6 +21,7 @@ import {
   IdentityMembershipRemovedPayloadV1,
   identityMembershipRemovedSchemaV1,
 } from '@fuzefront/shared/kafka';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { loadConfig } from './config';
 import {
   handleUserCreated,
@@ -34,6 +35,20 @@ import {
   HandlerDeps,
 } from './handler';
 import { createApp } from './app';
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'provisioning-service',
+  serviceVersion: SERVICE_VERSION,
+});
 
 async function main() {
   const config = loadConfig();
@@ -181,22 +196,42 @@ async function main() {
 
   // --- HTTP health probe ---
   const app = createApp();
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     console.log(`[provisioning-service] Listening on port ${config.port}`);
   });
 
   // --- Graceful shutdown ---
   const shutdown = async () => {
     console.log('[provisioning-service] Shutting down...');
-    await userConsumer.disconnect();
-    await orgConsumer.disconnect();
-    await orgUpdatedConsumer.disconnect();
-    await orgDeletedConsumer.disconnect();
-    await userUpdatedConsumer.disconnect();
-    await userDeletedConsumer.disconnect();
-    await membershipAddedConsumer.disconnect();
-    await membershipRemovedConsumer.disconnect();
-    await dlqProducer.disconnect();
+    // Close the listener (letting in-flight requests finish) BEFORE flushing
+    // telemetry — otherwise a request still in flight when SIGTERM arrives
+    // either finishes after the SDK has shut down (its span lost) or is cut
+    // off by process.exit(0) below.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    // Each disconnect is isolated: if the broker is unavailable during
+    // SIGTERM and one of these rejects, an unguarded `await` chain would
+    // abort right there, skipping every consumer/producer after it AND the
+    // telemetry flush below — leaving buffered spans dropped and the
+    // process hung for Kubernetes to kill. Caught by a Codex review on
+    // PR #1489 (email-service had the identical ordering, fixed alongside).
+    for (const client of [
+      userConsumer,
+      orgConsumer,
+      orgUpdatedConsumer,
+      orgDeletedConsumer,
+      userUpdatedConsumer,
+      userDeletedConsumer,
+      membershipAddedConsumer,
+      membershipRemovedConsumer,
+      dlqProducer,
+    ]) {
+      await client.disconnect().catch((error) => {
+        console.error('[provisioning-service] Error disconnecting a Kafka client during shutdown:', error);
+      });
+    }
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => {});
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

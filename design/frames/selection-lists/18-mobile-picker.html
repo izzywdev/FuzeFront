@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — SelectionListPicker at 375 px, LTR and RTL (ar)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<link rel="stylesheet" href="mobile.css" />
+</head>
+<body>
+<div class="content" data-frame="18-mobile-picker" style="padding-top: var(--space-12);">
+
+  <h1 class="page-title">SelectionListPicker — 375 px, English · العربية</h1>
+  <p class="page-sub">Frames 4a–4c at a phone width, inside a consuming product's form — <b>not</b> the FuzeFront shell. The control
+    fills the field width, the menu opens in the flow below it (never clipped by the host's container), and options are thumb-sized.</p>
+
+  <div class="sl-devices">
+
+    <!-- ===== 1 · EN · single ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · single select</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><span class="wordmark">Acme CRM</span><span class="spacer"></span></div>
+        <div class="sl-device__screen sl-device__screen--host">
+          <div class="sl-host" data-panel="picker-mobile" data-mode="single" data-state="ready">
+            <h2 class="sl-host__title">New opportunity</h2>
+            <p class="sl-host__sub">CRM · a consuming product's form</p>
+            <div class="sl-field"><label class="sl-field__label" for="m1-name">Account name</label><input class="sl-input" id="m1-name" value="Northwind Logistics" /></div>
+            <div class="sl-field" data-picker="sales-regions">
+              <label class="sl-field__label" for="m1-region">Sales region</label>
+              <div class="sl-combo">
+                <div class="sl-combo__control sl-combo__control--open" role="combobox" aria-expanded="true" aria-controls="m1-menu" id="m1-region" tabindex="0" data-combo-control>
+                  <span class="sl-combo__value" data-selected-label>EMEA</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+                </div>
+                <div class="sl-combo__menu" id="m1-menu" role="listbox" data-combo-menu data-menu-placement="inline">
+                  <div class="sl-combo__search"><input class="sl-input" type="search" placeholder="Filter regions…" aria-label="Filter regions" data-combo-search /></div>
+                  <div class="sl-combo__list">
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="sli_11h455vb4pex5vsknk084sn02q"><span>Americas</span></div>
+                    <div class="sl-opt" role="option" aria-selected="true" data-item="sli_12h455vb4pex5vsknk084sn02q"><span>EMEA</span><span class="sl-opt__check" aria-hidden="true">✓</span></div>
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="sli_13h455vb4pex5vsknk084sn02q"><span>APAC</span></div>
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="sli_14h455vb4pex5vsknk084sn02q"><span>Japan</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="sl-persist" data-persisted><div class="sl-persist__label">What the host form submits</div><code>{ "sales_region": "sli_12h455vb4pex5vsknk084sn02q" }</code></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 2 · EN · multi ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · multi select</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><span class="wordmark">Helpdesk</span><span class="spacer"></span></div>
+        <div class="sl-device__screen sl-device__screen--host">
+          <div class="sl-host" data-panel="picker-mobile" data-mode="multi" data-state="ready">
+            <h2 class="sl-host__title">Support ticket</h2>
+            <p class="sl-host__sub">Helpdesk · a consuming product's form</p>
+            <div class="sl-field" data-picker="countries">
+              <label class="sl-field__label" for="m2-c">Countries affected</label>
+              <div class="sl-combo">
+                <div class="sl-combo__control sl-combo__control--open" role="combobox" aria-expanded="true" aria-controls="m2-menu" id="m2-c" tabindex="0" data-combo-control>
+                  <span class="sl-chips" data-chips>
+                    <span class="sl-chip" data-chip="sli_01h455vb4pex5vsknk084sn02q">United States <span class="sl-chip__x" role="button" tabindex="0" aria-label="Remove United States">×</span></span>
+                    <span class="sl-chip" data-chip="sli_02h455vb4pex5vsknk084sn02q">Canada <span class="sl-chip__x" role="button" tabindex="0" aria-label="Remove Canada">×</span></span>
+                    <span class="sl-chip" data-chip="sli_03h455vb4pex5vsknk084sn02q">United Kingdom <span class="sl-chip__x" role="button" tabindex="0" aria-label="Remove United Kingdom">×</span></span>
+                  </span>
+                  <span class="sl-combo__caret" aria-hidden="true">▾</span>
+                </div>
+                <button class="btn btn-ghost sl-block" data-action="clear-all" style="margin-top: var(--space-2);">Clear all (3)</button>
+                <div class="sl-combo__menu" id="m2-menu" role="listbox" aria-multiselectable="true" data-combo-menu data-menu-placement="inline">
+                  <div class="sl-combo__search"><input class="sl-input" type="search" placeholder="Filter countries…" aria-label="Filter countries" data-combo-search /></div>
+                  <div class="sl-combo__list">
+                    <div class="sl-opt" role="option" aria-selected="true" data-item="sli_01h455vb4pex5vsknk084sn02q"><span>United States</span><span class="sl-opt__check" aria-hidden="true">✓</span></div>
+                    <div class="sl-opt" role="option" aria-selected="true" data-item="sli_02h455vb4pex5vsknk084sn02q"><span>Canada</span><span class="sl-opt__check" aria-hidden="true">✓</span></div>
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="sli_05h455vb4pex5vsknk084sn02q"><span>Mexico</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 3 · AR · RTL single ===== -->
+    <div>
+      <p class="sl-device__label">ar · rtl · 375 · single select</p>
+      <div class="sl-device" dir="rtl" lang="ar" data-device="375" data-locale="ar" data-dir="rtl">
+        <div class="sl-device__bar"><span class="wordmark" dir="ltr">Acme CRM</span><span class="spacer"></span></div>
+        <div class="sl-device__screen sl-device__screen--host">
+          <div class="sl-host" data-panel="picker-mobile" data-mode="single" data-state="ready">
+            <h2 class="sl-host__title">فرصة جديدة</h2>
+            <p class="sl-host__sub">نموذج منتج مستهلك</p>
+            <div class="sl-field" data-picker="sales-regions">
+              <label class="sl-field__label" for="m3-region">منطقة المبيعات</label>
+              <div class="sl-combo">
+                <div class="sl-combo__control sl-combo__control--open" role="combobox" aria-expanded="true" aria-controls="m3-menu" id="m3-region" tabindex="0" data-combo-control>
+                  <span class="sl-combo__value" data-selected-label>أوروبا والشرق الأوسط وأفريقيا</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+                </div>
+                <div class="sl-combo__menu" id="m3-menu" role="listbox" data-combo-menu data-menu-placement="inline">
+                  <div class="sl-combo__search"><input class="sl-input" type="search" placeholder="تصفية المناطق…" aria-label="تصفية المناطق" data-combo-search /></div>
+                  <div class="sl-combo__list">
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="sli_11h455vb4pex5vsknk084sn02q"><span>الأمريكتان</span></div>
+                    <div class="sl-opt" role="option" aria-selected="true" data-item="sli_12h455vb4pex5vsknk084sn02q"><span>أوروبا والشرق الأوسط وأفريقيا</span><span class="sl-opt__check" aria-hidden="true">✓</span></div>
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="sli_13h455vb4pex5vsknk084sn02q"><span>آسيا والمحيط الهادئ</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="sl-persist" data-persisted dir="ltr"><div class="sl-persist__label">submits</div><code>{ "sales_region": "sli_12h455vb4pex5vsknk084sn02q" }</code></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 4 · EN · archived + purged stored values ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · stored archived / purged</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><span class="wordmark">Acme CRM</span><span class="spacer"></span></div>
+        <div class="sl-device__screen sl-device__screen--host">
+          <div class="sl-host" data-panel="picker-mobile" data-state="resolved">
+            <h2 class="sl-host__title">Opportunity #2210</h2>
+            <p class="sl-host__sub">Saved in March</p>
+            <div class="sl-field" data-picker="sales-regions" data-case="archived">
+              <label class="sl-field__label" for="m4-a">Sales region</label>
+              <div class="sl-combo__control" id="m4-a" role="combobox" aria-expanded="false" tabindex="0" data-combo-control>
+                <span class="sl-combo__value sl-muted" data-selected-label data-status="archived" style="color: var(--text-tertiary);">Benelux</span>
+                <span class="sl-pill sl-pill--archived">archived</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+              </div>
+              <p class="sl-field__hint">Real label, greyed. Not offered in the menu — it can be kept, not newly chosen.</p>
+            </div>
+            <div class="sl-field" data-picker="countries" data-case="purged" style="margin-bottom: 0;">
+              <label class="sl-field__label" for="m4-p">Country</label>
+              <div class="sl-combo__control" id="m4-p" role="combobox" aria-expanded="false" tabindex="0" data-combo-control>
+                <span class="sl-combo__value sl-combo__value--ph" data-missing="true">Unknown value</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+              </div>
+              <p class="sl-field__hint">Purged id: the id stays in the form, so re-saving does not drop it.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section" style="margin-top: var(--space-10);">
+    <h2>States at 375 px</h2>
+    <p class="sl-caption">Same states as frame 4a: never throw into the host, never silently render an empty control.</p>
+    <div class="sl-devices">
+      <div>
+        <p class="sl-device__label">loading</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short sl-device__screen--host" data-panel="picker-mobile" data-state="loading">
+          <label class="sl-field__label">Sales region</label>
+          <div class="sl-combo__control" aria-busy="true"><span class="sl-skel" style="width: 45%;"></span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">empty — no active values</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short sl-device__screen--host" data-panel="picker-mobile" data-state="empty">
+          <label class="sl-field__label">Sales region</label>
+          <div class="sl-combo__control" aria-disabled="true" style="opacity: 0.6;"><span class="sl-combo__value sl-combo__value--ph">No options available</span></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">error</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short sl-device__screen--host" data-panel="picker-mobile" data-state="error">
+          <label class="sl-field__label">Sales region</label>
+          <div class="sl-combo__control" style="border-color: var(--error-color);"><span class="sl-combo__value sl-combo__value--ph">Couldn't load options</span></div>
+          <button class="btn btn-ghost sl-block" data-action="retry" style="margin-top: var(--space-2);">Retry</button>
+          <p class="sl-field__err" data-error="load-failed"><span aria-hidden="true">⚠</span><span>Keeps any selected value.</span></p>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">404 — list unavailable</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short sl-device__screen--host" data-panel="picker-mobile" data-state="not-found">
+          <label class="sl-field__label">Sales region</label>
+          <div class="sl-combo__control" aria-disabled="true" style="opacity: 0.6;"><span class="sl-combo__value sl-combo__value--ph">List unavailable</span></div>
+          <p class="sl-field__err" data-error="NOT_FOUND"><span aria-hidden="true">⚠</span><span>404, never 403 — no cross-org probing.</span></p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section">
+    <h2>Rules the implementation must keep</h2>
+    <ul class="sl-mrules" data-rules="mobile-picker">
+      <li><b>The picker takes the width of the host field</b> and never imposes a minimum width that would scroll the host page at 375 px.</li>
+      <li><b>Below 40em the menu opens inline, in the flow under the control</b> (<code class="sl-code">data-menu-placement="inline"</code>) instead
+        of as an absolutely-positioned popover, so a host container with <code class="sl-code">overflow: hidden</code> cannot clip it and the
+        on-screen keyboard cannot cover it. The filter input keeps focus while the keyboard is open.</li>
+      <li><b>Options, the control and the filter are ≥ 44 px</b> (<code class="sl-code">--touch-target</code>). Chip remove targets are padded to
+        at least <code class="sl-code">--space-6</code> and spaced apart; <b>Clear all</b> becomes its own full-width button under the chips.</li>
+      <li><b>RTL</b> (<code class="sl-code">ar</code>, <code class="sl-code">he</code>): the host's <code class="sl-code">dir</code> drives the picker — label,
+        value and options align to the start, the caret sits at the inline end; ids in the inspector stay LTR.</li>
+      <li>Archived and purged stored values render exactly as in frame 4c; every state renders inside the field, never by throwing into the host.</li>
+    </ul>
+  </div>
+
+  <p class="sl-notes">
+    <b>Test hooks:</b> <code>[data-frame='18-mobile-picker']</code> · <code>[data-device='375']</code> · <code>[data-panel='picker-mobile']</code> · <code>[data-mode='single']</code> · <code>[data-mode='multi']</code> · <code>[data-locale='ar'][data-dir='rtl']</code> · <code>[data-combo-control]</code> · <code>[data-combo-menu][data-menu-placement='inline']</code> · <code>[data-combo-search]</code> · <code>[data-selected-label]</code> · <code>[data-chips]</code> · <code>[data-action='clear-all']</code> · <code>[data-persisted]</code> · <code>[data-case='archived']</code> · <code>[data-case='purged']</code> · <code>[data-state='loading']</code> · <code>[data-state='empty']</code> · <code>[data-state='error']</code> · <code>[data-state='not-found']</code> · <code>[data-rules='mobile-picker']</code><br />
+    Playwright mounts the harness at <code>{ viewport: 375×812, locale: en | ar }</code>: no horizontal scroll, the open menu's box lies inside the viewport and
+    below the control, every option ≥ 44 px, and the form still submits the item id.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code> / <code>mobile.css</code>.
+  </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="17-mobile-access-control.html" data-nav="prev">← Access — 375 px</a>
+  <span class="caption"><b>(4d) Picker — 375 px</b> · Flow 4 · SelectionListPicker · frame 18 of 18</span>
+  <a class="btn btn-primary" href="index.html" data-nav="next">All frames →</a>
+</nav>
+</body>
+</html>

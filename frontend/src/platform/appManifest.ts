@@ -1,4 +1,4 @@
-import type { App, AppManifest, Icon } from '@fuzefront/app-registry-client'
+import type { App, AppManifest, Distribution, Icon } from '@fuzefront/app-registry-client'
 
 /**
  * Presentation + routing helpers derived from the FROZEN app manifest. These
@@ -73,4 +73,59 @@ export function appHref(app: App): string {
     return standalonePath(app)
   }
   return portalPath(app)
+}
+
+export type MobileInstallTarget = {
+  href: string
+  label: 'App Store' | 'Google Play' | 'Download APK'
+}
+
+/** Every real, public mobile destination declared by a product. */
+export function mobileDistributionLinks(
+  distribution: Distribution | undefined
+): MobileInstallTarget[] {
+  if (!distribution) return []
+  return [
+    distribution.appleAppStoreUrl && {
+      href: distribution.appleAppStoreUrl,
+      label: 'App Store' as const,
+    },
+    distribution.googlePlayUrl && {
+      href: distribution.googlePlayUrl,
+      label: 'Google Play' as const,
+    },
+    distribution.apkUrl && {
+      href: distribution.apkUrl,
+      label: 'Download APK' as const,
+    },
+  ].filter((link): link is MobileInstallTarget => Boolean(link))
+}
+
+/**
+ * Select the one native installation destination appropriate to this browser.
+ * Android deliberately falls back to the product-declared APK when no Play
+ * listing exists. Desktop and installed/standalone contexts return null.
+ */
+export function mobileInstallTarget(
+  distribution: Distribution | undefined,
+  userAgent: string,
+  isStandalone: boolean
+): MobileInstallTarget | null {
+  if (!distribution || isStandalone) return null
+  const ios = /iPad|iPhone|iPod/i.test(userAgent)
+  const android = /Android/i.test(userAgent)
+  if (ios) {
+    return distribution.appleAppStoreUrl
+      ? { href: distribution.appleAppStoreUrl, label: 'App Store' }
+      : null
+  }
+  if (android) {
+    if (distribution.googlePlayUrl) {
+      return { href: distribution.googlePlayUrl, label: 'Google Play' }
+    }
+    return distribution.apkUrl
+      ? { href: distribution.apkUrl, label: 'Download APK' }
+      : null
+  }
+  return null
 }
