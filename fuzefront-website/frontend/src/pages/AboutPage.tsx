@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container, TextLink, HeroPatternOverlay, Section, ResponsiveGrid } from '@fuzefront/design-system'
+import { Center, IconTile, Container, TextLink, HeroPatternOverlay, Section, ResponsiveGrid, Wrap } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -239,7 +239,7 @@ export const AboutPage: React.FC = () => {
           <p className="text-lg text-gray-600 mb-8">
             Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <Wrap gap={4} justify="center">
             <a
               href="https://app.fuzefront.com/signup"
               className="btn-primary flex items-center justify-center gap-2 text-base"
@@ -254,7 +254,7 @@ export const AboutPage: React.FC = () => {
             >
               View open roles
             </Link>
-          </div>
+          </Wrap>
         </div>
       </Section>
     </div>
