@@ -135,7 +135,7 @@ describe('ExecutionThresholdEvidence', () => {
     unmount()
   })
 
-  it('offers a retry only for terminal incomplete GitHub evidence', () => {
+  it('offers refresh for terminal GitHub evidence and reconciliation after a complete lookup', () => {
     const onRefresh = vi.fn()
     const { rerender, unmount } = render(<ExecutionEvidenceCoverage execution={{
       ...execution,
@@ -178,7 +178,8 @@ describe('ExecutionThresholdEvidence', () => {
       provider: 'github-actions',
       evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T04:00:00.000Z' },
     }} onRefresh={onRefresh} />)
-    expect(screen.queryByRole('button', { name: /refresh provider evidence/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reconcile provider evidence' }))
+    expect(onRefresh).toHaveBeenCalledTimes(3)
     unmount()
   })
 

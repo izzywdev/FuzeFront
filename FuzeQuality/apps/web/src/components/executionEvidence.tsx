@@ -360,8 +360,10 @@ export function ExecutionEvidenceCoverage({
   const collectionPartial = collection?.status === 'partial'
   const canRefresh = execution.provider === 'github-actions' &&
     execution.status !== 'running' &&
-    (!collection || collection.status === 'partial' || collection.status === 'unavailable') &&
     Boolean(onRefresh)
+  const refreshLabel = collection?.status === 'complete'
+    ? 'Reconcile provider evidence'
+    : 'Refresh provider evidence'
 
   return (
     <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
@@ -400,7 +402,7 @@ export function ExecutionEvidenceCoverage({
       )}
       {canRefresh && (
         <QualityAction intent="quiet" onClick={onRefresh} disabled={refreshing}>
-          {refreshing ? 'Refreshing provider evidence…' : 'Refresh provider evidence'}
+          {refreshing ? 'Refreshing provider evidence…' : refreshLabel}
         </QualityAction>
       )}
       {missingThresholds && (

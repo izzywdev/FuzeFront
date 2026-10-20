@@ -966,6 +966,8 @@ paths:
         installation. The execution outcome and attempt identity remain immutable; only merged evidence
         links and the explicit collection state are updated. This also repairs terminal attempts with no
         retained collection attempt; a successful empty lookup becomes an explicit `complete` result.
+        Complete attempts may be reconciled again so expired or deleted GitHub artifacts are removed while
+        externally hosted evidence is preserved.
       tags: [executions]
       security: [{ platformBearer: [] }]
       requestBody:
