@@ -174,6 +174,7 @@ describe('contract discovery', () => {
         expect(parameterRefs).toContain('#/components/parameters/ExecutionName')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceKind')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCollectionStatus')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCheckedBefore')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceRequirement')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionThresholdOutcome')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionGateOutcome')
@@ -195,6 +196,11 @@ describe('contract discovery', () => {
         name: 'evidenceCollectionStatus',
         in: 'query',
         schema: { type: 'string', enum: ['complete', 'partial', 'unavailable', 'not-collected'] },
+      })
+      expect(document.components.parameters.ExecutionEvidenceCheckedBefore).toMatchObject({
+        name: 'evidenceCheckedBefore',
+        in: 'query',
+        schema: { type: 'string', format: 'date-time' },
       })
       expect(document.components.parameters.ExecutionEvidenceRequirement).toMatchObject({
         name: 'evidenceRequirement',

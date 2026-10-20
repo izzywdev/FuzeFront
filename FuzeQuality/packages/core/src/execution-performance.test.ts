@@ -106,6 +106,8 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'unavailable' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'partial' })).toEqual([])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'not-collected' })).toEqual([executions[0]])
+  expect(filterTestExecutions(executions, { evidenceCheckedBefore: '2026-10-08T00:00:00.000Z' })).toEqual([executions[2]])
+  expect(filterTestExecutions(executions, { evidenceCheckedBefore: '2026-10-07T00:00:00.000Z' })).toEqual([])
   const postProductionWithoutVideo = {
     ...executions[0],
     id: 'post-production-without-video',

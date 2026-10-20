@@ -880,6 +880,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceCheckedBefore'
         - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionGateOutcome'
@@ -1103,6 +1104,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceCheckedBefore'
         - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionGateOutcome'
@@ -1160,6 +1162,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceCheckedBefore'
         - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
         - $ref: '#/components/parameters/ExecutionThresholdOutcome'
         - $ref: '#/components/parameters/ExecutionGateOutcome'
@@ -1322,6 +1325,11 @@ components:
       in: query
       description: Require a provider artifact-discovery outcome, or `not-collected` for executions with no retained collection attempt.
       schema: { type: string, enum: [complete, partial, unavailable, not-collected] }
+    ExecutionEvidenceCheckedBefore:
+      name: evidenceCheckedBefore
+      in: query
+      description: Require a retained provider artifact check at or before this ISO-8601 instant; executions never checked are excluded.
+      schema: { type: string, format: date-time }
     ExecutionEvidenceRequirement:
       name: evidenceRequirement
       in: query

@@ -2381,6 +2381,24 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('isolates execution evidence whose provider check predates an exact cutoff', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Evidence checked before'), {
+      target: { value: '2026-10-08T12:30' },
+    })
+
+    const evidenceCheckedBefore = new Date('2026-10-08T12:30').toISOString()
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, { evidenceCheckedBefore })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, { evidenceCheckedBefore })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, { evidenceCheckedBefore })
+    })
+  })
+
   it('isolates executions missing required post-production video evidence', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

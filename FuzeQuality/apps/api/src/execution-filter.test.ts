@@ -10,6 +10,7 @@ describe('execution evidence filter', () => {
       name: 'Post-production browser suite',
       evidenceKind: 'video',
       evidenceCollectionStatus: 'partial',
+      evidenceCheckedBefore: '2026-10-07T00:00:00.000Z',
       evidenceRequirement: 'post-production-video-missing',
       thresholdOutcome: 'failed',
       gateOutcome: 'failed',
@@ -55,6 +56,12 @@ describe('execution evidence filter', () => {
     expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'unavailable' }).evidenceCollectionStatus).toBe('unavailable')
     expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'not-collected' }).evidenceCollectionStatus).toBe('not-collected')
     expect(executionFilterSchema.safeParse({ evidenceCollectionStatus: 'unknown' }).success).toBe(false)
+  })
+
+  it('accepts only an ISO-8601 provider evidence cutoff', () => {
+    expect(executionFilterSchema.parse({ evidenceCheckedBefore: '2026-10-07T00:00:00.000Z' }).evidenceCheckedBefore)
+      .toBe('2026-10-07T00:00:00.000Z')
+    expect(executionPageFilterSchema.safeParse({ evidenceCheckedBefore: 'last week' }).success).toBe(false)
   })
 
   it('accepts only explicit required-evidence gaps', () => {

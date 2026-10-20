@@ -3604,6 +3604,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCollectionStatus, setExecutionEvidenceCollectionStatus] = useState<
     NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected' | ''
   >('')
+  const [executionEvidenceCheckedBefore, setExecutionEvidenceCheckedBefore] = useState('')
   const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
     'post-production-video-missing' | ''
   >('')
@@ -3837,6 +3838,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         provider: executionProvider,
         evidenceKind: executionEvidenceKind,
         evidenceCollectionStatus: executionEvidenceCollectionStatus,
+        evidenceCheckedBefore: iso(executionEvidenceCheckedBefore),
         evidenceRequirement: executionEvidenceRequirement,
         thresholdOutcome: executionThresholdOutcome,
         gateOutcome: executionGateOutcome,
@@ -3858,7 +3860,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionEvidenceRequirement, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionEvidenceCheckedBefore, executionEvidenceRequirement, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -5560,6 +5562,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="">All requirements</option>
                 <option value="post-production-video-missing">Missing post-production video</option>
               </select>
+            </label>
+            <label>
+              Evidence checked before
+              <input
+                type="datetime-local"
+                value={executionEvidenceCheckedBefore}
+                onChange={event => setExecutionEvidenceCheckedBefore(event.target.value)}
+              />
             </label>
             <label>
               Threshold evidence
