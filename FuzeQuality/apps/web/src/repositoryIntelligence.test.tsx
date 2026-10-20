@@ -1234,6 +1234,42 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
   })
 
+  it('requires rationale to confirm a LiteLLM flow with grounding gaps while keeping rejection available', async () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const incomplete = {
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis',
+        promptVersion: 'v3',
+        schemaVersion: '1.0',
+        grounding: {
+          referencedArtifactCount: 3,
+          groundedArtifactCount: 1,
+          rejectedArtifactCount: 1,
+          ungroundedStepCount: 1,
+        },
+      },
+    }
+
+    render(<FlowReviewControls flow={incomplete} currentRevision={candidate.revision} onReview={onReview} />)
+
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+    expect(screen.getByRole('status')).toHaveTextContent('Confirmation requires a reviewer rationale')
+
+    fireEvent.change(screen.getByLabelText('Review rationale required for grounding gaps'), {
+      target: { value: 'Verified against the production journey.' },
+    })
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(onReview).toHaveBeenCalledWith(
+      incomplete,
+      'confirmed',
+      'Verified against the production journey.',
+    ))
+  })
+
   it('unlocks an in-place stale flow control when a newer decision version arrives', async () => {
     const onReview = vi.fn().mockRejectedValue(new CatalogApiError(
       'This UX-flow review changed while you were deciding.',

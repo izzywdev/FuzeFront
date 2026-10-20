@@ -466,6 +466,11 @@ paths:
                 oneOf:
                   - { $ref: '#/components/schemas/StaleFlowCandidateError' }
                   - { $ref: '#/components/schemas/StaleFlowReviewError' }
+        '422':
+          description: Confirmation of a LiteLLM proposal with grounding gaps requires reviewer rationale.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 
   /api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/history:
     parameters:

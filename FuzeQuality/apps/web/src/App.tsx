@@ -2965,6 +2965,12 @@ export function FlowReviewControls({
     currentRevision && flow.revision === currentRevision
   )
   const isReviewable = isCurrentRevision && !stale
+  const grounding = flow.analysis?.grounding
+  const hasGroundingGaps = Boolean(
+    grounding &&
+      (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
+  )
+  const groundingRationaleMissing = hasGroundingGaps && reason.trim().length < 3
 
   useEffect(() => {
     setStale(false)
@@ -3016,7 +3022,9 @@ export function FlowReviewControls({
           </p>
         )}
         <label>
-          Optional review rationale
+          {hasGroundingGaps
+            ? 'Review rationale required for grounding gaps'
+            : 'Optional review rationale'}
           <input
             value={reason}
             disabled={!isReviewable || busy}
@@ -3024,10 +3032,15 @@ export function FlowReviewControls({
             placeholder="Why is this flow accurate or unsuitable?"
           />
         </label>
+        {hasGroundingGaps && (
+          <p className="performance-inventory-only" role="status">
+            LiteLLM returned unverified repository references. Confirmation requires a reviewer rationale; rejection remains available.
+          </p>
+        )}
         <div className="row-actions">
           <QualityAction
             intent="secondary"
-            disabled={busy || !isReviewable}
+            disabled={busy || !isReviewable || groundingRationaleMissing}
             onClick={() => void submit('confirmed')}
           >
             <Check size={14} /> Confirm

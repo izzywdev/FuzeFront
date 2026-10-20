@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
+import { repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
 
 const repository = {
   id: 'repo-1',
@@ -88,5 +88,34 @@ describe('repository UX-flow review revision guard', () => {
       expectedReviewedAt: null,
       currentReviewedAt: reviewed.reviewedAt,
     })
+  })
+
+  it('requires a reviewer rationale before confirming a LiteLLM proposal with grounding gaps', () => {
+    const incomplete = {
+      ...candidate,
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis',
+        promptVersion: 'v3',
+        schemaVersion: '1.0',
+        grounding: {
+          referencedArtifactCount: 3,
+          groundedArtifactCount: 1,
+          rejectedArtifactCount: 1,
+          ungroundedStepCount: 1,
+        },
+      },
+    }
+
+    expect(repositoryFlowGroundingRationaleConflict(incomplete, 'confirmed')).toMatchObject({
+      code: 'FLOW_GROUNDING_RATIONALE_REQUIRED',
+      grounding: incomplete.analysis.grounding,
+    })
+    expect(repositoryFlowGroundingRationaleConflict(incomplete, 'confirmed', 'Reviewer verified the remaining step manually.')).toBeUndefined()
+    expect(repositoryFlowGroundingRationaleConflict(incomplete, 'confirmed', 'no')).toMatchObject({
+      code: 'FLOW_GROUNDING_RATIONALE_REQUIRED',
+    })
+    expect(repositoryFlowGroundingRationaleConflict(incomplete, 'rejected')).toBeUndefined()
+    expect(repositoryFlowGroundingRationaleConflict(candidate, 'confirmed')).toBeUndefined()
   })
 })

@@ -37,3 +37,22 @@ export function repositoryFlowReviewStateConflict(
     currentReviewedAt: candidate.reviewedAt ?? null,
   } as const
 }
+
+export function repositoryFlowGroundingRationaleConflict(
+  candidate: RepositoryFlowCandidate,
+  status: 'confirmed' | 'rejected',
+  reason?: string,
+) {
+  const grounding = candidate.analysis?.grounding
+  const hasGroundingGaps = Boolean(
+    grounding &&
+    (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
+  )
+  if (status !== 'confirmed' || !hasGroundingGaps || (reason?.trim().length ?? 0) >= 3) return undefined
+
+  return {
+    error: 'A reviewer rationale is required to confirm a LiteLLM flow with unverified repository grounding.',
+    code: 'FLOW_GROUNDING_RATIONALE_REQUIRED',
+    grounding,
+  } as const
+}
