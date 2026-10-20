@@ -135,6 +135,77 @@ with the host.
 
 ---
 
+## 1c. Register an iframe app
+
+Not every integration needs Module Federation. `integration.type: "iframe"` embeds
+your app's own page, unmodified, in a sandboxed `<iframe>` — no shared React
+runtime, no federation build step, no `remoteEntry.js` at all. A full, runnable
+example (a one-file app + the manifest that registers it) lives in
+[`docs/examples/iframe-integration/`](../examples/iframe-integration/README.md).
+
+### Smallest valid registration payload
+
+```json
+{
+  "manifestVersion": "1",
+  "slug": "iframe-example",
+  "name": "Iframe Example",
+  "menuLabel": "Iframe Example",
+  "mode": "portal",
+  "integration": {
+    "type": "iframe",
+    "url": "http://localhost:5180/"
+  }
+}
+```
+
+`integration.url` is the only field an iframe integration adds over the bare
+minimum of `manifestVersion` / `slug` / `name` / `menuLabel` / `mode` — no
+`remoteEntry`, `scope`, or `module` (those are module-federation-only). Like
+`remoteUrl` for Module Federation (§1b), `url` accepts a same-origin absolute
+path or an absolute `http(s)` URL; a `javascript:` or protocol-relative value is
+rejected for the same reason — it would run inside the shell's own origin.
+
+### When iframe is preferable to Module Federation
+
+| Use iframe when… | Use Module Federation when… |
+|---|---|
+| Your app is not built with Vite/webpack, or isn't JS at all (a legacy server-rendered app, a third-party embed, a different framework entirely) | Your app is a React 19 SPA and can share the host's React/React-DOM singleton |
+| You want **hard isolation** — your app's CSS/globals/event listeners must never collide with the shell's or another app's | You want a seamless, same-document experience (shared router, shared design-system components, no visible frame boundary) |
+| Your app already runs standalone at its own URL and you don't want to add a federation build step just to appear in the shell | You're already maintaining a federation `shared` block and want tight integration (e.g. passing React context across the boundary) |
+| You're prototyping or embedding something you don't control the source of | Performance matters and you want to avoid the extra HTTP round-trip + frame overhead |
+
+### Isolation, auth, and routing caveats
+
+- **Isolation is real, in both directions.** The shell renders the iframe with
+  `sandbox="allow-scripts allow-same-origin allow-forms allow-popups"` (see
+  `frontend/src/components/FederatedAppLoader.tsx` and
+  `StandaloneAppSurface.tsx`). Your page runs in its own browsing context: it
+  cannot read the shell's DOM, globals, or design-system CSS, and the shell
+  cannot reach into yours. This is the main reason to pick iframe over MF —
+  but it also means you get **none** of the shell's shared UI for free; your
+  page renders exactly what you give it, full width/height inside the frame.
+- **No shared auth context.** A Module-Federation remote runs in the *same*
+  JS realm as the host, so the shell writes the current user, org, and a
+  `getAccessToken()` resolver onto `window.__FRONTFUSE_CONTEXT__` before
+  mounting it (§3 below). An iframe is a separate realm — that object is
+  **never** injected into it. If your app needs to know who's signed in, you
+  must establish that yourself: typically the host posts a short-lived token
+  via `window.postMessage` after the frame loads, and your page listens for
+  it (see the commented example in
+  [`docs/examples/iframe-integration/app/index.html`](../examples/iframe-integration/app/index.html)).
+  Never assume the iframe inherits the shell's session cookie — treat your
+  app as a standalone origin that happens to be framed.
+- **Routing is whatever your page already does.** The shell doesn't drive
+  your app's internal navigation the way it can coordinate routes with an MF
+  remote; the iframe's `src` is a fixed URL and everything after that is your
+  app's own router. Deep-linking *into* a specific in-app route from the
+  shell's URL is not wired up for iframe apps — if you need that, either add
+  it via `postMessage` (host tells the frame which route to show) or
+  reconsider whether Module Federation is the better fit.
+
+---
+
 ## 2. Consume the shared packages
 
 FuzeFront publishes reusable packages **privately to GitHub Packages** under the
@@ -376,6 +447,7 @@ rather than one-off styling.
 
 - Operational deployment runbook: `docs/deployment/CONTABO_DEPLOYMENT.md`
 - Module Federation deep-dive: `docs/guides/MODULE_FEDERATION_GUIDE.md`
+- Minimal runnable iframe integration example: `docs/examples/iframe-integration/README.md`
 - Developer guide: `docs/guides/DEVELOPER_GUIDE.md`
 - Consuming durable, typed settings from config-service (not the feature-flag
   system): `docs/guides/CONFIG_SERVICE_INTEGRATION_GUIDE.md`
