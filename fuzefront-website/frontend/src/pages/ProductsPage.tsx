@@ -6,9 +6,8 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
-import { ResponsiveGrid, Wrap } from '@fuzefront/design-system'
+import { ResponsiveGrid, Wrap, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
-import { Container } from '@fuzefront/design-system'
 
 interface Product {
   slug: string
