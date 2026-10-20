@@ -379,6 +379,12 @@ describe('contract discovery', () => {
         ].schema.$ref
       ).toBe('#/components/schemas/RepositoryFlowCandidate')
       expect(document.components.parameters.CandidateId.schema.maxLength).toBe(500)
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}'].get.responses['200'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/PolicyGateEvaluation')
+      expect(document.components.parameters.EvaluationId.schema.minLength).toBe(1)
       for (const path of [
         '/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/history',
         '/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/history',

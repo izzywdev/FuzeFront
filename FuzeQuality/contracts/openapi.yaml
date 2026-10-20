@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.56.0
+  version: 0.57.0
   license:
     name: UNLICENSED
 servers:
@@ -712,6 +712,25 @@ paths:
                     items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
                   page: { $ref: '#/components/schemas/HistoryCursorPage' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+      - $ref: '#/components/parameters/EvaluationId'
+    get:
+      operationId: getPolicyGateEvaluation
+      summary: Inspect one tenant-scoped policy/gate finding and its evidence
+      tags: [policy-gates]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: The exact revisioned policy/gate evaluation requested by the caller.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyGateEvaluation' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

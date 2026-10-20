@@ -53,6 +53,7 @@ import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewRationaleConflict, policyGateReviewStateConflict } from './policy-gate-review'
+import { policyGateDetail } from './policy-gate-detail'
 import { decodeHistoryCursor, decodeUuidHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
 import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
 import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
@@ -704,6 +705,17 @@ app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, asyn
     limit: limit + 1,
   })
   response.json(historyPage(evaluations, limit))
+})
+app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
+  const tenantId = requestIdentity(request)!.tenantId
+  const result = await policyGateDetail(repositoryId, tenantId, evaluationId, {
+    repository: (id, tenant) => store.repository(id, tenant),
+    evaluations: (id, tenant, query) => store.policyGateEvaluations(id, tenant, query),
+  })
+  if (result.status === 404) return response.status(404).json({ error: result.error })
+  response.json(result.evaluation)
 })
 app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/history', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

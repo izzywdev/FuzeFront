@@ -81,6 +81,7 @@ import {
   latestPostProductionExecution,
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
+import { GovernanceInspector } from './components/governanceInspector'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector, flowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
@@ -3558,6 +3559,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
   >([])
+  const [policyGateInspectorOpen, setPolicyGateInspectorOpen] = useState(false)
+  const [inspectedPolicyGate, setInspectedPolicyGate] = useState<PolicyGateEvaluation>()
+  const [policyGateInspectorArtifacts, setPolicyGateInspectorArtifacts] = useState<QualityArtifact[]>([])
+  const [policyGateInspectorLoading, setPolicyGateInspectorLoading] = useState(false)
+  const [policyGateInspectorError, setPolicyGateInspectorError] = useState<string>()
+  const [policyGateInspectorEvidenceError, setPolicyGateInspectorEvidenceError] = useState<string>()
+  const policyGateInspectorRequest = useRef(0)
   const policyGateEvaluationsRef = useRef(policyGateEvaluations)
   policyGateEvaluationsRef.current = policyGateEvaluations
   const [policyGateNextCursors, setPolicyGateNextCursors] = useState<Record<string, string>>({})
@@ -3751,6 +3759,66 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setFlowInspectorError(undefined)
     setFlowInspectorLoading(false)
   }
+  const inspectPolicyGate = async (evaluation: PolicyGateEvaluation) => {
+    const request = ++policyGateInspectorRequest.current
+    setPolicyGateInspectorOpen(true)
+    setInspectedPolicyGate(undefined)
+    setPolicyGateInspectorArtifacts([])
+    setPolicyGateInspectorError(undefined)
+    setPolicyGateInspectorEvidenceError(undefined)
+    setPolicyGateInspectorLoading(true)
+    try {
+      const detail = await api.policyGateEvaluation(evaluation.repositoryId, evaluation.id)
+      if (request !== policyGateInspectorRequest.current) return
+      setInspectedPolicyGate(detail)
+      const evidenceIds = [...new Set([
+        ...detail.policyArtifactIds,
+        ...detail.gateArtifactIds,
+        ...(detail.evidencePassages ?? []).map(passage => passage.artifactId),
+      ])]
+      if (evidenceIds.length) {
+        try {
+          const evidence = await api.qualityArtifactsByIds(
+            detail.repositoryId,
+            evidenceIds,
+            detail.revision,
+          )
+          if (request === policyGateInspectorRequest.current) {
+            setPolicyGateInspectorArtifacts(evidence.items)
+          }
+        } catch (cause) {
+          if (request === policyGateInspectorRequest.current) {
+            setPolicyGateInspectorEvidenceError(
+              cause instanceof Error
+                ? cause.message
+                : 'Unable to resolve governance source artifacts'
+            )
+          }
+        }
+      }
+    } catch (cause) {
+      if (request === policyGateInspectorRequest.current) {
+        setPolicyGateInspectorError(
+          cause instanceof Error
+            ? cause.message
+            : 'Unable to load policy and gate evaluation detail'
+        )
+      }
+    } finally {
+      if (request === policyGateInspectorRequest.current) {
+        setPolicyGateInspectorLoading(false)
+      }
+    }
+  }
+  const closePolicyGateInspector = () => {
+    policyGateInspectorRequest.current++
+    setPolicyGateInspectorOpen(false)
+    setInspectedPolicyGate(undefined)
+    setPolicyGateInspectorArtifacts([])
+    setPolicyGateInspectorError(undefined)
+    setPolicyGateInspectorEvidenceError(undefined)
+    setPolicyGateInspectorLoading(false)
+  }
   const reviewFlow = async (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -3795,6 +3863,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         ? current.map(item => (item.id === reviewed.id ? reviewed : item))
         : current.filter(item => item.id !== reviewed.id)
     )
+    setInspectedPolicyGate(current => current?.id === reviewed.id ? reviewed : current)
   }
   const runTestSuite = async (artifact: QualityArtifact) => {
     const repository = data.repositories.find(
@@ -4610,17 +4679,23 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const filteredPolicyGateEvaluations = useMemo(
     () =>
       policyGateEvaluations.filter(
-        evaluation =>
-          (!policyGateKind || evaluation.kind === policyGateKind) &&
-          (!policyGateSeverity || evaluation.severity === policyGateSeverity) &&
-          (!policyGateReviewStatus ||
-            evaluation.reviewStatus === policyGateReviewStatus)
+        evaluation => policyGateEvaluationMatchesInventory(
+          evaluation,
+          data.repositories,
+          policyGateSelection,
+        )
       ),
     [
+      data.repositories,
       policyGateEvaluations,
       policyGateKind,
+      policyGateRemediationAction,
       policyGateSeverity,
       policyGateReviewStatus,
+      policyGateRevisionScope,
+      policyGateSubject,
+      policyGateMinimumConfidencePercent,
+      policyGateMaximumConfidencePercent,
     ]
   )
   const groups: Array<[QualityArtifact['kind'], string, string]> = [
@@ -4693,6 +4768,31 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         error={flowInspectorError}
         onClose={closeFlowInspector}
       />
+      <GovernanceInspector
+        open={policyGateInspectorOpen}
+        evaluation={inspectedPolicyGate}
+        repositoryLabel={inspectedPolicyGate
+          ? repositoryLabels.get(inspectedPolicyGate.repositoryId)
+          : undefined}
+        artifacts={[...new Map(
+          [...evidenceArtifacts, ...policyGateInspectorArtifacts]
+            .map(artifact => [artifact.id, artifact])
+        ).values()]}
+        loading={policyGateInspectorLoading}
+        error={policyGateInspectorError}
+        evidenceError={policyGateInspectorEvidenceError}
+        onClose={closePolicyGateInspector}
+      >
+        {inspectedPolicyGate && (
+          <PolicyGateReviewControls
+            evaluation={inspectedPolicyGate}
+            currentRevision={data.repositories.find(
+              repository => repository.id === inspectedPolicyGate.repositoryId
+            )?.lastScanRevision}
+            onReview={reviewPolicyGate}
+          />
+        )}
+      </GovernanceInspector>
       {data.diagnostics.filter(item => item.category === 'repository').length > 0 && (
         <details className="scan-diagnostics" open>
           <summary>
@@ -5174,6 +5274,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 {evaluation.reviewStatus}
                               </code>
                               <p>{evaluation.detail}</p>
+                              <QualityAction
+                                intent="quiet"
+                                onClick={() => void inspectPolicyGate(evaluation)}
+                              >
+                                <Eye size={14} /> Inspect governance evidence
+                              </QualityAction>
                               {evaluation.reviewedAt && (
                                 <small>
                                   Reviewed {new Date(evaluation.reviewedAt).toLocaleString()}

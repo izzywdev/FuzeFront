@@ -306,6 +306,32 @@ describe('RepositoryIntelligence flow inventory', () => {
     view.unmount()
   })
 
+  it('loads exact tenant-scoped governance detail and revision evidence in the inspector', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([guardedEvaluation])
+    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({
+      items: [policyArtifact, gateArtifact],
+    })
+    const detailRequest = vi.spyOn(api, 'policyGateEvaluation').mockResolvedValue(guardedEvaluation)
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findAllByText(guardedEvaluation.title)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspect governance evidence' })[0])
+
+    const inspector = await screen.findByRole('dialog', { name: guardedEvaluation.title })
+    expect(detailRequest).toHaveBeenCalledWith(repository.id, guardedEvaluation.id)
+    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
+      repository.id,
+      [policyArtifact.id, gateArtifact.id],
+      guardedEvaluation.revision,
+    )
+    expect(within(inspector).getByText(`policy · ${policyArtifact.sourcePath}`)).toBeVisible()
+    expect(within(inspector).getByText(`gate · ${gateArtifact.sourcePath}`)).toBeVisible()
+    expect(within(inspector).getByText('Decisive passages')).toBeVisible()
+    expect(within(inspector).getByRole('button', { name: 'Accept recommendation' })).toBeEnabled()
+  })
+
   it('renders same-title policy relationships as independent review items', async () => {
     mockEvidenceApis()
     const secondPolicy = {
@@ -2922,7 +2948,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       )
     )
 
-    fireEvent.change(screen.getByLabelText('Governance revision'), {
+    fireEvent.change(await screen.findByLabelText('Governance revision'), {
       target: { value: 'all' },
     })
 
@@ -2942,6 +2968,9 @@ describe('RepositoryIntelligence flow inventory', () => {
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.change(await screen.findByLabelText('Governance revision'), {
+      target: { value: 'all' },
+    })
 
     expect(
       await screen.findByText(/Historical governance finding/)
