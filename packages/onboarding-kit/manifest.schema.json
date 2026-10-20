@@ -80,6 +80,9 @@
     "infra": {
       "$ref": "#/$defs/Infra"
     },
+    "distribution": {
+      "$ref": "#/$defs/Distribution"
+    },
     "visibility": {
       "$ref": "#/$defs/Visibility"
     },
@@ -104,6 +107,15 @@
         "both"
       ],
       "description": "Allowed installation modes (self, everyone, or both). 'everyone' enforces whole-organization only installs."
+    },
+    "organizationInstallMode": {
+      "type": "string",
+      "enum": [
+        "self",
+        "everyone",
+        "both"
+      ],
+      "description": "Optional organization-specific installation mode. Use 'everyone' with scopeLevel 'both' to allow personal installs while requiring organization installs to cover the whole organization."
     },
     "orgLevelOnly": {
       "type": "boolean",
@@ -197,6 +209,9 @@
         "infra": {
           "$ref": "#/$defs/Infra"
         },
+        "distribution": {
+          "$ref": "#/$defs/Distribution"
+        },
         "visibility": {
           "$ref": "#/$defs/Visibility"
         },
@@ -221,6 +236,15 @@
             "both"
           ],
           "description": "Allowed installation modes (self, everyone, or both). 'everyone' enforces whole-organization only installs."
+        },
+        "organizationInstallMode": {
+          "type": "string",
+          "enum": [
+            "self",
+            "everyone",
+            "both"
+          ],
+          "description": "Optional organization-specific installation mode. Use 'everyone' with scopeLevel 'both' to allow personal installs while requiring organization installs to cover the whole organization."
         },
         "orgLevelOnly": {
           "type": "boolean",
@@ -590,6 +614,31 @@
           "type": "boolean",
           "default": true,
           "description": "Deployed via the FuzeInfra GitOps pipeline"
+        }
+      }
+    },
+    "Distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Public installation destinations for a product's native mobile build. Omit a field until that exact store listing or APK is publicly available; clients must never synthesize download URLs from a product name.",
+      "properties": {
+        "appleAppStoreUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Public Apple App Store product URL."
+        },
+        "googlePlayUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Public Google Play Store product URL."
+        },
+        "apkUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Direct public Android APK URL, normally the product's latest GitHub Release asset."
         }
       }
     }

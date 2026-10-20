@@ -9,6 +9,7 @@ import { z } from 'zod';
 export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
+    listRevision: z.ZodNumber;
     eventId: z.ZodString;
     actor: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
         type: z.ZodLiteral<"user">;
@@ -33,7 +34,6 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     }>]>;
     listKey: z.ZodString;
-    listRevision: z.ZodNumber;
     list: z.ZodObject<{
         listId: z.ZodString;
         key: z.ZodString;
@@ -57,13 +57,30 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
             packVersion: number;
             userModified: boolean;
         }>>;
+        visibility: z.ZodOptional<z.ZodEnum<["private", "org", "platform"]>>;
+        forkedFrom: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+            listId: z.ZodString;
+            organizationId: z.ZodString;
+            listRevision: z.ZodNumber;
+            forkedAt: z.ZodString;
+        }, "strip", z.ZodTypeAny, {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        }, {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        }>>>;
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
+        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
-        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -74,11 +91,18 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     }, {
+        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
-        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -89,10 +113,18 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -103,12 +135,11 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     list: {
+        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
-        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -119,10 +150,18 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     };
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -133,12 +172,11 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     list: {
+        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
-        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -149,10 +187,18 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     };
 }>, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -163,12 +209,11 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     list: {
+        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
-        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -179,10 +224,18 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     };
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -193,12 +246,11 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     list: {
+        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
-        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -209,6 +261,13 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     };
 }>;
 export type SelectionListsListArchivedPayloadV1 = z.infer<typeof selectionListsListArchivedSchemaV1>;

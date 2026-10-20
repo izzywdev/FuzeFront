@@ -1,5 +1,171 @@
 # Changelog — @fuzefront/security-client
 
+## 0.12.0 — Account: change password; MFA last-factor guard (unreleased)
+
+`info.version` 0.11.0 -> 0.12.0, `SECURITY_CONTRACT_VERSION` 0.11.0 -> 0.12.0.
+Builds on 0.11.0 (#1552); `PASSWORD_POLICY` already exists there.
+
+### Added
+
+- `POST /v1/security/password/change` (`changePassword`), body
+  `ChangePasswordRequest { currentPassword, newPassword }`
+  (`additionalProperties: false`), bearer required. `204` on success and every
+  OTHER session is revoked; `400 INVALID_CREDENTIALS` wrong current password
+  (sessions untouched); `400 MALFORMED`; `401`; `409 NO_PASSWORD` (use set-first);
+  `422 PASSWORD_POLICY`; `429 RATE_LIMITED` (failed attempts).
+- `ErrorBody.code`: `LAST_FACTOR`, `NO_PASSWORD`, `RATE_LIMITED`.
+
+### Changed
+
+- `DELETE /v1/security/mfa/factors/{factorId}` documents `409 LAST_FACTOR`:
+  removing the user's last ACTIVE factor is refused (atomically) and the factor
+  survives. Pending factors can always be removed.
+
+## 0.11.0 — Auth: distinct token/password error codes for email verification and password reset (minor, unreleased)
+
+`info.version` 0.10.1 -> 0.11.0, `SECURITY_CONTRACT_VERSION` 0.10.1 -> 0.11.0.
+Additive: new `ErrorBody.code` values and a new `422` response. Existing
+success shapes are unchanged. (PR #1543 separately bumps to 0.10.2 on another
+branch; this release is minor because it adds codes and a status, so it takes
+0.11.0 and supersedes that patch number on merge.)
+
+### Added
+
+- `ErrorBody.code`: `TOKEN_EXPIRED`, `TOKEN_INVALID`, `PASSWORD_POLICY`.
+- `POST /v1/security/session/password/reset-confirm`: `422 PASSWORD_POLICY`
+  when the identity provider rejects the new password (the token stays live).
+
+### Changed (behaviour behind an unchanged shape)
+
+- `POST /v1/security/verify/email/confirm` and `.../reset-confirm`: an
+  expired or already-used token is now `400 TOKEN_EXPIRED` and an unknown token
+  `400 TOKEN_INVALID`. Previously verify-confirm answered `401 NOT_ACTIVE`,
+  which clients read as session expiry; reset-confirm answered `400 MALFORMED`.
+- `POST /v1/security/verify/email/start`: when authenticated, the target is
+  always the account's own email (a body `email` is ignored); unauthenticated
+  start resolves the account server-side and is always `202`.
+- `confirmEmailVerification` never returns `emailVerified: true` unless a user
+  row was actually updated (and the challenge email still matches the account).
+
+### Consumers
+
+UI packages still pin 0.10.x of this client and are deliberately not touched
+here; they should bump and branch on `TOKEN_EXPIRED` / `TOKEN_INVALID` /
+`PASSWORD_POLICY` instead of the HTTP status alone.
+
+## 0.10.3 — Security: `POST /v1/security/verify/phone/confirm` now requires a session (security fix, unreleased)
+
+`info.version` 0.10.2 -> 0.10.3, `SECURITY_CONTRACT_VERSION` 0.10.2 -> 0.10.3.
+Request/response schemas are unchanged.
+
+### Fixed (security)
+
+- `confirmPhoneVerification` declared no auth and the implementation marked
+  EVERY account holding the number as phone-verified from an unauthenticated
+  request. It now declares `bearerAuth`, documents `401`, and is bound to the
+  caller's own account: verified only when `phone` is that account's current
+  number. Callers must send `Authorization: Bearer <token>` (the same session
+  that called `startPhoneVerification`).
+
+## 0.10.2 — Org invitations v2: memberType, external (email/WhatsApp) invitees, and the signup bind-token flow (FFRNT-305 / FFRNT-304, unreleased)
+
+**Additive surface.** `info.version` 0.10.1 -> 0.10.2, `SECURITY_CONTRACT_VERSION`
+0.10.1 -> 0.10.2. First time the invitation surface is described in the contract
+at all (it previously existed only in `backend/security/src/routes/{organizations,invitations}.ts`,
+undocumented). Patch/minor-additive bump: new paths + schemas + two optional fields
+on existing schemas; no existing required field changed.
+
+### Added — invitation HTTP surface (tag `organizations`, base `/api`)
+
+- `GET /organizations/{id}/invitations` — list, **cursor-paginated** (`limit` +
+  opaque `cursor`, `{ items, page }` envelope) with an optional `status` filter.
+  The deployed route returned an unbounded `{ invitations: [] }`; the frozen
+  contract paginates it per the family pagination standard (backend conforms).
+- `POST /organizations/{id}/invitations` — create one (`201 Invitation`).
+- `POST /organizations/{id}/invitations/bulk` — up to 50, per-invitee results.
+- `POST /organizations/{id}/invitations/{invitationId}/resend` — re-dispatch + extend expiry.
+- `DELETE /organizations/{id}/invitations/{invitationId}` — revoke (`204`).
+- `GET /invitations/{token}` — **public** masked resolve (`200` / `410 Gone`).
+- `POST /invitations/{token}/accept` — auth-optional accept: `200` bound, or
+  `202` enroll carrying the `bindToken`; `403` identity mismatch, `409` race,
+  `410` expired/revoked.
+
+### Added — the two orthogonal dimensions
+
+- `MemberType` (`employee | customer`) — orthogonal to the access role. Added to
+  `InvitationCreate`/`BulkInvitationCreate` (required) and `Invitation`, and as
+  an **optional** field on `Member`, `MemberCreate`, and `DirectoryMember` (old
+  memberships may lack one). The root-org owner invites external users as `customer`.
+- `InviteeRef` — a `oneOf` discriminated on `kind`: `AccountInvitee` (existing
+  account-holder, by typed `userId` reference) or `ExternalInvitee` (`channel`
+  `email` → `email` (RFC 5322) OR `whatsapp` → `phone` (E.164 `^\+[1-9]\d{1,14}$`),
+  enforced by `if/then`). Satisfies identifier-standard 2 (every polymorphic
+  reference carries its type).
+
+### Added — external-signup bind-token flow
+
+- `202` accept returns `InvitationEnrollResponse { action:'enroll', enrollUrl,
+  bindToken }`. The `bindToken` is the single-use, short-lived, server-minted
+  carrier of the invite through signup/enrollment.
+- `SignupRequest.bindToken` (optional) threads it in: on signup the server
+  verifies the signup identity matches the invited channel identity and
+  auto-binds the membership (its `memberType`/`role`) — no second round-trip.
+
+### Added — Kafka event schemas (`@fuzefront/shared`, Zod)
+
+- `identity.invitation.created` — carries `organizationId`, `invitationId`,
+  `invitedByUserId`, `role`, `memberType`, `channel`, and the channel-appropriate
+  contact (email OR E.164 phone) so a notification worker dispatches over the
+  right channel (email + WhatsApp).
+- `identity.invitation.accepted` — carries `organizationId`, `invitationId`,
+  `userId`, `role`, `memberType`.
+
+### Identifier-standard conformance
+
+- Every create body (`InvitationCreate`, `BulkInvitationCreate`,
+  `InvitationAcceptRequest`) sets `additionalProperties: false` and accepts no
+  client-chosen `id`/`token` — the service mints the invitation id and the
+  bindToken (identifier-standard 1).
+
+### Consumers
+
+- New typed `paths`/`components` (`Invitation`, `InviteeRef`, `MemberType`, …).
+  No breaking rename. `Member`/`DirectoryMember` gain an optional `memberType`.
+
+## 0.10.1 — AuthZ: document the platform-admin gate on tenant creation and the caller-scoped tenant list (documentation fix, unreleased)
+
+**Documentation only, no shape change.** `info.version` 0.10.0 -> 0.10.1,
+`SECURITY_CONTRACT_VERSION` 0.10.0 -> 0.10.1. Request and response schemas are
+unchanged; this release documents status codes and visibility rules the
+`/v1/security/tenants` collection enforces once the platform-scope authz
+hardening lands, so consumers can handle them from the generated types.
+
+### Changed (documentation)
+
+- `POST /v1/security/tenants` (`createTenant`): documents `403 FORBIDDEN`
+  (the shared `ErrorBody`). Creating a tenant is a platform act: a human
+  caller must be a platform administrator (`Organization:manage` on the
+  platform root tenant), a machine caller must hold `authz:admin`. The check
+  runs before body validation, so an unauthorized caller gets `403`, not
+  `400`. An administrator of an ordinary customer tenant has no standing.
+- `GET /v1/security/tenants` (`listTenants`): documents that the list is the
+  tenants VISIBLE TO THE CALLER — every tenant for a platform administrator
+  or an `authz:admin` machine caller, otherwise only the tenants the caller
+  holds a role in (a filter, never a `403`). Documents `400` (malformed
+  pagination cursor) and `502` (provider unavailable while deciding which view
+  applies — fail-closed, never widened or downgraded).
+
+### Consumers
+
+No code change is required. A UI that offers "create tenant" should hide or
+disable it for non-platform-admins and render the `403` in place.
+
+## 0.10.0 — Trusted membership bootstrap (unreleased)
+
+- Adds operator membership proof and explicit session tenant verification.
+- Requires active SQL membership and active organization for scoped FuzeKeys owner grants.
+- Adds verified Security workload callers without weakening existing caller gates.
+
 ## 0.9.1 — AuthZ: human callers are authorized per tenant on grant/revoke, member/role management and cross-subject reads (security fix, unreleased)
 
 **Behavior tightening, no shape change.** `info.version` 0.9.0 -> 0.9.1,

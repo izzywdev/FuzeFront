@@ -1,0 +1,281 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront FuzePicker API
+  version: 1.0.0
+  description: >-
+    Canonical contract for backend/src/routes/fuzepicker.ts, mounted by the
+    FuzeFront backend. All operations require a JWT whose userId resolves to
+    an existing user. When multi-tenant portals are enabled, token portal
+    binding is enforced by authenticateToken. No separate role or email
+    verification check is performed here. Invite tokens are email-link metadata,
+    not API credentials. A shared per-IP limiter allows 60 requests per minute
+    across these operations and runs before authentication.
+servers:
+  - url: /api/fuzepicker
+security:
+  - bearerAuth: []
+tags:
+  - name: mentions
+    description: Component mentions and recipient replies
+paths:
+  /mentions:
+    post:
+      operationId: createPickerMention
+      tags: [mentions]
+      summary: Create a component mention
+      description: >-
+        Any authenticated user can mention a recipient email. Email is trimmed
+        and lowercased; message and XPath are trimmed. Unknown body properties
+        are stripped by Zod. The server mints the mention ID and a 30-day invite
+        token; the token is not returned. Failure to publish the notification
+        email does not fail creation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMention'
+      responses:
+        '201':
+          description: Mention persisted; notification delivery is not guaranteed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mention]
+                properties:
+                  mention:
+                    $ref: '#/components/schemas/CreatedMention'
+        '400':
+          $ref: '#/components/responses/InvalidBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          description: Failed to persist mention (error is Failed to create mention)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/PortalUnavailable'
+    get:
+      operationId: listPickerMentions
+      tags: [mentions]
+      summary: List mentions addressed to the current user
+      description: >-
+        Matches recipient_email to the authenticated user's lowercased email,
+        ordered by created_at descending. Returns all matching mentions without
+        pagination or an expiry filter. Sender is the joined user's display
+        name, falling back to their email; it may be null if the user is absent.
+      responses:
+        '200':
+          description: Recipient's mentions, including an empty array when none exist
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mentions]
+                properties:
+                  mentions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReceivedMention'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          description: Failed to query mentions (error is Failed to load mentions)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/PortalUnavailable'
+  /mentions/{mentionId}/read:
+    parameters:
+      - $ref: '#/components/parameters/MentionId'
+    post:
+      operationId: markPickerMentionRead
+      tags: [mentions]
+      summary: Mark a recipient's mention as read
+      description: >-
+        Updates only a mention whose recipient_email matches the authenticated
+        user's lowercased email. Repeated updates succeed. Invite expiry is not
+        checked. No request body is consumed.
+      responses:
+        '204':
+          description: Marked read; no response body
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/MentionNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/PortalUnavailable'
+  /mentions/{mentionId}/replies:
+    parameters:
+      - $ref: '#/components/parameters/MentionId'
+    post:
+      operationId: replyToPickerMention
+      tags: [mentions]
+      summary: Reply to a mention addressed to the current user
+      description: >-
+        Only the recipient, matched by lowercased authenticated email, can reply.
+        Message is trimmed and unknown body properties are stripped. Invite
+        expiry is not checked. Notification publication failure is non-fatal.
+        The handler does not catch database failures (unlike create/list);
+        it does not define a JSON 500 response for those failures.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReply'
+      responses:
+        '201':
+          description: Reply persisted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reply]
+                properties:
+                  reply:
+                    type: object
+                    required: [id, mentionId, message]
+                    properties:
+                      id: { type: string, format: uuid }
+                      mentionId: { type: string, format: uuid }
+                      message: { type: string, minLength: 1, maxLength: 4000 }
+        '400':
+          $ref: '#/components/responses/InvalidBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/MentionNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/PortalUnavailable'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    MentionId:
+      name: mentionId
+      in: path
+      required: true
+      description: Server-generated UUID; the handler passes the value to the database without format validation
+      schema: { type: string }
+  schemas:
+    CreateMention:
+      type: object
+      additionalProperties: false
+      required: [recipientEmail, message, pageUrl, componentXPath]
+      properties:
+        recipientEmail: { type: string, format: email, maxLength: 320 }
+        message: { type: string, minLength: 1, maxLength: 4000 }
+        pageUrl: { type: string, format: uri, pattern: '^[hH][tT][tT][pP][sS]?://', maxLength: 8000 }
+        componentXPath: { type: string, minLength: 1, maxLength: 8000 }
+    CreateReply:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 4000 }
+    CreatedMention:
+      type: object
+      required: [id, recipientEmail, message, pageUrl, componentXPath, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        recipientEmail: { type: string, format: email }
+        message: { type: string }
+        pageUrl: { type: string, format: uri }
+        componentXPath: { type: string }
+        status: { type: string, const: unread }
+        createdAt:
+          type: string
+          format: date-time
+          description: Response-time timestamp, not read back from the database
+    ReceivedMention:
+      type: object
+      required: [id, sender, message, pageUrl, componentXPath, status, createdAt, inviteExpiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        sender: { type: [string, 'null'] }
+        message: { type: string }
+        pageUrl: { type: string, format: uri }
+        componentXPath: { type: string }
+        status: { type: string, enum: [unread, read] }
+        createdAt: { type: string, format: date-time }
+        inviteExpiresAt: { type: string, format: date-time }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          required: [details]
+          properties:
+            details:
+              type: object
+              required: [formErrors, fieldErrors]
+              properties:
+                formErrors:
+                  type: array
+                  items: { type: string }
+                fieldErrors:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items: { type: string }
+  responses:
+    InvalidBody:
+      description: Zod validation failed; error is Invalid mention or Invalid reply
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+    Unauthorized:
+      description: Missing/invalid JWT, missing user, or rejected portal binding
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    MentionNotFound:
+      description: No mention matches both the ID and recipient email; error is Mention not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Shared per-IP limit of 60 requests per 60 seconds exceeded
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds until retry
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { error: 'Too many FuzePicker requests. Try again shortly.' }
+    PortalUnavailable:
+      description: Portal resolution degraded while multi-tenant portals are enabled
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error: { type: string, const: PORTAL_RESOLUTION_UNAVAILABLE }
+              message: { type: string }

@@ -24,6 +24,8 @@ import ApplicationsPage from './pages/ApplicationsPage'
 import AddApplicationPage from './pages/AddApplicationPage'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
+import { VerifyCheckInboxPage, VerifyLandingPage, ResetPage } from './pages/AuthExperiencePages'
+import { isAuthExperienceEnabled } from '@fuzefront/auth-ui'
 import DashboardPage from './pages/DashboardPage'
 import AdminPage from './pages/AdminPage'
 import OrganizationPage from './pages/OrganizationPage'
@@ -56,12 +58,14 @@ import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
 import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
 import ConnectorsPage from './pages/ConnectorsPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
+import FuzePickerMentionsPage from './pages/FuzePickerMentionsPage'
 import {
   SelectionListManagementFlow,
   TranslationWorkbenchFlow,
   SelectionListAccessFlow,
   SelectionListPickerHarness,
 } from '@fuzeone/selection-lists-ui'
+import { useSelectionListsAuth } from './lib/selectionListsAuth'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -299,6 +303,18 @@ function AppContent() {
     return <AcceptInvitePage />
   }
 
+  // Public auth-experience routes (FFRNT-360) — verify-email + password reset,
+  // behind `fuzefront.auth.experience` (default OFF; pre-auth-safe resolver, see
+  // @fuzefront/auth-ui flags.ts). They run before the auth check on purpose: the
+  // check-inbox screen is reached by a freshly signed-up (already authenticated)
+  // user, a verify link may be clicked while signed in, and /reset has no
+  // session at all. Flag OFF falls through to today's behaviour, unchanged.
+  if (isAuthExperienceEnabled()) {
+    if (currentPath === '/signup/verify') return <VerifyCheckInboxPage />
+    if (currentPath === '/verify/email') return <VerifyLandingPage />
+    if (currentPath === '/reset') return <ResetPage />
+  }
+
   // Public picker harness — embeddable component demo/test surface.
   // Must be accessible without authentication (Playwright tests navigate here directly).
   if (currentPath.startsWith('/embed/selection-list-picker')) {
@@ -374,6 +390,7 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/fuzepicker/mentions" element={<FuzePickerMentionsPage />} />
             <Route path="/applications" element={<ApplicationsPage />} />
             <Route path="/applications/new" element={<AddApplicationPage />} />
             <Route path="/organizations" element={<OrganizationsRoute />} />
@@ -525,6 +542,9 @@ const SELECTION_LISTS_FLAG = 'fuzefront.selection-lists.service'
  * (no redirect); settled OFF — including a failed fetch — redirects (fail-closed).
  */
 function useSelectionListsGate(): ReactNode | null {
+  // Org-scoped bearer for the flows' API client. Installed here, in the guard
+  // every selection-list route runs first, so it exists before any flow mounts.
+  useSelectionListsAuth()
   const { enabled, ready } = useFlagState(SELECTION_LISTS_FLAG, false)
   if (!ready) {
     return (

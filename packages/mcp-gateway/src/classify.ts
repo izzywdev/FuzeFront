@@ -25,7 +25,7 @@ const SAFE_METHODS = new Set(['get', 'head', 'options', 'trace']);
  * not a substring match: `/tickets/search` qualifies, `/search-index/rebuild`
  * does not.
  */
-const READ_ONLY_POST_SUFFIXES = ['/search', '/query', '/preview'];
+const READ_ONLY_POST_SUFFIXES = ['/search', '/query', '/preview', '/resolve'];
 
 export type Reversibility = 'reversible' | 'irreversible';
 

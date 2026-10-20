@@ -8,6 +8,16 @@ export interface CreateExpressAppOptions {
   corsOrigins?: string[]
   /** Service name used in request log lines. */
   serviceName?: string
+  /**
+   * Middleware mounted BEFORE helmet/cors/body-parsers/request-logging below —
+   * for anything that must see every request, including one helmet/cors itself
+   * rejects (e.g. @fuzefront/telemetry's tracingMiddleware()). A caller cannot
+   * achieve this by calling `app.use()` on the returned Express instance: this
+   * function has already registered its own stack by the time it returns, and
+   * Express runs middleware in registration order, so anything added afterward
+   * runs LAST, not first.
+   */
+  preMiddleware?: Array<(req: Request, res: Response, next: NextFunction) => void>
 }
 
 /**
@@ -19,6 +29,10 @@ export interface CreateExpressAppOptions {
 export function createExpressApp(options: CreateExpressAppOptions = {}): Express {
   const app = express()
   const serviceName = options.serviceName || 'backend'
+
+  for (const mw of options.preMiddleware || []) {
+    app.use(mw)
+  }
 
   app.use(
     helmet({

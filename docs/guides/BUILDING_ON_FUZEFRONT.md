@@ -170,7 +170,7 @@ on 2026-09-01 — `gh api "users/izzywdev/packages?package_type=npm&per_page=100
 | `@izzywdev/fuzefront-core` | `@fuzefront/core` | Express-side transactional-outbox middleware (`enqueueEvent` + relay) |
 | `@izzywdev/fuzefront-security-client` | `@fuzefront/security-client` | generated TypeScript client for the platform security/identity API |
 | `@izzywdev/fuzefront-design-system` | `@fuzefront/design-system` | the "fuse seam" design system — tokens + primitives |
-| `@izzywdev/fuzefront-auth` | `@fuzefront/auth` | Authentik/Permit-backed authN/authZ verifier + Express middleware |
+| `@izzywdev/fuzefront-auth` | `@fuzefront/auth` | Authentik/Permit-backed authN/authZ verifier + Express middleware (Python services: `fuzefront-auth`, a GitHub Release wheel, see `packages/auth-py/README.md`) |
 | `@izzywdev/fuzefront-service-auth` | `@fuzefront/service-auth` | service-to-service (client-credentials) auth |
 
 The full list is 24 packages; enumerate it rather than guessing a name — the mapping is
@@ -188,7 +188,7 @@ it in your `package.json` — this is the pattern several consumer repos already
 ```jsonc
 "dependencies": {
   "@fuzefront/shared": "npm:@izzywdev/fuzefront-shared@^1.0.0",
-  "@fuzefront/auth":   "npm:@izzywdev/fuzefront-auth@^0.2.2"
+  "@fuzefront/auth":   "npm:@izzywdev/fuzefront-auth@^0.4.0"
 }
 ```
 

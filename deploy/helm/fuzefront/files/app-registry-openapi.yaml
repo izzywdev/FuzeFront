@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront App Registry API
-  version: 1.2.0
+  version: 1.5.0
   description: >-
     REST API for the FuzeFront **app registry** — the contract by which a
     federated (or standalone) application is registered, activated, and surfaced
@@ -1148,6 +1148,30 @@ components:
           default: true
           description: 'Deployed via the FuzeInfra GitOps pipeline'
 
+    Distribution:
+      type: object
+      additionalProperties: false
+      description: >-
+        Public installation destinations for a product's native mobile build.
+        Omit a field until that exact store listing or APK is publicly available;
+        clients must never synthesize download URLs from a product name.
+      properties:
+        appleAppStoreUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Public Apple App Store product URL.
+        googlePlayUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Public Google Play Store product URL.
+        apkUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Direct public Android APK URL, normally the product's latest GitHub Release asset.
+
     AppManifest:
       type: object
       additionalProperties: false
@@ -1198,6 +1222,8 @@ components:
         routing: { $ref: '#/components/schemas/Routing' }
         infra:
           $ref: '#/components/schemas/Infra'
+        distribution:
+          $ref: '#/components/schemas/Distribution'
         visibility:
           $ref: '#/components/schemas/Visibility'
         scopeLevel:
@@ -1211,6 +1237,10 @@ components:
           type: string
           enum: [self, everyone, both]
           description: Allowed installation modes (self, everyone, or both). 'everyone' enforces whole-organization only installs.
+        organizationInstallMode:
+          type: string
+          enum: [self, everyone, both]
+          description: Optional organization-specific installation mode. Use 'everyone' with scopeLevel 'both' to allow personal installs while requiring organization installs to cover the whole organization.
         orgLevelOnly:
           type: boolean
           description: Whether installation is restricted to the whole organization only (cannot be installed to a single user in an org).
@@ -1298,6 +1328,16 @@ components:
             May NOT contain `_` — that is the namespace separator and the key must
             split cleanly at the first one.
         name: { type: string }
+        relations:
+          type: object
+          description: Map of bare relation names to bare resources in this same product.
+          additionalProperties:
+            { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
+        roles:
+          type: object
+          description: Instance-scoped roles; these do not create tenant-wide grants.
+          additionalProperties:
+            { $ref: '#/components/schemas/ProductInstanceRoleDecl' }
         actions:
           type: object
           description: 'Map of action key -> { name }, e.g. { create: { name: Create } }.'
@@ -1307,6 +1347,34 @@ components:
             required: [name]
             properties:
               name: { type: string }
+
+    ProductInstanceRoleDecl:
+      type: object
+      additionalProperties: false
+      required: [name, permissions]
+      properties:
+        name: { type: string }
+        permissions:
+          type: array
+          description: Bare actions of the containing resource; grants apply to one instance only.
+          items: { type: string }
+        granted_to:
+          type: object
+          additionalProperties: false
+          required: [users_with_role]
+          properties:
+            users_with_role:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [role, on_resource, linked_by_relation]
+                properties:
+                  role: { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
+                  on_resource:
+                    { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
+                  linked_by_relation:
+                    { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
 
     ProductRoleDecl:
       type: object

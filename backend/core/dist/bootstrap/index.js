@@ -18,6 +18,9 @@ const uuid_1 = require("uuid");
 function createExpressApp(options = {}) {
     const app = (0, express_1.default)();
     const serviceName = options.serviceName || 'backend';
+    for (const mw of options.preMiddleware || []) {
+        app.use(mw);
+    }
     app.use((0, helmet_1.default)({
         contentSecurityPolicy: {
             directives: {
