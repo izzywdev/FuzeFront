@@ -522,7 +522,20 @@ app.get('/api/health', async (_req, res) => {
 // receive them.
 app.get(['/ready', '/api/ready'], async (_req, res) => {
   const payload = await buildHealthPayload()
-  res.status(payload.status === 'ok' ? 200 : 503).json(payload)
+  // Readiness gates on the DATABASE ONLY — the single dependency a request path
+  // genuinely cannot serve without. Permit is deliberately NOT a readiness gate.
+  // The Permit schema sync runs in the background after the port binds (see
+  // startServer's runPostListenBootstrap), so `permit.outcome` is 'never_run'
+  // for the first moments of a pod's life and may stay non-'ok' while Permit is
+  // slow or degraded. Gating readiness on it turns a Permit blip — or merely the
+  // startup window before the background sync finishes — into a full backend
+  // outage: no pod ever becomes Ready, the Service has no endpoints, and the
+  // ingress returns 503 for every /api/* request, even though the DB-backed API
+  // is fully serveable and authorization already fails closed. `permit` stays in
+  // the payload below for observability (and /health still surfaces the real
+  // 'degraded' verdict); it just no longer removes the pod from rotation.
+  const ready = payload.database.status === 'connected'
+  res.status(ready ? 200 : 503).json(payload)
 })
 
 // Error handling middleware
