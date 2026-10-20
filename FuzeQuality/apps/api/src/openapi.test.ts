@@ -205,6 +205,10 @@ describe('contract discovery', () => {
         .toContain('no retained collection attempt')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
         .toContain('Complete attempts may be reconciled again')
+      expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.responses['502'].description)
+        .toContain('previously retained evidence remains unchanged')
+      expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.responses['504'].description)
+        .toContain('timed out')
       expect(document.components.parameters.ExecutionThresholdOutcome.schema.enum).toEqual([
         'passed', 'failed',
       ])

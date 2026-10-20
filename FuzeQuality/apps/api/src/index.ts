@@ -36,7 +36,7 @@ import {
   webhookScanCommands,
   webhookWorkflowExecutions,
 } from '@fuzequality/github-app'
-import { dispatchPerformanceWorkflow, dispatchTestWorkflow, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
+import { dispatchPerformanceWorkflow, dispatchTestWorkflow, GitHubArtifactEvidenceError, githubInstallationToken, githubWorkflowArtifactEvidence } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { qualityResources } from './platform-permissions'
@@ -844,12 +844,23 @@ app.post('/api/v1/repositories/:id/test-executions/evidence/refresh', mayRunExec
       code: 'EXECUTION_NOT_TERMINAL',
     })
   }
-  const refreshed = await refreshExecutionArtifactEvidence(execution, () => githubWorkflowArtifactEvidence({
-    owner: repository.owner,
-    name: repository.name,
-    runId: execution.externalRunId,
-    installationId,
-  }))
+  let refreshed: TestExecution
+  try {
+    refreshed = await refreshExecutionArtifactEvidence(execution, () => githubWorkflowArtifactEvidence({
+      owner: repository.owner,
+      name: repository.name,
+      runId: execution.externalRunId,
+      installationId,
+    }), new Date().toISOString(), 'throw')
+  } catch (error) {
+    const errorCode = error instanceof GitHubArtifactEvidenceError
+      ? error.code
+      : 'PROVIDER_UNAVAILABLE'
+    return response.status(errorCode === 'PROVIDER_TIMEOUT' ? 504 : 502).json({
+      error: 'Provider evidence reconciliation failed; previously retained evidence was preserved',
+      code: errorCode,
+    })
+  }
   await store.saveTestExecution(refreshed)
   response.json(refreshed)
 })

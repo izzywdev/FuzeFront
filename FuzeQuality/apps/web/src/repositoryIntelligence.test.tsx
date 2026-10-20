@@ -2046,6 +2046,35 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(within(outcome).queryByRole('button', { name: 'Refresh provider evidence' })).not.toBeInTheDocument()
   })
 
+  it('reports failed reconciliation while keeping previously verified evidence visible', async () => {
+    mockEvidenceApis()
+    const complete: TestExecution = {
+      ...loadExecution,
+      evidenceLinks: [{
+        kind: 'video',
+        name: 'Previously verified recording',
+        url: 'https://github.com/fuze/front/actions/runs/12345/artifacts/98',
+      }],
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T05:00:00.000Z' },
+    }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.mocked(api.latestPerformanceExecutions).mockResolvedValue({ items: [complete] })
+    vi.mocked(api.refreshTestExecutionEvidence).mockRejectedValue(
+      new Error('Provider evidence reconciliation failed; previously retained evidence was preserved')
+    )
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    const outcome = await screen.findByLabelText(`Latest execution for ${loadArtifact.title}`)
+    fireEvent.click(within(outcome).getByRole('button', { name: 'Reconcile provider evidence' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Provider evidence reconciliation failed; previously retained evidence was preserved'
+    )
+    expect(within(outcome).getByRole('link', { name: /Previously verified recording/ })).toBeVisible()
+  })
+
   it('explains performance precedence when one workflow overlaps integration inventory', async () => {
     mockEvidenceApis()
     const overlappingLoad = {

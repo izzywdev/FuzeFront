@@ -107,6 +107,7 @@ export async function refreshExecutionArtifactEvidence<T extends Pick<TestExecut
   execution: T,
   collect: () => Promise<ArtifactEvidenceResult>,
   checkedAt = new Date().toISOString(),
+  failureMode: 'preserve' | 'throw' = 'preserve',
 ): Promise<T & { evidenceCollection: NonNullable<TestExecution['evidenceCollection']> }> {
   try {
     const discovered = await collect()
@@ -120,6 +121,10 @@ export async function refreshExecutionArtifactEvidence<T extends Pick<TestExecut
         : { status: 'complete', checkedAt },
     }
   } catch (error) {
+    // Interactive reconciliation must report a failed provider lookup to the
+    // operator. Webhook ingestion uses the default preserve mode so provider
+    // outages never discard previously verified evidence or reject delivery.
+    if (failureMode === 'throw') throw error
     // A retry failure must not downgrade evidence already proven complete or
     // partial. This mirrors store merge precedence and keeps the API response
     // consistent with the durable record.

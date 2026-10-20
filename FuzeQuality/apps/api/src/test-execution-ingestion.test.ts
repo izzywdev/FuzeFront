@@ -131,6 +131,29 @@ describe('internal execution ingestion compatibility', () => {
     expect(refreshed.evidenceCollection).toEqual(execution.evidenceCollection)
   })
 
+  it('surfaces interactive reconciliation failures without mutating retained evidence', async () => {
+    const execution = webhookExecutionRecord({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000', provider: 'github-actions',
+      externalRunId: '45', attempt: 1, revision: 'abc123', kind: 'post-production', status: 'passed',
+      name: 'Production journey', evidenceLinks: [{
+        kind: 'video', name: 'Verified recording', url: 'https://github.com/acme/app/actions/runs/45/artifacts/7',
+      }],
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T03:00:00.000Z' },
+    }, 'tenant-1', { policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
+    const failure = Object.assign(new Error('timeout'), { code: 'PROVIDER_TIMEOUT' })
+
+    await expect(refreshExecutionArtifactEvidence(
+      execution,
+      async () => { throw failure },
+      '2026-10-18T04:00:00.000Z',
+      'throw',
+    )).rejects.toBe(failure)
+    expect(execution.evidenceCollection).toEqual({
+      status: 'complete', checkedAt: '2026-10-18T03:00:00.000Z',
+    })
+    expect(execution.evidenceLinks).toHaveLength(1)
+  })
+
   it('makes exact-revision links authoritative in webhook execution records', () => {
     const execution = {
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',
