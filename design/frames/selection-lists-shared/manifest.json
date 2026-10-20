@@ -551,9 +551,9 @@
           "browse/ListSourceGroups",
           "browse/ReadOnlyListNotice"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:08.934Z"
       },
       {
         "id": "fork",
