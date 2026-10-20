@@ -50,6 +50,7 @@ export type PolicyGatePerformancePage = {
 
 export type ExecutionEvidenceRequirement =
   | 'post-production-video-missing'
+  | 'performance-threshold-missing'
   | 'terminal-timing-missing'
 
 export type ExecutionFilter = Partial<Pick<TestExecution, 'id' | 'kind' | 'status' | 'provider' | 'externalRunId' | 'branch' | 'revision' | 'workflowPath' | 'name'>> & {
@@ -141,6 +142,10 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (
       filter.evidenceRequirement === 'post-production-video-missing' &&
       (execution.kind !== 'post-production' || execution.evidenceLinks.some(link => link.kind === 'video'))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'performance-threshold-missing' &&
+      (!['load', 'stress'].includes(execution.kind) || execution.thresholds.length > 0)
     ) return false
     if (
       filter.evidenceRequirement === 'terminal-timing-missing' &&

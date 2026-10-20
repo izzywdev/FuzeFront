@@ -2523,6 +2523,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('isolates load and stress executions missing threshold observations', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Required evidence'), {
+      target: { value: 'performance-threshold-missing' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'performance-threshold-missing',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'performance-threshold-missing',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'performance-threshold-missing',
+      })
+    })
+  })
+
   it('isolates execution history, trends, and policy-gate outcomes with breached thresholds', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

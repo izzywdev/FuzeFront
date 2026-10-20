@@ -1474,7 +1474,10 @@ export class PostgresCatalogStore implements CatalogStore {
              ))
            OR ($25='terminal-timing-missing'
              AND executions.status<>'running'
-             AND (executions.started_at IS NULL OR executions.completed_at IS NULL)))
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+           OR ($25='performance-threshold-missing'
+             AND executions.kind IN ('load','stress')
+             AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0))
          AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
          AND ($28::text IS NULL OR executions.id=$28)
@@ -1662,7 +1665,10 @@ export class PostgresCatalogStore implements CatalogStore {
              ))
            OR ($25='terminal-timing-missing'
              AND executions.status<>'running'
-             AND (executions.started_at IS NULL OR executions.completed_at IS NULL)))
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+           OR ($25='performance-threshold-missing'
+             AND executions.kind IN ('load','stress')
+             AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0))
          AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
        GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
@@ -1752,7 +1758,10 @@ export class PostgresCatalogStore implements CatalogStore {
                ))
              OR ($28='terminal-timing-missing'
                AND executions.status<>'running'
-               AND (executions.started_at IS NULL OR executions.completed_at IS NULL)))
+               AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+             OR ($28='performance-threshold-missing'
+               AND executions.kind IN ('load','stress')
+               AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0))
            AND ($29::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $29)
            AND ($30::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $30)
        ), explicit_pairs AS (

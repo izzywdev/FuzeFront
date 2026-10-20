@@ -77,6 +77,8 @@ describe('execution evidence filter', () => {
   it('accepts only explicit required-evidence gaps', () => {
     expect(executionFilterSchema.parse({ evidenceRequirement: 'post-production-video-missing' }).evidenceRequirement)
       .toBe('post-production-video-missing')
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'performance-threshold-missing' }).evidenceRequirement)
+      .toBe('performance-threshold-missing')
     expect(executionPageFilterSchema.parse({ evidenceRequirement: 'terminal-timing-missing' }).evidenceRequirement)
       .toBe('terminal-timing-missing')
     expect(executionPageFilterSchema.safeParse({ evidenceRequirement: 'video-missing' }).success).toBe(false)

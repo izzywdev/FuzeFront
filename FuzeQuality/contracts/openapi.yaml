@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.60.0
+  version: 0.61.0
   license:
     name: UNLICENSED
 servers:
@@ -1387,8 +1387,8 @@ components:
     ExecutionEvidenceRequirement:
       name: evidenceRequirement
       in: query
-      description: Select executions missing evidence required for a reviewed quality claim. Terminal timing requires both start and completion timestamps for a non-running execution.
-      schema: { type: string, enum: [post-production-video-missing, terminal-timing-missing] }
+      description: Select executions missing evidence required for a reviewed quality claim. Performance thresholds apply only to load and stress executions. Terminal timing requires both start and completion timestamps for a non-running execution.
+      schema: { type: string, enum: [post-production-video-missing, performance-threshold-missing, terminal-timing-missing] }
     ExecutionThresholdOutcome:
       name: thresholdOutcome
       in: query

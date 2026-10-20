@@ -226,7 +226,7 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionEvidenceRequirement).toMatchObject({
         name: 'evidenceRequirement',
         in: 'query',
-        schema: { type: 'string', enum: ['post-production-video-missing', 'terminal-timing-missing'] },
+        schema: { type: 'string', enum: ['post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
       })
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
         .toContain('no retained collection attempt')
