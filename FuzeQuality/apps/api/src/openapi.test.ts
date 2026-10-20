@@ -195,6 +195,8 @@ describe('contract discovery', () => {
         in: 'query',
         schema: { type: 'string', enum: ['complete', 'partial', 'unavailable', 'not-collected'] },
       })
+      expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
+        .toContain('no retained collection attempt')
       expect(document.components.parameters.ExecutionThresholdOutcome.schema.enum).toEqual([
         'passed', 'failed',
       ])

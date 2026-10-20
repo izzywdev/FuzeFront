@@ -359,13 +359,18 @@ export function ExecutionEvidenceCoverage({
   const collectionPartial = collection?.status === 'partial'
   const canRefresh = execution.provider === 'github-actions' &&
     execution.status !== 'running' &&
-    (collection?.status === 'partial' || collection?.status === 'unavailable') &&
+    (!collection || collection.status === 'partial' || collection.status === 'unavailable') &&
     Boolean(onRefresh)
 
   return (
     <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
       <strong>Evidence coverage</strong>
       <small>{thresholds} thresholds · {links} artifacts · {gatePairs} policy–gate outcomes</small>
+      {!collection && (
+        <span className="status-pill status-running">
+          Provider artifact discovery has not run; zero artifacts is not a verified result
+        </span>
+      )}
       {collectionFailure && (
         <span className="status-pill status-failed">
           {collectionFailure}; zero artifacts is not a verified result

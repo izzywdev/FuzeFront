@@ -137,11 +137,22 @@ describe('ExecutionThresholdEvidence', () => {
       ...execution,
       provider: 'github-actions',
       status: 'failed',
+      evidenceCollection: undefined,
+    }} onRefresh={onRefresh} />)
+
+    expect(screen.getByText(/artifact discovery has not run/i)).toHaveTextContent('zero artifacts is not a verified result')
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh provider evidence' }))
+    expect(onRefresh).toHaveBeenCalledOnce()
+
+    rerender(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      provider: 'github-actions',
+      status: 'failed',
       evidenceCollection: { status: 'unavailable', checkedAt: '2026-10-18T04:00:00.000Z', errorCode: 'PROVIDER_TIMEOUT' },
     }} onRefresh={onRefresh} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh provider evidence' }))
-    expect(onRefresh).toHaveBeenCalledOnce()
+    expect(onRefresh).toHaveBeenCalledTimes(2)
 
     rerender(<ExecutionEvidenceCoverage execution={{
       ...execution,
@@ -155,6 +166,13 @@ describe('ExecutionThresholdEvidence', () => {
       ...execution,
       provider: 'external',
       evidenceCollection: { status: 'unavailable', checkedAt: '2026-10-18T04:00:00.000Z', errorCode: 'PROVIDER_UNAVAILABLE' },
+    }} onRefresh={onRefresh} />)
+    expect(screen.queryByRole('button', { name: /refresh provider evidence/i })).not.toBeInTheDocument()
+
+    rerender(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      provider: 'github-actions',
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T04:00:00.000Z' },
     }} onRefresh={onRefresh} />)
     expect(screen.queryByRole('button', { name: /refresh provider evidence/i })).not.toBeInTheDocument()
     unmount()

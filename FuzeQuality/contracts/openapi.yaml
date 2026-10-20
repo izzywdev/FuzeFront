@@ -953,7 +953,8 @@ paths:
       description: >-
         Re-runs GitHub Actions artifact discovery through the repository's tenant-owned GitHub App
         installation. The execution outcome and attempt identity remain immutable; only merged evidence
-        links and the explicit collection state are updated.
+        links and the explicit collection state are updated. This also repairs terminal attempts with no
+        retained collection attempt; a successful empty lookup becomes an explicit `complete` result.
       tags: [executions]
       security: [{ platformBearer: [] }]
       requestBody:
