@@ -5,6 +5,12 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # This workflow produces the REQUIRED "Security Scan" context, which must also report
+  # for a merge-queue entry; a queue build emits `merge_group`, not `pull_request`.
+  # Note the `concurrency` block below keys on `github.ref` and only sets
+  # `cancel-in-progress` for `pull_request`, so queue runs are never cancelled by a
+  # sibling — cancelling one would strand the entry on an unreported required context.
+  merge_group:
   workflow_dispatch:
   release:
     types: [published]

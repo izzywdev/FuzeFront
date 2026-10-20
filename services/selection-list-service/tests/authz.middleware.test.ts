@@ -50,6 +50,7 @@ import {
 } from '../src/middleware/authz';
 import { db } from '../src/db';
 import { _setGrantTokenProviderForTesting } from '../src/lib/machineIdentity';
+import { usr, org, permitKey } from './helpers/ids';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,7 +63,7 @@ process.env.JWT_SECRET = JWT_SECRET;
 
 function makeToken(overrides: Record<string, unknown> = {}): string {
   return jwt.sign(
-    { userId: 'usr_tester01', orgId: 'org_acme', ...overrides },
+    { userId: usr('tester01'), orgId: org('acme'), ...overrides },
     JWT_SECRET,
   );
 }
@@ -140,7 +141,7 @@ describe('requireAuthzCheck — flag OFF (default)', () => {
 
   it('returns 401 when userId is missing from token (flag OFF)', async () => {
     // Token without userId claim → middleware should reject.
-    const token = jwt.sign({ orgId: 'org_acme' }, JWT_SECRET);
+    const token = jwt.sign({ orgId: org('acme') }, JWT_SECRET);
     const app = buildApp('SelectionList', 'read');
     const res = await request(app)
       .get('/lists/sl_abc123')
@@ -167,8 +168,8 @@ describe('requireAuthzCheck — flag ON', () => {
     expect(res.status).toBe(200);
     expect(check).toHaveBeenCalledWith(
       {
-        subject: 'usr_tester01',
-        tenant: 'org_acme',
+        subject: permitKey(usr('tester01')),
+        tenant: permitKey(org('acme')),
         resource: { type: 'SelectionList', key: 'sl_abc123' },
         action: 'read',
       },
@@ -219,7 +220,7 @@ describe('requireAuthzCheck — flag ON', () => {
       // The existence lookup is scoped to the CALLER's org.
       expect(mockDb.where).toHaveBeenCalledWith({
         id: 'sl_other_org_or_never_minted',
-        organization_id: 'org_acme',
+        organization_id: org('acme'),
       });
     } finally {
       mockDb.first = originalFirst;
@@ -264,9 +265,9 @@ describe('requireAuthzCheck — flag ON', () => {
       .set('Authorization', `Bearer ${makeToken()}`);
 
     const [checkArg, tokenArg] = check.mock.calls[0];
-    expect(checkArg.subject).toBe('usr_tester01');
+    expect(checkArg.subject).toBe(permitKey(usr('tester01')));
     expect(checkArg.action).toBe('write');
-    expect(checkArg).toMatchObject({ resource: { type: 'SelectionList', key: 'sl_unique999' }, tenant: 'org_acme' });
+    expect(checkArg).toMatchObject({ resource: { type: 'SelectionList', key: 'sl_unique999' }, tenant: permitKey(org('acme')) });
     expect(typeof tokenArg).toBe('string');
   });
 
@@ -274,7 +275,7 @@ describe('requireAuthzCheck — flag ON', () => {
     const check = jest.fn().mockResolvedValue({ allow: true });
     _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const app = buildApp('SelectionList', 'read');
-    const token = makeToken({ userId: 'usr_specific_caller' });
+    const token = makeToken({ userId: usr('specific') });
 
     await request(app).get('/lists/sl_abc123').set('Authorization', `Bearer ${token}`);
 
@@ -308,8 +309,8 @@ describe('grantListOwner', () => {
   it('calls AuthzClient.grant() with an INSTANCE-scoped resource, then upserts the mirror row', async () => {
     const grantMock = jest.fn().mockResolvedValue({
       id: 'org_acme:usr_newowner:list-owner',
-      subject: 'usr_newowner',
-      tenant: 'org_acme',
+      subject: usr('newowner'),
+      tenant: org('acme'),
       role: 'list-owner',
     });
     _setAuthzClientForTesting({
@@ -320,14 +321,14 @@ describe('grantListOwner', () => {
       listGrants: jest.fn(),
     } as unknown as AuthzClient);
 
-    await grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin');
+    await grantListOwner(usr('newowner'), org('acme'), 'sl_mylist', usr('admin'));
 
     // The resource MUST reach the wire — omitting it silently widens a
     // list-scoped grant to tenant-wide (the exact bug this test guards).
     expect(grantMock).toHaveBeenCalledWith(
       {
-        subject: 'usr_newowner',
-        tenant: 'org_acme',
+        subject: permitKey(usr('newowner')),
+        tenant: permitKey(org('acme')),
         role: 'list-owner',
         resource: { type: 'SelectionList', key: 'sl_mylist' },
       },
@@ -337,10 +338,10 @@ describe('grantListOwner', () => {
     expect(mockDb.insert).toHaveBeenCalledWith(
       expect.objectContaining({
         list_id: 'sl_mylist',
-        user_id: 'usr_newowner',
+        user_id: permitKey(usr('newowner')),
         role: 'list-owner',
-        granted_by: 'usr_admin',
-        org_id: 'org_acme',
+        granted_by: usr('admin'),
+        org_id: permitKey(org('acme')),
         revoked_at: null,
       }),
     );
@@ -364,7 +365,7 @@ describe('grantListOwner', () => {
     } as unknown as AuthzClient);
 
     await expect(
-      grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin'),
+      grantListOwner(usr('newowner'), org('acme'), 'sl_mylist', usr('admin')),
     ).rejects.toThrow();
 
     // The mirror upsert must never be reached — a caller retrying/observing
@@ -385,7 +386,7 @@ describe('grantListOwner', () => {
     } as unknown as AuthzClient);
 
     await expect(
-      grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin'),
+      grantListOwner(usr('newowner'), org('acme'), 'sl_mylist', usr('admin')),
     ).rejects.toThrow('token issuance failed');
 
     expect(grantMock).not.toHaveBeenCalled();
@@ -425,7 +426,7 @@ describe('countActiveOwners', () => {
 describe('filterReadable — instance-level read filter for list pages', () => {
   const rows = [{ id: 'sl_a' }, { id: 'sl_b' }, { id: 'sl_c' }];
   const req = (): Request =>
-    ({ userId: 'usr_tester01', orgId: 'org_acme', headers: { authorization: 'Bearer caller-token' } }) as unknown as Request;
+    ({ userId: usr('tester01'), orgId: org('acme'), headers: { authorization: 'Bearer caller-token' } }) as unknown as Request;
 
   afterEach(() => {
     delete process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'];
@@ -452,8 +453,8 @@ describe('filterReadable — instance-level read filter for list pages', () => {
     expect(bulkCheck).toHaveBeenCalledTimes(1);
     expect(bulkCheck).toHaveBeenCalledWith(
       rows.map((r) => ({
-        subject: 'usr_tester01',
-        tenant: 'org_acme',
+        subject: permitKey(usr('tester01')),
+        tenant: permitKey(org('acme')),
         resource: { type: 'SelectionList', key: r.id },
         action: 'read',
       })),
@@ -473,7 +474,7 @@ describe('filterReadable — instance-level read filter for list pages', () => {
     process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'] = 'true';
     const bulkCheck = jest.fn();
     _setAuthzClientForTesting({ check: jest.fn(), bulkCheck } as unknown as AuthzClient);
-    const noToken = { userId: 'usr_tester01', orgId: 'org_acme', headers: {} } as unknown as Request;
+    const noToken = { userId: usr('tester01'), orgId: org('acme'), headers: {} } as unknown as Request;
 
     await expect(filterReadable(noToken, rows)).resolves.toEqual([]);
     expect(bulkCheck).not.toHaveBeenCalled();

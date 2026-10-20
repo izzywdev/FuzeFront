@@ -144,9 +144,12 @@ export async function revokeDeletedUserGrants(
 ): Promise<number> {
   const placeholders = userIds.map(() => '?').join(', ');
   const found = await db.raw<{
-    rows?: Array<{ list_id: string; user_id: string; role: string; organization_id: string }>;
+    rows?: Array<{ list_id: string; user_id: string; role: string; organization_id: string; grant_tenant: string }>;
   }>(
-    `SELECT a.list_id, a.user_id, a.role, l.organization_id
+    // grant_tenant: the tenant the grant was MADE in (the mirror's org_id - the granting token's rendering of the
+    // org id), which can differ from the list's stored organization_id (e.g. a common list stored under the
+    // configured platform org id, granted through a bare-UUID operator token). Legacy rows fall back to the list's.
+    `SELECT a.list_id, a.user_id, a.role, l.organization_id, COALESCE(a.org_id, l.organization_id) AS grant_tenant
        FROM selection_list_access a
        JOIN selection_lists l ON l.id = a.list_id
       WHERE a.user_id IN (${placeholders})`,
@@ -188,7 +191,7 @@ export async function revokeDeletedUserGrants(
           await getAuthzClient().revoke(
             {
               subject: row.user_id,
-              tenant: row.organization_id,
+              tenant: row.grant_tenant,
               role: current['role'] as string,
               resource: { type: SELECTION_LIST_RESOURCE, key: row.list_id },
             },
