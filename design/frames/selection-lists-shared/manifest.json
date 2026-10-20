@@ -650,9 +650,9 @@
           "visibility/VisibilityControl",
           "visibility/PublishPlatformConfirm"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:24.240Z"
       },
       {
         "id": "effective-picker",
