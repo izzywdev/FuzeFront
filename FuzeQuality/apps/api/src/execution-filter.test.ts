@@ -10,6 +10,7 @@ describe('execution evidence filter', () => {
       name: 'Post-production browser suite',
       evidenceKind: 'video',
       evidenceCollectionStatus: 'partial',
+      evidenceCheckedAfter: '2026-10-01T00:00:00.000Z',
       evidenceCheckedBefore: '2026-10-07T00:00:00.000Z',
       evidenceRequirement: 'post-production-video-missing',
       thresholdOutcome: 'failed',
@@ -58,10 +59,19 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.safeParse({ evidenceCollectionStatus: 'unknown' }).success).toBe(false)
   })
 
-  it('accepts only an ISO-8601 provider evidence cutoff', () => {
+  it('accepts only a chronological ISO-8601 provider evidence window', () => {
+    expect(executionFilterSchema.parse({ evidenceCheckedAfter: '2026-10-01T00:00:00.000Z' }).evidenceCheckedAfter)
+      .toBe('2026-10-01T00:00:00.000Z')
     expect(executionFilterSchema.parse({ evidenceCheckedBefore: '2026-10-07T00:00:00.000Z' }).evidenceCheckedBefore)
       .toBe('2026-10-07T00:00:00.000Z')
+    expect(executionPageFilterSchema.safeParse({ evidenceCheckedAfter: 'last week' }).success).toBe(false)
     expect(executionPageFilterSchema.safeParse({ evidenceCheckedBefore: 'last week' }).success).toBe(false)
+    const inverted = executionFilterSchema.safeParse({
+      evidenceCheckedAfter: '2026-10-08T00:00:00.000Z',
+      evidenceCheckedBefore: '2026-10-07T00:00:00.000Z',
+    })
+    expect(inverted.success).toBe(false)
+    if (!inverted.success) expect(inverted.error.issues[0]?.path).toEqual(['evidenceCheckedBefore'])
   })
 
   it('accepts only explicit required-evidence gaps', () => {

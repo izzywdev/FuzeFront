@@ -15,6 +15,7 @@ export const executionFilterSchema = z.object({
   name: z.string().trim().min(1).max(500).optional(),
   evidenceKind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']).optional(),
   evidenceCollectionStatus: z.enum(['complete', 'partial', 'unavailable', 'not-collected']).optional(),
+  evidenceCheckedAfter: z.string().datetime().optional(),
   evidenceCheckedBefore: z.string().datetime().optional(),
   evidenceRequirement: z.enum(['post-production-video-missing']).optional(),
   thresholdOutcome: z.enum(['passed', 'failed']).optional(),
@@ -34,6 +35,9 @@ export const executionFilterSchema = z.object({
   if (value.from && value.until && Date.parse(value.from) > Date.parse(value.until)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['until'], message: 'until must be greater than or equal to from' })
   }
+  if (value.evidenceCheckedAfter && value.evidenceCheckedBefore && Date.parse(value.evidenceCheckedAfter) > Date.parse(value.evidenceCheckedBefore)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['evidenceCheckedBefore'], message: 'evidenceCheckedBefore must be greater than or equal to evidenceCheckedAfter' })
+  }
   if (value.minimumDurationMs !== undefined && value.maximumDurationMs !== undefined && value.minimumDurationMs > value.maximumDurationMs) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['maximumDurationMs'], message: 'maximumDurationMs must be greater than or equal to minimumDurationMs' })
   }
@@ -46,6 +50,7 @@ export const executionPageFilterSchema = z.object({
   name: z.string().trim().min(1).max(500).optional(),
   evidenceKind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']).optional(),
   evidenceCollectionStatus: z.enum(['complete', 'partial', 'unavailable', 'not-collected']).optional(),
+  evidenceCheckedAfter: z.string().datetime().optional(),
   evidenceCheckedBefore: z.string().datetime().optional(),
   evidenceRequirement: z.enum(['post-production-video-missing']).optional(),
   thresholdOutcome: z.enum(['passed', 'failed']).optional(),
@@ -65,6 +70,9 @@ export const executionPageFilterSchema = z.object({
 }).strict().superRefine((value, context) => {
   if (value.from && value.until && Date.parse(value.from) > Date.parse(value.until)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['until'], message: 'until must be greater than or equal to from' })
+  }
+  if (value.evidenceCheckedAfter && value.evidenceCheckedBefore && Date.parse(value.evidenceCheckedAfter) > Date.parse(value.evidenceCheckedBefore)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['evidenceCheckedBefore'], message: 'evidenceCheckedBefore must be greater than or equal to evidenceCheckedAfter' })
   }
   if (value.minimumDurationMs !== undefined && value.maximumDurationMs !== undefined && value.minimumDurationMs > value.maximumDurationMs) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['maximumDurationMs'], message: 'maximumDurationMs must be greater than or equal to minimumDurationMs' })

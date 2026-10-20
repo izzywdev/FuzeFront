@@ -2381,22 +2381,33 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
-  it('isolates execution evidence whose provider check predates an exact cutoff', async () => {
+  it('isolates execution evidence inside an exact provider verification window', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)
     await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Evidence checked after'), {
+      target: { value: '2026-10-08T12:00' },
+    })
     fireEvent.change(screen.getByLabelText('Evidence checked before'), {
       target: { value: '2026-10-08T12:30' },
     })
 
+    const evidenceCheckedAfter = new Date('2026-10-08T12:00').toISOString()
     const evidenceCheckedBefore = new Date('2026-10-08T12:30').toISOString()
     await waitFor(() => {
-      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, { evidenceCheckedBefore })
-      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, { evidenceCheckedBefore })
-      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, { evidenceCheckedBefore })
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, { evidenceCheckedAfter, evidenceCheckedBefore })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, { evidenceCheckedAfter, evidenceCheckedBefore })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, { evidenceCheckedAfter, evidenceCheckedBefore })
     })
+
+    fireEvent.change(screen.getByLabelText('Evidence checked before'), {
+      target: { value: '2026-10-08T11:30' },
+    })
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Evidence checked before must be greater than or equal to evidence checked after.'
+    )
   })
 
   it('isolates executions missing required post-production video evidence', async () => {

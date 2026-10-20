@@ -3604,6 +3604,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCollectionStatus, setExecutionEvidenceCollectionStatus] = useState<
     NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected' | ''
   >('')
+  const [executionEvidenceCheckedAfter, setExecutionEvidenceCheckedAfter] = useState('')
   const [executionEvidenceCheckedBefore, setExecutionEvidenceCheckedBefore] = useState('')
   const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
     'post-production-video-missing' | ''
@@ -3637,6 +3638,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     executionMinimumDurationSeconds !== '' &&
     executionMaximumDurationSeconds !== '' &&
     Number(executionMinimumDurationSeconds) > Number(executionMaximumDurationSeconds)
+  )
+  const invalidEvidenceCheckedRange = Boolean(
+    executionEvidenceCheckedAfter &&
+    executionEvidenceCheckedBefore &&
+    Date.parse(executionEvidenceCheckedAfter) > Date.parse(executionEvidenceCheckedBefore)
   )
   const [policyGateKind, setPolicyGateKind] = useState<
     PolicyGateEvaluation['kind'] | ''
@@ -3838,6 +3844,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         provider: executionProvider,
         evidenceKind: executionEvidenceKind,
         evidenceCollectionStatus: executionEvidenceCollectionStatus,
+        evidenceCheckedAfter: iso(executionEvidenceCheckedAfter),
         evidenceCheckedBefore: iso(executionEvidenceCheckedBefore),
         evidenceRequirement: executionEvidenceRequirement,
         thresholdOutcome: executionThresholdOutcome,
@@ -3860,13 +3867,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionEvidenceCheckedBefore, executionEvidenceRequirement, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionEvidenceCheckedAfter, executionEvidenceCheckedBefore, executionEvidenceRequirement, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
     executionFilter,
     invalidExecutionRange,
     invalidExecutionDurationRange,
+    invalidEvidenceCheckedRange,
   ])
   const executionTrendQueryRef = useRef(executionTrendQuery)
   executionTrendQueryRef.current = executionTrendQuery
@@ -4177,7 +4185,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setExecutionHistoryFailures([])
     setExecutionTrendFailures([])
     setExecutionPerformanceFailures([])
-    if (invalidExecutionRange || invalidExecutionDurationRange) {
+    if (invalidExecutionRange || invalidExecutionDurationRange || invalidEvidenceCheckedRange) {
       setExecutions([])
       setPerformanceExecutions([])
       setPerformanceEvidenceFailures([])
@@ -4313,6 +4321,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     executionRepositoryId,
     invalidExecutionRange,
     invalidExecutionDurationRange,
+    invalidEvidenceCheckedRange,
   ])
   const loadMoreExecutionTrend = async () => {
     const cursors = Object.entries(executionTrendNextCursors)
@@ -5564,13 +5573,33 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </select>
             </label>
             <label>
+              Evidence checked after
+              <input
+                type="datetime-local"
+                value={executionEvidenceCheckedAfter}
+                onChange={event => setExecutionEvidenceCheckedAfter(event.target.value)}
+              />
+            </label>
+            <label>
               Evidence checked before
               <input
                 type="datetime-local"
                 value={executionEvidenceCheckedBefore}
+                aria-invalid={invalidEvidenceCheckedRange}
                 onChange={event => setExecutionEvidenceCheckedBefore(event.target.value)}
               />
             </label>
+            {(executionEvidenceCheckedAfter || executionEvidenceCheckedBefore) && (
+              <button
+                className="secondary-button execution-filter-reset"
+                onClick={() => {
+                  setExecutionEvidenceCheckedAfter('')
+                  setExecutionEvidenceCheckedBefore('')
+                }}
+              >
+                Clear evidence dates
+              </button>
+            )}
             <label>
               Threshold evidence
               <select
@@ -5699,6 +5728,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               <input
                 type="datetime-local"
                 value={executionUntil}
+                aria-invalid={invalidExecutionRange}
                 onChange={event => setExecutionUntil(event.target.value)}
               />
             </label>
@@ -5732,6 +5762,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           {invalidExecutionDurationRange && (
             <p className="form-error" role="alert">
               Maximum duration must be greater than or equal to minimum duration.
+            </p>
+          )}
+          {invalidExecutionRange && (
+            <p className="form-error" role="alert">
+              Until must be greater than or equal to from.
+            </p>
+          )}
+          {invalidEvidenceCheckedRange && (
+            <p className="form-error" role="alert">
+              Evidence checked before must be greater than or equal to evidence checked after.
             </p>
           )}
           {executionTrendFailures.length > 0 && (

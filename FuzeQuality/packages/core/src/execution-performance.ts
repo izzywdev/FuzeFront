@@ -51,6 +51,7 @@ export type PolicyGatePerformancePage = {
 export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'externalRunId' | 'branch' | 'revision' | 'workflowPath' | 'name'>> & {
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
   evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
+  evidenceCheckedAfter?: string
   evidenceCheckedBefore?: string
   evidenceRequirement?: 'post-production-video-missing'
   thresholdOutcome?: 'passed' | 'failed'
@@ -115,6 +116,7 @@ export function isRecoveredExecution(execution: TestExecution, history: TestExec
 export function filterTestExecutions(executions: TestExecution[], filter: ExecutionFilter = {}, history: TestExecution[] = executions) {
   const from = filter.from ? Date.parse(filter.from) : undefined
   const until = filter.until ? Date.parse(filter.until) : undefined
+  const evidenceCheckedAfter = filter.evidenceCheckedAfter ? Date.parse(filter.evidenceCheckedAfter) : undefined
   const evidenceCheckedBefore = filter.evidenceCheckedBefore ? Date.parse(filter.evidenceCheckedBefore) : undefined
   return executions.filter(execution => {
     if (filter.kind && execution.kind !== filter.kind) return false
@@ -123,6 +125,10 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.evidenceKind && !execution.evidenceLinks.some(link => link.kind === filter.evidenceKind)) return false
     if (filter.evidenceCollectionStatus === 'not-collected' && execution.evidenceCollection) return false
     if (filter.evidenceCollectionStatus && filter.evidenceCollectionStatus !== 'not-collected' && execution.evidenceCollection?.status !== filter.evidenceCollectionStatus) return false
+    if (evidenceCheckedAfter !== undefined) {
+      const checkedAt = Date.parse(execution.evidenceCollection?.checkedAt ?? '')
+      if (!Number.isFinite(checkedAt) || checkedAt < evidenceCheckedAfter) return false
+    }
     if (evidenceCheckedBefore !== undefined) {
       const checkedAt = Date.parse(execution.evidenceCollection?.checkedAt ?? '')
       if (!Number.isFinite(checkedAt) || checkedAt > evidenceCheckedBefore) return false
