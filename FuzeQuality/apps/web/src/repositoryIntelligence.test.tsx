@@ -2500,6 +2500,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('isolates terminal executions missing timing evidence', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Required evidence'), {
+      target: { value: 'terminal-timing-missing' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'terminal-timing-missing',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'terminal-timing-missing',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'terminal-timing-missing',
+      })
+    })
+  })
+
   it('isolates execution history, trends, and policy-gate outcomes with breached thresholds', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

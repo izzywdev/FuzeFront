@@ -30,7 +30,7 @@ import { buildApiExpectations, buildFindings, buildFrontendExpectations } from '
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
-import { executionOutcomeTrend, executionPerformance, filterTestExecutions, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
+import { executionOutcomeTrend, executionPerformance, filterTestExecutions, type ExecutionEvidenceRequirement, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
 
 export const currentQualityArtifactsSql = `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
        FROM fuzequality.repository_quality_artifacts
@@ -93,7 +93,7 @@ export type TestExecutionQuery = {
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']; evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
   evidenceCheckedAfter?: string
   evidenceCheckedBefore?: string
-  evidenceRequirement?: 'post-production-video-missing'
+  evidenceRequirement?: ExecutionEvidenceRequirement
   thresholdOutcome?: 'passed' | 'failed'
   gateOutcome?: TestExecution['status']
   externalRunId?: string
@@ -1465,12 +1465,16 @@ export class PostgresCatalogStore implements CatalogStore {
          ))
          AND ($23::text IS NULL OR executions.branch=$23)
          AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
-         AND ($25::text IS NULL OR ($25='post-production-video-missing'
-           AND executions.kind='post-production'
-           AND NOT EXISTS (
-             SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
-             WHERE required_evidence.value->>'kind'='video'
-           )))
+         AND ($25::text IS NULL
+           OR ($25='post-production-video-missing'
+             AND executions.kind='post-production'
+             AND NOT EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
+               WHERE required_evidence.value->>'kind'='video'
+             ))
+           OR ($25='terminal-timing-missing'
+             AND executions.status<>'running'
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL)))
          AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
          AND ($28::text IS NULL OR executions.id=$28)
@@ -1649,12 +1653,16 @@ export class PostgresCatalogStore implements CatalogStore {
          ))
          AND ($23::text IS NULL OR executions.branch=$23)
          AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
-         AND ($25::text IS NULL OR ($25='post-production-video-missing'
-           AND executions.kind='post-production'
-           AND NOT EXISTS (
-             SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
-             WHERE required_evidence.value->>'kind'='video'
-           )))
+         AND ($25::text IS NULL
+           OR ($25='post-production-video-missing'
+             AND executions.kind='post-production'
+             AND NOT EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
+               WHERE required_evidence.value->>'kind'='video'
+             ))
+           OR ($25='terminal-timing-missing'
+             AND executions.status<>'running'
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL)))
          AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
        GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
@@ -1735,12 +1743,16 @@ export class PostgresCatalogStore implements CatalogStore {
            AND ($24::text IS NULL OR executions.name=$24)
            AND ($26::text IS NULL OR executions.branch=$26)
            AND ($27::text IS NULL OR ($27='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$27)
-           AND ($28::text IS NULL OR ($28='post-production-video-missing'
-             AND executions.kind='post-production'
-             AND NOT EXISTS (
-               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
-               WHERE required_evidence.value->>'kind'='video'
-             )))
+           AND ($28::text IS NULL
+             OR ($28='post-production-video-missing'
+               AND executions.kind='post-production'
+               AND NOT EXISTS (
+                 SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
+                 WHERE required_evidence.value->>'kind'='video'
+               ))
+             OR ($28='terminal-timing-missing'
+               AND executions.status<>'running'
+               AND (executions.started_at IS NULL OR executions.completed_at IS NULL)))
            AND ($29::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $29)
            AND ($30::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $30)
        ), explicit_pairs AS (

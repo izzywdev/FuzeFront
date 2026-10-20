@@ -153,6 +153,9 @@ export function executionTimingIssue(execution: Pick<TestExecution, 'status' | '
   if (execution.status === 'running' && execution.completedAt) {
     return 'Running execution includes a completion timestamp; timing evidence is inconsistent.'
   }
+  if (execution.status !== 'running' && (!execution.startedAt || !execution.completedAt)) {
+    return 'Terminal execution is missing start or completion timing evidence.'
+  }
   if (
     started !== undefined &&
     completed !== undefined &&
@@ -248,7 +251,10 @@ export function ExecutionEvidenceMetadata({
         )}
       </dl>
       {timingIssue && (
-        <span className="status-pill status-failed" role="alert">
+        <span
+          className="status-pill status-failed"
+          role={timingIssue.startsWith('Terminal execution is missing') ? 'status' : 'alert'}
+        >
           {timingIssue}
         </span>
       )}

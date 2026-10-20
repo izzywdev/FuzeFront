@@ -359,6 +359,15 @@ describe('ExecutionThresholdEvidence', () => {
     expect(within(container).getByRole('alert')).toHaveTextContent(
       'Completion timestamp precedes start; duration evidence is invalid.'
     )
+
+    rerender(<ExecutionEvidenceMetadata execution={{
+      ...execution,
+      startedAt: undefined,
+      completedAt: '2026-10-20T12:01:00.000Z',
+    }} />)
+    expect(within(container).getByRole('status')).toHaveTextContent(
+      'Terminal execution is missing start or completion timing evidence.'
+    )
   })
 
   it('renders observed-versus-target values and evaluated outcomes', () => {

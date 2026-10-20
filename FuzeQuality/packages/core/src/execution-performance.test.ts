@@ -122,6 +122,11 @@ it('filters and trends only timestamped execution evidence', () => {
     [...executions, postProductionWithoutVideo],
     { evidenceRequirement: 'post-production-video-missing' },
   )).toEqual([postProductionWithoutVideo])
+  expect(filterTestExecutions(executions, { evidenceRequirement: 'terminal-timing-missing' })).toEqual([executions[1]])
+  expect(filterTestExecutions([
+    ...executions,
+    { ...executions[1], id: 'running-without-completion', status: 'running' as const, startedAt: '2026-10-08T12:00:00.000Z', completedAt: undefined },
+  ], { evidenceRequirement: 'terminal-timing-missing' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'failed' })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { thresholdOutcome: 'passed' })).toEqual([])
   expect(filterTestExecutions(executions, { branch: 'feature/load' })).toEqual([executions[1]])

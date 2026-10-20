@@ -48,12 +48,16 @@ export type PolicyGatePerformancePage = {
   page: { nextCursor: string | null; hasMore: boolean }
 }
 
+export type ExecutionEvidenceRequirement =
+  | 'post-production-video-missing'
+  | 'terminal-timing-missing'
+
 export type ExecutionFilter = Partial<Pick<TestExecution, 'id' | 'kind' | 'status' | 'provider' | 'externalRunId' | 'branch' | 'revision' | 'workflowPath' | 'name'>> & {
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
   evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
   evidenceCheckedAfter?: string
   evidenceCheckedBefore?: string
-  evidenceRequirement?: 'post-production-video-missing'
+  evidenceRequirement?: ExecutionEvidenceRequirement
   thresholdOutcome?: 'passed' | 'failed'
   gateOutcome?: TestExecution['status']
   policyArtifactId?: string
@@ -137,6 +141,10 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (
       filter.evidenceRequirement === 'post-production-video-missing' &&
       (execution.kind !== 'post-production' || execution.evidenceLinks.some(link => link.kind === 'video'))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'terminal-timing-missing' &&
+      (execution.status === 'running' || (execution.startedAt !== undefined && execution.completedAt !== undefined))
     ) return false
     if (filter.thresholdOutcome && !execution.thresholds.some(threshold =>
       threshold.passed === (filter.thresholdOutcome === 'passed')
