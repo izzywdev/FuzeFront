@@ -321,6 +321,46 @@ describe('ExecutionThresholdEvidence', () => {
     expect(screen.getByText('load')).toBeInTheDocument()
   })
 
+  it('shows exact lifecycle timestamps and warns on retained legacy timing conflicts', () => {
+    const { container, rerender } = render(<ExecutionEvidenceMetadata execution={{
+      ...execution,
+      startedAt: '2026-10-20T12:00:00.000Z',
+      completedAt: '2026-10-20T12:01:00.000Z',
+    }} />)
+
+    const metadata = within(container).getByRole('region', { name: 'Execution provider metadata' })
+    expect(within(metadata).getByText('Started').nextElementSibling?.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-10-20T12:00:00.000Z',
+    )
+    expect(within(metadata).getByText('Completed').nextElementSibling?.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-10-20T12:01:00.000Z',
+    )
+    expect(within(metadata).getByText('1m 0s')).toBeVisible()
+    expect(within(metadata).queryByRole('alert')).not.toBeInTheDocument()
+
+    rerender(<ExecutionEvidenceMetadata execution={{
+      ...execution,
+      status: 'running',
+      startedAt: '2026-10-20T12:00:00.000Z',
+      completedAt: '2026-10-20T12:01:00.000Z',
+    }} />)
+    expect(within(container).getByRole('alert')).toHaveTextContent(
+      'Running execution includes a completion timestamp; timing evidence is inconsistent.'
+    )
+    expect(within(container).queryByText('1m 0s')).not.toBeInTheDocument()
+
+    rerender(<ExecutionEvidenceMetadata execution={{
+      ...execution,
+      startedAt: '2026-10-20T12:01:00.000Z',
+      completedAt: '2026-10-20T12:00:00.000Z',
+    }} />)
+    expect(within(container).getByRole('alert')).toHaveTextContent(
+      'Completion timestamp precedes start; duration evidence is invalid.'
+    )
+  })
+
   it('renders observed-versus-target values and evaluated outcomes', () => {
     render(<ExecutionThresholdEvidence execution={execution} />)
 

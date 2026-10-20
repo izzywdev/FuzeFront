@@ -143,6 +143,29 @@ export function durationMsLabel(durationMs: number): string | undefined {
   return `${seconds}s`
 }
 
+export function executionTimingIssue(execution: Pick<TestExecution, 'status' | 'startedAt' | 'completedAt'>): string | undefined {
+  const started = execution.startedAt ? Date.parse(execution.startedAt) : undefined
+  const completed = execution.completedAt ? Date.parse(execution.completedAt) : undefined
+  if (
+    (execution.startedAt && !Number.isFinite(started)) ||
+    (execution.completedAt && !Number.isFinite(completed))
+  ) return 'Execution timing contains an invalid timestamp.'
+  if (execution.status === 'running' && execution.completedAt) {
+    return 'Running execution includes a completion timestamp; timing evidence is inconsistent.'
+  }
+  if (
+    started !== undefined &&
+    completed !== undefined &&
+    completed < started
+  ) return 'Completion timestamp precedes start; duration evidence is invalid.'
+  return undefined
+}
+
+function executionTimeLabel(value: string) {
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? new Date(parsed).toLocaleString() : value
+}
+
 /** App-specific execution provenance composed from semantic HTML primitives. */
 export function ExecutionEvidenceMetadata({
   execution,
@@ -153,61 +176,83 @@ export function ExecutionEvidenceMetadata({
     execution.startedAt,
     execution.completedAt
   )
+  const timingIssue = executionTimingIssue(execution)
   if (
     execution.externalRunId === undefined &&
     execution.attempt === undefined &&
     execution.branch === undefined &&
     execution.headRepository === undefined &&
     execution.workflowPath === undefined &&
+    execution.startedAt === undefined &&
+    execution.completedAt === undefined &&
     !duration
   )
     return null
 
   return (
-    <dl className="execution-metadata" aria-label="Execution provider metadata">
-      <div data-field="suite-kind">
-        <dt>Suite classification</dt>
-        <dd>{execution.kind}</dd>
-      </div>
-      {execution.externalRunId !== undefined && (
-        <div data-field="provider-run-id">
-          <dt>Provider run ID</dt>
-          <dd>
-            {execution.provider} · {execution.externalRunId}
-          </dd>
+    <section aria-label="Execution provider metadata">
+      <dl className="execution-metadata">
+        <div data-field="suite-kind">
+          <dt>Suite classification</dt>
+          <dd>{execution.kind}</dd>
         </div>
+        {execution.externalRunId !== undefined && (
+          <div data-field="provider-run-id">
+            <dt>Provider run ID</dt>
+            <dd>
+              {execution.provider} · {execution.externalRunId}
+            </dd>
+          </div>
+        )}
+        {execution.attempt !== undefined && (
+          <div data-field="attempt">
+            <dt>Attempt</dt>
+            <dd>{execution.attempt}</dd>
+          </div>
+        )}
+        {execution.branch !== undefined && (
+          <div data-field="source-branch">
+            <dt>Source branch</dt>
+            <dd><code>{execution.branch}</code></dd>
+          </div>
+        )}
+        {execution.headRepository !== undefined && (
+          <div data-field="head-repository">
+            <dt>Source repository</dt>
+            <dd><code>{execution.headRepository}</code></dd>
+          </div>
+        )}
+        {execution.workflowPath !== undefined && (
+          <div data-field="workflow-path">
+            <dt>Workflow file</dt>
+            <dd><code>{execution.workflowPath}</code></dd>
+          </div>
+        )}
+        {execution.startedAt !== undefined && (
+          <div data-field="started-at">
+            <dt>Started</dt>
+            <dd><time dateTime={execution.startedAt}>{executionTimeLabel(execution.startedAt)}</time></dd>
+          </div>
+        )}
+        {execution.completedAt !== undefined && (
+          <div data-field="completed-at">
+            <dt>Completed</dt>
+            <dd><time dateTime={execution.completedAt}>{executionTimeLabel(execution.completedAt)}</time></dd>
+          </div>
+        )}
+        {duration && !timingIssue && (
+          <div data-field="duration">
+            <dt>Duration</dt>
+            <dd>{duration}</dd>
+          </div>
+        )}
+      </dl>
+      {timingIssue && (
+        <span className="status-pill status-failed" role="alert">
+          {timingIssue}
+        </span>
       )}
-      {execution.attempt !== undefined && (
-        <div data-field="attempt">
-          <dt>Attempt</dt>
-          <dd>{execution.attempt}</dd>
-        </div>
-      )}
-      {execution.branch !== undefined && (
-        <div data-field="source-branch">
-          <dt>Source branch</dt>
-          <dd><code>{execution.branch}</code></dd>
-        </div>
-      )}
-      {execution.headRepository !== undefined && (
-        <div data-field="head-repository">
-          <dt>Source repository</dt>
-          <dd><code>{execution.headRepository}</code></dd>
-        </div>
-      )}
-      {execution.workflowPath !== undefined && (
-        <div data-field="workflow-path">
-          <dt>Workflow file</dt>
-          <dd><code>{execution.workflowPath}</code></dd>
-        </div>
-      )}
-      {duration && (
-        <div data-field="duration">
-          <dt>Duration</dt>
-          <dd>{duration}</dd>
-        </div>
-      )}
-    </dl>
+    </section>
   )
 }
 

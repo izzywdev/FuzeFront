@@ -699,6 +699,47 @@ describe('internal execution ingestion compatibility', () => {
     }
   })
 
+  it('rejects impossible execution lifecycle timestamps before persistence', () => {
+    const execution = {
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'integration' as const,
+      name: 'Integration tests',
+      startedAt: '2026-10-20T12:00:00.000Z',
+    }
+
+    const runningWithCompletion = testExecutionInputSchema.safeParse({
+      ...execution,
+      status: 'running',
+      completedAt: '2026-10-20T12:01:00.000Z',
+    })
+    expect(runningWithCompletion.success).toBe(false)
+    if (!runningWithCompletion.success) {
+      expect(runningWithCompletion.error.flatten().fieldErrors.completedAt).toContain(
+        'Running execution cannot include a completion timestamp'
+      )
+    }
+
+    const reversed = testExecutionInputSchema.safeParse({
+      ...execution,
+      status: 'failed',
+      completedAt: '2026-10-20T11:59:59.000Z',
+    })
+    expect(reversed.success).toBe(false)
+    if (!reversed.success) {
+      expect(reversed.error.flatten().fieldErrors.completedAt).toContain(
+        'Execution completion timestamp cannot precede its start timestamp'
+      )
+    }
+
+    expect(testExecutionInputSchema.safeParse({
+      ...execution,
+      status: 'passed',
+      completedAt: '2026-10-20T12:01:00.000Z',
+    }).success).toBe(true)
+  })
+
   it('rejects duplicate outcomes for the same policy and gate pair', () => {
     const parsed = testExecutionInputSchema.safeParse({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

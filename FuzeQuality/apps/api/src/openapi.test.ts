@@ -112,6 +112,10 @@ describe('contract discovery', () => {
       expect(schemas.TestExecutionInput.properties.branch.maxLength).toBe(500)
       expect(schemas.TestExecution.properties.branch.maxLength).toBe(500)
       expect(schemas.TestExecution.properties.workflowPath.type).toBe('string')
+      expect(schemas.TestExecutionInput.description).toContain('completion cannot precede start')
+      expect(schemas.TestExecutionInput.properties.completedAt.description).toContain(
+        'forbidden while status is running'
+      )
       expect(
         document.paths['/api/v1/internal/test-executions'].post.responses['422'].content[
           'application/json'

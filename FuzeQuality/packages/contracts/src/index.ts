@@ -732,6 +732,24 @@ export const testExecutionInputSchema = z.object({
   evidenceCollection: testExecutionEvidenceCollectionSchema.optional(),
   summary: z.string().max(5000).optional(),
 }).strict().superRefine((execution, context) => {
+  if (execution.status === 'running' && execution.completedAt) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Running execution cannot include a completion timestamp',
+      path: ['completedAt'],
+    })
+  }
+  if (
+    execution.startedAt &&
+    execution.completedAt &&
+    Date.parse(execution.completedAt) < Date.parse(execution.startedAt)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Execution completion timestamp cannot precede its start timestamp',
+      path: ['completedAt'],
+    })
+  }
   const pairs = new Set<string>()
   for (const [index, evaluation] of execution.gateEvaluations.entries()) {
     const pair = `${evaluation.policyArtifactId}\u0000${evaluation.gateArtifactId}`

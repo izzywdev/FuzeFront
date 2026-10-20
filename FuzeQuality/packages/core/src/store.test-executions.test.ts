@@ -149,25 +149,31 @@ describe('test execution evidence', () => {
   })
 
   it('compares equivalent in-memory execution timestamps as instants', async () => {
-    const store = new MemoryCatalogStore()
-    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, revision: 'abc', kind: 'integration' as const, status: 'passed' as const, name: 'Integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
-    await store.saveTestExecution({ id: 'run-b', ...base, externalRunId: 'b', attempt: 1, completedAt: '2026-01-01T00:01:00Z' })
-    await store.saveTestExecution({ id: 'run-a', ...base, externalRunId: 'a', attempt: 1, completedAt: '2026-01-01T00:01:00.000Z' })
-    await store.saveTestExecution({ id: 'run-later', ...base, externalRunId: 'later', attempt: 1, completedAt: '2026-01-01T00:01:00.001Z' })
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T01:00:00.000Z'))
+      const store = new MemoryCatalogStore()
+      const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, revision: 'abc', kind: 'integration' as const, status: 'passed' as const, name: 'Integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
+      await store.saveTestExecution({ id: 'run-b', ...base, externalRunId: 'b', attempt: 1, completedAt: '2026-01-01T00:01:00Z' })
+      await store.saveTestExecution({ id: 'run-a', ...base, externalRunId: 'a', attempt: 1, completedAt: '2026-01-01T00:01:00.000Z' })
+      await store.saveTestExecution({ id: 'run-later', ...base, externalRunId: 'later', attempt: 1, completedAt: '2026-01-01T00:01:00.001Z' })
 
-    await expect(store.testExecutions('repo-1', 'org-1', {
-      until: '2026-01-01T00:01:00.000Z',
-    })).resolves.toEqual([
-      expect.objectContaining({ id: 'run-b' }),
-      expect.objectContaining({ id: 'run-a' }),
-    ])
-    const filtered = await store.testExecutions('repo-1', 'org-1', {
-      until: '2026-01-01T00:01:00.000Z',
-    })
-    await expect(store.testExecutions('repo-1', 'org-1', {
-      after: { createdAt: testExecutionCursorCreatedAt(filtered[0]), id: filtered[0].id },
-      until: '2026-01-01T00:01:00.000Z',
-    })).resolves.toEqual([expect.objectContaining({ id: 'run-a' })])
+      await expect(store.testExecutions('repo-1', 'org-1', {
+        until: '2026-01-01T00:01:00.000Z',
+      })).resolves.toEqual([
+        expect.objectContaining({ id: 'run-b' }),
+        expect.objectContaining({ id: 'run-a' }),
+      ])
+      const filtered = await store.testExecutions('repo-1', 'org-1', {
+        until: '2026-01-01T00:01:00.000Z',
+      })
+      await expect(store.testExecutions('repo-1', 'org-1', {
+        after: { createdAt: testExecutionCursorCreatedAt(filtered[0]), id: filtered[0].id },
+        until: '2026-01-01T00:01:00.000Z',
+      })).resolves.toEqual([expect.objectContaining({ id: 'run-a' })])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not skip a running execution that completes between immutable history pages', async () => {

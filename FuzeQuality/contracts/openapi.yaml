@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.58.0
+  version: 0.59.0
   license:
     name: UNLICENSED
 servers:
@@ -1887,6 +1887,7 @@ components:
           enum: [PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, PROVIDER_RESPONSE_INVALID, PROVIDER_RESULT_LIMIT_EXCEEDED]
     TestExecutionInput:
       type: object
+      description: Running executions cannot include `completedAt`; when both timestamps are supplied, completion cannot precede start.
       additionalProperties: false
       required: [repositoryId, tenantId, revision, kind, status, name]
       properties:
@@ -1902,8 +1903,14 @@ components:
         name: { type: string, minLength: 1, maxLength: 500 }
         workflowPath: { type: string, minLength: 1, maxLength: 1000 }
         sourceUrl: { type: string, format: uri, pattern: '^https://', maxLength: 2000 }
-        startedAt: { type: string, format: date-time }
-        completedAt: { type: string, format: date-time }
+        startedAt:
+          type: string
+          format: date-time
+          description: Provider-reported execution start instant.
+        completedAt:
+          type: string
+          format: date-time
+          description: Provider-reported terminal instant; forbidden while status is running and never earlier than startedAt.
         policyArtifactIds:
           type: array
           maxItems: 100
