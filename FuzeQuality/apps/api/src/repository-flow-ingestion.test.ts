@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
+import type { QualityArtifact, RepositoryFlowCandidate } from '@fuzequality/contracts'
+import { candidateArtifactReferenceError, candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 
 const candidate: RepositoryFlowCandidate = {
   id: 'repo-flow:123',
@@ -83,5 +83,30 @@ describe('repository flow candidate ingestion', () => {
         },
       }],
     }).success).toBe(false)
+  })
+
+  it('requires every step and wireframe target to resolve in the exact repository revision', async () => {
+    const artifact: QualityArtifact = {
+      id: 'route-1', logicalId: 'route-checkout', repositoryId: candidate.repositoryId,
+      kind: 'route', title: 'Checkout', sourcePath: 'apps/web/checkout.tsx', summary: 'Checkout route', evidence: ['/checkout'],
+    }
+    const lookup = vi.fn().mockResolvedValue([artifact])
+
+    await expect(candidateArtifactReferenceError([candidate], lookup)).resolves.toBeUndefined()
+    expect(lookup).toHaveBeenCalledWith(candidate.repositoryId, candidate.tenantId, candidate.revision)
+    await expect(candidateArtifactReferenceError([{
+      ...candidate,
+      steps: candidate.steps.map(step => ({ ...step, targetIds: [artifact.logicalId!] })),
+      wireframe: { ...candidate.wireframe, nodes: candidate.wireframe.nodes.map(node => ({ ...node, targetIds: [artifact.logicalId!] })) },
+    }], lookup)).resolves.toBeUndefined()
+    await expect(candidateArtifactReferenceError([{
+      ...candidate,
+      wireframe: { ...candidate.wireframe, nodes: candidate.wireframe.nodes.map(node => ({ ...node, targetIds: ['invented-route'] })) },
+    }], lookup)).resolves.toEqual({
+      candidateId: candidate.id,
+      repositoryId: candidate.repositoryId,
+      revision: candidate.revision,
+      targetId: 'invented-route',
+    })
   })
 })

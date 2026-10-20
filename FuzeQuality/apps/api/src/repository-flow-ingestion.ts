@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
+import type { QualityArtifact, Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
 
 const analysisSchema = z.object({
   provider: z.literal('fuzeinfra-litellm'),
@@ -124,6 +124,32 @@ export async function candidateOwnershipError(
     if (!repository || (repository.tenantId ?? 'legacy') !== candidate.tenantId) {
       return { candidateId: candidate.id, repositoryId: candidate.repositoryId }
     }
+  }
+  return undefined
+}
+
+/** Rejects stale or invented wireframe targets before reviewable evidence is persisted. */
+export async function candidateArtifactReferenceError(
+  candidates: RepositoryFlowCandidate[],
+  artifactLookup: (repositoryId: string, tenantId: string, revision: string) => Promise<QualityArtifact[]>,
+) {
+  const artifactsBySnapshot = new Map<string, Set<string>>()
+  for (const candidate of candidates) {
+    const snapshot = `${candidate.repositoryId}:${candidate.tenantId}:${candidate.revision}`
+    if (!artifactsBySnapshot.has(snapshot)) {
+      const artifacts = await artifactLookup(candidate.repositoryId, candidate.tenantId, candidate.revision)
+      artifactsBySnapshot.set(snapshot, new Set(artifacts.flatMap(artifact => [
+        artifact.id,
+        ...(artifact.logicalId ? [artifact.logicalId] : []),
+      ])))
+    }
+    const knownArtifactIds = artifactsBySnapshot.get(snapshot)!
+    const targetIds = new Set([
+      ...candidate.steps.flatMap(step => step.targetIds),
+      ...candidate.wireframe.nodes.flatMap(node => node.targetIds),
+    ])
+    const targetId = [...targetIds].find(id => !knownArtifactIds.has(id))
+    if (targetId) return { candidateId: candidate.id, repositoryId: candidate.repositoryId, revision: candidate.revision, targetId }
   }
   return undefined
 }

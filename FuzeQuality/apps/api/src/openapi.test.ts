@@ -228,6 +228,8 @@ describe('contract discovery', () => {
         in: 'query',
         schema: { type: 'string', enum: ['policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
       })
+      expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
+        .toContain('exact tenant-scoped repository revision')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
         .toContain('no retained collection attempt')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)

@@ -46,7 +46,7 @@ import { executionAttemptHistoryFilterSchema, executionPerformanceFilterSchema, 
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
 import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
-import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
+import { candidateArtifactReferenceError, candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
@@ -434,6 +434,11 @@ app.post('/api/v1/internal/repository-flow-candidates', async (request, response
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
   const ownershipError = await candidateOwnershipError(parsed.data.candidates, id => store.repository(id))
   if (ownershipError) return response.status(400).json({ error: 'Candidate repository/tenant ownership mismatch', ...ownershipError })
+  const referenceError = await candidateArtifactReferenceError(
+    parsed.data.candidates,
+    (repositoryId, tenantId, revision) => store.qualityArtifacts(repositoryId, tenantId, revision),
+  )
+  if (referenceError) return response.status(400).json({ error: 'Candidate target is unavailable in the repository revision', ...referenceError })
   await store.saveRepositoryFlowCandidates(parsed.data.candidates)
   response.status(202).json({ accepted: true })
 })

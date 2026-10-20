@@ -39,6 +39,12 @@ export function FlowInspector({
     ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
   ]))
   const evidenceIds = flow ? flowArtifactTargetIds(flow, artifactsById.keys()) : []
+  const unavailableTargetIds = flow
+    ? [...new Set([
+      ...flow.steps.flatMap(step => step.targetIds),
+      ...flow.wireframe.nodes.flatMap(node => node.targetIds),
+    ])].filter(targetId => !artifactsById.has(targetId))
+    : []
   const evidencePassages = flow
     ? flow.evidence.filter(evidence => !evidenceIds.includes(evidence))
     : []
@@ -105,6 +111,12 @@ export function FlowInspector({
                 </li>
               ))}
             </ol>
+            {unavailableTargetIds.length > 0 && (
+              <div className="flow-inspector-state form-error" role="alert">
+                <AlertTriangle size={16} />
+                {unavailableTargetIds.length} wireframe target {unavailableTargetIds.length === 1 ? 'is' : 'are'} unavailable in this exact repository revision. Do not confirm this flow until its evidence is regenerated.
+              </div>
+            )}
           </section>
 
           <section className="flow-inspector-section" aria-label="Flow steps">

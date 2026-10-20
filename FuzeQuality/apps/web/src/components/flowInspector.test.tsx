@@ -89,4 +89,24 @@ describe('FlowInspector', () => {
     expect(within(screen.getByRole('region', { name: 'Flow provenance' }))
       .getByText('apps/web/src/routes/login.tsx')).toBeVisible()
   })
+
+  it('blocks reviewer trust when a legacy wireframe target is unavailable at the exact revision', () => {
+    render(
+      <FlowInspector
+        open
+        flow={{
+          ...flow,
+          steps: flow.steps.map(step => ({ ...step, targetIds: ['missing-route'] })),
+          wireframe: { kind: 'sequence', nodes: [{ label: 'Login', targetIds: ['missing-route'] }] },
+        }}
+        artifacts={[artifact]}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '1 wireframe target is unavailable in this exact repository revision'
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('Do not confirm this flow')
+  })
 })
