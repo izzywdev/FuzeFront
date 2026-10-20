@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.63.0
+  version: 0.64.0
   license:
     name: UNLICENSED
 servers:
@@ -468,7 +468,9 @@ paths:
                   - { $ref: '#/components/schemas/StaleFlowCandidateError' }
                   - { $ref: '#/components/schemas/StaleFlowReviewError' }
         '422':
-          description: Confirmation of a LiteLLM proposal with grounding gaps requires reviewer rationale.
+          description: >-
+            Confirmation requires reviewer rationale for LiteLLM grounding gaps and
+            every target must resolve in the candidate's exact repository revision.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }

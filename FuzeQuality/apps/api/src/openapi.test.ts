@@ -427,6 +427,9 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
       ).toContain('grounding gaps')
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
+      ).toContain('exact repository revision')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.requestBody.content[
           'application/json'
         ].schema.properties.expectedReviewedAt

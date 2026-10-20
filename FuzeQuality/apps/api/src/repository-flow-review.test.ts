@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
+import { repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
 
 const repository = {
   id: 'repo-1',
@@ -117,5 +117,38 @@ describe('repository UX-flow review revision guard', () => {
     })
     expect(repositoryFlowGroundingRationaleConflict(incomplete, 'rejected')).toBeUndefined()
     expect(repositoryFlowGroundingRationaleConflict(candidate, 'confirmed')).toBeUndefined()
+  })
+
+  it('blocks confirmation when an exact-revision target is unavailable but preserves rejection', () => {
+    const artifact = {
+      id: 'route-1',
+      logicalId: 'route-checkout',
+      repositoryId: repository.id,
+      kind: 'route' as const,
+      title: 'Checkout',
+      sourcePath: 'apps/web/checkout.tsx',
+      summary: 'Checkout route',
+      evidence: ['/checkout'],
+    }
+
+    expect(repositoryFlowArtifactReferenceConflict(candidate, [artifact], 'confirmed')).toBeUndefined()
+    expect(repositoryFlowArtifactReferenceConflict({
+      ...candidate,
+      steps: candidate.steps.map(step => ({ ...step, targetIds: [artifact.logicalId] })),
+    }, [artifact], 'confirmed')).toBeUndefined()
+    expect(repositoryFlowArtifactReferenceConflict({
+      ...candidate,
+      wireframe: { ...candidate.wireframe, nodes: [{ label: 'Missing', targetIds: ['missing-route'] }] },
+    }, [artifact], 'confirmed')).toEqual({
+      error: 'This UX-flow candidate references evidence that is unavailable in its exact repository revision. Regenerate the analysis before confirming it.',
+      code: 'FLOW_ARTIFACT_REFERENCE_UNAVAILABLE',
+      candidateId: candidate.id,
+      revision: candidate.revision,
+      targetId: 'missing-route',
+    })
+    expect(repositoryFlowArtifactReferenceConflict({
+      ...candidate,
+      steps: candidate.steps.map(step => ({ ...step, targetIds: ['missing-route'] })),
+    }, [], 'rejected')).toBeUndefined()
   })
 })

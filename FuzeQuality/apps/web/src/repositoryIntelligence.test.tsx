@@ -1343,6 +1343,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     ))
   })
 
+  it('blocks confirmation for unavailable exact-revision targets while keeping rejection available', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const invalid = {
+      ...candidate,
+      steps: candidate.steps.map(step => ({ ...step, targetIds: ['missing-route'] })),
+      wireframe: { ...candidate.wireframe, nodes: [{ label: 'Missing route', targetIds: ['missing-route'] }] },
+    }
+
+    render(
+      <FlowReviewControls
+        flow={invalid}
+        currentRevision={candidate.revision}
+        knownArtifactIds={[]}
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Confirmation is blocked')
+    expect(screen.getByRole('alert')).toHaveTextContent('exact repository revision')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
   it('unlocks an in-place stale flow control when a newer decision version arrives', async () => {
     const onReview = vi.fn().mockRejectedValue(new CatalogApiError(
       'This UX-flow review changed while you were deciding.',

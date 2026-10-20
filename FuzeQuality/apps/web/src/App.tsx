@@ -84,7 +84,7 @@ import { PolicyGateEvidence } from './components/governanceEvidence'
 import { GovernanceInspector } from './components/governanceInspector'
 import { ExecutionInspector } from './components/executionInspector'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
-import { FlowInspector, flowArtifactTargetIds } from './components/flowInspector'
+import { FlowInspector, flowArtifactTargetIds, unavailableFlowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
 import { governanceEvidenceSelection } from './governanceEvidence'
@@ -2949,10 +2949,12 @@ function FlowReviewHistory({
 export function FlowReviewControls({
   flow,
   currentRevision,
+  knownArtifactIds = [],
   onReview,
 }: {
   flow: RepositoryFlowCandidate
   currentRevision?: string
+  knownArtifactIds?: Iterable<string>
   onReview: (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -2973,6 +2975,7 @@ export function FlowReviewControls({
       (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
   )
   const groundingRationaleMissing = hasGroundingGaps && reason.trim().length < 3
+  const unavailableTargetIds = unavailableFlowArtifactTargetIds(flow, knownArtifactIds)
 
   useEffect(() => {
     setStale(false)
@@ -3039,10 +3042,15 @@ export function FlowReviewControls({
             LiteLLM returned unverified repository references. Confirmation requires a reviewer rationale; rejection remains available.
           </p>
         )}
+        {unavailableTargetIds.length > 0 && (
+          <p className="form-error" role="alert">
+            Confirmation is blocked because {unavailableTargetIds.length} target {unavailableTargetIds.length === 1 ? 'is' : 'are'} unavailable in this exact repository revision. Reject this proposal or regenerate repository analysis.
+          </p>
+        )}
         <div className="row-actions">
           <QualityAction
             intent="secondary"
-            disabled={busy || !isReviewable || groundingRationaleMissing}
+            disabled={busy || !isReviewable || groundingRationaleMissing || unavailableTargetIds.length > 0}
             onClick={() => void submit('confirmed')}
           >
             <Check size={14} /> Confirm
@@ -5343,6 +5351,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             </details>
                             <FlowReviewControls
                               flow={flow}
+                              knownArtifactIds={evidenceArtifacts
+                                .filter(artifact =>
+                                  artifact.repositoryId === flow.repositoryId &&
+                                  (!artifact.revision || artifact.revision === flow.revision)
+                                )
+                                .flatMap(artifact => [
+                                  artifact.id,
+                                  ...(artifact.logicalId ? [artifact.logicalId] : []),
+                                ])}
                               currentRevision={
                                 data.repositories.find(
                                   repository => repository.id === flow.repositoryId

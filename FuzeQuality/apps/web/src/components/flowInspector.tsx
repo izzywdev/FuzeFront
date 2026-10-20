@@ -17,6 +17,17 @@ export function flowArtifactTargetIds(
   return [...ids]
 }
 
+export function unavailableFlowArtifactTargetIds(
+  flow: RepositoryFlowCandidate,
+  knownArtifactIds: Iterable<string>,
+) {
+  const known = new Set(knownArtifactIds)
+  return [...new Set([
+    ...flow.steps.flatMap(step => step.targetIds),
+    ...flow.wireframe.nodes.flatMap(node => node.targetIds),
+  ])].filter(targetId => !known.has(targetId))
+}
+
 export function FlowInspector({
   open,
   flow,
@@ -40,10 +51,7 @@ export function FlowInspector({
   ]))
   const evidenceIds = flow ? flowArtifactTargetIds(flow, artifactsById.keys()) : []
   const unavailableTargetIds = flow
-    ? [...new Set([
-      ...flow.steps.flatMap(step => step.targetIds),
-      ...flow.wireframe.nodes.flatMap(node => node.targetIds),
-    ])].filter(targetId => !artifactsById.has(targetId))
+    ? unavailableFlowArtifactTargetIds(flow, artifactsById.keys())
     : []
   const evidencePassages = flow
     ? flow.evidence.filter(evidence => !evidenceIds.includes(evidence))
