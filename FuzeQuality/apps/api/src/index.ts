@@ -63,6 +63,7 @@ import { reviewedIntegrationWorkflowPaths } from './latest-integration-execution
 import { reviewedPostProductionWorkflowPaths } from './latest-post-production-executions'
 import { repositoryProcessingStatus } from './repository-processing-status'
 import { dispatchWebhookScans } from './webhook-scan-dispatch'
+import { testExecutionDetail } from './test-execution-detail'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -875,6 +876,17 @@ app.post('/api/v1/repositories/:id/test-executions/evidence/refresh', mayRunExec
   }
   await store.saveTestExecution(refreshed)
   response.json(refreshed)
+})
+app.get('/api/v1/repositories/:id/test-executions/:executionId', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const executionId = Array.isArray(request.params.executionId) ? request.params.executionId[0] : request.params.executionId
+  const tenantId = requestIdentity(request)!.tenantId
+  const result = await testExecutionDetail(repositoryId, tenantId, executionId, {
+    repository: (id, tenant) => store.repository(id, tenant),
+    executions: (id, tenant, query) => store.testExecutions(id, tenant, query),
+  })
+  if (result.status === 404) return response.status(404).json({ error: result.error })
+  response.json(result.execution)
 })
 app.get('/api/v1/repositories/:id/performance-test-executions/latest', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

@@ -82,6 +82,7 @@ import {
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { GovernanceInspector } from './components/governanceInspector'
+import { ExecutionInspector } from './components/executionInspector'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector, flowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
@@ -3581,6 +3582,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionPaginationError, setExecutionPaginationError] = useState<string>()
   const [refreshingExecutionEvidenceId, setRefreshingExecutionEvidenceId] = useState<string>()
   const [executionEvidenceRefreshError, setExecutionEvidenceRefreshError] = useState<string>()
+  const [executionInspectorOpen, setExecutionInspectorOpen] = useState(false)
+  const [inspectedExecution, setInspectedExecution] = useState<TestExecution>()
+  const [executionInspectorArtifacts, setExecutionInspectorArtifacts] = useState<QualityArtifact[]>([])
+  const [executionInspectorLoading, setExecutionInspectorLoading] = useState(false)
+  const [executionInspectorError, setExecutionInspectorError] = useState<string>()
+  const [executionInspectorEvidenceError, setExecutionInspectorEvidenceError] = useState<string>()
+  const executionInspectorRequest = useRef(0)
   const [executionHistoryFailures, setExecutionHistoryFailures] = useState<string[]>([])
   const [executionTrendFailures, setExecutionTrendFailures] = useState<string[]>([])
   const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
@@ -4469,6 +4477,69 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       if (executionTrendQueryRef.current === query) setLoadingMoreExecutions(false)
     }
   }
+  const inspectExecution = async (execution: TestExecution) => {
+    const request = ++executionInspectorRequest.current
+    setExecutionInspectorOpen(true)
+    setInspectedExecution(undefined)
+    setExecutionInspectorArtifacts([])
+    setExecutionInspectorError(undefined)
+    setExecutionInspectorEvidenceError(undefined)
+    setExecutionInspectorLoading(true)
+    try {
+      const detail = await api.testExecution(execution.repositoryId, execution.id)
+      if (request !== executionInspectorRequest.current) return
+      setInspectedExecution(detail)
+      const evidenceIds = [...new Set([
+        ...detail.policyArtifactIds,
+        ...detail.gateArtifactIds,
+        ...(detail.gateEvaluations ?? []).flatMap(evaluation => [
+          evaluation.policyArtifactId,
+          evaluation.gateArtifactId,
+        ]),
+      ])]
+      if (evidenceIds.length) {
+        try {
+          const evidence = await api.qualityArtifactsByIds(
+            detail.repositoryId,
+            evidenceIds,
+            detail.revision,
+          )
+          if (request === executionInspectorRequest.current) {
+            setExecutionInspectorArtifacts(evidence.items)
+          }
+        } catch (cause) {
+          if (request === executionInspectorRequest.current) {
+            setExecutionInspectorEvidenceError(
+              cause instanceof Error
+                ? cause.message
+                : 'Unable to resolve execution policy and gate artifacts'
+            )
+          }
+        }
+      }
+    } catch (cause) {
+      if (request === executionInspectorRequest.current) {
+        setExecutionInspectorError(
+          cause instanceof Error
+            ? cause.message
+            : 'Unable to load execution evidence detail'
+        )
+      }
+    } finally {
+      if (request === executionInspectorRequest.current) {
+        setExecutionInspectorLoading(false)
+      }
+    }
+  }
+  const closeExecutionInspector = () => {
+    executionInspectorRequest.current++
+    setExecutionInspectorOpen(false)
+    setInspectedExecution(undefined)
+    setExecutionInspectorArtifacts([])
+    setExecutionInspectorError(undefined)
+    setExecutionInspectorEvidenceError(undefined)
+    setExecutionInspectorLoading(false)
+  }
   const refreshExecutionEvidence = async (execution: TestExecution) => {
     setRefreshingExecutionEvidenceId(execution.id)
     setExecutionEvidenceRefreshError(undefined)
@@ -4483,6 +4554,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setPerformanceExecutions(replace)
       setIntegrationExecutions(replace)
       setPostProductionExecutions(replace)
+      setInspectedExecution(current => current?.id === refreshed.id ? refreshed : current)
       if (refreshed.evidenceCollection?.status === 'unavailable') {
         setExecutionEvidenceRefreshError('Provider evidence is still unavailable. The failed lookup remains visible and can be retried.')
       }
@@ -4793,6 +4865,29 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           />
         )}
       </GovernanceInspector>
+      <ExecutionInspector
+        open={executionInspectorOpen}
+        execution={inspectedExecution}
+        repositoryLabel={inspectedExecution
+          ? repositoryLabels.get(inspectedExecution.repositoryId)
+          : undefined}
+        artifacts={[...new Map(
+          [...evidenceArtifacts, ...executionInspectorArtifacts]
+            .map(artifact => [artifact.id, artifact])
+        ).values()]}
+        loading={executionInspectorLoading}
+        error={executionInspectorError}
+        evidenceError={executionInspectorEvidenceError}
+        refreshing={Boolean(
+          inspectedExecution && refreshingExecutionEvidenceId === inspectedExecution.id
+        )}
+        onRefresh={inspectedExecution
+          ? () => void refreshExecutionEvidence(inspectedExecution)
+          : undefined}
+        onClose={closeExecutionInspector}
+      >
+        {inspectedExecution && <ExecutionAttemptHistory execution={inspectedExecution} />}
+      </ExecutionInspector>
       {data.diagnostics.filter(item => item.category === 'repository').length > 0 && (
         <details className="scan-diagnostics" open>
           <summary>
@@ -5955,6 +6050,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         ? ` · Started ${new Date(execution.startedAt).toLocaleString()}`
                         : ''}
                   </small>
+                  <QualityAction
+                    intent="quiet"
+                    onClick={() => void inspectExecution(execution)}
+                  >
+                    <Eye size={14} /> Inspect execution detail
+                  </QualityAction>
                   <ExecutionEvidenceMetadata execution={execution} />
                   <ExecutionEvidenceCoverage
                     execution={execution}

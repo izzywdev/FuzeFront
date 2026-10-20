@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.57.0
+  version: 0.58.0
   license:
     name: UNLICENSED
 servers:
@@ -1022,6 +1022,28 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
 
+  /api/v1/repositories/{repositoryId}/test-executions/{executionId}:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+      - $ref: '#/components/parameters/ExecutionId'
+    get:
+      operationId: getTestExecution
+      summary: Inspect one tenant-scoped retained test execution
+      description: >-
+        Returns the exact immutable execution record after verifying both repository ownership and
+        execution membership in the authenticated tenant. This endpoint is independent of list pagination.
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: Exact retained execution evidence.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestExecution' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/repositories/{repositoryId}/performance-test-executions/latest:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
@@ -1319,6 +1341,11 @@ components:
       in: path
       required: true
       schema: { type: string, minLength: 1 }
+    ExecutionId:
+      name: executionId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 500 }
     ExecutionKind:
       name: kind
       in: query

@@ -48,7 +48,7 @@ export type PolicyGatePerformancePage = {
   page: { nextCursor: string | null; hasMore: boolean }
 }
 
-export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'externalRunId' | 'branch' | 'revision' | 'workflowPath' | 'name'>> & {
+export type ExecutionFilter = Partial<Pick<TestExecution, 'id' | 'kind' | 'status' | 'provider' | 'externalRunId' | 'branch' | 'revision' | 'workflowPath' | 'name'>> & {
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
   evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
   evidenceCheckedAfter?: string
@@ -119,6 +119,7 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
   const evidenceCheckedAfter = filter.evidenceCheckedAfter ? Date.parse(filter.evidenceCheckedAfter) : undefined
   const evidenceCheckedBefore = filter.evidenceCheckedBefore ? Date.parse(filter.evidenceCheckedBefore) : undefined
   return executions.filter(execution => {
+    if (filter.id && execution.id !== filter.id) return false
     if (filter.kind && execution.kind !== filter.kind) return false
     if (filter.status && execution.status !== filter.status) return false
     if (filter.provider && execution.provider !== filter.provider) return false

@@ -139,6 +139,20 @@ describe('FuzeQuality portal API identity context', () => {
     )
   })
 
+  it('requests one exact execution independently of list pagination', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.testExecution('repo-1', 'execution/id with spaces')
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/v1/repositories/repo-1/test-executions/execution%2Fid%20with%20spaces'
+    )
+  })
+
   it('refreshes provider evidence for one exact execution attempt', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), {
       status: 200,

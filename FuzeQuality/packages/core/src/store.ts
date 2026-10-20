@@ -85,6 +85,7 @@ export type PolicyGateEvaluationQuery = {
   limit?: number
 }
 export type TestExecutionQuery = {
+  id?: string
   kind?: TestExecution['kind']
   status?: TestExecution['status']
   provider?: TestExecution['provider']
@@ -1472,9 +1473,10 @@ export class PostgresCatalogStore implements CatalogStore {
            )))
          AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
+         AND ($28::text IS NULL OR executions.id=$28)
        ORDER BY executions.created_at DESC,executions.id DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null],
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.id ?? null],
     )
     return result.rows.map(row => withTestExecutionCreatedAt(
       { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined },

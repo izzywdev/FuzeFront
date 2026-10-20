@@ -7,6 +7,10 @@ describe('test execution evidence', () => {
     await store.saveTestExecution({ id: 'run-1', repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions', externalRunId: '123', attempt: 1, revision: 'abc', kind: 'integration', status: 'failed', name: 'integration suite', policyArtifactIds: ['policy-1'], gateArtifactIds: ['gate-1'], gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'failed' }], thresholds: [], evidenceLinks: [], summary: 'one test failed' })
     await expect(store.testExecutions('repo-1', 'org-1')).resolves.toHaveLength(1)
     await expect(store.testExecutions('repo-1', 'org-2')).resolves.toEqual([])
+    await expect(store.testExecutions('repo-1', 'org-1', { id: 'run-1' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'run-1' })])
+    await expect(store.testExecutions('repo-1', 'org-1', { id: 'missing' }))
+      .resolves.toEqual([])
   })
 
   it('retains provider evidence collection failures with the exact execution attempt', async () => {
@@ -194,6 +198,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await store.testExecutions('repo-1', 'org-1', {
+      id: 'execution-detail-1',
       kind: 'post-production',
       status: 'failed',
       provider: 'github-actions',
@@ -242,11 +247,12 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("required_evidence.value->>'kind'='video'")
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz <= $26")
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $27")
+    expect(String(sql)).toContain('executions.id=$28')
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', 'failed', 'github-actions', 'abc',
       '.github/workflows/post-prod.yml', 'recovered', 60_000, 180_000, '2026-01-01T00:00:00.000Z',
       '2026-01-31T00:00:00.000Z', '2026-01-15T00:00:00.000Z', 'run-2', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'unavailable',
-      'post-production-video-missing', '2026-01-20T00:00:00.000Z', '2026-01-10T00:00:00.000Z',
+      'post-production-video-missing', '2026-01-20T00:00:00.000Z', '2026-01-10T00:00:00.000Z', 'execution-detail-1',
     ])
   })
 

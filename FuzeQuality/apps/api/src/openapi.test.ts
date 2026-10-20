@@ -154,6 +154,17 @@ describe('contract discovery', () => {
           'application/json'
         ].schema.$ref
       ).toBe('#/components/schemas/TestExecution')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions/{executionId}'].get.responses['200'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/TestExecution')
+      expect(document.components.parameters.ExecutionId).toMatchObject({
+        name: 'executionId',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', minLength: 1, maxLength: 500 },
+      })
       expect(schemas.TestExecutionEvidenceRefresh).toMatchObject({
         additionalProperties: false,
         required: ['provider', 'externalRunId', 'attempt'],

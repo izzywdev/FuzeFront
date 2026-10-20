@@ -227,6 +227,7 @@ function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifactsByIds').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
+  vi.spyOn(api, 'testExecution').mockResolvedValue(loadExecution)
   vi.spyOn(api, 'testExecutionAttempts').mockResolvedValue([])
   vi.spyOn(api, 'refreshTestExecutionEvidence').mockImplementation(async (_repositoryId, execution) => ({
     ...loadExecution,
@@ -836,6 +837,46 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
       cursor: 'execution-page-2',
     })
+  })
+
+  it('inspects exact execution evidence and resolves its revision-scoped policy and gate artifacts', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const exactExecution: TestExecution = {
+      ...loadExecution,
+      policyArtifactIds: [policyArtifact.id],
+      gateArtifactIds: [gateArtifact.id],
+      gateEvaluations: [{
+        policyArtifactId: policyArtifact.id,
+        gateArtifactId: gateArtifact.id,
+        status: 'failed',
+        detail: 'Authentication gate failed for this exact attempt.',
+      }],
+    }
+    vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
+    vi.mocked(api.testExecution).mockResolvedValue(exactExecution)
+    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({
+      items: [policyArtifact, gateArtifact],
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect execution detail' }))
+
+    const dialog = await screen.findByRole('dialog', { name: exactExecution.name })
+    expect(api.testExecution).toHaveBeenCalledWith(repository.id, exactExecution.id)
+    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
+      repository.id,
+      [policyArtifact.id, gateArtifact.id],
+      exactExecution.revision,
+    )
+    expect(within(dialog).getByText(policyArtifact.title)).toBeVisible()
+    expect(within(dialog).getByText(gateArtifact.title)).toBeVisible()
+    expect(within(dialog).getByText('Authentication gate failed for this exact attempt.')).toBeVisible()
+    expect(within(dialog).getByRole('link', { name: /Open CI run/ })).toHaveAttribute(
+      'href',
+      exactExecution.sourceUrl,
+    )
   })
 
   it('retains successful execution continuation when another repository fails', async () => {
