@@ -3623,7 +3623,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCheckedAfter, setExecutionEvidenceCheckedAfter] = useState('')
   const [executionEvidenceCheckedBefore, setExecutionEvidenceCheckedBefore] = useState('')
   const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
-    'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+    'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
   >('')
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
@@ -5765,11 +5765,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 value={executionEvidenceRequirement}
                 onChange={event =>
                   setExecutionEvidenceRequirement(
-                    event.target.value as 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+                    event.target.value as 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
                   )
                 }
               >
                 <option value="">All requirements</option>
+                <option value="policy-gate-outcome-missing">Missing policy–gate outcome</option>
                 <option value="post-production-video-missing">Missing post-production video</option>
                 <option value="performance-threshold-missing">Missing performance thresholds</option>
                 <option value="terminal-timing-missing">Missing terminal timing</option>

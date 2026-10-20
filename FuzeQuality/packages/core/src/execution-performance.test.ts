@@ -123,6 +123,30 @@ it('filters and trends only timestamped execution evidence', () => {
     { evidenceRequirement: 'post-production-video-missing' },
   )).toEqual([postProductionWithoutVideo])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'performance-threshold-missing' })).toEqual([executions[1]])
+  const explicitPolicyGateOutcome = {
+    ...executions[0],
+    id: 'explicit-policy-gate-outcome',
+    policyArtifactIds: ['policy-auth'],
+    gateArtifactIds: ['gate-auth'],
+    gateEvaluations: [{ policyArtifactId: 'policy-auth', gateArtifactId: 'gate-auth', status: 'failed' as const }],
+  }
+  const legacyPolicyGateOutcome = {
+    ...executions[0],
+    id: 'legacy-policy-gate-outcome',
+    policyArtifactIds: ['policy-auth'],
+    gateArtifactIds: ['gate-auth'],
+  }
+  const ambiguousPolicyGateInventory = {
+    ...executions[0],
+    id: 'ambiguous-policy-gate-inventory',
+    policyArtifactIds: ['policy-auth', 'policy-session'],
+    gateArtifactIds: ['gate-auth'],
+  }
+  expect(filterTestExecutions([
+    executions[0], explicitPolicyGateOutcome, legacyPolicyGateOutcome, ambiguousPolicyGateInventory,
+  ], { evidenceRequirement: 'policy-gate-outcome-missing' })).toEqual([
+    executions[0], ambiguousPolicyGateInventory,
+  ])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'terminal-timing-missing' })).toEqual([executions[1]])
   expect(filterTestExecutions([
     ...executions,

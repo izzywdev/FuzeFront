@@ -49,6 +49,7 @@ export type PolicyGatePerformancePage = {
 }
 
 export type ExecutionEvidenceRequirement =
+  | 'policy-gate-outcome-missing'
   | 'post-production-video-missing'
   | 'performance-threshold-missing'
   | 'terminal-timing-missing'
@@ -146,6 +147,11 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (
       filter.evidenceRequirement === 'performance-threshold-missing' &&
       (!['load', 'stress'].includes(execution.kind) || execution.thresholds.length > 0)
+    ) return false
+    if (
+      filter.evidenceRequirement === 'policy-gate-outcome-missing' &&
+      (execution.gateEvaluations.length > 0 ||
+        (execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1))
     ) return false
     if (
       filter.evidenceRequirement === 'terminal-timing-missing' &&

@@ -2546,6 +2546,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('isolates executions without an unambiguous policy-gate outcome', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Required evidence'), {
+      target: { value: 'policy-gate-outcome-missing' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'policy-gate-outcome-missing',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'policy-gate-outcome-missing',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'policy-gate-outcome-missing',
+      })
+    })
+  })
+
   it('isolates execution history, trends, and policy-gate outcomes with breached thresholds', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

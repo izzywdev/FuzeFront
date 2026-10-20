@@ -75,6 +75,8 @@ describe('execution evidence filter', () => {
   })
 
   it('accepts only explicit required-evidence gaps', () => {
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'policy-gate-outcome-missing' }).evidenceRequirement)
+      .toBe('policy-gate-outcome-missing')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'post-production-video-missing' }).evidenceRequirement)
       .toBe('post-production-video-missing')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'performance-threshold-missing' }).evidenceRequirement)

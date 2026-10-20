@@ -1477,7 +1477,12 @@ export class PostgresCatalogStore implements CatalogStore {
              AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
            OR ($25='performance-threshold-missing'
              AND executions.kind IN ('load','stress')
-             AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0))
+             AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
+           OR ($25='policy-gate-outcome-missing'
+             AND jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
+             AND NOT (
+               jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+               AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1)))
          AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
          AND ($28::text IS NULL OR executions.id=$28)
@@ -1668,7 +1673,12 @@ export class PostgresCatalogStore implements CatalogStore {
              AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
            OR ($25='performance-threshold-missing'
              AND executions.kind IN ('load','stress')
-             AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0))
+             AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
+           OR ($25='policy-gate-outcome-missing'
+             AND jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
+             AND NOT (
+               jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+               AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1)))
          AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
        GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
@@ -1761,7 +1771,12 @@ export class PostgresCatalogStore implements CatalogStore {
                AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
              OR ($28='performance-threshold-missing'
                AND executions.kind IN ('load','stress')
-               AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0))
+               AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
+             OR ($28='policy-gate-outcome-missing'
+               AND jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
+               AND NOT (
+                 jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+                 AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1)))
            AND ($29::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $29)
            AND ($30::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $30)
        ), explicit_pairs AS (
