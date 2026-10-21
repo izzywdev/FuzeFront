@@ -49,9 +49,9 @@
         "id": "set-password",
         "orchestrator": "SetPasswordFlow",
         "route": "/account/security/password",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:49:54.887Z"
       }
     ],
     "components": [
