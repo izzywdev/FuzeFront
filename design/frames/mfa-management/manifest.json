@@ -65,9 +65,9 @@
         "id": "sms-enroll",
         "orchestrator": "SmsEnrollFlow",
         "route": "/account/security/mfa/add/phone",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:02.427Z"
       },
       {
         "id": "recovery-codes",
