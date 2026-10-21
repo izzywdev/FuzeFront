@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { PolicyGateEvaluation, Repository } from '@fuzequality/contracts'
+import type { PolicyGateEvaluation, QualityArtifact, Repository } from '@fuzequality/contracts'
 
 const policyGateEvidencePassageSchema = z.object({
   artifactId: z.string().trim().min(1).max(500),
@@ -30,6 +30,29 @@ const policyGateEvaluationSchema = z.object({
   reviewStatus: z.literal('proposed'),
   createdAt: z.string().datetime(),
 }).strict().superRefine((evaluation, context) => {
+  const expectedShape = {
+    'guarded-policy': { minimumPolicies: 1, minimumGates: 1, remediationAction: 'align-policy-gate' },
+    'unguarded-policy': { minimumPolicies: 1, minimumGates: 0, remediationAction: 'build-gate' },
+    'guard-without-policy': { minimumPolicies: 0, minimumGates: 1, remediationAction: 'build-policy' },
+    'contradictory-policy': { minimumPolicies: 2, minimumGates: 0, remediationAction: 'disambiguate-policy' },
+    'ambiguous-policy': { minimumPolicies: 1, minimumGates: 0, remediationAction: 'disambiguate-policy' },
+  } as const
+  const expected = expectedShape[evaluation.kind]
+  if (evaluation.policyArtifactIds.length < expected.minimumPolicies) context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: `${evaluation.kind} requires at least ${expected.minimumPolicies} policy artifact reference(s)`,
+    path: ['policyArtifactIds'],
+  })
+  if (evaluation.gateArtifactIds.length < expected.minimumGates) context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: `${evaluation.kind} requires at least ${expected.minimumGates} gate artifact reference(s)`,
+    path: ['gateArtifactIds'],
+  })
+  if (evaluation.remediationAction !== expected.remediationAction) context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: `${evaluation.kind} requires ${expected.remediationAction} remediation`,
+    path: ['remediationAction'],
+  })
   const artifactIds = new Set([
     ...evaluation.policyArtifactIds,
     ...evaluation.gateArtifactIds,
@@ -58,6 +81,66 @@ export async function policyGateOwnershipError(
     if (!repository || (repository.tenantId ?? 'legacy') !== evaluation.tenantId) {
       return { evaluationId: evaluation.id, repositoryId: evaluation.repositoryId }
     }
+  }
+  return undefined
+}
+
+export function policyGateArtifactReferenceConflict(
+  evaluation: PolicyGateEvaluation,
+  artifacts: QualityArtifact[],
+) {
+  const artifactsById = new Map(artifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
+  for (const [artifactId, expectedKind] of [
+    ...evaluation.policyArtifactIds.map(id => [id, 'policy'] as const),
+    ...evaluation.gateArtifactIds.map(id => [id, 'gate'] as const),
+  ]) {
+    const artifact = artifactsById.get(artifactId)
+    if (!artifact || artifact.kind !== expectedKind) return {
+      evaluationId: evaluation.id,
+      repositoryId: evaluation.repositoryId,
+      revision: evaluation.revision,
+      artifactId,
+      expectedKind,
+      actualKind: artifact?.kind ?? null,
+      reason: artifact ? 'kind-mismatch' : 'unavailable',
+    } as const
+  }
+  for (const passage of evaluation.evidencePassages ?? []) {
+    const artifact = artifactsById.get(passage.artifactId)
+    if (!artifact || artifact.sourcePath !== passage.sourcePath) return {
+      evaluationId: evaluation.id,
+      repositoryId: evaluation.repositoryId,
+      revision: evaluation.revision,
+      artifactId: passage.artifactId,
+      expectedSourcePath: passage.sourcePath,
+      actualSourcePath: artifact?.sourcePath ?? null,
+      reason: artifact ? 'source-path-mismatch' : 'unavailable',
+    } as const
+  }
+  return undefined
+}
+
+export async function policyGateArtifactReferenceError(
+  evaluations: PolicyGateEvaluation[],
+  artifactLookup: (repositoryId: string, tenantId: string, revision: string) => Promise<QualityArtifact[]>,
+) {
+  const artifactsBySnapshot = new Map<string, QualityArtifact[]>()
+  for (const evaluation of evaluations) {
+    const snapshot = `${evaluation.repositoryId}:${evaluation.tenantId}:${evaluation.revision}`
+    if (!artifactsBySnapshot.has(snapshot)) {
+      artifactsBySnapshot.set(
+        snapshot,
+        await artifactLookup(evaluation.repositoryId, evaluation.tenantId, evaluation.revision),
+      )
+    }
+    const conflict = policyGateArtifactReferenceConflict(
+      evaluation,
+      artifactsBySnapshot.get(snapshot)!,
+    )
+    if (conflict) return conflict
   }
   return undefined
 }

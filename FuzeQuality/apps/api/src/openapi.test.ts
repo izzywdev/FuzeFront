@@ -367,6 +367,9 @@ describe('contract discovery', () => {
       expect(ingestionSchema.properties).not.toHaveProperty('reviewedBy')
       expect(ingestionSchema.properties).not.toHaveProperty('reviewReason')
       expect(
+        document.paths['/api/v1/internal/policy-gate-evaluations'].post.description
+      ).toContain('exact repository analysis revision')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
@@ -445,6 +448,9 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['422'].description
       ).toContain('requires reviewer rationale')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['422'].description
+      ).toContain('exact repository revision')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.requestBody.content[
           'application/json'

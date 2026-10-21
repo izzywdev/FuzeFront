@@ -50,7 +50,7 @@ import { candidateArtifactReferenceError, candidateOwnershipError, repositoryFlo
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
-import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
+import { policyGateArtifactReferenceConflict, policyGateArtifactReferenceError, policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewRationaleConflict, policyGateReviewStateConflict } from './policy-gate-review'
 import { policyGateDetail } from './policy-gate-detail'
@@ -470,6 +470,14 @@ app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) =
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
   const ownershipError = await policyGateOwnershipError(parsed.data.evaluations, id => store.repository(id))
   if (ownershipError) return response.status(400).json({ error: 'Evaluation repository/tenant ownership mismatch', ...ownershipError })
+  const referenceError = await policyGateArtifactReferenceError(
+    parsed.data.evaluations,
+    (repositoryId, tenantId, revision) => store.qualityArtifacts(repositoryId, tenantId, revision),
+  )
+  if (referenceError) return response.status(400).json({
+    error: 'Evaluation references unavailable or mismatched exact-revision policy/gate evidence',
+    ...referenceError,
+  })
   await store.savePolicyGateEvaluations(parsed.data.evaluations)
   response.status(202).json({ accepted: true })
 })
@@ -766,6 +774,17 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
     parsed.data.reason,
   )
   if (rationaleConflict) return response.status(422).json(rationaleConflict)
+  const artifactConflict = parsed.data.status === 'accepted'
+    ? policyGateArtifactReferenceConflict(
+        existingEvaluation,
+        await store.qualityArtifacts(repositoryId, tenantId, existingEvaluation.revision),
+      )
+    : undefined
+  if (artifactConflict) return response.status(422).json({
+    error: 'This policy-gate finding references evidence that is unavailable or mismatched in its exact repository revision. Regenerate the analysis before accepting it.',
+    code: 'POLICY_GATE_ARTIFACT_REFERENCE_UNAVAILABLE',
+    ...artifactConflict,
+  })
   const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, {
     status: parsed.data.status,
     reviewedBy: requestIdentity(request)!.userId,

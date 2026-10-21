@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PolicyGateEvaluation } from '@fuzequality/contracts'
+import type { PolicyGateEvaluation, QualityArtifact } from '@fuzequality/contracts'
 import { evaluatePolicyGates } from '@fuzequality/core'
-import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
+import { policyGateArtifactReferenceError, policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 
 const evaluation: PolicyGateEvaluation = {
   id: 'evaluation-1',
@@ -31,6 +31,17 @@ describe('policy gate evaluation ingestion', () => {
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{
       ...evaluation,
       evidencePassages: [{ ...evaluation.evidencePassages![0], artifactId: 'unrelated-artifact' }],
+    }] }).success).toBe(false)
+    expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{
+      ...evaluation, policyArtifactIds: [], evidencePassages: [],
+    }] }).success).toBe(false)
+    expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{
+      ...evaluation, remediationAction: 'build-policy',
+    }] }).success).toBe(false)
+    expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{
+      ...evaluation,
+      kind: 'contradictory-policy',
+      remediationAction: 'disambiguate-policy',
     }] }).success).toBe(false)
   })
 
@@ -73,5 +84,38 @@ describe('policy gate evaluation ingestion', () => {
 
     expect(generated[0]?.evidencePassages?.[0]?.text).toHaveLength(2000)
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: generated }).success).toBe(true)
+  })
+
+  it('requires policy, gate, and passage evidence from the exact repository revision', async () => {
+    const policy: QualityArtifact = {
+      id: 'policy-observation', logicalId: 'policy-auth', repositoryId: evaluation.repositoryId,
+      revision: evaluation.revision, kind: 'policy', title: 'Authentication policy',
+      sourcePath: 'governance/auth.md', summary: 'Authentication is required.',
+      evidence: ['Authentication is required.'],
+    }
+    const lookup = vi.fn().mockResolvedValue([policy])
+
+    await expect(policyGateArtifactReferenceError([evaluation], lookup)).resolves.toBeUndefined()
+    expect(lookup).toHaveBeenCalledWith(evaluation.repositoryId, evaluation.tenantId, evaluation.revision)
+    await expect(policyGateArtifactReferenceError([{
+      ...evaluation,
+      policyArtifactIds: ['missing-policy'],
+      evidencePassages: [],
+    }], lookup)).resolves.toMatchObject({
+      artifactId: 'missing-policy', expectedKind: 'policy', reason: 'unavailable',
+    })
+    await expect(policyGateArtifactReferenceError([{
+      ...evaluation,
+      gateArtifactIds: ['policy-auth'],
+    }], lookup)).resolves.toMatchObject({
+      artifactId: 'policy-auth', expectedKind: 'gate', actualKind: 'policy', reason: 'kind-mismatch',
+    })
+    await expect(policyGateArtifactReferenceError([{
+      ...evaluation,
+      evidencePassages: [{ ...evaluation.evidencePassages![0], sourcePath: 'governance/other.md' }],
+    }], lookup)).resolves.toMatchObject({
+      artifactId: 'policy-auth', expectedSourcePath: 'governance/other.md',
+      actualSourcePath: 'governance/auth.md', reason: 'source-path-mismatch',
+    })
   })
 })

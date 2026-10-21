@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.64.0
+  version: 0.65.0
   license:
     name: UNLICENSED
 servers:
@@ -633,6 +633,9 @@ paths:
     post:
       operationId: ingestPolicyGateEvaluations
       summary: Persist policy/gate evaluations produced by an analysis worker
+      description: >-
+        Persists tenant-owned findings only after every policy, gate, and quoted
+        source path resolves in the exact repository analysis revision.
       tags: [worker-intelligence]
       security: [{ serviceToken: [] }]
       requestBody:
@@ -778,7 +781,10 @@ paths:
                   - { $ref: '#/components/schemas/StalePolicyGateEvaluationError' }
                   - { $ref: '#/components/schemas/StalePolicyGateReviewError' }
         '422':
-          description: Accepting a policy or gate anomaly remediation requires reviewer rationale.
+          description: >-
+            Accepting an anomaly remediation requires reviewer rationale and every
+            policy, gate, and quoted source path must resolve in the finding's exact
+            repository revision.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }

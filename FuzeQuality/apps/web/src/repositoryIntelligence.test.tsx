@@ -2881,6 +2881,26 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText(/This governance decision can be revised/)).toBeVisible()
   })
 
+  it('blocks governance acceptance for unavailable exact-revision evidence while preserving dismissal', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    render(
+      <PolicyGateReviewControls
+        evaluation={governanceEvaluation}
+        currentRevision={repository.lastScanRevision}
+        evidenceArtifacts={[]}
+        onReview={onReview}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
+      target: { value: 'Verified remediation ownership.' },
+    })
+    expect(screen.getByRole('alert')).toHaveTextContent('Acceptance is blocked')
+    expect(screen.getByRole('alert')).toHaveTextContent('exact repository revision')
+    expect(screen.getByRole('button', { name: 'Accept recommendation' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+  })
+
   it('removes a reviewed governance finding that no longer matches the active filter', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([

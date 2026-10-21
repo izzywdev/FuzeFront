@@ -80,7 +80,7 @@ import {
   latestPerformanceExecution,
   latestPostProductionExecution,
 } from './components/executionEvidence'
-import { PolicyGateEvidence } from './components/governanceEvidence'
+import { PolicyGateEvidence, policyGateArtifactReferenceProblems } from './components/governanceEvidence'
 import { GovernanceInspector } from './components/governanceInspector'
 import { ExecutionInspector } from './components/executionInspector'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
@@ -3181,10 +3181,12 @@ function PolicyGateReviewHistory({
 export function PolicyGateReviewControls({
   evaluation,
   currentRevision,
+  evidenceArtifacts,
   onReview,
 }: {
   evaluation: PolicyGateEvaluation
   currentRevision?: string
+  evidenceArtifacts?: QualityArtifact[]
   onReview: (
     evaluation: PolicyGateEvaluation,
     status: 'accepted' | 'dismissed',
@@ -3202,6 +3204,9 @@ export function PolicyGateReviewControls({
   const requiresAcceptanceRationale = evaluation.kind !== 'guarded-policy'
   const acceptanceRationaleMissing =
     requiresAcceptanceRationale && reason.trim().length < 3
+  const unavailableEvidenceIds = evidenceArtifacts
+    ? policyGateArtifactReferenceProblems(evaluation, evidenceArtifacts)
+    : []
 
   useEffect(() => {
     setStale(false)
@@ -3261,10 +3266,15 @@ export function PolicyGateReviewControls({
               Accepting this anomaly creates reviewed remediation evidence and requires a rationale. Dismissal remains available.
             </p>
           )}
+          {unavailableEvidenceIds.length > 0 && (
+            <p className="form-error" role="alert">
+              Acceptance is blocked because {unavailableEvidenceIds.length} policy/gate evidence reference {unavailableEvidenceIds.length === 1 ? 'is' : 'are'} unavailable or mismatched in this exact repository revision. Dismiss this recommendation or regenerate repository analysis.
+            </p>
+          )}
           <div className="row-actions">
             <QualityAction
               intent="secondary"
-              disabled={busy || !isReviewable || acceptanceRationaleMissing}
+              disabled={busy || !isReviewable || acceptanceRationaleMissing || unavailableEvidenceIds.length > 0}
               onClick={() => void submit('accepted')}
             >
               <Check size={14} /> Accept recommendation
@@ -4866,6 +4876,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         {inspectedPolicyGate && (
           <PolicyGateReviewControls
             evaluation={inspectedPolicyGate}
+            evidenceArtifacts={policyGateInspectorArtifacts}
             currentRevision={data.repositories.find(
               repository => repository.id === inspectedPolicyGate.repositoryId
             )?.lastScanRevision}

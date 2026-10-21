@@ -15,6 +15,34 @@ const remediationActionLabels = {
   'align-policy-gate': 'Align policy and gate',
 } as const
 
+export function policyGateArtifactReferenceProblems(
+  evaluation: PolicyGateEvaluation,
+  artifacts: QualityArtifact[],
+) {
+  const revisionArtifacts = artifacts.filter(
+    artifact =>
+      artifact.repositoryId === evaluation.repositoryId &&
+      (!artifact.revision || artifact.revision === evaluation.revision)
+  )
+  const artifactsById = new Map(revisionArtifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
+  const problems: string[] = []
+  for (const [artifactId, expectedKind] of [
+    ...evaluation.policyArtifactIds.map(id => [id, 'policy'] as const),
+    ...evaluation.gateArtifactIds.map(id => [id, 'gate'] as const),
+  ]) {
+    const artifact = artifactsById.get(artifactId)
+    if (!artifact || artifact.kind !== expectedKind) problems.push(artifactId)
+  }
+  for (const passage of evaluation.evidencePassages ?? []) {
+    const artifact = artifactsById.get(passage.artifactId)
+    if (!artifact || artifact.sourcePath !== passage.sourcePath) problems.push(passage.artifactId)
+  }
+  return [...new Set(problems)]
+}
+
 /** App-specific governance evidence composed from semantic HTML primitives. */
 export function PolicyGateEvidence({
   evaluation,
