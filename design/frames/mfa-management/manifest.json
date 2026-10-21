@@ -57,9 +57,9 @@
         "id": "totp-enroll",
         "orchestrator": "TotpEnrollFlow",
         "route": "/account/security/mfa/add/authenticator",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:13.726Z"
       },
       {
         "id": "sms-enroll",
