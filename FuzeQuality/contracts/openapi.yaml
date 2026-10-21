@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.66.0
+  version: 0.67.0
   license:
     name: UNLICENSED
 servers:
@@ -830,6 +830,7 @@ paths:
     post:
       operationId: ingestTestExecution
       summary: Ingest CI, integration, post-production, load, or stress evidence
+      description: Provider-qualified GitHub workflow paths such as `.github/workflows/integration.yml@refs/heads/main` are canonicalized to their repository-relative YAML path before evidence is stored and matched to reviewed workflows.
       tags: [worker-executions]
       security: [{ serviceToken: [] }]
       requestBody:
@@ -1911,7 +1912,11 @@ components:
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string, minLength: 1, maxLength: 500 }
-        workflowPath: { type: string, minLength: 1, maxLength: 1000 }
+        workflowPath:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Repository-relative workflow YAML path; a provider `@ref` suffix is accepted and removed before storage.
         sourceUrl: { type: string, format: uri, pattern: '^https://', maxLength: 2000 }
         startedAt:
           type: string
@@ -1993,7 +1998,9 @@ components:
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string }
-        workflowPath: { type: string }
+        workflowPath:
+          type: string
+          description: Canonical repository-relative workflow YAML path without a provider `@ref` suffix.
         sourceUrl: { type: string, format: uri, pattern: '^https://', maxLength: 2000 }
         startedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }

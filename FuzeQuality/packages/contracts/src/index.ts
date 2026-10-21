@@ -760,7 +760,12 @@ export const testExecutionInputSchema = z.object({
     })
     pairs.add(pair)
   }
-})
+}).transform(execution => ({
+  ...execution,
+  ...(execution.workflowPath
+    ? { workflowPath: normalizeWorkflowPath(execution.workflowPath)! }
+    : {}),
+}))
 
 export const performanceTestRequestSchema = z.object({ artifactId: z.string().min(1).max(500) }).strict()
 

@@ -224,6 +224,10 @@ describe('ExecutionThresholdEvidence', () => {
         { ...loadRun, workflowPath: '.github/workflows/other.yml' },
       ])
     ).toBeUndefined()
+    expect(latestPerformanceExecution(artifact, [{
+      ...loadRun,
+      workflowPath: `${artifact.sourcePath}@refs/heads/main`,
+    }])).toMatchObject({ id: loadRun.id })
   })
 
   it('shows ingested evidence for a non-dispatch performance workflow', () => {
@@ -247,6 +251,10 @@ describe('ExecutionThresholdEvidence', () => {
     }
     const run = { ...execution, kind: 'post-production' as const, workflowPath: artifact.sourcePath }
     expect(latestPostProductionExecution(artifact, [run])).toBe(run)
+    expect(latestPostProductionExecution(artifact, [{
+      ...run,
+      workflowPath: `${artifact.sourcePath}@refs/heads/main`,
+    }])).toMatchObject({ id: run.id })
     expect(latestPostProductionExecution(artifact, [{ ...run, kind: 'ci' }])).toBeUndefined()
   })
 
@@ -257,6 +265,10 @@ describe('ExecutionThresholdEvidence', () => {
     }
     const run = { ...execution, kind: 'integration' as const, workflowPath: artifact.sourcePath }
     expect(latestIntegrationExecution(artifact, [run])).toBe(run)
+    expect(latestIntegrationExecution(artifact, [{
+      ...run,
+      workflowPath: `${artifact.sourcePath}@refs/heads/main`,
+    }])).toMatchObject({ id: run.id })
     expect(latestIntegrationExecution(artifact, [{ ...run, kind: 'ci' }])).toBeUndefined()
   })
 

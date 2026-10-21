@@ -3,6 +3,18 @@ import { testExecutionInputSchema, type ScanResult } from '@fuzequality/contract
 import { executionRecord, linkExecutionToRevisionArtifacts, mergeExecutionEvidenceLinks, prepareExecutionEvidence, reconcileCompleteExecutionEvidenceLinks, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
+  it('canonicalizes provider-qualified workflow paths before persistence', () => {
+    expect(testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'integration',
+      status: 'passed',
+      name: 'Integration suite',
+      workflowPath: '.github/workflows/integration.yml@refs/heads/main',
+    }).workflowPath).toBe('.github/workflows/integration.yml')
+  })
+
   it('requires a safe diagnostic for unavailable evidence collection', () => {
     const base = {
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

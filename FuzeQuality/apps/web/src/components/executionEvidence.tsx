@@ -11,6 +11,11 @@ const THRESHOLD_OPERATOR_LABELS = {
   eq: '=',
 } as const
 
+function sameWorkflowPath(left?: string, right?: string) {
+  const canonical = (path: string) => path.match(/^(.+\.ya?ml)@.+$/i)?.[1] ?? path
+  return Boolean(left && right && canonical(left) === canonical(right))
+}
+
 /** Defensive boundary for legacy rows written before the HTTPS ingestion contract. */
 export function safeExecutionHref(value?: string): string | undefined {
   if (!value) return undefined
@@ -55,7 +60,7 @@ export function latestPerformanceExecution(
       (!branch || execution.branch === branch) &&
       (!headRepository || execution.provider !== 'github-actions' || execution.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
       execution.kind === executionKind &&
-      execution.workflowPath === artifact.sourcePath
+      sameWorkflowPath(execution.workflowPath, artifact.sourcePath)
     )
     .sort((left, right) => {
       const leftTime = Date.parse(left.completedAt ?? left.startedAt ?? '')
@@ -80,7 +85,7 @@ export function latestPostProductionExecution(
       (!branch || execution.branch === branch) &&
       (!headRepository || execution.provider !== 'github-actions' || execution.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
       execution.kind === 'post-production' &&
-      execution.workflowPath === artifact.sourcePath
+      sameWorkflowPath(execution.workflowPath, artifact.sourcePath)
     )
     .sort((left, right) => {
       const leftTime = Date.parse(left.completedAt ?? left.startedAt ?? '')
@@ -105,7 +110,7 @@ export function latestIntegrationExecution(
       (!branch || execution.branch === branch) &&
       (!headRepository || execution.provider !== 'github-actions' || execution.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
       execution.kind === 'integration' &&
-      execution.workflowPath === artifact.sourcePath
+      sameWorkflowPath(execution.workflowPath, artifact.sourcePath)
     )
     .sort((left, right) => {
       const leftTime = Date.parse(left.completedAt ?? left.startedAt ?? '')

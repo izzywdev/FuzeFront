@@ -25,7 +25,7 @@ import type {
   QualityPrincipal,
   QualityMembership,
 } from '@fuzequality/contracts'
-import { TOPICS } from '@fuzequality/contracts'
+import { normalizeWorkflowPath, TOPICS } from '@fuzequality/contracts'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
@@ -561,7 +561,7 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string) {
-    const allowed = new Set(workflowPaths)
+    const allowed = new Set(workflowPaths.map(path => normalizeWorkflowPath(path)))
     const latest = new Map<string, TestExecution>()
     for (const execution of this.executions
       .filter(item =>
@@ -569,16 +569,17 @@ export class MemoryCatalogStore implements CatalogStore {
         item.branch === branch &&
         (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
         (item.kind === 'load' || item.kind === 'stress') &&
-        Boolean(item.workflowPath && allowed.has(item.workflowPath))
+        Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
       )
       .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))) {
-      if (execution.workflowPath && !latest.has(execution.workflowPath)) latest.set(execution.workflowPath, execution)
+      const workflowPath = normalizeWorkflowPath(execution.workflowPath)
+      if (workflowPath && !latest.has(workflowPath)) latest.set(workflowPath, execution)
     }
     return [...latest.values()]
   }
 
   async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string) {
-    const allowed = new Set(workflowPaths)
+    const allowed = new Set(workflowPaths.map(path => normalizeWorkflowPath(path)))
     const latest = new Map<string, TestExecution>()
     for (const execution of this.executions
       .filter(item =>
@@ -586,16 +587,17 @@ export class MemoryCatalogStore implements CatalogStore {
         item.branch === branch &&
         (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
         item.kind === 'post-production' &&
-        Boolean(item.workflowPath && allowed.has(item.workflowPath))
+        Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
       )
       .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))) {
-      if (execution.workflowPath && !latest.has(execution.workflowPath)) latest.set(execution.workflowPath, execution)
+      const workflowPath = normalizeWorkflowPath(execution.workflowPath)
+      if (workflowPath && !latest.has(workflowPath)) latest.set(workflowPath, execution)
     }
     return [...latest.values()]
   }
 
   async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string) {
-    const allowed = new Set(workflowPaths)
+    const allowed = new Set(workflowPaths.map(path => normalizeWorkflowPath(path)))
     const latest = new Map<string, TestExecution>()
     for (const execution of this.executions
       .filter(item =>
@@ -603,10 +605,11 @@ export class MemoryCatalogStore implements CatalogStore {
         item.branch === branch &&
         (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
         item.kind === 'integration' &&
-        Boolean(item.workflowPath && allowed.has(item.workflowPath))
+        Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
       )
       .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))) {
-      if (execution.workflowPath && !latest.has(execution.workflowPath)) latest.set(execution.workflowPath, execution)
+      const workflowPath = normalizeWorkflowPath(execution.workflowPath)
+      if (workflowPath && !latest.has(workflowPath)) latest.set(workflowPath, execution)
     }
     return [...latest.values()]
   }

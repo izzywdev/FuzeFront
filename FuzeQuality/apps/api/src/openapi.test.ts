@@ -109,9 +109,11 @@ describe('contract discovery', () => {
         '^[0-9a-fA-F]{40}$'
       )
       expect(schemas.TestExecutionInput.properties.workflowPath.maxLength).toBe(1000)
+      expect(schemas.TestExecutionInput.properties.workflowPath.description).toContain('removed before storage')
       expect(schemas.TestExecutionInput.properties.branch.maxLength).toBe(500)
       expect(schemas.TestExecution.properties.branch.maxLength).toBe(500)
       expect(schemas.TestExecution.properties.workflowPath.type).toBe('string')
+      expect(schemas.TestExecution.properties.workflowPath.description).toContain('without a provider `@ref` suffix')
       expect(schemas.TestExecutionInput.description).toContain('completion cannot precede start')
       expect(schemas.TestExecutionInput.properties.completedAt.description).toContain(
         'forbidden while status is running'
@@ -121,6 +123,9 @@ describe('contract discovery', () => {
           'application/json'
         ].schema.$ref
       ).toBe('#/components/schemas/ExecutionEvidenceConflict')
+      expect(document.paths['/api/v1/internal/test-executions'].post.description).toContain(
+        'canonicalized to their repository-relative YAML path'
+      )
       expect(schemas.ExecutionEvidenceConflict.properties.code.enum).toEqual([
         'EXECUTION_EVIDENCE_REVISION_UNANALYZED',
         'EXECUTION_EVIDENCE_REFERENCE_INVALID',

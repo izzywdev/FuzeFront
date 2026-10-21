@@ -33,7 +33,7 @@ describe('test execution evidence', () => {
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', headRepository: 'acme/app', status: 'passed' as const, name: 'run', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
     for (let index = 0; index < 60; index++) await store.saveTestExecution({ id: `ci-${index}`, ...base, externalRunId: `ci-${index}`, kind: 'ci', completedAt: `2026-10-13T12:${String(index).padStart(2, '0')}:00.000Z` })
     await store.saveTestExecution({ id: 'load-old', ...base, externalRunId: 'load-old', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-10T00:00:00.000Z' })
-    await store.saveTestExecution({ id: 'load-new', ...base, externalRunId: 'load-new', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-11T00:00:00.000Z' })
+    await store.saveTestExecution({ id: 'load-new', ...base, externalRunId: 'load-new', kind: 'load', workflowPath: '.github/workflows/load.yml@refs/heads/main', completedAt: '2026-10-11T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'load-feature', ...base, branch: 'feature/faster-load', externalRunId: 'load-feature', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-12T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'stress', ...base, externalRunId: 'stress', kind: 'stress', workflowPath: '.github/workflows/stress.yml', completedAt: '2026-10-09T00:00:00.000Z' })
 
@@ -63,7 +63,7 @@ describe('test execution evidence', () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', headRepository: 'acme/app', kind: 'post-production' as const, status: 'passed' as const, name: 'post-prod', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
     await store.saveTestExecution({ id: 'old', ...base, externalRunId: 'old', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-10T00:00:00.000Z' })
-    await store.saveTestExecution({ id: 'new', ...base, externalRunId: 'new', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-11T00:00:00.000Z' })
+    await store.saveTestExecution({ id: 'new', ...base, externalRunId: 'new', workflowPath: '.github/workflows/post-prod.yml@refs/heads/main', completedAt: '2026-10-11T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'feature', ...base, branch: 'feature/post-prod', externalRunId: 'feature', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-13T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'other', ...base, externalRunId: 'other', kind: 'ci', workflowPath: '.github/workflows/post-prod.yml', completedAt: '2026-10-12T00:00:00.000Z' })
 
@@ -88,7 +88,7 @@ describe('test execution evidence', () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', headRepository: 'acme/app', kind: 'integration' as const, status: 'passed' as const, name: 'integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
     await store.saveTestExecution({ id: 'old-integration', ...base, externalRunId: 'old', workflowPath: '.github/workflows/integration.yml', completedAt: '2026-10-10T00:00:00.000Z' })
-    await store.saveTestExecution({ id: 'new-integration', ...base, externalRunId: 'new', workflowPath: '.github/workflows/integration.yml', completedAt: '2026-10-11T00:00:00.000Z' })
+    await store.saveTestExecution({ id: 'new-integration', ...base, externalRunId: 'new', workflowPath: '.github/workflows/integration.yml@refs/heads/main', completedAt: '2026-10-11T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'feature-integration', ...base, branch: 'feature/integration', externalRunId: 'feature', workflowPath: '.github/workflows/integration.yml', completedAt: '2026-10-13T00:00:00.000Z' })
     await store.saveTestExecution({ id: 'other-post-prod', ...base, externalRunId: 'other', kind: 'post-production', workflowPath: '.github/workflows/integration.yml', completedAt: '2026-10-12T00:00:00.000Z' })
 
