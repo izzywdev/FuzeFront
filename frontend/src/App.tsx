@@ -43,6 +43,9 @@ import AcceptInvitePage from './pages/AcceptInvitePage'
 import BillingPage from './pages/BillingPage'
 import AccountSecurityPage from './pages/AccountSecurityPage'
 import AccountConnectionsPage from './pages/AccountConnectionsPage'
+import AccountPasswordPage from './pages/AccountPasswordPage'
+import AccountMfaPage from './pages/AccountMfaPage'
+import AccountVerifyPhonePage from './pages/AccountVerifyPhonePage'
 import PortalsDirectory from './pages/PortalsDirectory'
 import PortalBillingPage from './pages/PortalBillingPage'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
@@ -400,6 +403,15 @@ function AppContent() {
             <Route path="/profile" element={<UserProfileManagement />} />
             <Route path="/account/security" element={<AccountSecurityPage />} />
             <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
+            <Route path="/account/security/password" element={<AccountPasswordPage />} />
+            {/* The hub's two-factor card historically links here (approved account-security frame);
+                the MFA management surface lives at /account/security/mfa — keep one canonical route. */}
+            <Route path="/account/security/two-factor" element={<Navigate to="/account/security/mfa" replace />} />
+            <Route path="/account/security/mfa" element={<AccountMfaPage view="overview" />} />
+            <Route path="/account/security/mfa/add/authenticator" element={<AccountMfaPage view="authenticator" />} />
+            <Route path="/account/security/mfa/add/phone" element={<AccountMfaPage view="phone" />} />
+            <Route path="/account/security/mfa/recovery-codes" element={<AccountMfaPage view="recovery-codes" />} />
+            <Route path="/account/security/verify/phone" element={<AccountVerifyPhonePage />} />
             <Route path="/connectors" element={<ConnectorsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />

@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useMemo } from 'react'
-import type { AccountSecurityMessages } from './messages'
+import type { AccountSecurityMessages, LocaleMessages } from './messages'
 import { en } from './locales/en'
 import { he } from './locales/he'
 
 export type AccountSecurityLocale = 'en' | 'he'
 
-const LOCALES: Record<AccountSecurityLocale, AccountSecurityMessages> = { en, he }
+const LOCALES: Record<AccountSecurityLocale, LocaleMessages> = { en, he }
 const RTL_LOCALES = new Set<AccountSecurityLocale>(['he'])
 
 export interface AccountSecurityI18nContextValue {
@@ -35,7 +35,7 @@ function mergeDeep(
   return out
 }
 
-function withFallback(locale: AccountSecurityMessages): AccountSecurityMessages {
+function withFallback(locale: LocaleMessages): AccountSecurityMessages {
   return mergeDeep(
     en as unknown as Record<string, unknown>,
     locale as unknown as Record<string, unknown>

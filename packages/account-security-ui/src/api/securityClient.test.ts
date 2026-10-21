@@ -97,4 +97,19 @@ describe('createAccountSecurityClient', () => {
       status: 409,
     })
   })
+
+  it('calls the global fetch unbound-safely (a bare window.fetch throws "Illegal invocation" as a method)', async () => {
+    const seen: unknown[] = []
+    vi.stubGlobal('fetch', function (this: unknown) {
+      seen.push(this)
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation')
+      return Promise.resolve(new Response(JSON.stringify({ providers: [], hasPassword: true }), { status: 200 }))
+    })
+    try {
+      const client = createAccountSecurityClient()
+      await expect(client.getConnections()).resolves.toMatchObject({ hasPassword: true })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

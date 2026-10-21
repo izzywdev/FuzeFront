@@ -13,6 +13,7 @@ import type {
   MfaRequiredChallenge,
 } from '@fuzefront/auth-ui'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
+import { useLoginStepUp } from '../components/account-security/LoginStepUp'
 
 /**
  * LoginPage — a thin adapter around `@fuzefront/auth-ui`'s `AuthPanel`.
@@ -130,6 +131,11 @@ function LoginPage() {
   // concern, per the refactor plan. Rendered as its own Alert above the panel.
   const [callbackError, setCallbackError] = useState('')
   const [callbackNotice, setCallbackNotice] = useState('')
+  // MFA step-up (FFRNT-141/362) behind default-OFF flags; flag OFF = unchanged.
+  const stepUp = useLoginStepUp(session => {
+    authAPI.completeMfaSession(session)
+    void completeSession({ status: 'authenticated', ...session } as unknown as SessionResult)
+  })
 
   // Route an authenticated Security-API session into the app: hydrate the
   // current user then land on the dashboard. Always re-fetches via
@@ -140,6 +146,7 @@ function LoginPage() {
   // A `SessionResult` may instead be an `mfa_required` challenge (step-up).
   const completeSession = async (result: SessionResult): Promise<void> => {
     if (result.status === 'mfa_required') {
+      if (stepUp.begin(result)) return
       setCallbackNotice(
         'Additional verification is required to finish signing in. Please complete the verification step to continue.'
       )
@@ -268,7 +275,9 @@ function LoginPage() {
   // AuthPanel already shows its own MFA notice (from `labels.mfaNotice`,
   // identical wording to the callback path above) when a form submit resolves
   // to a challenge — nothing further to surface here.
-  const handleMfaRequired = (_challenge: MfaRequiredChallenge) => {}
+  const handleMfaRequired = (challenge: MfaRequiredChallenge) => {
+    stepUp.begin(challenge)
+  }
 
   // Only the mode-toggle strings were ever routed through t() on this page —
   // the heading/subtitle were always literal English, which is exactly
@@ -305,7 +314,7 @@ function LoginPage() {
         </Alert>
       )}
 
-      <AuthPanel
+      {stepUp.view ?? <AuthPanel
         variant={PANEL_VARIANT}
         mode={mode}
         transport={transport}
@@ -313,7 +322,7 @@ function LoginPage() {
         onMfaRequired={handleMfaRequired}
         forgotPasswordHref={isAuthExperienceEnabled() ? '/reset' : undefined}
         labels={labels}
-      />
+      />}
     </AuthCard>
   )
 }

@@ -426,6 +426,14 @@ export const authAPI = {
     return result
   },
 
+  // Persist the session minted by a successful MFA step-up (`POST /mfa/verify` →
+  // 200 { token, sessionId }). The step-up UI lives in @fuzefront/account-security-ui
+  // and calls the same-origin Security API itself; the host only stores the result
+  // exactly as `login()` does for an `authenticated` outcome.
+  completeMfaSession(session: { token?: string; sessionId?: string }): void {
+    persistSession(session?.token, session?.sessionId)
+  },
+
   // Server-brokered account creation. The user only ever sees FuzeFront-branded
   // UI — never a provider's raw enrollment page. On success a session is
   // established directly and persisted.
