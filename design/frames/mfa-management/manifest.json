@@ -81,9 +81,9 @@
         "id": "mfa-step-up",
         "orchestrator": "MfaStepUpFlow",
         "route": "/login/mfa",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:05.651Z"
       }
     ],
     "components": [
