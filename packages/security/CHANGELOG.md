@@ -1,5 +1,16 @@
 # Changelog — @fuzefront/security-client
 
+## 0.12.1 — Session workspace discovery contract (unreleased)
+
+`info.version` 0.12.0 -> 0.12.1, `SECURITY_CONTRACT_VERSION` 0.12.0 -> 0.12.1.
+
+### Added
+
+- `GET /v1/security/session/workspaces` and the generated
+  `SessionWorkspaceList` contract used by portal and standalone clients to
+  discover canonical personal and organization workspaces before proving the
+  selected tenant.
+
 ## 0.12.0 — Account: change password; MFA last-factor guard (unreleased)
 
 `info.version` 0.11.0 -> 0.12.0, `SECURITY_CONTRACT_VERSION` 0.11.0 -> 0.12.0.
