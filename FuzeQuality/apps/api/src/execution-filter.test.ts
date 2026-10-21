@@ -152,6 +152,14 @@ describe('execution evidence filter', () => {
       .toBe('.github/workflows/load.yml')
   })
 
+  it('passes a plain non-qualified path through as a string without stripping it', () => {
+    const plain = '.github/workflows/load.yml'
+    const result = executionFilterSchema.parse({ workflowPath: plain })
+    expect(result.workflowPath).toBe(plain)
+    expect(typeof result.workflowPath).toBe('string')
+    expect(executionPageFilterSchema.parse({ workflowPath: plain }).workflowPath).toBe(plain)
+  })
+
   it('rejects an inverted time range instead of returning misleading empty evidence', () => {
     const result = executionFilterSchema.safeParse({
       from: '2026-10-08T00:00:00.000Z',

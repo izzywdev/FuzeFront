@@ -3,7 +3,7 @@ import { normalizeWorkflowPath } from '@fuzequality/contracts'
 import { historyPageQueryFields } from './history-pagination'
 
 const workflowPathFilterSchema = z.string().trim().min(1).max(1000)
-  .transform(path => normalizeWorkflowPath(path)!)
+  .transform(path => normalizeWorkflowPath(path) ?? path)
 
 /**
  * Query contract shared by execution evidence and policy–gate performance.
