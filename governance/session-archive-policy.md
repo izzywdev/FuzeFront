@@ -15,7 +15,9 @@ hand-off:
    work in another repo, post-merge verification, deferred scope, anything the agent would
    otherwise have listed as "someone should…".
 2. **Spawn one new session per item** (`create_session`, `source_url` = the repo that owns the
-   item). Each prompt must stand alone: goal, files by repo-relative path, the PR/commit that
+   item). First reuse: if a session for the item was already spawned earlier in this conversation
+   (archiving was deferred and is being retried), link that session instead of creating a
+   duplicate. Each prompt must stand alone: goal, files by repo-relative path, the PR/commit that
    motivated it, and what done looks like. Never include secrets.
 3. **Show the spawned sessions** to the user as links (`https://claude.ai/code/<session_id>`),
    one line per item: what it covers and which repo it targets.
@@ -40,8 +42,12 @@ transport that would be needed, and leave archiving to the user.
 - Any PR this session opened is merged or closed. If it is still open, drive it to a terminal
   state first; do not archive over a live PR, and do not spawn sessions to babysit it.
 - Nothing is uncommitted or unpushed. Work that exists only on local disk is not archivable.
-- Defects found in this session's own scope are **fixed here**, not spawned; only
-  out-of-scope, other-repo, or later-observation items are spawned.
+- Every branch this session created is merged or deleted, or has a PR that is merged or closed
+  with its branch deleted (a closed-but-unmerged PR whose branch still exists is still flagged
+  by the stranded-branch detector). A pushed branch with no PR is stranded: open its PR and
+  drive it to a terminal state first (CLAUDE.md "Branch lifecycle policy").
+- Defects found in this session's own scope are **fixed here** (see CLAUDE.md "FIX is the
+  rule"); only out-of-scope, other-repo, or later-observation items are spawned.
 
 ## Not covered
 
