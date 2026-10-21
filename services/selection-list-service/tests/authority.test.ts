@@ -5,9 +5,10 @@ import { _setAuthzClientForTesting, makeNoOpProxy } from '../src/middleware/auth
 import { hasConfirmedOtherOwner, restoreAuthority, revokeInstanceGrants } from '../src/services/authority';
 import { authzCompensationTotal, grantCleanupFailedTotal, ownerDriftTotal } from '../src/lib/metrics';
 import { logger } from '../src/lib/logger';
+import { usr, org, permitKey } from './helpers/ids';
 
 const LIST = 'front_sl_authority01';
-const ORG = 'org_corp';
+const ORG = org('corp');
 const log = logger.child({ test: 'authority' });
 
 /** The only Knex surface hasConfirmedOtherOwner touches: executor(table).where().whereNull().select(). */
@@ -21,7 +22,7 @@ function executorWith(rows: Array<{ user_id: string }>): any {
   ex.q = q;
   return ex;
 }
-const owners = (n: number) => Array.from({ length: n }, (_, i) => ({ user_id: `usr_${String(i).padStart(4, '0')}` }));
+const owners = (n: number) => Array.from({ length: n }, (_, i) => ({ user_id: usr(String(i).padStart(4, '0')) }));
 const counter = async (
   c: { get: () => Promise<{ values: Array<{ value: number; labels: Record<string, unknown> }> }> },
   labels: Record<string, string> = {},
@@ -33,7 +34,7 @@ const counter = async (
 afterEach(() => _setAuthzClientForTesting(makeNoOpProxy()));
 
 describe('hasConfirmedOtherOwner', () => {
-  const query = (rows: Array<{ user_id: string }>, excludeUserIds = ['usr_gone'], token = 'tok') => ({
+  const query = (rows: Array<{ user_id: string }>, excludeUserIds = [usr('gone')], token = 'tok') => ({
     executor: executorWith(rows),
     listId: LIST,
     orgId: ORG,
@@ -58,9 +59,9 @@ describe('hasConfirmedOtherOwner', () => {
     const bulkCheck = jest.fn();
     _setAuthzClientForTesting({ ...makeNoOpProxy(), bulkCheck } as any);
     expect(await hasConfirmedOtherOwner(query([]))).toBe(false);
-    expect(await hasConfirmedOtherOwner(query([{ user_id: 'usr_gone' }]))).toBe(false);
+    expect(await hasConfirmedOtherOwner(query([{ user_id: usr('gone') }]))).toBe(false);
     expect(
-      await hasConfirmedOtherOwner(query([{ user_id: 'usr_gone' }, { user_id: 'bare-form' }], ['usr_gone', 'bare-form'])),
+      await hasConfirmedOtherOwner(query([{ user_id: usr('gone') }, { user_id: usr('bareform') }], [usr('gone'), usr('bareform')])),
     ).toBe(false);
     expect(bulkCheck).not.toHaveBeenCalled();
   });
@@ -68,9 +69,9 @@ describe('hasConfirmedOtherOwner', () => {
   it("asks manage_access on THIS instance, in the list's tenant, with the supplied token", async () => {
     const bulkCheck = jest.fn(async (c: unknown[]) => c.map(() => ({ allow: true })));
     _setAuthzClientForTesting({ ...makeNoOpProxy(), bulkCheck } as any);
-    expect(await hasConfirmedOtherOwner(query([{ user_id: 'usr_other' }], ['usr_gone'], 'the-token'))).toBe(true);
+    expect(await hasConfirmedOtherOwner(query([{ user_id: usr('other') }], [usr('gone')], 'the-token'))).toBe(true);
     expect(bulkCheck).toHaveBeenCalledWith(
-      [{ subject: 'usr_other', tenant: ORG, resource: { type: 'SelectionList', key: LIST }, action: 'manage_access' }],
+      [{ subject: permitKey(usr('other')), tenant: permitKey(ORG), resource: { type: 'SelectionList', key: LIST }, action: 'manage_access' }],
       'the-token',
     );
   });
@@ -80,7 +81,7 @@ describe('hasConfirmedOtherOwner', () => {
     const bulkCheck = jest.fn(async (checks: Array<{ subject: string }>) => {
       calls.push(checks.length);
       // only the 451st candidate (last chunk) is a real owner
-      return checks.map((c) => ({ allow: c.subject === 'usr_0450' }));
+      return checks.map((c) => ({ allow: c.subject === permitKey(usr('0450')) }));
     });
     _setAuthzClientForTesting({ ...makeNoOpProxy(), bulkCheck } as any);
     expect(await hasConfirmedOtherOwner(query(owners(451)))).toBe(true);
@@ -89,7 +90,7 @@ describe('hasConfirmedOtherOwner', () => {
     calls.length = 0;
     const confirmEarly = jest.fn(async (checks: Array<{ subject: string }>) => {
       calls.push(checks.length);
-      return checks.map((c) => ({ allow: c.subject === 'usr_0003' }));
+      return checks.map((c) => ({ allow: c.subject === permitKey(usr('0003')) }));
     });
     _setAuthzClientForTesting({ ...makeNoOpProxy(), bulkCheck: confirmEarly } as any);
     expect(await hasConfirmedOtherOwner(query(owners(451)))).toBe(true);
@@ -119,7 +120,7 @@ describe('hasConfirmedOtherOwner', () => {
 
 describe('restoreAuthority', () => {
   const resource = { type: 'SelectionList', key: LIST };
-  const base = { subject: 'usr_a', tenant: ORG, listId: LIST, token: 'm', log };
+  const base = { subject: usr('a'), tenant: ORG, listId: LIST, token: 'm', log };
 
   it('PUT with a prior role: drops the new role first, then re-grants the prior one', async () => {
     const order: string[] = [];
@@ -154,7 +155,7 @@ describe('restoreAuthority', () => {
       target: 'list-viewer',
       writes: { revokeAttempted: false, grantAttempted: true },
     });
-    expect(revoke).toHaveBeenCalledWith({ subject: 'usr_a', tenant: ORG, role: 'list-viewer', resource }, 'm');
+    expect(revoke).toHaveBeenCalledWith({ subject: permitKey(usr('a')), tenant: permitKey(ORG), role: 'list-viewer', resource }, 'm');
     expect(grant).not.toHaveBeenCalled();
   });
 
@@ -213,9 +214,9 @@ describe('restoreAuthority', () => {
 
 describe('revokeInstanceGrants', () => {
   const grants = [
-    { user_id: 'usr_a', role: 'list-owner' },
-    { user_id: 'usr_b', role: 'list-viewer' },
-    { user_id: 'usr_c', role: 'list-editor' },
+    { user_id: usr('a'), role: 'list-owner' },
+    { user_id: usr('b'), role: 'list-viewer' },
+    { user_id: usr('c'), role: 'list-editor' },
   ];
   const q = { orgId: ORG, listId: LIST, grants, token: 'm', cause: 'purge' as const, log };
 
@@ -224,20 +225,20 @@ describe('revokeInstanceGrants', () => {
     _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
     expect(await revokeInstanceGrants(q)).toEqual({ revoked: 3, failed: [] });
     expect(revoke).toHaveBeenCalledWith(
-      { subject: 'usr_b', tenant: ORG, role: 'list-viewer', resource: { type: 'SelectionList', key: LIST } },
+      { subject: permitKey(usr('b')), tenant: permitKey(ORG), role: 'list-viewer', resource: { type: 'SelectionList', key: LIST } },
       'm',
     );
   });
 
   it('never throws; failures are returned (for repair) and counted, and the rest are still attempted', async () => {
     const revoke = jest.fn(async (r: any) => {
-      if (r.subject === 'usr_b') throw new Error('502');
+      if (r.subject === permitKey(usr('b'))) throw new Error('502');
     });
     _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
     const before = await counter(grantCleanupFailedTotal, { cause: 'purge' });
     const out = await revokeInstanceGrants(q);
     expect(out.revoked).toBe(2);
-    expect(out.failed).toEqual([{ user_id: 'usr_b', role: 'list-viewer' }]);
+    expect(out.failed).toEqual([{ user_id: usr('b'), role: 'list-viewer' }]);
     expect(revoke).toHaveBeenCalledTimes(3);
     expect(await counter(grantCleanupFailedTotal, { cause: 'purge' })).toBe(before + 1);
   });
@@ -261,36 +262,36 @@ describe('revokeInstanceGrants', () => {
 
     it('retries ONLY the refused grant, once, with the fallback token; a success there is not a failure', async () => {
       const revoke = jest.fn(async (r: any, token: string) => {
-        if (r.subject === 'usr_b' && token === 'm') throw new Error('403');
+        if (r.subject === permitKey(usr('b')) && token === 'm') throw new Error('403');
       });
       const fallbackToken = jest.fn().mockResolvedValue('w');
       _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
       const before = await counter(grantCleanupFailedTotal, { cause: 'purge' });
       expect(await revokeInstanceGrants({ ...q, fallbackToken })).toEqual({ revoked: 3, failed: [] });
       expect(revoke).toHaveBeenCalledTimes(4);
-      expect(revoke).toHaveBeenNthCalledWith(3, expect.objectContaining({ subject: 'usr_b' }), 'w');
+      expect(revoke).toHaveBeenNthCalledWith(3, expect.objectContaining({ subject: permitKey(usr('b')) }), 'w');
       expect(await counter(grantCleanupFailedTotal, { cause: 'purge' })).toBe(before);
     });
 
     it('a grant refused under BOTH tokens is returned and counted exactly once', async () => {
       const revoke = jest.fn(async (r: any) => {
-        if (r.subject === 'usr_b') throw new Error('403');
+        if (r.subject === permitKey(usr('b'))) throw new Error('403');
       });
       _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
       const before = await counter(grantCleanupFailedTotal, { cause: 'purge' });
       const out = await revokeInstanceGrants({ ...q, fallbackToken: async () => 'w' });
-      expect(out.failed).toEqual([{ user_id: 'usr_b', role: 'list-viewer' }]);
+      expect(out.failed).toEqual([{ user_id: usr('b'), role: 'list-viewer' }]);
       expect(await counter(grantCleanupFailedTotal, { cause: 'purge' })).toBe(before + 1);
     });
 
     it('a fallback that cannot be resolved fails that grant only and never throws', async () => {
       const revoke = jest.fn(async (r: any) => {
-        if (r.subject === 'usr_b') throw new Error('403');
+        if (r.subject === permitKey(usr('b'))) throw new Error('403');
       });
       _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
       const out = await revokeInstanceGrants({ ...q, fallbackToken: async () => { throw new Error('no workload identity'); } });
       expect(out.revoked).toBe(2);
-      expect(out.failed).toEqual([{ user_id: 'usr_b', role: 'list-viewer' }]);
+      expect(out.failed).toEqual([{ user_id: usr('b'), role: 'list-viewer' }]);
     });
   });
 });

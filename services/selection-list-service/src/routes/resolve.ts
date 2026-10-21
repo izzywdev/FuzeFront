@@ -19,6 +19,15 @@
 //     only purged or never-created ids go to `missing`.
 //   - Single DB query: JOIN items → lists → translations with three LEFT JOINs
 //     (preferred locale, source_locale, 'en'). No N+1 queries.
+//   - Common lists and forks (4.1.0, behind `fuzefront.selection-lists.shared-lists`): the resolvable set
+//     is the caller's org's items PLUS the items of every `platform` list (ids of a common list resolve in
+//     every org; any other org's ids stay `missing`). When an id belongs to a platform list P and the
+//     caller's org holds an ACTIVE, `org`-visible fork F of P with an item whose `origin_item_id` is that
+//     id, the result is the FORK item's label/locale/status plus `effective_item_id` = the fork item's id
+//     (a private fork never redirects; a purged fork item falls back to the common one). Still ONE query:
+//     the redirect is two LEFT JOINs (ux_sl_fork_per_org, ux_sli_origin). The response body — hence the
+//     express ETag derived from it — differs whenever a redirect applies, so a cached answer cannot hide
+//     a fork appearing or disappearing.
 //   - Feature flag gate: returns 404 if `fuzefront.selection-lists.service`
 //     is OFF (release flag, default OFF).
 
@@ -29,6 +38,8 @@ import { isSelectionListsEnabled } from '../flags';
 import { requireCatalogCheck } from '../middleware/authz';
 import { acceptOnlyBodyProps, isItemId } from '../middleware/validateInput';
 import { ENTITY_PREFIXES } from '@izzywdev/fuzefront-identity';
+import { orgForms, orgRenderings } from '../lib/sharedLists';
+import { getReadScope, pickWinner, readableIds, type DupRow } from '../services/sharedReads';
 
 const router = createRouter();
 
@@ -144,9 +155,87 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
     label: string | null;
     is_machine: boolean;
     resolved_locale: string | null;
+    effective_item_id?: string | null;
   }> = [];
 
-  const result = await db.raw<{ rows: typeof dbRows }>(
+  const scope = await getReadScope(req);
+
+  // Duplicate forks of one common list under SEVERAL renderings of the org id: the redirect target is the winner AMONG
+  // THE FORKS THE CALLER CAN READ (sharedReads `pickWinner`: active, exact claim, oldest, smallest id), never an
+  // unreadable one. One tiny query that is empty unless some source is forked under two renderings; the Permit check
+  // runs only then (memoised per request). Sources with duplicates restrict the SQL below to the chosen fork (or to
+  // none when no duplicate is readable); every other source keeps the single-fork path untouched.
+  let dupSources: string[] = [];
+  let preferredForks: string[] = [];
+  if (scope.shared) {
+    const dups: Array<DupRow & { forked_from_list_id: string }> = (
+      await db.raw(
+        `SELECT f.id, f.organization_id, f.key, f.status, f.visibility, f.created_at, f.forked_from_list_id
+           FROM selection_lists f
+          WHERE f.organization_id = ANY(?) AND f.visibility = 'org' AND f.status = 'active'
+            AND f.forked_from_list_id IN (
+              SELECT g.forked_from_list_id FROM selection_lists g
+               WHERE g.organization_id = ANY(?) AND g.visibility = 'org' AND g.status = 'active' AND g.forked_from_list_id IS NOT NULL
+               GROUP BY g.forked_from_list_id HAVING count(*) > 1)`,
+        [orgRenderings(orgId), orgRenderings(orgId)],
+      )
+    ).rows;
+    if (dups.length > 0) {
+      const readable = await readableIds(req, dups, { shared: true, includeShared: true, platformOrg: scope.platformOrg });
+      dupSources = [...new Set(dups.map((d) => d.forked_from_list_id))];
+      for (const src of dupSources) {
+        const winner = pickWinner(dups.filter((d) => d.forked_from_list_id === src && readable.has(d.id)), orgId);
+        if (winner) preferredForks.push(winner.id);
+      }
+    }
+  }
+
+  const result = scope.shared
+    // Common lists + fork redirect (see the header).
+    ? await db.raw<{ rows: typeof dbRows }>(
+        `
+    SELECT
+      sli.id,
+      sli.list_id,
+      COALESCE(fi.status, sli.status)                                   AS status,
+      fi.id                                                             AS effective_item_id,
+      COALESCE(t1.label, t2.label, t3.label)                           AS label,
+      COALESCE(t1.is_machine, t2.is_machine, t3.is_machine, false)     AS is_machine,
+      CASE
+        WHEN t1.label IS NOT NULL THEN CAST(? AS text)
+        WHEN t2.label IS NOT NULL THEN CASE WHEN fi.id IS NOT NULL THEN fl.source_locale ELSE sl.source_locale END
+        ELSE 'en'
+      END                                                               AS resolved_locale
+    FROM selection_list_items sli
+    JOIN selection_lists sl
+      ON sl.id = sli.list_id
+    LEFT JOIN LATERAL (
+      -- the caller org's fork of a common list; when the org holds forks under SEVERAL renderings of its id exactly one
+      -- is effective (sharedReads.renderingWinnerOrder), so a stored id never resolves to two rows
+      SELECT f.* FROM selection_lists f
+       WHERE sl.visibility = 'platform'
+         AND f.forked_from_list_id = sl.id
+         AND f.organization_id = ANY(?)
+         AND f.visibility = 'org'
+         AND f.status = 'active'
+         AND (f.forked_from_list_id <> ALL(?) OR f.id = ANY(?))
+       ORDER BY (f.organization_id = ?) DESC, f.created_at ASC, f.id ASC
+       LIMIT 1
+    ) fl ON TRUE
+    LEFT JOIN selection_list_items fi
+      ON fi.list_id = fl.id AND fi.origin_item_id = sli.id
+    LEFT JOIN selection_list_item_translations t1
+      ON t1.item_id = COALESCE(fi.id, sli.id) AND t1.locale = ?
+    LEFT JOIN selection_list_item_translations t2
+      ON t2.item_id = COALESCE(fi.id, sli.id) AND t2.locale = CASE WHEN fi.id IS NOT NULL THEN fl.source_locale ELSE sl.source_locale END
+    LEFT JOIN selection_list_item_translations t3
+      ON t3.item_id = COALESCE(fi.id, sli.id) AND t3.locale = 'en'
+    WHERE sli.id = ANY(?)
+      AND (sl.organization_id = ANY(?) OR (sl.visibility = 'platform' AND sl.organization_id = ANY(?)))
+    `,
+        [effectiveLocale, orgRenderings(orgId), dupSources, preferredForks, orgId, effectiveLocale, validIds, orgRenderings(orgId), scope.platformOrg ? orgForms(scope.platformOrg) : []],
+      )
+    : await db.raw<{ rows: typeof dbRows }>(
     `
     SELECT
       sli.id,
@@ -189,7 +278,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
   // Collect resolved results (items that have a label).
   const results: Record<
     string,
-    { label: string; locale: string; is_machine: boolean; status: string }
+    { label: string; locale: string; is_machine: boolean; status: string; effective_item_id?: string }
   > = {};
   for (const row of dbRows) {
     if (row.label !== null && row.resolved_locale !== null) {
@@ -198,6 +287,8 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
         locale: row.resolved_locale,
         is_machine: Boolean(row.is_machine),
         status: row.status,
+        // Only when a fork redirect happened; absent otherwise (never null).
+        ...(row.effective_item_id ? { effective_item_id: row.effective_item_id } : {}),
       };
     }
   }

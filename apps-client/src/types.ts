@@ -25,6 +25,7 @@ export type ProductRoleDecl = components['schemas']['ProductRoleDecl'];
 export type BillingProfile = components['schemas']['BillingProfile'];
 export type Routing = components['schemas']['Routing'];
 export type Infra = components['schemas']['Infra'];
+export type Distribution = components['schemas']['Distribution'];
 export type Icon = components['schemas']['Icon'];
 export type Visibility = components['schemas']['Visibility'];
 export type RegisterAppRequest = components['schemas']['RegisterAppRequest'];

@@ -15,6 +15,7 @@
 import express, { Request, Response, NextFunction } from 'express'
 import { IdentityProvider } from '../../src/providers/IdentityProvider'
 import { MockIdentityProvider, ProviderError } from './mockIdentityProvider'
+import { TokenError } from '../../src/providers/errors'
 
 const CODE_TO_STATUS: Record<string, number> = {
   NO_TOKEN: 401,
@@ -43,6 +44,7 @@ function bearer(req: Request): string | null {
 }
 
 function handle(res: Response, e: unknown) {
+  if (e instanceof TokenError) return sendError(res, e.code, e.message, 400)
   if (e instanceof ProviderError) return sendError(res, e.code, e.message, e.httpStatus)
   return sendError(res, 'UNKNOWN', 'unexpected error', 500)
 }
@@ -304,13 +306,13 @@ export function createSecurityApp(provider: IdentityProvider = new MockIdentityP
     }
   })
 
-  app.post('/api/v1/security/verify/phone/confirm', async (req, res) => {
+  app.post('/api/v1/security/verify/phone/confirm', requireAuth, async (req, res) => {
     const { phone, code } = req.body || {}
     if (typeof phone !== 'string' || typeof code !== 'string') {
       return sendError(res, 'MALFORMED', 'phone and code required', 400)
     }
     try {
-      const status = await provider.confirmPhoneVerification(phone, code)
+      const status = await provider.confirmPhoneVerification((req as any).token, phone, code)
       res.status(200).json(status)
     } catch (e) {
       handle(res, e)

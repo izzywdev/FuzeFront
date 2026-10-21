@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { App } from '../lib/shared'
 import {
+  getAccountValue,
   getActiveAccountId,
   getActiveAuthToken,
   setActiveValue,
@@ -205,7 +206,9 @@ api.interceptors.request.use(
       console.groupEnd()
     }
 
-    if (token) {
+    // An explicit Authorization (e.g. startEmailVerification targeting a chosen
+    // signed-in account) wins over the active account's token.
+    if (token && !config.headers.Authorization) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
@@ -226,7 +229,7 @@ api.interceptors.request.use(
  * not redirect away from them. Keep this the single source of truth: LoginPage
  * derives sign-in vs sign-up from the path, so silently rewriting it loses intent.
  */
-const AUTH_ROUTE_RE = /^\/(login|signup)\b/
+const AUTH_ROUTE_RE = /^\/(login|signup|reset|verify)\b/
 
 // Enhanced response logging with timing
 api.interceptors.response.use(
@@ -296,7 +299,13 @@ api.interceptors.response.use(
     }
     console.groupEnd()
 
-    if (error.response?.status === 401) {
+    // A 401 from a TOKEN-redemption call (an expired/used verify link or reset
+    // token, 401 NOT_ACTIVE) says nothing about the caller's SESSION — it must
+    // not sign a signed-in user out. The auth-ui flows render it as "expired".
+    const failedUrl = String(error.config?.url ?? '')
+    const isTokenRedemption = /\/(verify\/email\/confirm|session\/password\/reset-confirm)$/.test(failedUrl)
+
+    if (error.response?.status === 401 && !isTokenRedemption) {
       console.log('🔐 Unauthorized - clearing the active account session')
       // Clear only the ACTIVE account. Other signed-in accounts keep their
       // sessions — one expiring must not sign the user out of the rest.
@@ -468,6 +477,60 @@ export const authAPI = {
     window.location.href = `${API_URL}${SECURITY_BASE}/social/${provider}/start`
   },
 
+  // ── Email verification + self-service password reset (FFRNT-360) ───────────
+  // Thin 1:1 wrappers over the frozen contract; the auth-ui flows classify the
+  // axios error shapes themselves (429 / EXPIRED / INVALID_CODE / 400).
+
+  // POST /verify/email/start → 202. Needs a session (the interceptor adds the bearer).
+  async startEmailVerification(accountId?: string): Promise<void> {
+    // No body: the server derives the target address from the session. With
+    // several accounts signed in, `accountId` picks WHICH account's session
+    // (never an address) — omitted means the active account.
+    const token = accountId ? getAccountValue(accountId, 'authToken') : null
+    // A named account with no stored session must fail, not fall through to
+    // the ACTIVE account's token and verify the wrong address.
+    if (accountId && !token) throw new Error('That account is no longer signed in')
+    await api.post(
+      `${SECURITY_BASE}/verify/email/start`,
+      {},
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    )
+  },
+
+  // POST /verify/email/confirm → 200 VerificationStatus (idempotent for an
+  // already-verified token) | 400 EXPIRED / INVALID_CODE.
+  async confirmEmailVerification(req: {
+    token: string
+  }): Promise<{ emailVerified: boolean; phoneVerified: boolean; phone?: string }> {
+    const response = await api.post(`${SECURITY_BASE}/verify/email/confirm`, req)
+    return response.data
+  },
+
+  // GET /verify/status — authenticated; used right after signup to decide
+  // whether the user must verify their email before continuing.
+  // `token` pins the call to a specific session (e.g. the one a signup just
+  // returned) instead of whatever the vault currently resolves as active.
+  async getVerificationStatus(
+    token?: string
+  ): Promise<{ emailVerified: boolean; phoneVerified: boolean }> {
+    const response = await api.get(
+      `${SECURITY_BASE}/verify/status`,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    )
+    return response.data
+  },
+
+  // POST /session/password/reset-request → ALWAYS 202 (no account enumeration).
+  async requestPasswordReset(email: string): Promise<void> {
+    await api.post(`${SECURITY_BASE}/session/password/reset-request`, { email })
+  },
+
+  // POST /session/password/reset-confirm → 200 { reset: true } | 400 (invalid,
+  // expired or already-used token, or a policy-rejected password).
+  async confirmPasswordReset(req: { token: string; newPassword: string }): Promise<void> {
+    await api.post(`${SECURITY_BASE}/session/password/reset-confirm`, req)
+  },
+
   // Current identity ("me"). The Security API returns `{ identity, user }`; the
   // UI consumes the hydrated user.
   async getCurrentUser(): Promise<User> {
@@ -629,6 +692,10 @@ export const createApp = async (app: Partial<App>) => {
 }
 export const updateAppStatus = async (id: string, isActive: boolean) => {
   const res = await api.put(`/apps/${id}/activate`, { isActive })
+  return res.data
+}
+export const updateApp = async (id: string, app: Partial<App>) => {
+  const res = await api.put(`/apps/${id}`, app)
   return res.data
 }
 export const deleteApp = async (id: string) => {

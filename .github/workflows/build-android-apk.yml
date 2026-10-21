@@ -228,8 +228,14 @@ jobs:
           fi
           test -n "$APK" || { echo "Expected APK was not produced" >&2; exit 1; }
           DEST="${{ steps.version.outputs.slug }}-android-${{ steps.version.outputs.name }}.apk"
+          LATEST="${{ steps.version.outputs.slug }}-android-latest.apk"
           cp "$APK" "$DEST"
+          # GitHub resolves /releases/latest/download/<name> against the newest
+          # release, making this stable public APK URL safe to declare in a
+          # product's FuzeFront manifest.
+          cp "$APK" "$LATEST"
           echo "path=android/$DEST" >> "$GITHUB_OUTPUT"
+          echo "latest_path=android/$LATEST" >> "$GITHUB_OUTPUT"
           echo "Found: $DEST"
 
       - name: Upload APK artifact
@@ -261,7 +267,9 @@ jobs:
             ### Requirements
             - Android 7.0+ (API 24+)
             - Chrome 72+ installed on device
-          files: ${{ steps.apk.outputs.path }}
+          files: |
+            ${{ steps.apk.outputs.path }}
+            ${{ steps.apk.outputs.latest_path }}
           draft: false
           prerelease: false
           overwrite_files: true

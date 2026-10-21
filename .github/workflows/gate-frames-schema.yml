@@ -1,0 +1,80 @@
+name: gate-frames-schema
+
+# Every design-frames manifest must match the load-bearing shape in
+# design/frames/_template/manifest.schema.json, and a CHANGED feature's flows must
+# declare mobile coverage.
+#
+# WHAT THIS CLOSES.
+# CLAUDE.md ("Design-first gate") named gate-frames-schema as a frames-PR gate for
+# months while nothing validated a manifest against the schema — a documented gate
+# that did not exist. gate-frames-first trusts each manifest's implementation.paths
+# to map a changed UI file to a flow; gate-frames-stamped trusts the stamp;
+# design-approval writes per-flow `approved`. All of that assumed a shape nothing
+# checked. This gate checks it.
+#
+# It also gives teeth to "mobile is part of the design contract": FuzeFront declares
+# mobile required (.fuze/manifest.json), so a flow must freeze a mobile layout, not
+# only a desktop one — the "works on desktop, breaks on mobile" defect, caught at
+# design time.
+#
+# SCOPE — block-now without retro-breaking (mirrors gate-ds-conformance's changed-
+# lines ratchet). Schema errors and missing mobile coverage FAIL the gate only for a
+# feature this PR changed; the pre-existing backlog (one legacy manifest; flows
+# without mobile frames) is printed as a warning, not a failure, so the gate can go
+# into the required set today without failing unrelated PRs. Run with --all to audit
+# the ramp's end state before flipping; the worklist + owner live in
+# governance/frames-schema-policy.json.
+#
+# NO `paths:` FILTER, deliberately — the same load-bearing rule as gate-ds-artifact.
+# This context is in the required set (governance/required-status-checks.json), and a
+# required context that is path-filtered never reports on a PR that misses the filter,
+# leaving that PR permanently "waiting on an expected check". The gate is dependency-
+# free (bare `node`, no `npm ci`) and runs in well under a second, so running it on
+# every PR costs nothing.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-frames-schema-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frames-schema:
+    # Job display name == the required-check context. Keep it equal to the workflow
+    # name (gate-frames-schema) so requiring that context matches this check.
+    name: gate-frames-schema
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned to immutable commit SHAs (repo hardening standard).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the mobile-coverage check diffs against the merge base
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      # The gate's own logic — schema validation and mobile-coverage resolution —
+      # verified against fixtures, INCLUDING a case asserting it fails on a
+      # desktop-only flow. A gate never shown to fail on its own target is not
+      # evidence of anything.
+      - name: Unit-test the gate itself
+        run: node --test scripts/__tests__/check-frames-schema.test.mjs
+
+      # `github` context data is untrusted (a branch name can carry arbitrary
+      # characters), so it goes through an env var and is quoted — interpolating
+      # ${{ ... }} straight into `run:` is a shell-injection path into the runner.
+      - name: Validate frames manifests (schema + changed-feature mobile coverage)
+        env:
+          # github.base_ref is set only for pull_request events; on a manual
+          # workflow_dispatch it is empty, so fall back to the default branch — else
+          # `git fetch origin ""` fails before any validation runs.
+          BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          node scripts/check-frames-schema.mjs --base "origin/$BASE_REF"

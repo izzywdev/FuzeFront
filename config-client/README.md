@@ -118,6 +118,29 @@ view**, so a change made at an ancestor scope invalidates it too — a version
 that tracked only this scope's own rows would let inherited changes go
 undetected.
 
+### Cache invalidation — `config.changed`
+
+config-service publishes a `config.changed` event (namespace + scope + changed key
+**names**, never values) after each committed write. `ConfigCache` wraps the
+client with a cache that honours it. Subscribe with your own transport and pass
+each message to `handleEvent`:
+
+```ts
+const cache = new ConfigCache(client, { maxAgeMs: 60_000 })
+consumer.run((event) => cache.handleEvent(event)) // topic: CONFIG_CHANGED_TOPIC
+const cfg = await cache.get('fuzefront.chat', { scopeType: 'org', scopeId })
+```
+
+Events are best-effort: an entry older than `maxAgeMs` is revalidated with
+`If-None-Match`, so a missed event is bounded. Handle both — see
+`docs/guides/CONFIG_SERVICE_INTEGRATION_GUIDE.md` §8.
+
+## History and secret reveal
+
+`listConfigHistory({ namespace, scope, key })` (audit grant required; secret keys
+come back `redacted`) and `revealSecret({ namespace, scope, key, reason })`
+(once-only plaintext, audited; never cache or log the result).
+
 ## This is not the feature-flag system
 
 Unleash owns feature flags. **Configuration** is durable, typed, user- and

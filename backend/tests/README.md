@@ -6,8 +6,8 @@ This directory contains comprehensive authentication tests for the FuzeFront bac
 
 ```
 tests/
-├── auth.test.ts              # Original authentication tests (SQLite)
-├── auth-production.test.ts   # Production database tests (PostgreSQL)
+├── auth.test.ts              # Authentication tests (PostgreSQL, via setup.ts)
+├── auth-production.test.ts   # Production-mode database tests (PostgreSQL)
 ├── setup.ts                  # Test configuration and utilities
 └── README.md                 # Documentation (this file)
 ```

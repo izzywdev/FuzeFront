@@ -29,6 +29,7 @@ base" and "FIX is the rule".
 | token **order + usage notes**, the type **groups/scale**, which tokens are public | this script | **curated** (the one place these editorial choices live) |
 | `components/<Comp>/README.md` | `<Comp>.prompt.md`, else the `<Comp>.d.ts` leading JSDoc | **derived** |
 | `components/<Comp>/preview.html` | `previews/<Comp>.html` (beside this script) if present, else a generated usage specimen | **override or derived** |
+| `README.md` "Mobile & responsiveness" breakpoint table | `tokens/spacing.css` (the Breakpoints reference comment) | **parsed** (producer throws if the comment is missing or yields < 3 rows) |
 | `components/index.d.ts` | every component `<Comp>.d.ts` | **concatenated** |
 | `components/Cover/preview.html` | `templates/cover.html` (beside this script) | **authored** |
 

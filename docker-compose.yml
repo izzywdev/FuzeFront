@@ -82,6 +82,9 @@ services:
       - SMTP_HOST=localhost
       - SMTP_PORT=1025
       - EMAIL_FROM=noreply@fuzefront.local
+      # Bearer for the internal POST /send; give the security service the same
+      # value as EMAIL_SERVICE_TOKEN (dev default only).
+      - EMAIL_AUTH_SECRET=${EMAIL_AUTH_SECRET:-dev-email-secret}
     networks:
       - FuzeInfra
     depends_on:
