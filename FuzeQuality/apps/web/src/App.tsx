@@ -66,7 +66,7 @@ import {
 } from './api'
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
-import { QualityAction, QualityIconAction } from './components/primitives'
+import { QualityAction, QualityIconAction, QualityInput } from './components/primitives'
 import {
   ExecutionEvidenceMetadata,
   ExecutionEvidenceLinks,
@@ -3720,6 +3720,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const policyGateHistoryQueryRef = useRef(policyGateHistoryQuery)
   policyGateHistoryQueryRef.current = policyGateHistoryQuery
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
+  const [workflowDispatchInputs, setWorkflowDispatchInputs] = useState<
+    Record<string, Record<string, string>>
+  >({})
   const [performanceDispatch, setPerformanceDispatch] = useState<{
     artifactId: string
     state: 'success' | 'error'
@@ -3900,19 +3903,23 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       ? analyzedSourceRevision(repository)
       : undefined
     if (!sourceRevision || !executableWorkflowTarget(artifact)) return
+    const requiredInputs = artifact.execution?.requiredInputs ?? []
+    const suppliedInputs = Object.fromEntries(
+      requiredInputs.map(name => [name, workflowDispatchInputs[artifact.id]?.[name]?.trim() ?? ''])
+    )
+    if (requiredInputs.some(name => !suppliedInputs[name])) return
     if (
       !window.confirm(
-        `Dispatch ${artifact.title} from ${repository?.defaultBranch ?? 'the analyzed branch'} at analyzed commit ${sourceRevision}?`
+        `Dispatch ${artifact.title} from ${repository?.defaultBranch ?? 'the analyzed branch'} at analyzed commit ${sourceRevision}${requiredInputs.length ? ` with reviewed inputs: ${requiredInputs.join(', ')}` : ''}?`
       )
     )
       return
     setDispatchingArtifact(artifact.id)
     setPerformanceDispatch(undefined)
     try {
-      const receipt = await api.runTestSuite(
-        artifact.repositoryId,
-        artifact.id
-      )
+      const receipt = requiredInputs.length
+        ? await api.runTestSuite(artifact.repositoryId, artifact.id, suppliedInputs)
+        : await api.runTestSuite(artifact.repositoryId, artifact.id)
       setPerformanceDispatch({
         artifactId: artifact.id,
         state: 'success',
@@ -5497,11 +5504,43 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                           )}
                           {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             workflowTarget &&
+                            analyzedRevision &&
+                            item.execution?.requiredInputs?.length ? (
+                              <div className="workflow-dispatch-inputs" aria-label={`Required inputs for ${item.title}`}>
+                                <small>
+                                  Controlled dispatch requires the analyzed workflow inputs below. Values are sent to GitHub Actions and are not stored by FuzeQuality.
+                                </small>
+                                {item.execution.requiredInputs.map(inputName => (
+                                  <QualityInput
+                                    key={inputName}
+                                    label={inputName}
+                                    value={workflowDispatchInputs[item.id]?.[inputName] ?? ''}
+                                    maxLength={256}
+                                    autoComplete="off"
+                                    disabled={dispatchingArtifact === item.id}
+                                    onChange={event => setWorkflowDispatchInputs(current => ({
+                                      ...current,
+                                      [item.id]: {
+                                        ...current[item.id],
+                                        [inputName]: event.target.value,
+                                      },
+                                    }))}
+                                  />
+                                ))}
+                              </div>
+                            ) : null}
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
+                            workflowTarget &&
                             analyzedRevision && (
                               <div className="row-actions">
                                 <button
                                   className="secondary-button"
-                                  disabled={dispatchingArtifact === item.id}
+                                  disabled={
+                                    dispatchingArtifact === item.id ||
+                                    Boolean(item.execution?.requiredInputs?.some(
+                                      inputName => !workflowDispatchInputs[item.id]?.[inputName]?.trim()
+                                    ))
+                                  }
                                   onClick={() => void runTestSuite(item)}
                                 >
                                   <Activity size={14} />{' '}
@@ -5512,16 +5551,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </div>
                             )}
                           {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
-                            item.execution?.requiredInputs?.length ? (
-                              <small className="performance-inventory-only">
-                                Inventory only · required workflow inputs need
-                                repository defaults before controlled dispatch:{' '}
-                                {item.execution.requiredInputs.join(', ')}.
-                              </small>
-                            ) : null}
-                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             item.execution &&
-                            !item.execution.requiredInputs?.length &&
                             analyzedRevision &&
                             !workflowTarget && (
                               <small className="performance-inventory-only">
@@ -5546,7 +5576,6 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             )}
                           {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             item.execution &&
-                            !item.execution.requiredInputs?.length &&
                             !analyzedRevision && (
                               <small className="performance-inventory-only">
                                 Inventory only · run repository analysis at an

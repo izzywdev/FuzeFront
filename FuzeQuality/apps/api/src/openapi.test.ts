@@ -533,6 +533,15 @@ describe('contract discovery', () => {
           'application/json'
         ].schema.$ref
       ).toBe('#/components/schemas/TestSuiteDispatch')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/execute'].post.requestBody.content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/WorkflowDispatchRequest')
+      expect(schemas.WorkflowDispatchRequest.properties.inputs).toMatchObject({
+        maxProperties: 20,
+        additionalProperties: { type: 'string', minLength: 1, maxLength: 256 },
+      })
       expect(schemas.TestSuiteDispatch.required).toContain('artifactKind')
     })
   })

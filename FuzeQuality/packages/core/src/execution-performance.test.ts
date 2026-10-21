@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { executableWorkflowTarget, executionOutcomeTrend, executionPerformance, filterTestExecutions, performanceDispatchRevision, performanceWorkflowTarget } from './execution-performance'
+import { executableWorkflowTarget, executionOutcomeTrend, executionPerformance, filterTestExecutions, performanceDispatchRevision, performanceWorkflowTarget, validateWorkflowDispatchInputs } from './execution-performance'
 
 describe('execution performance', () => {
   it('dispatches only the immutable source commit that produced the current catalog', () => {
@@ -29,7 +29,22 @@ describe('execution performance', () => {
     expect(performanceWorkflowTarget(artifact)).toBe('.github/workflows/load.yml')
     expect(performanceWorkflowTarget({ ...artifact, execution: undefined })).toBeUndefined()
     expect(performanceWorkflowTarget({ ...artifact, execution: { ...artifact.execution, workflowPath: '.github/workflows/other.yml' } })).toBeUndefined()
-    expect(performanceWorkflowTarget({ ...artifact, execution: { ...artifact.execution, requiredInputs: ['environment'] } })).toBeUndefined()
+    const requiredInputArtifact = { ...artifact, execution: { ...artifact.execution, requiredInputs: ['environment'] } }
+    expect(performanceWorkflowTarget(requiredInputArtifact)).toBe('.github/workflows/load.yml')
+    expect(validateWorkflowDispatchInputs(requiredInputArtifact, { environment: ' staging ' })).toEqual({
+      success: true,
+      inputs: { environment: 'staging' },
+    })
+    expect(validateWorkflowDispatchInputs(requiredInputArtifact, {})).toEqual({
+      success: false,
+      missing: ['environment'],
+      unexpected: [],
+    })
+    expect(validateWorkflowDispatchInputs(requiredInputArtifact, { environment: 'staging', unsafe: 'extra' })).toEqual({
+      success: false,
+      missing: [],
+      unexpected: ['unsafe'],
+    })
     expect(executableWorkflowTarget({ ...artifact, kind: 'integration-test' })).toBe('.github/workflows/load.yml')
     expect(executableWorkflowTarget({ ...artifact, kind: 'post-production-test' })).toBe('.github/workflows/load.yml')
     expect(executableWorkflowTarget({ ...artifact, kind: 'test-plan' })).toBeUndefined()

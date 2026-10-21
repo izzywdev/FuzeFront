@@ -156,21 +156,27 @@ export const api = {
     page: { nextCursor: string | null; hasMore: boolean }
   } | import('@fuzequality/core').ExecutionOutcomeTrend[]>(`/api/v1/repositories/${id}/execution-trend?${new URLSearchParams(filter)}`),
   executionPerformance: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/core').PolicyGatePerformancePage | import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance?${new URLSearchParams(filter)}`),
-  runPerformanceTest: (repositoryId: string, artifactId: string) => request<{
+  runPerformanceTest: (repositoryId: string, artifactId: string, inputs: Record<string, string> = {}) => request<{
     status: 'dispatched'
     artifactId: string
     workflowPath: string
     ref: string
     sourceRevision: string
-  }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, { method: 'POST' }),
-  runTestSuite: (repositoryId: string, artifactId: string) => request<{
+  }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, {
+    method: 'POST',
+    body: JSON.stringify({ inputs }),
+  }),
+  runTestSuite: (repositoryId: string, artifactId: string, inputs: Record<string, string> = {}) => request<{
     status: 'dispatched'
     artifactId: string
     artifactKind: 'integration-test' | 'post-production-test' | 'load-test' | 'stress-test'
     workflowPath: string
     ref: string
     sourceRevision: string
-  }>(`/api/v1/repositories/${repositoryId}/test-suites/${artifactId}/execute`, { method: 'POST' }),
+  }>(`/api/v1/repositories/${repositoryId}/test-suites/${artifactId}/execute`, {
+    method: 'POST',
+    body: JSON.stringify({ inputs }),
+  }),
   scanRepository: (id: string, localPath?: string) =>
     request(`/api/v1/repositories/${id}/scans`, {
       method: 'POST',

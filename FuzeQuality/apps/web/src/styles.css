@@ -249,6 +249,9 @@ button:disabled { cursor: wait; opacity: .55; }
 .performance-dispatch-success { margin: 10px 0 0; padding: 9px 11px; border: 1px solid #28625c; background: #102b2a; color: var(--green); font-size: 12px; line-height: 1.45; }
 .test-plan-identity { display: flex; align-items: center; gap: 6px; }
 .performance-inventory-only { display: block; margin-top: 8px; color: var(--muted); font: 10px var(--font-mono); }
+.workflow-dispatch-inputs { display: grid; gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid var(--line); background: var(--panel-raised); }
+.workflow-dispatch-inputs small { color: var(--muted); font: 10px var(--font-mono); line-height: 1.45; }
+.workflow-dispatch-inputs > div { max-width: 420px; }
 .empty-state, .loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); }.empty-state { padding: 24px; }.empty-state strong { color: var(--text); margin-top: 8px; }.empty-state span { font-size: 11px; }.empty-state.roomy { min-height: 240px; }.loading-screen { min-height: 60vh; gap: 10px; }.error-banner { display: flex; gap: 10px; margin-bottom: 20px; padding: 13px; border: 1px solid #653a3a; background: #2c191c; color: var(--coral); }.error-banner strong, .error-banner span { display: block; }.error-banner span { color: #d8a09b; font-size: 12px; }.spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

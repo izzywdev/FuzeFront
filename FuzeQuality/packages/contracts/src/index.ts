@@ -769,6 +769,21 @@ export const testExecutionInputSchema = z.object({
 
 export const performanceTestRequestSchema = z.object({ artifactId: z.string().min(1).max(500) }).strict()
 
+const workflowDispatchInputNameSchema = z.string().regex(
+  /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/,
+  'Workflow input names must be bounded GitHub identifiers',
+)
+
+export const workflowDispatchRequestSchema = z.object({
+  inputs: z.record(
+    workflowDispatchInputNameSchema,
+    z.string().trim().min(1).max(256),
+  ).refine(
+    inputs => Object.keys(inputs).length <= 20,
+    'At most 20 workflow inputs are allowed',
+  ).default({}),
+}).strict()
+
 export type Portfolio = {
   repositories: Repository[]
   operations: ApiOperation[]

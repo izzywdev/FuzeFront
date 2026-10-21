@@ -262,6 +262,7 @@ export async function dispatchTestWorkflow(input: {
   sourceRef: string
   installationId: string
   workflowPath: string
+  inputs?: Record<string, string>
   tokenProvider?: (installationId: string) => Promise<string>
   fetcher?: typeof fetch
 }): Promise<{ ref: string; sourceRevision: string }> {
@@ -276,6 +277,14 @@ export async function dispatchTestWorkflow(input: {
   if (!/^\.github\/workflows\/[^/]+\.ya?ml$/i.test(input.workflowPath)) {
     throw new Error('Only a scanned .github/workflows YAML test workflow may be dispatched')
   }
+  const workflowInputs = input.inputs ?? {}
+  const inputEntries = Object.entries(workflowInputs)
+  if (inputEntries.length > 20 || inputEntries.some(([name, value]) =>
+    !/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(name) || !value.trim() || value.length > 256
+  )) {
+    throw new Error('Workflow dispatch inputs must be bounded non-empty GitHub input values')
+  }
+  const normalizedInputs = Object.fromEntries(inputEntries.map(([name, value]) => [name, value.trim()]))
   const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
   const fetchGithub = input.fetcher ?? fetch
   const headers = { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' }
@@ -293,7 +302,10 @@ export async function dispatchTestWorkflow(input: {
     {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
-      body: JSON.stringify({ ref: input.sourceRef }),
+      body: JSON.stringify({
+        ref: input.sourceRef,
+        ...(inputEntries.length ? { inputs: normalizedInputs } : {}),
+      }),
     },
   )
   if (!response.ok) throw new Error(`GitHub test workflow dispatch failed: ${response.status}`)

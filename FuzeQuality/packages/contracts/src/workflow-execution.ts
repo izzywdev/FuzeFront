@@ -43,8 +43,27 @@ export function artifactWorkflowExecutionKind(
 export function executableWorkflowTarget(artifact: QualityArtifact): string | undefined {
   if (!executableTestKinds.includes(artifact.kind)) return undefined
   if (artifact.execution?.provider !== 'github-actions' || artifact.execution.trigger !== 'workflow_dispatch') return undefined
-  if (artifact.execution.requiredInputs?.length) return undefined
   if (artifact.execution.workflowPath !== artifact.sourcePath) return undefined
   if (!/^\.github\/workflows\/[^/]+\.ya?ml$/i.test(artifact.sourcePath)) return undefined
   return artifact.sourcePath
+}
+
+export type WorkflowDispatchInputValidation =
+  | { success: true; inputs: Record<string, string> }
+  | { success: false; missing: string[]; unexpected: string[] }
+
+/** Bind values to the exact required input names found in the analyzed workflow. */
+export function validateWorkflowDispatchInputs(
+  artifact: Pick<QualityArtifact, 'execution'>,
+  supplied: Readonly<Record<string, string>>,
+): WorkflowDispatchInputValidation {
+  const required = [...new Set(artifact.execution?.requiredInputs ?? [])].sort()
+  const suppliedNames = Object.keys(supplied).sort()
+  const missing = required.filter(name => !supplied[name]?.trim())
+  const unexpected = suppliedNames.filter(name => !required.includes(name))
+  if (missing.length || unexpected.length) return { success: false, missing, unexpected }
+  return {
+    success: true,
+    inputs: Object.fromEntries(required.map(name => [name, supplied[name].trim()])),
+  }
 }

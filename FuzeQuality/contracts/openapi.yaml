@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.69.0
+  version: 0.70.0
   license:
     name: UNLICENSED
 servers:
@@ -1271,6 +1271,11 @@ paths:
       summary: Dispatch a scanner-verified integration, post-production, load, or stress workflow at its immutable analyzed commit
       tags: [executions]
       security: [{ platformBearer: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowDispatchRequest' }
       responses:
         '202':
           description: The reviewed test workflow was dispatched.
@@ -1287,7 +1292,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '422':
-          description: The suite is inventory-only, required inputs lack repository defaults, the GitHub App installation is unavailable, or dispatch failed.
+          description: The suite is inventory-only, supplied inputs do not exactly match the analyzed required inputs, the GitHub App installation is unavailable, or dispatch failed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -1304,6 +1309,11 @@ paths:
       summary: Dispatch a scanner-verified workflow_dispatch load or stress test at its immutable analyzed commit
       tags: [executions]
       security: [{ platformBearer: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowDispatchRequest' }
       responses:
         '202':
           description: The performance workflow was dispatched.
@@ -1320,7 +1330,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '422':
-          description: The definition is inventory-only, the GitHub App installation is unavailable, or dispatch failed.
+          description: The definition is inventory-only, supplied inputs do not exactly match the analyzed required inputs, the GitHub App installation is unavailable, or dispatch failed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -2145,6 +2155,23 @@ components:
         workflowPath: { type: string }
         ref: { type: string }
         sourceRevision: { type: string, pattern: '^[0-9a-fA-F]{40}$' }
+    WorkflowDispatchRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        inputs:
+          type: object
+          maxProperties: 20
+          propertyNames:
+            pattern: '^[A-Za-z_][A-Za-z0-9_-]{0,63}$'
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 256
+      description: >-
+        Values for the exact required workflow_dispatch input names discovered
+        in the immutable analyzed workflow. Missing or extra names are rejected;
+        values are forwarded to GitHub Actions and are not persisted.
     TestSuiteDispatch:
       type: object
       additionalProperties: false

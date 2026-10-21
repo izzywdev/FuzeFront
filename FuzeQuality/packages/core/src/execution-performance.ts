@@ -1,7 +1,7 @@
 import { normalizeWorkflowPath, type QualityArtifact, type Repository, type TestExecution } from '@fuzequality/contracts'
 import { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
 
-export { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
+export { executableWorkflowTarget, validateWorkflowDispatchInputs } from '@fuzequality/contracts/workflow-execution'
 
 /** Backward-compatible performance-only guard for the original API route. */
 export function performanceWorkflowTarget(artifact: QualityArtifact): string | undefined {

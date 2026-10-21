@@ -2060,23 +2060,42 @@ describe('RepositoryIntelligence flow inventory', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('keeps workflows with unresolved required inputs inventory-only', async () => {
+  it('collects exact required workflow inputs before controlled dispatch', async () => {
     mockEvidenceApis()
-    vi.mocked(api.qualityArtifacts).mockResolvedValue([{
+    const inputWorkflow = {
       ...loadArtifact,
       execution: {
         ...loadArtifact.execution!,
         requiredInputs: ['environment', 'duration'],
       },
-    }])
+    }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([inputWorkflow])
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'runTestSuite').mockResolvedValue({
+      status: 'dispatched',
+      artifactId: inputWorkflow.id,
+      artifactKind: 'load-test',
+      workflowPath: inputWorkflow.sourcePath,
+      ref: 'main',
+      sourceRevision: 'a'.repeat(40),
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     render(<RepositoryIntelligence data={portfolio} />)
 
-    expect(await screen.findByText(/required workflow inputs/)).toHaveTextContent(
-      'environment, duration',
-    )
-    expect(screen.queryByRole('button', { name: /Run analyzed revision/ })).not.toBeInTheDocument()
+    const runButton = await screen.findByRole('button', { name: /Run analyzed revision/ })
+    expect(runButton).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('environment'), { target: { value: 'staging' } })
+    fireEvent.change(screen.getByLabelText('duration'), { target: { value: '5m' } })
+    expect(runButton).toBeEnabled()
+    fireEvent.click(runButton)
+
+    await waitFor(() => expect(api.runTestSuite).toHaveBeenCalledWith(
+      repository.id,
+      inputWorkflow.id,
+      { environment: 'staging', duration: '5m' },
+    ))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('reviewed inputs: environment, duration'))
   })
 
   it('keeps nested workflow inventory visible without advertising an impossible dispatch', async () => {

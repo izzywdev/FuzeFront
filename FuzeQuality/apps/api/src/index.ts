@@ -9,6 +9,7 @@ import {
   designTestLinkEventSchema,
   testExecutionInputSchema,
   performanceTestRequestSchema,
+  workflowDispatchRequestSchema,
   testImplementationRequestSchema,
   type OrganizationQualitySummary,
   type Portfolio,
@@ -28,6 +29,7 @@ import {
   repositoryCatalogStatus,
   testExecutionCursorCreatedAt,
   testSuiteDispatchRevision,
+  validateWorkflowDispatchInputs,
 } from '@fuzequality/core'
 import { scanRepository } from '@fuzequality/scanner'
 import {
@@ -1002,6 +1004,8 @@ app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async 
 app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecution, async (request, response) => {
   const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const body = workflowDispatchRequestSchema.safeParse(request.body ?? {})
+  if (!body.success) return response.status(400).json({ error: body.error.flatten() })
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   const repository = await store.repository(repositoryId, tenantId)
@@ -1011,17 +1015,19 @@ app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecu
   if (!artifact || !['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(artifact.kind)) {
     return response.status(404).json({ error: 'Executable test suite not found' })
   }
-  if (artifact.execution?.requiredInputs?.length) return response.status(422).json({
-    error: `Workflow requires repository defaults for: ${artifact.execution.requiredInputs.join(', ')}`,
-    code: 'TEST_WORKFLOW_INPUTS_REQUIRED',
-    requiredInputs: artifact.execution.requiredInputs,
-  })
   if (!workflowPath) return response.status(422).json({ error: 'Test definition is not a scanner-verified workflow_dispatch workflow', code: 'TEST_WORKFLOW_NOT_DISPATCHABLE' })
+  const dispatchInputs = validateWorkflowDispatchInputs(artifact, body.data.inputs)
+  if (!dispatchInputs.success) return response.status(422).json({
+    error: 'Workflow dispatch inputs must exactly match the required analyzed inputs',
+    code: 'TEST_WORKFLOW_INPUTS_INVALID',
+    missingInputs: dispatchInputs.missing,
+    unexpectedInputs: dispatchInputs.unexpected,
+  })
   const sourceRevision = testSuiteDispatchRevision(repository)
   if (!sourceRevision) return response.status(409).json({ error: 'An exact analyzed source revision is required before dispatch', code: 'ANALYSIS_SOURCE_REVISION_REQUIRED' })
   if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
   try {
-    const receipt = await dispatchTestWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath })
+    const receipt = await dispatchTestWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath, inputs: dispatchInputs.inputs })
     response.status(202).json({ status: 'dispatched', artifactId: artifact.id, artifactKind: artifact.kind, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision })
   } catch (error) {
     response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'TEST_DISPATCH_FAILED' })
@@ -1030,24 +1036,28 @@ app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecu
 app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRunExecution, async (request, response) => {
   const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const body = workflowDispatchRequestSchema.safeParse(request.body ?? {})
+  if (!body.success) return response.status(400).json({ error: body.error.flatten() })
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   const repository = await store.repository(repositoryId, tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const artifact = (await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)).find(item => item.id === parsed.data.artifactId)
   if (!artifact || !['load-test', 'stress-test'].includes(artifact.kind)) return response.status(404).json({ error: 'Performance test not found' })
-  if (artifact.execution?.requiredInputs?.length) return response.status(422).json({
-    error: `Workflow requires repository defaults for: ${artifact.execution.requiredInputs.join(', ')}`,
-    code: 'PERFORMANCE_WORKFLOW_INPUTS_REQUIRED',
-    requiredInputs: artifact.execution.requiredInputs,
-  })
   const workflowPath = performanceWorkflowTarget(artifact)
   if (!workflowPath) return response.status(422).json({ error: 'Performance definition is not a scanner-verified workflow_dispatch workflow', code: 'PERFORMANCE_WORKFLOW_NOT_DISPATCHABLE' })
+  const dispatchInputs = validateWorkflowDispatchInputs(artifact, body.data.inputs)
+  if (!dispatchInputs.success) return response.status(422).json({
+    error: 'Workflow dispatch inputs must exactly match the required analyzed inputs',
+    code: 'PERFORMANCE_WORKFLOW_INPUTS_INVALID',
+    missingInputs: dispatchInputs.missing,
+    unexpectedInputs: dispatchInputs.unexpected,
+  })
   const sourceRevision = performanceDispatchRevision(repository)
   if (!sourceRevision) return response.status(409).json({ error: 'An exact analyzed source revision is required before dispatch', code: 'ANALYSIS_SOURCE_REVISION_REQUIRED' })
   if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
   try {
-    const receipt = await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath })
+    const receipt = await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath, inputs: dispatchInputs.inputs })
     response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision })
   } catch (error) {
     response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'PERFORMANCE_DISPATCH_FAILED' })

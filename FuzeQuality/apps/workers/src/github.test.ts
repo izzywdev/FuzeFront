@@ -121,6 +121,26 @@ describe('controlled performance workflow dispatch', () => {
     await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision: 'a'.repeat(40), sourceRef: 'feature/load-tests', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('branch has advanced')
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
+
+  it('forwards only bounded reviewed workflow inputs', async () => {
+    const sourceRevision = 'a'.repeat(40)
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: sourceRevision } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await dispatchPerformanceWorkflow({
+      owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234',
+      workflowPath: '.github/workflows/load-test.yml', inputs: { environment: 'staging', duration: '5m' },
+      tokenProvider: async () => 'secret', fetcher,
+    })
+    expect(fetcher).toHaveBeenNthCalledWith(2, expect.any(String), expect.objectContaining({
+      body: JSON.stringify({ ref: 'main', inputs: { environment: 'staging', duration: '5m' } }),
+    }))
+    await expect(dispatchPerformanceWorkflow({
+      owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234',
+      workflowPath: '.github/workflows/load-test.yml', inputs: { environment: '' },
+      tokenProvider: async () => 'secret', fetcher,
+    })).rejects.toThrow('bounded non-empty')
+  })
 })
 
 describe('GitHub workflow artifact evidence', () => {
