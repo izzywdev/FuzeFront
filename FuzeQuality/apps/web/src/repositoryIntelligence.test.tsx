@@ -1852,6 +1852,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText(documentationArtifact.title)).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Existing test plans' })).toBeVisible()
     expect(screen.getByText(testPlanArtifact.title)).toBeVisible()
+    expect(api.qualityArtifacts).toHaveBeenCalledWith(repository.id, repository.lastScanRevision)
   })
 
   it('loads only the first repository evidence page until explicit continuation', async () => {
@@ -1873,7 +1874,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.queryByText('Continuation evidence', { exact: true })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Load more repository evidence' }))
     expect(await screen.findByText('Continuation evidence', { exact: true })).toBeVisible()
-    expect(api.qualityArtifacts).toHaveBeenLastCalledWith(repository.id, undefined, 'artifact-page-2')
+    expect(api.qualityArtifacts).toHaveBeenLastCalledWith(repository.id, repository.lastScanRevision, 'artifact-page-2')
   })
 
   it('retains successful artifact continuation when another repository fails', async () => {

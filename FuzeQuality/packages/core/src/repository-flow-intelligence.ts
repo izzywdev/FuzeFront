@@ -109,7 +109,7 @@ function promptArtifacts(artifacts: QualityArtifact[]) {
       title: consume(item.title),
       sourcePath: consume(item.sourcePath),
       summary: consume(item.summary),
-      evidence: item.evidence.slice(0, 8).map(consume).filter(Boolean),
+      evidence: item.evidence.slice(0, 8).map(value => consume(value)).filter(Boolean),
     }
     if (bounded.title || bounded.sourcePath || bounded.summary || bounded.evidence.length > 0) {
       prompt.push(bounded)

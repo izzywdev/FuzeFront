@@ -3999,7 +3999,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     void Promise.all(
       data.repositories.map(async repository => {
         const [repositoryArtifactsResult, evaluationResult] = await Promise.allSettled([
-          api.qualityArtifacts(repository.id),
+          api.qualityArtifacts(repository.id, repository.lastScanRevision),
           invalidPolicyGateConfidenceRange ||
           (policyGateRevisionScope === 'current' && !repository.lastScanRevision)
             ? []
@@ -4123,10 +4123,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setLoadingMoreArtifacts(true)
     setArtifactPaginationError(undefined)
     try {
-      const results = await Promise.allSettled(cursors.map(async ([repositoryId, cursor]) => ({
-        repositoryId,
-        page: normalizeHistoryPage(await api.qualityArtifacts(repositoryId, undefined, cursor)),
-      })))
+      const results = await Promise.allSettled(cursors.map(async ([repositoryId, cursor]) => {
+        const revision = data.repositories.find(repository => repository.id === repositoryId)?.lastScanRevision
+        return {
+          repositoryId,
+          page: normalizeHistoryPage(await api.qualityArtifacts(repositoryId, revision, cursor)),
+        }
+      }))
       if (artifactQueryRef.current !== query) return
       const groups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
       setArtifacts(current => [...new Map(

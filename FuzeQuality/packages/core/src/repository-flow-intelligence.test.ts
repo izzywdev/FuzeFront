@@ -198,6 +198,25 @@ describe('repository flow wireframes', () => {
     expect(new Set(requestKinds)).toEqual(new Set(['route', 'story', 'test-plan', 'integration-test', 'post-production-test', 'documentation']))
   })
 
+  it('preserves repository evidence passages in the FuzeInfra LiteLLM prompt', async () => {
+    const inventory = [{
+      ...artifacts[0],
+      evidence: ['checkout form submits an order', 'confirmation screen shows the order number'],
+    }]
+    let promptEvidence: string[] = []
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      const prompt = JSON.parse(body.messages[1].content)
+      promptEvidence = prompt.artifacts[0].evidence
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"flows":[]}' } }] }))
+    }) as typeof fetch
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl)
+
+    await analyzer.analyze(repository, 'abc', inventory)
+
+    expect(promptEvidence).toEqual(inventory[0].evidence)
+  })
+
   it('selects the same bounded prompt artifacts regardless of store ordering', async () => {
     const kinds = ['route', 'story', 'documentation', 'test-plan'] as const
     const inventory = Array.from({ length: 120 }, (_, index) => ({
