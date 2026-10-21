@@ -1,4 +1,4 @@
-import type { QualityArtifact, Repository, TestExecution } from '@fuzequality/contracts'
+import { normalizeWorkflowPath, type QualityArtifact, type Repository, type TestExecution } from '@fuzequality/contracts'
 import { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
 
 export { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
@@ -166,7 +166,10 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (!executionMatchesPolicyGate(execution, filter.policyArtifactId, filter.gateArtifactId)) return false
     if (filter.branch && execution.branch !== filter.branch) return false
     if (filter.revision && execution.revision !== filter.revision) return false
-    if (filter.workflowPath && execution.workflowPath !== filter.workflowPath) return false
+    if (
+      filter.workflowPath &&
+      normalizeWorkflowPath(execution.workflowPath) !== normalizeWorkflowPath(filter.workflowPath)
+    ) return false
     if (filter.attemptScope === 'initial' && execution.attempt !== 1) return false
     if (filter.attemptScope === 'retry' && execution.attempt <= 1) return false
     if (filter.attemptScope === 'recovered' && !isRecoveredExecution(execution, history)) return false

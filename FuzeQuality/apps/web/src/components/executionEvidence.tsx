@@ -11,9 +11,12 @@ const THRESHOLD_OPERATOR_LABELS = {
   eq: '=',
 } as const
 
+export function canonicalWorkflowPath(path: string) {
+  return path.match(/^(.+\.ya?ml)@.+$/i)?.[1] ?? path
+}
+
 function sameWorkflowPath(left?: string, right?: string) {
-  const canonical = (path: string) => path.match(/^(.+\.ya?ml)@.+$/i)?.[1] ?? path
-  return Boolean(left && right && canonical(left) === canonical(right))
+  return Boolean(left && right && canonicalWorkflowPath(left) === canonicalWorkflowPath(right))
 }
 
 /** Defensive boundary for legacy rows written before the HTTPS ingestion contract. */

@@ -1,5 +1,9 @@
 import { z } from 'zod'
+import { normalizeWorkflowPath } from '@fuzequality/contracts'
 import { historyPageQueryFields } from './history-pagination'
+
+const workflowPathFilterSchema = z.string().trim().min(1).max(1000)
+  .transform(path => normalizeWorkflowPath(path)!)
 
 /**
  * Query contract shared by execution evidence and policy–gate performance.
@@ -25,7 +29,7 @@ export const executionFilterSchema = z.object({
   gateArtifactId: z.string().trim().min(1).max(500).optional(),
   branch: z.string().trim().min(1).max(500).optional(),
   revision: z.string().trim().min(1).max(200).optional(),
-  workflowPath: z.string().trim().min(1).max(1000).optional(),
+  workflowPath: workflowPathFilterSchema.optional(),
   attemptScope: z.enum(['initial', 'retry', 'recovered']).optional(),
   minimumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
   maximumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
@@ -60,7 +64,7 @@ export const executionPageFilterSchema = z.object({
   gateArtifactId: z.string().trim().min(1).max(500).optional(),
   branch: z.string().trim().min(1).max(500).optional(),
   revision: z.string().trim().min(1).max(200).optional(),
-  workflowPath: z.string().trim().min(1).max(1000).optional(),
+  workflowPath: workflowPathFilterSchema.optional(),
   attemptScope: z.enum(['initial', 'retry', 'recovered']).optional(),
   minimumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
   maximumDurationMs: z.coerce.number().int().min(0).max(2_147_483_647).optional(),

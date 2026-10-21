@@ -75,6 +75,7 @@ import {
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
   ExecutionSourceLink,
+  canonicalWorkflowPath,
   durationMsLabel,
   latestIntegrationExecution,
   latestPerformanceExecution,
@@ -3951,7 +3952,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         attemptScope: executionAttemptScope,
         branch: executionBranch.trim(),
         revision: executionRevision.trim(),
-        workflowPath: executionWorkflowPath.trim(),
+        workflowPath: canonicalWorkflowPath(executionWorkflowPath.trim()),
         minimumDurationMs: executionMinimumDurationSeconds
           ? String(Math.round(Number(executionMinimumDurationSeconds) * 1000))
           : '',
@@ -5922,6 +5923,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 maxLength={1000}
                 placeholder=".github/workflows/load.yml"
                 onChange={event => setExecutionWorkflowPath(event.target.value)}
+                onBlur={() => setExecutionWorkflowPath(
+                  canonicalWorkflowPath(executionWorkflowPath.trim())
+                )}
               />
             </label>
             <label>

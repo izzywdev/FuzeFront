@@ -2874,6 +2874,26 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('canonicalizes a provider-qualified workflow file across evidence views', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    const workflow = screen.getByLabelText('Workflow file')
+    fireEvent.change(workflow, {
+      target: { value: '.github/workflows/load.yml@refs/heads/main' },
+    })
+    fireEvent.blur(workflow)
+
+    expect(workflow).toHaveValue('.github/workflows/load.yml')
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, { workflowPath: '.github/workflows/load.yml' })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, { workflowPath: '.github/workflows/load.yml' })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, { workflowPath: '.github/workflows/load.yml' })
+    })
+  })
+
   it('submits governance rationale through inline Design System controls', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([

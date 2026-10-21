@@ -144,6 +144,14 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.safeParse({ workflowPath: 'a'.repeat(1001) }).success).toBe(false)
   })
 
+  it('canonicalizes provider-qualified workflow paths across evidence queries', () => {
+    const qualified = '.github/workflows/load.yml@refs/heads/main'
+    expect(executionFilterSchema.parse({ workflowPath: qualified }).workflowPath)
+      .toBe('.github/workflows/load.yml')
+    expect(executionPageFilterSchema.parse({ workflowPath: qualified }).workflowPath)
+      .toBe('.github/workflows/load.yml')
+  })
+
   it('rejects an inverted time range instead of returning misleading empty evidence', () => {
     const result = executionFilterSchema.safeParse({
       from: '2026-10-08T00:00:00.000Z',

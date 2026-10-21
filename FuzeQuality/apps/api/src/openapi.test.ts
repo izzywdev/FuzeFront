@@ -114,6 +114,9 @@ describe('contract discovery', () => {
       expect(schemas.TestExecution.properties.branch.maxLength).toBe(500)
       expect(schemas.TestExecution.properties.workflowPath.type).toBe('string')
       expect(schemas.TestExecution.properties.workflowPath.description).toContain('without a provider `@ref` suffix')
+      expect(document.components.parameters.ExecutionWorkflowPath.description).toContain(
+        'removed before matching history, trends, and policy-gate performance'
+      )
       expect(schemas.TestExecutionInput.description).toContain('completion cannot precede start')
       expect(schemas.TestExecutionInput.properties.completedAt.description).toContain(
         'forbidden while status is running'

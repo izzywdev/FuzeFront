@@ -157,6 +157,10 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { branch: 'feature/load' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { revision: 'b' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { workflowPath: '.github/workflows/load.yml' })).toEqual([])
+  expect(filterTestExecutions([{
+    ...executions[1],
+    workflowPath: '.github/workflows/load.yml@refs/heads/main',
+  }], { workflowPath: '.github/workflows/load.yml' })).toHaveLength(1)
   expect(filterTestExecutions(executions, { attemptScope: 'initial' })).toEqual([executions[0]])
   expect(filterTestExecutions(executions, { attemptScope: 'retry' })).toEqual([executions[1], executions[2]])
   expect(filterTestExecutions(executions, { attemptScope: 'recovered' })).toEqual([executions[2]])

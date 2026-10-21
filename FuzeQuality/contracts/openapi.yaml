@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.67.0
+  version: 0.68.0
   license:
     name: UNLICENSED
 servers:
@@ -1438,7 +1438,7 @@ components:
     ExecutionWorkflowPath:
       name: workflowPath
       in: query
-      description: Exact repository-relative workflow path recorded with the execution evidence.
+      description: Exact repository-relative workflow path recorded with the execution evidence. A provider-qualified GitHub `@ref` suffix is accepted and removed before matching history, trends, and policy-gate performance.
       schema: { type: string, minLength: 1, maxLength: 1000 }
     ExecutionAttemptScope:
       name: attemptScope
