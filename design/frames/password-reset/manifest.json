@@ -41,9 +41,9 @@
         "id": "change-password",
         "orchestrator": "ChangePasswordFlow",
         "route": "/account/security/password",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:49:48.085Z"
       },
       {
         "id": "set-password",
