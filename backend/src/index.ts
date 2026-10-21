@@ -62,6 +62,7 @@ import { setupMetrics } from './metrics'
 import { provisionM2MClients } from './authentik/provision-m2m-clients'
 import { startBillingProjection, stopBillingProjection } from './services/billingProjection'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
+import type { EntityType } from '@izzywdev/fuzefront-identity'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 import { startChatResponseConsumer, stopChatResponseConsumer } from './kafka/chat-response.consumer'
@@ -521,7 +522,20 @@ app.get('/api/health', async (_req, res) => {
 // receive them.
 app.get(['/ready', '/api/ready'], async (_req, res) => {
   const payload = await buildHealthPayload()
-  res.status(payload.status === 'ok' ? 200 : 503).json(payload)
+  // Readiness gates on the DATABASE ONLY — the single dependency a request path
+  // genuinely cannot serve without. Permit is deliberately NOT a readiness gate.
+  // The Permit schema sync runs in the background after the port binds (see
+  // startServer's runPostListenBootstrap), so `permit.outcome` is 'never_run'
+  // for the first moments of a pod's life and may stay non-'ok' while Permit is
+  // slow or degraded. Gating readiness on it turns a Permit blip — or merely the
+  // startup window before the background sync finishes — into a full backend
+  // outage: no pod ever becomes Ready, the Service has no endpoints, and the
+  // ingress returns 503 for every /api/* request, even though the DB-backed API
+  // is fully serveable and authorization already fails closed. `permit` stays in
+  // the payload below for observability (and /health still surfaces the real
+  // 'degraded' verdict); it just no longer removes the pod from rotation.
+  const ready = payload.database.status === 'connected'
+  res.status(ready ? 200 : 503).json(payload)
 })
 
 // Error handling middleware
@@ -685,11 +699,22 @@ async function findAvailablePort(
 // Start server with port conflict handling
 async function startServer() {
   try {
-    // Step 5 (FFRNT-185): dual-accept windows closed.
-    // All entity types now use mintId() for creation and store bare UUIDs;
-    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
-    // need to be accepted at the request boundary.
-    configureIdentity({ legacyUuidTypes: new Set() })
+    // Dual-accept window for the platform spine types (FFRNT-185 / §8).
+    // The input boundary must track the OUTPUT wire form, governed by the
+    // `fuzefront.identity.prefixed-ids` release flag. That flag defaults OFF
+    // and is NOT force-enabled in prod, so API responses still emit BARE UUIDs.
+    // Closing this window to prefixed-only while output is bare rejects every
+    // id the frontend round-trips. parseId still accepts prefixed ids too, so
+    // listing these is purely additive; EMPTY this set only once prefixed-id
+    // OUTPUT is confirmed GA (governance/identifier-standard.md §8).
+    configureIdentity({
+      legacyUuidTypes: new Set<EntityType>([
+        'organization',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
 
     // Initialize database first
     console.log('🔄 Starting FuzeFront Backend Server...')
@@ -717,95 +742,109 @@ async function startServer() {
     // fall back to their in-code fail-safe defaults.
     await initFeatureFlags('fuzefront-host')
 
-    // FF-EPIC-09-S1 — idempotently ensure the seeded root portal exists. Runs
-    // regardless of the multi-tenant-portals flag (it only creates dormant
-    // rows nothing reads while the flag is off). Non-fatal: on a completely
-    // fresh install (no users yet) this self-heals on a later boot; any other
-    // failure (e.g. the AC4 orphaned-root-portal case) is logged, not fatal —
-    // it must never block the whole platform from starting.
-    try {
-      const root = await ensureRootPortal()
-      console.log(
-        root
-          ? `✅ Root portal ensured (${root.id})`
-          : 'ℹ️  Root portal not seeded yet (no users exist)'
-      )
-    } catch (error) {
-      console.error('⚠️  ensureRootPortal failed (non-fatal):', error)
-    }
-
-    // Push the environment-level Permit policy (resources/actions/roles from
-    // permit/schema.ts, incl. the ReBAC Organization.parent relation and the
-    // derived `org-admin` role). This was previously reachable ONLY via
-    // `npm run permit:schema` and the test suite, so a schema change reached
-    // Permit only when somebody remembered to run it — and the derived role the
-    // org hierarchy depends on could silently not exist in the environment.
-    // Non-fatal: Permit being unreachable must not stop the platform booting;
-    // authorization already fails closed.
-    try {
-      const status = await syncPermitSchemaFromRegistry(
-        permitClient as any,
-        loadLegacyProductPolicies()
-      )
-      console.log(
-        `✅ Permit schema synced (${status.resources} resources, ${status.roles} roles, ` +
-          `${status.registeredProducts.length} registered product(s))`
-      )
-      // Fail-soft is right here — the platform must boot even if Permit or the
-      // registry is down — but the outcome is now recorded and served on /health,
-      // so "the sync quietly dropped every product policy" is an observable state
-      // and not just a line that scrolled past in a pod log.
-      if (status.outcome !== 'ok') {
-        console.error(
-          `⚠️  Permit schema sync degraded (${status.outcome}) — registered product ` +
-            `policies were NOT applied; affected products have no roles in Permit. ` +
-            `See GET /health → permit.`
+    // Best-effort bootstrap that depends on external services (Permit.io,
+    // Kafka). Deliberately NOT awaited before the port binds — see the listen
+    // block below. Each step is individually non-fatal; a slow or degraded
+    // dependency here must never delay the server from listening.
+    const runPostListenBootstrap = async (): Promise<void> => {
+      // FF-EPIC-09-S1 — idempotently ensure the seeded root portal exists. Runs
+      // regardless of the multi-tenant-portals flag (it only creates dormant
+      // rows nothing reads while the flag is off). Non-fatal: on a completely
+      // fresh install (no users yet) this self-heals on a later boot; any other
+      // failure (e.g. the AC4 orphaned-root-portal case) is logged, not fatal —
+      // it must never block the whole platform from starting.
+      try {
+        const root = await ensureRootPortal()
+        console.log(
+          root
+            ? `✅ Root portal ensured (${root.id})`
+            : 'ℹ️  Root portal not seeded yet (no users exist)'
         )
+      } catch (error) {
+        console.error('⚠️  ensureRootPortal failed (non-fatal):', error)
       }
-    } catch (error) {
-      console.error('⚠️  Permit schema sync failed (non-fatal):', error)
-    }
 
-    // Grant the ReBAC `org-admin` role on the ROOT organization to platform
-    // administrators. Without a grant at the root there is nothing for the
-    // schema's parent→child derivation to derive FROM, so wiring the hierarchy
-    // alone would still leave staff unable to administer tenants.
-    // Non-fatal for the same reason as above.
-    try {
-      const granted = await ensureRootOrgAdmins()
-      console.log(
-        granted.length > 0
-          ? `✅ Root org-admin ensured for ${granted.length} administrator(s)`
-          : 'ℹ️  No platform administrators to grant root org-admin to yet'
-      )
-    } catch (error) {
-      console.error('⚠️  ensureRootOrgAdmins failed (non-fatal):', error)
-    }
-
-    // Configured human root admins (PLATFORM_ROOT_ADMIN_EMAILS) usually have no
-    // `users` row at boot — it appears on their first login. Re-check on an
-    // interval so that login takes effect without a restart. Permit treats a
-    // repeat assignment as a benign conflict.
-    if (parseRootAdminEmails().length > 0) {
-      setInterval(() => {
-        ensureConfiguredRootAdmins().catch(error =>
-          console.error('⚠️  ensureConfiguredRootAdmins failed (non-fatal):', error)
+      // Push the environment-level Permit policy (resources/actions/roles from
+      // permit/schema.ts, incl. the ReBAC Organization.parent relation and the
+      // derived `org-admin` role). This was previously reachable ONLY via
+      // `npm run permit:schema` and the test suite, so a schema change reached
+      // Permit only when somebody remembered to run it — and the derived role the
+      // org hierarchy depends on could silently not exist in the environment.
+      // Non-fatal: Permit being unreachable must not stop the platform booting;
+      // authorization already fails closed.
+      try {
+        const status = await syncPermitSchemaFromRegistry(
+          permitClient as any,
+          loadLegacyProductPolicies()
         )
-      }, 5 * 60 * 1000).unref()
+        console.log(
+          `✅ Permit schema synced (${status.resources} resources, ${status.roles} roles, ` +
+            `${status.registeredProducts.length} registered product(s))`
+        )
+        // Fail-soft is right here — the platform must boot even if Permit or the
+        // registry is down — but the outcome is now recorded and served on /health,
+        // so "the sync quietly dropped every product policy" is an observable state
+        // and not just a line that scrolled past in a pod log.
+        if (status.outcome !== 'ok') {
+          console.error(
+            `⚠️  Permit schema sync degraded (${status.outcome}) — registered product ` +
+              `policies were NOT applied; affected products have no roles in Permit. ` +
+              `See GET /health → permit.`
+          )
+        }
+      } catch (error) {
+        console.error('⚠️  Permit schema sync failed (non-fatal):', error)
+      }
+
+      // Grant the ReBAC `org-admin` role on the ROOT organization to platform
+      // administrators. Without a grant at the root there is nothing for the
+      // schema's parent→child derivation to derive FROM, so wiring the hierarchy
+      // alone would still leave staff unable to administer tenants.
+      // Non-fatal for the same reason as above.
+      try {
+        const granted = await ensureRootOrgAdmins()
+        console.log(
+          granted.length > 0
+            ? `✅ Root org-admin ensured for ${granted.length} administrator(s)`
+            : 'ℹ️  No platform administrators to grant root org-admin to yet'
+        )
+      } catch (error) {
+        console.error('⚠️  ensureRootOrgAdmins failed (non-fatal):', error)
+      }
+
+      // Configured human root admins (PLATFORM_ROOT_ADMIN_EMAILS) usually have no
+      // `users` row at boot — it appears on their first login. Re-check on an
+      // interval so that login takes effect without a restart. Permit treats a
+      // repeat assignment as a benign conflict.
+      if (parseRootAdminEmails().length > 0) {
+        setInterval(() => {
+          ensureConfiguredRootAdmins().catch(error =>
+            console.error('⚠️  ensureConfiguredRootAdmins failed (non-fatal):', error)
+          )
+        }, 5 * 60 * 1000).unref()
+      }
+
+      // Start consuming billing.subscription.changed to project plan-tier/status
+      // onto users/organizations. Non-fatal + no-op when KAFKA_BROKERS is unset.
+      try {
+        await startBillingProjection()
+      } catch (error) {
+        console.error('⚠️  startBillingProjection failed (non-fatal):', error)
+      }
+
+      // Keeps ref_index current from identity.*.created/deleted + portal.created.
+      // Non-fatal + no-op when KAFKA_BROKERS is unset.
+      try {
+        const refIndexStore = new KnexRefIndexRepository(db)
+        await startRefIndexProjection(refIndexStore)
+      } catch (error) {
+        console.error('⚠️  startRefIndexProjection failed (non-fatal):', error)
+      }
+
+      await startChatResponseConsumer(io).catch(error => {
+        console.error('⚠️  Chat response WebSocket bridge failed to start (non-fatal):', error)
+      })
     }
-
-    // Start consuming billing.subscription.changed to project plan-tier/status
-    // onto users/organizations. Non-fatal + no-op when KAFKA_BROKERS is unset.
-    await startBillingProjection()
-
-    // Keeps ref_index current from identity.*.created/deleted + portal.created.
-    // Non-fatal + no-op when KAFKA_BROKERS is unset.
-    const refIndexStore = new KnexRefIndexRepository(db)
-    await startRefIndexProjection(refIndexStore)
-
-    await startChatResponseConsumer(io).catch(error => {
-      console.error('⚠️  Chat response WebSocket bridge failed to start (non-fatal):', error)
-    })
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)
@@ -816,6 +855,14 @@ async function startServer() {
       )
     }
 
+    // Bind the HTTP port BEFORE the best-effort bootstrap above. Those steps
+    // call Permit.io / Kafka, which can be slow or degraded — and when they
+    // were awaited ahead of listen(), a slow Permit role-sync delayed the port
+    // bind past the k8s startup/liveness probe deadline, so the kubelet killed
+    // the pod (SIGTERM → ERR_SERVER_NOT_RUNNING) before it ever bound →
+    // CrashLoopBackOff, while the boot-time root org-admin grant never landed.
+    // The port bind depends only on the DB being initialized (done above);
+    // everything else runs once the server is listening.
     httpServer.listen(availablePort, () => {
       console.log(
         `🚀 FuzeFront backend server running on port ${availablePort}`
@@ -829,7 +876,7 @@ async function startServer() {
       )
       console.log(`💓 Health Check: http://localhost:${availablePort}/health`)
       console.log(`🗄️  Database: PostgreSQL (shared-postgres)`)
-      
+
       // Log authentication methods available
       const authMethods = ['Local Database']
       if (oidcService.isConfigured()) {
@@ -839,6 +886,10 @@ async function startServer() {
 
       // Update PORT variable for other parts of the app
       process.env.PORT = availablePort.toString()
+
+      // Now that the port is bound and probes can pass, run the external-service
+      // bootstrap. Fire-and-forget: it must never block or fail the listener.
+      void runPostListenBootstrap()
     })
 
     httpServer.on('error', (err: any) => {

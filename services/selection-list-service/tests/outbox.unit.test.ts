@@ -14,6 +14,7 @@ import {
   PRODUCED_TOPICS,
   WireIdError,
   enqueueEvent,
+  enqueueEvents,
   mintEventId,
   wireOrgId,
   wireUserId,
@@ -119,8 +120,11 @@ describe('enqueueEvent', () => {
       expect(trx.inserts).toHaveLength(1);
       expect(out.payload.organizationId).toBe(organizationId);
     }
-    // 13 change topics + seed.completed + seed.failed; seed.requested is consumed, never produced.
-    expect(PRODUCED_TOPICS.size).toBe(15);
+    // 13 change topics + list.forked + visibility.changed (shared 1.3.0) + seed.completed + seed.failed;
+    // seed.requested is consumed, never produced.
+    expect(PRODUCED_TOPICS.size).toBe(17);
+    expect(PRODUCED_TOPICS.has(TOPICS.SELECTION_LISTS_LIST_FORKED)).toBe(true);
+    expect(PRODUCED_TOPICS.has(TOPICS.SELECTION_LISTS_VISIBILITY_CHANGED)).toBe(true);
     expect(PRODUCED_TOPICS.has(TOPICS.SELECTION_LISTS_SEED_REQUESTED)).toBe(false);
   });
 
@@ -209,5 +213,51 @@ describe('enqueueEvent', () => {
     const { eventId: _e, organizationId, ...rest } = fixtures[TOPICS.SELECTION_LISTS_LIST_DELETED];
     const out = await enqueueEvent(trx, { topic: TOPICS.SELECTION_LISTS_LIST_DELETED, organizationId, payload: rest });
     expect(out.correlationId).toBe(out.eventId);
+  });
+});
+
+describe('enqueueEvents (batch writer, used by fork)', () => {
+  const created = () => {
+    const { listId, listKey, listRevision, actor, list } = fixtures[TOPICS.SELECTION_LISTS_LIST_CREATED];
+    return { topic: TOPICS.SELECTION_LISTS_LIST_CREATED, organizationId: ORG, payload: { actor, listId, listKey, listRevision, list } };
+  };
+
+  it('takes the org lock once, then writes the rows in order in multi-row inserts of at most 200', async () => {
+    const inserted: Array<Array<Record<string, any>>> = [];
+    const order: string[] = [];
+    const trx: any = () => ({
+      insert: async (rows: Array<Record<string, any>>) => {
+        order.push('insert');
+        inserted.push(rows);
+      },
+    });
+    trx.raw = jest.fn((sql: string, b?: unknown[]) => {
+      if (sql.startsWith('SELECT pg_advisory_xact_lock')) order.push('lock');
+      return { sql, bindings: b };
+    });
+    const out = await enqueueEvents(trx, Array.from({ length: 450 }, created));
+    expect(out).toHaveLength(450);
+    expect(new Set(out.map((e) => e.eventId)).size).toBe(450);
+    expect(order).toEqual(['lock', 'insert', 'insert', 'insert']);
+    expect(inserted.map((r) => r.length)).toEqual([200, 200, 50]);
+    expect(inserted.flat().map((r) => r.id)).toEqual(out.map((e) => e.eventId)); // insertion order == event order
+  });
+
+  it('validates EVERY payload before inserting anything: one bad event aborts the batch with nothing written', async () => {
+    const trx = fakeTrx();
+    const bad = { ...created(), payload: { ...created().payload, listRevision: 0 } };
+    await expect(enqueueEvents(trx, [created(), created(), bad])).rejects.toBeInstanceOf(OutboxPayloadInvalidError);
+    expect(trx.inserts).toHaveLength(0);
+  });
+
+  it('refuses a topic this service does not produce', async () => {
+    const trx = fakeTrx();
+    await expect(enqueueEvents(trx, [{ ...created(), topic: TOPICS.SELECTION_LISTS_SEED_REQUESTED }])).rejects.toBeInstanceOf(OutboxTopicError);
+  });
+
+  it('an empty batch writes nothing', async () => {
+    const trx = fakeTrx();
+    expect(await enqueueEvents(trx, [])).toEqual([]);
+    expect(trx.inserts).toHaveLength(0);
   });
 });

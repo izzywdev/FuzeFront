@@ -474,14 +474,21 @@ describe('FF-EPIC-12-S5 — fuzefront.apps.portal-catalog flag (both states)', (
     expect(ctx).toEqual({ mode: 'denied', portalId: null })
   })
 
-  it('flag ON + a legacy token with no portalId claim — mode "denied"', async () => {
+  it('flag ON + a validly-signed token with no portalId claim — mode "root" (unbound session = platform root, NOT denied)', async () => {
+    // The live issuer does not mint a portalId claim, so a no-claim token is a
+    // normal authenticated session, not tampering. It must resolve to the root
+    // portal (full pre-epic visibility), never fail closed to an empty catalog.
+    // Only a non-verifiable token ('invalid', tested above) stays denied.
     if (!reachable) return
     const { setFlagClient, FLAGS } = await import('../src/app-registry/flags')
     setFlagClient({ getBooleanValue: async (key: string) => key === FLAGS.PORTAL_CATALOG })
-    const { resolvePortalCatalogContext } = await import('../src/app-registry/portalContext')
+    const { resolvePortalCatalogContext, _clearRootPortalCacheForTests } = await import(
+      '../src/app-registry/portalContext'
+    )
+    _clearRootPortalCacheForTests()
     const req = { headers: { authorization: `Bearer ${signToken()}` } }
     const ctx = await resolvePortalCatalogContext(req as any)
-    expect(ctx).toEqual({ mode: 'denied', portalId: null })
+    expect(ctx).toEqual({ mode: 'root', portalId: ROOT_PORTAL_ID })
   })
 
   it('S5 AC4 — an unreachable flag store degrades to OFF (fail-safe release default)', async () => {
