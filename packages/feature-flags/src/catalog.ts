@@ -105,6 +105,26 @@ export const FLAG_KEYS = {
    */
   SELECTION_LISTS_SEED_DEFAULTS: 'fuzefront.selection-lists.seed-defaults',
   /**
+   * SL9 — shared/common selection lists + copy-on-write forks (selection-lists
+   * 4.1.0; docs/planning/selection-lists-shared-and-fork.md section 7). Gates
+   * list `visibility`/shared read, `include_shared`, the fork operation,
+   * `fork_required`, resolve of common lists + the fork redirect, the
+   * `list.forked`/`visibility.changed` events and seed-list `visibility`.
+   * Default OFF. Release flag. Owner: izzywdev.
+   * Removal criterion: ON for all orgs for 30 days with no fork / shared-read
+   * incident (then delete the flag, this key, the WEB_EXPOSED_FLAGS entry and
+   * every off-path branch in selection-list-service).
+   * Web-exposed (WEB_EXPOSED_FLAGS): the selection-lists UI gates the common
+   * badge / fork flow on it. NOTE: GET /api/flags evaluates browser flags
+   * with no `orgId`, so an org-only Unleash constraint would not match in the
+   * browser (service ON, UI OFF); a user constraint splits the other way (the
+   * browser sends the DB UUID, the service a usr_ TypeID). Enable globally
+   * until that endpoint carries an active-org context and the ids are aligned. Real authorization stays in Permit — this flag is
+   * never a boundary. Independent of, and additionally requires,
+   * SELECTION_LISTS_SERVICE.
+   */
+  SELECTION_LISTS_SHARED_LISTS: 'fuzefront.selection-lists.shared-lists',
+  /**
    * Portals Directory (backend S1 #640 / frontend S3 #642).
    * Gates the /portals page + SidePanel "Portals" nav entry (UI-side) and
    * the identityMode/launchUrl fields on GET /api/v1/admin/portals
@@ -292,6 +312,30 @@ export const FLAG_KEYS = {
    */
   BILLING_MODULE_FEDERATION: 'fuzefront.billing.module-federation',
   /**
+   * Configuration Management Console UI (EPIC-19-S3/S4). Gates the top-level
+   * "Configuration" left-nav item (SidePanel) AND the `/config` settings-editor
+   * route. Default OFF. Release flag. Owner: feature-flags-engineer.
+   * Web-exposed (WEB_EXPOSED_FLAGS) — required for the browser to see it;
+   * without it `useFlag()` reads the hardcoded default (false) and the feature
+   * stays dark regardless of Unleash. Independent of the server-only
+   * `fuzefront.platform.config-management` (consumers reading FROM config-service).
+   * Removal criterion: console GA for all orgs at 100% rollout for 30 days.
+   */
+  CONFIG_MANAGEMENT_CONSOLE: 'fuzefront.config.management-console',
+  /**
+   * Config key catalog admin surface (EPIC-19-S4). Gates the
+   * `/admin/config/catalog` + `/admin/config/catalog/:key` routes and the
+   * catalog entry on AdminPage. Default OFF. Release flag. Web-exposed.
+   * Owner: feature-flags-engineer.
+   */
+  CONFIG_KEY_CATALOG: 'fuzefront.config.key-catalog',
+  /**
+   * Config secret + audit-history surface (EPIC-19-S4). Gates the
+   * `/admin/config/keys/:key/history` route. Default OFF. Release flag.
+   * Web-exposed. Owner: feature-flags-engineer.
+   */
+  CONFIG_SECRETS_AUDIT: 'fuzefront.config.secrets-audit',
+  /**
    * fuzefront.billing.plan-flag-sync-enabled
    * Type: release. Default: FALSE (dark deploy).
    * SERVER-ONLY: gates whether billing-service's UnleashFlagSyncService calls
@@ -345,6 +389,7 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
     type: 'release',
     default: false,
   },
+  { key: FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS, type: 'release', default: false },
   { key: FLAG_KEYS.PORTALS_DIRECTORY, type: 'release', default: false },
   // FF-EPIC-17 identity UI flags — read in the browser via `useFlag()`. Without
   // these entries the backend `GET /api/flags` never discloses them, so flipping
@@ -392,4 +437,14 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   { key: FLAG_KEYS.BILLING_API_ACCESS, type: 'permission', default: false },
   { key: FLAG_KEYS.BILLING_CUSTOM_DOMAIN, type: 'permission', default: false },
   { key: FLAG_KEYS.BILLING_MODULE_FEDERATION, type: 'permission', default: false },
+
+  // EPIC-19 Configuration Management Console UI flags — read in the browser via
+  // `useFlag()` in SidePanel (nav item) and App.tsx route guards. Without these
+  // entries GET /api/flags never discloses them, so flipping them ON in Unleash
+  // would leave the nav item and /config + /admin/config/* routes dark. Default
+  // OFF (release flags). Distinct from the server-only
+  // `fuzefront.platform.config-management` (consumers reading FROM config-service).
+  { key: FLAG_KEYS.CONFIG_MANAGEMENT_CONSOLE, type: 'release', default: false },
+  { key: FLAG_KEYS.CONFIG_KEY_CATALOG, type: 'release', default: false },
+  { key: FLAG_KEYS.CONFIG_SECRETS_AUDIT, type: 'release', default: false },
 ] as const;
