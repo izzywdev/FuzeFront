@@ -1325,7 +1325,14 @@ describe('RepositoryIntelligence flow inventory', () => {
       },
     }
 
-    render(<FlowReviewControls flow={incomplete} currentRevision={candidate.revision} onReview={onReview} />)
+    render(
+      <FlowReviewControls
+        flow={incomplete}
+        currentRevision={candidate.revision}
+        knownArtifactIds={candidate.evidence}
+        onReview={onReview}
+      />
+    )
 
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
@@ -1362,6 +1369,33 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('Confirmation is blocked')
     expect(screen.getByRole('alert')).toHaveTextContent('exact repository revision')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
+  it('blocks confirmation for unavailable LiteLLM evidence while keeping rejection available', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const invalid = {
+      ...candidate,
+      evidence: ['missing-model-evidence'],
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis',
+        promptVersion: 'v3',
+        schemaVersion: '1.0',
+      },
+    }
+
+    render(
+      <FlowReviewControls
+        flow={invalid}
+        currentRevision={candidate.revision}
+        knownArtifactIds={[]}
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('1 artifact reference is unavailable')
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
   })

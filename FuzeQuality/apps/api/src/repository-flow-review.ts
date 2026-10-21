@@ -69,6 +69,7 @@ export function repositoryFlowArtifactReferenceConflict(
     ...(artifact.logicalId ? [artifact.logicalId] : []),
   ]))
   const targetId = [...new Set([
+    ...(candidate.source === 'litellm' && candidate.analysis ? candidate.evidence : []),
     ...candidate.steps.flatMap(step => step.targetIds),
     ...candidate.wireframe.nodes.flatMap(node => node.targetIds),
   ])].find(id => !artifactIds.has(id))

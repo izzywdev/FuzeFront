@@ -438,7 +438,7 @@ app.post('/api/v1/internal/repository-flow-candidates', async (request, response
     parsed.data.candidates,
     (repositoryId, tenantId, revision) => store.qualityArtifacts(repositoryId, tenantId, revision),
   )
-  if (referenceError) return response.status(400).json({ error: 'Candidate target is unavailable in the repository revision', ...referenceError })
+  if (referenceError) return response.status(400).json({ error: 'Candidate artifact reference is unavailable in the repository revision', ...referenceError })
   await store.saveRepositoryFlowCandidates(parsed.data.candidates)
   response.status(202).json({ accepted: true })
 })

@@ -148,6 +148,24 @@ describe('repository UX-flow review revision guard', () => {
     })
     expect(repositoryFlowArtifactReferenceConflict({
       ...candidate,
+      evidence: ['missing-model-evidence'],
+      analysis: {
+        provider: 'fuzeinfra-litellm',
+        model: 'quality-analysis',
+        promptVersion: 'v3',
+        schemaVersion: '1.0',
+      },
+    }, [artifact], 'confirmed')).toMatchObject({
+      code: 'FLOW_ARTIFACT_REFERENCE_UNAVAILABLE',
+      targetId: 'missing-model-evidence',
+    })
+    expect(repositoryFlowArtifactReferenceConflict({
+      ...candidate,
+      source: 'deterministic',
+      evidence: [artifact.id, 'GET /checkout returns the review screen'],
+    }, [artifact], 'confirmed')).toBeUndefined()
+    expect(repositoryFlowArtifactReferenceConflict({
+      ...candidate,
       steps: candidate.steps.map(step => ({ ...step, targetIds: ['missing-route'] })),
     }, [], 'rejected')).toBeUndefined()
   })

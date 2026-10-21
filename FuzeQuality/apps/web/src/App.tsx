@@ -3044,7 +3044,7 @@ export function FlowReviewControls({
         )}
         {unavailableTargetIds.length > 0 && (
           <p className="form-error" role="alert">
-            Confirmation is blocked because {unavailableTargetIds.length} target {unavailableTargetIds.length === 1 ? 'is' : 'are'} unavailable in this exact repository revision. Reject this proposal or regenerate repository analysis.
+            Confirmation is blocked because {unavailableTargetIds.length} artifact reference {unavailableTargetIds.length === 1 ? 'is' : 'are'} unavailable in this exact repository revision. Reject this proposal or regenerate repository analysis.
           </p>
         )}
         <div className="row-actions">

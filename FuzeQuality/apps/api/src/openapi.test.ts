@@ -230,6 +230,8 @@ describe('contract discovery', () => {
       })
       expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
         .toContain('exact tenant-scoped repository revision')
+      expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
+        .toContain('LiteLLM evidence IDs')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
         .toContain('no retained collection attempt')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
@@ -432,6 +434,9 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
       ).toContain('exact repository revision')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
+      ).toContain('LiteLLM evidence')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.requestBody.content[
           'application/json'

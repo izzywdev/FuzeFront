@@ -85,7 +85,7 @@ describe('repository flow candidate ingestion', () => {
     }).success).toBe(false)
   })
 
-  it('requires every step and wireframe target to resolve in the exact repository revision', async () => {
+  it('requires every LiteLLM evidence, step, and wireframe reference to resolve in the exact repository revision', async () => {
     const artifact: QualityArtifact = {
       id: 'route-1', logicalId: 'route-checkout', repositoryId: candidate.repositoryId,
       kind: 'route', title: 'Checkout', sourcePath: 'apps/web/checkout.tsx', summary: 'Checkout route', evidence: ['/checkout'],
@@ -108,5 +108,22 @@ describe('repository flow candidate ingestion', () => {
       revision: candidate.revision,
       targetId: 'invented-route',
     })
+    await expect(candidateArtifactReferenceError([{
+      ...candidate,
+      evidence: ['missing-model-evidence'],
+      steps: candidate.steps.map(step => ({ ...step, targetIds: [artifact.id] })),
+      wireframe: { ...candidate.wireframe, nodes: candidate.wireframe.nodes.map(node => ({ ...node, targetIds: [artifact.id] })) },
+    }], lookup)).resolves.toEqual({
+      candidateId: candidate.id,
+      repositoryId: candidate.repositoryId,
+      revision: candidate.revision,
+      targetId: 'missing-model-evidence',
+    })
+    await expect(candidateArtifactReferenceError([{
+      ...candidate,
+      source: 'deterministic',
+      analysis: undefined,
+      evidence: [artifact.id, 'GET /checkout returns the review screen'],
+    }], lookup)).resolves.toBeUndefined()
   })
 })

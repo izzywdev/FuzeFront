@@ -12,7 +12,7 @@ export function flowArtifactTargetIds(
   ])
   const known = new Set(knownArtifactIds)
   flow.evidence.forEach(evidence => {
-    if (evidence.startsWith('artifact:') || known.has(evidence)) ids.add(evidence)
+    if ((flow.source === 'litellm' && flow.analysis) || evidence.startsWith('artifact:') || known.has(evidence)) ids.add(evidence)
   })
   return [...ids]
 }
@@ -23,6 +23,7 @@ export function unavailableFlowArtifactTargetIds(
 ) {
   const known = new Set(knownArtifactIds)
   return [...new Set([
+    ...(flow.source === 'litellm' && flow.analysis ? flow.evidence : []),
     ...flow.steps.flatMap(step => step.targetIds),
     ...flow.wireframe.nodes.flatMap(node => node.targetIds),
   ])].filter(targetId => !known.has(targetId))
@@ -122,7 +123,7 @@ export function FlowInspector({
             {unavailableTargetIds.length > 0 && (
               <div className="flow-inspector-state form-error" role="alert">
                 <AlertTriangle size={16} />
-                {unavailableTargetIds.length} wireframe target {unavailableTargetIds.length === 1 ? 'is' : 'are'} unavailable in this exact repository revision. Do not confirm this flow until its evidence is regenerated.
+                {unavailableTargetIds.length} artifact reference {unavailableTargetIds.length === 1 ? 'is' : 'are'} unavailable in this exact repository revision. Do not confirm this flow until its evidence is regenerated.
               </div>
             )}
           </section>

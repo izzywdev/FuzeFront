@@ -128,7 +128,7 @@ export async function candidateOwnershipError(
   return undefined
 }
 
-/** Rejects stale or invented wireframe targets before reviewable evidence is persisted. */
+/** Rejects stale or invented model evidence and wireframe targets before persistence. */
 export async function candidateArtifactReferenceError(
   candidates: RepositoryFlowCandidate[],
   artifactLookup: (repositoryId: string, tenantId: string, revision: string) => Promise<QualityArtifact[]>,
@@ -145,6 +145,7 @@ export async function candidateArtifactReferenceError(
     }
     const knownArtifactIds = artifactsBySnapshot.get(snapshot)!
     const targetIds = new Set([
+      ...(candidate.source === 'litellm' && candidate.analysis ? candidate.evidence : []),
       ...candidate.steps.flatMap(step => step.targetIds),
       ...candidate.wireframe.nodes.flatMap(node => node.targetIds),
     ])

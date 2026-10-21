@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.65.0
+  version: 0.66.0
   license:
     name: UNLICENSED
 servers:
@@ -147,7 +147,7 @@ paths:
     post:
       operationId: ingestRepositoryFlowCandidates
       summary: Persist repository UX-flow candidates produced by an analysis worker
-      description: Candidate step and wireframe target IDs must resolve to artifacts in the candidate's exact tenant-scoped repository revision; stale or invented targets are rejected.
+      description: LiteLLM evidence IDs plus candidate step and wireframe target IDs must resolve to artifacts in the candidate's exact tenant-scoped repository revision; stale or invented references are rejected while deterministic evidence passages remain valid text.
       tags: [worker-intelligence]
       security: [{ serviceToken: [] }]
       requestBody:
@@ -470,7 +470,8 @@ paths:
         '422':
           description: >-
             Confirmation requires reviewer rationale for LiteLLM grounding gaps and
-            every target must resolve in the candidate's exact repository revision.
+            every LiteLLM evidence, step, or wireframe artifact reference must resolve
+            in the candidate's exact repository revision.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }

@@ -74,11 +74,11 @@ describe('FlowInspector', () => {
     expect(screen.getByRole('dialog', { name: 'UX flow inspector' })).not.toHaveTextContent('User signs in')
   })
 
-  it('keeps human-readable evidence passages distinct from artifact references', () => {
+  it('keeps deterministic human-readable evidence passages distinct from artifact references', () => {
     render(
       <FlowInspector
         open
-        flow={{ ...flow, evidence: [artifact.id, '/login'] }}
+        flow={{ ...flow, source: 'deterministic', analysis: undefined, evidence: [artifact.id, '/login'] }}
         artifacts={[artifact]}
         onClose={vi.fn()}
       />
@@ -105,8 +105,24 @@ describe('FlowInspector', () => {
     )
 
     expect(screen.getByRole('alert')).toHaveTextContent(
-      '1 wireframe target is unavailable in this exact repository revision'
+      '1 artifact reference is unavailable in this exact repository revision'
     )
     expect(screen.getByRole('alert')).toHaveTextContent('Do not confirm this flow')
+  })
+
+  it('blocks reviewer trust when LiteLLM evidence is unavailable even if targets still resolve', () => {
+    render(
+      <FlowInspector
+        open
+        flow={{ ...flow, evidence: ['missing-model-evidence'] }}
+        artifacts={[artifact]}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '1 artifact reference is unavailable in this exact repository revision'
+    )
+    expect(screen.getByText('Evidence reference unavailable in this catalog snapshot')).toBeVisible()
   })
 })
