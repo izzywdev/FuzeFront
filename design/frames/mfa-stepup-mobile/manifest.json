@@ -77,9 +77,9 @@
         "id": "security-status-mobile",
         "orchestrator": "SecurityStatusMobileFlow",
         "route": "/account/security",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:10.381Z",
         "implementation": {
           "paths": [
             "packages/account-security-ui/src/components/security-status/**"
