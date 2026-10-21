@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.68.0
+  version: 0.69.0
   license:
     name: UNLICENSED
 servers:
@@ -1418,12 +1418,12 @@ components:
     ExecutionPolicyArtifactId:
       name: policyArtifactId
       in: query
-      description: Exact repository policy artifact retained in the execution's explicit policy-gate evidence.
+      description: Repository policy observation or stable logical identity. Equivalent observations across revisions are included.
       schema: { type: string, minLength: 1, maxLength: 500 }
     ExecutionGateArtifactId:
       name: gateArtifactId
       in: query
-      description: Exact repository gate artifact retained in the execution's explicit policy-gate evidence.
+      description: Repository gate observation or stable logical identity. Equivalent observations across revisions are included.
       schema: { type: string, minLength: 1, maxLength: 500 }
     ExecutionBranch:
       name: branch

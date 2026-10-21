@@ -240,8 +240,10 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 <= $10')
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain('executions.external_run_id=$16')
-    expect(String(sql)).toContain("pair.value->>'policyArtifactId'=$17")
-    expect(String(sql)).toContain("pair.value->>'gateArtifactId'=$18")
+    expect(String(sql)).toContain("quality_artifact_logical_id(executions.repository_id,pair.value->>'policyArtifactId')")
+    expect(String(sql)).toContain('quality_artifact_logical_id(executions.repository_id,$17)')
+    expect(String(sql)).toContain("quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')")
+    expect(String(sql)).toContain('quality_artifact_logical_id(executions.repository_id,$18)')
     expect(String(sql)).toContain("evidence.value->>'kind'=$19")
     expect(String(sql)).toContain("threshold.value->>'passed'=CASE $20")
     expect(String(sql)).toContain('executions.name=$21')
@@ -301,8 +303,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain("previous.status='failed'")
     expect(String(sql)).toContain('executions.external_run_id=$16')
-    expect(String(sql)).toContain("pair.value->>'policyArtifactId'=$17")
-    expect(String(sql)).toContain("pair.value->>'gateArtifactId'=$18")
+    expect(String(sql)).toContain('quality_artifact_logical_id(executions.repository_id,$17)')
+    expect(String(sql)).toContain('quality_artifact_logical_id(executions.repository_id,$18)')
     expect(String(sql)).toContain("evidence.value->>'kind'=$19")
     expect(String(sql)).toContain("threshold.value->>'passed'=CASE $20")
     expect(String(sql)).toContain('executions.name=$21')
@@ -351,8 +353,10 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("$8='recovered'")
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain('executions.external_run_id=$19')
-    expect(String(sql)).toContain("pair.value->>'policyArtifactId'=$20")
-    expect(String(sql)).toContain("pair.value->>'gateArtifactId'=$21")
+    expect(String(sql)).toContain("execution.repository_id,pair.value->>'policyArtifactId'")
+    expect(String(sql)).toContain('quality_artifact_logical_id(execution.repository_id,$20)')
+    expect(String(sql)).toContain("execution.repository_id,pair.value->>'gateArtifactId'")
+    expect(String(sql)).toContain('quality_artifact_logical_id(execution.repository_id,$21)')
     expect(String(sql)).toContain("evidence.value->>'kind'=$22")
     expect(String(sql)).toContain("threshold.value->>'passed'=CASE $23")
     expect(String(sql)).toContain('executions.name=$24')
@@ -477,6 +481,30 @@ describe('test execution evidence', () => {
       expect.objectContaining({
         policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', total: 2, passed: 1, failed: 1, passRate: 0.5,
         revisionCount: 2, latestRevision: 'revision-b', revisions: undefined,
+      }),
+    ])
+  })
+
+  it('joins execution evidence across revision-scoped policy and gate observations', async () => {
+    const store = new MemoryCatalogStore()
+    ;(store as unknown as { artifacts: Array<Record<string, unknown>> }).artifacts = [
+      { id: 'policy-observation-a', logicalId: 'policy-auth', repositoryId: 'repo-1', revision: 'catalog-a', kind: 'policy', title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Authentication required.', evidence: [] },
+      { id: 'gate-observation-a', logicalId: 'gate-auth', repositoryId: 'repo-1', revision: 'catalog-a', kind: 'gate', title: 'Authentication gate', sourcePath: '.github/workflows/auth.yml', summary: 'Authentication check.', evidence: [] },
+      { id: 'policy-observation-b', logicalId: 'policy-auth', repositoryId: 'repo-1', revision: 'catalog-b', kind: 'policy', title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Authentication required.', evidence: [] },
+      { id: 'gate-observation-b', logicalId: 'gate-auth', repositoryId: 'repo-1', revision: 'catalog-b', kind: 'gate', title: 'Authentication gate', sourcePath: '.github/workflows/auth.yml', summary: 'Authentication check.', evidence: [] },
+    ]
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'external' as const, attempt: 1, kind: 'ci' as const, name: 'Auth gate', thresholds: [], evidenceLinks: [] }
+    await store.saveTestExecution({ id: 'run-a', ...base, externalRunId: 'a', revision: 'source-a', status: 'failed', policyArtifactIds: ['policy-observation-a'], gateArtifactIds: ['gate-observation-a'], gateEvaluations: [{ policyArtifactId: 'policy-observation-a', gateArtifactId: 'gate-observation-a', status: 'failed' }] })
+    await store.saveTestExecution({ id: 'run-b', ...base, externalRunId: 'b', revision: 'source-b', status: 'passed', policyArtifactIds: ['policy-auth'], gateArtifactIds: ['gate-auth'], gateEvaluations: [{ policyArtifactId: 'policy-auth', gateArtifactId: 'gate-auth', status: 'passed' }] })
+
+    await expect(store.testExecutions('repo-1', 'org-1', {
+      policyArtifactId: 'policy-observation-b',
+      gateArtifactId: 'gate-observation-b',
+    })).resolves.toHaveLength(2)
+    await expect(store.policyGatePerformance('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({
+        policyArtifactId: 'policy-auth', gateArtifactId: 'gate-auth',
+        total: 2, passed: 1, failed: 1, revisionCount: 2,
       }),
     ])
   })

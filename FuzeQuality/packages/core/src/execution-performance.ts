@@ -79,6 +79,52 @@ function retainedGateEvaluations(execution: TestExecution) {
       : []
 }
 
+function artifactIdentityMap(artifacts: QualityArtifact[]) {
+  return new Map(artifacts.flatMap(artifact => {
+    const logicalId = artifact.logicalId ?? artifact.id
+    return [
+      [`${artifact.repositoryId}\u0000${artifact.id}`, logicalId] as const,
+      [`${artifact.repositoryId}\u0000${logicalId}`, logicalId] as const,
+    ]
+  }))
+}
+
+type ArtifactIdentityMap = ReturnType<typeof artifactIdentityMap>
+
+export function qualityArtifactLogicalIdentity(
+  repositoryId: string,
+  artifactId: string | undefined,
+  artifacts: QualityArtifact[],
+  identities: ArtifactIdentityMap = artifactIdentityMap(artifacts),
+) {
+  if (!artifactId) return artifactId
+  return identities.get(`${repositoryId}\u0000${artifactId}`) ?? artifactId
+}
+
+/** Canonicalizes retained observation IDs without crossing repository boundaries. */
+export function normalizeExecutionArtifactIdentities(
+  execution: TestExecution,
+  artifacts: QualityArtifact[],
+  identities: ArtifactIdentityMap = artifactIdentityMap(artifacts),
+): TestExecution {
+  if (!artifacts.length) return execution
+  const identity = (artifactId: string) =>
+    identities.get(`${execution.repositoryId}\u0000${artifactId}`) ?? artifactId
+  return {
+    ...execution,
+    policyArtifactIds: [...new Set(execution.policyArtifactIds.map(identity))],
+    gateArtifactIds: [...new Set(execution.gateArtifactIds.map(identity))],
+    gateEvaluations: [...new Map(execution.gateEvaluations.map(evaluation => {
+      const canonical = {
+        ...evaluation,
+        policyArtifactId: identity(evaluation.policyArtifactId),
+        gateArtifactId: identity(evaluation.gateArtifactId),
+      }
+      return [`${canonical.policyArtifactId}\u0000${canonical.gateArtifactId}`, canonical]
+    })).values()],
+  }
+}
+
 /** Matches an explicitly retained pair; legacy evidence is paired only when exactly one policy and gate exist. */
 export function executionMatchesPolicyGate(
   execution: TestExecution,
@@ -119,12 +165,29 @@ export function isRecoveredExecution(execution: TestExecution, history: TestExec
 }
 
 /** Filters only the caller's already tenant-scoped execution evidence. */
-export function filterTestExecutions(executions: TestExecution[], filter: ExecutionFilter = {}, history: TestExecution[] = executions) {
+export function filterTestExecutions(
+  executions: TestExecution[],
+  filter: ExecutionFilter = {},
+  history: TestExecution[] = executions,
+  artifacts: QualityArtifact[] = [],
+) {
+  const repositoryId = executions[0]?.repositoryId
+  const identities = artifactIdentityMap(artifacts)
+  const selectedPolicyArtifactId = repositoryId
+    ? qualityArtifactLogicalIdentity(repositoryId, filter.policyArtifactId, artifacts, identities)
+    : filter.policyArtifactId
+  const selectedGateArtifactId = repositoryId
+    ? qualityArtifactLogicalIdentity(repositoryId, filter.gateArtifactId, artifacts, identities)
+    : filter.gateArtifactId
   const from = filter.from ? Date.parse(filter.from) : undefined
   const until = filter.until ? Date.parse(filter.until) : undefined
   const evidenceCheckedAfter = filter.evidenceCheckedAfter ? Date.parse(filter.evidenceCheckedAfter) : undefined
   const evidenceCheckedBefore = filter.evidenceCheckedBefore ? Date.parse(filter.evidenceCheckedBefore) : undefined
-  return executions.filter(execution => {
+  const normalizedHistory = artifacts.length
+    ? history.map(execution => normalizeExecutionArtifactIdentities(execution, artifacts, identities))
+    : history
+  return executions.filter(retainedExecution => {
+    const execution = normalizeExecutionArtifactIdentities(retainedExecution, artifacts, identities)
     if (filter.id && execution.id !== filter.id) return false
     if (filter.kind && execution.kind !== filter.kind) return false
     if (filter.status && execution.status !== filter.status) return false
@@ -163,7 +226,7 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     if (filter.gateOutcome && !retainedGateEvaluations(execution).some(evaluation => evaluation.status === filter.gateOutcome)) return false
     if (filter.externalRunId && execution.externalRunId !== filter.externalRunId) return false
     if (filter.name && execution.name !== filter.name) return false
-    if (!executionMatchesPolicyGate(execution, filter.policyArtifactId, filter.gateArtifactId)) return false
+    if (!executionMatchesPolicyGate(execution, selectedPolicyArtifactId, selectedGateArtifactId)) return false
     if (filter.branch && execution.branch !== filter.branch) return false
     if (filter.revision && execution.revision !== filter.revision) return false
     if (
@@ -172,7 +235,7 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
     ) return false
     if (filter.attemptScope === 'initial' && execution.attempt !== 1) return false
     if (filter.attemptScope === 'retry' && execution.attempt <= 1) return false
-    if (filter.attemptScope === 'recovered' && !isRecoveredExecution(execution, history)) return false
+    if (filter.attemptScope === 'recovered' && !isRecoveredExecution(execution, normalizedHistory)) return false
     if (filter.minimumDurationMs !== undefined || filter.maximumDurationMs !== undefined) {
       const startedAt = Date.parse(execution.startedAt ?? '')
       const completedAt = Date.parse(execution.completedAt ?? '')
@@ -285,7 +348,9 @@ export function executionPerformance(
     [artifact.id, artifact] as const,
     ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
   ]))
-  for (const execution of executions) {
+  const identities = artifactIdentityMap(artifacts)
+  for (const retainedExecution of executions) {
+    const execution = normalizeExecutionArtifactIdentities(retainedExecution, artifacts, identities)
     // Rows created before explicit pair evidence existed are only safe to use
     // when there is exactly one possible pair. Never create a Cartesian product.
     const gateEvaluations = retainedGateEvaluations(execution)

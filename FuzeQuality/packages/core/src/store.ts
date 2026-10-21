@@ -30,7 +30,7 @@ import { buildApiExpectations, buildFindings, buildFrontendExpectations } from '
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
-import { executionOutcomeTrend, executionPerformance, filterTestExecutions, type ExecutionEvidenceRequirement, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
+import { executionOutcomeTrend, executionPerformance, filterTestExecutions, normalizeExecutionArtifactIdentities, qualityArtifactLogicalIdentity, type ExecutionEvidenceRequirement, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
 
 export const currentQualityArtifactsSql = `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
        FROM fuzequality.repository_quality_artifacts
@@ -554,7 +554,8 @@ export class MemoryCatalogStore implements CatalogStore {
     const after = query.after ? Date.parse(query.after.createdAt) : undefined
     const snapshot = this.executions
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
-    const items = filterTestExecutions(snapshot, query, snapshot)
+    const artifacts = this.artifacts.filter(item => item.repositoryId === repositoryId)
+    const items = filterTestExecutions(snapshot, query, snapshot, artifacts)
       .sort((left, right) => testExecutionCursorCreatedAtMillis(right) - testExecutionCursorCreatedAtMillis(left) || right.id.localeCompare(left.id))
       .filter(item => !query.after || testExecutionCursorCreatedAtMillis(item) < after! || (testExecutionCursorCreatedAtMillis(item) === after && item.id < query.after.id))
     return query.limit === undefined ? items : items.slice(0, query.limit)
@@ -617,7 +618,8 @@ export class MemoryCatalogStore implements CatalogStore {
   async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}) {
     const snapshot = this.executionSnapshot(query.snapshotAt)
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
-    const items = executionOutcomeTrend(filterTestExecutions(snapshot, query, snapshot), snapshot)
+    const artifacts = this.artifacts.filter(item => item.repositoryId === repositoryId)
+    const items = executionOutcomeTrend(filterTestExecutions(snapshot, query, snapshot, artifacts), snapshot)
       .sort((left, right) => right.date.localeCompare(left.date))
       .filter(item => !query.beforeDate || item.date < query.beforeDate)
     return query.limit === undefined ? items : items.slice(0, query.limit)
@@ -627,18 +629,24 @@ export class MemoryCatalogStore implements CatalogStore {
     const snapshot = this.executionSnapshot(query.snapshotAt)
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
       .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
-    const filteredExecutions = filterTestExecutions(snapshot, query, snapshot).map(execution =>
+    const artifacts = this.artifacts.filter(item => item.repositoryId === repositoryId)
+    const selectedPolicyArtifactId = qualityArtifactLogicalIdentity(repositoryId, query.policyArtifactId, artifacts)
+    const selectedGateArtifactId = qualityArtifactLogicalIdentity(repositoryId, query.gateArtifactId, artifacts)
+    const filteredExecutions = filterTestExecutions(snapshot, query, snapshot, artifacts).map(retainedExecution => {
+      const execution = normalizeExecutionArtifactIdentities(retainedExecution, artifacts)
+      return (
       execution.gateEvaluations.length && (query.policyArtifactId || query.gateArtifactId)
         ? {
             ...execution,
             gateEvaluations: execution.gateEvaluations.filter(evaluation =>
-              (!query.policyArtifactId || evaluation.policyArtifactId === query.policyArtifactId) &&
-              (!query.gateArtifactId || evaluation.gateArtifactId === query.gateArtifactId)
+              (!selectedPolicyArtifactId || evaluation.policyArtifactId === selectedPolicyArtifactId) &&
+              (!selectedGateArtifactId || evaluation.gateArtifactId === selectedGateArtifactId)
             ),
           }
         : execution
-    )
-    const items = executionPerformance(filteredExecutions, [], query.gateOutcome)
+      )
+    })
+    const items = executionPerformance(filteredExecutions, artifacts, query.gateOutcome)
       .map(item => ({
         ...item,
         revisionCount: item.revisions?.length ?? 0,
@@ -1426,23 +1434,38 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $12)
          AND ($13::timestamptz IS NULL OR (executions.created_at,executions.id) < ($13::timestamptz,$14::text))
          AND ($16::text IS NULL OR executions.external_run_id=$16)
-         AND ($17::text IS NULL OR COALESCE(executions.policy_artifact_ids,'[]'::jsonb) ? $17 OR EXISTS (
+         AND ($17::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(executions.policy_artifact_ids,'[]'::jsonb)) AS policy_id(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,policy_id.value)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+         ) OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
-           WHERE pair.value->>'policyArtifactId'=$17
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'policyArtifactId')
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
          ))
-         AND ($18::text IS NULL OR COALESCE(executions.gate_artifact_ids,'[]'::jsonb) ? $18 OR EXISTS (
+         AND ($18::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(executions.gate_artifact_ids,'[]'::jsonb)) AS gate_id(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,gate_id.value)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ) OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
-           WHERE pair.value->>'gateArtifactId'=$18
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
          ))
          AND ($17::text IS NULL OR $18::text IS NULL OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
-           WHERE pair.value->>'policyArtifactId'=$17 AND pair.value->>'gateArtifactId'=$18
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'policyArtifactId')
+               =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+             AND fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')
+               =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
          ) OR (
            jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
            AND jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
            AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
-           AND executions.policy_artifact_ids->>0=$17
-           AND executions.gate_artifact_ids->>0=$18
+           AND fuzequality.quality_artifact_logical_id(executions.repository_id,executions.policy_artifact_ids->>0)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+           AND fuzequality.quality_artifact_logical_id(executions.repository_id,executions.gate_artifact_ids->>0)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
          ))
          AND ($19::text IS NULL OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS evidence(value)
@@ -1622,23 +1645,38 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $12)
          AND ($13::date IS NULL OR (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date < $13)
          AND ($16::text IS NULL OR executions.external_run_id=$16)
-         AND ($17::text IS NULL OR COALESCE(executions.policy_artifact_ids,'[]'::jsonb) ? $17 OR EXISTS (
+         AND ($17::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(executions.policy_artifact_ids,'[]'::jsonb)) AS policy_id(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,policy_id.value)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+         ) OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
-           WHERE pair.value->>'policyArtifactId'=$17
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'policyArtifactId')
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
          ))
-         AND ($18::text IS NULL OR COALESCE(executions.gate_artifact_ids,'[]'::jsonb) ? $18 OR EXISTS (
+         AND ($18::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(executions.gate_artifact_ids,'[]'::jsonb)) AS gate_id(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,gate_id.value)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ) OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
-           WHERE pair.value->>'gateArtifactId'=$18
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
          ))
          AND ($17::text IS NULL OR $18::text IS NULL OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
-           WHERE pair.value->>'policyArtifactId'=$17 AND pair.value->>'gateArtifactId'=$18
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'policyArtifactId')
+               =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+             AND fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')
+               =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
          ) OR (
            jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
            AND jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
            AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
-           AND executions.policy_artifact_ids->>0=$17
-           AND executions.gate_artifact_ids->>0=$18
+           AND fuzequality.quality_artifact_logical_id(executions.repository_id,executions.policy_artifact_ids->>0)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+           AND fuzequality.quality_artifact_logical_id(executions.repository_id,executions.gate_artifact_ids->>0)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
          ))
          AND ($19::text IS NULL OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS evidence(value)
@@ -1784,8 +1822,12 @@ export class PostgresCatalogStore implements CatalogStore {
            AND ($30::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $30)
        ), explicit_pairs AS (
          SELECT execution.repository_id,execution.revision,execution.completed_at,execution.occurred_at,
-                pair.value->>'policyArtifactId' AS policy_artifact_id,
-                pair.value->>'gateArtifactId' AS gate_artifact_id,
+                fuzequality.quality_artifact_logical_id(
+                  execution.repository_id,pair.value->>'policyArtifactId'
+                ) AS policy_artifact_id,
+                fuzequality.quality_artifact_logical_id(
+                  execution.repository_id,pair.value->>'gateArtifactId'
+                ) AS gate_artifact_id,
                 COALESCE(pair.value->>'status',execution.status) AS outcome
          FROM filtered_executions AS execution
          CROSS JOIN LATERAL jsonb_array_elements(
@@ -1802,8 +1844,12 @@ export class PostgresCatalogStore implements CatalogStore {
          ) AS pair(value)
          WHERE pair.value->>'policyArtifactId' IS NOT NULL
            AND pair.value->>'gateArtifactId' IS NOT NULL
-           AND ($20::text IS NULL OR pair.value->>'policyArtifactId'=$20)
-           AND ($21::text IS NULL OR pair.value->>'gateArtifactId'=$21)
+           AND ($20::text IS NULL OR fuzequality.quality_artifact_logical_id(
+             execution.repository_id,pair.value->>'policyArtifactId'
+           )=fuzequality.quality_artifact_logical_id(execution.repository_id,$20))
+           AND ($21::text IS NULL OR fuzequality.quality_artifact_logical_id(
+             execution.repository_id,pair.value->>'gateArtifactId'
+           )=fuzequality.quality_artifact_logical_id(execution.repository_id,$21))
            AND ($25::text IS NULL OR COALESCE(pair.value->>'status',execution.status)=$25)
        ), aggregates AS (
          SELECT repository_id,policy_artifact_id,gate_artifact_id,

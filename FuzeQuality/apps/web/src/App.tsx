@@ -5983,7 +5983,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           {executionPolicyArtifactId && executionGateArtifactId && (
             <div className="performance-inventory-only" role="status">
               Showing execution evidence for policy <code>{executionPolicyArtifactId}</code> and gate{' '}
-              <code>{executionGateArtifactId}</code>.{' '}
+              <code>{executionGateArtifactId}</code>, including equivalent artifact observations across repository revisions.{' '}
               <QualityAction
                 intent="quiet"
                 onClick={() => {

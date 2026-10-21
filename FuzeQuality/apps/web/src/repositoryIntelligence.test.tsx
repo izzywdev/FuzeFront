@@ -2430,6 +2430,9 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
     expect(screen.getByRole('status')).toHaveTextContent('policy-auth')
     expect(screen.getByRole('status')).toHaveTextContent('gate-auth')
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'including equivalent artifact observations across repository revisions'
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear policy-gate focus' }))
     await waitFor(() => {
