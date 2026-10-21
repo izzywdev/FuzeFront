@@ -73,9 +73,9 @@
         "id": "recovery-codes",
         "orchestrator": "RecoveryCodesFlow",
         "route": "/account/security/mfa/recovery-codes",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:49:59.912Z"
       },
       {
         "id": "mfa-step-up",
