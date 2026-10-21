@@ -64,9 +64,9 @@
         "id": "confirm-contact-phone",
         "orchestrator": "ConfirmContactFlow",
         "route": "/account/security/verify/phone",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:08.200Z",
         "implementation": {
           "paths": [
             "packages/account-security-ui/src/components/mfa/**"
