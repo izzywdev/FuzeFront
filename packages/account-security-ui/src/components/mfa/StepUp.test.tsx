@@ -287,6 +287,24 @@ describe('MfaStepUpMobileFlow (frames 01-02, 375px)', () => {
     }
   })
 
+  it('expiry applies on the TOTP path too: at zero the flow is expired, verify is gone, restart calls onBack', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const onBack = vi.fn()
+    const client = makeClient()
+    render(
+      <MfaStepUpFlow client={asClient(client)} challenge={{ challengeId: 'c', factors: [TOTP] }} onAuthenticated={vi.fn()} onBack={onBack} />
+    )
+    await waitFor(() => expect(q('[data-action="verify-mfa"]')).toBeTruthy())
+    await act(async () => { vi.advanceTimersByTime(301_000) })
+    expect(q('[data-state="expired"]')).toBeTruthy()
+    expect(q('[data-action="verify-mfa"]')).toBeNull()
+    expect(q('[data-action="resend"]')).toBeNull()
+    await user.click(q('[data-action="restart-sign-in"]')!)
+    expect(onBack).toHaveBeenCalled()
+    expect(client.verifyMfa).not.toHaveBeenCalled()
+  })
+
   it('delivery failure offers resend and other methods', async () => {
     const user = userEvent.setup()
     const client = makeClient({ challengeMfa: vi.fn(async () => { throw err(503) }) })
@@ -330,6 +348,20 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
     await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="error-invalid"]')).toBeTruthy())
     expect(q('[data-error="invalid-code"]')).toBeTruthy()
     expect(q('[data-panel="confirm-contact"][data-state="verified"]')).toBeNull()
+  })
+
+  it('a 5xx on confirm is a retryable service error, not "wrong code"', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({ confirmPhoneVerification: vi.fn(async () => { throw err(503) }) })
+    render(<ConfirmContactFlow client={asClient(client)} />)
+    await user.type(q('#phone')!, '+15550004471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-component="otp-input"]')).toBeTruthy())
+    await typeCode(user, '123456')
+    await user.click(q('[data-action="verify-contact"]')!)
+    await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="error-service"]')).toBeTruthy())
+    expect(q('[data-error="service-error"]')).toBeTruthy()
+    expect(q('[data-error="invalid-code"]')).toBeNull()
   })
 
   it('generic send failure offers retry or skip — never a silent hang', async () => {

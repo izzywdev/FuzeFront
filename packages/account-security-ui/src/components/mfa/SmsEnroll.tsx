@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Input, OtpInput, Spinner } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import type { AuthMethods, MfaClient } from '../../types'
+import { classifyCodeFailure } from '../../api/errors'
 import {
   Actions,
   CardHeading,
@@ -68,6 +69,8 @@ export interface SmsEnrollPanelProps {
   onCancel: () => void
   activating?: boolean
   invalid?: boolean
+  /** The submission failed for a non-rejection reason (5xx / 429 / network): retryable. */
+  serviceError?: boolean
 }
 
 export function SmsEnrollPanel(p: SmsEnrollPanelProps) {
@@ -117,7 +120,7 @@ export function SmsEnrollPanel(p: SmsEnrollPanelProps) {
   return (
     <SeamCard
       data-component="sms-enroll"
-      data-state={p.invalid ? 'error-invalid' : 'confirm-code'}
+      data-state={p.invalid ? 'error-invalid' : p.serviceError ? 'error-service' : 'confirm-code'}
       data-available="true"
     >
       <p style={{ margin: '0 0 var(--space-4)', color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>
@@ -128,6 +131,7 @@ export function SmsEnrollPanel(p: SmsEnrollPanelProps) {
       </label>
       <OtpInput value={code} onChange={setCode} error={p.invalid} disabled={p.activating} autoFocus />
       {p.invalid && <InlineError data-error="invalid-code">{m.mfa.sms.invalid}</InlineError>}
+      {p.serviceError && <InlineError data-error="service-error">{m.mfa.sms.serviceError}</InlineError>}
       <Hint style={{ marginBlockStart: 'var(--space-3)' }}>
         {m.mfa.sms.resendPrompt}{' '}
         <a
@@ -163,7 +167,7 @@ type SmsPhase =
   | { name: 'load-failed' }
   | { name: 'unavailable' }
   | { name: 'enter-phone'; sending: boolean; failed: boolean }
-  | { name: 'confirm-code'; factorId: string; activating: boolean; invalid: boolean }
+  | { name: 'confirm-code'; factorId: string; activating: boolean; invalid: boolean; serviceError?: boolean }
 
 /**
  * Add a phone for text-message codes (frame 03). LEADS with the channel check:
@@ -230,10 +234,12 @@ function SmsEnrollInner(props: EnrollFlowProps) {
       pending.clear()
       if (props.onActivated) props.onActivated(factor)
       else go(routes.overview)
-    } catch {
-      // Fail closed: ANY activation failure leaves the factor pending and shows
-      // the inline wrong-or-expired error (the server answers a bad code with 401).
-      setPhase({ name: 'confirm-code', factorId, activating: false, invalid: true })
+    } catch (err) {
+      // Fail closed: the factor stays pending. A rejected code (400/401/403/422)
+      // shows the wrong-or-expired error; 5xx / 429 / network is a retryable
+      // service error that does not claim the code was wrong.
+      const invalid = classifyCodeFailure(err) === 'invalid'
+      setPhase({ name: 'confirm-code', factorId, activating: false, invalid, serviceError: !invalid })
     }
   }
 
@@ -282,6 +288,7 @@ function SmsEnrollInner(props: EnrollFlowProps) {
           onPhone={setPhone}
           activating={phase.activating}
           invalid={phase.invalid}
+          serviceError={phase.serviceError}
           onSendCode={() => undefined}
           onActivate={(code) => void activate(phase.factorId, code)}
           onResend={() => void sendCode()}

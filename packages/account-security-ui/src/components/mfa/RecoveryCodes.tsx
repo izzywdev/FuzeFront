@@ -188,7 +188,8 @@ function RecoveryCodesInner(props: FlowBaseProps & MfaNavProps) {
       const codes = await api.regenerateRecoveryCodes()
       setPhase({ name: 'shown', codes })
     } catch {
-      // Nothing was revealed and the old set is unchanged server-side.
+      // Nothing was revealed, but a lost response may follow a server commit: the
+      // old set may already be invalid. Do NOT reassure; require a successful retry.
       setPhase({ name: 'error' })
     }
   }

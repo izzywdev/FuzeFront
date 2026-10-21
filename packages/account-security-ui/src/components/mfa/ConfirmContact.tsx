@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button, Input, OtpInput, Skeleton, Spinner } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import type { ContactClient } from '../../types'
+import { classifyCodeFailure } from '../../api/errors'
 import {
   Actions,
   FlowPage,
@@ -14,7 +15,7 @@ import {
 } from '../common/flowKit'
 import { maskPhone } from './factorMeta'
 
-type PanelState = 'enter-phone' | 'sending' | 'enter-code' | 'verifying' | 'error-invalid' | 'error-send' | 'verified'
+type PanelState = 'enter-phone' | 'sending' | 'enter-code' | 'verifying' | 'error-invalid' | 'error-service' | 'error-send' | 'verified'
 
 export interface ContactVerifyPanelProps {
   state: PanelState
@@ -83,7 +84,7 @@ export function ContactVerifyPanel(p: ContactVerifyPanelProps) {
           </div>
         )}
 
-        {(p.state === 'enter-code' || p.state === 'verifying' || p.state === 'error-invalid') && (
+        {(p.state === 'enter-code' || p.state === 'verifying' || p.state === 'error-invalid' || p.state === 'error-service') && (
           <>
             <Hint>{t(m.contact.enterCodePrompt, { phone: masked })}</Hint>
             <OtpInput
@@ -95,6 +96,7 @@ export function ContactVerifyPanel(p: ContactVerifyPanelProps) {
               autoFocus
             />
             {p.state === 'error-invalid' && <InlineError data-error="invalid-code">{m.contact.invalid}</InlineError>}
+            {p.state === 'error-service' && <InlineError data-error="service-error">{m.contact.serviceError}</InlineError>}
             <Actions style={{ flexDirection: 'column' }}>
               <Button
                 variant="primary"
@@ -107,7 +109,7 @@ export function ContactVerifyPanel(p: ContactVerifyPanelProps) {
               >
                 {p.state === 'verifying'
                   ? m.contact.confirming
-                  : p.state === 'error-invalid'
+                  : p.state === 'error-invalid' || p.state === 'error-service'
                     ? m.contact.tryAgain
                     : m.contact.confirm}
               </Button>
@@ -194,9 +196,10 @@ function ConfirmContactInner({ client, getToken, onSkip, onDone }: ConfirmContac
     try {
       await api.confirmPhoneVerification(phone, code)
       setState('verified')
-    } catch {
-      // Wrong / expired code (401) or any failure: stay on this screen, fail closed.
-      setState('error-invalid')
+    } catch (err) {
+      // Stay on this screen, fail closed: a rejected code is "invalid"; 5xx / 429 /
+      // network is a retryable service error (the code was not judged wrong).
+      setState(classifyCodeFailure(err) === 'invalid' ? 'error-invalid' : 'error-service')
     }
   }
 

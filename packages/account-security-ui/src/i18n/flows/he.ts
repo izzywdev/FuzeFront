@@ -86,7 +86,10 @@ export const flowsHe: DeepPartial<FlowMessages> = {
     useDifferent: 'שימוש בשיטה אחרת',
     serviceError: 'לא הצלחנו לאמת את הקוד כרגע. הקוד לא נדחה — נסה/י שוב בעוד רגע.',
     retry: 'נסה/י שוב',
+    expiredTitle: 'תוקף ההתחברות פג',
+    expiredText: 'חלון האימות נסגר. התחל/י את ההתחברות מחדש כדי לקבל חלון חדש.',
+    restart: 'להתחיל התחברות מחדש',
   },
-  contact: { title: 'אימות הטלפון', skip: 'דלג/י לעת עתה', sendCode: 'שלח/י קוד', confirm: 'אישור' },
+  contact: { serviceError: 'לא הצלחנו לאשר את הקוד כרגע. הוא לא נדחה — נסה/י שוב בעוד רגע.', title: 'אימות הטלפון', skip: 'דלג/י לעת עתה', sendCode: 'שלח/י קוד', confirm: 'אישור' },
   securityStatus: { title: 'אבטחה', active: 'פעיל', verified: 'מאומת', unverified: 'לא מאומת' },
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, OtpInput, Skeleton, Spinner, StatusCallout } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
-import { isInvalidCode } from '../../api/errors'
+import { classifyCodeFailure } from '../../api/errors'
 import type { MfaFactorRef, MfaFactorType, MfaSession, StepUpClient } from '../../types'
 import {
   Actions,
@@ -376,6 +376,9 @@ function StepUpInner({
   const [choosingBusy, setChoosingBusy] = useState(false)
   // The server's challenge deadline is fixed at login; resend never extends it.
   const expiresAt = useRef(Date.now() + EXPIRY_SECONDS * 1000)
+  // Tracked on EVERY path (incl. TOTP, which shows no countdown): once the window
+  // closes the server rejects everything, so we must not keep inviting codes.
+  const expired = useDeadlineCountdown(expiresAt.current, true) === 0
   const alive = useRef(true)
 
   const loadList = useCallback(async () => {
@@ -454,7 +457,7 @@ function StepUpInner({
         // Fail closed on this screen either way. A rejected code (400/401/403/422)
         // is "invalid"; a 5xx / 429 / network failure is a retryable service error
         // that must not claim the code was wrong.
-        setStep({ name: 'code', factor, delivered, code: isInvalidCode(err) ? 'error-invalid' : 'error-service' })
+        setStep({ name: 'code', factor, delivered, code: classifyCodeFailure(err) === 'invalid' ? 'error-invalid' : 'error-service' })
       } finally {
         inFlight.current = false
       }
@@ -468,7 +471,26 @@ function StepUpInner({
     : { 'data-frame': '05-step-up-challenge', 'data-route': '/login/mfa' }
 
   let body: React.ReactNode
-  if (step.name === 'code') {
+  if (expired) {
+    body = (
+      <div data-state="expired" data-component="mfa-challenge" role="alert">
+        <StatusCallout
+          tone="warning"
+          icon="⏱"
+          title={m.stepUp.expiredTitle}
+          actions={
+            onBack ? (
+              <Button variant="primary" data-action="restart-sign-in" onClick={onBack}>
+                {m.stepUp.restart}
+              </Button>
+            ) : undefined
+          }
+        >
+          {m.stepUp.expiredText}
+        </StatusCallout>
+      </div>
+    )
+  } else if (step.name === 'code') {
     body = (
       <MfaChallengeCard
         variant={variant}
@@ -563,7 +585,7 @@ function StepUpInner({
 
   return (
     <FlowPage title={title} maxWidth={mobile ? '100%' : 'var(--container-2xl)'} {...wrapAttrs}>
-      {onBack && step.name === 'choose' && (
+      {onBack && step.name === 'choose' && !expired && (
         <Button variant="ghost" data-action="back" onClick={onBack}>
           {m.stepUp.back}
         </Button>

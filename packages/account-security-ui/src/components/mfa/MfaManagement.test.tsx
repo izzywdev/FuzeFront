@@ -78,6 +78,20 @@ describe('MfaOverviewFlow', () => {
     expect(client.removeFactor).toHaveBeenCalledWith('fct_sms_1')
   })
 
+  it('DELETE ok but the follow-up reload fails: the removed factor is no longer shown as active', async () => {
+    const user = userEvent.setup()
+    const listFactors = vi.fn().mockResolvedValueOnce([totp, sms]).mockRejectedValue(err(500))
+    const client = makeClient({ listFactors, getMethods: vi.fn(async () => methods(['totp', 'sms'])) })
+    render(<MfaOverviewFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-factor="sms"]')).toBeTruthy())
+    await user.click(within(q('[data-factor="sms"]') as HTMLElement).getByRole('button'))
+    await user.click(q('[data-action="remove-confirm"]')!)
+    await waitFor(() => expect(q('[data-component="remove-factor-dialog"][data-state="removed"]')).toBeTruthy())
+    await waitFor(() => expect(listFactors).toHaveBeenCalledTimes(2))
+    expect(q('[data-panel="mfa-overview"] [data-factor="sms"]')).toBeNull()
+    expect(q('[data-panel="mfa-overview"] [data-factor="totp"]')).toBeTruthy()
+  })
+
   it('REMOVE-LAST: a 409 renders the blocked state, the factor stays, and "add another" routes to enrolment', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
@@ -327,6 +341,29 @@ describe('SmsEnrollFlow', () => {
     expect(q('[data-error="invalid-code"]')).toBeTruthy()
   })
 
+  it('a 5xx / network failure on activation is a retryable service error, not "wrong code"', async () => {
+    const user = userEvent.setup()
+    const activateFactor = vi.fn().mockRejectedValueOnce(err(503)).mockRejectedValueOnce(new TypeError('net'))
+    const client = makeClient({
+      getMethods: vi.fn(async () => methods(['sms'])),
+      enrollFactor: vi.fn(async () => ({ factorId: 'f', type: 'sms', status: 'pending', codeSent: true })),
+      activateFactor,
+    })
+    render(<SmsEnrollFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '+447700900471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-component="otp-input"]')).toBeTruthy())
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('123456')
+    for (let i = 0; i < 2; i++) {
+      await user.click(q('[data-action="activate-factor"]')!)
+      await waitFor(() => expect(q('[data-component="sms-enroll"][data-state="error-service"]')).toBeTruthy())
+      expect(q('[data-error="service-error"]')).toBeTruthy()
+      expect(q('[data-error="invalid-code"]')).toBeNull()
+    }
+  })
+
   it('RESEND replaces the pending factor: the previous one is deleted, only the newest is tracked', async () => {
     const user = userEvent.setup()
     let n = 0
@@ -444,6 +481,19 @@ describe('RecoveryCodesFlow — REVEAL ONCE', () => {
     await waitFor(() => expect(q('[data-state="error"]')).toBeTruthy())
     expect(q('[data-component="recovery-codes"][data-state="shown-once"]')).toBeNull()
     expect(q('[data-codes]')).toBeNull()
+  })
+
+  it('a failed regeneration does NOT reassure that old codes are unchanged (the response may be lost after commit)', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({ regenerateRecoveryCodes: vi.fn(async () => { throw err(500) }) })
+    render(<RecoveryCodesFlow client={asClient(client)} />)
+    await user.click(q('[data-action="regenerate-open"]')!)
+    await user.click(q('[data-field="ack-invalidate"]')!)
+    await user.click(q('[data-action="regenerate-confirm"]')!)
+    await waitFor(() => expect(q('[data-state="error"]')).toBeTruthy())
+    const text = q('[data-state="error"]')!.textContent ?? ''
+    expect(text).not.toMatch(/unchanged/i)
+    expect(text).toMatch(/may no longer work/i)
   })
 
   it('cancel returns to status without calling the server', async () => {
