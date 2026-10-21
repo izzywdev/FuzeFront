@@ -20,6 +20,12 @@ export interface PasswordFlowCallbacks {
   /** Called after a successful change / set. */
   onDone?: () => void
   onCancel?: () => void
+  /**
+   * Whether the host serves the `/reset` route. The "forgot password" / "reset"
+   * exits render ONLY when true (default false): the host mounts `/reset` behind
+   * its auth-experience flag, so an unconditional link would 404.
+   */
+  canReset?: boolean
 }
 
 const ROUTES = {
@@ -65,7 +71,7 @@ function SuccessPanel({
 }
 
 /** Shown when set-password hits 409: a password already exists (frame 06, already-has-password). */
-function AlreadyHasPassword({ onChange, onReset }: { onChange: () => void; onReset: () => void }) {
+function AlreadyHasPassword({ onChange, onReset }: { onChange: () => void; onReset?: () => void }) {
   const { messages: m } = useAccountSecurityI18n()
   return (
     <div data-state="already-has-password" data-error="password-exists">
@@ -78,9 +84,11 @@ function AlreadyHasPassword({ onChange, onReset }: { onChange: () => void; onRes
             <Button variant="primary" data-action="go-change" onClick={onChange}>
               {m.password.exists.goChange}
             </Button>
-            <Button variant="ghost" data-action="go-reset" onClick={onReset}>
-              {m.password.exists.goReset}
-            </Button>
+            {onReset && (
+              <Button variant="ghost" data-action="go-reset" onClick={onReset}>
+                {m.password.exists.goReset}
+              </Button>
+            )}
           </Actions>
         }
       >
@@ -130,6 +138,7 @@ function ChangePasswordInner({
   onNavigate,
   onDone,
   onCancel,
+  canReset,
 }: FlowBaseProps & PasswordFlowCallbacks) {
   const { messages: m } = useAccountSecurityI18n()
   const api = useSecurityClient<PasswordClient>(client, getToken)
@@ -195,7 +204,7 @@ function ChangePasswordInner({
           errors={errors}
           onSubmit={(c, n) => void submit(c, n)}
           onCancel={() => (onCancel ? onCancel() : nav(ROUTES.security))}
-          onForgot={onNavigate ? () => nav(ROUTES.reset) : undefined}
+          onForgot={onNavigate && canReset ? () => nav(ROUTES.reset) : undefined}
         />
       )}
     </FlowPage>
@@ -220,6 +229,7 @@ function SetPasswordInner({
   onNavigate,
   onDone,
   onCancel,
+  canReset,
 }: FlowBaseProps & PasswordFlowCallbacks) {
   const { messages: m } = useAccountSecurityI18n()
   const api = useSecurityClient<PasswordClient>(client, getToken)
@@ -265,7 +275,7 @@ function SetPasswordInner({
       ) : phase.name === 'exists' ? (
         <AlreadyHasPassword
           onChange={() => nav(ROUTES.password + '?mode=change')}
-          onReset={() => nav(ROUTES.reset)}
+          onReset={onNavigate && canReset ? () => nav(ROUTES.reset) : undefined}
         />
       ) : phase.name === 'error' ? (
         <ErrorWithRetry

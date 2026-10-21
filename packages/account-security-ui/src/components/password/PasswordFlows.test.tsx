@@ -15,7 +15,7 @@ async function fillChange(user: ReturnType<typeof userEvent.setup>, current = 'o
 
 describe('ChangePasswordFlow', () => {
   it('renders the change variant with current/new/confirm, the meter and the forgot link', () => {
-    render(<ChangePasswordFlow client={asClient(makeClient())} />)
+    render(<ChangePasswordFlow client={asClient(makeClient())} onNavigate={vi.fn()} canReset />)
     const form = document.querySelector('[data-variant="change"][data-has-password="true"]')!
     expect(form).toBeTruthy()
     expect(form.querySelector('[data-input="current-password"]')).toBeTruthy()
@@ -111,9 +111,19 @@ describe('ChangePasswordFlow', () => {
   it('forgot link routes to the reset flow via onNavigate', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
-    render(<ChangePasswordFlow client={asClient(makeClient())} onNavigate={onNavigate} />)
+    render(<ChangePasswordFlow client={asClient(makeClient())} onNavigate={onNavigate} canReset />)
     await user.click(document.querySelector('[data-nav="forgot"]')!)
     expect(onNavigate).toHaveBeenCalledWith('/reset')
+  })
+
+  it('hides the forgot link when the host does not serve /reset (canReset off / omitted)', () => {
+    const { unmount } = render(
+      <ChangePasswordFlow client={asClient(makeClient())} onNavigate={vi.fn()} />
+    )
+    expect(document.querySelector('[data-nav="forgot"]')).toBeNull()
+    unmount()
+    render(<ChangePasswordFlow client={asClient(makeClient())} onNavigate={vi.fn()} canReset={false} />)
+    expect(document.querySelector('[data-nav="forgot"]')).toBeNull()
   })
 
   it('mirrors under RTL (he): dir=rtl and logical layout, no raw physical margins', () => {
@@ -144,7 +154,7 @@ describe('SetPasswordFlow', () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
     const client = makeClient({ setPassword: vi.fn(async () => { throw err(409, 'CONFLICT') }) })
-    render(<SetPasswordFlow client={asClient(client)} onNavigate={onNavigate} />)
+    render(<SetPasswordFlow client={asClient(client)} onNavigate={onNavigate} canReset />)
     await user.type(document.querySelector('[data-input="set-password"]')!, STRONG)
     await user.type(document.querySelector('[data-input="set-confirm"]')!, STRONG)
     await user.click(screen.getByRole('button', { name: /^set password$/i }))
@@ -152,6 +162,18 @@ describe('SetPasswordFlow', () => {
     expect(document.querySelector('[data-error="password-exists"]')).toBeTruthy()
     await user.click(document.querySelector('[data-action="go-reset"]')!)
     expect(onNavigate).toHaveBeenCalledWith('/reset')
+  })
+
+  it('409 without /reset served: the reset exit is hidden, change exit remains', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({ setPassword: vi.fn(async () => { throw err(409, 'CONFLICT') }) })
+    render(<SetPasswordFlow client={asClient(client)} onNavigate={vi.fn()} />)
+    await user.type(document.querySelector('[data-input="set-password"]')!, STRONG)
+    await user.type(document.querySelector('[data-input="set-confirm"]')!, STRONG)
+    await user.click(screen.getByRole('button', { name: /^set password$/i }))
+    await waitFor(() => expect(document.querySelector('[data-state="already-has-password"]')).toBeTruthy())
+    expect(document.querySelector('[data-action="go-reset"]')).toBeNull()
+    expect(document.querySelector('[data-action="go-change"]')).toBeTruthy()
   })
 
   it('400 → policy rejected, form stays', async () => {

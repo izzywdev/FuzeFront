@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, OtpInput, Skeleton, Spinner, StatusCallout } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
+import { isInvalidCode } from '../../api/errors'
 import type { MfaFactorRef, MfaFactorType, MfaSession, StepUpClient } from '../../types'
 import {
   Actions,
@@ -55,17 +56,38 @@ function useCountdown(from: number, key: unknown, active: boolean): number {
   return left
 }
 
+/**
+ * Seconds left until a FIXED deadline (epoch ms), ticking once a second. Used for
+ * the code-expiry display: the server's challenge expiry is set at login and a
+ * resend does not extend it, so the deadline must never restart.
+ */
+function useDeadlineCountdown(deadline: number, active: boolean): number {
+  const remaining = () => Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+  const [left, setLeft] = useState(remaining)
+  useEffect(() => {
+    setLeft(remaining())
+    if (!active) return
+    const id = setInterval(() => setLeft(remaining()), 1000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deadline, active])
+  return left
+}
+
 // ── FactorPicker ────────────────────────────────────────────────────────────
 
 export function FactorPicker({
   factors,
   recoveryEnabled,
   onChoose,
+  disabled = false,
   variant = 'desktop',
 }: {
   factors: MfaFactorRef[]
   recoveryEnabled?: boolean
   onChoose: (choice: Choice) => void
+  /** A choice is being dispatched: ignore further clicks. */
+  disabled?: boolean
   variant?: Variant
 }) {
   const { messages: m, dir } = useAccountSecurityI18n()
@@ -86,6 +108,7 @@ export function FactorPicker({
       key={key}
       type="button"
       onClick={action}
+      disabled={disabled}
       {...attrs}
       style={{
         display: 'flex',
@@ -99,7 +122,7 @@ export function FactorPicker({
         color: 'var(--text-primary)',
         border: '1px solid var(--border-color)',
         borderRadius: 'var(--radius-md)',
-        cursor: 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
         fontFamily: 'var(--font-sans)',
         fontSize: 'var(--text-md)',
       }}
@@ -138,7 +161,7 @@ export function FactorPicker({
 
 // ── MfaChallengeCard (code entry) ───────────────────────────────────────────
 
-type CodeStatus = 'idle' | 'verifying' | 'error-invalid' | 'error-delivery'
+type CodeStatus = 'idle' | 'verifying' | 'error-invalid' | 'error-service' | 'error-delivery'
 
 export function MfaChallengeCard({
   factor,
@@ -147,6 +170,7 @@ export function MfaChallengeCard({
   onVerify,
   onResend,
   onChooseFactor,
+  expiresAt,
   variant = 'desktop',
 }: {
   factor: Choice
@@ -156,12 +180,16 @@ export function MfaChallengeCard({
   onVerify: (code: string) => void
   onResend: () => void
   onChooseFactor?: () => void
+  /** Fixed challenge deadline (epoch ms). Defaults to now + the expiry window, captured once. */
+  expiresAt?: number
   variant?: Variant
 }) {
   const { messages: m } = useAccountSecurityI18n()
   const [code, setCode] = useState('')
   const [resendKey, setResendKey] = useState(0)
-  const expiresIn = useCountdown(EXPIRY_SECONDS, resendKey, delivered)
+  const fallbackDeadline = useRef(Date.now() + EXPIRY_SECONDS * 1000)
+  // A resend restarts only the cooldown; the challenge's expiry is fixed.
+  const expiresIn = useDeadlineCountdown(expiresAt ?? fallbackDeadline.current, delivered)
   const cooldown = useCountdown(RESEND_COOLDOWN_SECONDS, resendKey, delivered)
   const mobile = variant === 'mobile'
   const recovery = factor.type === 'recovery'
@@ -228,6 +256,7 @@ export function MfaChallengeCard({
         autoFocus
       />
       {status === 'error-invalid' && <InlineError data-error="invalid-code">{m.stepUp.invalid}</InlineError>}
+      {status === 'error-service' && <InlineError data-error="service-error">{m.stepUp.serviceError}</InlineError>}
       {delivered && (
         <>
           <div data-value="expires-in" style={{ marginBlockStart: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
@@ -270,7 +299,7 @@ export function MfaChallengeCard({
         >
           {status === 'verifying'
             ? m.stepUp.verifying
-            : status === 'error-invalid'
+            : status === 'error-invalid' || status === 'error-service'
               ? m.stepUp.tryAgain
               : mobile
                 ? m.stepUp.verifyShort
@@ -343,6 +372,10 @@ function StepUpInner({
     initialTotp ? { name: 'code', factor: initialTotp, delivered: false, code: 'idle' } : { name: 'choose' }
   )
   const inFlight = useRef(false)
+  const choosing = useRef(false)
+  const [choosingBusy, setChoosingBusy] = useState(false)
+  // The server's challenge deadline is fixed at login; resend never extends it.
+  const expiresAt = useRef(Date.now() + EXPIRY_SECONDS * 1000)
   const alive = useRef(true)
 
   const loadList = useCallback(async () => {
@@ -384,13 +417,20 @@ function StepUpInner({
         setStep({ name: 'code', factor: choice, delivered: false, code: 'idle' })
         return
       }
-      // sms / email: ask the server to dispatch a code first.
+      // sms / email: ask the server to dispatch a code first. Ignore re-entry
+      // (double-click) while a dispatch is pending.
+      if (choosing.current) return
+      choosing.current = true
+      setChoosingBusy(true)
       try {
         const ack = await api.challengeMfa(challenge.challengeId, choice.factorId)
         const delivered = ack?.delivered !== false
         setStep({ name: 'code', factor: choice, delivered, code: delivered ? 'idle' : 'error-delivery' })
       } catch {
         setStep({ name: 'code', factor: choice, delivered: false, code: 'error-delivery' })
+      } finally {
+        choosing.current = false
+        if (alive.current) setChoosingBusy(false)
       }
     },
     [api, challenge.challengeId]
@@ -411,9 +451,10 @@ function StepUpInner({
         const session = await api.verifyMfa(challenge.challengeId, factor.factorId, code)
         onAuthenticated(session)
       } catch (err) {
-        // Wrong / expired code, expired challenge, or a server fault: all fail closed on this screen.
-        void err
-        setStep({ name: 'code', factor, delivered, code: 'error-invalid' })
+        // Fail closed on this screen either way. A rejected code (400/401/403/422)
+        // is "invalid"; a 5xx / 429 / network failure is a retryable service error
+        // that must not claim the code was wrong.
+        setStep({ name: 'code', factor, delivered, code: isInvalidCode(err) ? 'error-invalid' : 'error-service' })
       } finally {
         inFlight.current = false
       }
@@ -437,6 +478,7 @@ function StepUpInner({
         onVerify={(code) => void verify(step.factor, step.delivered, code)}
         onResend={() => void choose(step.factor)}
         onChooseFactor={() => setStep({ name: 'choose' })}
+        expiresAt={expiresAt.current}
       />
     )
   } else if (factorsState.status === 'loading') {
@@ -500,6 +542,7 @@ function StepUpInner({
         factors={factorsState.factors}
         recoveryEnabled={recoveryEnabled}
         onChoose={(c) => void choose(c)}
+        disabled={choosingBusy}
       />
     )
     body = mobile ? (

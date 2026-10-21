@@ -7,8 +7,10 @@ import type { MfaClient } from '../../types'
  * safety net, on unmount. Best-effort by design — a failed DELETE is swallowed
  * (the factor stays inert: it is `pending`, never offered at sign-in, and
  * deleting a pending factor is always allowed — it is not the "last factor"
- * the 409 guard protects). A hard tab close cannot run this; the server's
- * pending-factor expiry is the backstop.
+ * the 409 guard protects). A hard tab close cannot run this: the pending factor
+ * then stays until it is removed (the user can remove it from the MFA overview).
+ * There is currently NO server-side expiry of pending factors; adding one is a
+ * tracked follow-up.
  */
 export function usePendingFactor(api: Pick<MfaClient, 'removeFactor'>) {
   const pending = useRef<string | null>(null)

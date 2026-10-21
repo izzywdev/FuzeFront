@@ -228,6 +228,65 @@ describe('MfaStepUpMobileFlow (frames 01-02, 375px)', () => {
     expect(q('[data-state="cooldown"]')).toBeTruthy()
   })
 
+  it('resend restarts only the cooldown; the challenge expiry keeps counting down', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const client = makeClient()
+    render(
+      <MfaStepUpMobileFlow client={asClient(client)} challenge={{ challengeId: 'c', factors: [SMS] }} onAuthenticated={vi.fn()} />
+    )
+    await user.click(q('[data-factor="sms"][data-action="challenge"]')!)
+    await waitFor(() => expect(q('[data-value="expires-in"]')).toBeTruthy())
+    await act(async () => { vi.advanceTimersByTime(60_000) })
+    expect(q('[data-value="expires-in"]')!.textContent).toContain('04:0')
+    await user.click(q('[data-action="resend"]')!)
+    await waitFor(() => expect(client.challengeMfa).toHaveBeenCalledTimes(2))
+    expect(q('[data-state="cooldown"]')).toBeTruthy()
+    expect(q('[data-value="expires-in"]')!.textContent).not.toContain('05:00')
+    expect(q('[data-value="expires-in"]')!.textContent).toContain('04:')
+  })
+
+  it('a double-click on a factor issues exactly one challenge request', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const challengeMfa = vi.fn(
+      () => new Promise((res) => { release = () => res({ delivered: true }) })
+    )
+    const client = makeClient({ challengeMfa })
+    render(
+      <MfaStepUpMobileFlow client={asClient(client)} challenge={{ challengeId: 'c', factors: [SMS] }} onAuthenticated={vi.fn()} />
+    )
+    const btn = q('[data-factor="sms"][data-action="challenge"]') as HTMLButtonElement
+    await user.dblClick(btn)
+    expect(challengeMfa).toHaveBeenCalledTimes(1)
+    expect(btn.disabled).toBe(true)
+    await act(async () => { release() })
+    await waitFor(() => expect(q('[data-value="expires-in"]')).toBeTruthy())
+  })
+
+  it('a 5xx on verify is a retryable service error, not "wrong code"; 4xx stays invalid', async () => {
+    const user = userEvent.setup()
+    const verifyMfa = vi
+      .fn()
+      .mockRejectedValueOnce(err(503, 'UNAVAILABLE'))
+      .mockRejectedValueOnce(err(429, 'RATE'))
+      .mockRejectedValueOnce(new TypeError('network'))
+    const client = makeClient({ verifyMfa })
+    render(
+      <MfaStepUpFlow client={asClient(client)} challenge={{ challengeId: 'c', factors: [TOTP] }} onAuthenticated={vi.fn()} />
+    )
+    await waitFor(() => expect(q('[data-action="verify-mfa"]')).toBeTruthy())
+    await typeCode(user, '123456')
+    for (let i = 0; i < 3; i++) {
+      await user.click(q('[data-action="verify-mfa"]')!)
+      await waitFor(() => expect(q('[data-component="mfa-challenge"][data-state="error-service"]')).toBeTruthy())
+      expect(q('[data-error="service-error"]')).toBeTruthy()
+      expect(q('[data-error="invalid-code"]')).toBeNull()
+      // code is kept, verify is retryable
+      expect((q('[data-action="verify-mfa"]') as HTMLButtonElement).disabled).toBe(false)
+    }
+  })
+
   it('delivery failure offers resend and other methods', async () => {
     const user = userEvent.setup()
     const client = makeClient({ challengeMfa: vi.fn(async () => { throw err(503) }) })

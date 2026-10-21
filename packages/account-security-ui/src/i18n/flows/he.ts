@@ -84,6 +84,7 @@ export const flowsHe: DeepPartial<FlowMessages> = {
     verify: 'אימות והתחברות',
     verifyShort: 'אימות והמשך',
     useDifferent: 'שימוש בשיטה אחרת',
+    serviceError: 'לא הצלחנו לאמת את הקוד כרגע. הקוד לא נדחה — נסה/י שוב בעוד רגע.',
     retry: 'נסה/י שוב',
   },
   contact: { title: 'אימות הטלפון', skip: 'דלג/י לעת עתה', sendCode: 'שלח/י קוד', confirm: 'אישור' },

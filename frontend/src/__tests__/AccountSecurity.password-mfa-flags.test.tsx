@@ -21,17 +21,36 @@ vi.mock('../platform/featureFlags', () => ({
 }))
 vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'tok' }))
 
+let language = 'en'
+vi.mock('@fuzefront/i18n', () => ({
+  useT: () => ({ t: (k: string) => k, i18n: { resolvedLanguage: language, language } }),
+}))
+let authExperience = false
+vi.mock('@fuzefront/auth-ui', () => ({ isAuthExperienceEnabled: () => authExperience }))
+const pwProps = vi.fn()
+const mfaProps = vi.fn()
+const phoneProps = vi.fn()
+
 const hubProps = vi.fn()
 const statusProps = vi.fn()
 vi.mock('@fuzefront/account-security-ui', () => {
   const stub = (id: string) => (props: Record<string, unknown>) => <div data-testid={id} data-props={Object.keys(props).join(',')} />
   return {
-    PasswordManagementFlow: stub('password-flow'),
-    MfaOverviewFlow: stub('mfa-overview'),
+    PasswordManagementFlow: (props: Record<string, unknown>) => {
+      pwProps(props)
+      return <div data-testid="password-flow" />
+    },
+    MfaOverviewFlow: (props: Record<string, unknown>) => {
+      mfaProps(props)
+      return <div data-testid="mfa-overview" />
+    },
     TotpEnrollFlow: stub('mfa-totp'),
     SmsEnrollFlow: stub('mfa-sms'),
     RecoveryCodesFlow: stub('mfa-recovery'),
-    ConfirmContactFlow: stub('confirm-contact'),
+    ConfirmContactFlow: (props: Record<string, unknown>) => {
+      phoneProps(props)
+      return <div data-testid="confirm-contact" />
+    },
     SecurityStatusMobileFlow: (props: Record<string, unknown>) => {
       statusProps(props)
       return <div data-testid="security-status-mobile" />
@@ -58,6 +77,11 @@ const inRouter = (ui: React.ReactNode) => render(<MemoryRouter>{ui}</MemoryRoute
 beforeEach(() => {
   flags = {}
   ready = true
+  language = 'en'
+  authExperience = false
+  pwProps.mockClear()
+  mfaProps.mockClear()
+  phoneProps.mockClear()
   hubProps.mockClear()
   statusProps.mockClear()
   window.matchMedia = ((q: string) => ({
@@ -78,6 +102,29 @@ describe('/account/security/password — fuzefront.account-security.password-res
     flags = { [PW]: true }
     inRouter(<AccountPasswordPage />)
     expect(screen.getByTestId('password-flow')).toBeInTheDocument()
+  })
+  it('/reset exits are offered only when the auth experience (which mounts /reset) is enabled', () => {
+    flags = { [PW]: true }
+    inRouter(<AccountPasswordPage />)
+    expect(pwProps.mock.calls[0][0].canReset).toBe(false)
+    pwProps.mockClear()
+    authExperience = true
+    inRouter(<AccountPasswordPage />)
+    expect(pwProps.mock.calls[0][0].canReset).toBe(true)
+  })
+  it('passes the active language as the package locale (he -> he, unsupported -> en)', () => {
+    flags = { [PW]: true, [MFA]: true, [MOBILE]: true }
+    language = 'he-IL'
+    inRouter(<AccountPasswordPage />)
+    inRouter(<AccountMfaPage view="overview" />)
+    inRouter(<AccountVerifyPhonePage />)
+    expect(pwProps.mock.calls[0][0].locale).toBe('he')
+    expect(mfaProps.mock.calls[0][0].locale).toBe('he')
+    expect(phoneProps.mock.calls[0][0].locale).toBe('he')
+    pwProps.mockClear()
+    language = 'fr'
+    inRouter(<AccountPasswordPage />)
+    expect(pwProps.mock.calls[0][0].locale).toBe('en')
   })
   it('flags not yet fetched: renders nothing (neither the surface nor a false "unavailable")', () => {
     ready = false

@@ -273,6 +273,7 @@ export const flowsEn = {
     recoveryLabel: 'Recovery code',
     invalidPrompt: "That didn't work. Enter the current 6-digit code.",
     invalid: 'Wrong or expired code. Codes change every 30 seconds.',
+    serviceError: "We couldn't verify your code right now. Your code wasn't rejected — try again in a moment.",
     verify: 'Verify & sign in',
     verifyShort: 'Verify & continue',
     verifying: 'Verifying…',

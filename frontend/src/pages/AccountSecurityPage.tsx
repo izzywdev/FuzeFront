@@ -5,6 +5,7 @@ import { useFlag } from '../platform/featureFlags'
 import { getActiveAuthToken } from '../lib/accounts'
 import { ACCOUNT_SECURITY_FLAGS } from '../components/account-security/FlaggedSurface'
 import { useCompactViewport } from '../lib/compactViewport'
+import { useAccountSecurityLocale } from '../components/account-security/useAccountSecurityLocale'
 
 /**
  * Feature-flag gate for the account-security hub
@@ -33,6 +34,7 @@ export default function AccountSecurityPage() {
   const mfaManagement = useFlag(ACCOUNT_SECURITY_FLAGS.mfaManagement, false)
   const mfaStepUpMobile = useFlag(ACCOUNT_SECURITY_FLAGS.mfaStepUpMobile, false)
   const compact = useCompactViewport()
+  const locale = useAccountSecurityLocale()
 
   const onNavigate = useCallback(
     (route: string) => {
@@ -59,11 +61,12 @@ export default function AccountSecurityPage() {
           small screens only, behind fuzefront.security.mfa-stepup-mobile. */}
       {mfaStepUpMobile && compact && (
         <div style={{ marginBottom: 'var(--space-6)' }}>
-          <SecurityStatusMobileFlow getToken={getToken} onNavigate={onNavigate} addMethodEnabled={mfaManagement} />
+          <SecurityStatusMobileFlow getToken={getToken} locale={locale} onNavigate={onNavigate} addMethodEnabled={mfaManagement} />
         </div>
       )}
       <AccountSecurityHub
         getToken={getToken}
+        locale={locale}
         onNavigate={onNavigate}
         onSetPassword={() => navigate('/account/security/password')}
         routes={mfaManagement ? { twoFactor: '/account/security/mfa' } : undefined}

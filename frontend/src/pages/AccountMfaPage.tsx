@@ -8,6 +8,7 @@ import {
 } from '@fuzefront/account-security-ui'
 import { getActiveAuthToken } from '../lib/accounts'
 import { ACCOUNT_SECURITY_FLAGS, FlaggedSurface } from '../components/account-security/FlaggedSurface'
+import { useAccountSecurityLocale } from '../components/account-security/useAccountSecurityLocale'
 
 export type AccountMfaView = 'overview' | 'authenticator' | 'phone' | 'recovery-codes'
 
@@ -22,7 +23,8 @@ export type AccountMfaView = 'overview' | 'authenticator' | 'phone' | 'recovery-
 export default function AccountMfaPage({ view }: { view: AccountMfaView }) {
   const navigate = useNavigate()
   const getToken = useCallback(() => getActiveAuthToken(), [])
-  const nav = { getToken, onNavigate: (r: string) => navigate(r) }
+  const locale = useAccountSecurityLocale()
+  const nav = { getToken, locale, onNavigate: (r: string) => navigate(r) }
   return (
     <FlaggedSurface flag={ACCOUNT_SECURITY_FLAGS.mfaManagement}>
       {view === 'overview' && <MfaOverviewFlow {...nav} />}

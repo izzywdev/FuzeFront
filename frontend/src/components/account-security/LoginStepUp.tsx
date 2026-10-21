@@ -6,6 +6,7 @@ import {
 import { isPreAuthFlagEnabled } from '../../platform/preAuthFlags'
 import { isCompactViewport } from '../../lib/compactViewport'
 import { ACCOUNT_SECURITY_FLAGS } from './FlaggedSurface'
+import { useAccountSecurityLocale } from './useAccountSecurityLocale'
 
 /** Support contact for the step-up "no verification method" fail-closed state. */
 const SUPPORT_MAILTO = 'mailto:support@frontfuse.dev'
@@ -45,6 +46,7 @@ export function useLoginStepUp(
 } {
   const [challenge, setChallenge] = useState<StepUpChallenge | null>(null)
   const variant = resolveStepUpVariant(isCompactViewport())
+  const locale = useAccountSecurityLocale()
 
   const begin = (next: StepUpChallenge): boolean => {
     setChallenge(next)
@@ -58,6 +60,7 @@ export function useLoginStepUp(
     view: (
       <Flow
         challenge={challenge}
+        locale={locale}
         onAuthenticated={onSession}
         onContactSupport={() => window.location.assign(SUPPORT_MAILTO)}
         onBack={() => setChallenge(null)}

@@ -18,9 +18,8 @@ export interface ChangePasswordFormProps {
   errors?: PasswordFormErrors
   onSubmit: (currentPassword: string, newPassword: string) => void
   onCancel?: () => void
-  /** "Forgot your current password?" → the reset flow. */
+  /** "Forgot your current password?" → the reset flow. The link is hidden when omitted. */
   onForgot?: () => void
-  forgotHref?: string
 }
 
 /** Change an existing password: current + new + confirm (frame 05, variant change). */
@@ -30,7 +29,6 @@ export function ChangePasswordForm({
   onSubmit,
   onCancel,
   onForgot,
-  forgotHref = '/reset',
 }: ChangePasswordFormProps) {
   const { messages: m } = useAccountSecurityI18n()
   const [current, setCurrent] = useState('')
@@ -83,24 +81,24 @@ export function ChangePasswordForm({
             data-input="current-password"
           />
         </div>
-        <a
-          href={forgotHref}
-          data-nav="forgot"
-          onClick={(e) => {
-            if (onForgot) {
+        {onForgot && (
+          <a
+            href="/reset"
+            data-nav="forgot"
+            onClick={(e) => {
               e.preventDefault()
               onForgot()
-            }
-          }}
-          style={{
-            display: 'inline-block',
-            marginBlockStart: 'var(--space-2)',
-            fontSize: 'var(--text-xs)',
-            color: 'var(--accent-color)',
-          }}
-        >
-          {m.password.change.forgot}
-        </a>
+            }}
+            style={{
+              display: 'inline-block',
+              marginBlockStart: 'var(--space-2)',
+              fontSize: 'var(--text-xs)',
+              color: 'var(--accent-color)',
+            }}
+          >
+            {m.password.change.forgot}
+          </a>
+        )}
 
         <PasswordFields
           newLabel={m.password.change.newPassword}
