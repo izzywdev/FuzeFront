@@ -23,6 +23,7 @@ import {
   createCatalogStore,
   createEventBus,
   executableWorkflowTarget,
+  isPreferredWorkflowExecutionArtifact,
   performanceDispatchRevision,
   performanceWorkflowTarget,
   relayOutboxBatch,
@@ -1012,11 +1013,16 @@ app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecu
   const tenantId = requestIdentity(request)!.tenantId
   const repository = await store.repository(repositoryId, tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  const artifact = (await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)).find(item => item.id === parsed.data.artifactId)
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
+  const artifact = artifacts.find(item => item.id === parsed.data.artifactId)
   const workflowPath = artifact ? executableWorkflowTarget(artifact) : undefined
   if (!artifact || !['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(artifact.kind)) {
     return response.status(404).json({ error: 'Executable test suite not found' })
   }
+  if (!isPreferredWorkflowExecutionArtifact(artifact, artifacts)) return response.status(422).json({
+    error: 'This workflow is represented by a higher-priority reviewed suite classification',
+    code: 'TEST_WORKFLOW_CLASSIFICATION_CONFLICT',
+  })
   if (!workflowPath) return response.status(422).json({ error: 'Test definition is not a scanner-verified workflow_dispatch workflow', code: 'TEST_WORKFLOW_NOT_DISPATCHABLE' })
   const dispatchInputs = validateWorkflowDispatchInputs(artifact, body.data.inputs)
   if (!dispatchInputs.success) return response.status(422).json({
@@ -1044,8 +1050,13 @@ app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRu
   const tenantId = requestIdentity(request)!.tenantId
   const repository = await store.repository(repositoryId, tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  const artifact = (await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)).find(item => item.id === parsed.data.artifactId)
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
+  const artifact = artifacts.find(item => item.id === parsed.data.artifactId)
   if (!artifact || !['load-test', 'stress-test'].includes(artifact.kind)) return response.status(404).json({ error: 'Performance test not found' })
+  if (!isPreferredWorkflowExecutionArtifact(artifact, artifacts)) return response.status(422).json({
+    error: 'This workflow is represented by a higher-priority reviewed suite classification',
+    code: 'PERFORMANCE_WORKFLOW_CLASSIFICATION_CONFLICT',
+  })
   const workflowPath = performanceWorkflowTarget(artifact)
   if (!workflowPath) return response.status(422).json({ error: 'Performance definition is not a scanner-verified workflow_dispatch workflow', code: 'PERFORMANCE_WORKFLOW_NOT_DISPATCHABLE' })
   const dispatchInputs = validateWorkflowDispatchInputs(artifact, body.data.inputs)

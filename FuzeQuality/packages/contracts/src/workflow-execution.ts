@@ -36,6 +36,27 @@ export function artifactWorkflowExecutionKind(
 }
 
 /**
+ * A scanner can legitimately emit more than one suite artifact for the same
+ * workflow when the workflow carries overlapping reviewed markers. Only the
+ * preferred classification may be dispatched: webhook ingestion applies the
+ * same precedence, so dispatching a lower-priority alias would create a run
+ * that can never be correlated back to the suite the operator selected.
+ */
+export function isPreferredWorkflowExecutionArtifact(
+  artifact: Pick<QualityArtifact, 'repositoryId' | 'sourcePath' | 'kind'>,
+  artifacts: ReadonlyArray<Pick<QualityArtifact, 'repositoryId' | 'sourcePath' | 'kind'>>,
+): boolean {
+  const artifactKind = artifactWorkflowExecutionKind(artifact)
+  if (!artifactKind) return false
+  const sharedWorkflowArtifacts = artifacts.filter(candidate =>
+    candidate.repositoryId === artifact.repositoryId &&
+    candidate.sourcePath === artifact.sourcePath &&
+    artifactWorkflowExecutionKind(candidate) !== undefined
+  )
+  return preferredWorkflowExecutionKind(sharedWorkflowArtifacts) === artifactKind
+}
+
+/**
  * Shared API/UI eligibility contract for scanner-verified GitHub Actions
  * workflows. GitHub accepts workflow dispatch by file name only for direct
  * children of .github/workflows; nested inventory files are never runnable.

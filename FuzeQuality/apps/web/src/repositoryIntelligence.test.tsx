@@ -2073,6 +2073,32 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('offers controlled dispatch only for the preferred classification of a shared workflow', async () => {
+    mockEvidenceApis()
+    const sharedIntegration = {
+      ...integrationArtifact,
+      id: 'artifact-shared-integration',
+      title: 'Shared integration alias',
+      sourcePath: loadArtifact.sourcePath,
+      execution: {
+        ...integrationArtifact.execution!,
+        workflowPath: loadArtifact.sourcePath,
+      },
+    }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([sharedIntegration, loadArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    const aliasRow = (await screen.findByText('Shared integration alias')).closest('article')!
+    expect(within(aliasRow).getByText(/Inventory only · this shared workflow/)).toHaveTextContent(
+      'dispatched and recorded as load evidence before integration evidence'
+    )
+    expect(within(aliasRow).queryByRole('button', { name: /Run analyzed revision/ })).not.toBeInTheDocument()
+    expect(within(aliasRow).queryByRole('region', { name: /Latest execution/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /Run analyzed revision/ })).toHaveLength(1)
+  })
+
   it('keeps dispatch failures actionable beside the selected workflow', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
@@ -2287,11 +2313,10 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
 
-    expect(await screen.findByText('Shared workflow · recorded outcomes are classified as load evidence before integration evidence.')).toBeVisible()
+    expect(await screen.findByText('Inventory only · this shared workflow is dispatched and recorded as load evidence before integration evidence.')).toBeVisible()
     expect(await screen.findByLabelText(`Latest execution for ${overlappingLoad.title}`)).toHaveTextContent('failed · revision-1')
-    expect(screen.getByLabelText(`Latest execution for ${integrationArtifact.title}`)).toHaveTextContent(
-      'No matching integration execution has been ingested',
-    )
+    expect(screen.queryByLabelText(`Latest execution for ${integrationArtifact.title}`)).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /Run analyzed revision/ })).toHaveLength(1)
   })
 
   it('loads performance evidence independently of the first mixed execution page', async () => {

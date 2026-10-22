@@ -53,6 +53,7 @@ const qualityArtifacts = [
   { id: 'test-plan-artifact-retry', repositoryId: 'repo-1', kind: 'test-plan', title: 'administrator suspends an application', sourcePath: 'tests/suspension.spec.ts', summary: 'e2e playwright test discovered during repository analysis', evidence: ['test:suspension:retry'] },
   { id: 'policy-artifact', repositoryId: 'repo-1', kind: 'policy', title: 'Administrative suspension policy', sourcePath: 'docs/policies/apps.md', summary: 'Only administrators may suspend apps', evidence: ['role=administrator'] },
   { id: 'gate-artifact', repositoryId: 'repo-1', kind: 'gate', title: 'Suspension authorization gate', sourcePath: '.github/workflows/quality.yml', summary: 'Checks the administrator boundary', evidence: ['npm run test:authorization'] },
+  { id: 'shared-integration-artifact', repositoryId: 'repo-1', kind: 'integration-test', title: 'Application API integration alias', sourcePath: '.github/workflows/load.yml', summary: 'Shared workflow integration classification', evidence: ['npm run test:integration'], execution: { provider: 'github-actions', workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' } },
   { id: 'load-artifact', repositoryId: 'repo-1', kind: 'load-test', title: 'Application API load test', sourcePath: '.github/workflows/load.yml', summary: 'Sustained application API load', evidence: ['p95 < 500ms'], execution: { provider: 'github-actions', workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' } },
 ]
 
@@ -422,6 +423,12 @@ test.describe('FuzeQuality implemented UX flows', () => {
     )
     await expect(latestLoad.getByLabel('Execution threshold evidence')).toContainText('640 ms ≤ 500 ms')
     await expect(latestLoad.getByText('Failed', { exact: true })).toBeVisible()
+    const integrationAlias = page.getByText('Application API integration alias', { exact: true }).locator('..')
+    await expect(integrationAlias).toContainText(
+      'Inventory only · this shared workflow is dispatched and recorded as load evidence before integration evidence.'
+    )
+    await expect(integrationAlias.getByRole('button', { name: /Run analyzed revision/ })).toHaveCount(0)
+    await expect(page.getByLabel('Latest execution for Application API integration alias')).toHaveCount(0)
     const providerRequest = page.waitForRequest(request =>
       request.url().includes('/test-executions?provider=github-actions')
     )

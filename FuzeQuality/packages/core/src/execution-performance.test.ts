@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { executableWorkflowTarget, executionOutcomeTrend, executionPerformance, filterTestExecutions, performanceDispatchRevision, performanceWorkflowTarget, validateWorkflowDispatchInputs } from './execution-performance'
+import { executableWorkflowTarget, executionOutcomeTrend, executionPerformance, filterTestExecutions, isPreferredWorkflowExecutionArtifact, performanceDispatchRevision, performanceWorkflowTarget, validateWorkflowDispatchInputs } from './execution-performance'
 
 describe('execution performance', () => {
   it('dispatches only the immutable source commit that produced the current catalog', () => {
@@ -53,6 +53,24 @@ describe('execution performance', () => {
       sourcePath: '.github/workflows/load/test.yml',
       execution: { ...artifact.execution, workflowPath: '.github/workflows/load/test.yml' },
     })).toBeUndefined()
+  })
+
+  it('dispatches only the preferred classification of a shared workflow', () => {
+    const integration = {
+      id: 'integration', repositoryId: 'repo', kind: 'integration-test' as const,
+      title: 'System checks', sourcePath: '.github/workflows/verify.yml',
+      summary: 'Integration workflow', evidence: [],
+    }
+    const load = { ...integration, id: 'load', kind: 'load-test' as const, title: 'Load checks' }
+    const otherRepository = { ...integration, id: 'other', repositoryId: 'other-repo' }
+
+    expect(isPreferredWorkflowExecutionArtifact(load, [integration, load])).toBe(true)
+    expect(isPreferredWorkflowExecutionArtifact(integration, [integration, load])).toBe(false)
+    expect(isPreferredWorkflowExecutionArtifact(integration, [integration, otherRepository])).toBe(true)
+    expect(isPreferredWorkflowExecutionArtifact(
+      { ...integration, kind: 'test-plan' },
+      [integration],
+    )).toBe(false)
   })
 
   it('aggregates only explicit policy-gate execution pairs', () => {

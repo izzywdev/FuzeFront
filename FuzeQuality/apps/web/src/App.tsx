@@ -54,6 +54,7 @@ import type {
 import {
   artifactWorkflowExecutionKind,
   executableWorkflowTarget,
+  isPreferredWorkflowExecutionArtifact,
   preferredWorkflowExecutionKind,
 } from '@fuzequality/contracts/workflow-execution'
 import type { ExecutionOutcomeTrend, PolicyGatePerformance } from '@fuzequality/core'
@@ -5472,7 +5473,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       const artifactExecutionKind = artifactWorkflowExecutionKind(item)
                       const lowerPrioritySharedWorkflow = sharedWorkflowKinds.size > 1 &&
                         preferredExecutionKind !== undefined &&
-                        artifactExecutionKind !== preferredExecutionKind
+                        !isPreferredWorkflowExecutionArtifact(item, sharedWorkflowArtifacts)
                       return (
                       <article className="catalog-row" key={item.id}>
                         <div>
@@ -5481,7 +5482,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                           <p>{item.summary}</p>
                           {lowerPrioritySharedWorkflow && (
                             <small className="performance-inventory-only">
-                              Shared workflow · recorded outcomes are classified as {preferredExecutionKind} evidence before {artifactExecutionKind} evidence.
+                              Inventory only · this shared workflow is dispatched and recorded as {preferredExecutionKind} evidence before {artifactExecutionKind} evidence.
                             </small>
                           )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
@@ -5517,6 +5518,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                           {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             workflowTarget &&
                             analyzedRevision &&
+                            !lowerPrioritySharedWorkflow &&
                             item.execution?.requiredInputs?.length ? (
                               <div className="workflow-dispatch-inputs" aria-label={`Required inputs for ${item.title}`}>
                                 <small>
@@ -5543,7 +5545,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             ) : null}
                           {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             workflowTarget &&
-                            analyzedRevision && (
+                            analyzedRevision &&
+                            !lowerPrioritySharedWorkflow && (
                               <div className="row-actions">
                                 <button
                                   className="secondary-button"
@@ -5594,7 +5597,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 exact commit before dispatching this workflow.
                               </small>
                             )}
-                          {['load-test', 'stress-test'].includes(item.kind) && item.execution && (
+                          {['load-test', 'stress-test'].includes(item.kind) && item.execution && !lowerPrioritySharedWorkflow && (
                             <section
                               className="performance-latest-execution"
                               aria-label={`Latest execution for ${item.title}`}
@@ -5620,7 +5623,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               )}
                             </section>
                           )}
-                          {item.kind === 'post-production-test' && (
+                          {item.kind === 'post-production-test' && !lowerPrioritySharedWorkflow && (
                             <section
                               className="performance-latest-execution"
                               aria-label={`Latest execution for ${item.title}`}
@@ -5645,7 +5648,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               )}
                             </section>
                           )}
-                          {item.kind === 'integration-test' && (
+                          {item.kind === 'integration-test' && !lowerPrioritySharedWorkflow && (
                             <section
                               className="performance-latest-execution"
                               aria-label={`Latest execution for ${item.title}`}

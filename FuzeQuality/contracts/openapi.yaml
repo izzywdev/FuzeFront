@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.71.0
+  version: 0.72.0
   license:
     name: UNLICENSED
 servers:
@@ -1294,7 +1294,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '422':
-          description: The suite is inventory-only, supplied inputs do not exactly match the analyzed required inputs, the GitHub App installation is unavailable, or dispatch failed.
+          description: The suite is inventory-only, is a lower-priority alias of a shared workflow, supplied inputs do not exactly match the analyzed required inputs, the GitHub App installation is unavailable, or dispatch failed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -1332,7 +1332,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '422':
-          description: The definition is inventory-only, supplied inputs do not exactly match the analyzed required inputs, the GitHub App installation is unavailable, or dispatch failed.
+          description: The definition is inventory-only, is a lower-priority alias of a shared workflow, supplied inputs do not exactly match the analyzed required inputs, the GitHub App installation is unavailable, or dispatch failed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
