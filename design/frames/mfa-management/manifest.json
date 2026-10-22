@@ -49,41 +49,41 @@
         "id": "mfa-overview",
         "orchestrator": "MfaOverviewFlow",
         "route": "/account/security/mfa",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:49:57.514Z"
       },
       {
         "id": "totp-enroll",
         "orchestrator": "TotpEnrollFlow",
         "route": "/account/security/mfa/add/authenticator",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:13.726Z"
       },
       {
         "id": "sms-enroll",
         "orchestrator": "SmsEnrollFlow",
         "route": "/account/security/mfa/add/phone",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:02.427Z"
       },
       {
         "id": "recovery-codes",
         "orchestrator": "RecoveryCodesFlow",
         "route": "/account/security/mfa/recovery-codes",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:49:59.912Z"
       },
       {
         "id": "mfa-step-up",
         "orchestrator": "MfaStepUpFlow",
         "route": "/login/mfa",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:05.651Z"
       }
     ],
     "components": [
