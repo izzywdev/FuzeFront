@@ -918,6 +918,8 @@ app.get('/api/v1/repositories/:id/test-executions/:executionId', mayReadCatalog,
   const result = await testExecutionDetail(repositoryId, tenantId, executionId, {
     repository: (id, tenant) => store.repository(id, tenant),
     executions: (id, tenant, query) => store.testExecutions(id, tenant, query),
+    catalogRevisionForSource: (id, tenant, sourceRevision) =>
+      store.catalogRevisionForSource(id, tenant, sourceRevision),
   })
   if (result.status === 404) return response.status(404).json({ error: result.error })
   response.json(result.execution)

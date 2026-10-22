@@ -170,7 +170,11 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/test-executions/{executionId}'].get.responses['200'].content[
           'application/json'
         ].schema.$ref
-      ).toBe('#/components/schemas/TestExecution')
+      ).toBe('#/components/schemas/TestExecutionDetail')
+      expect(schemas.TestExecutionDetail.allOf[0].$ref).toBe(
+        '#/components/schemas/TestExecution'
+      )
+      expect(schemas.TestExecutionDetail.allOf[1].properties.catalogRevision.type).toBe('string')
       expect(document.components.parameters.ExecutionId).toMatchObject({
         name: 'executionId',
         in: 'path',

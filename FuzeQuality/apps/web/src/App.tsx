@@ -3607,7 +3607,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [refreshingExecutionEvidenceId, setRefreshingExecutionEvidenceId] = useState<string>()
   const [executionEvidenceRefreshError, setExecutionEvidenceRefreshError] = useState<string>()
   const [executionInspectorOpen, setExecutionInspectorOpen] = useState(false)
-  const [inspectedExecution, setInspectedExecution] = useState<TestExecution>()
+  const [inspectedExecution, setInspectedExecution] = useState<import('@fuzequality/contracts').TestExecutionDetail>()
   const [executionInspectorArtifacts, setExecutionInspectorArtifacts] = useState<QualityArtifact[]>([])
   const [executionInspectorLoading, setExecutionInspectorLoading] = useState(false)
   const [executionInspectorError, setExecutionInspectorError] = useState<string>()
@@ -4532,11 +4532,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         ]),
       ])]
       if (evidenceIds.length) {
-        try {
+        if (!detail.catalogRevision) {
+          setExecutionInspectorEvidenceError(
+            'The analyzed catalog revision for this execution is unavailable. Stored policy and gate identifiers remain visible, but their source artifacts cannot be resolved.'
+          )
+        } else try {
           const evidence = await api.qualityArtifactsByIds(
             detail.repositoryId,
             evidenceIds,
-            detail.revision,
+            detail.catalogRevision,
           )
           if (request === executionInspectorRequest.current) {
             setExecutionInspectorArtifacts(evidence.items)

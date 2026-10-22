@@ -632,6 +632,15 @@ export type TestExecution = {
   summary?: string
 }
 
+/**
+ * Exact execution evidence plus the analyzed catalog revision that owns its
+ * policy/gate artifact identifiers. `revision` remains the provider source
+ * revision (for GitHub Actions, the workflow head SHA).
+ */
+export type TestExecutionDetail = TestExecution & {
+  catalogRevision?: string
+}
+
 export type TestExecutionPage = {
   items: TestExecution[]
   page: { nextCursor: string | null; hasMore: boolean }

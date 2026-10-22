@@ -187,6 +187,10 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       ],
       page: { nextCursor: null, hasMore: false },
     })
+    if (url.pathname.endsWith('/test-executions/execution-1')) return respond({
+      ...testExecutions[0],
+      catalogRevision: 'execution-catalog-revision',
+    })
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
     if (url.pathname.endsWith('/execution-performance')) return respond([{ repositoryId: 'repo-1', policyArtifactId: 'policy-artifact', policyTitle: 'Administrative suspension policy', policySourcePath: 'docs/policies/apps.md', gateArtifactId: 'gate-artifact', gateTitle: 'Admin authorization gate', gateSourcePath: '.github/workflows/authorization.yml', passed: 2, failed: 1, cancelled: 0, running: 0, revisionCount: 3, latestRevision: 'abcdef123456', latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
     if (url.pathname.endsWith('/test-suites/load-artifact/execute') && method === 'POST') return respond({
@@ -391,6 +395,22 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(gateEvidence.getByText('Suspension authorization gate')).toBeVisible()
     await expect(gateEvidence).toContainText('docs/policies/apps.md → .github/workflows/quality.yml')
     await expect(productionExecution.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
+    const executionDetailRequest = page.waitForRequest(request =>
+      request.url().endsWith('/test-executions/execution-1')
+    )
+    const executionArtifactRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/quality-artifacts/by-ids') &&
+        url.searchParams.get('revision') === 'execution-catalog-revision'
+    })
+    await productionExecution.getByRole('button', { name: 'Inspect execution detail' }).click()
+    await executionDetailRequest
+    await executionArtifactRequest
+    const executionInspector = page.getByRole('dialog', { name: 'Production suspension journey' })
+    await expect(executionInspector.getByText('Administrative suspension policy')).toBeVisible()
+    await expect(executionInspector.getByText('Suspension authorization gate')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(executionInspector).toBeHidden()
     const latestLoad = page.getByLabel('Latest execution for Application API load test')
     await expect(latestLoad).toContainText('failed · abcdef123456')
     await expect(latestLoad).toContainText('p95 latency exceeded the release threshold.')

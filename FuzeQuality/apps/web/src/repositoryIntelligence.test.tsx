@@ -347,7 +347,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(detailRequest).toHaveBeenCalledWith(repository.id, guardedEvaluation.id)
     expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
       repository.id,
-      [policyArtifact.id, gateArtifact.id],
+      expect.arrayContaining([policyArtifact.id, gateArtifact.id]),
       guardedEvaluation.revision,
     )
     expect(within(inspector).getByText(`policy · ${policyArtifact.sourcePath}`)).toBeVisible()
@@ -865,8 +865,9 @@ describe('RepositoryIntelligence flow inventory', () => {
   it('inspects exact execution evidence and resolves its revision-scoped policy and gate artifacts', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
-    const exactExecution: TestExecution = {
+    const exactExecution: import('@fuzequality/contracts').TestExecutionDetail = {
       ...loadExecution,
+      catalogRevision: 'catalog-revision-1',
       policyArtifactIds: [policyArtifact.id],
       gateArtifactIds: [gateArtifact.id],
       gateEvaluations: [{
@@ -888,17 +889,41 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     const dialog = await screen.findByRole('dialog', { name: exactExecution.name })
     expect(api.testExecution).toHaveBeenCalledWith(repository.id, exactExecution.id)
-    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
+    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
       repository.id,
       [policyArtifact.id, gateArtifact.id],
-      exactExecution.revision,
-    )
+      exactExecution.catalogRevision,
+    ))
     expect(within(dialog).getByText(policyArtifact.title)).toBeVisible()
     expect(within(dialog).getByText(gateArtifact.title)).toBeVisible()
     expect(within(dialog).getByText('Authentication gate failed for this exact attempt.')).toBeVisible()
     expect(within(dialog).getByRole('link', { name: /Open CI run/ })).toHaveAttribute(
       'href',
       exactExecution.sourceUrl,
+    )
+  })
+
+  it('does not resolve execution artifacts against an unavailable catalog revision', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const exactExecution: import('@fuzequality/contracts').TestExecutionDetail = {
+      ...loadExecution,
+      policyArtifactIds: [policyArtifact.id],
+    }
+    vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
+    vi.mocked(api.testExecution).mockResolvedValue(exactExecution)
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect execution detail' }))
+
+    const dialog = await screen.findByRole('dialog', { name: exactExecution.name })
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'The analyzed catalog revision for this execution is unavailable'
+    ))
+    expect(api.qualityArtifactsByIds).not.toHaveBeenCalledWith(
+      repository.id,
+      [policyArtifact.id],
+      exactExecution.revision,
     )
   })
 

@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.70.0
+  version: 0.71.0
   license:
     name: UNLICENSED
 servers:
@@ -1042,7 +1042,9 @@ paths:
       summary: Inspect one tenant-scoped retained test execution
       description: >-
         Returns the exact immutable execution record after verifying both repository ownership and
-        execution membership in the authenticated tenant. This endpoint is independent of list pagination.
+        execution membership in the authenticated tenant. The optional catalogRevision resolves the
+        provider source revision to the analyzed catalog that owns policy/gate artifact identifiers.
+        This endpoint is independent of list pagination.
       tags: [executions]
       security: [{ platformBearer: [] }]
       responses:
@@ -1050,7 +1052,7 @@ paths:
           description: Exact retained execution evidence.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/TestExecution' }
+              schema: { $ref: '#/components/schemas/TestExecutionDetail' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -2031,6 +2033,15 @@ components:
           items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
         evidenceCollection: { $ref: '#/components/schemas/TestExecutionEvidenceCollection' }
         summary: { type: string }
+    TestExecutionDetail:
+      allOf:
+        - $ref: '#/components/schemas/TestExecution'
+        - type: object
+          description: Exact execution detail with its source revision resolved to retained catalog evidence.
+          properties:
+            catalogRevision:
+              type: string
+              description: Catalog revision that owns this execution's policy and gate artifact identifiers.
     TestExecutionPage:
       type: object
       additionalProperties: false
