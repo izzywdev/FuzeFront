@@ -823,6 +823,11 @@ export const testSuiteDispatchSchema = z.object({
 
 export type TestSuiteDispatch = z.infer<typeof testSuiteDispatchSchema>
 
+export type TestSuiteDispatchPage = {
+  items: TestSuiteDispatch[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
 export type Portfolio = {
   repositories: Repository[]
   operations: ApiOperation[]

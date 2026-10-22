@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.73.0
+  version: 0.74.0
   license:
     name: UNLICENSED
 servers:
@@ -1332,6 +1332,41 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
 
+  /api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+      - name: artifactId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 500 }
+    get:
+      operationId: listTestSuiteDispatchHistory
+      summary: Read the immutable controlled-dispatch audit for one reviewed suite
+      description: >-
+        Returns tenant-scoped dispatch attempts from newest to oldest. Continuation cursors use
+        immutable request time and dispatch identity, so retries arriving between pages do not
+        duplicate or skip retained attempts. Input values are never persisted or returned.
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque dispatch cursor returned by the preceding page.
+          schema: { type: string, maxLength: 2000 }
+      responses:
+        '200':
+          description: Controlled dispatch attempts ordered newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestSuiteDispatchAuditPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
@@ -2257,6 +2292,15 @@ components:
         error: { type: string, minLength: 1, maxLength: 2000 }
         requestedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
+    TestSuiteDispatchAuditPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TestSuiteDispatchAudit' }
+        page: { $ref: '#/components/schemas/HistoryCursorPage' }
     ApiError:
       type: object
       required: [error]

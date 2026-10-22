@@ -2954,6 +2954,110 @@ function FlowReviewHistory({
   )
 }
 
+function TestSuiteDispatchHistory({
+  artifact,
+  latestDispatch,
+}: {
+  artifact: QualityArtifact
+  latestDispatch: TestSuiteDispatch
+}) {
+  const [history, setHistory] = useState<TestSuiteDispatch[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  const requestRef = useRef(0)
+  const requestInFlight = useRef(false)
+  const initialHistoryLoaded = useRef(false)
+
+  const loadHistory = useCallback(async (cursor?: string) => {
+    if (requestInFlight.current) return
+    if (!cursor) initialHistoryLoaded.current = true
+    const request = ++requestRef.current
+    requestInFlight.current = true
+    setLoading(true)
+    setError(undefined)
+    try {
+      const page = await api.testSuiteDispatchHistory(
+        artifact.repositoryId,
+        artifact.id,
+        cursor,
+      )
+      if (request !== requestRef.current) return
+      setHistory(current => cursor
+        ? [...new Map([...current, ...page.items].map(item => [item.id, item])).values()]
+        : page.items)
+      setNextCursor(page.page.nextCursor)
+    } catch (cause) {
+      if (request === requestRef.current) {
+        if (!cursor) initialHistoryLoaded.current = false
+        setError(cause instanceof Error ? cause.message : 'Unable to load dispatch history')
+      }
+    } finally {
+      if (request === requestRef.current) {
+        requestInFlight.current = false
+        setLoading(false)
+      }
+    }
+  }, [artifact.id, artifact.repositoryId])
+
+  useEffect(() => {
+    requestRef.current++
+    requestInFlight.current = false
+    initialHistoryLoaded.current = false
+    setHistory([])
+    setNextCursor(null)
+    setError(undefined)
+    if (detailsRef.current?.open) void loadHistory()
+  }, [latestDispatch.id, loadHistory])
+
+  return (
+    <details
+      ref={detailsRef}
+      className="policy-review-history"
+      onToggle={event => {
+        if (event.currentTarget.open && !initialHistoryLoaded.current && !loading) void loadHistory()
+      }}
+    >
+      <summary>Controlled dispatch history</summary>
+      <small>Audit records retain reviewed input names, never their values.</small>
+      {loading && !history.length ? (
+        <small>Loading dispatches…</small>
+      ) : error ? (
+        <small className="policy-review-error" role="alert">{error}</small>
+      ) : history.length ? (
+        <>
+          <ol>
+            {history.map(dispatch => (
+              <li key={dispatch.id}>
+                <span className={`status-pill severity-${dispatch.status === 'accepted' ? 'low' : dispatch.status === 'failed' ? 'high' : 'medium'}`}>
+                  {dispatch.status}
+                </span>
+                <strong>{dispatch.sourceRevision.slice(0, 12)}</strong>
+                <time dateTime={dispatch.requestedAt}>{new Date(dispatch.requestedAt).toLocaleString()}</time>
+                <p>
+                  Requested by {dispatch.requestedBy}
+                  {dispatch.inputNames.length
+                    ? ` · reviewed inputs: ${dispatch.inputNames.join(', ')}`
+                    : ' · no workflow inputs'}
+                  {dispatch.error ? ` · ${dispatch.error}` : ''}
+                </p>
+              </li>
+            ))}
+          </ol>
+          {nextCursor && (
+            <QualityAction intent="quiet" disabled={loading} onClick={() => void loadHistory(nextCursor)}>
+              <ChevronRight size={14} /> Load more controlled dispatches
+            </QualityAction>
+          )}
+        </>
+      ) : (
+        <small>No controlled dispatches recorded.</small>
+      )}
+    </details>
+  )
+}
+
 export function FlowReviewControls({
   flow,
   currentRevision,
@@ -5591,15 +5695,18 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </div>
                             )}
                           {latestDispatch && !lowerPrioritySharedWorkflow && (
-                            <small className="performance-inventory-only" role="status">
-                              Latest controlled dispatch · {latestDispatch.status} ·{' '}
-                              {new Date(latestDispatch.requestedAt).toLocaleString()} · revision{' '}
-                              {latestDispatch.sourceRevision.slice(0, 12)} · requested by {latestDispatch.requestedBy}
-                              {latestDispatch.inputNames.length
-                                ? ` · reviewed inputs: ${latestDispatch.inputNames.join(', ')}`
-                                : ' · no workflow inputs'}
-                              {latestDispatch.error ? ` · ${latestDispatch.error}` : ''}
-                            </small>
+                            <>
+                              <small className="performance-inventory-only" role="status">
+                                Latest controlled dispatch · {latestDispatch.status} ·{' '}
+                                {new Date(latestDispatch.requestedAt).toLocaleString()} · revision{' '}
+                                {latestDispatch.sourceRevision.slice(0, 12)} · requested by {latestDispatch.requestedBy}
+                                {latestDispatch.inputNames.length
+                                  ? ` · reviewed inputs: ${latestDispatch.inputNames.join(', ')}`
+                                  : ' · no workflow inputs'}
+                                {latestDispatch.error ? ` · ${latestDispatch.error}` : ''}
+                              </small>
+                              <TestSuiteDispatchHistory artifact={item} latestDispatch={latestDispatch} />
+                            </>
                           )}
                           {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             item.execution &&

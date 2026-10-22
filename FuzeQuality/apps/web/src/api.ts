@@ -152,6 +152,7 @@ export const api = {
   latestIntegrationExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/integration-test-executions/latest`),
   latestPostProductionExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/post-production-test-executions/latest`),
   latestTestSuiteDispatches: (id: string) => request<{ items: import('@fuzequality/contracts').TestSuiteDispatch[] }>(`/api/v1/repositories/${id}/test-suite-dispatches/latest`),
+  testSuiteDispatchHistory: (repositoryId: string, artifactId: string, cursor?: string) => request<import('@fuzequality/contracts').TestSuiteDispatchPage>(`/api/v1/repositories/${repositoryId}/test-suites/${encodeURIComponent(artifactId)}/dispatches${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
   executionTrend: (id: string, filter: Record<string, string> = {}) => request<{
     items: import('@fuzequality/core').ExecutionOutcomeTrend[]
     page: { nextCursor: string | null; hasMore: boolean }

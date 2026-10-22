@@ -63,4 +63,35 @@ describe('test-suite dispatch audit', () => {
       expect.objectContaining({ id: latest.id, status: 'failed' }),
     ])
   })
+
+  it('pages one artifact history by immutable request time and id', async () => {
+    const store = new MemoryCatalogStore()
+    const newest = dispatch({
+      id: '77777777-7777-4777-8777-777777777777',
+      requestedAt: '2026-10-22T20:02:00.000Z',
+    })
+    const middle = dispatch({
+      id: '66666666-6666-4666-8666-666666666666',
+      requestedAt: '2026-10-22T20:01:00.000Z',
+    })
+    const oldest = dispatch({
+      id: '55555555-5555-4555-8555-555555555555',
+      requestedAt: '2026-10-22T20:00:00.000Z',
+    })
+    await store.saveTestSuiteDispatch(oldest)
+    await store.saveTestSuiteDispatch(newest)
+    await store.saveTestSuiteDispatch(middle)
+    await store.saveTestSuiteDispatch(dispatch({
+      id: '88888888-8888-4888-8888-888888888888',
+      artifactId: 'suite:stress',
+      requestedAt: '2026-10-22T20:03:00.000Z',
+    }))
+
+    expect(await store.testSuiteDispatchHistory(newest.repositoryId, newest.tenantId, newest.artifactId, { limit: 2 }))
+      .toEqual([newest, middle])
+    expect(await store.testSuiteDispatchHistory(newest.repositoryId, newest.tenantId, newest.artifactId, {
+      after: { createdAt: middle.requestedAt, id: middle.id },
+      limit: 2,
+    })).toEqual([oldest])
+  })
 })

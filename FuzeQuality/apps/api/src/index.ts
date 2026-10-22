@@ -68,6 +68,7 @@ import { reviewedPostProductionWorkflowPaths } from './latest-post-production-ex
 import { repositoryProcessingStatus } from './repository-processing-status'
 import { dispatchWebhookScans } from './webhook-scan-dispatch'
 import { testExecutionDetail } from './test-execution-detail'
+import { testSuiteDispatchPage } from './test-suite-dispatch-pagination'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -958,6 +959,21 @@ app.get('/api/v1/repositories/:id/test-suite-dispatches/latest', mayReadCatalog,
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   response.json({ items: await store.latestTestSuiteDispatches(repositoryId, tenantId) })
+})
+app.get('/api/v1/repositories/:id/test-suites/:artifactId/dispatches', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const artifactId = Array.isArray(request.params.artifactId) ? request.params.artifactId[0] : request.params.artifactId
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const filter = historyPageQuerySchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeUuidHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const history = await store.testSuiteDispatchHistory(repositoryId, tenantId, artifactId, {
+    after: cursor.data,
+    limit: filter.data.limit + 1,
+  })
+  response.json(testSuiteDispatchPage(history, filter.data.limit))
 })
 app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

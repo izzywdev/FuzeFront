@@ -262,6 +262,10 @@ function mockEvidenceApis() {
   vi.spyOn(api, 'latestIntegrationExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'latestPostProductionExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'latestTestSuiteDispatches').mockResolvedValue({ items: [] })
+  vi.spyOn(api, 'testSuiteDispatchHistory').mockResolvedValue({
+    items: [],
+    page: { nextCursor: null, hasMore: false },
+  })
   vi.spyOn(api, 'executionTrend').mockResolvedValue([])
   vi.spyOn(api, 'executionPerformance').mockResolvedValue([])
   vi.spyOn(api, 'repositoryFlowReviewHistory').mockResolvedValue([])
@@ -2103,6 +2107,48 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText(/Latest controlled dispatch · accepted/)).toHaveTextContent(
       'requested by 33333333-3333-4333-8333-333333333333 · no workflow inputs'
     )
+  })
+
+  it('continues the immutable controlled-dispatch audit for one reviewed suite', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const latest = acceptedDispatch(loadArtifact)
+    const failed = {
+      ...latest,
+      id: '55555555-5555-4555-8555-555555555555',
+      status: 'failed' as const,
+      error: 'Provider unavailable',
+      requestedAt: '2026-10-22T19:00:00.000Z',
+      completedAt: '2026-10-22T19:00:01.000Z',
+    }
+    const oldest = {
+      ...latest,
+      id: '66666666-6666-4666-8666-666666666666',
+      requestedBy: 'older-reviewer',
+      requestedAt: '2026-10-22T18:00:00.000Z',
+      completedAt: '2026-10-22T18:00:01.000Z',
+    }
+    vi.mocked(api.latestTestSuiteDispatches).mockResolvedValue({ items: [latest] })
+    const historyRequest = vi.mocked(api.testSuiteDispatchHistory)
+      .mockResolvedValueOnce({
+        items: [latest, failed],
+        page: { nextCursor: 'dispatch-page-2', hasMore: true },
+      })
+      .mockResolvedValueOnce({
+        items: [oldest],
+        page: { nextCursor: null, hasMore: false },
+      })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    fireEvent.click(await screen.findByText('Controlled dispatch history'))
+    await waitFor(() => expect(historyRequest).toHaveBeenCalled())
+    expect(await screen.findByText(/Provider unavailable/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more controlled dispatches' }))
+    expect(await screen.findByText(/Requested by older-reviewer/)).toBeVisible()
+    expect(historyRequest).toHaveBeenNthCalledWith(1, repository.id, loadArtifact.id, undefined)
+    expect(historyRequest).toHaveBeenNthCalledWith(2, repository.id, loadArtifact.id, 'dispatch-page-2')
   })
 
   it('offers controlled dispatch only for the preferred classification of a shared workflow', async () => {

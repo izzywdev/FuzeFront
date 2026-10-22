@@ -557,6 +557,18 @@ describe('contract discovery', () => {
         ].schema.properties.items.items.$ref
       ).toBe('#/components/schemas/TestSuiteDispatchAudit')
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.responses['200'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/TestSuiteDispatchAuditPage')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.parameters
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['limit', 'cursor'])
+      expect(schemas.TestSuiteDispatchAuditPage.properties.page.$ref).toBe(
+        '#/components/schemas/HistoryCursorPage'
+      )
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/execute'].post.responses
       ).toHaveProperty('503')
     })

@@ -195,6 +195,42 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
     if (url.pathname.endsWith('/execution-performance')) return respond([{ repositoryId: 'repo-1', policyArtifactId: 'policy-artifact', policyTitle: 'Administrative suspension policy', policySourcePath: 'docs/policies/apps.md', gateArtifactId: 'gate-artifact', gateTitle: 'Admin authorization gate', gateSourcePath: '.github/workflows/authorization.yml', passed: 2, failed: 1, cancelled: 0, running: 0, revisionCount: 3, latestRevision: 'abcdef123456', latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
     if (url.pathname.endsWith('/test-suite-dispatches/latest')) return respond({ items: [] })
+    if (url.pathname.endsWith('/test-suites/load-artifact/dispatches')) return respond({
+      items: [
+        {
+          id: '00000000-0000-4000-8000-000000000003',
+          repositoryId: 'repo-1',
+          tenantId: 'tenant-1',
+          artifactId: 'load-artifact',
+          artifactKind: 'load-test',
+          workflowPath: '.github/workflows/load.yml',
+          ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          requestedBy: 'quality-reviewer',
+          inputNames: [],
+          status: 'accepted',
+          requestedAt: '2026-10-22T22:00:00.000Z',
+          completedAt: '2026-10-22T22:00:01.000Z',
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000002',
+          repositoryId: 'repo-1',
+          tenantId: 'tenant-1',
+          artifactId: 'load-artifact',
+          artifactKind: 'load-test',
+          workflowPath: '.github/workflows/load.yml',
+          ref: '9999999999999999999999999999999999999999',
+          sourceRevision: '9999999999999999999999999999999999999999',
+          requestedBy: 'release-operator',
+          inputNames: ['duration', 'profile'],
+          status: 'failed',
+          requestedAt: '2026-10-22T21:00:00.000Z',
+          completedAt: '2026-10-22T21:00:01.000Z',
+          error: 'Provider unavailable',
+        },
+      ],
+      page: { nextCursor: null, hasMore: false },
+    })
     if (url.pathname.endsWith('/test-suites/load-artifact/execute') && method === 'POST') return respond({
       status: 'dispatched',
       artifactId: 'load-artifact',
@@ -997,6 +1033,12 @@ test.describe('FuzeQuality implemented UX flows', () => {
       hasText: 'Latest controlled dispatch · accepted',
     })).toContainText(
       'revision aaaaaaaaaaaa · requested by quality-reviewer · no workflow inputs'
+    )
+
+    await page.getByText('Controlled dispatch history', { exact: true }).click()
+    await expect(page.getByText('Provider unavailable', { exact: false })).toBeVisible()
+    await expect(page.getByText(/Requested by release-operator/)).toContainText(
+      'reviewed inputs: duration, profile'
     )
   })
 

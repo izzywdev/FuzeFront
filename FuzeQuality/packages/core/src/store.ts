@@ -44,6 +44,7 @@ export const revisionQualityArtifactsSql = `SELECT id, logical_id, repository_id
        ORDER BY kind, source_path, title, id`
 export type HistoryCursor = { createdAt: string; id: string }
 export type ReviewHistoryQuery = { after?: HistoryCursor; limit?: number }
+export type TestSuiteDispatchHistoryQuery = { after?: HistoryCursor; limit?: number }
 export type RepositoryFlowCandidateQuery = {
   id?: string
   source?: RepositoryFlowCandidate['source']
@@ -245,6 +246,7 @@ export interface CatalogStore {
   policyGatePerformance(repositoryId: string, tenantId: string, query?: PolicyGatePerformanceQuery): Promise<PolicyGatePerformance[]>
   saveTestExecution(execution: TestExecution): Promise<void>
   latestTestSuiteDispatches(repositoryId: string, tenantId: string): Promise<TestSuiteDispatch[]>
+  testSuiteDispatchHistory(repositoryId: string, tenantId: string, artifactId: string, query?: TestSuiteDispatchHistoryQuery): Promise<TestSuiteDispatch[]>
   saveTestSuiteDispatch(dispatch: TestSuiteDispatch): Promise<void>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   updateRepositoryAdministration(
@@ -714,6 +716,21 @@ export class MemoryCatalogStore implements CatalogStore {
         if (!latest.has(item.artifactId)) latest.set(item.artifactId, structuredClone(item))
       })
     return [...latest.values()]
+  }
+
+  async testSuiteDispatchHistory(
+    repositoryId: string,
+    tenantId: string,
+    artifactId: string,
+    query: TestSuiteDispatchHistoryQuery = {},
+  ) {
+    const limit = Math.min(Math.max(query.limit ?? 50, 1), 100)
+    return this.testSuiteDispatches
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId && item.artifactId === artifactId)
+      .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
+      .slice(0, limit)
+      .map(item => structuredClone(item))
   }
 
   async saveTestSuiteDispatch(dispatch: TestSuiteDispatch) {
@@ -1974,6 +1991,46 @@ export class PostgresCatalogStore implements CatalogStore {
        WHERE repository_id=$1 AND tenant_id=$2
        ORDER BY artifact_id,requested_at DESC,id DESC`,
       [repositoryId, tenantId],
+    )
+    return result.rows.map(row => ({
+      id: row.id,
+      repositoryId: row.repository_id,
+      tenantId: row.tenant_id,
+      artifactId: row.artifact_id,
+      artifactKind: row.artifact_kind,
+      workflowPath: row.workflow_path,
+      ref: row.source_ref,
+      sourceRevision: row.source_revision,
+      requestedBy: row.requested_by,
+      inputNames: row.input_names,
+      status: row.status,
+      error: row.error ?? undefined,
+      requestedAt: row.requested_at.toISOString(),
+      completedAt: row.completed_at?.toISOString(),
+    }))
+  }
+
+  async testSuiteDispatchHistory(
+    repositoryId: string,
+    tenantId: string,
+    artifactId: string,
+    query: TestSuiteDispatchHistoryQuery = {},
+  ): Promise<TestSuiteDispatch[]> {
+    const values: unknown[] = [repositoryId, tenantId, artifactId]
+    const clauses = ['repository_id=$1', 'tenant_id=$2', 'artifact_id=$3']
+    if (query.after) {
+      values.push(query.after.createdAt, query.after.id)
+      clauses.push(`(requested_at,id) < ($${values.length - 1}::timestamptz,$${values.length}::uuid)`)
+    }
+    values.push(Math.min(Math.max(query.limit ?? 50, 1), 100))
+    const result = await this.pool.query(
+      `SELECT id,repository_id,tenant_id,artifact_id,artifact_kind,workflow_path,source_ref,
+         source_revision,requested_by,input_names,status,error,requested_at,completed_at
+       FROM fuzequality.test_suite_dispatches
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY requested_at DESC,id DESC
+       LIMIT $${values.length}`,
+      values,
     )
     return result.rows.map(row => ({
       id: row.id,
