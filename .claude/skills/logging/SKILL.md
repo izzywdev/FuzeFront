@@ -227,7 +227,6 @@ app.use((req, res, next) => {
 **Known gap — not yet wired into onboarding.** `sdlc-bootstrap` (steps 1–10) does not yet install `@izzywdev/fuzefront-telemetry` or mount `tracingMiddleware()` for a newly onboarded repo; a fresh repo gets `reqId` correlation from this skill but no trace correlation until someone adds it by hand. Adding that as a bootstrap step is a real design decision (every onboarded repo must actually reach FuzeInfra's Collector, and the step would need its own env-resolution default) rather than a one-line addition, so it's recorded here as a gap rather than guessed at — a follow-up to `sdlc-bootstrap` should close it once a rollout owner is assigned.
 
 ## Related
-- **`governance/observability-standard.md`** — the canonical, enumerated policy list (logs + traces + metrics + RUM), each tagged HAVE / PARTIAL / GAP with owner and enforcement. This skill is the *how-to*; that document is the *what-and-whether* and the build plan for the gaps. If the two ever disagree, the standard is canonical.
 - `@izzywdev/fuzefront-telemetry` (§9) — distributed tracing correlated with this skill's `reqId`/pino standard; FuzeInfra's `docs/consuming-repos/OBSERVABILITY_DASHBOARDS.md` is the upstream app-side contract it implements.
 - `ui-runtime-validation` — browser **console-cleanliness** at runtime (leftover errors/noise), complementary to deliberate app logging.
 - `endpoint-authorization` — auth/authz on endpoints; boundary logging + redaction are strongest exactly on these paths.
