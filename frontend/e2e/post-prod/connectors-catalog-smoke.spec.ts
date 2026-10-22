@@ -112,4 +112,44 @@ test.describe('Connectors — live post-production UX', () => {
       contentType: 'application/json',
     })
   })
+
+  test('Gmail Connect opens the live Google consent journey', async ({ page, request }) => {
+    test.setTimeout(90_000)
+    const password = process.env.POST_PROD_PASSWORD
+    expect(password, 'POST_PROD_PASSWORD is required: missing connector coverage must fail, not skip').toBeTruthy()
+
+    const session = await request.post('/api/v1/security/session', {
+      timeout: 30_000,
+      data: { email: process.env.POST_PROD_EMAIL || 'postprod-smoke@fuzefront.com', password },
+    })
+    expect(session.status(), 'production synthetic sign-in failed').toBe(200)
+    const { token } = await session.json() as { token?: string }
+    expect(typeof token, 'production sign-in returned no session token').toBe('string')
+    await page.addInitScript(seedMockSession, token!)
+
+    await page.goto('/connectors')
+    await expect(page.getByRole('heading', { name: 'Connectors', level: 1, exact: true })).toBeVisible()
+    const connect = page.getByRole('button', { name: 'Connect', exact: true }).first()
+    await expect(connect).toBeEnabled()
+
+    // This deliberately stops at Google's consent screen: the post-production
+    // synthetic account must never grant mailbox access.  It nevertheless
+    // exercises the exact browser hand-off a real user takes and catches the
+    // production-only http/https redirect URI mismatch.
+    const authorizationResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/v1/connectors/google-gmail/connect' &&
+      response.request().method() === 'POST'
+    )
+    const googleConsent = page.waitForURL(/^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth/, { timeout: 30_000 })
+    await connect.click()
+    const response = await authorizationResponse
+    expect(response.status(), 'Gmail authorization initiation failed').toBe(200)
+    const { authorization_url: authorizationUrl } = await response.json() as { authorization_url?: string }
+    const authorization = new URL(String(authorizationUrl || ''))
+    expect(authorization.origin).toBe('https://accounts.google.com')
+    expect(authorization.pathname).toBe('/o/oauth2/v2/auth')
+    expect(authorization.searchParams.get('redirect_uri')).toBe('https://app.fuzefront.com/api/v1/connectors/google-gmail/oauth/callback')
+    await googleConsent
+    await expect(page.getByText('Error 400: redirect_uri_mismatch', { exact: true })).toHaveCount(0)
+  })
 })

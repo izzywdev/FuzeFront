@@ -262,6 +262,11 @@ connectors:
   # 8000 development port makes every connector status request fail at the
   # FuzeFront proxy with a 502, even when the FuzeKeys pods are healthy.
   fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8002"
+  # Canonical browser-facing origin for OAuth callback registration. Leave
+  # empty in environments where the in-cluster ingress TLS setting matches the
+  # public edge; production sets this because Cloudflare terminates HTTPS
+  # before traffic reaches the HTTP-only cluster ingress.
+  publicBaseUrl: ""
 
 # Backend 3-way split (dual-serving). Both default to disabled; the old backend
 # still serves every route until the Phase 3 cutover flips routing. Enable in

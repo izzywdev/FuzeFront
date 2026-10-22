@@ -1,3 +1,4 @@
+{{- $connectorPublicBaseUrl := default (printf "%s://%s" (ternary "https" "http" .Values.ingress.tls.enabled) .Values.ingress.host) .Values.connectors.publicBaseUrl -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -141,7 +142,7 @@ spec:
                   key: GOOGLE_CLIENT_SECRET
                   optional: true
             - name: GOOGLE_OAUTH_REDIRECT_URI
-              value: "{{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}/api/v1/connectors/google-gmail/oauth/callback"
+              value: "{{ $connectorPublicBaseUrl }}/api/v1/connectors/google-gmail/oauth/callback"
             - name: CONNECTOR_STATE_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
@@ -170,7 +171,7 @@ spec:
               (dict "env" "LINEAR_CONNECTOR_REDIRECT_URI" "id" "linear")
               (dict "env" "TRELLO_CONNECTOR_REDIRECT_URI" "id" "trello") }}
             - name: {{ $entry.env }}
-              value: "{{ ternary "https" "http" $.Values.ingress.tls.enabled }}://{{ $.Values.ingress.host }}/api/v1/connectors/{{ $entry.id }}/oauth/callback"
+              value: "{{ $connectorPublicBaseUrl }}/api/v1/connectors/{{ $entry.id }}/oauth/callback"
             {{- end }}
             {{- range $name := list "MICROSOFT_OAUTH_CLIENT_ID" "MICROSOFT_OAUTH_CLIENT_SECRET" "SLACK_CLIENT_ID" "SLACK_CLIENT_SECRET" "NOTION_CLIENT_ID" "NOTION_CLIENT_SECRET" "GITHUB_CONNECTOR_CLIENT_ID" "GITHUB_CONNECTOR_CLIENT_SECRET" "DROPBOX_CONNECTOR_CLIENT_ID" "DROPBOX_CONNECTOR_CLIENT_SECRET" "JIRA_CONNECTOR_CLIENT_ID" "JIRA_CONNECTOR_CLIENT_SECRET" "CONFLUENCE_CONNECTOR_CLIENT_ID" "CONFLUENCE_CONNECTOR_CLIENT_SECRET" "LINEAR_CONNECTOR_CLIENT_ID" "LINEAR_CONNECTOR_CLIENT_SECRET" "TRELLO_CONNECTOR_CLIENT_ID" "TRELLO_CONNECTOR_CLIENT_SECRET" }}
             - name: {{ $name }}
