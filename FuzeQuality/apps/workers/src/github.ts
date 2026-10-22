@@ -238,10 +238,14 @@ export async function githubWorkflowArtifactEvidence(input: {
       if (!hasMore) break
       if (page === GITHUB_ARTIFACT_MAX_PAGES) truncated = true
     }
-    const prioritized = [...new Map(links.map(link => [link.url, link])).values()]
+    const deduplicated = [...new Map(links.map(link => [link.url, link])).values()]
+    const prioritized = deduplicated
       .sort((left, right) => artifactKindPriority[left.kind] - artifactKindPriority[right.kind] || left.name.localeCompare(right.name))
       .slice(0, GITHUB_ARTIFACT_LINK_LIMIT)
-    return { links: prioritized, truncated }
+    return {
+      links: prioritized,
+      truncated: truncated || deduplicated.length > GITHUB_ARTIFACT_LINK_LIMIT,
+    }
   }
   try {
     return await Promise.race([collect(), timedOut])

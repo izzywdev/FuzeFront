@@ -60,7 +60,7 @@ const repositoryFlowCandidates = [{
   id: 'candidate-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Suspend an application', confidence: 0.94,
   evidence: [],
   steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['route-artifact'] }],
-  wireframe: { kind: 'sequence', nodes: [{ label: 'App settings', targetIds: ['AppSettings'] }, { label: 'Confirm suspension', targetIds: ['SuspendDialog'] }, { label: 'Suspended state', targetIds: ['AppStatus'] }] },
+  wireframe: { kind: 'sequence', nodes: [{ label: 'App settings', targetIds: ['story-artifact'] }, { label: 'Confirm suspension', targetIds: ['route-artifact'] }, { label: 'Suspended state', targetIds: ['story-artifact'] }] },
   analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'fuzequality-repository-flow-v3', schemaVersion: '1.0' },
   status: 'proposed', source: 'litellm', createdAt: '2026-10-08T09:00:00.000Z',
 }, {
@@ -818,6 +818,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
     await page.getByRole('button', { name: 'Load more policy and gate history' }).click()
+    await page.getByLabel('Governance rationale required to accept anomaly').fill('The policy needs an explicit release gate.')
     await page.getByRole('button', { name: 'Accept recommendation' }).click()
     await expect(page.getByText('high · unguarded-policy · accepted', { exact: true })).toBeVisible()
     releaseContinuation()
@@ -973,7 +974,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
       body: JSON.stringify({ error: 'Governance review service unavailable' }),
     }))
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
-    const rationale = page.getByLabel('Optional governance rationale')
+    const rationale = page.getByLabel('Governance rationale required to accept anomaly')
     await rationale.fill('The gate owner is not identified.')
 
     await page.getByRole('button', { name: 'Dismiss' }).click()
@@ -1007,6 +1008,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     )
 
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByLabel('Governance revision').selectOption('all')
 
     await expect(
       page.getByText(/Historical governance finding/)
@@ -1016,7 +1018,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     ).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
     await expect(
-      page.getByLabel('Optional governance rationale')
+      page.getByLabel('Governance rationale required to accept anomaly')
     ).toBeDisabled()
   })
 

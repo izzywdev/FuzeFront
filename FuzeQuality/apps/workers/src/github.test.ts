@@ -210,7 +210,7 @@ describe('GitHub workflow artifact evidence', () => {
     )
   })
 
-  it('finds a Playwright video on a later provider page and retains it ahead of generic artifacts', async () => {
+  it('finds a Playwright video on a later provider page and marks the locally capped result partial', async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => ({
       id: index + 1,
       name: `generic-artifact-${String(index + 1).padStart(3, '0')}`,
@@ -227,7 +227,7 @@ describe('GitHub workflow artifact evidence', () => {
       tokenProvider: async () => 'secret', fetcher,
     })
 
-    expect(result.truncated).toBe(false)
+    expect(result.truncated).toBe(true)
     expect(result.links[0]).toMatchObject({ kind: 'video', name: 'post-production-playwright-video' })
     expect(result.links).toHaveLength(99)
     expect(fetcher).toHaveBeenNthCalledWith(2, expect.stringContaining('per_page=100&page=2'), expect.any(Object))
