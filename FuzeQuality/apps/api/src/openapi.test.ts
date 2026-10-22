@@ -547,6 +547,18 @@ describe('contract discovery', () => {
         additionalProperties: { type: 'string', minLength: 1, maxLength: 256 },
       })
       expect(schemas.TestSuiteDispatch.required).toContain('artifactKind')
+      expect(schemas.TestSuiteDispatch.required).toContain('dispatch')
+      expect(schemas.TestSuiteDispatchAudit.properties.inputNames.description).toContain(
+        'values are never persisted'
+      )
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.responses['200'].content[
+          'application/json'
+        ].schema.properties.items.items.$ref
+      ).toBe('#/components/schemas/TestSuiteDispatchAudit')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/execute'].post.responses
+      ).toHaveProperty('503')
     })
   })
 

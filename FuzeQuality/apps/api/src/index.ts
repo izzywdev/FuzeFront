@@ -15,6 +15,7 @@ import {
   type Portfolio,
   type ScanResult,
   type TestExecution,
+  type TestSuiteDispatch,
   repositoryScanFailureSchema,
 } from '@fuzequality/contracts'
 import {
@@ -952,6 +953,12 @@ app.get('/api/v1/repositories/:id/post-production-test-executions/latest', mayRe
   const workflowPaths = reviewedPostProductionWorkflowPaths(artifacts)
   response.json({ items: await store.latestPostProductionExecutions(repositoryId, tenantId, workflowPaths, repository.defaultBranch, `${repository.owner}/${repository.name}`) })
 })
+app.get('/api/v1/repositories/:id/test-suite-dispatches/latest', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  response.json({ items: await store.latestTestSuiteDispatches(repositoryId, tenantId) })
+})
 app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
@@ -1034,12 +1041,37 @@ app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecu
   const sourceRevision = testSuiteDispatchRevision(repository)
   if (!sourceRevision) return response.status(409).json({ error: 'An exact analyzed source revision is required before dispatch', code: 'ANALYSIS_SOURCE_REVISION_REQUIRED' })
   if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
-  try {
-    const receipt = await dispatchTestWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath, inputs: dispatchInputs.inputs })
-    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, artifactKind: artifact.kind, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision })
-  } catch (error) {
-    response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'TEST_DISPATCH_FAILED' })
+  const identity = requestIdentity(request)!
+  const dispatch: TestSuiteDispatch = {
+    id: randomUUID(),
+    repositoryId,
+    tenantId,
+    artifactId: artifact.id,
+    artifactKind: artifact.kind as TestSuiteDispatch['artifactKind'],
+    workflowPath,
+    ref: repository.defaultBranch,
+    sourceRevision,
+    requestedBy: identity.userId,
+    inputNames: Object.keys(dispatchInputs.inputs).sort(),
+    status: 'dispatching',
+    requestedAt: new Date().toISOString(),
   }
+  try {
+    await store.saveTestSuiteDispatch(dispatch)
+  } catch {
+    return response.status(503).json({ error: 'Dispatch audit storage is unavailable; the workflow was not dispatched', code: 'TEST_DISPATCH_AUDIT_UNAVAILABLE' })
+  }
+  let receipt: Awaited<ReturnType<typeof dispatchTestWorkflow>>
+  try {
+    receipt = await dispatchTestWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath, inputs: dispatchInputs.inputs })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    await store.saveTestSuiteDispatch({ ...dispatch, status: 'failed', error: message.slice(0, 2000), completedAt: new Date().toISOString() }).catch(() => undefined)
+    return response.status(422).json({ error: message, code: 'TEST_DISPATCH_FAILED' })
+  }
+  const accepted = { ...dispatch, status: 'accepted' as const, ref: receipt.ref, sourceRevision: receipt.sourceRevision, completedAt: new Date().toISOString() }
+  const auditPersisted = await store.saveTestSuiteDispatch(accepted).then(() => true, () => false)
+  response.status(202).json({ status: 'dispatched', artifactId: artifact.id, artifactKind: artifact.kind, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision, dispatch: auditPersisted ? accepted : dispatch })
 })
 app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRunExecution, async (request, response) => {
   const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
@@ -1069,12 +1101,37 @@ app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRu
   const sourceRevision = performanceDispatchRevision(repository)
   if (!sourceRevision) return response.status(409).json({ error: 'An exact analyzed source revision is required before dispatch', code: 'ANALYSIS_SOURCE_REVISION_REQUIRED' })
   if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
-  try {
-    const receipt = await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath, inputs: dispatchInputs.inputs })
-    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision })
-  } catch (error) {
-    response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'PERFORMANCE_DISPATCH_FAILED' })
+  const identity = requestIdentity(request)!
+  const dispatch: TestSuiteDispatch = {
+    id: randomUUID(),
+    repositoryId,
+    tenantId,
+    artifactId: artifact.id,
+    artifactKind: artifact.kind as TestSuiteDispatch['artifactKind'],
+    workflowPath,
+    ref: repository.defaultBranch,
+    sourceRevision,
+    requestedBy: identity.userId,
+    inputNames: Object.keys(dispatchInputs.inputs).sort(),
+    status: 'dispatching',
+    requestedAt: new Date().toISOString(),
   }
+  try {
+    await store.saveTestSuiteDispatch(dispatch)
+  } catch {
+    return response.status(503).json({ error: 'Dispatch audit storage is unavailable; the workflow was not dispatched', code: 'PERFORMANCE_DISPATCH_AUDIT_UNAVAILABLE' })
+  }
+  let receipt: Awaited<ReturnType<typeof dispatchPerformanceWorkflow>>
+  try {
+    receipt = await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath, inputs: dispatchInputs.inputs })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    await store.saveTestSuiteDispatch({ ...dispatch, status: 'failed', error: message.slice(0, 2000), completedAt: new Date().toISOString() }).catch(() => undefined)
+    return response.status(422).json({ error: message, code: 'PERFORMANCE_DISPATCH_FAILED' })
+  }
+  const accepted = { ...dispatch, status: 'accepted' as const, ref: receipt.ref, sourceRevision: receipt.sourceRevision, completedAt: new Date().toISOString() }
+  const auditPersisted = await store.saveTestSuiteDispatch(accepted).then(() => true, () => false)
+  response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision, dispatch: auditPersisted ? accepted : dispatch })
 })
 app.get('/api/v1/repositories/:id/catalog-status', mayReadCatalog, async (request, response) => {
   const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)

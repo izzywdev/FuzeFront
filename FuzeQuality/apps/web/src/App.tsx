@@ -49,6 +49,7 @@ import type {
   StorybookStory,
   TestExpectation,
   TestExecution,
+  TestSuiteDispatch,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
 import {
@@ -3734,6 +3735,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     state: 'success' | 'error'
     message: string
   }>()
+  const [testSuiteDispatches, setTestSuiteDispatches] = useState<TestSuiteDispatch[]>([])
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
   const [loadingFlows, setLoadingFlows] = useState(true)
   const [loadedFlowQuery, setLoadedFlowQuery] = useState('')
@@ -3901,6 +3903,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     )
     setInspectedPolicyGate(current => current?.id === reviewed.id ? reviewed : current)
   }
+  useEffect(() => {
+    let active = true
+    void Promise.allSettled(
+      data.repositories.map(repository => api.latestTestSuiteDispatches(repository.id))
+    ).then(results => {
+      if (!active) return
+      setTestSuiteDispatches(results.flatMap(result =>
+        result.status === 'fulfilled' ? result.value.items : []
+      ))
+    })
+    return () => { active = false }
+  }, [data.repositories])
+
   const runTestSuite = async (artifact: QualityArtifact) => {
     const repository = data.repositories.find(
       candidate => candidate.id === artifact.repositoryId
@@ -3931,6 +3946,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         state: 'success',
         message: `Dispatched ${receipt.workflowPath} from ${receipt.ref} at analyzed commit ${receipt.sourceRevision}. GitHub Actions will report the run as execution evidence.`,
       })
+      setTestSuiteDispatches(current => [
+        receipt.dispatch,
+        ...current.filter(item =>
+          item.repositoryId !== receipt.dispatch.repositoryId ||
+          item.artifactId !== receipt.dispatch.artifactId
+        ),
+      ])
     } catch (error) {
       setPerformanceDispatch({
         artifactId: artifact.id,
@@ -5474,6 +5496,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       const lowerPrioritySharedWorkflow = sharedWorkflowKinds.size > 1 &&
                         preferredExecutionKind !== undefined &&
                         !isPreferredWorkflowExecutionArtifact(item, sharedWorkflowArtifacts)
+                      const latestDispatch = testSuiteDispatches.find(dispatch =>
+                        dispatch.repositoryId === item.repositoryId && dispatch.artifactId === item.id
+                      )
                       return (
                       <article className="catalog-row" key={item.id}>
                         <div>
@@ -5565,6 +5590,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 </button>
                               </div>
                             )}
+                          {latestDispatch && !lowerPrioritySharedWorkflow && (
+                            <small className="performance-inventory-only" role="status">
+                              Latest controlled dispatch · {latestDispatch.status} ·{' '}
+                              {new Date(latestDispatch.requestedAt).toLocaleString()} · revision{' '}
+                              {latestDispatch.sourceRevision.slice(0, 12)} · requested by {latestDispatch.requestedBy}
+                              {latestDispatch.inputNames.length
+                                ? ` · reviewed inputs: ${latestDispatch.inputNames.join(', ')}`
+                                : ' · no workflow inputs'}
+                              {latestDispatch.error ? ` · ${latestDispatch.error}` : ''}
+                            </small>
+                          )}
                           {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
                             item.execution &&
                             analyzedRevision &&

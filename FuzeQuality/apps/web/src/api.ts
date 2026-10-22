@@ -151,6 +151,7 @@ export const api = {
   latestPerformanceExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/performance-test-executions/latest`),
   latestIntegrationExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/integration-test-executions/latest`),
   latestPostProductionExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/post-production-test-executions/latest`),
+  latestTestSuiteDispatches: (id: string) => request<{ items: import('@fuzequality/contracts').TestSuiteDispatch[] }>(`/api/v1/repositories/${id}/test-suite-dispatches/latest`),
   executionTrend: (id: string, filter: Record<string, string> = {}) => request<{
     items: import('@fuzequality/core').ExecutionOutcomeTrend[]
     page: { nextCursor: string | null; hasMore: boolean }
@@ -162,6 +163,7 @@ export const api = {
     workflowPath: string
     ref: string
     sourceRevision: string
+    dispatch: import('@fuzequality/contracts').TestSuiteDispatch
   }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, {
     method: 'POST',
     body: JSON.stringify({ inputs }),
@@ -173,6 +175,7 @@ export const api = {
     workflowPath: string
     ref: string
     sourceRevision: string
+    dispatch: import('@fuzequality/contracts').TestSuiteDispatch
   }>(`/api/v1/repositories/${repositoryId}/test-suites/${artifactId}/execute`, {
     method: 'POST',
     body: JSON.stringify({ inputs }),

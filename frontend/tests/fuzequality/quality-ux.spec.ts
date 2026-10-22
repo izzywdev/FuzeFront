@@ -194,6 +194,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
     })
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
     if (url.pathname.endsWith('/execution-performance')) return respond([{ repositoryId: 'repo-1', policyArtifactId: 'policy-artifact', policyTitle: 'Administrative suspension policy', policySourcePath: 'docs/policies/apps.md', gateArtifactId: 'gate-artifact', gateTitle: 'Admin authorization gate', gateSourcePath: '.github/workflows/authorization.yml', passed: 2, failed: 1, cancelled: 0, running: 0, revisionCount: 3, latestRevision: 'abcdef123456', latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
+    if (url.pathname.endsWith('/test-suite-dispatches/latest')) return respond({ items: [] })
     if (url.pathname.endsWith('/test-suites/load-artifact/execute') && method === 'POST') return respond({
       status: 'dispatched',
       artifactId: 'load-artifact',
@@ -201,6 +202,21 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       workflowPath: '.github/workflows/load.yml',
       ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      dispatch: {
+        id: '00000000-0000-4000-8000-000000000003',
+        repositoryId: 'repo-1',
+        tenantId: 'tenant-1',
+        artifactId: 'load-artifact',
+        artifactKind: 'load-test',
+        workflowPath: '.github/workflows/load.yml',
+        ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        requestedBy: 'quality-reviewer',
+        inputNames: [],
+        status: 'accepted',
+        requestedAt: '2026-10-22T22:00:00.000Z',
+        completedAt: '2026-10-22T22:00:01.000Z',
+      },
     }, 202)
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
@@ -976,6 +992,11 @@ test.describe('FuzeQuality implemented UX flows', () => {
     )
     await expect(dispatchStatus).toContainText(
       'GitHub Actions will report the run as execution evidence.'
+    )
+    await expect(page.getByRole('status').filter({
+      hasText: 'Latest controlled dispatch · accepted',
+    })).toContainText(
+      'revision aaaaaaaaaaaa · requested by quality-reviewer · no workflow inputs'
     )
   })
 

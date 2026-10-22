@@ -793,6 +793,36 @@ export const workflowDispatchRequestSchema = z.object({
   ).default({}),
 }).strict()
 
+export const testSuiteDispatchStatusSchema = z.enum([
+  'dispatching',
+  'accepted',
+  'failed',
+])
+
+export const testSuiteDispatchSchema = z.object({
+  id: z.string().uuid(),
+  repositoryId: z.string().uuid(),
+  tenantId: z.string().trim().min(1).max(200),
+  artifactId: z.string().trim().min(1).max(500),
+  artifactKind: z.enum([
+    'integration-test',
+    'post-production-test',
+    'load-test',
+    'stress-test',
+  ]),
+  workflowPath: z.string().trim().min(1).max(1000),
+  ref: z.string().trim().min(1).max(500),
+  sourceRevision: z.string().regex(/^[0-9a-f]{40}$/i),
+  requestedBy: z.string().trim().min(1).max(200),
+  inputNames: z.array(workflowDispatchInputNameSchema).max(20),
+  status: testSuiteDispatchStatusSchema,
+  error: z.string().trim().min(1).max(2000).optional(),
+  requestedAt: z.string().datetime(),
+  completedAt: z.string().datetime().optional(),
+}).strict()
+
+export type TestSuiteDispatch = z.infer<typeof testSuiteDispatchSchema>
+
 export type Portfolio = {
   repositories: Repository[]
   operations: ApiOperation[]

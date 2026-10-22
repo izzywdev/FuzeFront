@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.72.0
+  version: 0.73.0
   license:
     name: UNLICENSED
 servers:
@@ -1261,6 +1261,34 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/repositories/{repositoryId}/test-suite-dispatches/latest:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listLatestTestSuiteDispatches
+      summary: Read the latest durable controlled-dispatch receipt for each reviewed suite
+      description: >-
+        Returns tenant-scoped dispatch lifecycle records. Workflow input names are retained for
+        auditability; input values are never persisted or returned.
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: Latest dispatch receipt per reviewed artifact.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/TestSuiteDispatchAudit' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/repositories/{repositoryId}/test-suites/{artifactId}/execute:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
@@ -1295,6 +1323,11 @@ paths:
               schema: { $ref: '#/components/schemas/ApiError' }
         '422':
           description: The suite is inventory-only, is a lower-priority alias of a shared workflow, supplied inputs do not exactly match the analyzed required inputs, the GitHub App installation is unavailable, or dispatch failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '503':
+          description: Dispatch audit storage was unavailable, so no provider dispatch was attempted.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -1333,6 +1366,11 @@ paths:
               schema: { $ref: '#/components/schemas/ApiError' }
         '422':
           description: The definition is inventory-only, is a lower-priority alias of a shared workflow, supplied inputs do not exactly match the analyzed required inputs, the GitHub App installation is unavailable, or dispatch failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '503':
+          description: Dispatch audit storage was unavailable, so no provider dispatch was attempted.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -2159,13 +2197,14 @@ components:
           description: Passed retry attempts backed by a retained failed earlier attempt for the same provider run.
     PerformanceDispatch:
       type: object
-      required: [status, artifactId, workflowPath, ref, sourceRevision]
+      required: [status, artifactId, workflowPath, ref, sourceRevision, dispatch]
       properties:
         status: { type: string, enum: [dispatched] }
         artifactId: { type: string }
         workflowPath: { type: string }
         ref: { type: string }
         sourceRevision: { type: string, pattern: '^[0-9a-fA-F]{40}$' }
+        dispatch: { $ref: '#/components/schemas/TestSuiteDispatchAudit' }
     WorkflowDispatchRequest:
       type: object
       additionalProperties: false
@@ -2186,7 +2225,7 @@ components:
     TestSuiteDispatch:
       type: object
       additionalProperties: false
-      required: [status, artifactId, artifactKind, workflowPath, ref, sourceRevision]
+      required: [status, artifactId, artifactKind, workflowPath, ref, sourceRevision, dispatch]
       properties:
         status: { type: string, enum: [dispatched] }
         artifactId: { type: string }
@@ -2194,6 +2233,30 @@ components:
         workflowPath: { type: string }
         ref: { type: string }
         sourceRevision: { type: string, pattern: '^[0-9a-fA-F]{40}$' }
+        dispatch: { $ref: '#/components/schemas/TestSuiteDispatchAudit' }
+    TestSuiteDispatchAudit:
+      type: object
+      additionalProperties: false
+      required: [id, repositoryId, tenantId, artifactId, artifactKind, workflowPath, ref, sourceRevision, requestedBy, inputNames, status, requestedAt]
+      properties:
+        id: { type: string, format: uuid }
+        repositoryId: { type: string, format: uuid }
+        tenantId: { type: string, minLength: 1, maxLength: 200 }
+        artifactId: { type: string, minLength: 1, maxLength: 500 }
+        artifactKind: { type: string, enum: [integration-test, post-production-test, load-test, stress-test] }
+        workflowPath: { type: string, minLength: 1, maxLength: 1000 }
+        ref: { type: string, minLength: 1, maxLength: 500 }
+        sourceRevision: { type: string, pattern: '^[0-9a-fA-F]{40}$' }
+        requestedBy: { type: string, minLength: 1, maxLength: 200 }
+        inputNames:
+          type: array
+          maxItems: 20
+          items: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_-]{0,63}$' }
+          description: Reviewed workflow input names only; values are never persisted.
+        status: { type: string, enum: [dispatching, accepted, failed] }
+        error: { type: string, minLength: 1, maxLength: 2000 }
+        requestedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
     ApiError:
       type: object
       required: [error]

@@ -21,6 +21,7 @@ import type {
   PolicyGateEvaluation,
   PolicyGateReviewHistoryEntry,
   TestExecution,
+  TestSuiteDispatch,
   QualityTenant,
   QualityPrincipal,
   QualityMembership,
@@ -243,6 +244,8 @@ export interface CatalogStore {
   executionOutcomeTrend(repositoryId: string, tenantId: string, query?: ExecutionOutcomeTrendQuery): Promise<ExecutionOutcomeTrend[]>
   policyGatePerformance(repositoryId: string, tenantId: string, query?: PolicyGatePerformanceQuery): Promise<PolicyGatePerformance[]>
   saveTestExecution(execution: TestExecution): Promise<void>
+  latestTestSuiteDispatches(repositoryId: string, tenantId: string): Promise<TestSuiteDispatch[]>
+  saveTestSuiteDispatch(dispatch: TestSuiteDispatch): Promise<void>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   updateRepositoryAdministration(
     id: string,
@@ -343,6 +346,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private policyGateReviewAudits: PolicyGateReviewHistoryEntry[] = []
   private executions: TestExecution[] = []
   private executionVersions: Array<{ execution: TestExecution; versionedAt: number }> = []
+  private testSuiteDispatches: TestSuiteDispatch[] = []
   private tenants = new Map<string, QualityTenant>()
   private principals = new Map<string, QualityPrincipal>()
   private memberships = new Map<string, QualityMembership>()
@@ -699,6 +703,23 @@ export class MemoryCatalogStore implements CatalogStore {
       execution: structuredClone(this.executions[index >= 0 ? index : this.executions.length - 1]),
       versionedAt: Date.now(),
     })
+  }
+
+  async latestTestSuiteDispatches(repositoryId: string, tenantId: string) {
+    const latest = new Map<string, TestSuiteDispatch>()
+    this.testSuiteDispatches
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+      .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
+      .forEach(item => {
+        if (!latest.has(item.artifactId)) latest.set(item.artifactId, structuredClone(item))
+      })
+    return [...latest.values()]
+  }
+
+  async saveTestSuiteDispatch(dispatch: TestSuiteDispatch) {
+    const index = this.testSuiteDispatches.findIndex(item => item.id === dispatch.id)
+    if (index >= 0) this.testSuiteDispatches[index] = structuredClone(dispatch)
+    else this.testSuiteDispatches.push(structuredClone(dispatch))
   }
 
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
@@ -1941,6 +1962,63 @@ export class PostgresCatalogStore implements CatalogStore {
               started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection
        FROM upserted`,
       [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.branch ?? null,item.headRepository ?? null,item.kind,item.status,item.name,item.workflowPath ?? null,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.evidenceCollection ? JSON.stringify(item.evidenceCollection) : null,item.summary ?? null],
+    )
+  }
+
+  async latestTestSuiteDispatches(repositoryId: string, tenantId: string): Promise<TestSuiteDispatch[]> {
+    const result = await this.pool.query(
+      `SELECT DISTINCT ON (artifact_id)
+         id,repository_id,tenant_id,artifact_id,artifact_kind,workflow_path,source_ref,
+         source_revision,requested_by,input_names,status,error,requested_at,completed_at
+       FROM fuzequality.test_suite_dispatches
+       WHERE repository_id=$1 AND tenant_id=$2
+       ORDER BY artifact_id,requested_at DESC,id DESC`,
+      [repositoryId, tenantId],
+    )
+    return result.rows.map(row => ({
+      id: row.id,
+      repositoryId: row.repository_id,
+      tenantId: row.tenant_id,
+      artifactId: row.artifact_id,
+      artifactKind: row.artifact_kind,
+      workflowPath: row.workflow_path,
+      ref: row.source_ref,
+      sourceRevision: row.source_revision,
+      requestedBy: row.requested_by,
+      inputNames: row.input_names,
+      status: row.status,
+      error: row.error ?? undefined,
+      requestedAt: row.requested_at.toISOString(),
+      completedAt: row.completed_at?.toISOString(),
+    }))
+  }
+
+  async saveTestSuiteDispatch(dispatch: TestSuiteDispatch): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO fuzequality.test_suite_dispatches
+         (id,repository_id,tenant_id,artifact_id,artifact_kind,workflow_path,source_ref,
+          source_revision,requested_by,input_names,status,error,requested_at,completed_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       ON CONFLICT (id) DO UPDATE SET
+         status=EXCLUDED.status,
+         error=EXCLUDED.error,
+         completed_at=EXCLUDED.completed_at`,
+      [
+        dispatch.id,
+        dispatch.repositoryId,
+        dispatch.tenantId,
+        dispatch.artifactId,
+        dispatch.artifactKind,
+        dispatch.workflowPath,
+        dispatch.ref,
+        dispatch.sourceRevision,
+        dispatch.requestedBy,
+        JSON.stringify(dispatch.inputNames),
+        dispatch.status,
+        dispatch.error ?? null,
+        dispatch.requestedAt,
+        dispatch.completedAt ?? null,
+      ],
     )
   }
 

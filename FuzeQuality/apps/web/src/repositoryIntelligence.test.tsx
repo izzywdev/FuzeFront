@@ -9,6 +9,7 @@ import type {
   RepositoryFlowCandidate,
   PolicyGateEvaluation,
   TestExecution,
+  TestSuiteDispatch,
 } from '@fuzequality/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -145,6 +146,27 @@ const integrationArtifact: QualityArtifact = {
   execution: { provider: 'github-actions', workflowPath: '.github/workflows/integration.yml', trigger: 'workflow_dispatch' },
 }
 
+function acceptedDispatch(
+  artifact: QualityArtifact,
+  inputNames: string[] = [],
+): TestSuiteDispatch {
+  return {
+    id: '44444444-4444-4444-8444-444444444444',
+    repositoryId: artifact.repositoryId,
+    tenantId: '22222222-2222-4222-8222-222222222222',
+    artifactId: artifact.id,
+    artifactKind: artifact.kind as TestSuiteDispatch['artifactKind'],
+    workflowPath: artifact.sourcePath,
+    ref: 'main',
+    sourceRevision: 'a'.repeat(40),
+    requestedBy: '33333333-3333-4333-8333-333333333333',
+    inputNames,
+    status: 'accepted',
+    requestedAt: '2026-10-22T20:00:00.000Z',
+    completedAt: '2026-10-22T20:00:01.000Z',
+  }
+}
+
 const policyArtifact: QualityArtifact = {
   id: 'policy-auth', repositoryId: repository.id, kind: 'policy',
   title: 'Authentication policy', sourcePath: 'governance/auth.md',
@@ -239,6 +261,7 @@ function mockEvidenceApis() {
   vi.spyOn(api, 'latestPerformanceExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'latestIntegrationExecutions').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'latestPostProductionExecutions').mockResolvedValue({ items: [] })
+  vi.spyOn(api, 'latestTestSuiteDispatches').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'executionTrend').mockResolvedValue([])
   vi.spyOn(api, 'executionPerformance').mockResolvedValue([])
   vi.spyOn(api, 'repositoryFlowReviewHistory').mockResolvedValue([])
@@ -486,20 +509,23 @@ describe('RepositoryIntelligence flow inventory', () => {
   it('refreshes an expanded flow review history after recording a decision', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])
+    let flowReviewed = false
     vi.mocked(api.repositoryFlowReviewHistory)
-      .mockResolvedValueOnce({
+      .mockImplementation(async () => flowReviewed ? {
+        items: [{ id: 'flow-review-new', candidateId: candidate.id, tenantId: candidate.tenantId, status: 'confirmed', reviewedBy: 'current-reviewer', createdAt: '2026-10-11T01:00:00.000Z' }],
+        page: { nextCursor: null, hasMore: false },
+      } : {
         items: [{ id: 'flow-review-old', candidateId: candidate.id, tenantId: candidate.tenantId, status: 'rejected', reviewedBy: 'previous-reviewer', createdAt: '2026-10-09T01:00:00.000Z' }],
         page: { nextCursor: null, hasMore: false },
       })
-      .mockResolvedValueOnce({
-        items: [{ id: 'flow-review-new', candidateId: candidate.id, tenantId: candidate.tenantId, status: 'confirmed', reviewedBy: 'current-reviewer', createdAt: '2026-10-11T01:00:00.000Z' }],
-        page: { nextCursor: null, hasMore: false },
-      })
-    vi.spyOn(api, 'reviewRepositoryFlowCandidate').mockResolvedValue({
-      ...candidate,
-      status: 'confirmed',
-      reviewedAt: '2026-10-11T01:00:00.000Z',
-      reviewedBy: 'current-reviewer',
+    vi.spyOn(api, 'reviewRepositoryFlowCandidate').mockImplementation(async () => {
+      flowReviewed = true
+      return {
+        ...candidate,
+        status: 'confirmed',
+        reviewedAt: '2026-10-11T01:00:00.000Z',
+        reviewedBy: 'current-reviewer',
+      }
     })
 
     render(<RepositoryIntelligence data={portfolio} />)
@@ -2054,6 +2080,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       workflowPath: loadArtifact.sourcePath,
       ref: 'main',
       sourceRevision: 'a'.repeat(40),
+      dispatch: acceptedDispatch(loadArtifact),
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
@@ -2068,8 +2095,13 @@ describe('RepositoryIntelligence flow inventory', () => {
         loadArtifact.id
       )
     )
-    expect(await screen.findByRole('status')).toHaveTextContent(
+    expect(await screen.findByText(
+      new RegExp(`Dispatched ${loadArtifact.sourcePath.replaceAll('.', '\\.')}`)
+    )).toHaveTextContent(
       `Dispatched ${loadArtifact.sourcePath} from main at analyzed commit ${'a'.repeat(40)}`
+    )
+    expect(screen.getByText(/Latest controlled dispatch · accepted/)).toHaveTextContent(
+      'requested by 33333333-3333-4333-8333-333333333333 · no workflow inputs'
     )
   })
 
@@ -2153,6 +2185,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       workflowPath: inputWorkflow.sourcePath,
       ref: 'main',
       sourceRevision: 'a'.repeat(40),
+      dispatch: acceptedDispatch(inputWorkflow, ['duration', 'environment']),
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
@@ -2379,6 +2412,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       workflowPath: integrationArtifact.sourcePath,
       ref: 'main',
       sourceRevision: 'a'.repeat(40),
+      dispatch: acceptedDispatch(integrationArtifact),
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
@@ -2386,7 +2420,8 @@ describe('RepositoryIntelligence flow inventory', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Run analyzed revision a{12}/ }))
 
     await waitFor(() => expect(api.runTestSuite).toHaveBeenCalledWith(repository.id, integrationArtifact.id))
-    expect(await screen.findByRole('status')).toHaveTextContent(integrationArtifact.sourcePath)
+    expect(await screen.findByText(new RegExp(`Dispatched ${integrationArtifact.sourcePath.replaceAll('.', '\\.')}`)))
+      .toHaveTextContent(integrationArtifact.sourcePath)
   })
 
   it('keeps repository and governance evidence visible when optional performance history fails', async () => {
