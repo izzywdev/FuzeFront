@@ -44,6 +44,8 @@ describe('repository scanner', () => {
       code: 'quality-artifact-transport-bound',
       severity: 'warning',
     }))
+    expect(result.scanDetails.partial).toBe(true)
+    expect(result.scanDetails.counts.diagnostics).toBe(result.diagnostics.length)
     expect(Buffer.byteLength(JSON.stringify(result), 'utf8')).toBeLessThanOrEqual(4_500_000)
   }, 30_000)
 

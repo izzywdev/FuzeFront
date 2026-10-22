@@ -278,6 +278,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(failureMessage)
   })
 
+  it('warns when reviewed analysis is based on a transport-truncated inventory', () => {
+    render(
+      <Repositories
+        data={{
+          ...portfolio,
+          repositories: [{
+            ...repository,
+            lastScanDetails: {
+              ...repository.lastScanDetails!,
+              partial: true,
+            },
+          }],
+        }}
+        reload={vi.fn()}
+        updateProcessingStatus={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'This inventory is partial. Reviewed flow and policy analysis may omit repository evidence'
+    )
+  })
+
   it('normalizes malformed optional execution evidence without exposing undefined rows', () => {
     expect(normalizeItemList<TestExecution>({})).toEqual([])
     expect(normalizeItemList<TestExecution>({ items: [loadExecution, undefined] })).toEqual([

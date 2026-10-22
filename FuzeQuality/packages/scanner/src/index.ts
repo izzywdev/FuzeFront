@@ -124,6 +124,14 @@ export function boundQualityArtifactsForTransport(
       },
     ],
     qualityArtifacts,
+    scanDetails: {
+      ...result.scanDetails,
+      partial: result.scanDetails.partial || omitted > 0,
+      counts: {
+        ...result.scanDetails.counts,
+        diagnostics: result.scanDetails.counts.diagnostics + 1,
+      },
+    },
   }
   const boundedBytes = serializedBytes(bounded)
   if (boundedBytes > MAX_SCAN_RESULT_BYTES) {

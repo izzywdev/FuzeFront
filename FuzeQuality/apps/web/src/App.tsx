@@ -1063,6 +1063,11 @@ export function Repositories({
                   {repository.lastScanFailure.message}
                 </p>
               )}
+              {repository.lastScanDetails?.partial && (
+                <p className="scan-partial-warning" role="status">
+                  <AlertTriangle size={14} /> This inventory is partial. Reviewed flow and policy analysis may omit repository evidence; narrow the scan scope and rescan for complete results.
+                </p>
+              )}
               <dl>
                 <div>
                   <dt>Branch</dt>
