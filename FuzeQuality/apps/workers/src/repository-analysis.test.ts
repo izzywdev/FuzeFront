@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { POLICY_GATE_EVALUATION_BATCH_SIZE, repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
+import { POLICY_GATE_EVALUATION_BATCH_SIZE, isRepositoryAnalysisTopic, repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
 import { RepositoryFlowAnalysisTimeoutError } from '@fuzequality/core'
+import { TOPICS } from '@fuzequality/contracts'
 
 const repository = { id: 'repo-1', tenantId: 'tenant-1', owner: 'fuze', name: 'front', canonicalUrl: 'https://example.test/front', defaultBranch: 'main', kind: 'application' as const, includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true, lastScanStatus: 'complete' as const }
 const artifacts = [{ id: 'route-1', repositoryId: 'repo-1', kind: 'route' as const, title: 'Checkout', sourcePath: 'apps/web/Checkout.tsx', summary: 'Open checkout', evidence: [] }]
@@ -10,6 +11,12 @@ describe('repository inventory analysis ordering', () => {
     expect(repositoryQualityArtifactsPath('repo/one', 'release #1')).toBe(
       '/api/v1/internal/repositories/repo%2Fone/quality-artifacts?revision=release%20%231'
     )
+  })
+
+  it('runs reviewed analysis for both new inventories and dedicated retry commands', () => {
+    expect(isRepositoryAnalysisTopic(TOPICS.REPOSITORY_INVENTORY_CHANGED)).toBe(true)
+    expect(isRepositoryAnalysisTopic(TOPICS.ANALYSIS_REQUESTED)).toBe(true)
+    expect(isRepositoryAnalysisTopic(TOPICS.REQUIREMENT_SYNC_REQUESTED)).toBe(false)
   })
 
   it('persists deterministic flows and policy evaluations before a failed LiteLLM call', async () => {

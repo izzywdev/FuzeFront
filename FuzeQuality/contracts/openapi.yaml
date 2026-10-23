@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.79.0
+  version: 0.80.0
   license:
     name: UNLICENSED
 servers:
@@ -877,8 +877,9 @@ paths:
       operationId: retryRepositoryAnalysis
       summary: Requeue failed reviewed analysis for the exact current revision
       description: >-
-        Uses the durable outbox to retry deterministic governance and FuzeInfra LiteLLM review
-        without checking out or rescanning the repository. Only failed current-revision analysis is retryable.
+        Uses a dedicated durable analysis command to retry deterministic governance and FuzeInfra
+        LiteLLM review without checking out, rescanning, or replaying unrelated inventory projections.
+        Only failed current-revision analysis is retryable.
       tags: [repositories]
       security: [{ platformBearer: [] }]
       responses:

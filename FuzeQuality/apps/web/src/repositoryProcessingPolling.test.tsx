@@ -77,4 +77,22 @@ describe('repository processing polling', () => {
     await waitFor(() => expect(api.retryRepositoryAnalysis).toHaveBeenCalledWith('repo-1'))
     expect(updateProcessingStatus).toHaveBeenCalledWith(queued)
   })
+
+  it('shows a retry failure beside the affected repository without opening onboarding', async () => {
+    vi.spyOn(api, 'retryRepositoryAnalysis').mockRejectedValue(new Error('FuzeInfra retry queue unavailable'))
+    const data: Portfolio = {
+      repositories: [{
+        id: 'repo-1', owner: 'fuze', name: 'front', canonicalUrl: 'https://github.com/fuze/front', defaultBranch: 'main',
+        kind: 'application', includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true,
+        lastScanStatus: 'complete', lastScanRevision: 'abc', lastAnalysis: { revision: 'abc', status: 'failed' },
+      }],
+      operations: [], surfaces: [], tests: [], expectations: [], findings: [], diagnostics: [], requirements: [], flows: [], suggestions: [],
+    }
+
+    render(<Repositories data={data} reload={vi.fn()} updateProcessingStatus={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Retry reviewed analysis' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('FuzeInfra retry queue unavailable')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
 })

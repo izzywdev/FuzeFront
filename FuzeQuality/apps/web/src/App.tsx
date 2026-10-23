@@ -900,6 +900,7 @@ export function Repositories({
   const [error, setError] = useState('')
   const [pollError, setPollError] = useState('')
   const [retryingAnalysis, setRetryingAnalysis] = useState<string>()
+  const [analysisRetryErrors, setAnalysisRetryErrors] = useState<Record<string, string>>({})
   const [history, setHistory] = useState<
     Record<string, RepositoryScanHistoryPage>
   >({})
@@ -990,11 +991,14 @@ export function Repositories({
   }
   async function retryAnalysis(id: string) {
     setRetryingAnalysis(id)
-    setError('')
+    setAnalysisRetryErrors(current => ({ ...current, [id]: '' }))
     try {
       updateProcessingStatus(await api.retryRepositoryAnalysis(id))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Reviewed analysis could not be requeued')
+      setAnalysisRetryErrors(current => ({
+        ...current,
+        [id]: cause instanceof Error ? cause.message : 'Reviewed analysis could not be requeued',
+      }))
     } finally {
       setRetryingAnalysis(undefined)
     }
@@ -1060,6 +1064,11 @@ export function Repositories({
                 onRetry={repository.lastAnalysis?.status === 'failed' ? () => void retryAnalysis(repository.id) : undefined}
                 retrying={retryingAnalysis === repository.id}
               />
+              {analysisRetryErrors[repository.id] && (
+                <p className="form-error" role="alert">
+                  {analysisRetryErrors[repository.id]}
+                </p>
+              )}
               {repository.lastScanStatus === 'failed' && repository.lastScanFailure && (
                 <p className="form-error" role="alert">
                   {repository.lastScanFailure.message}

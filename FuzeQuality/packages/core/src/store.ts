@@ -838,7 +838,7 @@ export class MemoryCatalogStore implements CatalogStore {
     const repository = await this.repository(id, tenantId)
     if (!repository?.lastScanRevision || repository.lastAnalysis?.status !== 'failed') return undefined
     repository.lastAnalysis = { revision: repository.lastScanRevision, status: 'queued' }
-    this.outboxEvents.push({ id: randomUUID(), topic: TOPICS.REPOSITORY_INVENTORY_CHANGED, key: id,
+    this.outboxEvents.push({ id: randomUUID(), topic: TOPICS.ANALYSIS_REQUESTED, key: id,
       payload: { repositoryId: id, revision: repository.lastScanRevision }, attempts: 0, createdAt: new Date().toISOString() })
     return repository
   }
@@ -2505,7 +2505,7 @@ export class PostgresCatalogStore implements CatalogStore {
       if (!result.rowCount) { await client.query('ROLLBACK'); return undefined }
       const revision = result.rows[0].last_scan_revision
       await client.query('INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
-        [TOPICS.REPOSITORY_INVENTORY_CHANGED, id, JSON.stringify({ repositoryId: id, revision })])
+        [TOPICS.ANALYSIS_REQUESTED, id, JSON.stringify({ repositoryId: id, revision })])
       await client.query('COMMIT')
       return this.repository(id, tenantId)
     } catch (error) {

@@ -172,7 +172,7 @@ describe('repository analysis lifecycle storage', () => {
     await expect(relayOutboxBatch(store, bus)).resolves.toBe(0)
     expect(bus.events).toHaveLength(1)
     expect(bus.events[0]).toMatchObject({
-      topic: TOPICS.REPOSITORY_INVENTORY_CHANGED,
+      topic: TOPICS.ANALYSIS_REQUESTED,
       key: 'repo-1',
       payload: { repositoryId: 'repo-1', revision: 'catalog-revision' },
     })

@@ -1,7 +1,11 @@
-import type { PolicyGateEvaluation, QualityArtifact, Repository, RepositoryAnalysisStatus, RepositoryFlowCandidate } from '@fuzequality/contracts'
+import { TOPICS, type PolicyGateEvaluation, type QualityArtifact, type Repository, type RepositoryAnalysisStatus, type RepositoryFlowCandidate } from '@fuzequality/contracts'
 import { deterministicRepositoryFlows, evaluatePolicyGates, RepositoryFlowAnalysisTimeoutError, type LiteLlmRepositoryFlowAnalyzer } from '@fuzequality/core'
 
 export const POLICY_GATE_EVALUATION_BATCH_SIZE = 200
+
+export function isRepositoryAnalysisTopic(topic: string) {
+  return topic === TOPICS.REPOSITORY_INVENTORY_CHANGED || topic === TOPICS.ANALYSIS_REQUESTED
+}
 
 function evaluationBatches(evaluations: PolicyGateEvaluation[]) {
   if (!evaluations.length) return [[]]

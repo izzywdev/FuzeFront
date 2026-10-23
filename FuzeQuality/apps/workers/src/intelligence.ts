@@ -10,7 +10,7 @@ import {
 } from '@fuzequality/core'
 import { apiRequest, failureCode, runConsumer } from './runtime'
 import { searchJira } from './jira'
-import { repositoryQualityArtifactsPath, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
+import { isRepositoryAnalysisTopic, repositoryQualityArtifactsPath, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
 
 await runConsumer(
   'fuzequality-intelligence-v1',
@@ -21,7 +21,7 @@ await runConsumer(
     // Repository analysis does not need retrieval. Keep it independent of
     // Chroma so a semantic-index outage cannot suppress persisted flow and
     // governance evidence for a newly scanned revision.
-    if (!command && topic === TOPICS.REPOSITORY_INVENTORY_CHANGED) {
+    if (!command && isRepositoryAnalysisTopic(topic)) {
       const inventory = payload as { repositoryId: string; revision: string }
       const repository = await apiRequest<Repository>(`/api/v1/internal/repositories/${inventory.repositoryId}`)
       const artifacts = await apiRequest<QualityArtifact[]>(repositoryQualityArtifactsPath(inventory.repositoryId, inventory.revision))

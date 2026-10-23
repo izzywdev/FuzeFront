@@ -1502,6 +1502,41 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect((await scan).postDataJSON()).toEqual({})
   })
 
+  test('keeps a failed LiteLLM retry actionable beside its repository', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/portfolio'),
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...portfolio,
+          repositories: [{
+            ...portfolio.repositories[0],
+            lastAnalysis: {
+              revision: 'abcdef123456',
+              status: 'failed',
+              errorCode: 'INTELLIGENCE_UNAVAILABLE',
+            },
+          }],
+        }),
+      }),
+    )
+    await page.route(
+      url => url.pathname.endsWith('/repositories/repo-1/analysis-retries'),
+      route => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'FuzeInfra retry queue unavailable' }),
+      }),
+    )
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Repositories' }).click()
+
+    await expect(page.getByText('Reviewed analysis unavailable; deterministic evidence remains available.')).toBeVisible()
+    await page.getByRole('button', { name: 'Retry reviewed analysis' }).click()
+    await expect(page.getByRole('alert')).toHaveText('FuzeInfra retry queue unavailable')
+    await expect(page.getByRole('heading', { name: 'Add repository' })).not.toBeVisible()
+  })
+
   test('continues bounded repository analysis history', async ({ page }) => {
     await page.getByRole('button', { name: 'Repositories' }).click()
     await page.getByText('Scan history', { exact: true }).click()
