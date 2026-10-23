@@ -2281,6 +2281,30 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(warning).toHaveTextContent('Verify GitHub Actions before retrying')
   })
 
+  it('blocks a new workflow run until failed dispatch-audit loading recovers', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.latestTestSuiteDispatches)
+      .mockRejectedValueOnce(new Error('Dispatch audit unavailable'))
+      .mockResolvedValueOnce({ items: [] })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    const run = await screen.findByRole('button', { name: /Run analyzed revision a{12}/ })
+    const warning = await screen.findByRole('alert')
+    expect(warning).toHaveTextContent(
+      'New dispatch is blocked to prevent duplicate GitHub Actions runs'
+    )
+    expect(run).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry dispatch audit' }))
+
+    await waitFor(() => expect(api.latestTestSuiteDispatches).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(run).toBeEnabled())
+    expect(screen.queryByText(/New dispatch is blocked/)).not.toBeInTheDocument()
+  })
+
   it('keeps a discovered performance definition inventory-only without workflow_dispatch evidence', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([

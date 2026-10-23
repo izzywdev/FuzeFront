@@ -3840,6 +3840,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     message: string
   }>()
   const [testSuiteDispatches, setTestSuiteDispatches] = useState<TestSuiteDispatch[]>([])
+  const [testSuiteDispatchAuditStatus, setTestSuiteDispatchAuditStatus] = useState<
+    Record<string, 'loading' | 'ready' | 'error'>
+  >({})
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
   const [loadingFlows, setLoadingFlows] = useState(true)
   const [loadedFlowQuery, setLoadedFlowQuery] = useState('')
@@ -4009,6 +4012,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   }
   useEffect(() => {
     let active = true
+    setTestSuiteDispatchAuditStatus(Object.fromEntries(
+      data.repositories.map(repository => [repository.id, 'loading' as const])
+    ))
     void Promise.allSettled(
       data.repositories.map(repository => api.latestTestSuiteDispatches(repository.id))
     ).then(results => {
@@ -4016,9 +4022,29 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setTestSuiteDispatches(results.flatMap(result =>
         result.status === 'fulfilled' ? result.value.items : []
       ))
+      setTestSuiteDispatchAuditStatus(Object.fromEntries(
+        data.repositories.map((repository, index) => [
+          repository.id,
+          results[index]?.status === 'fulfilled' ? 'ready' : 'error',
+        ])
+      ))
     })
     return () => { active = false }
   }, [data.repositories])
+
+  const retryTestSuiteDispatchAudit = async (repositoryId: string) => {
+    setTestSuiteDispatchAuditStatus(current => ({ ...current, [repositoryId]: 'loading' }))
+    try {
+      const result = await api.latestTestSuiteDispatches(repositoryId)
+      setTestSuiteDispatches(current => [
+        ...current.filter(dispatch => dispatch.repositoryId !== repositoryId),
+        ...result.items,
+      ])
+      setTestSuiteDispatchAuditStatus(current => ({ ...current, [repositoryId]: 'ready' }))
+    } catch {
+      setTestSuiteDispatchAuditStatus(current => ({ ...current, [repositoryId]: 'error' }))
+    }
+  }
 
   const runTestSuite = async (artifact: QualityArtifact) => {
     const repository = data.repositories.find(
@@ -5609,6 +5635,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         dispatch.repositoryId === item.repositoryId &&
                         dispatch.artifactLogicalId === (item.logicalId ?? item.id)
                       )
+                      const dispatchAuditStatus =
+                        testSuiteDispatchAuditStatus[item.repositoryId] ?? 'loading'
                       return (
                       <article className="catalog-row" key={item.id}>
                         <div>
@@ -5686,6 +5714,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 <button
                                   className="secondary-button"
                                   disabled={
+                                    dispatchAuditStatus !== 'ready' ||
                                     dispatchingArtifact === item.id ||
                                     Boolean(item.execution?.requiredInputs?.some(
                                       inputName => !workflowDispatchInputs[item.id]?.[inputName]?.trim()
@@ -5698,6 +5727,32 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                     ? 'Dispatching…'
                                     : `Run analyzed revision ${analyzedRevision.slice(0, 12)}`}
                                 </button>
+                              </div>
+                            )}
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
+                            workflowTarget &&
+                            analyzedRevision &&
+                            !lowerPrioritySharedWorkflow &&
+                            dispatchAuditStatus === 'loading' && (
+                              <small className="performance-inventory-only" role="status">
+                                Checking controlled-dispatch audit before enabling a new run.
+                              </small>
+                            )}
+                          {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&
+                            workflowTarget &&
+                            analyzedRevision &&
+                            !lowerPrioritySharedWorkflow &&
+                            dispatchAuditStatus === 'error' && (
+                              <div className="performance-evidence-warning" role="alert">
+                                <small>
+                                  Controlled-dispatch audit is unavailable. New dispatch is blocked to prevent duplicate GitHub Actions runs.
+                                </small>
+                                <QualityAction
+                                  intent="quiet"
+                                  onClick={() => void retryTestSuiteDispatchAudit(item.repositoryId)}
+                                >
+                                  <RefreshCw size={14} /> Retry dispatch audit
+                                </QualityAction>
                               </div>
                             )}
                           {latestDispatch && !lowerPrioritySharedWorkflow && (

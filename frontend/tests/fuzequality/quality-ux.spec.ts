@@ -97,6 +97,8 @@ const testExecutions = [{
   thresholds: [{ metric: 'p95 latency', observed: 640, unit: 'ms', operator: 'lte', target: 500, passed: false }],
 }]
 
+let latestDispatchAuditUnavailable = false
+
 async function mockQualityApi(page: Page, fixture = portfolio) {
   let suggestionConfirmed = false
   let flowCandidates = repositoryFlowCandidates
@@ -194,7 +196,12 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
     })
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
     if (url.pathname.endsWith('/execution-performance')) return respond([{ repositoryId: 'repo-1', policyArtifactId: 'policy-artifact', policyTitle: 'Administrative suspension policy', policySourcePath: 'docs/policies/apps.md', gateArtifactId: 'gate-artifact', gateTitle: 'Admin authorization gate', gateSourcePath: '.github/workflows/authorization.yml', passed: 2, failed: 1, cancelled: 0, running: 0, revisionCount: 3, latestRevision: 'abcdef123456', latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
-    if (url.pathname.endsWith('/test-suite-dispatches/latest')) return respond({ items: [] })
+    if (url.pathname.endsWith('/test-suite-dispatches/latest')) {
+      if (latestDispatchAuditUnavailable) {
+        return respond({ error: 'Dispatch audit unavailable', code: 'AUDIT_UNAVAILABLE' }, 503)
+      }
+      return respond({ items: [] })
+    }
     if (url.pathname.endsWith('/test-suites/load-artifact/dispatches')) return respond({
       items: [
         {
@@ -288,6 +295,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
 
 test.describe('FuzeQuality implemented UX flows', () => {
   test.beforeEach(async ({ page }) => {
+    latestDispatchAuditUnavailable = false
     await mockQualityApi(page)
     await page.goto('/', { waitUntil: 'domcontentloaded' })
   })
@@ -1116,6 +1124,25 @@ test.describe('FuzeQuality implemented UX flows', () => {
     })
     await expect(warning).toContainText('Dispatch failed: GitHub dispatch timed out')
     await expect(warning).toContainText('Verify GitHub Actions before retrying')
+  })
+
+  test('blocks workflow dispatch until the latest audit can be verified', async ({ page }) => {
+    latestDispatchAuditUnavailable = true
+    await page.reload()
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const run = page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' })
+    const warning = page.getByRole('alert').filter({
+      hasText: 'New dispatch is blocked to prevent duplicate GitHub Actions runs',
+    })
+    await expect(warning).toBeVisible()
+    await expect(run).toBeDisabled()
+
+    latestDispatchAuditUnavailable = false
+    await page.getByRole('button', { name: 'Retry dispatch audit' }).click()
+
+    await expect(run).toBeEnabled()
+    await expect(warning).toHaveCount(0)
   })
 
   test('retains controlled dispatch evidence across analyzed artifact revisions', async ({ page }) => {
