@@ -1093,6 +1093,31 @@ test.describe('FuzeQuality implemented UX flows', () => {
     })).toBeVisible()
   })
 
+  test('warns before retrying when a failed dispatch audit remains unresolved', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/test-suites/load-artifact/execute'),
+      route => route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'GitHub dispatch timed out',
+          code: 'TEST_DISPATCH_FAILED',
+          auditPersistence: 'pending',
+        }),
+      }),
+    )
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    page.once('dialog', dialog => dialog.accept())
+
+    await page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' }).click()
+
+    const warning = page.getByRole('alert').filter({
+      hasText: 'could not finalize the failure audit after retries',
+    })
+    await expect(warning).toContainText('Dispatch failed: GitHub dispatch timed out')
+    await expect(warning).toContainText('Verify GitHub Actions before retrying')
+  })
+
   test('retains controlled dispatch evidence across analyzed artifact revisions', async ({ page }) => {
     await page.route(
       url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',

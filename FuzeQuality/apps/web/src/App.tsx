@@ -4060,13 +4060,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         ),
       ])
     } catch (error) {
+      const failureAuditPending =
+        error instanceof CatalogApiError && error.auditPersistence === 'pending'
       setPerformanceDispatch({
         artifactId: artifact.id,
-        state: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Unable to dispatch the test workflow.',
+        state: failureAuditPending ? 'warning' : 'error',
+        message: failureAuditPending
+          ? `Dispatch failed: ${error.message}. FuzeQuality could not finalize the failure audit after retries. Verify GitHub Actions before retrying.`
+          : error instanceof Error
+              ? error.message
+              : 'Unable to dispatch the test workflow.',
       })
     } finally {
       setDispatchingArtifact(undefined)

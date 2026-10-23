@@ -2254,6 +2254,33 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('warns operators when a failed dispatch could not persist its terminal audit', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'runTestSuite').mockRejectedValue(
+      new CatalogApiError(
+        'GitHub dispatch timed out',
+        'TEST_DISPATCH_FAILED',
+        502,
+        'pending',
+      )
+    )
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Run analyzed revision a{12}/ })
+    )
+
+    const warning = await screen.findByRole('alert')
+    expect(warning).toHaveTextContent('Dispatch failed: GitHub dispatch timed out')
+    expect(warning).toHaveTextContent(
+      'could not finalize the failure audit after retries'
+    )
+    expect(warning).toHaveTextContent('Verify GitHub Actions before retrying')
+  })
+
   it('keeps a discovered performance definition inventory-only without workflow_dispatch evidence', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([

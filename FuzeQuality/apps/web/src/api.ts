@@ -65,10 +65,19 @@ export function configurePlatformSecurity(getToken?: TokenProvider, getTenantId?
 }
 
 export type PlatformSession = Pick<Identity, 'userId' | 'tenantId' | 'roles'>
-type ApiFailure = { error?: string; code?: string }
+type ApiFailure = {
+  error?: string
+  code?: string
+  auditPersistence?: 'persisted' | 'pending'
+}
 
 export class CatalogApiError extends Error {
-  constructor(message: string, readonly code?: string, readonly status?: number) {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly status?: number,
+    readonly auditPersistence?: 'persisted' | 'pending',
+  ) {
     super(message)
     this.name = 'CatalogApiError'
   }
@@ -95,7 +104,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       throw new CatalogApiError(
         error?.error ?? `Request failed: ${response.status}`,
         error?.code,
-        response.status
+        response.status,
+        error?.auditPersistence,
       )
     }
     return response.json() as Promise<T>

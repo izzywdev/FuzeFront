@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, configurePlatformSecurity } from './api'
+import { api, CatalogApiError, configurePlatformSecurity } from './api'
 
 describe('FuzeQuality portal API identity context', () => {
   afterEach(() => {
@@ -60,6 +60,28 @@ describe('FuzeQuality portal API identity context', () => {
     const headers = new Headers(fetchMock.mock.calls[0][1].headers)
     expect(headers.get('authorization')).toBe('Bearer standalone-token')
     expect(headers.get('x-fuzefront-tenant-id')).toBe('standalone-tenant')
+  })
+
+  it('preserves unresolved failure-audit state from a rejected dispatch', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: 'GitHub dispatch timed out',
+      code: 'TEST_DISPATCH_FAILED',
+      auditPersistence: 'pending',
+    }), {
+      status: 502,
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.runTestSuite('repo-1', 'artifact-1')).rejects.toEqual(
+      expect.objectContaining<CatalogApiError>({
+        name: 'CatalogApiError',
+        message: 'GitHub dispatch timed out',
+        code: 'TEST_DISPATCH_FAILED',
+        status: 502,
+        auditPersistence: 'pending',
+      }),
+    )
   })
 
   it('normalizes nested FuzeFront member identities for organization administration', async () => {
