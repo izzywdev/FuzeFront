@@ -272,4 +272,40 @@ describe('standalone FuzeFront authentication', () => {
     expect(screen.getByRole('heading', { name: 'Verify your identity' })).toBeVisible()
     expect(readStandaloneSession()).toBeNull()
   })
+
+  it('preserves the MFA factor chooser when the initial delivery method fails', async () => {
+    const fetcher = vi.fn()
+      .mockImplementationOnce(() => response({
+        status: 'mfa_required',
+        challengeId: 'challenge-1',
+        factors: [
+          { factorId: 'sms-1', type: 'sms' },
+          { factorId: 'totp-1', type: 'totp' },
+        ],
+      }))
+      .mockImplementationOnce(() => response({ error: 'Text delivery unavailable' }, 503))
+      .mockImplementationOnce(() => response({ challengeId: 'challenge-1', factorId: 'totp-1', delivered: false }, 202))
+
+    render(
+      <StandaloneAuthBoundary fetcher={fetcher as typeof fetch}>
+        {() => <p>Authenticated</p>}
+      </StandaloneAuthBoundary>,
+    )
+
+    fireEvent.change(await screen.findByLabelText('Email'), { target: { value: 'mfa@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in securely' }))
+
+    expect(await screen.findByRole('heading', { name: 'Verify your identity' })).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent('Text delivery unavailable')
+    expect(screen.getByText('Choose another verification method to continue.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Verify and continue' })).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Verification method'), { target: { value: 'totp-1' } })
+
+    expect(await screen.findByText('Enter the current code from your authenticator app.')).toBeVisible()
+    expect(fetcher).toHaveBeenNthCalledWith(3, '/api/v1/security/mfa/challenge', expect.objectContaining({
+      body: JSON.stringify({ challengeId: 'challenge-1', factorId: 'totp-1' }),
+    }))
+  })
 })

@@ -283,6 +283,7 @@ export function StandaloneAuthBoundary({
   const [workspaceSelection, setWorkspaceSelection] = useState<StandaloneWorkspaceSelection | null>(null)
   const [workspaceRetryToken, setWorkspaceRetryToken] = useState<string>()
   const [factorId, setFactorId] = useState('')
+  const [factorChallengeReady, setFactorChallengeReady] = useState(false)
   const [code, setCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string>()
@@ -321,6 +322,7 @@ export function StandaloneAuthBoundary({
     setWorkspaceSelection(null)
     setWorkspaceRetryToken(undefined)
     setFactorId('')
+    setFactorChallengeReady(false)
     setCode('')
     setError(undefined)
   }, [fetcher, session])
@@ -334,10 +336,12 @@ export function StandaloneAuthBoundary({
       const result = await signInStandalone(email, password, fetcher)
       if ('status' in result && result.status === 'mfa_required') {
         const selectedFactor = result.factors[0].factorId
-        await challengeStandaloneMfa(result.challengeId, selectedFactor, fetcher)
         setMfa(result)
         setFactorId(selectedFactor)
+        setFactorChallengeReady(false)
         setPassword('')
+        await challengeStandaloneMfa(result.challengeId, selectedFactor, fetcher)
+        setFactorChallengeReady(true)
       } else if ('status' in result) {
         setWorkspaceSelection(result)
         setPassword('')
@@ -385,10 +389,12 @@ export function StandaloneAuthBoundary({
     if (!mfa) return
     setSubmitting(true)
     setError(undefined)
+    setFactorId(nextFactorId)
+    setFactorChallengeReady(false)
+    setCode('')
     try {
       await challengeStandaloneMfa(mfa.challengeId, nextFactorId, fetcher)
-      setFactorId(nextFactorId)
-      setCode('')
+      setFactorChallengeReady(true)
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value))
     } finally {
@@ -494,7 +500,13 @@ export function StandaloneAuthBoundary({
                   {mfa.factors.map(factor => <option key={factor.factorId} value={factor.factorId}>{factor.type === 'totp' ? 'Authenticator app' : factor.type === 'sms' ? 'Text message' : 'Email'}</option>)}
                 </select>
               </label>
-              <p className="standalone-auth-hint">{activeFactor?.type === 'totp' ? 'Enter the current code from your authenticator app.' : `A one-time code was sent by ${activeFactor?.type === 'sms' ? 'text message' : 'email'}.`}</p>
+              <p className="standalone-auth-hint">{
+                factorChallengeReady
+                  ? activeFactor?.type === 'totp'
+                    ? 'Enter the current code from your authenticator app.'
+                    : `A one-time code was sent by ${activeFactor?.type === 'sms' ? 'text message' : 'email'}.`
+                  : 'Choose another verification method to continue.'
+              }</p>
               <Input label="Verification code" name="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={event => setCode(event.target.value)} />
             </>
           ) : (
@@ -509,11 +521,11 @@ export function StandaloneAuthBoundary({
               <RefreshCw size={14} /> Retry workspace discovery
             </QualityAction>
           )}
-          <QualityAction type="submit" disabled={submitting || (mfa ? !code : !email || !password)}>
+          <QualityAction type="submit" disabled={submitting || (mfa ? !factorChallengeReady || !code : !email || !password)}>
             {submitting ? <RefreshCw className="spin" size={14} /> : <LockKeyhole size={14} />}
             {submitting ? (mfa ? 'Verifying…' : 'Signing in…') : (mfa ? 'Verify and continue' : 'Sign in securely')}
           </QualityAction>
-          {mfa && <QualityAction type="button" intent="quiet" disabled={submitting} onClick={() => { setMfa(null); setFactorId(''); setCode(''); setError(undefined) }}>Back to sign in</QualityAction>}
+          {mfa && <QualityAction type="button" intent="quiet" disabled={submitting} onClick={() => { setMfa(null); setFactorId(''); setFactorChallengeReady(false); setCode(''); setError(undefined) }}>Back to sign in</QualityAction>}
         </form>
       </section>
     </main>

@@ -1735,6 +1735,44 @@ test.describe('FuzeQuality implemented UX flows', () => {
 })
 
 test.describe('FuzeQuality standalone Security session', () => {
+  test('keeps alternate MFA methods available during a notification outage', async ({ page }) => {
+    let challengeAttempts = 0
+    await page.route('**/api/v1/**', async route => {
+      const url = new URL(route.request().url())
+      const method = route.request().method()
+      const respond = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+      if (url.pathname.endsWith('/security/session') && method === 'POST') {
+        return respond({
+          status: 'mfa_required',
+          challengeId: 'challenge-1',
+          factors: [
+            { factorId: 'sms-1', type: 'sms' },
+            { factorId: 'totp-1', type: 'totp' },
+          ],
+        })
+      }
+      if (url.pathname.endsWith('/security/mfa/challenge')) {
+        challengeAttempts += 1
+        return challengeAttempts === 1
+          ? respond({ error: 'Text delivery unavailable' }, 503)
+          : respond({ challengeId: 'challenge-1', factorId: 'totp-1', delivered: false }, 202)
+      }
+      return respond({})
+    })
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await page.getByLabel('Email').fill('mfa@example.com')
+    await page.getByLabel('Password').fill('secret')
+    await page.getByRole('button', { name: 'Sign in securely' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible()
+    await expect(page.getByRole('alert')).toHaveText('Text delivery unavailable')
+    await expect(page.getByText('Choose another verification method to continue.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Verify and continue' })).toBeDisabled()
+    await page.getByLabel('Verification method').selectOption('totp-1')
+    await expect(page.getByText('Enter the current code from your authenticator app.')).toBeVisible()
+  })
+
   test('completes MFA before loading tenant-scoped quality evidence', async ({ page }) => {
     let portfolioHeaders: Record<string, string> = {}
     await page.route('**/api/v1/**', async route => {
