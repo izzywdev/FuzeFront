@@ -886,6 +886,41 @@ test.describe('FuzeQuality implemented UX flows', () => {
     }
   })
 
+  test('labels filtered execution performance from the selected historical catalog', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/execution-performance'),
+      route => {
+        const historical = new URL(route.request().url()).searchParams.get('revision') === 'historical-source-revision'
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{
+            repositoryId: 'repo-1',
+            policyArtifactId: 'policy-artifact',
+            policyTitle: historical ? 'Historical suspension policy' : 'Administrative suspension policy',
+            policySourcePath: historical ? 'docs/policies/apps-v1.md' : 'docs/policies/apps.md',
+            gateArtifactId: 'gate-artifact',
+            gateTitle: historical ? 'Historical authorization gate' : 'Admin authorization gate',
+            gateSourcePath: historical ? '.github/workflows/authorization-v1.yml' : '.github/workflows/authorization.yml',
+            total: 1,
+            passed: 0,
+            failed: 1,
+            cancelled: 0,
+            running: 0,
+            passRate: 0,
+          }]),
+        })
+      },
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toBeVisible()
+    await page.getByLabel('Source revision').fill('historical-source-revision')
+    await expect(page.getByText('Historical suspension policy → Historical authorization gate')).toBeVisible()
+    await expect(page.getByText('docs/policies/apps-v1.md → .github/workflows/authorization-v1.yml')).toBeVisible()
+    await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toHaveCount(0)
+  })
+
   test('continues immutable UX-flow and governance review audit pages', async ({ page }) => {
     await page.route(
       url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates/candidate-1/history',

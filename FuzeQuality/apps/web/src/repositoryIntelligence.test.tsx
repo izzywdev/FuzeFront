@@ -3402,6 +3402,37 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('replaces current policy and gate labels with historical revision evidence', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.executionPerformance).mockImplementation(async (_repositoryId, filter = {}) => [{
+      repositoryId: repository.id,
+      policyArtifactId: 'policy-auth',
+      policyTitle: filter.revision ? 'Historical authentication policy' : 'Current authentication policy',
+      policySourcePath: filter.revision ? 'governance/auth-v1.md' : 'governance/auth.md',
+      gateArtifactId: 'gate-auth',
+      gateTitle: filter.revision ? 'Historical authentication gate' : 'Current authentication gate',
+      gateSourcePath: filter.revision ? '.github/workflows/auth-v1.yml' : '.github/workflows/auth.yml',
+      total: 1,
+      passed: 0,
+      failed: 1,
+      cancelled: 0,
+      running: 0,
+      passRate: 0,
+    }])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    expect(await screen.findByText('Current authentication policy → Current authentication gate')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('Source revision'), {
+      target: { value: 'historical-source-revision' },
+    })
+
+    expect(await screen.findByText('Historical authentication policy → Historical authentication gate')).toBeVisible()
+    expect(screen.getByText('governance/auth-v1.md → .github/workflows/auth-v1.yml')).toBeVisible()
+    expect(screen.queryByText('Current authentication policy → Current authentication gate')).not.toBeInTheDocument()
+  })
+
   it('filters execution history, trends, and gate performance by exact source branch', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

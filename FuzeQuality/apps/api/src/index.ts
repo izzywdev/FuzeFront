@@ -47,6 +47,7 @@ import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
 import { executionAttemptHistoryFilterSchema, executionPerformanceFilterSchema, executionPageFilterSchema } from './execution-filter'
+import { enrichPerformanceEvidence } from './execution-performance-evidence'
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
 import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
@@ -1036,23 +1037,19 @@ app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async 
     after: cursor.data,
     limit: limit + 1,
   })
-  const artifactIds = [...new Set(items.flatMap(item => [item.policyArtifactId, item.gateArtifactId]))]
-  const artifacts = new Map(
-    (await store.qualityArtifactsByIds(repositoryId, tenantId, artifactIds))
-      .flatMap(artifact => [
-        [artifact.id, artifact] as const,
-        ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
-      ]),
+  const enriched = await enrichPerformanceEvidence(
+    repositoryId,
+    tenantId,
+    items,
+    { sourceRevision: query.revision, currentCatalogRevision: repository.lastScanRevision },
+    {
+      catalogRevisionForSource: (id, tenant, sourceRevision) =>
+        store.catalogRevisionForSource(id, tenant, sourceRevision),
+      qualityArtifactsByIds: (id, tenant, ids, catalogRevision) =>
+        store.qualityArtifactsByIds(id, tenant, ids, catalogRevision),
+    },
   )
-  response.json(performancePage(items.map(item => {
-    const policy = artifacts.get(item.policyArtifactId)
-    const gate = artifacts.get(item.gateArtifactId)
-    return {
-      ...item,
-      ...(policy?.kind === 'policy' ? { policyTitle: policy.title, policySourcePath: policy.sourcePath } : {}),
-      ...(gate?.kind === 'gate' ? { gateTitle: gate.title, gateSourcePath: gate.sourcePath } : {}),
-    }
-  }), limit, undefined, snapshotAt))
+  response.json(performancePage(enriched, limit, undefined, snapshotAt))
 })
 app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecution, async (request, response) => {
   const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
