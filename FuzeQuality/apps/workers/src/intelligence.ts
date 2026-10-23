@@ -10,7 +10,7 @@ import {
 } from '@fuzequality/core'
 import { apiRequest, failureCode, runConsumer } from './runtime'
 import { searchJira } from './jira'
-import { isRepositoryAnalysisTopic, repositoryQualityArtifactsPath, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
+import { isRepositoryAnalysisTopic, reportExhaustedRepositoryAnalysis, repositoryQualityArtifactsPath, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
 
 await runConsumer(
   'fuzequality-intelligence-v1',
@@ -107,5 +107,32 @@ await runConsumer(
       }
       throw error
     }
-  }
+  },
+  {
+    onExhausted: (topic, payload, _correlationId, error) => reportExhaustedRepositoryAnalysis(
+      topic,
+      payload,
+      error,
+      {
+        persistStatus: async (repositoryId, status) => {
+          // If analysis reached the tracked phase, retain its original start
+          // time. Setup failures remain distinguishable because their queued
+          // state has no start time yet.
+          const repository = await apiRequest<Repository>(
+            `/api/v1/internal/repositories/${encodeURIComponent(repositoryId)}`,
+          )
+          const startedAt = repository.lastAnalysis?.revision === status.revision
+            ? repository.lastAnalysis.startedAt
+            : undefined
+          await apiRequest(
+            `/api/v1/internal/repositories/${encodeURIComponent(repositoryId)}/analysis-status`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ ...status, ...(startedAt ? { startedAt } : {}) }),
+            },
+          )
+        },
+      },
+    ).then(() => undefined),
+  },
 )

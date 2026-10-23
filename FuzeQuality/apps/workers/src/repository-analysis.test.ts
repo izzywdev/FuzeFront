@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { POLICY_GATE_EVALUATION_BATCH_SIZE, isRepositoryAnalysisTopic, repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
+import { POLICY_GATE_EVALUATION_BATCH_SIZE, isRepositoryAnalysisTopic, reportExhaustedRepositoryAnalysis, repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
 import { RepositoryFlowAnalysisTimeoutError } from '@fuzequality/core'
 import { TOPICS } from '@fuzequality/contracts'
 
@@ -17,6 +17,43 @@ describe('repository inventory analysis ordering', () => {
     expect(isRepositoryAnalysisTopic(TOPICS.REPOSITORY_INVENTORY_CHANGED)).toBe(true)
     expect(isRepositoryAnalysisTopic(TOPICS.ANALYSIS_REQUESTED)).toBe(true)
     expect(isRepositoryAnalysisTopic(TOPICS.REQUIREMENT_SYNC_REQUESTED)).toBe(false)
+  })
+
+  it('marks setup failures terminal after bounded repository-analysis retries', async () => {
+    const persistStatus = vi.fn(async () => undefined)
+
+    await expect(reportExhaustedRepositoryAnalysis(
+      TOPICS.REPOSITORY_INVENTORY_CHANGED,
+      { repositoryId: 'repo-1', revision: 'catalog-revision' },
+      new Error('catalog lookup returned provider details'),
+      { persistStatus, now: () => '2026-10-23T18:15:00.000Z' },
+    )).resolves.toBe(true)
+
+    expect(persistStatus).toHaveBeenCalledWith('repo-1', {
+      revision: 'catalog-revision',
+      status: 'failed',
+      finishedAt: '2026-10-23T18:15:00.000Z',
+      errorCode: 'INTELLIGENCE_UNAVAILABLE',
+    })
+  })
+
+  it('does not write terminal analysis state for unrelated or malformed deliveries', async () => {
+    const persistStatus = vi.fn(async () => undefined)
+
+    await expect(reportExhaustedRepositoryAnalysis(
+      TOPICS.REQUIREMENT_SYNC_REQUESTED,
+      { repositoryId: 'repo-1', revision: 'catalog-revision' },
+      new Error('Jira unavailable'),
+      { persistStatus },
+    )).resolves.toBe(false)
+    await expect(reportExhaustedRepositoryAnalysis(
+      TOPICS.ANALYSIS_REQUESTED,
+      { repositoryId: 'repo-1' },
+      new Error('invalid delivery'),
+      { persistStatus },
+    )).resolves.toBe(false)
+
+    expect(persistStatus).not.toHaveBeenCalled()
   })
 
   it('persists deterministic flows and policy evaluations before a failed LiteLLM call', async () => {

@@ -5,7 +5,9 @@ import { QualityAction } from './primitives'
 export function RepositoryAnalysisStatus({ analysis, onRetry, retrying = false }: { analysis: Repository['lastAnalysis']; onRetry?: () => void; retrying?: boolean }) {
   if (!analysis) return <span className="scan-status scan-never">analysis not run</span>
   const counts = analysis.counts
-  const failure = analysis.errorCode === 'INTELLIGENCE_TIMEOUT'
+  const failure = analysis.status === 'failed' && !analysis.startedAt
+    ? 'Reviewed analysis could not start after bounded retries; deterministic evidence remains available.'
+    : analysis.errorCode === 'INTELLIGENCE_TIMEOUT'
     ? 'FuzeInfra LiteLLM timed out; deterministic evidence remains available.'
     : analysis.errorCode
       ? 'Reviewed analysis unavailable; deterministic evidence remains available.'

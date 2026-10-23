@@ -1709,6 +1709,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
             lastAnalysis: {
               revision: 'abcdef123456',
               status: 'failed',
+              startedAt: '2026-10-23T18:00:00.000Z',
               errorCode: 'INTELLIGENCE_UNAVAILABLE',
             },
           }],
@@ -1730,6 +1731,51 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await page.getByRole('button', { name: 'Retry reviewed analysis' }).click()
     await expect(page.getByRole('alert')).toHaveText('FuzeInfra retry queue unavailable')
     await expect(page.getByRole('heading', { name: 'Add repository' })).not.toBeVisible()
+  })
+
+  test('surfaces exhausted repository-analysis setup and requeues it from the repository card', async ({ page }) => {
+    let retryRequested = false
+    await page.route(
+      url => url.pathname.endsWith('/portfolio'),
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...portfolio,
+          repositories: [{
+            ...portfolio.repositories[0],
+            lastAnalysis: {
+              revision: 'abcdef123456',
+              status: 'failed',
+              finishedAt: '2026-10-23T18:15:00.000Z',
+              errorCode: 'INTELLIGENCE_UNAVAILABLE',
+            },
+          }],
+        }),
+      }),
+    )
+    await page.route(
+      url => url.pathname.endsWith('/repositories/repo-1/analysis-retries'),
+      route => {
+        retryRequested = true
+        return route.fulfill({
+          status: 202,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'repo-1',
+            lastScanStatus: 'complete',
+            lastScanRevision: 'abcdef123456',
+            lastAnalysis: { revision: 'abcdef123456', status: 'queued' },
+          }),
+        })
+      },
+    )
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Repositories' }).click()
+    await expect(page.getByText(/could not start after bounded retries/)).toBeVisible()
+    await page.getByRole('button', { name: 'Retry reviewed analysis' }).click()
+    await expect.poll(() => retryRequested).toBe(true)
+    await expect(page.getByLabel('Repository analysis status')).toContainText('analysis queued')
   })
 
   test('continues bounded repository analysis history', async ({ page }) => {

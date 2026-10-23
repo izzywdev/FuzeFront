@@ -1,10 +1,49 @@
 import { TOPICS, type PolicyGateEvaluation, type QualityArtifact, type Repository, type RepositoryAnalysisStatus, type RepositoryFlowCandidate } from '@fuzequality/contracts'
 import { deterministicRepositoryFlows, evaluatePolicyGates, RepositoryFlowAnalysisTimeoutError, type LiteLlmRepositoryFlowAnalyzer } from '@fuzequality/core'
+import { z } from 'zod'
 
 export const POLICY_GATE_EVALUATION_BATCH_SIZE = 200
 
+const repositoryAnalysisCommandSchema = z.object({
+  repositoryId: z.string().trim().min(1).max(500),
+  revision: z.string().trim().min(1).max(500),
+}).strict()
+
 export function isRepositoryAnalysisTopic(topic: string) {
   return topic === TOPICS.REPOSITORY_INVENTORY_CHANGED || topic === TOPICS.ANALYSIS_REQUESTED
+}
+
+export function repositoryAnalysisFailureCode(error: unknown): NonNullable<RepositoryAnalysisStatus['errorCode']> {
+  return error instanceof RepositoryFlowAnalysisTimeoutError
+    ? 'INTELLIGENCE_TIMEOUT'
+    : 'INTELLIGENCE_UNAVAILABLE'
+}
+
+/**
+ * Catalog/revision lookup can fail before the tracked analyzer has written its
+ * first `running` state. Once Kafka has exhausted the bounded delivery retries,
+ * persist a safe terminal state so the portal stops polling and exposes its
+ * existing reviewed-analysis retry action instead of showing `queued` forever.
+ */
+export async function reportExhaustedRepositoryAnalysis(
+  topic: string,
+  payload: unknown,
+  error: unknown,
+  dependencies: {
+    persistStatus: (repositoryId: string, status: RepositoryAnalysisStatus) => Promise<void>
+    now?: () => string
+  },
+) {
+  if (!isRepositoryAnalysisTopic(topic)) return false
+  const command = repositoryAnalysisCommandSchema.safeParse(payload)
+  if (!command.success) return false
+  await dependencies.persistStatus(command.data.repositoryId, {
+    revision: command.data.revision,
+    status: 'failed',
+    finishedAt: (dependencies.now ?? (() => new Date().toISOString()))(),
+    errorCode: repositoryAnalysisFailureCode(error),
+  })
+  return true
 }
 
 function evaluationBatches(evaluations: PolicyGateEvaluation[]) {
@@ -86,9 +125,7 @@ export async function runTrackedRepositoryInventoryAnalysis(
     await dependencies.persistStatus({ revision, status: 'complete', startedAt, finishedAt: now(), counts })
     return counts
   } catch (error) {
-    const errorCode = error instanceof RepositoryFlowAnalysisTimeoutError
-      ? 'INTELLIGENCE_TIMEOUT' as const
-      : 'INTELLIGENCE_UNAVAILABLE' as const
+    const errorCode = repositoryAnalysisFailureCode(error)
     await dependencies.persistStatus({ revision, status: 'failed', startedAt, finishedAt: now(), errorCode }).catch(() => undefined)
     throw error
   }
