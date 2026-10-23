@@ -199,14 +199,22 @@ cat > "${REG}/apps/recruiter.json" <<JSON
 }
 JSON
 
-# Every federated sibling is checked before any surface is registered.
-printf '<html><body>broken sibling</body></html>\n' > "${WORK}/recruiter-remoteEntry.js"
+# First-time init-container registration must not wait on the application remote:
+# the app container cannot start until this script exits. Stage all rows once, then
+# prove a later activation/refresh still validates every remote before any write.
 start_server
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "" "true"; RC=$?; set -e
+check "first suite registration does not deadlock on federation probes" "$RC" "0"
+grep -q 'deferring federation probe until the app can start' "${WORK}/run.out" \
+  && ok "explains the deferred first-install federation probe" || notok "explains the deferred first-install federation probe"
+
+printf '<html><body>broken sibling</body></html>\n' > "${WORK}/recruiter-remoteEntry.js"
 : > "${WORK}/calls.txt"
 set +e; run_register; RC=$?; set -e
 if [ "$RC" -ne 0 ]; then ok "broken sibling federation asset exits NON-ZERO"; else notok "broken sibling federation asset exits NON-ZERO (got 0)"; fi
 WRITES="$(grep -Ec '^(POST|PUT|DELETE) ' "${WORK}/calls.txt" || true)"
-check "broken sibling prevents every registry write" "$WRITES" "0"
+check "broken sibling prevents every refresh or activation write" "$WRITES" "0"
 cleanup; SERVER_PID=""
 printf 'const recruiter = "__federation_method_ensure";\n' > "${WORK}/recruiter-remoteEntry.js"
 

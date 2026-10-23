@@ -1140,7 +1140,11 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async checkReadiness() {
-    await this.pool.query('SELECT 1')
+    // Readiness must prove both connectivity and that the provisioned schema is
+    // available to the runtime role. Keep the probe bounded: an empty table is
+    // still ready, while a missing schema/table or missing SELECT grant fails
+    // closed before Kubernetes sends catalog traffic to this pod.
+    await this.pool.query('SELECT 1 FROM fuzequality.repositories LIMIT 1')
   }
 
   async portfolio(tenantId?: string): Promise<Portfolio> {

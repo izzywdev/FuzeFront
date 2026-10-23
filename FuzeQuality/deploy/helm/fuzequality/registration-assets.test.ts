@@ -165,6 +165,15 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(workflow).toContain("grep -Eq 'minSdk(Version)?([[:space:]]+|[[:space:]]*=[[:space:]]*)24\\b'")
   })
 
+  it('signs manual Android releases only from the repository default branch', () => {
+    const workflow = read('../../../../.github/workflows/fuzequality-android-apk.yml')
+
+    expect(workflow).toContain(
+      "RELEASE_BUILD: ${{ github.ref_name == github.event.repository.default_branch && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}",
+    )
+    expect(workflow).not.toContain("|| github.event_name == 'workflow_dispatch' }}")
+  })
+
   it('bounds reviewed repository analysis calls to FuzeInfra LiteLLM', () => {
     const values = parse(read('values.yaml')) as { config: { repositoryAnalysisTimeoutMs: number } }
     const helpers = read('templates/_helpers.tpl')

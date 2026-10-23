@@ -175,16 +175,30 @@ for _manifest in $MANIFESTS; do
   fi
 
   _probe="false"
-  if [ "${SKIP_ACTIVATE:-false}" != "true" ]; then
-    _probe="true"
-  elif [ -n "$_remote" ]; then
-    # A staged first registration is intentionally allowed before its remote is
-    # deployed. An already-active row is different: the PUT below changes the
-    # live portal immediately, so its replacement must pass the same probe.
+  if [ -n "$_remote" ]; then
+    # Registration commonly runs as an init container. On the first install the
+    # application container cannot serve its own remote until this script exits,
+    # so probing an absent registry row here would deadlock the pod forever. A
+    # first registration may proceed; every later refresh/activation probes before
+    # mutating the live row. Post-start registration Jobs still get the same
+    # protection because their remote is already serving by the next refresh.
     _lookup_code="$(http GET "${API}/apps/${_slug}" "$BODY")"
-    if [ "$_lookup_code" = "200" ] && [ "$(jq -r '.status // empty' "$BODY")" = "activated" ]; then
-      _probe="true"
-    fi
+    case "$_lookup_code" in
+      200)
+        if [ "${SKIP_ACTIVATE:-false}" != "true" ] || [ "$(jq -r '.status // empty' "$BODY")" = "activated" ]; then
+          _probe="true"
+        fi
+        ;;
+      404)
+        log "first registration for ${_slug} — deferring federation probe until the app can start"
+        ;;
+      401|403)
+        die "auth rejected (HTTP ${_lookup_code}) — check FUZEFRONT_REGISTRATION_TOKEN has the apps:register scope"
+        ;;
+      *)
+        die "unexpected response looking up ${_slug} before federation probe: HTTP ${_lookup_code} $(cat "$BODY")"
+        ;;
+    esac
   fi
   [ "$_probe" != "true" ] || [ -z "$_remote" ] || probe_federation_asset "$_remote" "$_slug"
 done

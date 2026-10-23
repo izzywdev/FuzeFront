@@ -10,8 +10,8 @@ describe('catalog store readiness', () => {
     expect(portfolio).not.toHaveBeenCalled()
   })
 
-  it('uses one constant-time Postgres query instead of loading the catalog', async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ '?column?': 1 }] })
+  it('uses one bounded Postgres schema probe instead of loading the catalog', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
     const portfolio = vi.spyOn(store, 'portfolio')
     ;(store as unknown as { pool: unknown }).pool = { query }
@@ -19,8 +19,17 @@ describe('catalog store readiness', () => {
     await expect(store.checkReadiness()).resolves.toBeUndefined()
 
     expect(query).toHaveBeenCalledOnce()
-    expect(query).toHaveBeenCalledWith('SELECT 1')
+    expect(query).toHaveBeenCalledWith('SELECT 1 FROM fuzequality.repositories LIMIT 1')
     expect(portfolio).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the provisioned FuzeQuality schema is unavailable', async () => {
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = {
+      query: vi.fn().mockRejectedValue(new Error('relation "fuzequality.repositories" does not exist')),
+    }
+
+    await expect(store.checkReadiness()).rejects.toThrow('fuzequality.repositories')
   })
 
   it('fails closed when Postgres cannot answer the readiness query', async () => {
