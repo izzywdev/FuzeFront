@@ -2085,6 +2085,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       workflowPath: loadArtifact.sourcePath,
       ref: 'main',
       sourceRevision: 'a'.repeat(40),
+      auditPersistence: 'persisted',
       dispatch: acceptedDispatch(loadArtifact),
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -2108,6 +2109,31 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText(/Latest controlled dispatch · accepted/)).toHaveTextContent(
       'requested by 33333333-3333-4333-8333-333333333333 · no workflow inputs'
     )
+  })
+
+  it('warns without suggesting a duplicate dispatch when provider acceptance outlives audit storage', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'runTestSuite').mockResolvedValue({
+      status: 'dispatched',
+      artifactId: loadArtifact.id,
+      artifactKind: 'load-test',
+      workflowPath: loadArtifact.sourcePath,
+      ref: 'main',
+      sourceRevision: 'a'.repeat(40),
+      auditPersistence: 'pending',
+      dispatch: acceptedDispatch(loadArtifact),
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Run analyzed revision a{12}/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'could not finalize the audit after retries. Do not dispatch it again'
+    )
+    expect(screen.getByText(/Latest controlled dispatch · accepted/)).toBeVisible()
   })
 
   it('continues the immutable controlled-dispatch audit for one reviewed suite', async () => {
@@ -2263,6 +2289,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       workflowPath: inputWorkflow.sourcePath,
       ref: 'main',
       sourceRevision: 'a'.repeat(40),
+      auditPersistence: 'persisted',
       dispatch: acceptedDispatch(inputWorkflow, ['duration', 'environment']),
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -2490,6 +2517,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       workflowPath: integrationArtifact.sourcePath,
       ref: 'main',
       sourceRevision: 'a'.repeat(40),
+      auditPersistence: 'persisted',
       dispatch: acceptedDispatch(integrationArtifact),
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)

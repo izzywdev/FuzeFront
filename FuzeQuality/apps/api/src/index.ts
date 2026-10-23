@@ -69,6 +69,7 @@ import { repositoryProcessingStatus } from './repository-processing-status'
 import { dispatchWebhookScans } from './webhook-scan-dispatch'
 import { testExecutionDetail } from './test-execution-detail'
 import { testSuiteDispatchPage } from './test-suite-dispatch-pagination'
+import { persistTerminalTestSuiteDispatch } from './test-suite-dispatch-audit'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -1089,12 +1090,18 @@ app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecu
     receipt = await dispatchTestWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath, inputs: dispatchInputs.inputs })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    await store.saveTestSuiteDispatch({ ...dispatch, status: 'failed', error: message.slice(0, 2000), completedAt: new Date().toISOString() }).catch(() => undefined)
-    return response.status(422).json({ error: message, code: 'TEST_DISPATCH_FAILED' })
+    const auditPersistence = await persistTerminalTestSuiteDispatch(
+      terminalDispatch => store.saveTestSuiteDispatch(terminalDispatch),
+      { ...dispatch, status: 'failed', error: message.slice(0, 2000), completedAt: new Date().toISOString() },
+    )
+    return response.status(422).json({ error: message, code: 'TEST_DISPATCH_FAILED', auditPersistence })
   }
   const accepted = { ...dispatch, status: 'accepted' as const, ref: receipt.ref, sourceRevision: receipt.sourceRevision, completedAt: new Date().toISOString() }
-  const auditPersisted = await store.saveTestSuiteDispatch(accepted).then(() => true, () => false)
-  response.status(202).json({ status: 'dispatched', artifactId: artifact.id, artifactKind: artifact.kind, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision, dispatch: auditPersisted ? accepted : dispatch })
+  const auditPersistence = await persistTerminalTestSuiteDispatch(
+    terminalDispatch => store.saveTestSuiteDispatch(terminalDispatch),
+    accepted,
+  )
+  response.status(202).json({ status: 'dispatched', artifactId: artifact.id, artifactKind: artifact.kind, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision, auditPersistence, dispatch: accepted })
 })
 app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRunExecution, async (request, response) => {
   const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
@@ -1150,12 +1157,18 @@ app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRu
     receipt = await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath, inputs: dispatchInputs.inputs })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    await store.saveTestSuiteDispatch({ ...dispatch, status: 'failed', error: message.slice(0, 2000), completedAt: new Date().toISOString() }).catch(() => undefined)
-    return response.status(422).json({ error: message, code: 'PERFORMANCE_DISPATCH_FAILED' })
+    const auditPersistence = await persistTerminalTestSuiteDispatch(
+      terminalDispatch => store.saveTestSuiteDispatch(terminalDispatch),
+      { ...dispatch, status: 'failed', error: message.slice(0, 2000), completedAt: new Date().toISOString() },
+    )
+    return response.status(422).json({ error: message, code: 'PERFORMANCE_DISPATCH_FAILED', auditPersistence })
   }
   const accepted = { ...dispatch, status: 'accepted' as const, ref: receipt.ref, sourceRevision: receipt.sourceRevision, completedAt: new Date().toISOString() }
-  const auditPersisted = await store.saveTestSuiteDispatch(accepted).then(() => true, () => false)
-  response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision, dispatch: auditPersisted ? accepted : dispatch })
+  const auditPersistence = await persistTerminalTestSuiteDispatch(
+    terminalDispatch => store.saveTestSuiteDispatch(terminalDispatch),
+    accepted,
+  )
+  response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision, auditPersistence, dispatch: accepted })
 })
 app.get('/api/v1/repositories/:id/catalog-status', mayReadCatalog, async (request, response) => {
   const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)

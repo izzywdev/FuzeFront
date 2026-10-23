@@ -548,6 +548,10 @@ describe('contract discovery', () => {
       })
       expect(schemas.TestSuiteDispatch.required).toContain('artifactKind')
       expect(schemas.TestSuiteDispatch.required).toContain('dispatch')
+      expect(schemas.TestSuiteDispatch.required).toContain('auditPersistence')
+      expect(schemas.TestSuiteDispatch.properties.auditPersistence.enum).toEqual(['persisted', 'pending'])
+      expect(schemas.PerformanceDispatch.required).toContain('auditPersistence')
+      expect(schemas.ApiError.properties.auditPersistence.enum).toEqual(['persisted', 'pending'])
       expect(schemas.TestSuiteDispatchAudit.properties.inputNames.description).toContain(
         'values are never persisted'
       )

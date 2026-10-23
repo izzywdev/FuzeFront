@@ -3836,7 +3836,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   >({})
   const [performanceDispatch, setPerformanceDispatch] = useState<{
     artifactId: string
-    state: 'success' | 'error'
+    state: 'success' | 'warning' | 'error'
     message: string
   }>()
   const [testSuiteDispatches, setTestSuiteDispatches] = useState<TestSuiteDispatch[]>([])
@@ -4047,8 +4047,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         : await api.runTestSuite(artifact.repositoryId, artifact.id)
       setPerformanceDispatch({
         artifactId: artifact.id,
-        state: 'success',
-        message: `Dispatched ${receipt.workflowPath} from ${receipt.ref} at analyzed commit ${receipt.sourceRevision}. GitHub Actions will report the run as execution evidence.`,
+        state: receipt.auditPersistence === 'persisted' ? 'success' : 'warning',
+        message: receipt.auditPersistence === 'persisted'
+          ? `Dispatched ${receipt.workflowPath} from ${receipt.ref} at analyzed commit ${receipt.sourceRevision}. GitHub Actions will report the run as execution evidence.`
+          : `GitHub accepted ${receipt.workflowPath} at analyzed commit ${receipt.sourceRevision}, but FuzeQuality could not finalize the audit after retries. Do not dispatch it again; refresh after audit storage recovers.`,
       })
       setTestSuiteDispatches(current => [
         receipt.dispatch,
@@ -5822,10 +5824,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               className={
                                 performanceDispatch.state === 'error'
                                   ? 'form-error'
-                                  : 'performance-dispatch-success'
+                                  : performanceDispatch.state === 'warning'
+                                    ? 'performance-dispatch-warning'
+                                    : 'performance-dispatch-success'
                               }
                               role={
-                                performanceDispatch.state === 'error'
+                                performanceDispatch.state === 'error' || performanceDispatch.state === 'warning'
                                   ? 'alert'
                                   : 'status'
                               }

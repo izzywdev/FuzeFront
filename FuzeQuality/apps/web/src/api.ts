@@ -164,6 +164,7 @@ export const api = {
     workflowPath: string
     ref: string
     sourceRevision: string
+    auditPersistence: 'persisted' | 'pending'
     dispatch: import('@fuzequality/contracts').TestSuiteDispatch
   }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, {
     method: 'POST',
@@ -176,6 +177,7 @@ export const api = {
     workflowPath: string
     ref: string
     sourceRevision: string
+    auditPersistence: 'persisted' | 'pending'
     dispatch: import('@fuzequality/contracts').TestSuiteDispatch
   }>(`/api/v1/repositories/${repositoryId}/test-suites/${artifactId}/execute`, {
     method: 'POST',

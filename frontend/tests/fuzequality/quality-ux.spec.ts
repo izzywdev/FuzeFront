@@ -240,6 +240,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       workflowPath: '.github/workflows/load.yml',
       ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      auditPersistence: 'persisted',
       dispatch: {
         id: '00000000-0000-4000-8000-000000000003',
         repositoryId: 'repo-1',
@@ -1043,6 +1044,53 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText(/Requested by release-operator/)).toContainText(
       'reviewed inputs: duration, profile'
     )
+  })
+
+  test('warns against duplicate dispatch when accepted workflow audit finalization is pending', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/test-suites/load-artifact/execute'),
+      route => route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'dispatched',
+          artifactId: 'load-artifact',
+          artifactKind: 'load-test',
+          workflowPath: '.github/workflows/load.yml',
+          ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          auditPersistence: 'pending',
+          dispatch: {
+            id: '00000000-0000-4000-8000-000000000004',
+            repositoryId: 'repo-1',
+            tenantId: 'tenant-1',
+            artifactId: 'load-artifact',
+            artifactLogicalId: 'workflow:.github/workflows/load.yml',
+            artifactKind: 'load-test',
+            workflowPath: '.github/workflows/load.yml',
+            ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            requestedBy: 'quality-reviewer',
+            inputNames: [],
+            status: 'accepted',
+            requestedAt: '2026-10-23T01:00:00.000Z',
+            completedAt: '2026-10-23T01:00:01.000Z',
+          },
+        }),
+      }),
+    )
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    page.once('dialog', dialog => dialog.accept())
+
+    await page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' }).click()
+
+    const warning = page.getByRole('alert').filter({
+      hasText: 'could not finalize the audit after retries',
+    })
+    await expect(warning).toContainText('Do not dispatch it again')
+    await expect(page.getByRole('status').filter({
+      hasText: 'Latest controlled dispatch · accepted',
+    })).toBeVisible()
   })
 
   test('retains controlled dispatch evidence across analyzed artifact revisions', async ({ page }) => {

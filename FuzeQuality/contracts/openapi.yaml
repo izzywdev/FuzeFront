@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.75.0
+  version: 0.76.0
   license:
     name: UNLICENSED
 servers:
@@ -2232,13 +2232,17 @@ components:
           description: Passed retry attempts backed by a retained failed earlier attempt for the same provider run.
     PerformanceDispatch:
       type: object
-      required: [status, artifactId, workflowPath, ref, sourceRevision, dispatch]
+      required: [status, artifactId, workflowPath, ref, sourceRevision, auditPersistence, dispatch]
       properties:
         status: { type: string, enum: [dispatched] }
         artifactId: { type: string }
         workflowPath: { type: string }
         ref: { type: string }
         sourceRevision: { type: string, pattern: '^[0-9a-fA-F]{40}$' }
+        auditPersistence:
+          type: string
+          enum: [persisted, pending]
+          description: Whether the accepted provider outcome was durably finalized after bounded audit retries.
         dispatch: { $ref: '#/components/schemas/TestSuiteDispatchAudit' }
     WorkflowDispatchRequest:
       type: object
@@ -2260,7 +2264,7 @@ components:
     TestSuiteDispatch:
       type: object
       additionalProperties: false
-      required: [status, artifactId, artifactKind, workflowPath, ref, sourceRevision, dispatch]
+      required: [status, artifactId, artifactKind, workflowPath, ref, sourceRevision, auditPersistence, dispatch]
       properties:
         status: { type: string, enum: [dispatched] }
         artifactId: { type: string }
@@ -2268,6 +2272,10 @@ components:
         workflowPath: { type: string }
         ref: { type: string }
         sourceRevision: { type: string, pattern: '^[0-9a-fA-F]{40}$' }
+        auditPersistence:
+          type: string
+          enum: [persisted, pending]
+          description: Whether the accepted provider outcome was durably finalized after bounded audit retries.
         dispatch: { $ref: '#/components/schemas/TestSuiteDispatchAudit' }
     TestSuiteDispatchAudit:
       type: object
@@ -2310,6 +2318,10 @@ components:
       type: object
       required: [error]
       properties:
+        auditPersistence:
+          type: string
+          enum: [persisted, pending]
+          description: Present after a provider dispatch attempt to report whether its terminal audit state was durably finalized.
         error:
           oneOf:
             - type: string
