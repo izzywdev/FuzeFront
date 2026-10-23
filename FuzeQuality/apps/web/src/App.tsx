@@ -6409,6 +6409,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           <p className="performance-inventory-only">
             Outcome-trend continuation retains the execution lifecycle state captured when this view loaded.
           </p>
+          <p className="performance-inventory-only">
+            GitHub evidence is scoped to each selected source repository; fork runs are excluded even when branch names match.
+          </p>
           <div className="execution-trend" aria-label="Execution outcome trend">
             {outcomeTrend.map(day => (
               <div key={day.date}>

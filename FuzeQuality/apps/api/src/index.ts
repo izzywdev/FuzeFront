@@ -818,7 +818,8 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
 app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const filter = executionPageFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   const cursor = decodeHistoryCursor(filter.data.cursor)
@@ -826,6 +827,7 @@ app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (reque
   const limit = filter.data.limit
   const executions = await store.testExecutions(repositoryId, tenantId, {
     ...filter.data,
+    headRepository: `${repository.owner}/${repository.name}`,
     after: cursor.data,
     limit: limit + 1,
   })
@@ -842,7 +844,8 @@ app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (reque
 app.get('/api/v1/repositories/:id/test-executions/attempts', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const filter = executionAttemptHistoryFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   const cursor = decodeHistoryCursor(filter.data.cursor)
@@ -851,6 +854,7 @@ app.get('/api/v1/repositories/:id/test-executions/attempts', mayReadCatalog, asy
   const attempts = await store.testExecutions(repositoryId, tenantId, {
     provider,
     externalRunId,
+    headRepository: `${repository.owner}/${repository.name}`,
     after: cursor.data,
     limit: limit + 1,
   })
@@ -996,7 +1000,8 @@ app.get('/api/v1/repositories/:id/test-suites/:artifactId/dispatches', mayReadCa
 app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const filter = executionPageFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   const cursor = decodeExecutionTrendCursor(filter.data.cursor)
@@ -1005,6 +1010,7 @@ app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (reque
   const snapshotAt = cursor.data?.snapshotAt ?? new Date().toISOString()
   const items = await store.executionOutcomeTrend(repositoryId, tenantId, {
     ...query,
+    headRepository: `${repository.owner}/${repository.name}`,
     beforeDate: cursor.data?.date,
     snapshotAt,
     limit: limit + 1,
@@ -1014,7 +1020,8 @@ app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (reque
 app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const filter = executionPerformanceFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   const cursor = decodePerformanceCursor(filter.data.cursor)
@@ -1023,6 +1030,7 @@ app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async 
   const snapshotAt = cursor.data?.snapshotAt ?? new Date().toISOString()
   const items = await store.policyGatePerformance(repositoryId, tenantId, {
     ...query,
+    headRepository: `${repository.owner}/${repository.name}`,
     snapshotAt,
     after: cursor.data,
     limit: limit + 1,

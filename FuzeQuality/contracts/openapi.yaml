@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.82.0
+  version: 0.83.0
   license:
     name: UNLICENSED
 servers:
@@ -904,6 +904,7 @@ paths:
     get:
       operationId: listTestExecutions
       summary: List filtered test-execution evidence for a repository
+      description: GitHub Actions evidence is automatically limited to runs whose head repository matches this repository; same-named branches from forks are excluded.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:
@@ -1153,6 +1154,7 @@ paths:
     get:
       operationId: listExecutionPerformance
       summary: Aggregate execution outcomes by explicit policy/gate pair
+      description: GitHub Actions evidence is automatically limited to runs whose head repository matches this repository; same-named branches from forks cannot affect policy/gate rates.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:
@@ -1211,7 +1213,7 @@ paths:
     get:
       operationId: listExecutionOutcomeTrend
       summary: Aggregate filtered execution outcomes by UTC day
-      description: Returns immutable daily outcome and valid-duration aggregates across the complete filtered execution history, independently of execution-row pagination.
+      description: Returns immutable daily outcome and valid-duration aggregates across the complete filtered execution history, independently of execution-row pagination. GitHub Actions evidence is automatically limited to runs whose head repository matches this repository, excluding same-named branches from forks.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:

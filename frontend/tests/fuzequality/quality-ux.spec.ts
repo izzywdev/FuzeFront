@@ -667,6 +667,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
 
     const trend = page.getByLabel('Execution outcome trend')
+    await expect(page.getByText(/fork runs are excluded even when branch names match/i)).toBeVisible()
     await expect(trend).toContainText('2026-10-01')
     await expect(trend).toContainText('8 passed')
     await expect(trend).not.toContainText('2026-09-01')

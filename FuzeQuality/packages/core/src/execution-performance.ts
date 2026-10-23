@@ -55,6 +55,8 @@ export type ExecutionEvidenceRequirement =
   | 'terminal-timing-missing'
 
 export type ExecutionFilter = Partial<Pick<TestExecution, 'id' | 'kind' | 'status' | 'provider' | 'externalRunId' | 'branch' | 'revision' | 'workflowPath' | 'name'>> & {
+  /** Canonical repository owner/name used to exclude same-named branches from GitHub forks. */
+  headRepository?: string
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
   evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
   evidenceCheckedAfter?: string
@@ -207,6 +209,11 @@ export function filterTestExecutions(
     if (filter.kind && execution.kind !== filter.kind) return false
     if (filter.status && execution.status !== filter.status) return false
     if (filter.provider && execution.provider !== filter.provider) return false
+    if (
+      filter.headRepository &&
+      execution.provider === 'github-actions' &&
+      execution.headRepository?.toLowerCase() !== filter.headRepository.toLowerCase()
+    ) return false
     if (filter.evidenceKind && !execution.evidenceLinks.some(link => link.kind === filter.evidenceKind)) return false
     if (filter.evidenceCollectionStatus === 'not-collected' && execution.evidenceCollection) return false
     if (filter.evidenceCollectionStatus && filter.evidenceCollectionStatus !== 'not-collected' && execution.evidenceCollection?.status !== filter.evidenceCollectionStatus) return false

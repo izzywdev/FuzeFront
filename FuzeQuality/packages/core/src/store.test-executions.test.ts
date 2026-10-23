@@ -49,6 +49,38 @@ describe('test execution evidence', () => {
     ])
   })
 
+  it('excludes same-named GitHub fork branches from history, trends, and policy-gate rates', async () => {
+    const store = new MemoryCatalogStore()
+    const base = {
+      repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const,
+      attempt: 1, revision: 'abc', branch: 'main', kind: 'integration' as const,
+      name: 'integration', policyArtifactIds: ['policy-1'], gateArtifactIds: ['gate-1'],
+      thresholds: [], evidenceLinks: [], completedAt: '2026-10-20T12:00:00.000Z',
+    }
+    await store.saveTestExecution({
+      id: 'head-run', ...base, externalRunId: 'head-run', headRepository: 'Acme/App', status: 'passed',
+      gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'passed' }],
+    })
+    await store.saveTestExecution({
+      id: 'fork-run', ...base, externalRunId: 'fork-run', headRepository: 'contributor/app', status: 'failed',
+      gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'failed' }],
+    })
+    await store.saveTestExecution({
+      id: 'external-run', ...base, provider: 'external', externalRunId: 'external-run', status: 'passed',
+      gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'passed' }],
+    })
+
+    const scope = { branch: 'main', headRepository: 'acme/app' }
+    const history = await store.testExecutions('repo-1', 'org-1', scope)
+    expect(history.map(execution => execution.id).sort()).toEqual(['external-run', 'head-run'])
+    await expect(store.executionOutcomeTrend('repo-1', 'org-1', scope)).resolves.toEqual([
+      expect.objectContaining({ total: 2, passed: 2, failed: 0 }),
+    ])
+    await expect(store.policyGatePerformance('repo-1', 'org-1', scope)).resolves.toEqual([
+      expect.objectContaining({ total: 2, passed: 2, failed: 0, passRate: 1 }),
+    ])
+  })
+
   it('returns the latest load or stress execution for every reviewed workflow independently of mixed history', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, attempt: 1, revision: 'abc', branch: 'main', headRepository: 'acme/app', status: 'passed' as const, name: 'run', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
@@ -248,6 +280,7 @@ describe('test execution evidence', () => {
       until: '2026-01-31T00:00:00.000Z',
       policyArtifactId: 'policy-1',
       gateArtifactId: 'gate-1',
+      headRepository: 'acme/app',
       after: { createdAt: '2026-01-15T00:00:00.000Z', id: 'run-2' },
       limit: 51,
     })
@@ -287,11 +320,12 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz <= $26")
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $27")
     expect(String(sql)).toContain('executions.id=$28')
+    expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($29)")
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', 'failed', 'github-actions', 'abc',
       '.github/workflows/post-prod.yml', 'recovered', 60_000, 180_000, '2026-01-01T00:00:00.000Z',
       '2026-01-31T00:00:00.000Z', '2026-01-15T00:00:00.000Z', 'run-2', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'unavailable',
-      'post-production-video-missing', '2026-01-20T00:00:00.000Z', '2026-01-10T00:00:00.000Z', 'execution-detail-1',
+      'post-production-video-missing', '2026-01-20T00:00:00.000Z', '2026-01-10T00:00:00.000Z', 'execution-detail-1', 'acme/app',
     ])
   })
 
@@ -301,7 +335,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
-      kind: 'integration', name: 'Integration suite', externalRunId: 'provider-run-42', branch: 'feature/checkout', evidenceKind: 'report', evidenceCollectionStatus: 'complete', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'passed', gateOutcome: 'passed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
+      kind: 'integration', name: 'Integration suite', externalRunId: 'provider-run-42', branch: 'feature/checkout', headRepository: 'acme/app', evidenceKind: 'report', evidenceCollectionStatus: 'complete', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'passed', gateOutcome: 'passed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
     })).resolves.toEqual([
       { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
     ])
@@ -344,7 +378,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz <= $26")
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $27")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
-    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42', 'policy-1', 'gate-1', 'report', 'passed', 'Integration suite', 'passed', 'feature/checkout', 'complete', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z'])
+    expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($28)")
+    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42', 'policy-1', 'gate-1', 'report', 'passed', 'Integration suite', 'passed', 'feature/checkout', 'complete', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app'])
   })
 
   it('pushes filtered policy-gate aggregation and its stable cursor into Postgres', async () => {
@@ -358,7 +393,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.policyGatePerformance('repo-1', 'org-1', {
-      kind: 'post-production', name: 'Post-production browser suite', provider: 'github-actions', externalRunId: 'provider-run-42', branch: 'release/quality', evidenceKind: 'video', evidenceCollectionStatus: 'partial', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'failed', gateOutcome: 'failed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', attemptScope: 'recovered', minimumDurationMs: 90_000, maximumDurationMs: 300_000,
+      kind: 'post-production', name: 'Post-production browser suite', provider: 'github-actions', externalRunId: 'provider-run-42', branch: 'release/quality', headRepository: 'acme/app', evidenceKind: 'video', evidenceCollectionStatus: 'partial', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'failed', gateOutcome: 'failed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', attemptScope: 'recovered', minimumDurationMs: 90_000, maximumDurationMs: 300_000,
       after: { failed: 3, passed: 5, gateArtifactId: 'gate-0', policyArtifactId: 'policy-0' },
       limit: 51,
     })).resolves.toEqual([{
@@ -396,12 +431,13 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz <= $29")
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $30")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
+    expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($31)")
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
     expect(String(sql)).toContain('AS pass_rate')
     expect(String(sql)).toContain('ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id')
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', null, 'github-actions', null, null, 'recovered', 90_000, 300_000, null, null, null,
-      3, 5, 'gate-0', 'policy-0', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'partial', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z',
+      3, 5, 'gate-0', 'policy-0', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'partial', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app',
     ])
   })
 
