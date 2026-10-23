@@ -8,7 +8,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS repositories_id_tenant_unique
 CREATE TABLE IF NOT EXISTS fuzequality.test_suite_dispatches (
   id uuid PRIMARY KEY,
   repository_id uuid NOT NULL,
-  tenant_id uuid NOT NULL,
+  -- repositories.tenant_id is intentionally text because platform tenant
+  -- identities are opaque and are not guaranteed to be UUIDs.
+  tenant_id text NOT NULL,
   artifact_id text NOT NULL,
   artifact_kind text NOT NULL CHECK (artifact_kind IN (
     'integration-test',

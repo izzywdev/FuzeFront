@@ -5,6 +5,10 @@ const migration = await readFile(
   new URL('../migrations/066_test_suite_dispatch_audit.sql', import.meta.url),
   'utf8',
 )
+const repositoryTenantMigration = await readFile(
+  new URL('../migrations/004_repository_onboarding.sql', import.meta.url),
+  'utf8',
+)
 
 describe('test-suite dispatch audit migration', () => {
   it('enforces tenant ownership and excludes workflow input values', () => {
@@ -14,5 +18,11 @@ describe('test-suite dispatch audit migration', () => {
     expect(migration).not.toContain('input_values')
     expect(migration).toContain("status IN ('dispatching', 'accepted', 'failed')")
     expect(migration).toContain('test_suite_dispatches_latest_idx')
+  })
+
+  it('matches the opaque tenant type used by the referenced repository key', () => {
+    expect(repositoryTenantMigration).toMatch(/tenant_id\s+text\s+NOT NULL/)
+    expect(migration).toMatch(/tenant_id\s+text\s+NOT NULL/)
+    expect(migration).not.toMatch(/tenant_id\s+uuid\s+NOT NULL/)
   })
 })
