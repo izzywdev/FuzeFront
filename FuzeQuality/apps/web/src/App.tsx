@@ -2955,10 +2955,12 @@ function FlowReviewHistory({
 }
 
 function TestSuiteDispatchHistory({
-  artifact,
+  repositoryId,
+  artifactId,
   latestDispatch,
 }: {
-  artifact: QualityArtifact
+  repositoryId: string
+  artifactId: string
   latestDispatch: TestSuiteDispatch
 }) {
   const [history, setHistory] = useState<TestSuiteDispatch[]>([])
@@ -2979,8 +2981,8 @@ function TestSuiteDispatchHistory({
     setError(undefined)
     try {
       const page = await api.testSuiteDispatchHistory(
-        artifact.repositoryId,
-        artifact.id,
+        repositoryId,
+        artifactId,
         cursor,
       )
       if (request !== requestRef.current) return
@@ -2999,7 +3001,7 @@ function TestSuiteDispatchHistory({
         setLoading(false)
       }
     }
-  }, [artifact.id, artifact.repositoryId])
+  }, [artifactId, repositoryId])
 
   useEffect(() => {
     requestRef.current++
@@ -5018,6 +5020,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       'Stress and soak-test definitions discovered in source',
     ],
   ]
+  const currentDispatchLogicalIds = new Set(
+    artifacts
+      .filter(artifact => ['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(artifact.kind))
+      .flatMap(artifact => [artifact.logicalId ?? artifact.id])
+  )
+  const retiredTestSuiteDispatches = loadingArtifacts
+    ? []
+    : testSuiteDispatches.filter(dispatch =>
+        !currentDispatchLogicalIds.has(dispatch.artifactLogicalId)
+      )
   return (
     <>
       <PageHeading
@@ -5340,6 +5352,46 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             </p>
           )}
           <div className="catalog-grid">
+            {retiredTestSuiteDispatches.length > 0 && (
+              <section className="catalog-panel" aria-label="Retired controlled workflow audits">
+                <header>
+                  <div>
+                    <p className="eyebrow">{retiredTestSuiteDispatches.length} retained</p>
+                    <h2>Retired controlled workflows</h2>
+                    <p>
+                      Immutable dispatch evidence retained after repository analysis no longer finds the workflow.
+                    </p>
+                  </div>
+                </header>
+                <div className="catalog-list">
+                  {retiredTestSuiteDispatches.map(dispatch => (
+                    <article className="catalog-row" key={dispatch.id}>
+                      <div>
+                        <strong>{dispatch.workflowPath}</strong>
+                        <small className="flow-repository-label">
+                          Repository {repositoryLabels.get(dispatch.repositoryId) ?? dispatch.repositoryId}
+                        </small>
+                        <code>{dispatch.artifactKind} · retired from current analysis</code>
+                        <p>
+                          Latest controlled dispatch · {dispatch.status} ·{' '}
+                          {new Date(dispatch.requestedAt).toLocaleString()} · revision{' '}
+                          {dispatch.sourceRevision.slice(0, 12)} · requested by {dispatch.requestedBy}
+                          {dispatch.inputNames.length
+                            ? ` · reviewed inputs: ${dispatch.inputNames.join(', ')}`
+                            : ' · no workflow inputs'}
+                          {dispatch.error ? ` · ${dispatch.error}` : ''}
+                        </p>
+                        <TestSuiteDispatchHistory
+                          repositoryId={dispatch.repositoryId}
+                          artifactId={dispatch.artifactId}
+                          latestDispatch={dispatch}
+                        />
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
             {groups.map(([kind, title, detail]) => {
               const items = artifacts.filter(item => item.kind === kind)
               const visibleFlowCandidates = flowResultsAreCurrent
@@ -5766,7 +5818,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   : ' · no workflow inputs'}
                                 {latestDispatch.error ? ` · ${latestDispatch.error}` : ''}
                               </small>
-                              <TestSuiteDispatchHistory artifact={item} latestDispatch={latestDispatch} />
+                              <TestSuiteDispatchHistory
+                                repositoryId={item.repositoryId}
+                                artifactId={item.id}
+                                latestDispatch={latestDispatch}
+                              />
                             </>
                           )}
                           {['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(item.kind) &&

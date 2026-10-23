@@ -68,7 +68,7 @@ import { reviewedPostProductionWorkflowPaths } from './latest-post-production-ex
 import { repositoryProcessingStatus } from './repository-processing-status'
 import { dispatchWebhookScans } from './webhook-scan-dispatch'
 import { testExecutionDetail } from './test-execution-detail'
-import { testSuiteDispatchPage } from './test-suite-dispatch-pagination'
+import { testSuiteDispatchLogicalId, testSuiteDispatchPage } from './test-suite-dispatch-pagination'
 import { persistTerminalTestSuiteDispatch } from './test-suite-dispatch-audit'
 import {
   buildImplementationManifest,
@@ -968,15 +968,19 @@ app.get('/api/v1/repositories/:id/test-suites/:artifactId/dispatches', mayReadCa
   const repository = await store.repository(repositoryId, tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
-  const artifact = artifacts.find(item => item.id === artifactId)
-  if (!artifact || !['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(artifact.kind)) {
+  let artifactLogicalId = testSuiteDispatchLogicalId(artifactId, artifacts, [])
+  if (!artifactLogicalId) {
+    const latestDispatches = await store.latestTestSuiteDispatches(repositoryId, tenantId)
+    artifactLogicalId = testSuiteDispatchLogicalId(artifactId, [], latestDispatches)
+  }
+  if (!artifactLogicalId) {
     return response.status(404).json({ error: 'Test suite not found' })
   }
   const filter = historyPageQuerySchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   const cursor = decodeUuidHistoryCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
-  const history = await store.testSuiteDispatchHistory(repositoryId, tenantId, artifact.logicalId ?? artifact.id, {
+  const history = await store.testSuiteDispatchHistory(repositoryId, tenantId, artifactLogicalId, {
     after: cursor.data,
     limit: filter.data.limit + 1,
   })

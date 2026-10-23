@@ -1180,6 +1180,56 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(retained).toContainText('requested by prior-release-operator')
   })
 
+  test('keeps retired workflow dispatch evidence inspectable after repository analysis removes it', async ({ page }) => {
+    const retiredDispatch = {
+      id: '00000000-0000-4000-8000-000000000004',
+      repositoryId: 'repo-1',
+      tenantId: 'tenant-1',
+      artifactId: 'retired-load-artifact',
+      artifactLogicalId: 'workflow:.github/workflows/retired-load.yml',
+      artifactKind: 'load-test',
+      workflowPath: '.github/workflows/retired-load.yml',
+      ref: '7777777777777777777777777777777777777777',
+      sourceRevision: '7777777777777777777777777777777777777777',
+      requestedBy: 'release-auditor',
+      inputNames: ['profile'],
+      status: 'accepted',
+      requestedAt: '2026-10-20T22:00:00.000Z',
+      completedAt: '2026-10-20T22:00:01.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify(qualityArtifacts),
+      }),
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [retiredDispatch] }),
+      }),
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-suites/retired-load-artifact/dispatches',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [retiredDispatch],
+          page: { nextCursor: null, hasMore: false },
+        }),
+      }),
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Retired controlled workflows' })).toBeVisible()
+    await expect(page.getByText('.github/workflows/retired-load.yml', { exact: true })).toBeVisible()
+    await page.getByText('Controlled dispatch history').click()
+    await expect(page.getByText(/Requested by release-auditor/)).toBeVisible()
+  })
+
   test('keeps failed policy-gate review rationale available for retry', async ({ page }) => {
     const proposedEvaluation = {
       ...policyGateEvaluations[0],

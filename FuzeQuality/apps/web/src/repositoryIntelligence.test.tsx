@@ -2209,6 +2209,36 @@ describe('RepositoryIntelligence flow inventory', () => {
     ))
   })
 
+  it('keeps a retired workflow and its immutable dispatch history visible', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const retiredArtifact = {
+      ...loadArtifact,
+      id: 'artifact-load-retired-revision',
+      logicalId: 'workflow:.github/workflows/retired-load.yml',
+      sourcePath: '.github/workflows/retired-load.yml',
+    }
+    const retiredDispatch = acceptedDispatch(retiredArtifact)
+    vi.mocked(api.latestTestSuiteDispatches).mockResolvedValue({ items: [retiredDispatch] })
+    vi.mocked(api.testSuiteDispatchHistory).mockResolvedValue({
+      items: [retiredDispatch],
+      page: { nextCursor: null, hasMore: false },
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByRole('heading', { name: 'Retired controlled workflows' })).toBeVisible()
+    expect(screen.getByText('.github/workflows/retired-load.yml')).toBeVisible()
+    expect(screen.getByText(/load-test · retired from current analysis/)).toBeVisible()
+    fireEvent.click(screen.getByText('Controlled dispatch history'))
+    await waitFor(() => expect(api.testSuiteDispatchHistory).toHaveBeenCalledWith(
+      repository.id,
+      retiredArtifact.id,
+      undefined,
+    ))
+  })
+
   it('offers controlled dispatch only for the preferred classification of a shared workflow', async () => {
     mockEvidenceApis()
     const sharedIntegration = {

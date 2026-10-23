@@ -573,6 +573,9 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.parameters
           .map((parameter: { name: string }) => parameter.name)
       ).toEqual(['limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
+      ).toContain('after a later repository scan removes the workflow')
       expect(schemas.TestSuiteDispatchAuditPage.properties.page.$ref).toBe(
         '#/components/schemas/HistoryCursorPage'
       )

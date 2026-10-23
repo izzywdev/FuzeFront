@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.76.0
+  version: 0.77.0
   license:
     name: UNLICENSED
 servers:
@@ -1345,7 +1345,9 @@ paths:
       description: >-
         Returns tenant-scoped dispatch attempts from newest to oldest. Continuation cursors use
         immutable request time and dispatch identity, so retries arriving between pages do not
-        duplicate or skip retained attempts. Input values are never persisted or returned.
+        duplicate or skip retained attempts. A durable audit remains addressable by the artifact
+        identity in its latest receipt after a later repository scan removes the workflow. Input
+        values are never persisted or returned.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:
