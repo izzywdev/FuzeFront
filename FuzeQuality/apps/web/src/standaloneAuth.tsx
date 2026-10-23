@@ -60,6 +60,17 @@ export function portalTokenProvider(hostWindow: Window = window): (() => string 
     : undefined
 }
 
+/**
+ * The API has an explicit non-production authentication bypass for local
+ * development. Keep the standalone entry on the same contract so a developer
+ * is not sent to Security routes that the local FuzeQuality API does not own.
+ * Both inputs must be true; production builds therefore remain fail-closed
+ * even if the shell environment accidentally carries the bypass variable.
+ */
+export function developmentAuthBypassEnabled(isDevelopment: boolean, configured: boolean): boolean {
+  return isDevelopment && configured
+}
+
 type SessionResult = AuthenticatedSessionResponse | MfaRequiredResponse
 type StandaloneSignInResult = StandaloneSession | StandaloneMfaChallenge | StandaloneWorkspaceSelection
 

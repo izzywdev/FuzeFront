@@ -6,8 +6,19 @@ import { fileURLToPath } from 'node:url'
 
 const appRoot = fileURLToPath(new URL('.', import.meta.url))
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => {
+  // Match the API's explicitly opted-in local authentication bypass without
+  // exposing a general VITE_* client variable. `vite --mode production` stays
+  // fail-closed even when a developer's shell carries the flag.
+  const developmentAuthBypass = command === 'serve'
+    && mode !== 'production'
+    && process.env.FUZEQUALITY_DEV_AUTH_BYPASS === 'true'
+
+  return {
   root: resolve(appRoot),
+  define: {
+    'import.meta.env.FUZEQUALITY_DEV_AUTH_BYPASS': JSON.stringify(developmentAuthBypass),
+  },
   resolve: {
     // Shared Design System modules resolve from the monorepo root. Dedupe them
     // onto the remote's singleton React runtime before federation packaging.
@@ -67,4 +78,5 @@ export default defineConfig({
     emptyOutDir: true,
     target: 'esnext',
   },
+  }
 })

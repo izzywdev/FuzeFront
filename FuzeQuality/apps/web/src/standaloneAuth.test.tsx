@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   StandaloneAuthBoundary,
   clearStandaloneSession,
+  developmentAuthBypassEnabled,
   portalTokenProvider,
   readStandaloneSession,
   saveStandaloneSession,
@@ -25,6 +26,12 @@ afterEach(() => {
 })
 
 describe('standalone FuzeFront authentication', () => {
+  it('uses the API development bypass only for an explicitly enabled development build', () => {
+    expect(developmentAuthBypassEnabled(true, true)).toBe(true)
+    expect(developmentAuthBypassEnabled(true, false)).toBe(false)
+    expect(developmentAuthBypassEnabled(false, true)).toBe(false)
+  })
+
   it('preserves the host-owned token bridge when the portal mounts the web entry', () => {
     ;(window as any).__FRONTFUSE_CONTEXT__ = { getAccessToken: () => 'portal-token' }
     expect(portalTokenProvider()?.()).toBe('portal-token')

@@ -110,6 +110,11 @@ describe('FuzeQuality Helm registration assets', () => {
       read('../../../apps/web/public/.well-known/assetlinks.json')
     )
     const nginx = read('../../../docker/nginx.conf')
+    const securityLocationStart = nginx.indexOf('location ^~ /api/v1/security/')
+    const securityLocation = nginx.slice(
+      securityLocationStart,
+      nginx.indexOf('\n  }', securityLocationStart),
+    )
 
     expect(registration.modes).toContain('standalone')
     expect(twa).toMatchObject({
@@ -129,8 +134,21 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(nginx).toContain('proxy_pass http://fuzequality-backend:4180/health')
     expect(nginx).toContain('location ^~ /api/v1/security/')
     expect(nginx).toContain('proxy_pass http://fuzefront-security.fuzefront.svc.cluster.local:3002')
+    expect(securityLocation).toContain('proxy_set_header X-Real-IP $http_x_real_ip;')
+    expect(securityLocation).toContain('proxy_set_header X-Forwarded-For $http_x_real_ip;')
+    expect(securityLocation).not.toContain('$proxy_add_x_forwarded_for')
     expect(nginx).toContain('limit_req_zone $binary_remote_addr zone=fq_health:10m rate=10r/s')
     expect(nginx.match(/limit_req zone=fq_health burst=20 nodelay/g)).toHaveLength(2)
+  })
+
+  it('keeps the standalone development boundary aligned with the API-only auth bypass', () => {
+    const vite = read('../../../apps/web/vite.config.ts')
+    const main = read('../../../apps/web/src/main.tsx')
+
+    expect(vite).toContain("command === 'serve'")
+    expect(vite).toContain("mode !== 'production'")
+    expect(vite).toContain("process.env.FUZEQUALITY_DEV_AUTH_BYPASS === 'true'")
+    expect(main).toContain('developmentAuthBypassEnabled(')
   })
 
   it('patches Bubblewrap generated Gradle to the reviewed Android minimum before assembly', () => {
