@@ -417,6 +417,8 @@ export function ExecutionEvidenceCoverage({
         : 'Provider artifact lookup was unavailable'
     : undefined
   const collectionPartial = collection?.status === 'partial'
+  const provenanceUnverified = collection?.issues?.includes('attempt-provenance-unverified')
+  const resultLimited = collection?.errorCode === 'PROVIDER_RESULT_LIMIT_EXCEEDED' || collection?.issues?.includes('provider-result-limit-exceeded')
   const canRefresh = execution.provider === 'github-actions' &&
     execution.status !== 'running' &&
     Boolean(onRefresh)
@@ -444,9 +446,14 @@ export function ExecutionEvidenceCoverage({
           {collectionFailure}; zero artifacts is not a verified result
         </span>
       )}
-      {collectionPartial && (
+      {collectionPartial && resultLimited && (
         <span className="status-pill status-running">
           Provider result limit reached; showing prioritized evidence, including videos first
+        </span>
+      )}
+      {provenanceUnverified && (
+        <span className="status-pill status-running">
+          {collection?.unverifiedLinks?.length ?? 0} run-level artifacts were withheld because GitHub could not prove they belong to attempt {execution.attempt}
         </span>
       )}
       {collection?.status === 'complete' && !links && execution.kind !== 'post-production' && (

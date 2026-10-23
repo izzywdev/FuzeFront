@@ -87,6 +87,7 @@ export function reconcileCompleteExecutionEvidenceLinks(
 
 type ArtifactEvidenceResult = {
   links: TestExecution['evidenceLinks']
+  unverifiedLinks?: TestExecution['evidenceLinks']
   truncated: boolean
 }
 
@@ -111,13 +112,21 @@ export async function refreshExecutionArtifactEvidence<T extends Pick<TestExecut
 ): Promise<T & { evidenceCollection: NonNullable<TestExecution['evidenceCollection']> }> {
   try {
     const discovered = await collect()
+    const issues: NonNullable<TestExecution['evidenceCollection']>['issues'] = [
+      ...(discovered.truncated ? ['provider-result-limit-exceeded' as const] : []),
+      ...(discovered.unverifiedLinks?.length ? ['attempt-provenance-unverified' as const] : []),
+    ]
     return {
       ...execution,
       evidenceLinks: discovered.truncated
         ? mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered.links)
         : reconcileCompleteExecutionEvidenceLinks(execution.evidenceLinks, discovered.links),
-      evidenceCollection: discovered.truncated
-        ? { status: 'partial', checkedAt, errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' }
+      evidenceCollection: issues.length
+        ? {
+            status: 'partial', checkedAt, issues,
+            ...(discovered.truncated ? { errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' as const } : {}),
+            ...(discovered.unverifiedLinks?.length ? { unverifiedLinks: discovered.unverifiedLinks } : {}),
+          }
         : { status: 'complete', checkedAt },
     }
   } catch (error) {

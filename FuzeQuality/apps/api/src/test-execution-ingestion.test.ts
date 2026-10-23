@@ -77,9 +77,29 @@ describe('internal execution ingestion compatibility', () => {
     expect(refreshed.evidenceLinks).toEqual([expect.objectContaining({ kind: 'video' })])
     expect(refreshed.evidenceCollection).toEqual({
       status: 'partial', checkedAt: '2026-10-18T04:00:00.000Z', errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED',
+      issues: ['provider-result-limit-exceeded'],
     })
     expect(refreshed.externalRunId).toBe('42')
     expect(refreshed.attempt).toBe(2)
+  })
+
+  it('withholds run-level artifacts that cannot be proven to belong to the exact attempt', async () => {
+    const execution = webhookExecutionRecord({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000', provider: 'github-actions',
+      externalRunId: '42', attempt: 2, revision: 'abc123', kind: 'post-production',
+      status: 'passed', name: 'Production journey', evidenceLinks: [],
+    }, 'tenant-1', { policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
+    const unverifiedVideo = { kind: 'video' as const, name: 'Unscoped video', url: 'https://github.com/acme/app/actions/runs/42/artifacts/9' }
+
+    const refreshed = await refreshExecutionArtifactEvidence(execution, async () => ({
+      links: [], unverifiedLinks: [unverifiedVideo], truncated: false,
+    }), '2026-10-18T04:00:00.000Z')
+
+    expect(refreshed.evidenceLinks).toEqual([])
+    expect(refreshed.evidenceCollection).toEqual({
+      status: 'partial', checkedAt: '2026-10-18T04:00:00.000Z',
+      issues: ['attempt-provenance-unverified'], unverifiedLinks: [unverifiedVideo],
+    })
   })
 
   it('reconciles expired provider artifacts when a refresh is complete', async () => {

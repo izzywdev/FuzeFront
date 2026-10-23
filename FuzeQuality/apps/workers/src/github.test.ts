@@ -153,6 +153,7 @@ describe('GitHub workflow artifact evidence', () => {
       owner: 'izzywdev',
       name: 'FuzeFront',
       runId: '4242',
+      attempt: 1,
       installationId: '1234',
       tokenProvider: async () => 'secret',
       fetcher,
@@ -165,9 +166,12 @@ describe('GitHub workflow artifact evidence', () => {
   })
 
   it('classifies malformed provider responses without exposing their body', async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ unexpected: 'secret body' }), { status: 200 }))
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ run_attempt: 1, run_started_at: '2026-10-18T04:00:00.000Z' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ unexpected: 'secret body' }), { status: 200 }))
     await expect(githubWorkflowArtifactEvidence({
       owner: 'izzywdev', name: 'FuzeFront', runId: '4242', installationId: '1234',
+      attempt: 1,
       tokenProvider: async () => 'secret', fetcher,
     })).rejects.toMatchObject({
       code: 'PROVIDER_RESPONSE_INVALID',
@@ -176,13 +180,15 @@ describe('GitHub workflow artifact evidence', () => {
   })
 
   it('classifies active run artifacts and returns browser-accessible links', async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ artifacts: [
-      { id: 11, name: 'fuzequality-post-prod-playwright-video', expired: false },
-      { id: 12, name: 'playwright-report', expired: false },
-      { id: 13, name: 'browser-trace', expired: false },
-      { id: 14, name: 'failure-screenshots', expired: false },
-      { id: 15, name: 'service-logs', expired: false },
-      { id: 16, name: 'raw-artifacts', expired: false },
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ run_attempt: 1, run_started_at: '2026-10-18T04:00:00.000Z' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ artifacts: [
+      { id: 11, name: 'fuzequality-post-prod-playwright-video', expired: false, created_at: '2026-10-18T04:01:00.000Z' },
+      { id: 12, name: 'playwright-report', expired: false, created_at: '2026-10-18T04:01:00.000Z' },
+      { id: 13, name: 'browser-trace', expired: false, created_at: '2026-10-18T04:01:00.000Z' },
+      { id: 14, name: 'failure-screenshots', expired: false, created_at: '2026-10-18T04:01:00.000Z' },
+      { id: 15, name: 'service-logs', expired: false, created_at: '2026-10-18T04:01:00.000Z' },
+      { id: 16, name: 'raw-artifacts', expired: false, created_at: '2026-10-18T04:01:00.000Z' },
       { id: 17, name: 'expired-video', expired: true },
     ] }), { status: 200 }))
 
@@ -190,11 +196,13 @@ describe('GitHub workflow artifact evidence', () => {
       owner: 'izzywdev',
       name: 'FuzeFront',
       runId: '4242',
+      attempt: 1,
       installationId: '1234',
       tokenProvider: async () => 'secret',
       fetcher,
     })).resolves.toEqual({
       truncated: false,
+      unverifiedLinks: [],
       links: [
         { kind: 'video', name: 'fuzequality-post-prod-playwright-video', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/11' },
         { kind: 'report', name: 'playwright-report', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/12' },
@@ -204,10 +212,40 @@ describe('GitHub workflow artifact evidence', () => {
         { kind: 'other', name: 'raw-artifacts', url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/16' },
       ],
     })
-    expect(fetcher).toHaveBeenCalledWith(
+    expect(fetcher).toHaveBeenNthCalledWith(2,
       'https://api.github.com/repos/izzywdev/FuzeFront/actions/runs/4242/artifacts?per_page=100',
       expect.objectContaining({ headers: expect.objectContaining({ authorization: 'Bearer secret' }), signal: expect.any(AbortSignal) }),
     )
+  })
+
+  it('binds a historical retry to its attempt window and withholds artifacts with no provenance', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ run_attempt: 3, run_started_at: '2026-10-18T06:00:00.000Z' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ run_started_at: '2026-10-18T04:00:00.000Z' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ run_started_at: '2026-10-18T05:00:00.000Z' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ artifacts: [
+        { id: 10, name: 'attempt-one-video', expired: false, created_at: '2026-10-18T03:30:00.000Z' },
+        { id: 20, name: 'attempt-two-video', expired: false, created_at: '2026-10-18T04:30:00.000Z' },
+        { id: 30, name: 'attempt-three-video', expired: false, created_at: '2026-10-18T06:30:00.000Z' },
+        { id: 40, name: 'run-video-without-timestamp', expired: false },
+      ] }), { status: 200 }))
+
+    await expect(githubWorkflowArtifactEvidence({
+      owner: 'izzywdev', name: 'FuzeFront', runId: '4242', attempt: 2, installationId: '1234',
+      tokenProvider: async () => 'secret', fetcher,
+    })).resolves.toEqual({
+      truncated: false,
+      links: [{
+        kind: 'video', name: 'attempt-two-video',
+        url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/20',
+      }],
+      unverifiedLinks: [{
+        kind: 'video', name: 'run-video-without-timestamp',
+        url: 'https://github.com/izzywdev/FuzeFront/actions/runs/4242/artifacts/40',
+      }],
+    })
+    expect(fetcher).toHaveBeenNthCalledWith(2, expect.stringContaining('/attempts/2'), expect.any(Object))
+    expect(fetcher).toHaveBeenNthCalledWith(3, expect.stringContaining('/attempts/3'), expect.any(Object))
   })
 
   it('finds a Playwright video on a later provider page and marks the locally capped result partial', async () => {
@@ -215,22 +253,25 @@ describe('GitHub workflow artifact evidence', () => {
       id: index + 1,
       name: `generic-artifact-${String(index + 1).padStart(3, '0')}`,
       expired: false,
+      created_at: '2026-10-18T04:01:00.000Z',
     }))
     const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ run_attempt: 1, run_started_at: '2026-10-18T04:00:00.000Z' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ total_count: 101, artifacts: firstPage }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ total_count: 101, artifacts: [
-        { id: 101, name: 'post-production-playwright-video', expired: false },
+        { id: 101, name: 'post-production-playwright-video', expired: false, created_at: '2026-10-18T04:01:00.000Z' },
       ] }), { status: 200 }))
 
     const result = await githubWorkflowArtifactEvidence({
       owner: 'izzywdev', name: 'FuzeFront', runId: '4242', installationId: '1234',
+      attempt: 1,
       tokenProvider: async () => 'secret', fetcher,
     })
 
     expect(result.truncated).toBe(true)
     expect(result.links[0]).toMatchObject({ kind: 'video', name: 'post-production-playwright-video' })
     expect(result.links).toHaveLength(99)
-    expect(fetcher).toHaveBeenNthCalledWith(2, expect.stringContaining('per_page=100&page=2'), expect.any(Object))
+    expect(fetcher).toHaveBeenNthCalledWith(3, expect.stringContaining('per_page=100&page=2'), expect.any(Object))
   })
 
   it('marks evidence partial when provider pagination exceeds the collection bound', async () => {
@@ -238,25 +279,27 @@ describe('GitHub workflow artifact evidence', () => {
       id: index + 1,
       name: `artifact-${index + 1}`,
       expired: false,
+      created_at: '2026-10-18T04:01:00.000Z',
     }))
-    const fetcher = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
-      total_count: 1001,
-      artifacts,
-    }), { status: 200 }))
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ run_attempt: 1, run_started_at: '2026-10-18T04:00:00.000Z' }), { status: 200 }))
+      .mockImplementation(async () => new Response(JSON.stringify({ total_count: 1001, artifacts }), { status: 200 }))
 
     const result = await githubWorkflowArtifactEvidence({
       owner: 'izzywdev', name: 'FuzeFront', runId: '4242', installationId: '1234',
+      attempt: 1,
       tokenProvider: async () => 'secret', fetcher,
     })
 
     expect(result.truncated).toBe(true)
-    expect(fetcher).toHaveBeenCalledTimes(10)
+    expect(fetcher).toHaveBeenCalledTimes(11)
   })
 
   it('rejects invalid run identity before requesting an installation token', async () => {
     const tokenProvider = vi.fn(async () => 'secret')
     await expect(githubWorkflowArtifactEvidence({
       owner: 'izzywdev', name: 'FuzeFront', runId: '../42', installationId: '1234', tokenProvider,
+      attempt: 1,
     })).rejects.toThrow('Invalid GitHub Actions run ID')
     expect(tokenProvider).not.toHaveBeenCalled()
   })

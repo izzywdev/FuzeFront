@@ -656,12 +656,29 @@ export type TestExecutionEvidenceCollection = {
   status: 'complete' | 'partial' | 'unavailable'
   checkedAt: string
   errorCode?: 'PROVIDER_TIMEOUT' | 'PROVIDER_UNAVAILABLE' | 'PROVIDER_RESPONSE_INVALID' | 'PROVIDER_RESULT_LIMIT_EXCEEDED'
+  issues?: Array<'provider-result-limit-exceeded' | 'attempt-provenance-unverified'>
+  /** Run-level artifacts withheld from exact-attempt evidence. */
+  unverifiedLinks?: TestExecutionEvidenceLink[]
+}
+
+const httpsEvidenceUrlSchema = z.string().url().max(2000).refine(
+  value => value.startsWith('https://'),
+  'Execution evidence URL must use HTTPS',
+)
+
+const testExecutionEvidenceLinkFields = {
+  kind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']),
+  name: z.string().trim().min(1).max(200),
+  url: httpsEvidenceUrlSchema,
 }
 
 export const testExecutionEvidenceCollectionSchema = z.object({
   status: z.enum(['complete', 'partial', 'unavailable']),
   checkedAt: z.string().datetime(),
   errorCode: z.enum(['PROVIDER_TIMEOUT', 'PROVIDER_UNAVAILABLE', 'PROVIDER_RESPONSE_INVALID', 'PROVIDER_RESULT_LIMIT_EXCEEDED']).optional(),
+  issues: z.array(z.enum(['provider-result-limit-exceeded', 'attempt-provenance-unverified'])).max(2).optional(),
+  /** Run-level artifacts that could not be proven to belong to this exact retry attempt. */
+  unverifiedLinks: z.array(z.object(testExecutionEvidenceLinkFields).strict()).max(99).optional(),
 }).strict().superRefine((collection, context) => {
   if (collection.status === 'complete' && collection.errorCode) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Completed evidence collection cannot include an error code' })
@@ -669,20 +686,22 @@ export const testExecutionEvidenceCollectionSchema = z.object({
   if (collection.status === 'unavailable' && !collection.errorCode) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Unavailable evidence collection requires an error code' })
   }
-  if (collection.status === 'partial' && collection.errorCode !== 'PROVIDER_RESULT_LIMIT_EXCEEDED') {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Partial evidence collection requires the provider result-limit code' })
+  if (collection.status === 'partial' && collection.errorCode !== 'PROVIDER_RESULT_LIMIT_EXCEEDED' && !collection.issues?.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['issues'], message: 'Partial evidence collection requires at least one collection issue' })
+  }
+  if (collection.status === 'partial' && collection.errorCode && collection.errorCode !== 'PROVIDER_RESULT_LIMIT_EXCEEDED') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Partial evidence collection only supports the provider result-limit error code' })
+  }
+  if (collection.status !== 'partial' && (collection.issues?.length || collection.unverifiedLinks?.length)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['issues'], message: 'Only partial evidence collection may retain collection issues' })
+  }
+  if (collection.unverifiedLinks?.length && !collection.issues?.includes('attempt-provenance-unverified')) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['unverifiedLinks'], message: 'Unverified links require an attempt provenance issue' })
   }
 })
 
-const httpsEvidenceUrlSchema = z.string().url().max(2000).refine(
-  value => value.startsWith('https://'),
-  'Execution evidence URL must use HTTPS',
-)
-
 export const testExecutionEvidenceLinkSchema = z.object({
-  kind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']),
-  name: z.string().trim().min(1).max(200),
-  url: httpsEvidenceUrlSchema,
+  ...testExecutionEvidenceLinkFields,
 }).strict()
 
 export type TestExecutionGateEvaluation = {

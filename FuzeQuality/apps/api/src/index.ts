@@ -905,6 +905,7 @@ app.post('/api/v1/repositories/:id/test-executions/evidence/refresh', mayRunExec
       owner: repository.owner,
       name: repository.name,
       runId: execution.externalRunId,
+      attempt: execution.attempt,
       installationId,
     }), new Date().toISOString(), 'throw')
   } catch (error) {
@@ -1571,6 +1572,7 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
           owner: repository.owner,
           name: repository.name,
           runId: execution.externalRunId,
+          attempt: execution.attempt,
           installationId,
         }),
         checkedAt,

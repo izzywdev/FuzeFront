@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.83.0
+  version: 0.84.0
   license:
     name: UNLICENSED
 servers:
@@ -1994,6 +1994,17 @@ components:
         errorCode:
           type: string
           enum: [PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, PROVIDER_RESPONSE_INVALID, PROVIDER_RESULT_LIMIT_EXCEEDED]
+        issues:
+          type: array
+          maxItems: 2
+          items:
+            type: string
+            enum: [provider-result-limit-exceeded, attempt-provenance-unverified]
+        unverifiedLinks:
+          type: array
+          maxItems: 99
+          description: Run-level artifacts withheld because provider metadata could not prove ownership by this exact retry attempt.
+          items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
     TestExecutionInput:
       type: object
       description: Running executions cannot include `completedAt`; when both timestamps are supplied, completion cannot precede start.
