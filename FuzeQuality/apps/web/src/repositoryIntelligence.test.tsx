@@ -894,6 +894,34 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('does not promote continuation history when latest performance evidence is unavailable', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.mocked(api.latestPerformanceExecutions).mockRejectedValue(
+      new Error('latest performance evidence unavailable'),
+    )
+    const olderExecution: TestExecution = {
+      ...loadExecution,
+      id: 'execution-load-continuation',
+      externalRunId: '12340',
+      name: 'Historical load test',
+      completedAt: '2026-10-01T12:00:00.000Z',
+    }
+    vi.mocked(api.testExecutions)
+      .mockResolvedValueOnce({ items: [], page: { nextCursor: 'execution-page-2', hasMore: true } })
+      .mockResolvedValueOnce({ items: [olderExecution], page: { nextCursor: null, hasMore: false } })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(/Latest execution evidence is temporarily unavailable/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more execution evidence' }))
+    expect(await screen.findByText(olderExecution.name)).toBeVisible()
+    const latestOutcome = screen.getByLabelText(`Latest execution for ${loadArtifact.title}`)
+    expect(latestOutcome).toHaveTextContent('No matching execution has been ingested for this workflow yet.')
+    expect(latestOutcome).not.toHaveTextContent(olderExecution.name)
+  })
+
   it('inspects exact execution evidence and resolves its revision-scoped policy and gate artifacts', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

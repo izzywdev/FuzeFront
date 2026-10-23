@@ -4752,12 +4752,6 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setExecutions(current => [...new Map(
         [...current, ...continuedExecutions].map(item => [item.id, item])
       ).values()])
-      setPerformanceExecutions(current => [...new Map(
-        [
-          ...current,
-          ...continuedExecutions.filter(execution => execution.kind === 'load' || execution.kind === 'stress'),
-        ].map(item => [item.id, item])
-      ).values()])
       setExecutionNextCursors(current => {
         const next = { ...current }
         groups.forEach(group => {

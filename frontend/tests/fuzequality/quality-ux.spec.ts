@@ -643,6 +643,47 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText(olderExecution.name, { exact: true })).toBeVisible()
   })
 
+  test('does not present continuation history as the latest performance outcome', async ({ page }) => {
+    const historicalLoad = {
+      ...testExecutions[0],
+      id: 'execution-historical-load',
+      externalRunId: '654319',
+      kind: 'load',
+      name: 'Historical load continuation',
+      workflowPath: '.github/workflows/load.yml',
+      completedAt: '2026-10-06T09:00:00.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/performance-test-executions/latest',
+      route => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Latest performance evidence unavailable' }),
+      }),
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-executions',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [historicalLoad], page: { nextCursor: null, hasMore: false } }
+            : { items: [], page: { nextCursor: 'execution-page-2', hasMore: true } }),
+        })
+      },
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await expect(page.getByText(/Latest execution evidence is temporarily unavailable/)).toBeVisible()
+    await page.getByRole('button', { name: 'Load more execution evidence' }).click()
+    await expect(page.getByText(historicalLoad.name, { exact: true })).toBeVisible()
+    const latestOutcome = page.getByLabel('Latest execution for Application API load test')
+    await expect(latestOutcome).toContainText('No matching execution has been ingested for this workflow yet.')
+    await expect(latestOutcome).not.toContainText(historicalLoad.name)
+  })
+
   test('renders the complete paginated execution outcome trend', async ({ page }) => {
     await page.route(
       url => url.pathname.endsWith('/execution-trend'),
