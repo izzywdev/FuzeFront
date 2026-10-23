@@ -136,7 +136,11 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
     }
     if (url.pathname.endsWith('/quality-artifacts/by-ids')) {
       const ids = new Set(url.searchParams.getAll('id'))
-      return respond({ items: qualityArtifacts.filter(artifact => ids.has(artifact.id)) })
+      return respond({
+        items: qualityArtifacts.filter(artifact =>
+          ids.has(artifact.id) || ids.has(artifact.logicalId ?? artifact.id)
+        ),
+      })
     }
     if (url.pathname.endsWith('/quality-artifacts')) return respond(qualityArtifacts)
     if (url.pathname.endsWith('/flow-candidates')) {
@@ -1345,6 +1349,54 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await page.getByText('Controlled dispatch history').click()
     expect((await historyRequest).method()).toBe('GET')
     await expect(page.getByText(/Requested by release-auditor/)).toBeVisible()
+  })
+
+  test('does not classify a current workflow beyond the first artifact page as retired', async ({ page }) => {
+    const currentDispatch = {
+      id: '00000000-0000-4000-8000-000000000005',
+      repositoryId: 'repo-1',
+      tenantId: 'tenant-1',
+      artifactId: 'load-artifact-prior-revision',
+      artifactLogicalId: 'workflow:.github/workflows/load.yml',
+      artifactKind: 'load-test',
+      workflowPath: '.github/workflows/load.yml',
+      ref: '6666666666666666666666666666666666666666',
+      sourceRevision: '6666666666666666666666666666666666666666',
+      requestedBy: 'release-auditor',
+      inputNames: [],
+      status: 'accepted',
+      requestedAt: '2026-10-20T23:00:00.000Z',
+      completedAt: '2026-10-20T23:00:01.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: qualityArtifacts.filter(artifact => artifact.id !== 'load-artifact'),
+          page: { nextCursor: 'artifact-page-2', hasMore: true },
+        }),
+      }),
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [currentDispatch] }),
+      }),
+    )
+    const exactLookup = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/quality-artifacts/by-ids') &&
+        url.searchParams.get('revision') === 'abcdef123456' &&
+        url.searchParams.getAll('id').includes(currentDispatch.artifactLogicalId)
+    })
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await exactLookup
+    await expect(page.getByRole('button', { name: 'Load more repository evidence' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Retired controlled workflows' })).toHaveCount(0)
   })
 
   test('keeps failed policy-gate review rationale available for retry', async ({ page }) => {

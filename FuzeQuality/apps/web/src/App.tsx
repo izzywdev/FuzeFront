@@ -3880,6 +3880,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [testSuiteDispatchAuditStatus, setTestSuiteDispatchAuditStatus] = useState<
     Record<string, 'loading' | 'ready' | 'error'>
   >({})
+  const [currentDispatchArtifacts, setCurrentDispatchArtifacts] = useState<QualityArtifact[]>([])
+  const [verifiedDispatchRetirementRepositories, setVerifiedDispatchRetirementRepositories] = useState<string[]>([])
+  const [dispatchRetirementFailures, setDispatchRetirementFailures] = useState<string[]>([])
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
   const [loadingFlows, setLoadingFlows] = useState(true)
   const [loadedFlowQuery, setLoadedFlowQuery] = useState('')
@@ -4082,6 +4085,44 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setTestSuiteDispatchAuditStatus(current => ({ ...current, [repositoryId]: 'error' }))
     }
   }
+
+  useEffect(() => {
+    let active = true
+    setCurrentDispatchArtifacts([])
+    setVerifiedDispatchRetirementRepositories([])
+    setDispatchRetirementFailures([])
+    const requests = data.repositories.flatMap(repository => {
+      if (testSuiteDispatchAuditStatus[repository.id] !== 'ready') return []
+      const artifactIds = [...new Set(testSuiteDispatches
+        .filter(dispatch => dispatch.repositoryId === repository.id)
+        .map(dispatch => dispatch.artifactLogicalId))]
+      if (!artifactIds.length) return []
+      return [{ repositoryId: repository.id, revision: repository.lastScanRevision, artifactIds }]
+    })
+    if (!requests.length) return () => { active = false }
+    void Promise.allSettled(requests.map(async request => {
+      if (!request.revision) throw new Error('Current repository analysis is unavailable')
+      return {
+        repositoryId: request.repositoryId,
+        response: await api.qualityArtifactsByIdsBatched(
+          request.repositoryId,
+          request.artifactIds,
+          request.revision,
+        ),
+      }
+    })).then(results => {
+      if (!active) return
+      const successful = results.flatMap(result =>
+        result.status === 'fulfilled' ? [result.value] : []
+      )
+      setCurrentDispatchArtifacts(successful.flatMap(result => result.response.items))
+      setVerifiedDispatchRetirementRepositories(successful.map(result => result.repositoryId))
+      setDispatchRetirementFailures(results.flatMap((result, index) =>
+        result.status === 'rejected' ? [requests[index].repositoryId] : []
+      ))
+    })
+    return () => { active = false }
+  }, [data.repositories, testSuiteDispatches, testSuiteDispatchAuditStatus])
 
   const runTestSuite = async (artifact: QualityArtifact) => {
     const repository = data.repositories.find(
@@ -5056,15 +5097,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     ],
   ]
   const currentDispatchLogicalIds = new Set(
-    artifacts
+    [...artifacts, ...currentDispatchArtifacts]
       .filter(artifact => ['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(artifact.kind))
-      .flatMap(artifact => [artifact.logicalId ?? artifact.id])
+      .map(artifact => artifact.logicalId ?? artifact.id)
   )
-  const retiredTestSuiteDispatches = loadingArtifacts
-    ? []
-    : testSuiteDispatches.filter(dispatch =>
-        !currentDispatchLogicalIds.has(dispatch.artifactLogicalId)
-      )
+  const verifiedDispatchRetirementRepositoryIds = new Set(
+    verifiedDispatchRetirementRepositories
+  )
+  const retiredTestSuiteDispatches = testSuiteDispatches.filter(dispatch =>
+    verifiedDispatchRetirementRepositoryIds.has(dispatch.repositoryId) &&
+    !currentDispatchLogicalIds.has(dispatch.artifactLogicalId)
+  )
   return (
     <>
       <PageHeading
@@ -5210,6 +5253,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           {governanceEvidenceFailures.length > 0 && (
             <p className="form-error" role="alert">
               Some exact policy and gate evidence could not be loaded. Evidence from successful repositories remains visible.
+            </p>
+          )}
+          {dispatchRetirementFailures.length > 0 && (
+            <p className="form-error" role="alert">
+              Current workflow verification is unavailable for {dispatchRetirementFailures.length}{' '}
+              {dispatchRetirementFailures.length === 1 ? 'repository' : 'repositories'}. No dispatch evidence from those repositories is classified as retired.
             </p>
           )}
           <div

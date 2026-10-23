@@ -2269,6 +2269,61 @@ describe('RepositoryIntelligence flow inventory', () => {
     ))
   })
 
+  it('proves a paginated current workflow exists before classifying dispatch evidence as retired', async () => {
+    mockEvidenceApis()
+    const firstPageArtifact = { ...policyArtifact, id: 'artifact-first-page' }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue({
+      items: [firstPageArtifact],
+      page: { nextCursor: 'artifact-page-2', hasMore: true },
+    })
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const currentArtifact = {
+      ...loadArtifact,
+      id: 'artifact-load-current-revision',
+      logicalId: 'workflow:.github/workflows/load.yml',
+    }
+    const priorDispatch = {
+      ...acceptedDispatch(currentArtifact),
+      artifactId: 'artifact-load-prior-revision',
+    }
+    vi.mocked(api.latestTestSuiteDispatches).mockResolvedValue({ items: [priorDispatch] })
+    vi.mocked(api.qualityArtifactsByIdsBatched).mockResolvedValue({ items: [currentArtifact] })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    await waitFor(() => expect(api.qualityArtifactsByIdsBatched).toHaveBeenCalledWith(
+      repository.id,
+      [currentArtifact.logicalId],
+      repository.lastScanRevision,
+    ))
+    expect(screen.getByRole('button', { name: 'Load more repository evidence' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Retired controlled workflows' })).not.toBeInTheDocument()
+  })
+
+  it('does not claim retirement when exact current-workflow verification fails', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const retiredArtifact = {
+      ...loadArtifact,
+      id: 'artifact-load-unverified',
+      logicalId: 'workflow:.github/workflows/unverified-load.yml',
+    }
+    vi.mocked(api.latestTestSuiteDispatches).mockResolvedValue({
+      items: [acceptedDispatch(retiredArtifact)],
+    })
+    vi.mocked(api.qualityArtifactsByIdsBatched).mockRejectedValue(
+      new Error('Exact artifact lookup unavailable'),
+    )
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(
+      /Current workflow verification is unavailable for 1 repository/i,
+    )).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Retired controlled workflows' })).not.toBeInTheDocument()
+  })
+
   it('verifies every latest-dispatch page before enabling another workflow run', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
@@ -2292,7 +2347,9 @@ describe('RepositoryIntelligence flow inventory', () => {
       repository.id,
       'latest-dispatch-page-2',
     ))
-    expect(await screen.findAllByText(/Latest controlled dispatch · accepted/)).toHaveLength(2)
+    await waitFor(() => expect(
+      screen.getAllByText(/Latest controlled dispatch · accepted/),
+    ).toHaveLength(2))
     expect(screen.getByRole('button', { name: /Run analyzed revision a{12}/ })).toBeEnabled()
   })
 
