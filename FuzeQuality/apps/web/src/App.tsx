@@ -3456,6 +3456,32 @@ export function normalizeHistoryPage<T>(value: T[] | HistoryPage<T>): HistoryPag
     : value
 }
 
+/**
+ * A dispatch is enabled only after every bounded audit page has been checked.
+ * Fail closed on a malformed cursor or an unexpectedly deep repository rather
+ * than silently treating an omitted prior dispatch as safe to repeat.
+ */
+export async function loadLatestTestSuiteDispatches(
+  repositoryId: string,
+  maximumPages = 100,
+): Promise<TestSuiteDispatch[]> {
+  const dispatches = new Map<string, TestSuiteDispatch>()
+  let cursor: string | undefined
+  for (let pageNumber = 0; pageNumber < maximumPages; pageNumber++) {
+    const result = await api.latestTestSuiteDispatches(repositoryId, cursor)
+    const page: HistoryPage<TestSuiteDispatch> = 'page' in result
+      ? result
+      : { items: result.items, page: { nextCursor: null, hasMore: false } }
+    page.items.forEach(dispatch => dispatches.set(dispatch.artifactLogicalId, dispatch))
+    if (!page.page.hasMore) return [...dispatches.values()]
+    if (!page.page.nextCursor || page.page.nextCursor === cursor) {
+      throw new Error('Controlled-dispatch audit returned an invalid continuation cursor')
+    }
+    cursor = page.page.nextCursor
+  }
+  throw new Error(`Controlled-dispatch audit exceeds the safe ${maximumPages}-page verification limit`)
+}
+
 function hasRetainedFailureBefore(
   execution: TestExecution,
   history: TestExecution[],
@@ -4018,11 +4044,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       data.repositories.map(repository => [repository.id, 'loading' as const])
     ))
     void Promise.allSettled(
-      data.repositories.map(repository => api.latestTestSuiteDispatches(repository.id))
+      data.repositories.map(repository => loadLatestTestSuiteDispatches(repository.id))
     ).then(results => {
       if (!active) return
       setTestSuiteDispatches(results.flatMap(result =>
-        result.status === 'fulfilled' ? result.value.items : []
+        result.status === 'fulfilled' ? result.value : []
       ))
       setTestSuiteDispatchAuditStatus(Object.fromEntries(
         data.repositories.map((repository, index) => [
@@ -4037,10 +4063,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const retryTestSuiteDispatchAudit = async (repositoryId: string) => {
     setTestSuiteDispatchAuditStatus(current => ({ ...current, [repositoryId]: 'loading' }))
     try {
-      const result = await api.latestTestSuiteDispatches(repositoryId)
+      const result = await loadLatestTestSuiteDispatches(repositoryId)
       setTestSuiteDispatches(current => [
         ...current.filter(dispatch => dispatch.repositoryId !== repositoryId),
-        ...result.items,
+        ...result,
       ])
       setTestSuiteDispatchAuditStatus(current => ({ ...current, [repositoryId]: 'ready' }))
     } catch {

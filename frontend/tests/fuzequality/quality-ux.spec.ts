@@ -1145,6 +1145,55 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(warning).toHaveCount(0)
   })
 
+  test('continues every latest-dispatch audit page before enabling a workflow run', async ({ page }) => {
+    const requestedCursors: Array<string | null> = []
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',
+      route => {
+        const url = new URL(route.request().url())
+        const cursor = url.searchParams.get('cursor')
+        requestedCursors.push(cursor)
+        const dispatch = {
+          id: cursor
+            ? '00000000-0000-4000-8000-000000000012'
+            : '00000000-0000-4000-8000-000000000011',
+          repositoryId: 'repo-1',
+          tenantId: 'tenant-1',
+          artifactId: cursor ? 'load-artifact' : 'retired-post-production-artifact',
+          artifactLogicalId: cursor
+            ? 'workflow:.github/workflows/load.yml'
+            : 'workflow:.github/workflows/retired-post-production.yml',
+          artifactKind: cursor ? 'load-test' : 'post-production-test',
+          workflowPath: cursor
+            ? '.github/workflows/load.yml'
+            : '.github/workflows/retired-post-production.yml',
+          ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          requestedBy: 'quality-reviewer',
+          inputNames: [],
+          status: 'accepted',
+          requestedAt: cursor ? '2026-10-22T22:00:00.000Z' : '2026-10-22T23:00:00.000Z',
+          completedAt: cursor ? '2026-10-22T22:00:01.000Z' : '2026-10-22T23:00:01.000Z',
+        }
+        return route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [dispatch],
+            page: cursor
+              ? { nextCursor: null, hasMore: false }
+              : { nextCursor: 'latest-dispatch-page-2', hasMore: true },
+          }),
+        })
+      },
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect.poll(() => [...new Set(requestedCursors)]).toEqual([null, 'latest-dispatch-page-2'])
+    await expect(page.getByText(/Latest controlled dispatch · accepted/)).toHaveCount(2)
+    await expect(page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' })).toBeEnabled()
+  })
+
   test('retains controlled dispatch evidence across analyzed artifact revisions', async ({ page }) => {
     await page.route(
       url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',

@@ -562,8 +562,12 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.responses['200'].content[
           'application/json'
-        ].schema.properties.items.items.$ref
-      ).toBe('#/components/schemas/TestSuiteDispatchAudit')
+        ].schema.$ref
+      ).toBe('#/components/schemas/TestSuiteDispatchAuditPage')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.parameters
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['limit', 'cursor'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.responses['200'].content[
           'application/json'

@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.77.0
+  version: 0.78.0
   license:
     name: UNLICENSED
 servers:
@@ -1269,22 +1269,25 @@ paths:
       summary: Read the latest durable controlled-dispatch receipt for each reviewed suite
       description: >-
         Returns tenant-scoped dispatch lifecycle records. Workflow input names are retained for
-        auditability; input values are never persisted or returned.
+        auditability; input values are never persisted or returned. Continue every page before
+        enabling another dispatch so a large repository cannot skip duplicate-run evidence.
       tags: [executions]
       security: [{ platformBearer: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque latest-dispatch cursor returned by the preceding page.
+          schema: { type: string, maxLength: 2000 }
       responses:
         '200':
           description: Latest dispatch receipt per reviewed artifact.
           content:
             application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: '#/components/schemas/TestSuiteDispatchAudit' }
+              schema: { $ref: '#/components/schemas/TestSuiteDispatchAuditPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

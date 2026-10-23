@@ -959,7 +959,15 @@ app.get('/api/v1/repositories/:id/test-suite-dispatches/latest', mayReadCatalog,
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json({ items: await store.latestTestSuiteDispatches(repositoryId, tenantId) })
+  const filter = historyPageQuerySchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeUuidHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const items = await store.latestTestSuiteDispatches(repositoryId, tenantId, {
+    after: cursor.data,
+    limit: filter.data.limit + 1,
+  })
+  response.json(testSuiteDispatchPage(items, filter.data.limit))
 })
 app.get('/api/v1/repositories/:id/test-suites/:artifactId/dispatches', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

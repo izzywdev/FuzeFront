@@ -2239,6 +2239,33 @@ describe('RepositoryIntelligence flow inventory', () => {
     ))
   })
 
+  it('verifies every latest-dispatch page before enabling another workflow run', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const priorPostProductionDispatch = acceptedDispatch(postProductionArtifact)
+    const latestLoadDispatch = acceptedDispatch(loadArtifact)
+    vi.mocked(api.latestTestSuiteDispatches)
+      .mockResolvedValueOnce({
+        items: [priorPostProductionDispatch],
+        page: { nextCursor: 'latest-dispatch-page-2', hasMore: true },
+      })
+      .mockResolvedValueOnce({
+        items: [latestLoadDispatch],
+        page: { nextCursor: null, hasMore: false },
+      })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    await waitFor(() => expect(api.latestTestSuiteDispatches).toHaveBeenNthCalledWith(
+      2,
+      repository.id,
+      'latest-dispatch-page-2',
+    ))
+    expect(await screen.findAllByText(/Latest controlled dispatch · accepted/)).toHaveLength(2)
+    expect(screen.getByRole('button', { name: /Run analyzed revision a{12}/ })).toBeEnabled()
+  })
+
   it('offers controlled dispatch only for the preferred classification of a shared workflow', async () => {
     mockEvidenceApis()
     const sharedIntegration = {
