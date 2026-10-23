@@ -162,7 +162,7 @@ export const api = {
   latestIntegrationExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/integration-test-executions/latest`),
   latestPostProductionExecutions: (id: string) => request<{ items: import('@fuzequality/contracts').TestExecution[] }>(`/api/v1/repositories/${id}/post-production-test-executions/latest`),
   latestTestSuiteDispatches: (id: string, cursor?: string) => request<import('@fuzequality/contracts').TestSuiteDispatchPage | { items: import('@fuzequality/contracts').TestSuiteDispatch[] }>(`/api/v1/repositories/${id}/test-suite-dispatches/latest${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
-  testSuiteDispatchHistory: (repositoryId: string, artifactId: string, cursor?: string) => request<import('@fuzequality/contracts').TestSuiteDispatchPage>(`/api/v1/repositories/${repositoryId}/test-suites/${encodeURIComponent(artifactId)}/dispatches${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
+  testSuiteDispatchHistory: (repositoryId: string, artifactReference: string, cursor?: string) => request<import('@fuzequality/contracts').TestSuiteDispatchPage>(`/api/v1/repositories/${repositoryId}/test-suites/${encodeURIComponent(artifactReference)}/dispatches${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
   executionTrend: (id: string, filter: Record<string, string> = {}) => request<{
     items: import('@fuzequality/core').ExecutionOutcomeTrend[]
     page: { nextCursor: string | null; hasMore: boolean }

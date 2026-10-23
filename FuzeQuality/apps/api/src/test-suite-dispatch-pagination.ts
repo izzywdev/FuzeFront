@@ -15,17 +15,19 @@ const dispatchableArtifactKinds = new Set<QualityArtifact['kind']>([
  * dispatch receipt belongs to the same repository and tenant query.
  */
 export function testSuiteDispatchLogicalId(
-  artifactId: string,
+  artifactReference: string,
   artifacts: QualityArtifact[],
   latestDispatches: TestSuiteDispatch[],
 ): string | undefined {
   const artifact = artifacts.find(item =>
-    item.id === artifactId && dispatchableArtifactKinds.has(item.kind)
+    (item.id === artifactReference || item.logicalId === artifactReference) &&
+    dispatchableArtifactKinds.has(item.kind)
   )
   if (artifact) return artifact.logicalId ?? artifact.id
 
   return latestDispatches.find(dispatch =>
-    dispatch.artifactId === artifactId && dispatchableArtifactKinds.has(dispatch.artifactKind)
+    (dispatch.artifactId === artifactReference || dispatch.artifactLogicalId === artifactReference) &&
+    dispatchableArtifactKinds.has(dispatch.artifactKind)
   )?.artifactLogicalId
 }
 

@@ -978,8 +978,7 @@ app.get('/api/v1/repositories/:id/test-suites/:artifactId/dispatches', mayReadCa
   const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
   let artifactLogicalId = testSuiteDispatchLogicalId(artifactId, artifacts, [])
   if (!artifactLogicalId) {
-    const latestDispatches = await store.latestTestSuiteDispatches(repositoryId, tenantId)
-    artifactLogicalId = testSuiteDispatchLogicalId(artifactId, [], latestDispatches)
+    artifactLogicalId = await store.testSuiteDispatchLogicalId(repositoryId, tenantId, artifactId)
   }
   if (!artifactLogicalId) {
     return response.status(404).json({ error: 'Test suite not found' })

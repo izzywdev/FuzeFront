@@ -2174,8 +2174,8 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(await screen.findByText(/Provider unavailable/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Load more controlled dispatches' }))
     expect(await screen.findByText(/Requested by older-reviewer/)).toBeVisible()
-    expect(historyRequest).toHaveBeenNthCalledWith(1, repository.id, loadArtifact.id, undefined)
-    expect(historyRequest).toHaveBeenNthCalledWith(2, repository.id, loadArtifact.id, 'dispatch-page-2')
+    expect(historyRequest).toHaveBeenNthCalledWith(1, repository.id, loadArtifact.logicalId ?? loadArtifact.id, undefined)
+    expect(historyRequest).toHaveBeenNthCalledWith(2, repository.id, loadArtifact.logicalId ?? loadArtifact.id, 'dispatch-page-2')
   })
 
   it('keeps dispatch history visible when a rescan replaces the artifact observation', async () => {
@@ -2204,7 +2204,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     fireEvent.click(screen.getByText('Controlled dispatch history'))
     await waitFor(() => expect(api.testSuiteDispatchHistory).toHaveBeenCalledWith(
       repository.id,
-      currentArtifact.id,
+      currentArtifact.logicalId,
       undefined,
     ))
   })
@@ -2234,7 +2234,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     fireEvent.click(screen.getByText('Controlled dispatch history'))
     await waitFor(() => expect(api.testSuiteDispatchHistory).toHaveBeenCalledWith(
       repository.id,
-      retiredArtifact.id,
+      retiredArtifact.logicalId,
       undefined,
     ))
   })

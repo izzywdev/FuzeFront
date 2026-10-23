@@ -150,4 +150,26 @@ describe('test-suite dispatch audit', () => {
       limit: 2,
     })).toEqual([oldest])
   })
+
+  it('resolves stable and legacy suite references without crossing tenant boundaries', async () => {
+    const store = new MemoryCatalogStore()
+    const receipt = dispatch({ artifactId: 'suite:load:revision-1' })
+    await store.saveTestSuiteDispatch(receipt)
+
+    expect(await store.testSuiteDispatchLogicalId(
+      receipt.repositoryId,
+      receipt.tenantId,
+      receipt.artifactLogicalId,
+    )).toBe(receipt.artifactLogicalId)
+    expect(await store.testSuiteDispatchLogicalId(
+      receipt.repositoryId,
+      receipt.tenantId,
+      receipt.artifactId,
+    )).toBe(receipt.artifactLogicalId)
+    expect(await store.testSuiteDispatchLogicalId(
+      receipt.repositoryId,
+      '99999999-9999-4999-8999-999999999999',
+      receipt.artifactId,
+    )).toBeUndefined()
+  })
 })

@@ -579,7 +579,7 @@ describe('contract discovery', () => {
       ).toEqual(['limit', 'cursor'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
-      ).toContain('after a later repository scan removes the workflow')
+      ).toContain('bounded tenant-scoped dispatch lookup')
       expect(schemas.TestSuiteDispatchAuditPage.properties.page.$ref).toBe(
         '#/components/schemas/HistoryCursorPage'
       )

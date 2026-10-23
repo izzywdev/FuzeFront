@@ -202,7 +202,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       }
       return respond({ items: [] })
     }
-    if (url.pathname.endsWith('/test-suites/load-artifact/dispatches')) return respond({
+    if (decodeURIComponent(url.pathname).endsWith('/test-suites/workflow:.github/workflows/load.yml/dispatches')) return respond({
       items: [
         {
           id: '00000000-0000-4000-8000-000000000003',
@@ -1261,7 +1261,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
       }),
     )
     await page.route(
-      url => url.pathname === '/api/v1/repositories/repo-1/test-suites/retired-load-artifact/dispatches',
+      url => decodeURIComponent(url.pathname) === '/api/v1/repositories/repo-1/test-suites/workflow:.github/workflows/retired-load.yml/dispatches',
       route => route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
@@ -1275,7 +1275,11 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
     await expect(page.getByRole('heading', { name: 'Retired controlled workflows' })).toBeVisible()
     await expect(page.getByText('.github/workflows/retired-load.yml', { exact: true })).toBeVisible()
+    const historyRequest = page.waitForRequest(request =>
+      request.url().includes('/test-suites/workflow%3A.github%2Fworkflows%2Fretired-load.yml/dispatches')
+    )
     await page.getByText('Controlled dispatch history').click()
+    expect((await historyRequest).method()).toBe('GET')
     await expect(page.getByText(/Requested by release-auditor/)).toBeVisible()
   })
 

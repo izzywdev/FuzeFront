@@ -2956,11 +2956,11 @@ function FlowReviewHistory({
 
 function TestSuiteDispatchHistory({
   repositoryId,
-  artifactId,
+  artifactReference,
   latestDispatch,
 }: {
   repositoryId: string
-  artifactId: string
+  artifactReference: string
   latestDispatch: TestSuiteDispatch
 }) {
   const [history, setHistory] = useState<TestSuiteDispatch[]>([])
@@ -2982,7 +2982,7 @@ function TestSuiteDispatchHistory({
     try {
       const page = await api.testSuiteDispatchHistory(
         repositoryId,
-        artifactId,
+        artifactReference,
         cursor,
       )
       if (request !== requestRef.current) return
@@ -3001,7 +3001,7 @@ function TestSuiteDispatchHistory({
         setLoading(false)
       }
     }
-  }, [artifactId, repositoryId])
+  }, [artifactReference, repositoryId])
 
   useEffect(() => {
     requestRef.current++
@@ -5409,7 +5409,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         </p>
                         <TestSuiteDispatchHistory
                           repositoryId={dispatch.repositoryId}
-                          artifactId={dispatch.artifactId}
+                          artifactReference={dispatch.artifactLogicalId}
                           latestDispatch={dispatch}
                         />
                       </div>
@@ -5846,7 +5846,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </small>
                               <TestSuiteDispatchHistory
                                 repositoryId={item.repositoryId}
-                                artifactId={item.id}
+                                artifactReference={item.logicalId ?? item.id}
                                 latestDispatch={latestDispatch}
                               />
                             </>

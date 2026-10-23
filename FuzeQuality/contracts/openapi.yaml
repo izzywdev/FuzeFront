@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.78.0
+  version: 0.79.0
   license:
     name: UNLICENSED
 servers:
@@ -1341,6 +1341,7 @@ paths:
       - name: artifactId
         in: path
         required: true
+        description: Current observation identity or stable logical workflow identity.
         schema: { type: string, minLength: 1, maxLength: 500 }
     get:
       operationId: listTestSuiteDispatchHistory
@@ -1349,8 +1350,10 @@ paths:
         Returns tenant-scoped dispatch attempts from newest to oldest. Continuation cursors use
         immutable request time and dispatch identity, so retries arriving between pages do not
         duplicate or skip retained attempts. A durable audit remains addressable by the artifact
-        identity in its latest receipt after a later repository scan removes the workflow. Input
-        values are never persisted or returned.
+        identity in its latest receipt after a later repository scan removes the workflow. Stable
+        logical identities avoid revision-sized catalog scans; legacy observation identities are
+        resolved through a bounded tenant-scoped dispatch lookup. Input values are never persisted
+        or returned.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:

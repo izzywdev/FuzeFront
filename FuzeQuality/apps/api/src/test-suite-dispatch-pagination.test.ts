@@ -49,6 +49,7 @@ describe('test-suite dispatch pagination', () => {
     }
 
     expect(testSuiteDispatchLogicalId(artifact.id, [artifact], [])).toBe(artifact.logicalId)
+    expect(testSuiteDispatchLogicalId(artifact.logicalId!, [artifact], [])).toBe(artifact.logicalId)
   })
 
   it('resolves a retired suite only from its tenant-scoped durable dispatch receipt', () => {
@@ -56,6 +57,7 @@ describe('test-suite dispatch pagination', () => {
     retired.artifactId = 'suite:retired'
 
     expect(testSuiteDispatchLogicalId(retired.artifactId, [], [retired])).toBe(retired.artifactLogicalId)
+    expect(testSuiteDispatchLogicalId(retired.artifactLogicalId, [], [retired])).toBe(retired.artifactLogicalId)
     expect(testSuiteDispatchLogicalId('suite:unknown', [], [retired])).toBeUndefined()
   })
 

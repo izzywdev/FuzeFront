@@ -246,6 +246,7 @@ export interface CatalogStore {
   policyGatePerformance(repositoryId: string, tenantId: string, query?: PolicyGatePerformanceQuery): Promise<PolicyGatePerformance[]>
   saveTestExecution(execution: TestExecution): Promise<void>
   latestTestSuiteDispatches(repositoryId: string, tenantId: string, query?: TestSuiteDispatchHistoryQuery): Promise<TestSuiteDispatch[]>
+  testSuiteDispatchLogicalId(repositoryId: string, tenantId: string, artifactReference: string): Promise<string | undefined>
   testSuiteDispatchHistory(repositoryId: string, tenantId: string, artifactLogicalId: string, query?: TestSuiteDispatchHistoryQuery): Promise<TestSuiteDispatch[]>
   saveTestSuiteDispatch(dispatch: TestSuiteDispatch): Promise<void>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
@@ -740,6 +741,21 @@ export class MemoryCatalogStore implements CatalogStore {
       .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
       .slice(0, limit)
       .map(item => structuredClone(item))
+  }
+
+  async testSuiteDispatchLogicalId(
+    repositoryId: string,
+    tenantId: string,
+    artifactReference: string,
+  ) {
+    return this.testSuiteDispatches
+      .filter(item =>
+        item.repositoryId === repositoryId &&
+        item.tenantId === tenantId &&
+        (item.artifactId === artifactReference || item.artifactLogicalId === artifactReference)
+      )
+      .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))[0]
+      ?.artifactLogicalId
   }
 
   async saveTestSuiteDispatch(dispatch: TestSuiteDispatch) {
@@ -2078,6 +2094,23 @@ export class PostgresCatalogStore implements CatalogStore {
       requestedAt: row.requested_at.toISOString(),
       completedAt: row.completed_at?.toISOString(),
     }))
+  }
+
+  async testSuiteDispatchLogicalId(
+    repositoryId: string,
+    tenantId: string,
+    artifactReference: string,
+  ): Promise<string | undefined> {
+    const result = await this.pool.query(
+      `SELECT artifact_logical_id
+       FROM fuzequality.test_suite_dispatches
+       WHERE repository_id=$1 AND tenant_id=$2
+         AND (artifact_logical_id=$3 OR artifact_id=$3)
+       ORDER BY requested_at DESC,id DESC
+       LIMIT 1`,
+      [repositoryId, tenantId, artifactReference],
+    )
+    return result.rows[0]?.artifact_logical_id
   }
 
   async saveTestSuiteDispatch(dispatch: TestSuiteDispatch): Promise<void> {
