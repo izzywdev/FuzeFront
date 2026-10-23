@@ -2865,6 +2865,58 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.latestIntegrationExecutions).toHaveBeenCalledWith(repository.id)
   })
 
+  it('keeps every inventory outcome visible when execution history is filtered to one repository', async () => {
+    mockEvidenceApis()
+    const secondRepository = { ...repository, id: 'repo-2', name: 'agent' }
+    const secondArtifact = {
+      ...integrationArtifact,
+      id: 'artifact-integration-2',
+      repositoryId: secondRepository.id,
+      title: 'Agent integration',
+      sourcePath: '.github/workflows/agent-integration.yml',
+      execution: {
+        ...integrationArtifact.execution!,
+        workflowPath: '.github/workflows/agent-integration.yml',
+      },
+    }
+    const secondExecution = {
+      ...integrationExecution,
+      id: 'execution-integration-2',
+      repositoryId: secondRepository.id,
+      externalRunId: '56790',
+      name: 'Agent integration',
+      headRepository: 'fuze/agent',
+      workflowPath: secondArtifact.sourcePath,
+      summary: 'Agent integration suites passed.',
+    }
+    vi.mocked(api.qualityArtifacts).mockImplementation(async repositoryId =>
+      repositoryId === secondRepository.id ? [secondArtifact] : [integrationArtifact]
+    )
+    vi.mocked(api.latestIntegrationExecutions).mockImplementation(async repositoryId => ({
+      items: repositoryId === secondRepository.id ? [secondExecution] : [integrationExecution],
+    }))
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={{ ...portfolio, repositories: [repository, secondRepository] }} />)
+
+    const secondOutcome = await screen.findByLabelText(`Latest execution for ${secondArtifact.title}`)
+    expect(secondOutcome).toHaveTextContent('Agent integration suites passed.')
+
+    fireEvent.change(
+      within(screen.getByLabelText('Execution evidence filters')).getByLabelText('Repository'),
+      { target: { value: repository.id } },
+    )
+
+    await waitFor(() => expect(
+      vi.mocked(api.latestIntegrationExecutions).mock.calls.filter(([repositoryId]) =>
+        repositoryId === secondRepository.id
+      )
+    ).toHaveLength(2))
+    expect(screen.getByLabelText(`Latest execution for ${secondArtifact.title}`)).toHaveTextContent(
+      'Agent integration suites passed.'
+    )
+  })
+
   it('dispatches an explicitly reviewed integration workflow at its analyzed revision', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([integrationArtifact])

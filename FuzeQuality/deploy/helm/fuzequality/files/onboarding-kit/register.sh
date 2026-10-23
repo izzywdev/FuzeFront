@@ -17,6 +17,8 @@
 # Optional env:
 #   REGISTRATION_DIR   directory holding manifest.json (default: /registration)
 #   SKIP_ACTIVATE      "true" to register but not activate (staged rollout)
+#   FUZEFRONT_REGISTRATION_PHASE "init" when running before the app container;
+#                       init registration never probes or refreshes its own remote
 #   FUZEFRONT_REMOTE_HEALTH_URL  primary deployed federation asset override
 #   FUZEFRONT_REMOTE_HEALTH_URLS JSON object mapping surface slugs to health URLs
 #   FUZEFRONT_PORTAL_URL          public portal origin used to resolve /apps/... probes
@@ -29,6 +31,7 @@ REGISTRATION_DIR="${REGISTRATION_DIR:-/registration}"
 MANIFEST="${REGISTRATION_DIR}/manifest.json"
 POLICY="${REGISTRATION_DIR}/policy.json"
 BILLING="${REGISTRATION_DIR}/billing-profile.json"
+REGISTRATION_PHASE="${FUZEFRONT_REGISTRATION_PHASE:-post-start}"
 
 # BOTH go to stderr, on purpose. http() returns the HTTP status code on STDOUT and
 # is read via command substitution, so anything else written to stdout would be
@@ -36,6 +39,11 @@ BILLING="${REGISTRATION_DIR}/billing-profile.json"
 # containers send both streams to the pod log, so nothing is lost by this.
 log()  { echo "[fuzefront-register] $*" >&2; }
 die()  { echo "[fuzefront-register] FATAL: $*" >&2; exit 1; }
+
+case "$REGISTRATION_PHASE" in
+  init|post-start) ;;
+  *) die "FUZEFRONT_REGISTRATION_PHASE must be 'init' or 'post-start'" ;;
+esac
 
 # ---- preflight ---------------------------------------------------------------
 [ -n "${FUZEFRONT_API_URL:-}" ] || die "FUZEFRONT_API_URL is not set"
@@ -175,13 +183,17 @@ for _manifest in $MANIFESTS; do
   fi
 
   _probe="false"
-  if [ -n "$_remote" ]; then
-    # Registration commonly runs as an init container. On the first install the
-    # application container cannot serve its own remote until this script exits,
-    # so probing an absent registry row here would deadlock the pod forever. A
-    # first registration may proceed; every later refresh/activation probes before
-    # mutating the live row. Post-start registration Jobs still get the same
-    # protection because their remote is already serving by the next refresh.
+  if [ -n "$_remote" ] && [ "$REGISTRATION_PHASE" = "init" ]; then
+    # An init container runs before the frontend that serves this asset. This is
+    # true on first install and on a cold restart with no healthy replicas, so an
+    # HTTP dependency on the app's own remote would permanently deadlock startup.
+    # Existing rows are also left unchanged below; a post-start Job owns verified
+    # manifest refreshes once the remote is actually available.
+    log "init registration for ${_slug} — deferring federation probe to post-start registration"
+  elif [ -n "$_remote" ]; then
+    # A post-start Job can verify an existing live row before refreshing it. An
+    # absent row has no live portal route to protect, so its first registration
+    # may proceed; the next post-start run verifies it before any refresh.
     _lookup_code="$(http GET "${API}/apps/${_slug}" "$BODY")"
     case "$_lookup_code" in
       200)
@@ -246,13 +258,17 @@ case "$CODE" in
     # Re-PUT the manifest so a redeploy picks up manifest changes (new remoteEntry
     # after a version bump, changed nav placement, …). Without this, the very first
     # registration would be frozen forever and every later manifest edit a no-op.
-    PUT_CODE="$(http PUT "${API}/apps/${SLUG}" "$BODY" "$MANIFEST")"
-    case "$PUT_CODE" in
-      200|204) log "manifest refreshed" ;;
-      # A manifest update is not worth failing the pod over — the app IS registered
-      # and can serve. Report it; the drift shows up in the registry.
-      *) log "WARNING: manifest refresh returned ${PUT_CODE} — continuing with the existing registration" ;;
-    esac
+    if [ "$REGISTRATION_PHASE" = "init" ]; then
+      log "init registration leaves the existing manifest unchanged; post-start registration owns verified refreshes"
+    else
+      PUT_CODE="$(http PUT "${API}/apps/${SLUG}" "$BODY" "$MANIFEST")"
+      case "$PUT_CODE" in
+        200|204) log "manifest refreshed" ;;
+        # A manifest update is not worth failing the pod over — the app IS registered
+        # and can serve. Report it; the drift shows up in the registry.
+        *) log "WARNING: manifest refresh returned ${PUT_CODE} — continuing with the existing registration" ;;
+      esac
+    fi
     ;;
   404)
     log "not registered — registering"

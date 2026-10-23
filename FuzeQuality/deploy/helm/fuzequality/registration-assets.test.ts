@@ -25,6 +25,15 @@ describe('FuzeQuality Helm registration assets', () => {
     )
   })
 
+  it('marks the shared init container so cold restarts defer self-probing', () => {
+    const initContainer = read(
+      '../../../../packages/onboarding-kit/helm/initcontainer.yaml'
+    )
+
+    expect(initContainer).toContain('name: FUZEFRONT_REGISTRATION_PHASE')
+    expect(initContainer).toContain("value: 'init'")
+  })
+
   it('makes monorepo registration and design-system dependencies available in the release image', () => {
     const dockerfile = read('../../../docker/Dockerfile')
 

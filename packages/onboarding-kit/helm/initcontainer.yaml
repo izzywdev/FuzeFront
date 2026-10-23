@@ -35,9 +35,14 @@ initContainers:
         # may not resolve before ingress is ready.
         value: 'http://fuzefront-applications.fuzefront.svc.cluster.local:3003'
       - name: FUZEFRONT_PORTAL_URL
-        # Used only to resolve a preferred same-origin remoteEntry such as
-        # /apps/myapp/assets/remoteEntry.js for the pre-activation health probe.
+        # Kept for teams that adapt this snippet into a post-start Job. Init
+        # registration deliberately does not probe its own serving container.
         value: 'https://app.fuzefront.com'
+      - name: FUZEFRONT_REGISTRATION_PHASE
+        # This pod runs before the frontend, so it must never wait for or refresh
+        # the remote served by that frontend. Use a post-start registration Job
+        # to probe the federation asset and publish manifest changes safely.
+        value: 'init'
       - name: FUZEFRONT_REGISTRATION_TOKEN
         valueFrom:
           secretKeyRef:

@@ -79,6 +79,7 @@ run_register() {
   FUZEFRONT_REMOTE_HEALTH_URL="${2:-}" \
   SKIP_ACTIVATE="${3:-false}" \
   FUZEFRONT_PORTAL_URL="${4:-}" \
+  FUZEFRONT_REGISTRATION_PHASE="${5:-post-start}" \
     sh "$SCRIPT" > "${WORK}/run.out" 2>&1
 }
 
@@ -104,6 +105,20 @@ check "does NOT re-register an existing app" "$REREG" "0"
 REACT="$(echo "$CALLS2" | grep -c '/activate$' || true)"
 check "does NOT re-activate an already-activated app" "$REACT" "0"
 echo "$CALLS2" | grep -q '^PUT /api/v1/app-registry/apps/testapp$' && ok "refreshes the manifest on re-run" || notok "refreshes the manifest on re-run"
+cleanup; SERVER_PID=""
+
+# A shipped init container must also survive an all-replicas-down restart. The
+# existing registry row does not prove that the frontend is currently serving,
+# so init mode neither probes the remote nor refreshes the live manifest.
+start_server
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/missing-cold-start-remoteEntry.js" "false" "" "init"; RC=$?; set -e
+check "cold-restart init registration does not deadlock on its own remote" "$RC" "0"
+INIT_CALLS="$(cat "${WORK}/calls.txt")"
+INIT_REFRESH="$(echo "$INIT_CALLS" | grep -c '^PUT /api/v1/app-registry/apps/testapp$' || true)"
+check "init registration does not refresh an unverified live manifest" "$INIT_REFRESH" "0"
+grep -q 'deferring federation probe to post-start registration' "${WORK}/run.out" \
+  && ok "init registration explains the deferred probe" || notok "init registration explains the deferred probe"
 cleanup; SERVER_PID=""
 
 # ---- 4. auth failure is FATAL ------------------------------------------------

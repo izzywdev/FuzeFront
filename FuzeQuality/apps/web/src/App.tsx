@@ -4577,27 +4577,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     }
     void Promise.all(
       data.repositories.map(async repository => {
-        if (executionRepositoryId && executionRepositoryId !== repository.id) {
-          return {
-            repositoryId: repository.id,
-            executions: { items: [] as TestExecution[], page: { nextCursor: null, hasMore: false } },
-            performance: { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } },
-            trend: { items: [] as ExecutionOutcomeTrend[], page: { nextCursor: null, hasMore: false } },
-            performanceExecutions: [] as TestExecution[],
-            integrationExecutions: [] as TestExecution[],
-            postProductionExecutions: [] as TestExecution[],
-            executionFailed: false,
-            performanceExecutionsFailed: false,
-            integrationExecutionsFailed: false,
-            postProductionExecutionsFailed: false,
-            performanceFailed: false,
-            trendFailed: false,
-          }
-        }
+        const includeHistory = !executionRepositoryId || executionRepositoryId === repository.id
+        const emptyHistoryPage = { items: [], page: { nextCursor: null, hasMore: false } }
         const [executionResult, performanceResult, trendResult, performanceExecutionsResult, integrationExecutionsResult, postProductionExecutionsResult] = await Promise.allSettled([
-          api.testExecutions(repository.id, executionFilter),
-          api.executionPerformance(repository.id, executionFilter),
-          api.executionTrend(repository.id, executionFilter),
+          includeHistory ? api.testExecutions(repository.id, executionFilter) : Promise.resolve(emptyHistoryPage),
+          includeHistory ? api.executionPerformance(repository.id, executionFilter) : Promise.resolve(emptyHistoryPage),
+          includeHistory ? api.executionTrend(repository.id, executionFilter) : Promise.resolve(emptyHistoryPage),
+          // Inventory cards are repository artifacts, not execution-history rows.
+          // Their latest outcomes remain loaded for every visible repository even
+          // while the history dashboard is filtered to one repository.
           api.latestPerformanceExecutions(repository.id),
           api.latestIntegrationExecutions(repository.id),
           api.latestPostProductionExecutions(repository.id),
