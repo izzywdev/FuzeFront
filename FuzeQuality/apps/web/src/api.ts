@@ -128,6 +128,33 @@ async function qualityArtifacts(id: string, revision?: string, cursor?: string):
   )
 }
 
+const QUALITY_ARTIFACT_ID_BATCH_SIZE = 100
+
+function qualityArtifactsByIds(id: string, artifactIds: string[], revision?: string) {
+  const query = new URLSearchParams()
+  if (revision) query.set('revision', revision)
+  artifactIds.forEach(artifactId => query.append('id', artifactId))
+  return request<{ items: import('@fuzequality/contracts').QualityArtifact[] }>(
+    `/api/v1/repositories/${id}/quality-artifacts/by-ids?${query}`
+  )
+}
+
+async function qualityArtifactsByIdsBatched(id: string, artifactIds: string[], revision?: string) {
+  const uniqueIds = [...new Set(artifactIds)]
+  const requests = Array.from(
+    { length: Math.ceil(uniqueIds.length / QUALITY_ARTIFACT_ID_BATCH_SIZE) },
+    (_, index) => qualityArtifactsByIds(
+      id,
+      uniqueIds.slice(index * QUALITY_ARTIFACT_ID_BATCH_SIZE, (index + 1) * QUALITY_ARTIFACT_ID_BATCH_SIZE),
+      revision,
+    )
+  )
+  const pages = await Promise.all(requests)
+  return {
+    items: [...new Map(pages.flatMap(page => page.items).map(item => [item.id, item])).values()],
+  }
+}
+
 export const api = {
   portfolio: () => request<Portfolio>('/api/v1/portfolio'),
   requirementFreshness: () => request<{ freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'; lastSuccessAt?: string }>('/api/v1/requirements/freshness'),
@@ -135,14 +162,8 @@ export const api = {
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
   repositoryScanHistory: (id: string, cursor?: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryPage | import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
   qualityArtifacts,
-  qualityArtifactsByIds: (id: string, artifactIds: string[], revision?: string) => {
-    const query = new URLSearchParams()
-    if (revision) query.set('revision', revision)
-    artifactIds.forEach(artifactId => query.append('id', artifactId))
-    return request<{ items: import('@fuzequality/contracts').QualityArtifact[] }>(
-      `/api/v1/repositories/${id}/quality-artifacts/by-ids?${query}`
-    )
-  },
+  qualityArtifactsByIds,
+  qualityArtifactsByIdsBatched,
   repositoryFlowCandidates: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').RepositoryFlowCandidatePage | import('@fuzequality/contracts').RepositoryFlowCandidate[]>(`/api/v1/repositories/${id}/flow-candidates?${new URLSearchParams(filter)}`),
   repositoryFlowCandidate: (repositoryId: string, candidateId: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}`),
   reviewRepositoryFlowCandidate: (repositoryId: string, candidateId: string, status: 'confirmed' | 'rejected', reason?: string, expectedReviewedAt?: string | null) => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}), ...(expectedReviewedAt !== undefined ? { expectedReviewedAt } : {}) }) }),

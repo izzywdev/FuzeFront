@@ -3960,7 +3960,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       ])]
       if (evidenceIds.length) {
         try {
-          const evidence = await api.qualityArtifactsByIds(
+          const evidence = await api.qualityArtifactsByIdsBatched(
             detail.repositoryId,
             evidenceIds,
             detail.revision,
@@ -4732,7 +4732,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             'The analyzed catalog revision for this execution is unavailable. Stored policy and gate identifiers remain visible, but their source artifacts cannot be resolved.'
           )
         } else try {
-          const evidence = await api.qualityArtifactsByIds(
+          const evidence = await api.qualityArtifactsByIdsBatched(
             detail.repositoryId,
             evidenceIds,
             detail.catalogRevision,

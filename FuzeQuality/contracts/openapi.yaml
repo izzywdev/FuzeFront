@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.81.0
+  version: 0.82.0
   license:
     name: UNLICENSED
 servers:
@@ -304,6 +304,8 @@ paths:
       description: >-
         Resolves a bounded set of revision-scoped artifact identifiers through
         the caller's tenant boundary without scanning complete artifact pages.
+        Callers resolving more than 100 identifiers must issue bounded requests
+        and merge the tenant-scoped results.
       tags: [repository-analysis]
       security: [{ platformBearer: [] }]
       parameters:

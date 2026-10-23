@@ -528,6 +528,43 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Suspend app route', { exact: true })).toBeVisible()
   })
 
+  test('batches large execution evidence lookups at the backend contract limit', async ({ page }) => {
+    const policyIds = Array.from({ length: 100 }, (_, index) => `policy-${index}`)
+    const gateIds = Array.from({ length: 100 }, (_, index) => `gate-${index}`)
+    const requestedBatches: string[][] = []
+    await page.route(
+      url => url.pathname.endsWith('/test-executions/execution-1'),
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...testExecutions[0],
+          catalogRevision: 'execution-catalog-revision',
+          policyArtifactIds: policyIds,
+          gateArtifactIds: gateIds,
+          gateEvaluations: [],
+        }),
+      }),
+    )
+    await page.route(
+      url => url.pathname.endsWith('/quality-artifacts/by-ids'),
+      route => {
+        const searchParams = new URL(route.request().url()).searchParams
+        if (searchParams.get('revision') === 'execution-catalog-revision') {
+          requestedBatches.push(searchParams.getAll('id'))
+        }
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) })
+      },
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const productionExecution = page.getByText('Production suspension journey', { exact: true }).locator('..')
+    await productionExecution.getByRole('button', { name: 'Inspect execution detail' }).click()
+
+    await expect.poll(() => requestedBatches.length).toBe(2)
+    expect(requestedBatches.map(batch => batch.length)).toEqual([100, 100])
+    expect(new Set(requestedBatches.flat())).toEqual(new Set([...policyIds, ...gateIds]))
+  })
+
   test('continues bounded UX-flow and policy history pages', async ({ page }) => {
     const olderFlow = {
       ...repositoryFlowCandidates[0],

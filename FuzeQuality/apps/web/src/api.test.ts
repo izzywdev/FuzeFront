@@ -62,6 +62,30 @@ describe('FuzeQuality portal API identity context', () => {
     expect(headers.get('x-fuzefront-tenant-id')).toBe('standalone-tenant')
   })
 
+  it('resolves large evidence sets in bounded exact-ID batches and deduplicates results', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) => {
+      const url = new URL(input, 'https://quality.test')
+      const ids = url.searchParams.getAll('id')
+      return new Response(JSON.stringify({
+        items: ids.map(id => ({ id, repositoryId: 'repo-1', kind: 'policy', title: id, sourcePath: `${id}.md`, summary: id, evidence: [] })),
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const ids = [...Array.from({ length: 205 }, (_, index) => `artifact-${index}`), 'artifact-0']
+
+    const result = await api.qualityArtifactsByIdsBatched('repo-1', ids, 'catalog-revision')
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls.map(([input]) =>
+      new URL(input, 'https://quality.test').searchParams.getAll('id').length
+    )).toEqual([100, 100, 5])
+    expect(fetchMock.mock.calls.every(([input]) =>
+      new URL(input, 'https://quality.test').searchParams.get('revision') === 'catalog-revision'
+    )).toBe(true)
+    expect(result.items).toHaveLength(205)
+    expect(result.items[0].id).toBe('artifact-0')
+  })
+
   it('preserves unresolved failure-audit state from a rejected dispatch', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       error: 'GitHub dispatch timed out',

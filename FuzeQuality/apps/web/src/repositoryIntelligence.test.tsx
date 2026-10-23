@@ -248,6 +248,7 @@ const integrationExecution: TestExecution = {
 function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifacts').mockResolvedValue([])
   vi.spyOn(api, 'qualityArtifactsByIds').mockResolvedValue({ items: [] })
+  vi.spyOn(api, 'qualityArtifactsByIdsBatched').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
   vi.spyOn(api, 'testExecution').mockResolvedValue(loadExecution)
@@ -361,7 +362,7 @@ describe('RepositoryIntelligence flow inventory', () => {
   it('loads exact tenant-scoped governance detail and revision evidence in the inspector', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([guardedEvaluation])
-    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({
+    vi.mocked(api.qualityArtifactsByIdsBatched).mockResolvedValue({
       items: [policyArtifact, gateArtifact],
     })
     const detailRequest = vi.spyOn(api, 'policyGateEvaluation').mockResolvedValue(guardedEvaluation)
@@ -373,7 +374,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     const inspector = await screen.findByRole('dialog', { name: guardedEvaluation.title })
     expect(detailRequest).toHaveBeenCalledWith(repository.id, guardedEvaluation.id)
-    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
+    expect(api.qualityArtifactsByIdsBatched).toHaveBeenCalledWith(
       repository.id,
       expect.arrayContaining([policyArtifact.id, gateArtifact.id]),
       guardedEvaluation.revision,
@@ -910,7 +911,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     }
     vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
     vi.mocked(api.testExecution).mockResolvedValue(exactExecution)
-    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({
+    vi.mocked(api.qualityArtifactsByIdsBatched).mockResolvedValue({
       items: [policyArtifact, gateArtifact],
     })
 
@@ -920,7 +921,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     const dialog = await screen.findByRole('dialog', { name: exactExecution.name })
     expect(api.testExecution).toHaveBeenCalledWith(repository.id, exactExecution.id)
-    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
+    await waitFor(() => expect(api.qualityArtifactsByIdsBatched).toHaveBeenCalledWith(
       repository.id,
       [policyArtifact.id, gateArtifact.id],
       exactExecution.catalogRevision,
@@ -951,11 +952,40 @@ describe('RepositoryIntelligence flow inventory', () => {
     await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(
       'The analyzed catalog revision for this execution is unavailable'
     ))
-    expect(api.qualityArtifactsByIds).not.toHaveBeenCalledWith(
+    expect(api.qualityArtifactsByIdsBatched).not.toHaveBeenCalledWith(
       repository.id,
       [policyArtifact.id],
       exactExecution.revision,
     )
+  })
+
+  it('resolves execution evidence beyond the backend per-request ID limit', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const policyIds = Array.from({ length: 100 }, (_, index) => `policy-${index}`)
+    const gateIds = Array.from({ length: 100 }, (_, index) => `gate-${index}`)
+    const exactExecution: import('@fuzequality/contracts').TestExecutionDetail = {
+      ...loadExecution,
+      catalogRevision: 'catalog-revision-large',
+      policyArtifactIds: policyIds,
+      gateArtifactIds: gateIds,
+    }
+    vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
+    vi.mocked(api.testExecution).mockResolvedValue(exactExecution)
+    vi.mocked(api.qualityArtifactsByIdsBatched).mockResolvedValue({ items: [] })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect execution detail' }))
+
+    const dialog = await screen.findByRole('dialog', { name: exactExecution.name })
+    await waitFor(() => expect(api.qualityArtifactsByIdsBatched).toHaveBeenCalledWith(
+      repository.id,
+      [...policyIds, ...gateIds],
+      exactExecution.catalogRevision,
+    ))
+    expect(within(dialog).getByText(
+      '100 policies and 100 gates are associated, but no unambiguous pair outcome exists',
+    )).toBeVisible()
   })
 
   it('retains successful execution continuation when another repository fails', async () => {
