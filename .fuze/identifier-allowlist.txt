@@ -31,8 +31,8 @@
 # broadening the exception.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality test-implementation entity
 src FuzeQuality/apps/api/src/index.ts:503                   # FuzeQuality test-execution entity
-src FuzeQuality/apps/api/src/index.ts:1062                  # FuzeQuality controlled test-suite dispatch audit entity
-src FuzeQuality/apps/api/src/index.ts:1122                  # FuzeQuality legacy performance dispatch audit entity
+src FuzeQuality/apps/api/src/index.ts:1068                  # FuzeQuality controlled test-suite dispatch audit entity
+src FuzeQuality/apps/api/src/index.ts:1129                  # FuzeQuality legacy performance dispatch audit entity
 src FuzeQuality/packages/core/src/store.ts:488              # FuzeQuality repository-flow review audit entity
 src FuzeQuality/packages/core/src/store.ts:547              # FuzeQuality policy-gate review audit entity
 src FuzeQuality/packages/core/src/store.ts:752              # FuzeQuality repository entity
@@ -45,4 +45,4 @@ src FuzeQuality/packages/core/src/store.ts:895              # FuzeQuality expect
 src FuzeQuality/packages/core/src/store.ts:981              # FuzeQuality admin-context audit entity
 src FuzeQuality/packages/core/src/store.ts:1069             # FuzeQuality identity-event outbox entity
 src FuzeQuality/packages/core/src/store.ts:1080             # FuzeQuality design-test-link outbox entity
-src FuzeQuality/packages/core/src/store.ts:2709             # FuzeQuality admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:2712             # FuzeQuality admin-context audit entity

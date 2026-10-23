@@ -804,6 +804,7 @@ export const testSuiteDispatchSchema = z.object({
   repositoryId: z.string().uuid(),
   tenantId: z.string().trim().min(1).max(200),
   artifactId: z.string().trim().min(1).max(500),
+  artifactLogicalId: z.string().trim().min(1).max(500),
   artifactKind: z.enum([
     'integration-test',
     'post-production-test',

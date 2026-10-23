@@ -155,6 +155,7 @@ function acceptedDispatch(
     repositoryId: artifact.repositoryId,
     tenantId: '22222222-2222-4222-8222-222222222222',
     artifactId: artifact.id,
+    artifactLogicalId: artifact.logicalId ?? artifact.id,
     artifactKind: artifact.kind as TestSuiteDispatch['artifactKind'],
     workflowPath: artifact.sourcePath,
     ref: 'main',
@@ -2149,6 +2150,37 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(await screen.findByText(/Requested by older-reviewer/)).toBeVisible()
     expect(historyRequest).toHaveBeenNthCalledWith(1, repository.id, loadArtifact.id, undefined)
     expect(historyRequest).toHaveBeenNthCalledWith(2, repository.id, loadArtifact.id, 'dispatch-page-2')
+  })
+
+  it('keeps dispatch history visible when a rescan replaces the artifact observation', async () => {
+    mockEvidenceApis()
+    const currentArtifact = {
+      ...loadArtifact,
+      id: 'artifact-load-current-revision',
+      logicalId: 'workflow:.github/workflows/load.yml',
+    }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([currentArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const priorDispatch = {
+      ...acceptedDispatch(currentArtifact),
+      artifactId: 'artifact-load-prior-revision',
+      artifactLogicalId: currentArtifact.logicalId,
+    }
+    vi.mocked(api.latestTestSuiteDispatches).mockResolvedValue({ items: [priorDispatch] })
+    vi.mocked(api.testSuiteDispatchHistory).mockResolvedValue({
+      items: [priorDispatch],
+      page: { nextCursor: null, hasMore: false },
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(/Latest controlled dispatch · accepted/)).toBeVisible()
+    fireEvent.click(screen.getByText('Controlled dispatch history'))
+    await waitFor(() => expect(api.testSuiteDispatchHistory).toHaveBeenCalledWith(
+      repository.id,
+      currentArtifact.id,
+      undefined,
+    ))
   })
 
   it('offers controlled dispatch only for the preferred classification of a shared workflow', async () => {

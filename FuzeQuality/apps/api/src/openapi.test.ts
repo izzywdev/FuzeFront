@@ -551,6 +551,10 @@ describe('contract discovery', () => {
       expect(schemas.TestSuiteDispatchAudit.properties.inputNames.description).toContain(
         'values are never persisted'
       )
+      expect(schemas.TestSuiteDispatchAudit.required).toContain('artifactLogicalId')
+      expect(schemas.TestSuiteDispatchAudit.properties.artifactLogicalId.description).toContain(
+        'across repository scans'
+      )
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.responses['200'].content[
           'application/json'

@@ -964,12 +964,18 @@ app.get('/api/v1/repositories/:id/test-suites/:artifactId/dispatches', mayReadCa
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const artifactId = Array.isArray(request.params.artifactId) ? request.params.artifactId[0] : request.params.artifactId
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)
+  const artifact = artifacts.find(item => item.id === artifactId)
+  if (!artifact || !['integration-test', 'post-production-test', 'load-test', 'stress-test'].includes(artifact.kind)) {
+    return response.status(404).json({ error: 'Test suite not found' })
+  }
   const filter = historyPageQuerySchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   const cursor = decodeUuidHistoryCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
-  const history = await store.testSuiteDispatchHistory(repositoryId, tenantId, artifactId, {
+  const history = await store.testSuiteDispatchHistory(repositoryId, tenantId, artifact.logicalId ?? artifact.id, {
     after: cursor.data,
     limit: filter.data.limit + 1,
   })
@@ -1063,6 +1069,7 @@ app.post('/api/v1/repositories/:id/test-suites/:artifactId/execute', mayRunExecu
     repositoryId,
     tenantId,
     artifactId: artifact.id,
+    artifactLogicalId: artifact.logicalId ?? artifact.id,
     artifactKind: artifact.kind as TestSuiteDispatch['artifactKind'],
     workflowPath,
     ref: repository.defaultBranch,
@@ -1123,6 +1130,7 @@ app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRu
     repositoryId,
     tenantId,
     artifactId: artifact.id,
+    artifactLogicalId: artifact.logicalId ?? artifact.id,
     artifactKind: artifact.kind as TestSuiteDispatch['artifactKind'],
     workflowPath,
     ref: repository.defaultBranch,

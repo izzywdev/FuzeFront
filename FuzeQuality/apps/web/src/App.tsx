@@ -5601,7 +5601,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         preferredExecutionKind !== undefined &&
                         !isPreferredWorkflowExecutionArtifact(item, sharedWorkflowArtifacts)
                       const latestDispatch = testSuiteDispatches.find(dispatch =>
-                        dispatch.repositoryId === item.repositoryId && dispatch.artifactId === item.id
+                        dispatch.repositoryId === item.repositoryId &&
+                        dispatch.artifactLogicalId === (item.logicalId ?? item.id)
                       )
                       return (
                       <article className="catalog-row" key={item.id}>

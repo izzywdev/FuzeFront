@@ -8,6 +8,7 @@ const receipt = (id: string, requestedAt: string): TestSuiteDispatch => ({
   repositoryId: '11111111-1111-4111-8111-111111111111',
   tenantId: 'tenant-1',
   artifactId: 'suite:load',
+  artifactLogicalId: 'workflow:.github/workflows/load.yml',
   artifactKind: 'load-test',
   workflowPath: '.github/workflows/load.yml',
   ref: 'main',

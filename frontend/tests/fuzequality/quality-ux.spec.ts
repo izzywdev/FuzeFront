@@ -54,7 +54,7 @@ const qualityArtifacts = [
   { id: 'policy-artifact', repositoryId: 'repo-1', kind: 'policy', title: 'Administrative suspension policy', sourcePath: 'docs/policies/apps.md', summary: 'Only administrators may suspend apps', evidence: ['role=administrator'] },
   { id: 'gate-artifact', repositoryId: 'repo-1', kind: 'gate', title: 'Suspension authorization gate', sourcePath: '.github/workflows/quality.yml', summary: 'Checks the administrator boundary', evidence: ['npm run test:authorization'] },
   { id: 'shared-integration-artifact', repositoryId: 'repo-1', kind: 'integration-test', title: 'Application API integration alias', sourcePath: '.github/workflows/load.yml', summary: 'Shared workflow integration classification', evidence: ['npm run test:integration'], execution: { provider: 'github-actions', workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' } },
-  { id: 'load-artifact', repositoryId: 'repo-1', kind: 'load-test', title: 'Application API load test', sourcePath: '.github/workflows/load.yml', summary: 'Sustained application API load', evidence: ['p95 < 500ms'], execution: { provider: 'github-actions', workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' } },
+  { id: 'load-artifact', logicalId: 'workflow:.github/workflows/load.yml', repositoryId: 'repo-1', kind: 'load-test', title: 'Application API load test', sourcePath: '.github/workflows/load.yml', summary: 'Sustained application API load', evidence: ['p95 < 500ms'], execution: { provider: 'github-actions', workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' } },
 ]
 
 const repositoryFlowCandidates = [{
@@ -202,6 +202,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
           repositoryId: 'repo-1',
           tenantId: 'tenant-1',
           artifactId: 'load-artifact',
+          artifactLogicalId: 'workflow:.github/workflows/load.yml',
           artifactKind: 'load-test',
           workflowPath: '.github/workflows/load.yml',
           ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -217,6 +218,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
           repositoryId: 'repo-1',
           tenantId: 'tenant-1',
           artifactId: 'load-artifact',
+          artifactLogicalId: 'workflow:.github/workflows/load.yml',
           artifactKind: 'load-test',
           workflowPath: '.github/workflows/load.yml',
           ref: '9999999999999999999999999999999999999999',
@@ -243,6 +245,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
         repositoryId: 'repo-1',
         tenantId: 'tenant-1',
         artifactId: 'load-artifact',
+        artifactLogicalId: 'workflow:.github/workflows/load.yml',
         artifactKind: 'load-test',
         workflowPath: '.github/workflows/load.yml',
         ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -1040,6 +1043,41 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText(/Requested by release-operator/)).toContainText(
       'reviewed inputs: duration, profile'
     )
+  })
+
+  test('retains controlled dispatch evidence across analyzed artifact revisions', async ({ page }) => {
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [{
+            id: '00000000-0000-4000-8000-000000000001',
+            repositoryId: 'repo-1',
+            tenantId: 'tenant-1',
+            artifactId: 'load-artifact-prior-revision',
+            artifactLogicalId: 'workflow:.github/workflows/load.yml',
+            artifactKind: 'load-test',
+            workflowPath: '.github/workflows/load.yml',
+            ref: '8888888888888888888888888888888888888888',
+            sourceRevision: '8888888888888888888888888888888888888888',
+            requestedBy: 'prior-release-operator',
+            inputNames: [],
+            status: 'accepted',
+            requestedAt: '2026-10-21T22:00:00.000Z',
+            completedAt: '2026-10-21T22:00:01.000Z',
+          }],
+        }),
+      }),
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const retained = page.getByRole('status').filter({
+      hasText: 'Latest controlled dispatch · accepted',
+    })
+    await expect(retained).toContainText('revision 888888888888')
+    await expect(retained).toContainText('requested by prior-release-operator')
   })
 
   test('keeps failed policy-gate review rationale available for retry', async ({ page }) => {

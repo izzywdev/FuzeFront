@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.74.0
+  version: 0.75.0
   license:
     name: UNLICENSED
 servers:
@@ -2272,12 +2272,17 @@ components:
     TestSuiteDispatchAudit:
       type: object
       additionalProperties: false
-      required: [id, repositoryId, tenantId, artifactId, artifactKind, workflowPath, ref, sourceRevision, requestedBy, inputNames, status, requestedAt]
+      required: [id, repositoryId, tenantId, artifactId, artifactLogicalId, artifactKind, workflowPath, ref, sourceRevision, requestedBy, inputNames, status, requestedAt]
       properties:
         id: { type: string, format: uuid }
         repositoryId: { type: string, format: uuid }
         tenantId: { type: string, minLength: 1, maxLength: 200 }
         artifactId: { type: string, minLength: 1, maxLength: 500 }
+        artifactLogicalId:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Stable suite identity used to retain dispatch history across repository scans.
         artifactKind: { type: string, enum: [integration-test, post-production-test, load-test, stress-test] }
         workflowPath: { type: string, minLength: 1, maxLength: 1000 }
         ref: { type: string, minLength: 1, maxLength: 500 }

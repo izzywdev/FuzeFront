@@ -246,7 +246,7 @@ export interface CatalogStore {
   policyGatePerformance(repositoryId: string, tenantId: string, query?: PolicyGatePerformanceQuery): Promise<PolicyGatePerformance[]>
   saveTestExecution(execution: TestExecution): Promise<void>
   latestTestSuiteDispatches(repositoryId: string, tenantId: string): Promise<TestSuiteDispatch[]>
-  testSuiteDispatchHistory(repositoryId: string, tenantId: string, artifactId: string, query?: TestSuiteDispatchHistoryQuery): Promise<TestSuiteDispatch[]>
+  testSuiteDispatchHistory(repositoryId: string, tenantId: string, artifactLogicalId: string, query?: TestSuiteDispatchHistoryQuery): Promise<TestSuiteDispatch[]>
   saveTestSuiteDispatch(dispatch: TestSuiteDispatch): Promise<void>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   updateRepositoryAdministration(
@@ -713,7 +713,7 @@ export class MemoryCatalogStore implements CatalogStore {
       .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
       .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
       .forEach(item => {
-        if (!latest.has(item.artifactId)) latest.set(item.artifactId, structuredClone(item))
+        if (!latest.has(item.artifactLogicalId)) latest.set(item.artifactLogicalId, structuredClone(item))
       })
     return [...latest.values()]
   }
@@ -721,12 +721,12 @@ export class MemoryCatalogStore implements CatalogStore {
   async testSuiteDispatchHistory(
     repositoryId: string,
     tenantId: string,
-    artifactId: string,
+    artifactLogicalId: string,
     query: TestSuiteDispatchHistoryQuery = {},
   ) {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 100)
     return this.testSuiteDispatches
-      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId && item.artifactId === artifactId)
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId && item.artifactLogicalId === artifactLogicalId)
       .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
       .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
       .slice(0, limit)
@@ -1984,12 +1984,12 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async latestTestSuiteDispatches(repositoryId: string, tenantId: string): Promise<TestSuiteDispatch[]> {
     const result = await this.pool.query(
-      `SELECT DISTINCT ON (artifact_id)
-         id,repository_id,tenant_id,artifact_id,artifact_kind,workflow_path,source_ref,
+      `SELECT DISTINCT ON (artifact_logical_id)
+         id,repository_id,tenant_id,artifact_id,artifact_logical_id,artifact_kind,workflow_path,source_ref,
          source_revision,requested_by,input_names,status,error,requested_at,completed_at
        FROM fuzequality.test_suite_dispatches
        WHERE repository_id=$1 AND tenant_id=$2
-       ORDER BY artifact_id,requested_at DESC,id DESC`,
+       ORDER BY artifact_logical_id,requested_at DESC,id DESC`,
       [repositoryId, tenantId],
     )
     return result.rows.map(row => ({
@@ -1997,6 +1997,7 @@ export class PostgresCatalogStore implements CatalogStore {
       repositoryId: row.repository_id,
       tenantId: row.tenant_id,
       artifactId: row.artifact_id,
+      artifactLogicalId: row.artifact_logical_id,
       artifactKind: row.artifact_kind,
       workflowPath: row.workflow_path,
       ref: row.source_ref,
@@ -2013,18 +2014,18 @@ export class PostgresCatalogStore implements CatalogStore {
   async testSuiteDispatchHistory(
     repositoryId: string,
     tenantId: string,
-    artifactId: string,
+    artifactLogicalId: string,
     query: TestSuiteDispatchHistoryQuery = {},
   ): Promise<TestSuiteDispatch[]> {
-    const values: unknown[] = [repositoryId, tenantId, artifactId]
-    const clauses = ['repository_id=$1', 'tenant_id=$2', 'artifact_id=$3']
+    const values: unknown[] = [repositoryId, tenantId, artifactLogicalId]
+    const clauses = ['repository_id=$1', 'tenant_id=$2', 'artifact_logical_id=$3']
     if (query.after) {
       values.push(query.after.createdAt, query.after.id)
       clauses.push(`(requested_at,id) < ($${values.length - 1}::timestamptz,$${values.length}::uuid)`)
     }
     values.push(Math.min(Math.max(query.limit ?? 50, 1), 100))
     const result = await this.pool.query(
-      `SELECT id,repository_id,tenant_id,artifact_id,artifact_kind,workflow_path,source_ref,
+      `SELECT id,repository_id,tenant_id,artifact_id,artifact_logical_id,artifact_kind,workflow_path,source_ref,
          source_revision,requested_by,input_names,status,error,requested_at,completed_at
        FROM fuzequality.test_suite_dispatches
        WHERE ${clauses.join(' AND ')}
@@ -2037,6 +2038,7 @@ export class PostgresCatalogStore implements CatalogStore {
       repositoryId: row.repository_id,
       tenantId: row.tenant_id,
       artifactId: row.artifact_id,
+      artifactLogicalId: row.artifact_logical_id,
       artifactKind: row.artifact_kind,
       workflowPath: row.workflow_path,
       ref: row.source_ref,
@@ -2053,9 +2055,9 @@ export class PostgresCatalogStore implements CatalogStore {
   async saveTestSuiteDispatch(dispatch: TestSuiteDispatch): Promise<void> {
     await this.pool.query(
       `INSERT INTO fuzequality.test_suite_dispatches
-         (id,repository_id,tenant_id,artifact_id,artifact_kind,workflow_path,source_ref,
+         (id,repository_id,tenant_id,artifact_id,artifact_logical_id,artifact_kind,workflow_path,source_ref,
           source_revision,requested_by,input_names,status,error,requested_at,completed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT (id) DO UPDATE SET
          status=EXCLUDED.status,
          error=EXCLUDED.error,
@@ -2065,6 +2067,7 @@ export class PostgresCatalogStore implements CatalogStore {
         dispatch.repositoryId,
         dispatch.tenantId,
         dispatch.artifactId,
+        dispatch.artifactLogicalId,
         dispatch.artifactKind,
         dispatch.workflowPath,
         dispatch.ref,

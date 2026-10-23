@@ -8,6 +8,7 @@ function dispatch(overrides: Partial<TestSuiteDispatch> = {}): TestSuiteDispatch
     repositoryId: '11111111-1111-4111-8111-111111111111',
     tenantId: '22222222-2222-4222-8222-222222222222',
     artifactId: 'suite:load',
+    artifactLogicalId: 'workflow:.github/workflows/load.yml',
     artifactKind: 'load-test',
     workflowPath: '.github/workflows/load.yml',
     ref: 'main',
@@ -42,11 +43,12 @@ describe('test-suite dispatch audit', () => {
       .not.toContain('production-secret')
   })
 
-  it('returns only the newest receipt per artifact within the requested tenant', async () => {
+  it('returns only the newest receipt per logical suite within the requested tenant', async () => {
     const store = new MemoryCatalogStore()
     const first = dispatch({ id: '44444444-4444-4444-8444-444444444444' })
     const latest = dispatch({
       id: '55555555-5555-4555-8555-555555555555',
+      artifactId: 'suite:load:new-revision',
       status: 'failed',
       error: 'provider unavailable',
       requestedAt: '2026-10-22T20:01:00.000Z',
@@ -84,12 +86,13 @@ describe('test-suite dispatch audit', () => {
     await store.saveTestSuiteDispatch(dispatch({
       id: '88888888-8888-4888-8888-888888888888',
       artifactId: 'suite:stress',
+      artifactLogicalId: 'workflow:.github/workflows/stress.yml',
       requestedAt: '2026-10-22T20:03:00.000Z',
     }))
 
-    expect(await store.testSuiteDispatchHistory(newest.repositoryId, newest.tenantId, newest.artifactId, { limit: 2 }))
+    expect(await store.testSuiteDispatchHistory(newest.repositoryId, newest.tenantId, newest.artifactLogicalId, { limit: 2 }))
       .toEqual([newest, middle])
-    expect(await store.testSuiteDispatchHistory(newest.repositoryId, newest.tenantId, newest.artifactId, {
+    expect(await store.testSuiteDispatchHistory(newest.repositoryId, newest.tenantId, newest.artifactLogicalId, {
       after: { createdAt: middle.requestedAt, id: middle.id },
       limit: 2,
     })).toEqual([oldest])
