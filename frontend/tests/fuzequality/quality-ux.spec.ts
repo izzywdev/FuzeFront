@@ -698,6 +698,33 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('policy-historical → gate-historical', { exact: true })).toBeVisible()
   })
 
+  test('keeps gate outcomes scoped to the selected policy-gate pair', async ({ page }) => {
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Inspect execution evidence' }).click()
+
+    const scopedRequests = Promise.all([
+      page.waitForRequest(request => {
+        const url = new URL(request.url())
+        return url.pathname.endsWith('/test-executions') && url.searchParams.get('gateOutcome') === 'failed'
+      }),
+      page.waitForRequest(request => {
+        const url = new URL(request.url())
+        return url.pathname.endsWith('/execution-trend') && url.searchParams.get('gateOutcome') === 'failed'
+      }),
+      page.waitForRequest(request => {
+        const url = new URL(request.url())
+        return url.pathname.endsWith('/execution-performance') && url.searchParams.get('gateOutcome') === 'failed'
+      }),
+    ])
+    await page.getByRole('combobox', { name: 'Gate outcome' }).selectOption('failed')
+
+    for (const request of await scopedRequests) {
+      const url = new URL(request.url())
+      expect(url.searchParams.get('policyArtifactId')).toBe('policy-artifact')
+      expect(url.searchParams.get('gateArtifactId')).toBe('gate-artifact')
+    }
+  })
+
   test('continues immutable UX-flow and governance review audit pages', async ({ page }) => {
     await page.route(
       url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates/candidate-1/history',

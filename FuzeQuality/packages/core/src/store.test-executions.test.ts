@@ -13,6 +13,27 @@ describe('test execution evidence', () => {
       .resolves.toEqual([])
   })
 
+  it('scopes a gate outcome to the selected policy-gate pair in history and trends', async () => {
+    const store = new MemoryCatalogStore()
+    await store.saveTestExecution({
+      id: 'mixed-pairs', repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions',
+      externalRunId: 'mixed-pairs', attempt: 1, revision: 'abc', kind: 'integration', status: 'failed',
+      name: 'mixed policy gates', policyArtifactIds: ['policy-a', 'policy-b'], gateArtifactIds: ['gate-a', 'gate-b'],
+      gateEvaluations: [
+        { policyArtifactId: 'policy-a', gateArtifactId: 'gate-a', status: 'passed' },
+        { policyArtifactId: 'policy-b', gateArtifactId: 'gate-b', status: 'failed' },
+      ],
+      thresholds: [], evidenceLinks: [], completedAt: '2026-10-10T12:00:00.000Z',
+    })
+
+    const selectedPair = { policyArtifactId: 'policy-a', gateArtifactId: 'gate-a', gateOutcome: 'failed' as const }
+    await expect(store.testExecutions('repo-1', 'org-1', selectedPair)).resolves.toEqual([])
+    await expect(store.executionOutcomeTrend('repo-1', 'org-1', selectedPair)).resolves.toEqual([])
+    await expect(store.testExecutions('repo-1', 'org-1', {
+      policyArtifactId: 'policy-b', gateArtifactId: 'gate-b', gateOutcome: 'failed',
+    })).resolves.toEqual([expect.objectContaining({ id: 'mixed-pairs' })])
+  })
+
   it('retains provider evidence collection failures with the exact execution attempt', async () => {
     const store = new MemoryCatalogStore()
     await store.saveTestExecution({
@@ -248,6 +269,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("threshold.value->>'passed'=CASE $20")
     expect(String(sql)).toContain('executions.name=$21')
     expect(String(sql)).toContain("gate_evaluation.value->>'status',executions.status)=$22")
+    expect(String(sql)).toContain("executions.repository_id,gate_evaluation.value->>'policyArtifactId'")
+    expect(String(sql)).toContain("executions.repository_id,gate_evaluation.value->>'gateArtifactId'")
     expect(String(sql)).toContain('executions.branch=$23')
     expect(String(sql)).toContain("$24='not-collected' AND executions.evidence_collection IS NULL")
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")
@@ -309,6 +332,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("threshold.value->>'passed'=CASE $20")
     expect(String(sql)).toContain('executions.name=$21')
     expect(String(sql)).toContain("gate_evaluation.value->>'status',executions.status)=$22")
+    expect(String(sql)).toContain("executions.repository_id,gate_evaluation.value->>'policyArtifactId'")
+    expect(String(sql)).toContain("executions.repository_id,gate_evaluation.value->>'gateArtifactId'")
     expect(String(sql)).toContain('executions.branch=$23')
     expect(String(sql)).toContain("$24='not-collected' AND executions.evidence_collection IS NULL")
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")

@@ -2776,11 +2776,30 @@ describe('RepositoryIntelligence flow inventory', () => {
       'including equivalent artifact observations across repository revisions'
     )
 
+    fireEvent.change(screen.getByLabelText('Gate outcome'), { target: { value: 'failed' } })
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        policyArtifactId: 'policy-auth',
+        gateArtifactId: 'gate-auth',
+        gateOutcome: 'failed',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        policyArtifactId: 'policy-auth',
+        gateArtifactId: 'gate-auth',
+        gateOutcome: 'failed',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        policyArtifactId: 'policy-auth',
+        gateArtifactId: 'gate-auth',
+        gateOutcome: 'failed',
+      })
+    })
+
     fireEvent.click(screen.getByRole('button', { name: 'Clear policy-gate focus' }))
     await waitFor(() => {
-      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {})
-      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {})
-      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {})
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, { gateOutcome: 'failed' })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, { gateOutcome: 'failed' })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, { gateOutcome: 'failed' })
     })
   })
 

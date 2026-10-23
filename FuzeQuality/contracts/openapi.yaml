@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.80.0
+  version: 0.81.0
   license:
     name: UNLICENSED
 servers:
@@ -1502,7 +1502,7 @@ components:
     ExecutionGateOutcome:
       name: gateOutcome
       in: query
-      description: Require retained policy-gate evaluation evidence with this outcome. Legacy one-policy/one-gate executions use the execution outcome.
+      description: Require retained policy-gate evaluation evidence with this outcome. When policyArtifactId or gateArtifactId is supplied, the outcome must belong to that selected policy, gate, or exact pair rather than another evaluation in the same execution. Legacy one-policy/one-gate executions use the execution outcome.
       schema: { $ref: '#/components/schemas/ExecutionStatus' }
     ExecutionExternalRunId:
       name: externalRunId

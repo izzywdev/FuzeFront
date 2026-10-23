@@ -92,6 +92,12 @@ describe('execution performance', () => {
     ], { policyArtifactId: 'policy', gateArtifactId: 'gate' })).toHaveLength(1)
     const mixed = { id: 'mixed', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'mixed', attempt: 1, revision: 'e', kind: 'ci' as const, status: 'passed' as const, name: 'mixed gates', policyArtifactIds: ['policy', 'policy-other'], gateArtifactIds: ['gate', 'gate-other'], gateEvaluations: [{ policyArtifactId: 'policy', gateArtifactId: 'gate', status: 'passed' as const }, { policyArtifactId: 'policy-other', gateArtifactId: 'gate-other', status: 'failed' as const }], thresholds: [], evidenceLinks: [] }
     expect(filterTestExecutions([mixed], { gateOutcome: 'failed' })).toEqual([mixed])
+    expect(filterTestExecutions([mixed], {
+      policyArtifactId: 'policy', gateArtifactId: 'gate', gateOutcome: 'failed',
+    })).toEqual([])
+    expect(filterTestExecutions([mixed], {
+      policyArtifactId: 'policy-other', gateArtifactId: 'gate-other', gateOutcome: 'failed',
+    })).toEqual([mixed])
     expect(executionPerformance([mixed], [], 'failed')).toEqual([
       { repositoryId: 'repo', policyArtifactId: 'policy-other', gateArtifactId: 'gate-other', revisions: ['e'], total: 1, passed: 0, failed: 1, cancelled: 0, running: 0, passRate: 0 },
     ])

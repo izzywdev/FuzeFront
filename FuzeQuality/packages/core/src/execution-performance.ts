@@ -151,6 +151,21 @@ export function executionMatchesPolicyGate(
     pairs.some(pair => pair.gateArtifactId === selectedGateArtifactId)
 }
 
+/** Applies an outcome to the selected pair instead of any unrelated pair in the same execution. */
+function executionMatchesGateOutcome(
+  execution: TestExecution,
+  outcome?: TestExecution['status'],
+  policyArtifactId?: string,
+  gateArtifactId?: string,
+) {
+  if (!outcome) return true
+  return retainedGateEvaluations(execution).some(evaluation =>
+    evaluation.status === outcome &&
+    (!policyArtifactId || evaluation.policyArtifactId === policyArtifactId) &&
+    (!gateArtifactId || evaluation.gateArtifactId === gateArtifactId)
+  )
+}
+
 /** Requires retained failed-attempt evidence; a successful rerun alone is not recovery evidence. */
 export function isRecoveredExecution(execution: TestExecution, history: TestExecution[]): boolean {
   if (execution.attempt <= 1 || execution.status !== 'passed') return false
@@ -223,7 +238,7 @@ export function filterTestExecutions(
     if (filter.thresholdOutcome && !execution.thresholds.some(threshold =>
       threshold.passed === (filter.thresholdOutcome === 'passed')
     )) return false
-    if (filter.gateOutcome && !retainedGateEvaluations(execution).some(evaluation => evaluation.status === filter.gateOutcome)) return false
+    if (!executionMatchesGateOutcome(execution, filter.gateOutcome, selectedPolicyArtifactId, selectedGateArtifactId)) return false
     if (filter.externalRunId && execution.externalRunId !== filter.externalRunId) return false
     if (filter.name && execution.name !== filter.name) return false
     if (!executionMatchesPolicyGate(execution, selectedPolicyArtifactId, selectedGateArtifactId)) return false

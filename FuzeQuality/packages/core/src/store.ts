@@ -1546,11 +1546,21 @@ export class PostgresCatalogStore implements CatalogStore {
                  THEN executions.gate_evaluations
                WHEN jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
                  AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
-                 THEN jsonb_build_array(jsonb_build_object('status',executions.status))
+                 THEN jsonb_build_array(jsonb_build_object(
+                   'policyArtifactId',executions.policy_artifact_ids->>0,
+                   'gateArtifactId',executions.gate_artifact_ids->>0,
+                   'status',executions.status
+                 ))
                ELSE '[]'::jsonb
              END
            ) AS gate_evaluation(value)
            WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
+             AND ($17::text IS NULL OR fuzequality.quality_artifact_logical_id(
+               executions.repository_id,gate_evaluation.value->>'policyArtifactId'
+             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$17))
+             AND ($18::text IS NULL OR fuzequality.quality_artifact_logical_id(
+               executions.repository_id,gate_evaluation.value->>'gateArtifactId'
+             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$18))
          ))
          AND ($23::text IS NULL OR executions.branch=$23)
          AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
@@ -1757,11 +1767,21 @@ export class PostgresCatalogStore implements CatalogStore {
                  THEN executions.gate_evaluations
                WHEN jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
                  AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
-                 THEN jsonb_build_array(jsonb_build_object('status',executions.status))
+                 THEN jsonb_build_array(jsonb_build_object(
+                   'policyArtifactId',executions.policy_artifact_ids->>0,
+                   'gateArtifactId',executions.gate_artifact_ids->>0,
+                   'status',executions.status
+                 ))
                ELSE '[]'::jsonb
              END
            ) AS gate_evaluation(value)
            WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
+             AND ($17::text IS NULL OR fuzequality.quality_artifact_logical_id(
+               executions.repository_id,gate_evaluation.value->>'policyArtifactId'
+             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$17))
+             AND ($18::text IS NULL OR fuzequality.quality_artifact_logical_id(
+               executions.repository_id,gate_evaluation.value->>'gateArtifactId'
+             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$18))
          ))
          AND ($23::text IS NULL OR executions.branch=$23)
          AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
