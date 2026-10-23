@@ -1833,6 +1833,71 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(within(provenance).getByText(storyArtifact.sourcePath)).toBeVisible()
   })
 
+  it('loads exact evidence on demand when an older flow was outside the prefetch window', async () => {
+    mockEvidenceApis()
+    const oldRevision = 'historical-revision-omitted-from-prefetch'
+    const oldArtifact = {
+      ...storyArtifact,
+      id: 'artifact-old-flow',
+      title: 'Historical checkout state',
+      sourcePath: 'src/historical/Checkout.stories.tsx',
+    }
+    const oldFlow = {
+      ...candidate,
+      id: 'flow-old-inspected',
+      revision: oldRevision,
+      title: 'Historical checkout flow',
+      evidence: [oldArtifact.id],
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis',
+        promptVersion: 'flow-v2',
+        schemaVersion: '2.0',
+      },
+    }
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([oldFlow])
+    vi.spyOn(api, 'repositoryFlowCandidate').mockResolvedValue(oldFlow)
+    vi.mocked(api.qualityArtifactsByIdsBatched).mockResolvedValue({ items: [oldArtifact] })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect flow and wireframe' }))
+
+    const inspector = await screen.findByRole('dialog', { name: oldFlow.title })
+    await waitFor(() => expect(api.qualityArtifactsByIdsBatched).toHaveBeenCalledWith(
+      repository.id,
+      [oldArtifact.id],
+      oldRevision,
+    ))
+    expect(within(inspector).getByText(oldArtifact.sourcePath)).toBeVisible()
+    expect(within(inspector).queryByText(/evidence is regenerated/i)).not.toBeInTheDocument()
+  })
+
+  it('distinguishes an exact-evidence lookup failure from missing repository evidence', async () => {
+    mockEvidenceApis()
+    const flow = {
+      ...candidate,
+      evidence: [storyArtifact.id],
+      analysis: {
+        provider: 'fuzeinfra-litellm' as const,
+        model: 'quality-analysis',
+        promptVersion: 'flow-v2',
+        schemaVersion: '2.0',
+      },
+    }
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([flow])
+    vi.spyOn(api, 'repositoryFlowCandidate').mockResolvedValue(flow)
+    vi.mocked(api.qualityArtifactsByIdsBatched).mockRejectedValue(new Error('evidence service unavailable'))
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect flow and wireframe' }))
+
+    const inspector = await screen.findByRole('dialog', { name: flow.title })
+    expect(await within(inspector).findByRole('alert')).toHaveTextContent(
+      'Exact revision evidence could not be loaded: evidence service unavailable'
+    )
+    expect(within(inspector).queryByText(/Do not confirm this flow until its evidence is regenerated/i)).not.toBeInTheDocument()
+  })
+
   it('resolves flow evidence identifiers to repository source paths', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([storyArtifact])

@@ -36,6 +36,7 @@ export function FlowInspector({
   artifacts,
   loading = false,
   error,
+  evidenceError,
   onClose,
 }: {
   open: boolean
@@ -44,6 +45,7 @@ export function FlowInspector({
   artifacts: QualityArtifact[]
   loading?: boolean
   error?: string
+  evidenceError?: string
   onClose: () => void
 }) {
   const artifactsById = new Map(artifacts.flatMap(artifact => [
@@ -120,7 +122,12 @@ export function FlowInspector({
                 </li>
               ))}
             </ol>
-            {unavailableTargetIds.length > 0 && (
+            {evidenceError && (
+              <div className="flow-inspector-state form-error" role="alert">
+                <AlertTriangle size={16} /> Exact revision evidence could not be loaded: {evidenceError}
+              </div>
+            )}
+            {!evidenceError && unavailableTargetIds.length > 0 && (
               <div className="flow-inspector-state form-error" role="alert">
                 <AlertTriangle size={16} />
                 {unavailableTargetIds.length} artifact reference {unavailableTargetIds.length === 1 ? 'is' : 'are'} unavailable in this exact repository revision. Do not confirm this flow until its evidence is regenerated.

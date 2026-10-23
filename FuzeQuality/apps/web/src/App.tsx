@@ -3721,8 +3721,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   )
   const [flowInspectorOpen, setFlowInspectorOpen] = useState(false)
   const [inspectedFlow, setInspectedFlow] = useState<RepositoryFlowCandidate>()
+  const [flowInspectorArtifacts, setFlowInspectorArtifacts] = useState<QualityArtifact[]>([])
   const [flowInspectorLoading, setFlowInspectorLoading] = useState(false)
   const [flowInspectorError, setFlowInspectorError] = useState<string>()
+  const [flowInspectorEvidenceError, setFlowInspectorEvidenceError] = useState<string>()
   const flowInspectorRequest = useRef(0)
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
@@ -3922,11 +3924,35 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     const request = ++flowInspectorRequest.current
     setFlowInspectorOpen(true)
     setInspectedFlow(undefined)
+    setFlowInspectorArtifacts([])
     setFlowInspectorError(undefined)
+    setFlowInspectorEvidenceError(undefined)
     setFlowInspectorLoading(true)
     try {
       const detail = await api.repositoryFlowCandidate(flow.repositoryId, flow.id)
-      if (request === flowInspectorRequest.current) setInspectedFlow(detail)
+      if (request !== flowInspectorRequest.current) return
+      setInspectedFlow(detail)
+      const evidenceIds = flowArtifactTargetIds(detail)
+      if (evidenceIds.length) {
+        try {
+          const evidence = await api.qualityArtifactsByIdsBatched(
+            detail.repositoryId,
+            evidenceIds,
+            detail.revision,
+          )
+          if (request === flowInspectorRequest.current) {
+            setFlowInspectorArtifacts(evidence.items)
+          }
+        } catch (cause) {
+          if (request === flowInspectorRequest.current) {
+            setFlowInspectorEvidenceError(
+              cause instanceof Error
+                ? cause.message
+                : 'Unable to load exact UX-flow evidence'
+            )
+          }
+        }
+      }
     } catch (cause) {
       if (request === flowInspectorRequest.current) {
         setFlowInspectorError(
@@ -3941,7 +3967,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowInspectorRequest.current++
     setFlowInspectorOpen(false)
     setInspectedFlow(undefined)
+    setFlowInspectorArtifacts([])
     setFlowInspectorError(undefined)
+    setFlowInspectorEvidenceError(undefined)
     setFlowInspectorLoading(false)
   }
   const inspectPolicyGate = async (evaluation: PolicyGateEvaluation) => {
@@ -5121,9 +5149,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         repositoryLabel={inspectedFlow
           ? repositoryLabels.get(inspectedFlow.repositoryId)
           : undefined}
-        artifacts={evidenceArtifacts}
+        artifacts={[...new Map(
+          [...evidenceArtifacts, ...flowInspectorArtifacts]
+            .map(artifact => [artifact.id, artifact])
+        ).values()]}
         loading={flowInspectorLoading}
         error={flowInspectorError}
+        evidenceError={flowInspectorEvidenceError}
         onClose={closeFlowInspector}
       />
       <GovernanceInspector
