@@ -2626,6 +2626,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
   it('refreshes incomplete provider evidence directly from a workflow outcome card', async () => {
     mockEvidenceApis()
+    let evidenceRefreshed = false
     const incomplete = {
       ...loadExecution,
       evidenceCollection: {
@@ -2644,8 +2645,13 @@ describe('RepositoryIntelligence flow inventory', () => {
       evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T05:00:00.000Z' },
     }
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
-    vi.mocked(api.latestPerformanceExecutions).mockResolvedValue({ items: [incomplete] })
-    vi.mocked(api.refreshTestExecutionEvidence).mockResolvedValue(refreshed)
+    vi.mocked(api.latestPerformanceExecutions).mockImplementation(async () => ({
+      items: [evidenceRefreshed ? refreshed : incomplete],
+    }))
+    vi.mocked(api.refreshTestExecutionEvidence).mockImplementation(async () => {
+      evidenceRefreshed = true
+      return refreshed
+    })
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)
@@ -2661,6 +2667,70 @@ describe('RepositoryIntelligence flow inventory', () => {
       'https://github.com/fuze/front/actions/runs/12345/artifacts/99',
     )
     expect(within(outcome).queryByRole('button', { name: 'Refresh provider evidence' })).not.toBeInTheDocument()
+  })
+
+  it('reapplies active evidence filters and aggregates after provider reconciliation', async () => {
+    mockEvidenceApis()
+    let reconciled = false
+    const incomplete: TestExecution = {
+      ...loadExecution,
+      summary: 'Provider evidence is unavailable.',
+      evidenceCollection: {
+        status: 'unavailable',
+        checkedAt: '2026-10-18T04:00:00.000Z',
+        errorCode: 'PROVIDER_TIMEOUT',
+      },
+    }
+    const refreshed: TestExecution = {
+      ...incomplete,
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T05:00:00.000Z' },
+    }
+    vi.mocked(api.testExecutions).mockImplementation(async (_repositoryId, filter = {}) =>
+      filter.evidenceCollectionStatus === 'unavailable' && !reconciled ? [incomplete] : []
+    )
+    vi.mocked(api.executionTrend).mockImplementation(async (_repositoryId, filter = {}) =>
+      filter.evidenceCollectionStatus === 'unavailable' && !reconciled
+        ? [{
+            date: '2026-10-18', total: 1, passed: 0, failed: 1, cancelled: 0, running: 0,
+            passRate: 0, durationSampleCount: 1, averageDurationMs: 60_000,
+            maximumDurationMs: 60_000, retryAttemptCount: 0, successfulRetryCount: 0,
+            recoveredRunCount: 0,
+          }]
+        : []
+    )
+    vi.mocked(api.refreshTestExecutionEvidence).mockImplementation(async () => {
+      reconciled = true
+      return refreshed
+    })
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.change(await screen.findByLabelText('Evidence collection'), {
+      target: { value: 'unavailable' },
+    })
+
+    const summary = await screen.findByText(incomplete.summary!)
+    const row = summary.closest('article')
+    expect(row).not.toBeNull()
+    expect(screen.getByLabelText('Execution outcome trend')).toHaveTextContent('2026-10-18')
+    fireEvent.click(within(row!).getByRole('button', { name: 'Refresh provider evidence' }))
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceCollectionStatus: 'unavailable',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceCollectionStatus: 'unavailable',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceCollectionStatus: 'unavailable',
+      })
+      expect(screen.getByText('No execution evidence received')).toBeVisible()
+      expect(screen.getByLabelText('Execution outcome trend')).toHaveTextContent(
+        'No timestamped outcomes for this filter.'
+      )
+    })
+    expect(screen.queryByText(incomplete.summary!)).not.toBeInTheDocument()
   })
 
   it('reports failed reconciliation while keeping previously verified evidence visible', async () => {

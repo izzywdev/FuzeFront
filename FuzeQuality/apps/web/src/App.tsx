@@ -3751,6 +3751,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionPaginationError, setExecutionPaginationError] = useState<string>()
   const [refreshingExecutionEvidenceId, setRefreshingExecutionEvidenceId] = useState<string>()
   const [executionEvidenceRefreshError, setExecutionEvidenceRefreshError] = useState<string>()
+  const [executionEvidenceRefreshVersion, setExecutionEvidenceRefreshVersion] = useState(0)
   const [executionInspectorOpen, setExecutionInspectorOpen] = useState(false)
   const [inspectedExecution, setInspectedExecution] = useState<import('@fuzequality/contracts').TestExecutionDetail>()
   const [executionInspectorArtifacts, setExecutionInspectorArtifacts] = useState<QualityArtifact[]>([])
@@ -4694,6 +4695,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     data.repositories,
     executionFilter,
     executionRepositoryId,
+    executionEvidenceRefreshVersion,
     invalidExecutionRange,
     invalidExecutionDurationRange,
     invalidEvidenceCheckedRange,
@@ -4857,6 +4859,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setIntegrationExecutions(replace)
       setPostProductionExecutions(replace)
       setInspectedExecution(current => current?.id === refreshed.id ? refreshed : current)
+      setExecutionEvidenceRefreshVersion(version => version + 1)
       if (refreshed.evidenceCollection?.status === 'unavailable') {
         setExecutionEvidenceRefreshError('Provider evidence is still unavailable. The failed lookup remains visible and can be retried.')
       }

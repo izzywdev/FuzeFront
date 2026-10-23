@@ -676,6 +676,84 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(trend).toContainText('2 failed')
   })
 
+  test('reapplies active execution filters after provider evidence reconciliation', async ({ page }) => {
+    let reconciled = false
+    let filteredHistoryRequests = 0
+    let filteredTrendRequests = 0
+    const unavailableExecution = {
+      ...testExecutions[0],
+      summary: 'Provider evidence is unavailable.',
+      evidenceCollection: {
+        status: 'unavailable',
+        checkedAt: '2026-10-18T04:00:00.000Z',
+        errorCode: 'PROVIDER_TIMEOUT',
+      },
+    }
+    await page.route(
+      url => url.pathname.endsWith('/test-executions/evidence/refresh'),
+      route => {
+        reconciled = true
+        return route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ...unavailableExecution,
+            evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T05:00:00.000Z' },
+          }),
+        })
+      },
+    )
+    await page.route(
+      url => url.pathname.endsWith('/test-executions'),
+      route => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get('evidenceCollectionStatus') === 'unavailable') {
+          filteredHistoryRequests += 1
+          return route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify(reconciled ? [] : [unavailableExecution]),
+          })
+        }
+        return route.fulfill({ contentType: 'application/json', body: '[]' })
+      },
+    )
+    await page.route(
+      url => url.pathname.endsWith('/execution-trend'),
+      route => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get('evidenceCollectionStatus') === 'unavailable') {
+          filteredTrendRequests += 1
+          return route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify(reconciled ? [] : [{
+              date: '2026-10-18', total: 1, passed: 0, failed: 1, cancelled: 0,
+              running: 0, passRate: 0, durationSampleCount: 1, averageDurationMs: 120_000,
+              maximumDurationMs: 120_000, retryAttemptCount: 0, successfulRetryCount: 0,
+              recoveredRunCount: 0,
+            }]),
+          })
+        }
+        return route.fulfill({ contentType: 'application/json', body: '[]' })
+      },
+    )
+    await page.route(
+      url => url.pathname.endsWith('/execution-performance'),
+      route => route.fulfill({ contentType: 'application/json', body: '[]' }),
+    )
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByLabel('Evidence collection').selectOption('unavailable')
+    const executionRow = page.getByText('Provider evidence is unavailable.').locator('..')
+    await expect(executionRow).toBeVisible()
+    await expect(page.getByLabel('Execution outcome trend')).toContainText('2026-10-18')
+    await executionRow.getByRole('button', { name: 'Refresh provider evidence' }).click()
+
+    await expect(page.getByText('No execution evidence received')).toBeVisible()
+    await expect(page.getByLabel('Execution outcome trend')).toContainText('No timestamped outcomes for this filter.')
+    expect(filteredHistoryRequests).toBeGreaterThanOrEqual(2)
+    expect(filteredTrendRequests).toBeGreaterThanOrEqual(2)
+  })
+
   test('discards an obsolete outcome-trend page after the filter changes', async ({ page }) => {
     let releaseOlderPage: () => void = () => undefined
     const olderPageRequested = new Promise<void>(resolve => {
