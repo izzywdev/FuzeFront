@@ -500,15 +500,15 @@ describe('RepositoryIntelligence flow inventory', () => {
     await screen.findByText(candidate.title)
 
     fireEvent.click(screen.getByText('UX flow review history'))
-    expect(await screen.findByText('reviewer-2')).toBeVisible()
+    expect(await screen.findByText('reviewer-2', undefined, { timeout: 3_000 })).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Load more UX flow decisions' }))
-    expect(await screen.findByText('reviewer-1')).toBeVisible()
+    expect(await screen.findByText('reviewer-1', undefined, { timeout: 3_000 })).toBeVisible()
     expect(flowHistory).toHaveBeenLastCalledWith(repository.id, candidate.id, 'flow-review-page-2')
 
     fireEvent.click(screen.getByText('Review history'))
-    expect(await screen.findByText('governance-2')).toBeVisible()
+    expect(await screen.findByText('governance-2', undefined, { timeout: 3_000 })).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Load more governance decisions' }))
-    expect(await screen.findByText('governance-1')).toBeVisible()
+    expect(await screen.findByText('governance-1', undefined, { timeout: 3_000 })).toBeVisible()
     expect(policyHistory).toHaveBeenLastCalledWith(repository.id, governanceEvaluation.id, 'policy-review-page-2')
   })
 

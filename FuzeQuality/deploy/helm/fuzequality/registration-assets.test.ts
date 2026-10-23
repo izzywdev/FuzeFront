@@ -172,6 +172,13 @@ describe('FuzeQuality Helm registration assets', () => {
       "RELEASE_BUILD: ${{ github.ref_name == github.event.repository.default_branch && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}",
     )
     expect(workflow).not.toContain("|| github.event_name == 'workflow_dispatch' }}")
+    expect(workflow).toContain('EXPECTED_FINGERPRINT=$(node -p')
+    expect(workflow).toContain('apksigner" verify --print-certs "$SIGNED"')
+    expect(workflow).toContain('test "$ACTUAL_FINGERPRINT" = "$EXPECTED_FINGERPRINT"')
+    expect(workflow).toMatch(/permissions:\n  contents: read/)
+    expect(workflow).toMatch(/build-apk:[\s\S]*?permissions:\n      contents: read/)
+    expect(workflow).toMatch(/release-apk:[\s\S]*?permissions:\n      contents: write/)
+    expect(workflow).toContain('actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c')
   })
 
   it('bounds reviewed repository analysis calls to FuzeInfra LiteLLM', () => {

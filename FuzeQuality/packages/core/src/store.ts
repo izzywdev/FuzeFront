@@ -1136,7 +1136,13 @@ export class PostgresCatalogStore implements CatalogStore {
   private readonly pool: pg.Pool
 
   constructor(connectionString: string) {
-    this.pool = new pg.Pool({ connectionString })
+    this.pool = new pg.Pool({
+      connectionString,
+      // Readiness and API work must fail closed instead of accumulating forever
+      // behind an exhausted pool or an unresponsive database connection.
+      connectionTimeoutMillis: 5_000,
+      query_timeout: 5_000,
+    })
   }
 
   async checkReadiness() {

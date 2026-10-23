@@ -22,7 +22,7 @@ on:
         required: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: fuzequality-android-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
@@ -32,6 +32,12 @@ jobs:
   build-apk:
     name: Build & sign FuzeQuality TWA APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact_name: ${{ steps.apk.outputs.artifact_name }}
+      release_name: ${{ steps.apk.outputs.release_name }}
+      release_tag: ${{ steps.apk.outputs.release_tag }}
     env:
       RELEASE_BUILD: ${{ github.ref_name == github.event.repository.default_branch && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
 
@@ -198,6 +204,14 @@ jobs:
             --ks-key-alias "${{ steps.version.outputs.alias }}" \
             --out "$SIGNED" "$UNSIGNED"
           "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --verbose "$SIGNED"
+          EXPECTED_FINGERPRINT=$(node -p "require('./twa-manifest.json').fingerprints[0].value.replace(/:/g, '').toLowerCase()")
+          ACTUAL_FINGERPRINT=$("$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --print-certs "$SIGNED" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
+          test -n "$ACTUAL_FINGERPRINT" || { echo "Unable to read signed APK certificate fingerprint" >&2; exit 1; }
+          test "$ACTUAL_FINGERPRINT" = "$EXPECTED_FINGERPRINT" || {
+            echo "Signed APK certificate does not match the fingerprint published in twa-manifest.json and assetlinks.json" >&2
+            exit 1
+          }
 
       - name: Locate FuzeQuality APK
         id: apk
@@ -211,21 +225,39 @@ jobs:
           test -n "$APK" || { echo "Expected FuzeQuality APK was not produced" >&2; exit 1; }
           DEST="fuzequality-android-${{ steps.version.outputs.name }}.apk"
           cp "$APK" "$DEST"
+          echo "artifact_name=fuzequality-android-v${{ steps.version.outputs.name }}" >> "$GITHUB_OUTPUT"
           echo "path=FuzeQuality/android/$DEST" >> "$GITHUB_OUTPUT"
+          echo "release_name=FuzeQuality Android v${{ steps.version.outputs.name }}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=fuzequality-android-v${{ steps.version.outputs.name }}" >> "$GITHUB_OUTPUT"
 
       - name: Upload FuzeQuality APK artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: fuzequality-android-v${{ steps.version.outputs.name }}
+          name: ${{ steps.apk.outputs.artifact_name }}
           path: ${{ steps.apk.outputs.path }}
           retention-days: 90
 
+  release-apk:
+    name: Publish FuzeQuality Android release
+    needs: build-apk
+    if: github.ref_name == github.event.repository.default_branch && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # This write-capable job never checks out or executes selected-ref code. It
+      # receives only the APK built by the read-only job above.
+      - name: Download verified FuzeQuality APK
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.build-apk.outputs.artifact_name }}
+          path: release
+
       - name: Create FuzeQuality Android release
-        if: env.RELEASE_BUILD == 'true'
         uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7 # v2.3.4
         with:
-          tag_name: fuzequality-android-v${{ steps.version.outputs.name }}
-          name: FuzeQuality Android v${{ steps.version.outputs.name }}
+          tag_name: ${{ needs.build-apk.outputs.release_tag }}
+          name: ${{ needs.build-apk.outputs.release_name }}
           body: |
             ## FuzeQuality Android APK (TWA)
 
@@ -233,7 +265,7 @@ jobs:
 
             The standalone origin serves the FuzeQuality PWA, Digital Asset Links,
             and same-origin API under `/api` without FuzeFront portal chrome.
-          files: ${{ steps.apk.outputs.path }}
+          files: release/*.apk
           draft: false
           prerelease: false
           overwrite_files: true
