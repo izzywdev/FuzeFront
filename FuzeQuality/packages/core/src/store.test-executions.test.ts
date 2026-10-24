@@ -184,21 +184,27 @@ describe('test execution evidence', () => {
   })
 
   it('continues tenant-scoped execution evidence with a stable timestamp and id cursor', async () => {
-    const store = new MemoryCatalogStore()
-    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, revision: 'abc', kind: 'integration' as const, status: 'passed' as const, name: 'Integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [], completedAt: '2026-01-01T00:01:00.000Z' }
-    await store.saveTestExecution({ id: 'run-a', ...base, externalRunId: 'a', attempt: 1 })
-    await store.saveTestExecution({ id: 'run-c', ...base, externalRunId: 'c', attempt: 1 })
-    await store.saveTestExecution({ id: 'run-b', ...base, externalRunId: 'b', attempt: 1 })
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T01:00:00.000Z'))
+      const store = new MemoryCatalogStore()
+      const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, revision: 'abc', kind: 'integration' as const, status: 'passed' as const, name: 'Integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [], completedAt: '2026-01-01T00:01:00.000Z' }
+      await store.saveTestExecution({ id: 'run-a', ...base, externalRunId: 'a', attempt: 1 })
+      await store.saveTestExecution({ id: 'run-c', ...base, externalRunId: 'c', attempt: 1 })
+      await store.saveTestExecution({ id: 'run-b', ...base, externalRunId: 'b', attempt: 1 })
 
-    await expect(store.testExecutions('repo-1', 'org-1', { limit: 2 })).resolves.toEqual([
-      expect.objectContaining({ id: 'run-c' }),
-      expect.objectContaining({ id: 'run-b' }),
-    ])
-    const firstPage = await store.testExecutions('repo-1', 'org-1', { limit: 2 })
-    await expect(store.testExecutions('repo-1', 'org-1', {
-      after: { createdAt: testExecutionCursorCreatedAt(firstPage[1]), id: firstPage[1].id },
-      limit: 2,
-    })).resolves.toEqual([expect.objectContaining({ id: 'run-a' })])
+      await expect(store.testExecutions('repo-1', 'org-1', { limit: 2 })).resolves.toEqual([
+        expect.objectContaining({ id: 'run-c' }),
+        expect.objectContaining({ id: 'run-b' }),
+      ])
+      const firstPage = await store.testExecutions('repo-1', 'org-1', { limit: 2 })
+      await expect(store.testExecutions('repo-1', 'org-1', {
+        after: { createdAt: testExecutionCursorCreatedAt(firstPage[1]), id: firstPage[1].id },
+        limit: 2,
+      })).resolves.toEqual([expect.objectContaining({ id: 'run-a' })])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('compares equivalent in-memory execution timestamps as instants', async () => {

@@ -2000,6 +2000,36 @@ components:
       type: object
       additionalProperties: false
       required: [status, checkedAt]
+      oneOf:
+        - title: Complete evidence collection
+          properties:
+            status: { type: string, enum: [complete] }
+            issues: { type: array, maxItems: 0 }
+            unverifiedLinks: { type: array, maxItems: 0 }
+          not: { required: [errorCode] }
+        - title: Partial evidence collection
+          anyOf:
+            - required: [errorCode]
+            - required: [issues]
+          properties:
+            status: { type: string, enum: [partial] }
+            errorCode: { type: string, enum: [PROVIDER_RESULT_LIMIT_EXCEEDED] }
+            issues:
+              type: array
+              minItems: 1
+              maxItems: 2
+              items:
+                type: string
+                enum: [provider-result-limit-exceeded, attempt-provenance-unverified]
+        - title: Unavailable evidence collection
+          required: [errorCode]
+          properties:
+            status: { type: string, enum: [unavailable] }
+            errorCode:
+              type: string
+              enum: [PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, PROVIDER_RESPONSE_INVALID, PROVIDER_RESULT_LIMIT_EXCEEDED]
+            issues: { type: array, maxItems: 0 }
+            unverifiedLinks: { type: array, maxItems: 0 }
       properties:
         status: { type: string, enum: [complete, partial, unavailable] }
         checkedAt: { type: string, format: date-time }
@@ -2030,6 +2060,11 @@ components:
         attempt: { type: integer, minimum: 1, default: 1 }
         revision: { type: string, minLength: 1, maxLength: 200 }
         branch: { type: string, minLength: 1, maxLength: 500 }
+        headRepository:
+          type: string
+          maxLength: 255
+          pattern: '^[^/\s]+/[^/\s]+$'
+          description: GitHub workflow head repository in owner/name form, used to reject fork evidence.
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string, minLength: 1, maxLength: 500 }

@@ -1999,6 +1999,33 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
   })
 
+  it('keeps successful flow evidence visible and retries failed exact-revision batches', async () => {
+    mockEvidenceApis()
+    const historicalArtifact = { ...storyArtifact, id: 'artifact:repo-1:story-retry' }
+    vi.mocked(api.qualityArtifactsByIds).mockRejectedValueOnce(new Error('evidence service unavailable'))
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([{
+      ...candidate,
+      id: 'flow-evidence-retry',
+      revision: 'historical-revision',
+      evidence: [historicalArtifact.id],
+    }])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByRole('alert', {
+      name: '',
+    })).toHaveTextContent('Some exact UX flow evidence could not be loaded')
+    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [historicalArtifact] })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry exact UX flow evidence' }))
+
+    await waitFor(() => expect(api.qualityArtifactsByIds).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(
+      screen.queryByText('Some exact UX flow evidence could not be loaded', { exact: false })
+    ).not.toBeInTheDocument())
+    fireEvent.click(screen.getByText('Source evidence'))
+    expect(await screen.findByText('story · src/Checkout.stories.tsx')).toBeVisible()
+  })
+
   it('resolves exact evidence for current flows outside the artifact first page', async () => {
     mockEvidenceApis()
     const exactArtifact = { ...storyArtifact, id: 'artifact:repo-1:story-current-exact' }

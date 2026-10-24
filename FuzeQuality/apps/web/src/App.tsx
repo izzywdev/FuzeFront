@@ -3699,6 +3699,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
   const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
+  const [flowEvidenceFailures, setFlowEvidenceFailures] = useState(0)
+  const [flowEvidenceReloadKey, setFlowEvidenceReloadKey] = useState(0)
   const [omittedFlowEvidenceRevisions, setOmittedFlowEvidenceRevisions] = useState(0)
   const [flowCandidates, setFlowCandidates] = useState<
     RepositoryFlowCandidate[]
@@ -4505,6 +4507,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     let active = true
     if (!flowResultsAreCurrent) {
       setFlowEvidenceArtifacts([])
+      setFlowEvidenceFailures(0)
       setOmittedFlowEvidenceRevisions(0)
       return () => { active = false }
     }
@@ -4513,6 +4516,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       : { selected: [], omitted: 0 }
     setOmittedFlowEvidenceRevisions(selection.omitted)
     setFlowEvidenceArtifacts([])
+    setFlowEvidenceFailures(0)
     const currentRevisions = new Map(
       data.repositories.map(repository => [repository.id, repository.lastScanRevision])
     )
@@ -4539,15 +4543,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       return Array.from({ length: Math.ceil(values.length / 100) }, (_, index) =>
         api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100), revision)
           .then(response => response.items)
-          .catch(() => [])
       )
     })
-    void Promise.all(requests).then(
-      groups => { if (active) setFlowEvidenceArtifacts(groups.flat()) },
-      () => { if (active) setFlowEvidenceArtifacts([]) },
-    )
+    void Promise.allSettled(requests).then(results => {
+      if (!active) return
+      setFlowEvidenceArtifacts(results.flatMap(result =>
+        result.status === 'fulfilled' ? result.value : []
+      ))
+      setFlowEvidenceFailures(results.filter(result => result.status === 'rejected').length)
+    })
     return () => { active = false }
-  }, [artifacts, data.repositories, flowCandidates, flowResultsAreCurrent, flowRevisionScope])
+  }, [artifacts, data.repositories, flowCandidates, flowEvidenceReloadKey, flowResultsAreCurrent, flowRevisionScope])
   useEffect(() => {
     let active = true
     setExecutionNextCursors({})
@@ -5271,6 +5277,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             <p className="form-error" role="alert">
               Some exact policy and gate evidence could not be loaded. Evidence from successful repositories remains visible.
             </p>
+          )}
+          {flowEvidenceFailures > 0 && (
+            <div className="form-error" role="alert">
+              Some exact UX flow evidence could not be loaded. Evidence from successful requests remains visible.{' '}
+              <QualityAction
+                intent="quiet"
+                onClick={() => setFlowEvidenceReloadKey(current => current + 1)}
+              >
+                <RefreshCw size={14} /> Retry exact UX flow evidence
+              </QualityAction>
+            </div>
           )}
           {dispatchRetirementFailures.length > 0 && (
             <p className="form-error" role="alert">

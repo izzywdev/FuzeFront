@@ -133,6 +133,31 @@ describe('contract discovery', () => {
         'EXECUTION_EVIDENCE_REVISION_UNANALYZED',
         'EXECUTION_EVIDENCE_REFERENCE_INVALID',
       ])
+      expect(schemas.TestExecutionInput.properties.headRepository).toMatchObject({
+        type: 'string',
+        maxLength: 255,
+        pattern: '^[^/\\s]+/[^/\\s]+$',
+      })
+      expect(schemas.TestExecutionEvidenceCollection.oneOf).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          title: 'Complete evidence collection',
+          properties: expect.objectContaining({ status: { type: 'string', enum: ['complete'] } }),
+          not: { required: ['errorCode'] },
+        }),
+        expect.objectContaining({
+          title: 'Partial evidence collection',
+          anyOf: [{ required: ['errorCode'] }, { required: ['issues'] }],
+          properties: expect.objectContaining({
+            status: { type: 'string', enum: ['partial'] },
+            errorCode: { type: 'string', enum: ['PROVIDER_RESULT_LIMIT_EXCEEDED'] },
+          }),
+        }),
+        expect.objectContaining({
+          title: 'Unavailable evidence collection',
+          required: ['errorCode'],
+          properties: expect.objectContaining({ status: { type: 'string', enum: ['unavailable'] } }),
+        }),
+      ]))
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
           .map((parameter: { $ref?: string }) => parameter.$ref)
