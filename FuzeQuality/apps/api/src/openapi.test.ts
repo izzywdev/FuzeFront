@@ -146,11 +146,13 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/test-executions/attempts'].get.parameters
           .map((parameter: { $ref?: string }) => parameter.$ref)
       ).toEqual([
-        '#/components/parameters/ExecutionProvider',
-        '#/components/parameters/ExecutionExternalRunId',
+        '#/components/parameters/ExecutionAttemptProvider',
+        '#/components/parameters/ExecutionAttemptExternalRunId',
         undefined,
         undefined,
       ])
+      expect(document.components.parameters.ExecutionAttemptProvider.required).toBe(true)
+      expect(document.components.parameters.ExecutionAttemptExternalRunId.required).toBe(true)
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-executions/attempts'].get.responses['200'].content[
           'application/json'

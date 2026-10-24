@@ -970,8 +970,8 @@ paths:
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:
-        - $ref: '#/components/parameters/ExecutionProvider'
-        - $ref: '#/components/parameters/ExecutionExternalRunId'
+        - $ref: '#/components/parameters/ExecutionAttemptProvider'
+        - $ref: '#/components/parameters/ExecutionAttemptExternalRunId'
         - name: limit
           in: query
           description: Maximum number of immutable attempts to return in this page.
@@ -1512,6 +1512,18 @@ components:
       name: externalRunId
       in: query
       description: Exact provider-owned run identifier shared by all attempts of one CI run.
+      schema: { type: string, minLength: 1, maxLength: 500 }
+    ExecutionAttemptProvider:
+      name: provider
+      in: query
+      required: true
+      description: Required execution-ingestion origin for one provider-owned attempt history.
+      schema: { $ref: '#/components/schemas/ExecutionProvider' }
+    ExecutionAttemptExternalRunId:
+      name: externalRunId
+      in: query
+      required: true
+      description: Required provider-owned run identifier shared by every returned attempt.
       schema: { type: string, minLength: 1, maxLength: 500 }
     ExecutionPolicyArtifactId:
       name: policyArtifactId

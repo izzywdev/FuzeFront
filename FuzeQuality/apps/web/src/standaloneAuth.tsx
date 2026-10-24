@@ -157,7 +157,15 @@ async function canonicalSession(
   preferredTenantId?: string,
 ): Promise<StandaloneSession | StandaloneWorkspaceSelection> {
   const tenantId = await sessionTenant(token, fetcher, preferredTenantId)
-  if (tenantId) return { token, tenantId }
+  if (tenantId) {
+    if (preferredTenantId && tenantId !== preferredTenantId) {
+      throw new StandaloneAuthenticationError(
+        'FuzeFront resolved a different workspace than the one selected. Sign in again before accessing tenant data.',
+        'TENANT_CONTEXT_MISMATCH',
+      )
+    }
+    return { token, tenantId }
+  }
   if (preferredTenantId) {
     throw new StandaloneAuthenticationError(
       'Your selected workspace is no longer available.',
@@ -447,6 +455,16 @@ export function StandaloneAuthBoundary({
       setMfa(null)
       setCode('')
     } catch (value) {
+      if (value instanceof StandaloneAuthenticationError && value.retryToken) {
+        // MFA already produced a verified bearer. If only workspace discovery
+        // failed, leave the consumed challenge and reuse that bearer through the
+        // existing retry flow instead of asking for another MFA code.
+        setWorkspaceRetryToken(value.retryToken)
+        setMfa(null)
+        setFactorId('')
+        setFactorChallengeReady(false)
+        setCode('')
+      }
       setError(value instanceof Error ? value.message : String(value))
     } finally {
       setSubmitting(false)
