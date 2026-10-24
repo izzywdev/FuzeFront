@@ -65,6 +65,25 @@ describe('FuzeQuality GitHub App contract', () => {
     })])
   })
 
+  it('retains stale GitHub workflow conclusions as failed execution evidence', () => {
+    const executions = webhookWorkflowExecutions('workflow_run', {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 108, run_attempt: 1, head_branch: 'main', head_sha: '8'.repeat(40),
+        name: 'Post-production browser suite', path: '.github/workflows/post-production.yml',
+        status: 'completed', conclusion: 'stale',
+        html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/108',
+        run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }, repositories)
+
+    expect(executions).toEqual([expect.objectContaining({
+      externalRunId: '108', kind: 'post-production', status: 'failed', summary: 'stale',
+      completedAt: '2026-01-01T00:01:00.000Z',
+    })])
+  })
+
   it('retains pull-request branch evidence without treating it as analyzed policy linkage', () => {
     const executions = webhookWorkflowExecutions('workflow_run', {
       action: 'completed',

@@ -92,7 +92,7 @@ const workflowRunSchema = z.object({
     id: z.number().int().positive(), run_attempt: z.number().int().positive(),
     head_branch: z.string().nullable(), head_sha: z.string().regex(/^[0-9a-f]{40}$/i), name: z.string().min(1),
     head_repository: z.object({ full_name: z.string().min(3).max(255) }).optional(),
-    status: z.enum(['queued', 'in_progress', 'completed']), conclusion: z.enum(['success', 'failure', 'cancelled', 'skipped', 'neutral', 'timed_out', 'action_required']).nullable(),
+    status: z.enum(['queued', 'in_progress', 'completed']), conclusion: z.enum(['success', 'failure', 'cancelled', 'skipped', 'neutral', 'timed_out', 'action_required', 'stale']).nullable(),
     path: z.string().trim().min(1).max(1000).optional(),
     html_url: z.string().url().optional(), run_started_at: z.string().datetime().nullable(), updated_at: z.string().datetime(),
   }),
