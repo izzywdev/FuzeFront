@@ -2058,6 +2058,49 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
   })
 
+  it('resolves logical flow evidence within the candidate revision', async () => {
+    mockEvidenceApis()
+    const logicalId = 'story:checkout-complete'
+    const currentArtifact = {
+      ...storyArtifact,
+      id: 'artifact:repo-1:story-current',
+      logicalId,
+      revision: repository.lastScanRevision,
+      title: 'Current checkout state',
+      sourcePath: 'src/current/Checkout.stories.tsx',
+    }
+    const historicalArtifact = {
+      ...storyArtifact,
+      id: 'artifact:repo-1:story-historical',
+      logicalId,
+      revision: 'historical-revision',
+      title: 'Historical checkout state',
+      sourcePath: 'src/historical/Checkout.stories.tsx',
+    }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([currentArtifact])
+    vi.mocked(api.qualityArtifactsByIds).mockImplementation(async (_repositoryId, _ids, revision) => ({
+      items: revision === historicalArtifact.revision ? [historicalArtifact] : [currentArtifact],
+    }))
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([{
+      ...candidate,
+      id: 'flow-historical-logical-reference',
+      revision: historicalArtifact.revision,
+      evidence: [logicalId],
+      steps: [{ ...candidate.steps[0], targetIds: [logicalId] }],
+    }])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    fireEvent.click(screen.getByText('Source evidence'))
+
+    expect(await screen.findByText('story · src/historical/Checkout.stories.tsx')).toBeVisible()
+    expect(screen.getByText('Artifact: Historical checkout state')).toBeVisible()
+    expect(screen.getByLabelText('Completes checkout targets')).toHaveTextContent(
+      'story · src/historical/Checkout.stories.tsx · Historical checkout state'
+    )
+    expect(screen.queryByText('Artifact: Current checkout state')).not.toBeInTheDocument()
+  })
+
   it('keeps successful flow evidence visible and retries failed exact-revision batches', async () => {
     mockEvidenceApis()
     const historicalArtifact = { ...storyArtifact, id: 'artifact:repo-1:story-retry' }

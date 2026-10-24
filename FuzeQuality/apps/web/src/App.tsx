@@ -4542,7 +4542,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       const values = [...ids]
       return Array.from({ length: Math.ceil(values.length / 100) }, (_, index) =>
         api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100), revision)
-          .then(response => response.items)
+          .then(response => response.items.map(artifact => ({
+            ...artifact,
+            revision: artifact.revision ?? revision,
+          })))
       )
     })
     void Promise.allSettled(requests).then(results => {
@@ -5034,13 +5037,22 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     ).values()],
     [artifacts, governanceEvidenceArtifacts, flowEvidenceArtifacts]
   )
-  const artifactsById = useMemo(
-    () => new Map(evidenceArtifacts.flatMap(artifact => [
-      [artifact.id, artifact] as const,
-      ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
-    ])),
-    [evidenceArtifacts]
-  )
+  const artifactsByRevisionReference = useMemo(() => {
+    const currentRevisions = new Map(
+      data.repositories.map(repository => [repository.id, repository.lastScanRevision])
+    )
+    return new Map(evidenceArtifacts.flatMap(artifact => {
+      const revision = artifact.revision ?? currentRevisions.get(artifact.repositoryId)
+      if (!revision) return []
+      const prefix = `${artifact.repositoryId}\u0000${revision}\u0000`
+      return [
+        [`${prefix}${artifact.id}`, artifact] as const,
+        ...(artifact.logicalId ? [[`${prefix}${artifact.logicalId}`, artifact] as const] : []),
+      ]
+    }))
+  }, [data.repositories, evidenceArtifacts])
+  const artifactForFlowReference = (flow: RepositoryFlowCandidate, reference: string) =>
+    artifactsByRevisionReference.get(`${flow.repositoryId}\u0000${flow.revision}\u0000${reference}`)
   const filteredPolicyGateEvaluations = useMemo(
     () =>
       policyGateEvaluations.filter(
@@ -5668,7 +5680,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                     ),
                                   ]),
                                 ].map(evidence => {
-                                  const artifact = artifactsById.get(evidence)
+                                  const artifact = artifactForFlowReference(flow, evidence)
                                   return (
                                     <li key={evidence}>
                                       <code>
@@ -5696,7 +5708,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                         ({step.targetIds
                                           .map(targetId => {
                                             const artifact =
-                                              artifactsById.get(targetId)
+                                              artifactForFlowReference(flow, targetId)
                                             return artifact
                                               ? `${artifact.kind} · ${artifact.sourcePath} · ${artifact.title}`
                                               : targetId
