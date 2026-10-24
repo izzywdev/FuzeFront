@@ -4567,23 +4567,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setExecutionHistoryFailures([])
     setExecutionTrendFailures([])
     setExecutionPerformanceFailures([])
-    if (invalidExecutionRange || invalidExecutionDurationRange || invalidEvidenceCheckedRange) {
-      setExecutions([])
-      setPerformanceExecutions([])
-      setPerformanceEvidenceFailures([])
-      setIntegrationExecutions([])
-      setIntegrationEvidenceFailures([])
-      setPostProductionExecutions([])
-      setPostProductionEvidenceFailures([])
-      setExecutionPerformance([])
-      setExecutionTrends([])
-      return () => {
-        active = false
-      }
-    }
+    const historyFiltersValid = !invalidExecutionRange &&
+      !invalidExecutionDurationRange &&
+      !invalidEvidenceCheckedRange
     void Promise.all(
       data.repositories.map(async repository => {
-        const includeHistory = !executionRepositoryId || executionRepositoryId === repository.id
+        const includeHistory = historyFiltersValid &&
+          (!executionRepositoryId || executionRepositoryId === repository.id)
         const emptyHistoryPage = { items: [], page: { nextCursor: null, hasMore: false } }
         const [executionResult, performanceResult, trendResult, performanceExecutionsResult, integrationExecutionsResult, postProductionExecutionsResult] = await Promise.allSettled([
           includeHistory ? api.testExecutions(repository.id, executionFilter) : Promise.resolve(emptyHistoryPage),

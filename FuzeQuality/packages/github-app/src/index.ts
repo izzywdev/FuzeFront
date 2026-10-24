@@ -181,6 +181,11 @@ export function workflowExecutionKind(
   workflowPath?: string,
 ): WorkflowExecutionCommand['kind'] {
   const evidence = `${name} ${workflowPath ?? ''}`.replace(/[_./-]+/g, ' ')
+  // Deployment workflows are operational evidence, not test executions. Keep
+  // them in the generic CI stream even when their name contains "production"
+  // or another test-like token; the scanner applies the same exclusion before
+  // it creates post-production inventory artifacts.
+  if (/\bdeploy(?:ment|ing|ed)?\b/i.test(evidence)) return 'ci'
   if (/\b(?:stress|soak)\b/i.test(evidence)) return 'stress'
   if (/\b(?:load|performance|k6|artillery)\b/i.test(evidence)) return 'load'
   if (/\bpost[-_ ]?prod(?:uction)?\b|\bproduction\b/i.test(evidence)) return 'post-production'

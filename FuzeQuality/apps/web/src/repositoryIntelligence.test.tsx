@@ -3647,13 +3647,22 @@ describe('RepositoryIntelligence flow inventory', () => {
 
   it('rejects an inverted duration window before loading misleading evidence', async () => {
     mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.mocked(api.latestPerformanceExecutions).mockResolvedValue({ items: [loadExecution] })
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)
     await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    const outcome = await screen.findByLabelText(`Latest execution for ${loadArtifact.title}`)
+    expect(outcome).toHaveTextContent('failed · revision-1')
     fireEvent.change(screen.getByLabelText('Minimum duration (seconds)'), {
       target: { value: '300' },
     })
+    await waitFor(() => expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+      minimumDurationMs: '300000',
+    }))
+    const historyRequestCount = vi.mocked(api.testExecutions).mock.calls.length
+    const inventoryRequestCount = vi.mocked(api.latestPerformanceExecutions).mock.calls.length
     fireEvent.change(screen.getByLabelText('Maximum duration (seconds)'), {
       target: { value: '90' },
     })
@@ -3662,6 +3671,11 @@ describe('RepositoryIntelligence flow inventory', () => {
       'Maximum duration must be greater than or equal to minimum duration.'
     )
     expect(screen.getByLabelText('Maximum duration (seconds)')).toHaveAttribute('aria-invalid', 'true')
+    await waitFor(() => expect(api.latestPerformanceExecutions).toHaveBeenCalledTimes(inventoryRequestCount + 1))
+    expect(api.testExecutions).toHaveBeenCalledTimes(historyRequestCount)
+    expect(screen.getByLabelText(`Latest execution for ${loadArtifact.title}`)).toHaveTextContent(
+      'Latency threshold exceeded.'
+    )
   })
 
   it('filters execution evidence and gate performance by exact workflow file', async () => {
