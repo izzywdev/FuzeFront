@@ -76,6 +76,19 @@ const PARTIAL_SCAN_DIAGNOSTIC_CODES = new Set([
 
 const serializedBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8')
 
+const transportArtifactPriority: Record<QualityArtifact['kind'], number> = {
+  policy: 0,
+  gate: 0,
+  documentation: 0,
+  'integration-test': 0,
+  'post-production-test': 0,
+  'load-test': 0,
+  'stress-test': 0,
+  route: 1,
+  story: 1,
+  'test-plan': 2,
+}
+
 export class ScanTransportLimitError extends Error {
   readonly code = 'SCAN_TRANSPORT_LIMIT_EXCEEDED' as const
 
@@ -101,13 +114,17 @@ export function boundQualityArtifactsForTransport(
     MAX_SCAN_RESULT_BYTES - emptyPayloadBytes - TRANSPORT_DIAGNOSTIC_RESERVE_BYTES,
   )
   const retainedIds = new Set<string>()
-  // Preserve unique repository evidence before the generated test-plan mirror.
-  // Test cases remain complete in result.tests; these artifacts are a navigational
-  // projection and can be regenerated from the same exact revision.
-  const ordered = [
-    ...artifacts.filter(item => item.kind !== 'test-plan'),
-    ...artifacts.filter(item => item.kind === 'test-plan'),
-  ]
+  // Preserve source-derived governance and executable-suite evidence before
+  // regenerable route/story projections and the generated test-plan mirror.
+  // Canonical operations, surfaces, and tests remain available elsewhere in
+  // the scan result even when their navigational artifacts are omitted.
+  const ordered = artifacts
+    .map((artifact, index) => ({ artifact, index }))
+    .sort((left, right) =>
+      transportArtifactPriority[left.artifact.kind] - transportArtifactPriority[right.artifact.kind] ||
+      left.index - right.index
+    )
+    .map(item => item.artifact)
   for (const artifact of ordered) {
     const bytes = serializedBytes(artifact) + 1
     if (bytes > remainingBytes) continue

@@ -27,6 +27,32 @@ const repository: Repository = {
 }
 
 describe('repository scanner', () => {
+  it('retains source governance evidence before regenerable projections at the transport bound', async () => {
+    const scanned = await scanRepository(repository, await mkdtemp(join(tmpdir(), 'fuzequality-priority-')))
+    const { qualityArtifacts: _qualityArtifacts, ...base } = scanned
+    const largeEvidence = 'x'.repeat(3_000_000)
+    const artifacts = [
+      {
+        id: 'route-artifact', repositoryId: repository.id, kind: 'route' as const,
+        title: 'Generated route', sourcePath: 'src/routes.ts', summary: largeEvidence, evidence: ['/generated'],
+      },
+      {
+        id: 'policy-artifact', repositoryId: repository.id, kind: 'policy' as const,
+        title: 'Release policy', sourcePath: 'governance/release.md', summary: largeEvidence,
+        evidence: ['Every release requires its gate.'],
+      },
+    ]
+
+    const bounded = boundQualityArtifactsForTransport(base, artifacts)
+
+    expect(bounded.qualityArtifacts?.map(item => item.id)).toEqual(['policy-artifact'])
+    expect(bounded.scanDetails.partial).toBe(true)
+    expect(bounded.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'quality-artifact-transport-bound',
+      severity: 'warning',
+    }))
+  })
+
   it('bounds generated test-plan evidence below the scan transport limit', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-large-test-inventory-'))
     await mkdir(join(root, 'tests'), { recursive: true })
