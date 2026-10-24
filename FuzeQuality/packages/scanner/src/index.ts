@@ -304,7 +304,16 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
     return pending
   }
   for (const candidate of QUALITY_ARTIFACT_GLOBS) {
-    const files = await fg(candidate.glob, { cwd: root, ignore, onlyFiles: true, dot: true })
+    // Repository evidence must be physically contained by the checkout. Following
+    // a matching symlink can read worker-host files outside `root` and then retain
+    // their contents in catalog evidence and the reviewed LiteLLM prompt.
+    const files = await fg(candidate.glob, {
+      cwd: root,
+      ignore,
+      onlyFiles: true,
+      dot: true,
+      followSymbolicLinks: false,
+    })
     for (const file of files.slice(0, 100)) {
       const sourcePath = normalize(file)
       const source = await qualitySource(file)

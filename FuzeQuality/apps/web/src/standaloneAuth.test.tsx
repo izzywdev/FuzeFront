@@ -72,6 +72,42 @@ describe('standalone FuzeFront authentication', () => {
     })
   })
 
+  it('preserves a stored session and offers retry after a transient restore outage', async () => {
+    saveStandaloneSession({ token: 'stored-token', tenantId: 'canonical-tenant' })
+    const fetcher = vi.fn()
+      .mockImplementationOnce(() => response({ error: 'Security is temporarily unavailable' }, 503))
+      .mockImplementationOnce(() => response({ identity: { tenantId: 'canonical-tenant' } }))
+
+    render(
+      <StandaloneAuthBoundary fetcher={fetcher as typeof fetch}>
+        {session => <p>Tenant {session.tenantId}</p>}
+      </StandaloneAuthBoundary>,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Security is temporarily unavailable')
+    expect(readStandaloneSession()).toEqual({ token: 'stored-token', tenantId: 'canonical-tenant' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry secure session' }))
+
+    expect(await screen.findByText('Tenant canonical-tenant')).toBeVisible()
+    expect(readStandaloneSession()).toEqual({ token: 'stored-token', tenantId: 'canonical-tenant' })
+  })
+
+  it('clears a stored session when Security forbids its tenant scope', async () => {
+    saveStandaloneSession({ token: 'stored-token', tenantId: 'forbidden-tenant' })
+    const fetcher = vi.fn(() => response({ error: 'Workspace access was revoked' }, 403))
+
+    render(
+      <StandaloneAuthBoundary fetcher={fetcher as typeof fetch}>
+        {session => <p>Tenant {session.tenantId}</p>}
+      </StandaloneAuthBoundary>,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Workspace access was revoked')
+    expect(readStandaloneSession()).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Retry secure session' })).not.toBeInTheDocument()
+  })
+
   it('shows the standalone sign-in surface and persists an authenticated workspace', async () => {
     const fetcher = vi.fn()
       .mockImplementationOnce(() => response({ status: 'authenticated', token: 'new-token' }))

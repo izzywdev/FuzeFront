@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -90,6 +90,19 @@ describe('repository scanner', () => {
       code: 'unreadable-quality-evidence',
     }))
     expect(result.scanDetails.partial).toBe(true)
+  })
+
+  it('does not follow policy or workflow symlinks outside the repository checkout', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-symlink-repository-'))
+    const outside = await mkdtemp(join(tmpdir(), 'fuzequality-symlink-host-'))
+    const outsidePolicy = join(outside, 'host-security.yml')
+    await writeFile(outsidePolicy, 'policy: never disclose this host credential\nrequired_gate: secret')
+    await symlink(outsidePolicy, join(root, 'security.yml'))
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.qualityArtifacts?.some(item => item.sourcePath === 'security.yml')).toBe(false)
+    expect(JSON.stringify(result)).not.toContain('never disclose this host credential')
   })
 
   it('records deterministic policy, gate, and performance evidence for later reviewed analysis', async () => {

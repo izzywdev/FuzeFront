@@ -123,7 +123,11 @@ async function sessionTenant(token: string, fetcher: typeof fetch, tenantId?: st
   if (!response.ok) {
     throw new StandaloneAuthenticationError(
       errorMessage(body, 'Your FuzeFront session is no longer valid.'),
-      response.status === 401 ? 'SESSION_EXPIRED' : 'SESSION_UNAVAILABLE',
+      response.status === 401
+        ? 'SESSION_EXPIRED'
+        : response.status === 403
+          ? 'SESSION_FORBIDDEN'
+          : 'SESSION_UNAVAILABLE',
     )
   }
   return body?.identity?.tenantId ?? null
@@ -298,6 +302,7 @@ export function StandaloneAuthBoundary({
   const [code, setCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string>()
+  const [restoreRetryAvailable, setRestoreRetryAvailable] = useState(false)
 
   const restore = useCallback(async () => {
     const stored = readStandaloneSession()
@@ -307,13 +312,24 @@ export function StandaloneAuthBoundary({
     }
     setChecking(true)
     setError(undefined)
+    setRestoreRetryAvailable(false)
     try {
       const canonical = await restoreStandaloneSession(stored, fetcher)
       saveStandaloneSession(canonical)
       setSession(canonical)
     } catch (value) {
-      clearStandaloneSession()
       setSession(null)
+      const retryable = !(value instanceof StandaloneAuthenticationError) ||
+        value.code === 'SESSION_UNAVAILABLE' ||
+        value.code === 'WORKSPACES_UNAVAILABLE'
+      if (retryable) {
+        // The bearer and tenant are still valid evidence of the last verified
+        // session. Preserve them through transient Security/platform outages so
+        // the user can retry without re-entering credentials.
+        setRestoreRetryAvailable(true)
+      } else {
+        clearStandaloneSession()
+      }
       setError(value instanceof Error ? value.message : String(value))
     } finally {
       setChecking(false)
@@ -336,12 +352,14 @@ export function StandaloneAuthBoundary({
     setFactorChallengeReady(false)
     setCode('')
     setError(undefined)
+    setRestoreRetryAvailable(false)
   }, [fetcher, session])
 
   const submit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSubmitting(true)
     setError(undefined)
+    setRestoreRetryAvailable(false)
     setWorkspaceRetryToken(undefined)
     try {
       const result = await signInStandalone(email, password, fetcher)
@@ -530,6 +548,11 @@ export function StandaloneAuthBoundary({
           {workspaceRetryToken && !mfa && (
             <QualityAction type="button" intent="quiet" disabled={submitting} onClick={() => void retryWorkspaceDiscovery()}>
               <RefreshCw size={14} /> Retry workspace discovery
+            </QualityAction>
+          )}
+          {restoreRetryAvailable && !mfa && (
+            <QualityAction type="button" intent="quiet" disabled={submitting} onClick={() => void restore()}>
+              <RefreshCw size={14} /> Retry secure session
             </QualityAction>
           )}
           <QualityAction type="submit" disabled={submitting || (mfa ? !factorChallengeReady || !code : !email || !password)}>
