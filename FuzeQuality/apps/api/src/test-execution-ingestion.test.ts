@@ -51,6 +51,25 @@ describe('internal execution ingestion compatibility', () => {
     ])
   })
 
+  it('keeps newly discovered evidence ahead of the retained-link cap', () => {
+    const retained = Array.from({ length: 100 }, (_, index) => ({
+      kind: 'other' as const,
+      name: `Retained artifact ${index}`,
+      url: `https://evidence.example/retained/${index}`,
+    }))
+    const replacement = {
+      kind: 'video' as const,
+      name: 'Replacement Playwright video',
+      url: 'https://github.com/acme/app/actions/runs/42/artifacts/101',
+    }
+
+    const merged = mergeExecutionEvidenceLinks(retained, [replacement])
+
+    expect(merged).toHaveLength(100)
+    expect(merged[0]).toEqual(replacement)
+    expect(merged).not.toContainEqual(retained[99])
+  })
+
   it('removes expired GitHub artifacts only after a complete provider inventory', () => {
     const expiredVideo = { kind: 'video' as const, name: 'Expired video', url: 'https://github.com/acme/app/actions/runs/42/artifacts/7' }
     const externalReport = { kind: 'report' as const, name: 'External report', url: 'https://evidence.example/run/42' }
@@ -60,7 +79,7 @@ describe('internal execution ingestion compatibility', () => {
     expect(reconcileCompleteExecutionEvidenceLinks(
       [expiredVideo, externalReport, runArtifacts],
       [currentTrace],
-    )).toEqual([externalReport, runArtifacts, currentTrace])
+    )).toEqual([currentTrace, externalReport, runArtifacts])
   })
 
   it('refreshes exact-attempt artifacts and records bounded provider results', async () => {
@@ -118,8 +137,8 @@ describe('internal execution ingestion compatibility', () => {
     }), '2026-10-20T11:00:00.000Z')
 
     expect(refreshed.evidenceLinks).toEqual([
-      expect.objectContaining({ name: 'External report' }),
       expect.objectContaining({ name: 'Current trace' }),
+      expect.objectContaining({ name: 'External report' }),
     ])
     expect(refreshed.evidenceLinks).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Expired video' }),

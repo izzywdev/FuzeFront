@@ -62,9 +62,15 @@ export function mergeExecutionEvidenceLinks(
   existing: WorkflowExecutionCommand['evidenceLinks'],
   discovered: WorkflowExecutionCommand['evidenceLinks'],
 ) {
-  return [...new Map(
-    [...existing, ...discovered].map(link => [`${link.kind}:${link.url}`, link])
-  ).values()].slice(0, 100)
+  const links = new Map<string, WorkflowExecutionCommand['evidenceLinks'][number]>()
+  // Provider results are the freshest observation and must survive the local
+  // response cap. First-write wins so they also retain the provider's latest
+  // label when an older retained link has the same stable kind and URL.
+  for (const link of [...discovered, ...existing]) {
+    const key = `${link.kind}:${link.url}`
+    if (!links.has(key)) links.set(key, link)
+  }
+  return [...links.values()].slice(0, 100)
 }
 
 const githubWorkflowArtifactUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+\/artifacts\/\d+$/i
