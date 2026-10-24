@@ -246,6 +246,35 @@ describe('repository scanner', () => {
     expect(rescanned.qualityArtifacts?.every(item => originalLogicalIds.has(item.logicalId))).toBe(true)
   })
 
+  it('marks capped quality and documentation discovery as partial', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-evidence-cap-'))
+    await mkdir(join(root, '.github', 'workflows'), { recursive: true })
+    await mkdir(join(root, 'docs'), { recursive: true })
+    await Promise.all(Array.from({ length: 101 }, async (_, index) => {
+      await Promise.all([
+        writeFile(
+          join(root, '.github', 'workflows', `workflow-${index}.yml`),
+          `name: Quality workflow ${index}\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test`,
+        ),
+        writeFile(
+          join(root, 'docs', `guide-${index}.md`),
+          `# Journey ${index}\nThe user completes flow step ${index}.`,
+        ),
+      ])
+    }))
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'quality-evidence-file-limit', severity: 'warning' }),
+      expect.objectContaining({ code: 'documentation-evidence-file-limit', severity: 'warning' }),
+    ]))
+    expect(result.scanDetails.partial).toBe(true)
+    expect(result.scanDetails.counts.diagnostics).toBe(result.diagnostics.length)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'gate')).toHaveLength(100)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'documentation')).toHaveLength(100)
+  })
+
   it('keeps repeated test titles as distinct repository evidence', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-duplicate-tests-'))
     await mkdir(join(root, 'tests'), { recursive: true })

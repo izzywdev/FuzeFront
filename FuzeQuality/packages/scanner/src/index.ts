@@ -68,6 +68,11 @@ const OPENAPI_CONFIG_GLOBS = [
 export const SCANNER_VERSION = '1.11.0'
 export const MAX_SCAN_RESULT_BYTES = 4_500_000
 const TRANSPORT_DIAGNOSTIC_RESERVE_BYTES = 2_048
+const QUALITY_EVIDENCE_FILE_LIMIT = 100
+const PARTIAL_SCAN_DIAGNOSTIC_CODES = new Set([
+  'quality-evidence-file-limit',
+  'documentation-evidence-file-limit',
+])
 
 const serializedBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8')
 
@@ -314,7 +319,16 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
       dot: true,
       followSymbolicLinks: false,
     })
-    for (const file of files.slice(0, 100)) {
+    if (files.length > QUALITY_EVIDENCE_FILE_LIMIT) {
+      diagnostics.set(`limit:${candidate.kind}:${candidate.glob}`, {
+        sourcePath: candidate.glob,
+        category: 'repository',
+        severity: 'warning',
+        code: 'quality-evidence-file-limit',
+        message: `Matched ${files.length} ${candidate.kind} evidence files but retained only ${QUALITY_EVIDENCE_FILE_LIMIT}; narrow the repository scan scope and rescan for complete reviewed analysis.`,
+      })
+    }
+    for (const file of files.slice(0, QUALITY_EVIDENCE_FILE_LIMIT)) {
       const sourcePath = normalize(file)
       const source = await qualitySource(file)
       if (source === undefined) continue
@@ -346,7 +360,16 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
     }
   }
   const documentationFiles = await fg('**/*.{md,mdx}', { cwd: root, ignore, onlyFiles: true, dot: true, followSymbolicLinks: false })
-  for (const file of documentationFiles.slice(0, 100)) {
+  if (documentationFiles.length > QUALITY_EVIDENCE_FILE_LIMIT) {
+    diagnostics.set('limit:documentation', {
+      sourcePath: '**/*.{md,mdx}',
+      category: 'repository',
+      severity: 'warning',
+      code: 'documentation-evidence-file-limit',
+      message: `Matched ${documentationFiles.length} documentation evidence files but retained only ${QUALITY_EVIDENCE_FILE_LIMIT}; narrow the repository scan scope and rescan for complete reviewed analysis.`,
+    })
+  }
+  for (const file of documentationFiles.slice(0, QUALITY_EVIDENCE_FILE_LIMIT)) {
     const sourcePath = normalize(file)
     const source = await qualitySource(file)
     if (source === undefined) continue
@@ -885,7 +908,9 @@ export async function scanRepository(
       catalogRevision: revision,
       scannerVersion: SCANNER_VERSION,
       configVersion,
-      partial: diagnostics.some(item => item.severity === 'error'),
+      partial: diagnostics.some(item =>
+        item.severity === 'error' || PARTIAL_SCAN_DIAGNOSTIC_CODES.has(item.code)
+      ),
       candidates,
       counts: {
         candidates: candidates.length,
