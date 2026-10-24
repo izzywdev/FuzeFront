@@ -1526,8 +1526,8 @@ export class PostgresCatalogStore implements CatalogStore {
            AND executions.completed_at >= executions.started_at
            AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 <= $10
          ))
-         AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) >= $11)
-         AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $12)
+         AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) >= $11)
+         AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $12)
          AND ($13::timestamptz IS NULL OR (executions.created_at,executions.id) < ($13::timestamptz,$14::text))
          AND ($16::text IS NULL OR executions.external_run_id=$16)
          AND ($17::text IS NULL OR EXISTS (
@@ -1904,8 +1904,8 @@ export class PostgresCatalogStore implements CatalogStore {
              AND executions.completed_at >= executions.started_at
              AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 <= $10
            ))
-           AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) >= $11)
-           AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at,'epoch'::timestamptz) <= $12)
+           AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) >= $11)
+           AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $12)
            AND ($19::text IS NULL OR executions.external_run_id=$19)
            AND ($22::text IS NULL OR EXISTS (
              SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS evidence(value)
