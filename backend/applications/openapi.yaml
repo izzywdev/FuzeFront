@@ -1,0 +1,157 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront Legacy Applications API
+  version: 1.0.0
+  description: >-
+    Contract for the legacy portal administration routes mounted by the
+    applications service under /api/apps. New registry integrations use the
+    versioned app-registry API; this surface remains the portal admin adapter.
+servers:
+  - url: /api
+paths:
+  /apps/{id}:
+    put:
+      operationId: updateLegacyApp
+      summary: Update a registered application's editable portal fields
+      description: >-
+        Updates presentation, federation, and installation-scope fields for an
+        existing application. Identity, ownership, lifecycle status, built-in
+        state, and installation records are immutable through this operation.
+        Requires the platform admin role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyAppUpdate'
+      responses:
+        '200':
+          description: Application updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyApp'
+        '400':
+          description: No editable fields were supplied or a field is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication is required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The caller is not a platform administrator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Application not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: An application with the requested name already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: The application could not be updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    LegacyAppUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        url:
+          type: string
+          format: uri
+          maxLength: 255
+        iconUrl:
+          type: [string, 'null']
+          format: uri
+          maxLength: 255
+        integrationType:
+          type: string
+          enum: [iframe, module-federation, web-component, spa]
+        remoteUrl:
+          type: [string, 'null']
+          format: uri
+          maxLength: 255
+        scope:
+          type: [string, 'null']
+        module:
+          type: [string, 'null']
+        description:
+          type: [string, 'null']
+        scopeLevel:
+          type: string
+          enum: [personal, organization, both]
+    LegacyApp:
+      type: object
+      additionalProperties: false
+      required: [id, name, url, isActive, integrationType, scopeLevel]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+        iconUrl:
+          type: [string, 'null']
+        isActive:
+          type: boolean
+        integrationType:
+          type: string
+          enum: [iframe, module-federation, web-component, spa]
+        remoteUrl:
+          type: [string, 'null']
+        scope:
+          type: [string, 'null']
+        module:
+          type: [string, 'null']
+        description:
+          type: [string, 'null']
+        visibility:
+          type: [string, 'null']
+        scopeLevel:
+          type: string
+          enum: [personal, organization, both]
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string

@@ -61,8 +61,17 @@ env var. This kit replaces all four.
 3. **Wire the init container.** Paste `helm/initcontainer.yaml` into your
    Deployment's pod spec and create the two prerequisites it documents (a sealed
    `fuzefront-registration` Secret, and a ConfigMap of your `registration/` files).
+   The template sets `FUZEFRONT_REGISTRATION_PHASE=init`, so a cold restart never
+   waits for the federation asset served by the application container itself.
 
 4. **Deploy.** The init container registers the app before your container starts.
+
+5. **Run the same script post-start for federation changes.** A post-install or
+   post-upgrade Job should omit `FUZEFRONT_REGISTRATION_PHASE` (the default is
+   `post-start`) and set `FUZEFRONT_REMOTE_HEALTH_URL` to the in-cluster remote.
+   That job verifies the serving asset before refreshing an existing live manifest.
+   FuzeQuality's `deploy/helm/fuzequality/templates/registration.yaml` is the
+   reference implementation.
 
 ## Mobile store and APK links
 
@@ -96,18 +105,27 @@ diagnose than a pod that refuses to start with a clear reason in its logs.
 Transient failures (connection refused, 5xx) are retried five times with backoff, so
 a platform that is still starting up does not trip this.
 
+For a post-start registration of a module-federation manifest whose `remoteEntry`
+is a same-origin `/apps/...` path, set `FUZEFRONT_PORTAL_URL` to the absolute portal
+origin. The registration preflight resolves the path against that origin before
+probing it. An absolute `FUZEFRONT_REMOTE_HEALTH_URL` remains the preferred override
+when the asset has a cluster-internal health address. Init registration deliberately
+does not probe or refresh that manifest because the serving container has not started.
+
 ## Idempotence
 
 Safe to run on every pod start, every restart, and concurrently across replicas:
 
-- already registered + activated → refreshes the manifest, does nothing else
+- already registered + activated in init phase → preserves the live manifest
+- already registered + activated post-start → verifies and refreshes the manifest
 - already registered, not activated → activates
 - not registered → registers, then activates
 - another replica registers first (`409`) → treated as success, not a failure
 
-Because it re-`PUT`s the manifest on every run, a redeploy picks up manifest changes
-(a new `remoteEntry` after a version bump, a changed `nav` placement). Without that,
-the first registration would be frozen forever and later edits would be silent no-ops.
+The post-start run re-`PUT`s the manifest after federation verification, so a redeploy
+picks up changes such as a new `remoteEntry` or changed `nav` placement. Init runs
+leave existing manifests untouched; otherwise a cold restart would either deadlock on
+its own frontend or publish an unverified live route.
 
 ## `manifest.schema.json` is generated
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams, useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@fuzefront/design-system'
 import {
   useCurrentUser,
@@ -71,6 +71,7 @@ import { useSelectionListsAuth } from './lib/selectionListsAuth'
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { state, dispatch } = useAppContext()
   const { t } = useT()
+  const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(true)
   // Set when an "add account" sign-in succeeded but the roster was already at
   // MAX_PARALLEL_ACCOUNTS. The session is discarded and the user is told why,
@@ -199,6 +200,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
           payload: menuRef.current.filter(m => m.appId !== appId),
         })
       },
+      onNavigate: path => navigate(path),
       socket: {
         on: (event, handler) => websocketService.onServer(event, handler),
         off: (event, handler) => websocketService.offServer(event, handler),
@@ -206,10 +208,16 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         isConnected: () => websocketService.isConnected(),
       },
     })
-  }, [dispatch])
+  }, [dispatch, navigate])
 
   useEffect(() => {
     const activeOrg = state.organizations.find(o => o.id === state.activeOrganizationId)
+    // Personal is presented as `activeOrganizationId === null`, but it is
+    // persisted and authorized through the user's provisioned personal org.
+    // Federated products need that canonical tenant just as they need an
+    // explicitly selected organization.
+    const personalOrg = state.organizations.find(o => o.type === 'personal')
+    const tenantId = activeOrg?.id ?? state.personalTenantId ?? personalOrg?.id ?? null
     bridge.setContext({
       user: state.user
         ? {
@@ -222,12 +230,13 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
       activeApp: state.activeApp
         ? { id: state.activeApp.id, name: state.activeApp.name }
         : null,
+      tenantId,
       activeOrganization: activeOrg
         ? { id: activeOrg.id, name: activeOrg.name }
         : null,
       isPlatformMode: true,
     })
-  }, [state.user, state.apps, state.activeApp, state.activeOrganizationId, state.organizations])
+  }, [state.user, state.apps, state.activeApp, state.activeOrganizationId, state.organizations, state.personalTenantId])
 
   if (isLoading) {
     return (

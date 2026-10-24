@@ -12,8 +12,9 @@
 - Kafka topic contracts, consumers, outbox foundations, and DLQs.
 - Helm chart, Argo CD application, Sealed Secrets, NetworkPolicies, health,
   metrics, and structured worker logging.
-- Production ingress at `https://quality.prod.fuzefront.com`, protected by
-  Cloudflare Access.
+- Production standalone ingress at `https://fuzequality.fuzefront.com`, public
+  for the PWA shell, manifest, icons, and Android Digital Asset Links, with
+  application authentication protecting user data rather than an edge login wall.
 - Existing platform PostgreSQL, Kafka, ChromaDB, LiteLLM endpoint, and
   FuzeFront security-service integration.
 - Read-only FuzeQuality GitHub App:

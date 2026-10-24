@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { importPKCS8, SignJWT } from 'jose'
 import { GITHUB_APP_PERMISSIONS } from '@fuzequality/github-app'
+import type { TestExecutionEvidenceLink } from '@fuzequality/contracts'
 
 const execFileAsync = promisify(execFile)
 const githubIdentifier = /^[A-Za-z0-9_.-]+$/
@@ -55,6 +56,13 @@ function assertIdentifier(value: string, label: string): void {
   if (!githubIdentifier.test(value) || value === '.' || value === '..') {
     throw new Error(`Invalid GitHub ${label}`)
   }
+}
+
+function isGithubBranchName(value: string): boolean {
+  if (!value || value.length > 255 || value.startsWith('refs/') || value.startsWith('/') || value.endsWith('/') || value.endsWith('.')) return false
+  if (value.includes('..') || value.includes('//') || value.includes('@{')) return false
+  if ([...value].some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127 || '~^:?*[\\'.includes(character))) return false
+  return !value.split('/').some(part => part.startsWith('.') || part.endsWith('.lock'))
 }
 
 function credentialFreeUrl(owner: string, name: string): string {
@@ -124,32 +132,237 @@ export async function githubInstallationToken(installationId: string): Promise<s
   return body.token
 }
 
-/** Dispatches only a repository-owned workflow on its configured default branch. */
-export async function dispatchPerformanceWorkflow(input: {
+function workflowArtifactKind(name: string): TestExecutionEvidenceLink['kind'] {
+  if (/video|recording|\.webm\b|\.mp4\b/i.test(name)) return 'video'
+  if (/trace/i.test(name)) return 'trace'
+  if (/screen(?:shot)?/i.test(name)) return 'screenshot'
+  if (/\blog(?:s)?\b/i.test(name)) return 'log'
+  if (/report|result|junit|coverage|playwright/i.test(name)) return 'report'
+  return 'other'
+}
+
+export type GitHubArtifactEvidenceErrorCode =
+  | 'PROVIDER_TIMEOUT'
+  | 'PROVIDER_UNAVAILABLE'
+  | 'PROVIDER_RESPONSE_INVALID'
+
+export class GitHubArtifactEvidenceError extends Error {
+  constructor(readonly code: GitHubArtifactEvidenceErrorCode, message: string) {
+    super(message)
+    this.name = 'GitHubArtifactEvidenceError'
+  }
+}
+
+export type GitHubWorkflowArtifactEvidence = {
+  links: TestExecutionEvidenceLink[]
+  /** Artifacts whose provider metadata cannot prove ownership by the requested attempt. */
+  unverifiedLinks: TestExecutionEvidenceLink[]
+  /** True when the provider had more pages than the bounded collection permits. */
+  truncated: boolean
+}
+
+const GITHUB_ARTIFACT_PAGE_SIZE = 100
+const GITHUB_ARTIFACT_MAX_PAGES = 10
+const GITHUB_ARTIFACT_LINK_LIMIT = 99
+const artifactKindPriority: Record<TestExecutionEvidenceLink['kind'], number> = {
+  video: 0,
+  report: 1,
+  trace: 2,
+  screenshot: 3,
+  log: 4,
+  other: 5,
+}
+
+/** Discovers durable, browser-accessible evidence uploaded by one completed run. */
+export async function githubWorkflowArtifactEvidence(input: {
   owner: string
   name: string
-  defaultBranch: string
+  runId: string
+  attempt: number
   installationId: string
-  workflowPath: string
   tokenProvider?: (installationId: string) => Promise<string>
   fetcher?: typeof fetch
-}): Promise<void> {
+  timeoutMs?: number
+}): Promise<GitHubWorkflowArtifactEvidence> {
   assertIdentifier(input.owner, 'owner')
   assertIdentifier(input.name, 'repository name')
-  if (!input.workflowPath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(input.workflowPath) || input.workflowPath.includes('..')) {
-    throw new Error('Only a scanned .github/workflows YAML performance workflow may be dispatched')
+  if (!/^\d+$/.test(input.runId)) throw new Error('Invalid GitHub Actions run ID')
+  if (!Number.isSafeInteger(input.attempt) || input.attempt <= 0) throw new Error('Invalid GitHub Actions run attempt')
+  if (!/^\d+$/.test(input.installationId)) throw new Error('Invalid GitHub App installation ID')
+  const timeoutMs = input.timeoutMs ?? 10_000
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('GitHub workflow artifact discovery timeout must be positive')
   }
+  const controller = new AbortController()
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort()
+      reject(new GitHubArtifactEvidenceError('PROVIDER_TIMEOUT', `GitHub workflow artifact discovery timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+  const collect = async () => {
+    const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
+    const fetchGithub = input.fetcher ?? fetch
+    const headers = { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' }
+    const runResponse = await fetchGithub(
+      `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}`,
+      { signal: controller.signal, headers },
+    )
+    if (!runResponse.ok) throw new GitHubArtifactEvidenceError('PROVIDER_UNAVAILABLE', `GitHub workflow run lookup failed: ${runResponse.status}`)
+    const run = (await runResponse.json()) as { run_attempt?: unknown; run_started_at?: unknown }
+    if (!Number.isSafeInteger(run.run_attempt) || Number(run.run_attempt) < input.attempt || typeof run.run_started_at !== 'string') {
+      throw new GitHubArtifactEvidenceError('PROVIDER_RESPONSE_INVALID', 'GitHub workflow run response was invalid')
+    }
+    let attemptStartedAt = run.run_started_at
+    let nextAttemptStartedAt: string | undefined
+    if (Number(run.run_attempt) !== input.attempt) {
+      const [attemptResponse, nextAttemptResponse] = await Promise.all([
+        fetchGithub(`https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}/attempts/${input.attempt}`, { signal: controller.signal, headers }),
+        fetchGithub(`https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}/attempts/${input.attempt + 1}`, { signal: controller.signal, headers }),
+      ])
+      if (!attemptResponse.ok || !nextAttemptResponse.ok) {
+        throw new GitHubArtifactEvidenceError('PROVIDER_UNAVAILABLE', 'GitHub workflow attempt lookup failed')
+      }
+      const attempt = (await attemptResponse.json()) as { run_started_at?: unknown }
+      const nextAttempt = (await nextAttemptResponse.json()) as { run_started_at?: unknown }
+      if (typeof attempt.run_started_at !== 'string' || typeof nextAttempt.run_started_at !== 'string') {
+        throw new GitHubArtifactEvidenceError('PROVIDER_RESPONSE_INVALID', 'GitHub workflow attempt response was invalid')
+      }
+      attemptStartedAt = attempt.run_started_at
+      nextAttemptStartedAt = nextAttempt.run_started_at
+    }
+    const attemptStart = Date.parse(attemptStartedAt)
+    const nextAttemptStart = nextAttemptStartedAt ? Date.parse(nextAttemptStartedAt) : Number.POSITIVE_INFINITY
+    if (!Number.isFinite(attemptStart) || nextAttemptStart <= attemptStart) {
+      throw new GitHubArtifactEvidenceError('PROVIDER_RESPONSE_INVALID', 'GitHub workflow attempt timestamps were invalid')
+    }
+    const links: TestExecutionEvidenceLink[] = []
+    const unverifiedLinks: TestExecutionEvidenceLink[] = []
+    let truncated = false
+    for (let page = 1; page <= GITHUB_ARTIFACT_MAX_PAGES; page += 1) {
+      const pageSuffix = page === 1 ? '' : `&page=${page}`
+      const response = await fetchGithub(
+        `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}/artifacts?per_page=${GITHUB_ARTIFACT_PAGE_SIZE}${pageSuffix}`,
+        {
+          signal: controller.signal,
+          headers,
+        },
+      )
+      if (!response.ok) throw new GitHubArtifactEvidenceError('PROVIDER_UNAVAILABLE', `GitHub workflow artifact discovery failed: ${response.status}`)
+      const body = (await response.json()) as { artifacts?: unknown; total_count?: unknown }
+      if (!Array.isArray(body.artifacts) || (body.total_count !== undefined && (!Number.isSafeInteger(body.total_count) || Number(body.total_count) < 0))) {
+        throw new GitHubArtifactEvidenceError('PROVIDER_RESPONSE_INVALID', 'GitHub workflow artifact response was invalid')
+      }
+      links.push(...body.artifacts.flatMap((value): TestExecutionEvidenceLink[] => {
+        if (!value || typeof value !== 'object') return []
+        const artifact = value as { id?: unknown; name?: unknown; expired?: unknown; created_at?: unknown }
+        if (
+          typeof artifact.id !== 'number' || !Number.isSafeInteger(artifact.id) || artifact.id <= 0 ||
+          typeof artifact.name !== 'string' || !artifact.name.trim() || artifact.expired === true
+        ) return []
+        const name = artifact.name.trim().slice(0, 200)
+        const link: TestExecutionEvidenceLink = {
+          kind: workflowArtifactKind(name),
+          name,
+          url: `https://github.com/${input.owner}/${input.name}/actions/runs/${input.runId}/artifacts/${artifact.id}`,
+        }
+        const createdAt = typeof artifact.created_at === 'string' ? Date.parse(artifact.created_at) : Number.NaN
+        if (!Number.isFinite(createdAt)) {
+          unverifiedLinks.push(link)
+          return []
+        }
+        return createdAt >= attemptStart && createdAt < nextAttemptStart ? [link] : []
+      }))
+      const totalCount = typeof body.total_count === 'number' ? body.total_count : undefined
+      const consumed = page * GITHUB_ARTIFACT_PAGE_SIZE
+      const hasMore = totalCount !== undefined
+        ? consumed < totalCount
+        : body.artifacts.length === GITHUB_ARTIFACT_PAGE_SIZE
+      if (!hasMore) break
+      if (page === GITHUB_ARTIFACT_MAX_PAGES) truncated = true
+    }
+    const deduplicated = [...new Map(links.map(link => [link.url, link])).values()]
+    const prioritized = deduplicated
+      .sort((left, right) => artifactKindPriority[left.kind] - artifactKindPriority[right.kind] || left.name.localeCompare(right.name))
+      .slice(0, GITHUB_ARTIFACT_LINK_LIMIT)
+    return {
+      links: prioritized,
+      unverifiedLinks: [...new Map(unverifiedLinks.map(link => [link.url, link])).values()].slice(0, GITHUB_ARTIFACT_LINK_LIMIT),
+      truncated: truncated || deduplicated.length > GITHUB_ARTIFACT_LINK_LIMIT || unverifiedLinks.length > GITHUB_ARTIFACT_LINK_LIMIT,
+    }
+  }
+  try {
+    return await Promise.race([collect(), timedOut])
+  } catch (error) {
+    if (error instanceof GitHubArtifactEvidenceError) throw error
+    throw new GitHubArtifactEvidenceError('PROVIDER_UNAVAILABLE', 'GitHub workflow artifact discovery is unavailable')
+  } finally {
+    if (timeout) clearTimeout(timeout)
+    controller.abort()
+  }
+}
+
+/** Dispatches only a scanner-reviewed repository workflow at an immutable analyzed commit. */
+export async function dispatchTestWorkflow(input: {
+  owner: string
+  name: string
+  sourceRevision: string
+  sourceRef: string
+  installationId: string
+  workflowPath: string
+  inputs?: Record<string, string>
+  tokenProvider?: (installationId: string) => Promise<string>
+  fetcher?: typeof fetch
+}): Promise<{ ref: string; sourceRevision: string }> {
+  assertIdentifier(input.owner, 'owner')
+  assertIdentifier(input.name, 'repository name')
+  if (!immutableCommit.test(input.sourceRevision)) {
+    throw new Error('An exact analyzed commit SHA is required for test-suite dispatch')
+  }
+  if (!isGithubBranchName(input.sourceRef)) {
+    throw new Error('A valid analyzed branch is required for test-suite dispatch')
+  }
+  if (!/^\.github\/workflows\/[^/]+\.ya?ml$/i.test(input.workflowPath)) {
+    throw new Error('Only a scanned .github/workflows YAML test workflow may be dispatched')
+  }
+  const workflowInputs = input.inputs ?? {}
+  const inputEntries = Object.entries(workflowInputs)
+  if (inputEntries.length > 20 || inputEntries.some(([name, value]) =>
+    !/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(name) || !value.trim() || value.length > 256
+  )) {
+    throw new Error('Workflow dispatch inputs must be bounded non-empty GitHub input values')
+  }
+  const normalizedInputs = Object.fromEntries(inputEntries.map(([name, value]) => [name, value.trim()]))
   const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
-  const response = await (input.fetcher ?? fetch)(
-    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/workflows/${encodeURIComponent(input.workflowPath)}/dispatches`,
+  const fetchGithub = input.fetcher ?? fetch
+  const headers = { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' }
+  const branchResponse = await fetchGithub(
+    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/branches/${encodeURIComponent(input.sourceRef)}`,
+    { headers },
+  )
+  if (!branchResponse.ok) throw new Error(`GitHub analyzed branch verification failed: ${branchResponse.status}`)
+  const branch = (await branchResponse.json()) as { commit?: { sha?: string } }
+  if (branch.commit?.sha?.toLowerCase() !== input.sourceRevision.toLowerCase()) {
+    throw new Error('Analyzed branch has advanced; rescan the repository before dispatch')
+  }
+  const response = await fetchGithub(
+    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/workflows/${encodeURIComponent(basename(input.workflowPath))}/dispatches`,
     {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'content-type': 'application/json' },
-      body: JSON.stringify({ ref: input.defaultBranch }),
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ref: input.sourceRef,
+        ...(inputEntries.length ? { inputs: normalizedInputs } : {}),
+      }),
     },
   )
-  if (!response.ok) throw new Error(`GitHub performance workflow dispatch failed: ${response.status}`)
+  if (!response.ok) throw new Error(`GitHub test workflow dispatch failed: ${response.status}`)
+  return { ref: input.sourceRef, sourceRevision: input.sourceRevision }
 }
+
+/** @deprecated Use dispatchTestWorkflow for new executable test-suite paths. */
+export const dispatchPerformanceWorkflow = dispatchTestWorkflow
 
 /**
  * Fetches exactly one immutable commit into isolated storage. Authentication is

@@ -52,6 +52,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/session/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active workspaces available to the current session
+         * @description Returns canonical personal and organization workspace choices backed by the caller's direct active memberships. Discovery is available before a tenant is selected; callers must still prove the chosen workspace with GET /session?tenant= before using tenant-scoped APIs.
+         */
+        get: operations["listSessionWorkspaces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/session/password/reset-request": {
         parameters: {
             query?: never;
@@ -1339,6 +1359,17 @@ export interface components {
             identity: components["schemas"]["Identity"];
             user: components["schemas"]["User"];
         };
+        /** @description A canonical active workspace the session identity may select. */
+        SessionWorkspace: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            type: "personal" | "organization";
+        };
+        SessionWorkspaceList: {
+            workspaces: components["schemas"]["SessionWorkspace"][];
+        };
         /** @description Result of the public inline email-availability check. `available` is the negation of "an account already exists"; `email` is the normalized (trimmed + lowercased) address that was actually checked. */
         EmailAvailability: {
             /** @description True when no account exists for the email and it is free to register. */
@@ -2260,6 +2291,28 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listSessionWorkspaces: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active workspace choices for the current identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionWorkspaceList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     requestPasswordReset: {
