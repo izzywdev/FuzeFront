@@ -121,6 +121,35 @@ describe('internal execution ingestion compatibility', () => {
     })
   })
 
+  it('preserves verified attempt evidence when the latest provider inventory is only partial', async () => {
+    const verifiedVideo = {
+      kind: 'video' as const,
+      name: 'Verified Playwright video',
+      url: 'https://github.com/acme/app/actions/runs/42/artifacts/7',
+    }
+    const unverifiedVideo = {
+      kind: 'video' as const,
+      name: 'Run-level video without attempt provenance',
+      url: 'https://github.com/acme/app/actions/runs/42/artifacts/9',
+    }
+    const execution = webhookExecutionRecord({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000', provider: 'github-actions',
+      externalRunId: '42', attempt: 2, revision: 'abc123', kind: 'post-production',
+      status: 'passed', name: 'Production journey', evidenceLinks: [verifiedVideo],
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T03:00:00.000Z' },
+    }, 'tenant-1', { policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] })
+
+    const refreshed = await refreshExecutionArtifactEvidence(execution, async () => ({
+      links: [], unverifiedLinks: [unverifiedVideo], truncated: false,
+    }), '2026-10-18T04:00:00.000Z')
+
+    expect(refreshed.evidenceLinks).toEqual([verifiedVideo])
+    expect(refreshed.evidenceCollection).toEqual({
+      status: 'partial', checkedAt: '2026-10-18T04:00:00.000Z',
+      issues: ['attempt-provenance-unverified'], unverifiedLinks: [unverifiedVideo],
+    })
+  })
+
   it('reconciles expired provider artifacts when a refresh is complete', async () => {
     const execution = webhookExecutionRecord({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000', provider: 'github-actions',

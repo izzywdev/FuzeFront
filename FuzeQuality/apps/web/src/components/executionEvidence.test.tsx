@@ -132,6 +132,28 @@ describe('ExecutionThresholdEvidence', () => {
     rerender(<ExecutionEvidenceCoverage execution={{
       ...execution,
       provider: 'github-actions',
+      attempt: 2,
+      evidenceLinks: [{
+        kind: 'video',
+        name: 'Verified Playwright video',
+        url: 'https://github.com/acme/app/actions/runs/42/artifacts/7',
+      }],
+      evidenceCollection: {
+        status: 'partial', checkedAt: '2026-10-16T08:00:00.000Z',
+        issues: ['attempt-provenance-unverified'],
+        unverifiedLinks: [{ kind: 'video', name: 'Run video', url: 'https://github.com/acme/app/actions/runs/42/artifacts/9' }],
+      },
+    }} />)
+
+    expect(screen.getByRole('region', { name: 'Execution evidence coverage' })).toHaveTextContent(
+      '2 thresholds · 1 artifacts · 1 policy–gate outcomes'
+    )
+    expect(screen.getByText(/run-level artifacts were withheld/i)).toHaveTextContent('attempt 2')
+    expect(screen.queryByText('Required post-production video evidence is missing')).not.toBeInTheDocument()
+
+    rerender(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      provider: 'github-actions',
       evidenceLinks: [{
         kind: 'report',
         name: 'GitHub Actions artifacts',

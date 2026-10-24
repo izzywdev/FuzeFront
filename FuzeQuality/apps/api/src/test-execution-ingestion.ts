@@ -124,7 +124,10 @@ export async function refreshExecutionArtifactEvidence<T extends Pick<TestExecut
     ]
     return {
       ...execution,
-      evidenceLinks: discovered.truncated
+      // Any partial provider observation is non-authoritative. In particular,
+      // artifacts without exact-attempt provenance must not make an earlier
+      // verified GitHub link look deleted in the durable record or refresh UI.
+      evidenceLinks: issues.length
         ? mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered.links)
         : reconcileCompleteExecutionEvidenceLinks(execution.evidenceLinks, discovered.links),
       evidenceCollection: issues.length
