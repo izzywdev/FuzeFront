@@ -55,4 +55,47 @@ describe('webhook scan dispatch', () => {
     })
     expect(repositoryAccess.verify).toHaveBeenCalledWith(expect.objectContaining({ installationId: '42' }))
   })
+
+  it('continues reconciling valid tenant copies after one installation verification fails', async () => {
+    const secondRepository: Repository = {
+      ...repository,
+      id: 'c5908e35-8a57-4c13-9366-489ec59071fe',
+      tenantId: 'tenant-2',
+      installationId: '84',
+    }
+    const store = new MemoryCatalogStore({
+      ...seed(),
+      repositories: [repository, secondRepository],
+    })
+    const events = new InProcessEventBus()
+    const repositoryAccess = {
+      verify: vi.fn()
+        .mockRejectedValueOnce(new Error('stale installation'))
+        .mockResolvedValueOnce({ commitSha: 'c'.repeat(40) }),
+    }
+
+    await expect(dispatchWebhookScans([
+      { repositoryId: repository.id, trigger: 'reconcile' },
+      { repositoryId: secondRepository.id, trigger: 'reconcile' },
+    ], [repository, secondRepository], {
+      store,
+      events,
+      repositoryAccess: repositoryAccess as never,
+    })).resolves.toBe(1)
+
+    expect(await store.repository(repository.id, 'tenant-1')).toMatchObject({
+      lastScanStatus: 'failed',
+    })
+    expect(await store.repository(secondRepository.id, 'tenant-2')).toMatchObject({
+      lastScanStatus: 'queued',
+    })
+    expect(events.events).toEqual([expect.objectContaining({
+      key: secondRepository.id,
+      payload: {
+        repositoryId: secondRepository.id,
+        commitSha: 'c'.repeat(40),
+        trigger: 'reconcile',
+      },
+    })])
+  })
 })

@@ -25,13 +25,22 @@ export async function dispatchWebhookScans(
     let commitSha = command.commitSha
     if (!commitSha) {
       if (!repository.installationId) continue
-      const access = await dependencies.repositoryAccess.verify({
-        owner: repository.owner,
-        name: repository.name,
-        defaultBranch: repository.defaultBranch,
-        installationId: repository.installationId,
-      })
-      commitSha = access.commitSha
+      try {
+        const access = await dependencies.repositoryAccess.verify({
+          owner: repository.owner,
+          name: repository.name,
+          defaultBranch: repository.defaultBranch,
+          installationId: repository.installationId,
+        })
+        commitSha = access.commitSha
+      } catch {
+        // One tenant's stale installation binding must not prevent other
+        // onboarded copies of the same GitHub repository from reconciling.
+        // Keep this repository's failure visible to frontend polling without
+        // exposing provider diagnostics in shared catalog state.
+        await dependencies.store.setRepositoryStatus(repository.id, 'failed')
+        continue
+      }
     }
 
     await dependencies.store.setRepositoryStatus(repository.id, 'queued')
