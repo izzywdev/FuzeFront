@@ -134,7 +134,9 @@ describe('repository scanner', () => {
     await writeFile(join(root, '.github', 'workflows', 'verify-system.yml'), 'name: Verify system\nenv:\n  FUZEQUALITY_STAGE: integration\n  FUZEQUALITY_EXECUTION: dispatch\non: [workflow_dispatch]\njobs:\n  integration:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:system')
     await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
     await writeFile(join(root, '.github', 'workflows', 'load-test.yml'), 'name: Invalid legacy marker\nx-fuzequality-performance: load\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
+    await writeFile(join(root, '.github', 'workflows', 'load_test.yml'), 'name: Inventory load test\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
     await writeFile(join(root, '.github', 'workflows', 'stress.yml'), 'name: Stress test\nenv:\n  FUZEQUALITY_PERFORMANCE: stress\non: [workflow_dispatch]\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
+    await writeFile(join(root, '.github', 'workflows', 'stress_test.yaml'), 'name: Inventory stress test\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
     await writeFile(join(root, '.github', 'workflows', 'nightly-benchmark.yml'), 'name: Nightly benchmark\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non: workflow_dispatch\njobs:\n  benchmark:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run benchmark')
     await writeFile(join(root, '.github', 'workflows', 'parameterized-load.yml'), 'name: Parameterized load\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non:\n  workflow_dispatch:\n    inputs:\n      environment:\n        required: true\n        type: string\n      duration:\n        required: true\n        default: 5m\n        type: string\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
     await writeFile(join(root, 'src', 'loader.ts'), 'export const loader = () => "production"')
@@ -172,6 +174,8 @@ describe('repository scanner', () => {
       expect.objectContaining({ kind: 'load-test', sourcePath: 'load-tests/scenario.js' }),
       expect.objectContaining({ kind: 'stress-test', sourcePath: 'stress-tests/scenario.js' }),
       expect.objectContaining({ kind: 'load-test', sourcePath: 'performance.yml' }),
+      expect.objectContaining({ kind: 'load-test', sourcePath: '.github/workflows/load_test.yml', execution: undefined }),
+      expect.objectContaining({ kind: 'stress-test', sourcePath: '.github/workflows/stress_test.yaml', execution: undefined }),
       expect.objectContaining({
         kind: 'load-test',
         sourcePath: '.github/workflows/load.yml',

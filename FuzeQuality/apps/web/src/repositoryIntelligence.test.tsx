@@ -2646,6 +2646,28 @@ describe('RepositoryIntelligence flow inventory', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('shows an ingested outcome for an inventory-only performance workflow', async () => {
+    mockEvidenceApis()
+    const inventoryWorkflow = {
+      ...loadArtifact,
+      sourcePath: '.github/workflows/load_test.yml',
+      execution: undefined,
+    }
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([inventoryWorkflow])
+    vi.mocked(api.latestPerformanceExecutions).mockResolvedValue({
+      items: [{ ...loadExecution, workflowPath: inventoryWorkflow.sourcePath }],
+    })
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(/Inventory only/)).toBeVisible()
+    const outcome = await screen.findByLabelText(`Latest execution for ${inventoryWorkflow.title}`)
+    expect(outcome).toHaveTextContent('failed · revision-1')
+    expect(outcome).toHaveTextContent('Latency threshold exceeded.')
+    expect(screen.queryByRole('button', { name: /Run analyzed revision/ })).not.toBeInTheDocument()
+  })
+
   it('collects exact required workflow inputs before controlled dispatch', async () => {
     mockEvidenceApis()
     const inputWorkflow = {

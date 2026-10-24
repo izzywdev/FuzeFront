@@ -5985,7 +5985,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 exact commit before dispatching this workflow.
                               </small>
                             )}
-                          {['load-test', 'stress-test'].includes(item.kind) && item.execution && !lowerPrioritySharedWorkflow && (
+                          {['load-test', 'stress-test'].includes(item.kind) && !lowerPrioritySharedWorkflow && (
                             <section
                               className="performance-latest-execution"
                               aria-label={`Latest execution for ${item.title}`}

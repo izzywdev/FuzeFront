@@ -158,11 +158,11 @@ const QUALITY_ARTIFACT_GLOBS: Array<{ kind: QualityArtifact['kind']; glob: strin
   { kind: 'load-test', glob: '**/{load,load-test,load-tests,performance,performance-test,performance-tests,k6,artillery}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
   { kind: 'load-test', glob: '**/{load,performance,k6,artillery}.{ts,js,mjs,py,json,yaml,yml}' },
   { kind: 'load-test', glob: '**/{load,load-test,performance,performance-test,k6,artillery}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
-  { kind: 'load-test', glob: '**/.github/workflows/{load,load-test,performance,performance-test,k6,artillery}.{yaml,yml}' },
+  { kind: 'load-test', glob: '**/.github/workflows/{load,load-test,load_test,performance,performance-test,performance_test,k6,artillery}.{yaml,yml}' },
   { kind: 'stress-test', glob: '**/{stress,stress-test,stress-tests,soak,soak-test,soak-tests}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
   { kind: 'stress-test', glob: '**/{stress,soak}.{ts,js,mjs,py,json,yaml,yml}' },
   { kind: 'stress-test', glob: '**/{stress,stress-test,soak,soak-test}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
-  { kind: 'stress-test', glob: '**/.github/workflows/{stress,stress-test,soak,soak-test}.{yaml,yml}' },
+  { kind: 'stress-test', glob: '**/.github/workflows/{stress,stress-test,stress_test,soak,soak-test,soak_test}.{yaml,yml}' },
 ]
 
 function workflowDispatchMetadata(
