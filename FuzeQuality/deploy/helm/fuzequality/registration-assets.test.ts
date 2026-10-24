@@ -151,6 +151,15 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(securityLocation).not.toContain('$proxy_add_x_forwarded_for')
     expect(nginx).toContain('limit_req_zone $binary_remote_addr zone=fq_health:10m rate=10r/s')
     expect(nginx.match(/limit_req zone=fq_health burst=20 nodelay/g)).toHaveLength(2)
+    const firstLocation = nginx.indexOf('\n  location ')
+    const frameAncestors = `add_header Content-Security-Policy "frame-ancestors 'none'" always;`
+    const frameOptions = 'add_header X-Frame-Options "DENY" always;'
+    expect(nginx.match(/add_header Content-Security-Policy/g)).toHaveLength(1)
+    expect(nginx.match(/add_header X-Frame-Options/g)).toHaveLength(1)
+    expect(nginx.indexOf(frameAncestors)).toBeGreaterThan(-1)
+    expect(nginx.indexOf(frameAncestors)).toBeLessThan(firstLocation)
+    expect(nginx.indexOf(frameOptions)).toBeGreaterThan(-1)
+    expect(nginx.indexOf(frameOptions)).toBeLessThan(firstLocation)
   })
 
   it('keeps the standalone development boundary aligned with the API-only auth bypass', () => {
