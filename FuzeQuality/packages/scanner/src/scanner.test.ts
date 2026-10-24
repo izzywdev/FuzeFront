@@ -131,6 +131,7 @@ describe('repository scanner', () => {
     await writeFile(join(root, '.github', 'workflows', 'post-production-deploy.yml'), 'name: Post production deployment\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
     await writeFile(join(root, '.github', 'workflows', 'verify-live.yml'), 'name: Verify live journeys\nenv:\n  FUZEQUALITY_STAGE: post-production\n  FUZEQUALITY_EXECUTION: dispatch\non:\n  workflow_dispatch:\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:live')
     await writeFile(join(root, '.github', 'workflows', 'integration.yml'), 'name: Integration tests\njobs:\n  integration:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:integration')
+    await writeFile(join(root, '.github', 'workflows', 'integration_tests.yml'), 'jobs:\n  integration_tests:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:integration')
     await writeFile(join(root, '.github', 'workflows', 'verify-system.yml'), 'name: Verify system\nenv:\n  FUZEQUALITY_STAGE: integration\n  FUZEQUALITY_EXECUTION: dispatch\non: [workflow_dispatch]\njobs:\n  integration:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:system')
     await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
     await writeFile(join(root, '.github', 'workflows', 'load-test.yml'), 'name: Invalid legacy marker\nx-fuzequality-performance: load\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
@@ -161,6 +162,7 @@ describe('repository scanner', () => {
         },
       }),
       expect.objectContaining({ kind: 'integration-test', sourcePath: '.github/workflows/integration.yml' }),
+      expect.objectContaining({ kind: 'integration-test', sourcePath: '.github/workflows/integration_tests.yml' }),
       expect.objectContaining({
         kind: 'integration-test',
         sourcePath: '.github/workflows/verify-system.yml',
@@ -230,7 +232,7 @@ describe('repository scanner', () => {
       item.kind === 'post-production-test' &&
       item.sourcePath === '.github/workflows/post-production-deploy.yml'
     )).toBe(false)
-    expect(result.qualityArtifacts?.filter(item => item.kind === 'integration-test')).toHaveLength(2)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'integration-test')).toHaveLength(3)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'story' && item.sourcePath === 'stories/Checkout.stories.tsx')).toHaveLength(2)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'test-plan' && item.sourcePath === 'tests/checkout.spec.ts')).toHaveLength(2)
 

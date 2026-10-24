@@ -274,6 +274,7 @@ function isIntegrationWorkflow(sourcePath: string, source: string): boolean {
     const document = parseYaml(source) as { name?: unknown; env?: Record<string, unknown> } | undefined
     if (document?.env?.FUZEQUALITY_STAGE === 'integration') return true
     const identity = `${sourcePath} ${typeof document?.name === 'string' ? document.name : ''}`
+      .replace(/[_./-]+/g, ' ')
     return /\bintegration\b/i.test(identity)
   } catch {
     return false
