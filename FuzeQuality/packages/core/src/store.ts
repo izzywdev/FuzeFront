@@ -151,6 +151,13 @@ function testExecutionOccurredAtMillis(execution: TestExecution) {
   const occurredAt = Date.parse(testExecutionOccurredAt(execution))
   return Number.isFinite(occurredAt) ? occurredAt : 0
 }
+
+function latestTestExecutionAtMillis(execution: TestExecution) {
+  if (execution.completedAt || execution.startedAt) {
+    return testExecutionOccurredAtMillis(execution)
+  }
+  return testExecutionCursorCreatedAtMillis(execution)
+}
 export type IdentityLifecycleProjection =
   | { type: 'organization.upsert'; tenant: QualityTenant }
   | { type: 'organization.deleted'; tenantId: string }
@@ -581,7 +588,7 @@ export class MemoryCatalogStore implements CatalogStore {
         (item.kind === 'load' || item.kind === 'stress') &&
         Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
       )
-      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))) {
+      .sort((left, right) => latestTestExecutionAtMillis(right) - latestTestExecutionAtMillis(left) || right.id.localeCompare(left.id))) {
       const workflowPath = normalizeWorkflowPath(execution.workflowPath)
       if (workflowPath && !latest.has(workflowPath)) latest.set(workflowPath, execution)
     }
@@ -599,7 +606,7 @@ export class MemoryCatalogStore implements CatalogStore {
         item.kind === 'post-production' &&
         Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
       )
-      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))) {
+      .sort((left, right) => latestTestExecutionAtMillis(right) - latestTestExecutionAtMillis(left) || right.id.localeCompare(left.id))) {
       const workflowPath = normalizeWorkflowPath(execution.workflowPath)
       if (workflowPath && !latest.has(workflowPath)) latest.set(workflowPath, execution)
     }
@@ -617,7 +624,7 @@ export class MemoryCatalogStore implements CatalogStore {
         item.kind === 'integration' &&
         Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
       )
-      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))) {
+      .sort((left, right) => latestTestExecutionAtMillis(right) - latestTestExecutionAtMillis(left) || right.id.localeCompare(left.id))) {
       const workflowPath = normalizeWorkflowPath(execution.workflowPath)
       if (workflowPath && !latest.has(workflowPath)) latest.set(workflowPath, execution)
     }
@@ -1623,7 +1630,7 @@ export class PostgresCatalogStore implements CatalogStore {
          AND workflow_path=ANY($3::text[])
          AND branch=$4
          AND (provider<>'github-actions' OR lower(head_repository)=lower($5))
-       ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
+       ORDER BY workflow_path,COALESCE(completed_at,started_at,created_at) DESC,id DESC`,
       [repositoryId, tenantId, workflowPaths, branch, headRepository],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))
@@ -1639,7 +1646,7 @@ export class PostgresCatalogStore implements CatalogStore {
          AND workflow_path=ANY($3::text[])
          AND branch=$4
          AND (provider<>'github-actions' OR lower(head_repository)=lower($5))
-       ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
+       ORDER BY workflow_path,COALESCE(completed_at,started_at,created_at) DESC,id DESC`,
       [repositoryId, tenantId, workflowPaths, branch, headRepository],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))
@@ -1655,7 +1662,7 @@ export class PostgresCatalogStore implements CatalogStore {
          AND workflow_path=ANY($3::text[])
          AND branch=$4
          AND (provider<>'github-actions' OR lower(head_repository)=lower($5))
-       ORDER BY workflow_path,COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC`,
+       ORDER BY workflow_path,COALESCE(completed_at,started_at,created_at) DESC,id DESC`,
       [repositoryId, tenantId, workflowPaths, branch, headRepository],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))

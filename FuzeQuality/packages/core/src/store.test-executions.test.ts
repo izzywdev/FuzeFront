@@ -109,6 +109,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('branch=$4')
     expect(String(sql)).toContain("provider<>'github-actions' OR lower(head_repository)=lower($5)")
     expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
+    expect(String(sql)).toContain('COALESCE(completed_at,started_at,created_at) DESC')
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/load.yml'], 'main', 'acme/app'])
   })
 
@@ -134,6 +135,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
     expect(String(sql)).toContain('branch=$4')
     expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
+    expect(String(sql)).toContain('COALESCE(completed_at,started_at,created_at) DESC')
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/post-prod.yml'], 'main', 'acme/app'])
   })
 
@@ -159,7 +161,39 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
     expect(String(sql)).toContain('branch=$4')
     expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
+    expect(String(sql)).toContain('COALESCE(completed_at,started_at,created_at) DESC')
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main', 'acme/app'])
+  })
+
+  it('uses ingestion time to select newly recorded running executions without provider timestamps', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = new MemoryCatalogStore()
+      const base = {
+        repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const,
+        attempt: 1, revision: 'abc', branch: 'main', headRepository: 'acme/app',
+        status: 'passed' as const, name: 'workflow', policyArtifactIds: [], gateArtifactIds: [],
+        gateEvaluations: [], thresholds: [], evidenceLinks: [],
+      }
+      vi.setSystemTime(new Date('2026-10-20T00:00:00.000Z'))
+      await store.saveTestExecution({ id: 'load-complete', ...base, externalRunId: 'load-complete', kind: 'load', workflowPath: '.github/workflows/load.yml', completedAt: '2026-10-20T00:00:00.000Z' })
+      await store.saveTestExecution({ id: 'post-complete', ...base, externalRunId: 'post-complete', kind: 'post-production', workflowPath: '.github/workflows/post.yml', completedAt: '2026-10-20T00:00:00.000Z' })
+      await store.saveTestExecution({ id: 'integration-complete', ...base, externalRunId: 'integration-complete', kind: 'integration', workflowPath: '.github/workflows/integration.yml', completedAt: '2026-10-20T00:00:00.000Z' })
+
+      vi.setSystemTime(new Date('2026-10-21T00:00:00.000Z'))
+      await store.saveTestExecution({ id: 'load-running', ...base, externalRunId: 'load-running', kind: 'load', status: 'running', workflowPath: '.github/workflows/load.yml' })
+      await store.saveTestExecution({ id: 'post-running', ...base, externalRunId: 'post-running', kind: 'post-production', status: 'running', workflowPath: '.github/workflows/post.yml' })
+      await store.saveTestExecution({ id: 'integration-running', ...base, externalRunId: 'integration-running', kind: 'integration', status: 'running', workflowPath: '.github/workflows/integration.yml' })
+
+      await expect(store.latestPerformanceExecutions('repo-1', 'org-1', ['.github/workflows/load.yml'], 'main', 'acme/app'))
+        .resolves.toEqual([expect.objectContaining({ id: 'load-running' })])
+      await expect(store.latestPostProductionExecutions('repo-1', 'org-1', ['.github/workflows/post.yml'], 'main', 'acme/app'))
+        .resolves.toEqual([expect.objectContaining({ id: 'post-running' })])
+      await expect(store.latestIntegrationExecutions('repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main', 'acme/app'))
+        .resolves.toEqual([expect.objectContaining({ id: 'integration-running' })])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('updates a run lifecycle in place but preserves reruns without a source URL', async () => {

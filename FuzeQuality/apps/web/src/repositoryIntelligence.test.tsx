@@ -1172,6 +1172,33 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, { cursor: 'older-days' })
   })
 
+  it('retains successful trend continuation when another repository fails', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const secondRepository = { ...repository, id: 'repo-2', name: 'agent' }
+    vi.mocked(api.executionTrend).mockImplementation(async (repositoryId, filter) => {
+      if (!filter?.cursor) return {
+        items: [{ date: repositoryId === repository.id ? '2026-10-02' : '2026-10-01', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 1, averageDurationMs: 10, maximumDurationMs: 10, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 }],
+        page: { nextCursor: `trend-${repositoryId}`, hasMore: true },
+      }
+      if (repositoryId === secondRepository.id) throw new Error('temporary continuation failure')
+      return {
+        items: [{ date: '2026-09-30', total: 2, passed: 1, failed: 1, cancelled: 0, running: 0, passRate: 0.5, durationSampleCount: 2, averageDurationMs: 20, maximumDurationMs: 30, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 }],
+        page: { nextCursor: null, hasMore: false },
+      }
+    })
+
+    render(<RepositoryIntelligence data={{ ...portfolio, repositories: [repository, secondRepository] }} />)
+
+    const trend = await screen.findByLabelText('Execution outcome trend')
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more outcome trend' }))
+    await waitFor(() => expect(trend).toHaveTextContent('2026-09-30'))
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Unable to load more execution trend history for 1 repository. Successful evidence remains visible.'
+    )
+    expect(screen.getByRole('button', { name: 'Load more outcome trend' })).toBeVisible()
+  })
+
   it('discards an older trend continuation when the execution filter changes', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

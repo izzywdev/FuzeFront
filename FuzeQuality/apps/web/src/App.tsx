@@ -4701,7 +4701,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setLoadingMoreExecutionTrend(true)
     setExecutionTrendPaginationError(undefined)
     try {
-      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+      const results = await Promise.allSettled(cursors.map(async ([repositoryId, cursor]) => ({
         repositoryId,
         page: normalizeHistoryPage(await api.executionTrend(repositoryId, {
           ...executionFilter,
@@ -4709,12 +4709,22 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         })),
       })))
       if (executionTrendQueryRef.current !== query) return
+      const groups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
+      const failedRepositoryIds = results.flatMap((result, index) =>
+        result.status === 'rejected' ? [cursors[index][0]] : []
+      )
       setExecutionTrends(current => [...current, ...groups.map(group => group.page.items)])
-      setExecutionTrendNextCursors(Object.fromEntries(
-        groups.flatMap(group => group.page.page.nextCursor
-          ? [[group.repositoryId, group.page.page.nextCursor]]
-          : [])
-      ))
+      setExecutionTrendNextCursors(current => {
+        const next = { ...current }
+        groups.forEach(group => {
+          if (group.page.page.nextCursor) next[group.repositoryId] = group.page.page.nextCursor
+          else delete next[group.repositoryId]
+        })
+        return next
+      })
+      if (failedRepositoryIds.length) {
+        setExecutionTrendPaginationError(`Unable to load more execution trend history for ${failedRepositoryIds.length} ${failedRepositoryIds.length === 1 ? 'repository' : 'repositories'}. Successful evidence remains visible.`)
+      }
     } catch (cause) {
       if (executionTrendQueryRef.current === query) {
         setExecutionTrendPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution trend history.')
