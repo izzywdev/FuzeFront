@@ -789,8 +789,8 @@ export async function scanRepository(
   )
   const qualityArtifacts = [
     ...surfaces.filter(surface => surface.routePath).map(surface => ({
-      id: qualityArtifactId(repository.id, revision, 'route', surface.sourcePath),
-      logicalId: qualityArtifactLogicalId(repository.id, 'route', surface.sourcePath),
+      id: qualityArtifactId(repository.id, revision, 'route', surface.sourcePath, surface.routePath!),
+      logicalId: qualityArtifactLogicalId(repository.id, 'route', surface.sourcePath, surface.routePath!),
       repositoryId: repository.id,
       kind: 'route' as const,
       title: surface.name,

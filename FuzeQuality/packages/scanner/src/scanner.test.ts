@@ -275,6 +275,32 @@ describe('repository scanner', () => {
     expect(new Set(repeatedPlans.flatMap(item => item.evidence)).size).toBeGreaterThanOrEqual(2)
   })
 
+  it('keeps routes declared in one source file as distinct catalog artifacts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-multi-route-'))
+    await mkdir(join(root, 'src'), { recursive: true })
+    await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@fuze/multi-route' }))
+    await writeFile(
+      join(root, 'src', 'routes.tsx'),
+      `export const routes = [
+        { path: '/quality/flows', element: 'Flows' },
+        { path: '/quality/policies', element: 'Policies' },
+      ]`,
+    )
+
+    const result = await scanRepository(repository, root)
+    const routes = result.qualityArtifacts?.filter(artifact =>
+      artifact.kind === 'route' && artifact.sourcePath === 'src/routes.tsx'
+    ) ?? []
+
+    expect(routes).toHaveLength(2)
+    expect(new Set(routes.map(artifact => artifact.id)).size).toBe(2)
+    expect(new Set(routes.map(artifact => artifact.logicalId)).size).toBe(2)
+    expect(routes.map(artifact => artifact.evidence[0]).sort()).toEqual([
+      '/quality/flows',
+      '/quality/policies',
+    ])
+  })
+
   it('keeps unique test identities stable when unrelated source is inserted above them', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-stable-test-ids-'))
     await mkdir(join(root, 'tests'), { recursive: true })

@@ -925,37 +925,69 @@ describe('RepositoryIntelligence flow inventory', () => {
   it('inspects exact execution evidence and resolves its revision-scoped policy and gate artifacts', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const currentPolicy = {
+      ...policyArtifact,
+      id: 'policy-auth-current',
+      logicalId: 'policy-auth-logical',
+      title: 'Current authentication policy',
+    }
+    const currentGate = {
+      ...gateArtifact,
+      id: 'gate-auth-current',
+      logicalId: 'gate-auth-logical',
+      title: 'Current authentication gate',
+    }
+    const historicalPolicy = {
+      ...policyArtifact,
+      id: 'policy-auth-historical',
+      logicalId: currentPolicy.logicalId,
+      title: 'Historical authentication policy',
+    }
+    const historicalGate = {
+      ...gateArtifact,
+      id: 'gate-auth-historical',
+      logicalId: currentGate.logicalId,
+      title: 'Historical authentication gate',
+    }
     const exactExecution: import('@fuzequality/contracts').TestExecutionDetail = {
       ...loadExecution,
       catalogRevision: 'catalog-revision-1',
-      policyArtifactIds: [policyArtifact.id],
-      gateArtifactIds: [gateArtifact.id],
+      policyArtifactIds: [currentPolicy.logicalId],
+      gateArtifactIds: [currentGate.logicalId],
       gateEvaluations: [{
-        policyArtifactId: policyArtifact.id,
-        gateArtifactId: gateArtifact.id,
+        policyArtifactId: currentPolicy.logicalId,
+        gateArtifactId: currentGate.logicalId,
         status: 'failed',
         detail: 'Authentication gate failed for this exact attempt.',
       }],
     }
-    vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([currentPolicy, currentGate])
+    vi.mocked(api.testExecutions).mockResolvedValue([exactExecution])
     vi.mocked(api.testExecution).mockResolvedValue(exactExecution)
     vi.mocked(api.qualityArtifactsByIdsBatched).mockResolvedValue({
-      items: [policyArtifact, gateArtifact],
+      items: [historicalPolicy, historicalGate],
     })
 
     render(<RepositoryIntelligence data={portfolio} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Inspect execution detail' }))
+    const executionRow = (await screen.findByText(exactExecution.name)).closest('article')!
+    expect(within(executionRow).getByText(currentPolicy.logicalId)).toBeVisible()
+    expect(within(executionRow).getByText(currentGate.logicalId)).toBeVisible()
+    expect(within(executionRow).queryByText(currentPolicy.title)).not.toBeInTheDocument()
+    expect(within(executionRow).queryByText(currentGate.title)).not.toBeInTheDocument()
+    fireEvent.click(within(executionRow).getByRole('button', { name: 'Inspect execution detail' }))
 
     const dialog = await screen.findByRole('dialog', { name: exactExecution.name })
     expect(api.testExecution).toHaveBeenCalledWith(repository.id, exactExecution.id)
     await waitFor(() => expect(api.qualityArtifactsByIdsBatched).toHaveBeenCalledWith(
       repository.id,
-      [policyArtifact.id, gateArtifact.id],
+      [currentPolicy.logicalId, currentGate.logicalId],
       exactExecution.catalogRevision,
     ))
-    expect(within(dialog).getByText(policyArtifact.title)).toBeVisible()
-    expect(within(dialog).getByText(gateArtifact.title)).toBeVisible()
+    expect(within(dialog).getByText(historicalPolicy.title)).toBeVisible()
+    expect(within(dialog).getByText(historicalGate.title)).toBeVisible()
+    expect(within(dialog).queryByText(currentPolicy.title)).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(currentGate.title)).not.toBeInTheDocument()
     expect(within(dialog).getByText('Authentication gate failed for this exact attempt.')).toBeVisible()
     expect(within(dialog).getByRole('link', { name: /Open CI run/ })).toHaveAttribute(
       'href',

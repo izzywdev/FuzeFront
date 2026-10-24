@@ -5192,7 +5192,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           ? repositoryLabels.get(inspectedExecution.repositoryId)
           : undefined}
         artifacts={[...new Map(
-          [...evidenceArtifacts, ...executionInspectorArtifacts]
+          executionInspectorArtifacts
             .map(artifact => [artifact.id, artifact])
         ).values()]}
         loading={executionInspectorLoading}
@@ -6538,7 +6538,6 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   <ExecutionEvidenceLinks execution={execution} />
                   <ExecutionGateEvidence
                     execution={execution}
-                    artifacts={evidenceArtifacts}
                   />
                   <ExecutionThresholdEvidence execution={execution} />
                   <ExecutionSourceLink execution={execution} />
