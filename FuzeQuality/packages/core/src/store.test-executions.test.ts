@@ -370,14 +370,14 @@ describe('test execution evidence', () => {
   })
 
   it('aggregates complete tenant-scoped outcome history by UTC day in Postgres', async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, pass_rate: 2 / 3, duration_sample_count: 2, average_duration_ms: 45_000, maximum_duration_ms: 60_000, retry_attempt_count: 3, successful_retry_count: 2, recovered_run_count: 1 }] })
+    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, pass_rate: 2 / 3, duration_sample_count: 2, average_duration_ms: '2592000000', maximum_duration_ms: '2678400000', retry_attempt_count: 3, successful_retry_count: 2, recovered_run_count: 1 }] })
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
       kind: 'integration', name: 'Integration suite', externalRunId: 'provider-run-42', branch: 'feature/checkout', headRepository: 'acme/app', evidenceKind: 'report', evidenceCollectionStatus: 'complete', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'passed', gateOutcome: 'passed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
     })).resolves.toEqual([
-      { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
+      { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 2_592_000_000, maximumDurationMs: 2_678_400_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
     ])
 
     const [sql, parameters] = query.mock.calls[0]
@@ -394,6 +394,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('duration_sample_count')
     expect(String(sql)).toContain('average_duration_ms')
     expect(String(sql)).toContain('maximum_duration_ms')
+    expect(String(sql)).toMatch(/COALESCE\(round\(avg[\s\S]*?\),0\)::bigint AS average_duration_ms/)
+    expect(String(sql)).toMatch(/COALESCE\(max[\s\S]*?\),0\)::bigint AS maximum_duration_ms/)
     expect(String(sql)).toContain('retry_attempt_count')
     expect(String(sql)).toContain('successful_retry_count')
     expect(String(sql)).toContain('recovered_run_count')

@@ -1704,10 +1704,10 @@ export class PostgresCatalogStore implements CatalogStore {
               )::integer AS duration_sample_count,
               COALESCE(round(avg(EXTRACT(EPOCH FROM (completed_at-started_at))*1000) FILTER (
                 WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
-              )),0)::integer AS average_duration_ms,
+              )),0)::bigint AS average_duration_ms,
               COALESCE(max(EXTRACT(EPOCH FROM (completed_at-started_at))*1000) FILTER (
                 WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
-              ),0)::integer AS maximum_duration_ms,
+              ),0)::bigint AS maximum_duration_ms,
               count(*) FILTER (WHERE attempt>1)::integer AS retry_attempt_count,
               count(*) FILTER (WHERE executions.attempt>1 AND executions.status='passed')::integer AS successful_retry_count,
               count(*) FILTER (
@@ -1854,8 +1854,8 @@ export class PostgresCatalogStore implements CatalogStore {
       running: row.running,
       passRate: row.pass_rate,
       durationSampleCount: row.duration_sample_count,
-      averageDurationMs: row.average_duration_ms,
-      maximumDurationMs: row.maximum_duration_ms,
+      averageDurationMs: Number(row.average_duration_ms),
+      maximumDurationMs: Number(row.maximum_duration_ms),
       retryAttemptCount: row.retry_attempt_count,
       successfulRetryCount: row.successful_retry_count,
       recoveredRunCount: row.recovered_run_count,
