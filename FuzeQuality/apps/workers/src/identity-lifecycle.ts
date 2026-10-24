@@ -11,7 +11,7 @@ const userCreatedSchema = z.object({
 const userUpdatedSchema = userCreatedSchema.extend({ firstName: z.string().optional(), lastName: z.string().optional() })
 const deletedSchema = z.object({
   userId: z.string().uuid(),
-  cascade: z.enum(['soft', 'hard']),
+  cascade: z.enum(['soft', 'hard']).default('soft'),
 })
 const organizationDeletedSchema = z.object({ organizationId: z.string().uuid() })
 const membershipSchema = z.object({ organizationId: z.string().uuid(), userId: z.string().uuid(), role: z.string().min(1) })

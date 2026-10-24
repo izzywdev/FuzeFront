@@ -72,6 +72,14 @@ describe('identity lifecycle event bridge', () => {
     },
   )
 
+  it('defaults legacy user-deletion events to a soft local cascade', async () => {
+    await runtime.handler?.('identity.user.deleted', {
+      userId, email: 'person@example.com',
+    })
+
+    expect(postedBody()).toEqual({ type: 'user.deleted', userId, cascade: 'soft' })
+  })
+
   it.each([
     ['identity.membership.added', true],
     ['identity.membership.removed', false],
