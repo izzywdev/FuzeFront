@@ -156,7 +156,19 @@ async function canonicalSession(
   fetcher: typeof fetch,
   preferredTenantId?: string,
 ): Promise<StandaloneSession | StandaloneWorkspaceSelection> {
-  const tenantId = await sessionTenant(token, fetcher, preferredTenantId)
+  let tenantId: string | null
+  try {
+    tenantId = await sessionTenant(token, fetcher, preferredTenantId)
+  } catch (error) {
+    if (!(error instanceof StandaloneAuthenticationError) || error.code === 'SESSION_UNAVAILABLE') {
+      throw new StandaloneAuthenticationError(
+        error instanceof Error ? error.message : String(error),
+        'SESSION_UNAVAILABLE',
+        token,
+      )
+    }
+    throw error
+  }
   if (tenantId) {
     if (preferredTenantId && tenantId !== preferredTenantId) {
       throw new StandaloneAuthenticationError(
@@ -177,8 +189,12 @@ async function canonicalSession(
   try {
     workspaces = await availableWorkspaces(token, fetcher)
   } catch (error) {
-    if (error instanceof StandaloneAuthenticationError && error.code === 'WORKSPACES_UNAVAILABLE') {
-      throw new StandaloneAuthenticationError(error.message, error.code, token)
+    if (!(error instanceof StandaloneAuthenticationError) || error.code === 'WORKSPACES_UNAVAILABLE') {
+      throw new StandaloneAuthenticationError(
+        error instanceof Error ? error.message : String(error),
+        error instanceof StandaloneAuthenticationError ? error.code : 'WORKSPACES_UNAVAILABLE',
+        token,
+      )
     }
     throw error
   }

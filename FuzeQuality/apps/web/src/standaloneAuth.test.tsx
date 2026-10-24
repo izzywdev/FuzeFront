@@ -356,6 +356,39 @@ describe('standalone FuzeFront authentication', () => {
     expect(readStandaloneSession()).toEqual({ token: 'verified-token', tenantId: 'org-mfa' })
   })
 
+  it('retries canonical session proof with the verified bearer after MFA', async () => {
+    const fetcher = vi.fn()
+      .mockImplementationOnce(() => response({
+        status: 'mfa_required',
+        challengeId: 'challenge-1',
+        factors: [{ factorId: 'totp-1', type: 'totp' }],
+      }))
+      .mockImplementationOnce(() => response({ challengeId: 'challenge-1', factorId: 'totp-1', delivered: false }, 202))
+      .mockImplementationOnce(() => response({ token: 'verified-token', sessionId: 'session-1' }))
+      .mockImplementationOnce(() => response({ error: 'Session proof unavailable' }, 503))
+      .mockImplementationOnce(() => response({ identity: { tenantId: 'org-mfa' } }))
+
+    render(
+      <StandaloneAuthBoundary fetcher={fetcher as typeof fetch}>
+        {session => <p>Authenticated {session.tenantId}</p>}
+      </StandaloneAuthBoundary>,
+    )
+
+    fireEvent.change(await screen.findByLabelText('Email'), { target: { value: 'mfa@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in securely' }))
+    fireEvent.change(await screen.findByLabelText('Verification code'), { target: { value: '123456' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and continue' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Session proof unavailable')
+    expect(screen.queryByRole('heading', { name: 'Verify your identity' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry workspace discovery' }))
+
+    expect(await screen.findByText('Authenticated org-mfa')).toBeVisible()
+    expect(fetcher.mock.calls.filter(([url]) => url === '/api/v1/security/mfa/verify')).toHaveLength(1)
+    expect(readStandaloneSession()).toEqual({ token: 'verified-token', tenantId: 'org-mfa' })
+  })
+
   it('keeps MFA fail-closed when Security rejects the verification code', async () => {
     const fetcher = vi.fn()
       .mockImplementationOnce(() => response({
