@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { POLICY_GATE_EVALUATION_BATCH_SIZE, isRepositoryAnalysisTopic, reportExhaustedRepositoryAnalysis, repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis, runTrackedRepositoryInventoryAnalysis } from './repository-analysis'
+import { POLICY_GATE_EVALUATION_BATCH_SIZE, isRepositoryAnalysisTopic, reportExhaustedRepositoryAnalysis, repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis, runTrackedRepositoryInventoryAnalysis, shouldRunRepositoryAnalysis } from './repository-analysis'
 import { RepositoryFlowAnalysisTimeoutError } from '@fuzequality/core'
 import { TOPICS } from '@fuzequality/contracts'
 
@@ -17,6 +17,32 @@ describe('repository inventory analysis ordering', () => {
     expect(isRepositoryAnalysisTopic(TOPICS.REPOSITORY_INVENTORY_CHANGED)).toBe(true)
     expect(isRepositoryAnalysisTopic(TOPICS.ANALYSIS_REQUESTED)).toBe(true)
     expect(isRepositoryAnalysisTopic(TOPICS.REQUIREMENT_SYNC_REQUESTED)).toBe(false)
+  })
+
+  it('runs only the durable queued revision and treats completed redeliveries as terminal', () => {
+    expect(shouldRunRepositoryAnalysis({
+      lastScanRevision: 'catalog-revision',
+      lastAnalysis: { revision: 'catalog-revision', status: 'queued' },
+    }, 'catalog-revision')).toBe(true)
+    expect(shouldRunRepositoryAnalysis({
+      lastScanRevision: 'catalog-revision',
+      lastAnalysis: {
+        revision: 'catalog-revision', status: 'complete',
+        counts: { deterministic: 2, evaluations: 3, proposed: 1 },
+      },
+    }, 'catalog-revision')).toBe(false)
+    expect(shouldRunRepositoryAnalysis({
+      lastScanRevision: 'catalog-revision',
+      lastAnalysis: { revision: 'catalog-revision', status: 'failed', errorCode: 'INTELLIGENCE_UNAVAILABLE' },
+    }, 'catalog-revision')).toBe(true)
+    expect(shouldRunRepositoryAnalysis({
+      lastScanRevision: 'catalog-revision',
+      lastAnalysis: { revision: 'catalog-revision', status: 'running', startedAt: '2026-10-24T00:00:00.000Z' },
+    }, 'catalog-revision')).toBe(true)
+    expect(shouldRunRepositoryAnalysis({
+      lastScanRevision: 'new-revision',
+      lastAnalysis: { revision: 'new-revision', status: 'queued' },
+    }, 'stale-revision')).toBe(false)
   })
 
   it('marks setup failures terminal after bounded repository-analysis retries', async () => {

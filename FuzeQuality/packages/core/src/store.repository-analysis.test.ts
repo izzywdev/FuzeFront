@@ -205,6 +205,62 @@ describe('repository analysis lifecycle storage', () => {
     ])
   })
 
+  it('preserves completed analysis when the same catalog revision is scanned again', async () => {
+    const complete = {
+      revision: 'catalog-revision', status: 'complete' as const,
+      counts: { deterministic: 2, evaluations: 3, proposed: 1 },
+    }
+    const store = new MemoryCatalogStore(seed({ ...repository, lastAnalysis: complete }))
+    const scan: ScanResult = {
+      repository: { ...repository, lastAnalysis: complete },
+      revision: 'catalog-revision',
+      scannedAt: '2026-10-24T01:00:00.000Z',
+      trigger: 'manual',
+      operations: [], surfaces: [], tests: [], expectations: [], findings: [], diagnostics: [], qualityArtifacts: [],
+      scanDetails: {
+        catalogRevision: 'catalog-revision', scannerVersion: 'v1', configVersion: 'v1', partial: false, candidates: [],
+        counts: { candidates: 0, operations: 0, frontendSurfaces: 0, tests: 0, diagnostics: 0 },
+      },
+    }
+
+    await store.saveScan(scan)
+
+    expect((await store.repository('repo-1', 'tenant-1'))?.lastAnalysis).toEqual(complete)
+  })
+
+  it('preserves completed analysis in the Postgres scan upsert for an identical revision', async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('INSERT INTO fuzequality.repository_revisions')) {
+        return { rowCount: 1, rows: [{ id: 'revision-id' }] }
+      }
+      return { rowCount: 0, rows: [] }
+    })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = {
+      connect: vi.fn().mockResolvedValue({ query, release }),
+    }
+    const scan: ScanResult = {
+      repository,
+      revision: 'catalog-revision',
+      scannedAt: '2026-10-24T01:00:00.000Z',
+      trigger: 'manual',
+      operations: [], surfaces: [], tests: [], expectations: [], findings: [], diagnostics: [], qualityArtifacts: [],
+      scanDetails: {
+        catalogRevision: 'catalog-revision', scannerVersion: 'v1', configVersion: 'v1', partial: false, candidates: [],
+        counts: { candidates: 0, operations: 0, frontendSurfaces: 0, tests: 0, diagnostics: 0 },
+      },
+    }
+
+    await store.saveScan(scan)
+
+    const update = query.mock.calls.find(([sql]) => String(sql).includes("last_analysis=CASE"))
+    expect(String(update?.[0])).toContain("last_scan_revision=$3")
+    expect(String(update?.[0])).toContain("last_analysis->>'status'='complete'")
+    expect(update?.[1]?.[2]).toBe('catalog-revision')
+    expect(release).toHaveBeenCalledOnce()
+  })
+
   it('guards completed Postgres analysis from non-terminal replay states', async () => {
     const query = vi.fn().mockResolvedValue({ rowCount: 0, rows: [] })
     const release = vi.fn()

@@ -13,6 +13,21 @@ export function isRepositoryAnalysisTopic(topic: string) {
   return topic === TOPICS.REPOSITORY_INVENTORY_CHANGED || topic === TOPICS.ANALYSIS_REQUESTED
 }
 
+/**
+ * A completed revision is terminal under Kafka redelivery. Non-terminal states
+ * remain eligible so the consumer's bounded automatic retries can recover a
+ * failed or interrupted attempt; an explicit retry likewise moves a terminal
+ * failed revision back to queued before publishing a new event.
+ */
+export function shouldRunRepositoryAnalysis(
+  repository: Pick<Repository, 'lastScanRevision' | 'lastAnalysis'>,
+  revision: string,
+) {
+  return repository.lastScanRevision === revision &&
+    repository.lastAnalysis?.revision === revision &&
+    repository.lastAnalysis.status !== 'complete'
+}
+
 export function repositoryAnalysisFailureCode(error: unknown): NonNullable<RepositoryAnalysisStatus['errorCode']> {
   return error instanceof RepositoryFlowAnalysisTimeoutError
     ? 'INTELLIGENCE_TIMEOUT'

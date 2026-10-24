@@ -25,4 +25,25 @@ describe('repository processing refresh', () => {
     expect(updated.ownership).toEqual({ team: 'quality' })
     expect(updated.lastAnalysis?.status).toBe('complete')
   })
+
+  it('does not regress a completed reviewed revision from a stale poll response', () => {
+    const complete = {
+      revision: 'abc', status: 'complete' as const,
+      counts: { deterministic: 2, proposed: 1, evaluations: 3 },
+    }
+    const current = repository({ lastAnalysis: complete })
+
+    expect(applyRepositoryProcessingStatus(current, {
+      id: current.id,
+      lastScanStatus: 'complete',
+      lastScanRevision: 'abc',
+      lastAnalysis: { revision: 'abc', status: 'running', startedAt: '2026-10-24T00:00:00.000Z' },
+    }).lastAnalysis).toEqual(complete)
+    expect(applyRepositoryProcessingStatus(current, {
+      id: current.id,
+      lastScanStatus: 'complete',
+      lastScanRevision: 'new-revision',
+      lastAnalysis: { revision: 'new-revision', status: 'queued' },
+    }).lastAnalysis).toEqual({ revision: 'new-revision', status: 'queued' })
+  })
 })

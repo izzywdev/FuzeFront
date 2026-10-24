@@ -848,13 +848,18 @@ export class MemoryCatalogStore implements CatalogStore {
   async saveScan(result: ScanResult) {
     const repository = this.data.repositories.find(item => item.id === result.repository.id)
     if (repository) {
+      const retainedAnalysis = repository.lastScanRevision === result.revision &&
+        repository.lastAnalysis?.revision === result.revision &&
+        repository.lastAnalysis.status === 'complete'
+        ? repository.lastAnalysis
+        : { revision: result.revision, status: 'queued' as const }
       Object.assign(repository, result.repository, {
         lastScanAt: result.scannedAt,
         lastScanRevision: result.revision,
         lastScanStatus: 'complete',
         lastScanDetails: result.scanDetails,
         lastScanFailure: undefined,
-        lastAnalysis: { revision: result.revision, status: 'queued' },
+        lastAnalysis: retainedAnalysis,
       })
     }
     if (result.scanDetails.sourceRevision) {
@@ -2592,7 +2597,17 @@ export class PostgresCatalogStore implements CatalogStore {
          ON CONFLICT (id) DO UPDATE SET logical_id=EXCLUDED.logical_id,revision=EXCLUDED.revision,kind=EXCLUDED.kind,title=EXCLUDED.title,source_path=EXCLUDED.source_path,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,execution_target=EXCLUDED.execution_target,discovered_at=now()`,
         [item.id, item.logicalId ?? item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence), item.execution ? JSON.stringify(item.execution) : null],
       )
-      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,last_scan_failure=NULL,last_analysis=$5,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails),JSON.stringify({ revision: result.revision, status: 'queued' })])
+      await client.query(`UPDATE fuzequality.repositories
+        SET last_scan_status='complete',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,last_scan_failure=NULL,
+          last_analysis=CASE
+            WHEN last_scan_revision=$3
+              AND last_analysis->>'revision'=$3
+              AND last_analysis->>'status'='complete'
+            THEN last_analysis
+            ELSE $5::jsonb
+          END,
+          updated_at=now()
+        WHERE id=$1`, [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails),JSON.stringify({ revision: result.revision, status: 'queued' })])
       await client.query('INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
         [TOPICS.REPOSITORY_INVENTORY_CHANGED, result.repository.id, JSON.stringify({ repositoryId: result.repository.id, revision: result.revision })])
       await client.query('COMMIT')

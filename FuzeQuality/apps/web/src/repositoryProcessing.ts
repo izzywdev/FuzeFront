@@ -24,5 +24,12 @@ export function repositoryProcessingTransitionCompleted(
 
 export function applyRepositoryProcessingStatus(repository: Repository, status: RepositoryProcessingStatus): Repository {
   if (repository.id !== status.id) return repository
+  if (
+    repository.lastAnalysis?.status === 'complete' &&
+    repository.lastAnalysis.revision === status.lastAnalysis?.revision &&
+    status.lastAnalysis.status !== 'complete'
+  ) {
+    return { ...repository, ...status, lastAnalysis: repository.lastAnalysis }
+  }
   return { ...repository, ...status }
 }
