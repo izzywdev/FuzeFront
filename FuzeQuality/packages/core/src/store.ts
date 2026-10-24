@@ -181,11 +181,18 @@ export function mergeTestExecutionEvidence(
   existing: TestExecution,
   incoming: TestExecution
 ): TestExecution {
-  const retainedEvidence = incoming.provider === 'github-actions' && incoming.evidenceCollection?.status === 'complete'
+  const existingEvidenceCheckedAt = Date.parse(existing.evidenceCollection?.checkedAt ?? '')
+  const incomingEvidenceCheckedAt = Date.parse(incoming.evidenceCollection?.checkedAt ?? '')
+  const incomingEvidenceIsStale = Number.isFinite(existingEvidenceCheckedAt) &&
+    Number.isFinite(incomingEvidenceCheckedAt) &&
+    incomingEvidenceCheckedAt < existingEvidenceCheckedAt
+  const retainedEvidence = incomingEvidenceIsStale
+    ? existing.evidenceLinks
+    : incoming.provider === 'github-actions' && incoming.evidenceCollection?.status === 'complete'
     ? existing.evidenceLinks.filter(link => !/^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+\/artifacts\/\d+$/i.test(link.url))
     : existing.evidenceLinks
   const evidenceLinks = new Map(
-    [...retainedEvidence, ...incoming.evidenceLinks].map(link => [
+    [...retainedEvidence, ...(incomingEvidenceIsStale ? [] : incoming.evidenceLinks)].map(link => [
       `${link.kind}:${link.url}`,
       link,
     ])
@@ -200,7 +207,9 @@ export function mergeTestExecutionEvidence(
       : existing.gateEvaluations.map(evaluation => evaluation.status === 'running'
         ? { ...evaluation, status: incoming.status }
         : evaluation)
-  const evidenceCollection = incoming.evidenceCollection?.status === 'complete' || incoming.evidenceCollection?.status === 'partial'
+  const evidenceCollection = incomingEvidenceIsStale
+    ? existing.evidenceCollection
+    : incoming.evidenceCollection?.status === 'complete' || incoming.evidenceCollection?.status === 'partial'
     ? incoming.evidenceCollection
     : existing.evidenceCollection?.status === 'complete' || existing.evidenceCollection?.status === 'partial'
       ? existing.evidenceCollection
@@ -2024,7 +2033,12 @@ export class PostgresCatalogStore implements CatalogStore {
          gate_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.gate_artifact_ids)>0 THEN EXCLUDED.gate_artifact_ids ELSE fuzequality.test_executions.gate_artifact_ids END,
          gate_evaluations=CASE WHEN jsonb_array_length(EXCLUDED.gate_evaluations)>0 THEN EXCLUDED.gate_evaluations WHEN EXCLUDED.status<>'running' THEN (SELECT COALESCE(jsonb_agg(CASE WHEN evaluation->>'status'='running' THEN jsonb_set(evaluation,'{status}',to_jsonb(EXCLUDED.status)) ELSE evaluation END),'[]'::jsonb) FROM jsonb_array_elements(fuzequality.test_executions.gate_evaluations) AS gate(evaluation)) ELSE fuzequality.test_executions.gate_evaluations END,
          thresholds=CASE WHEN jsonb_array_length(EXCLUDED.thresholds)>0 THEN EXCLUDED.thresholds ELSE fuzequality.test_executions.thresholds END,
-         evidence_links=(SELECT COALESCE(jsonb_agg(link ORDER BY ordinal),'[]'::jsonb)
+         evidence_links=CASE
+           WHEN (fuzequality.test_executions.evidence_collection->>'checkedAt') IS NOT NULL
+             AND (EXCLUDED.evidence_collection->>'checkedAt') IS NOT NULL
+             AND (EXCLUDED.evidence_collection->>'checkedAt')::timestamptz < (fuzequality.test_executions.evidence_collection->>'checkedAt')::timestamptz
+           THEN fuzequality.test_executions.evidence_links
+           ELSE (SELECT COALESCE(jsonb_agg(link ORDER BY ordinal),'[]'::jsonb)
            FROM (SELECT link,ordinal
              FROM (SELECT DISTINCT ON (link->>'kind',link->>'url') link,ordinal
                FROM jsonb_array_elements(
@@ -2037,8 +2051,17 @@ export class PostgresCatalogStore implements CatalogStore {
                ) WITH ORDINALITY AS evidence(link,ordinal)
                ORDER BY link->>'kind',link->>'url',ordinal DESC
              ) AS deduplicated_links ORDER BY ordinal LIMIT 100
-           ) AS bounded_links),
-         evidence_collection=CASE WHEN EXCLUDED.evidence_collection->>'status' IN ('complete','partial') THEN EXCLUDED.evidence_collection WHEN fuzequality.test_executions.evidence_collection->>'status' IN ('complete','partial') THEN fuzequality.test_executions.evidence_collection ELSE COALESCE(EXCLUDED.evidence_collection,fuzequality.test_executions.evidence_collection) END,
+           ) AS bounded_links)
+         END,
+         evidence_collection=CASE
+           WHEN (fuzequality.test_executions.evidence_collection->>'checkedAt') IS NOT NULL
+             AND (EXCLUDED.evidence_collection->>'checkedAt') IS NOT NULL
+             AND (EXCLUDED.evidence_collection->>'checkedAt')::timestamptz < (fuzequality.test_executions.evidence_collection->>'checkedAt')::timestamptz
+           THEN fuzequality.test_executions.evidence_collection
+           WHEN EXCLUDED.evidence_collection->>'status' IN ('complete','partial') THEN EXCLUDED.evidence_collection
+           WHEN fuzequality.test_executions.evidence_collection->>'status' IN ('complete','partial') THEN fuzequality.test_executions.evidence_collection
+           ELSE COALESCE(EXCLUDED.evidence_collection,fuzequality.test_executions.evidence_collection)
+         END,
          summary=CASE WHEN length(COALESCE(EXCLUDED.summary,''))>length(COALESCE(fuzequality.test_executions.summary,'')) THEN EXCLUDED.summary ELSE fuzequality.test_executions.summary END
        WHERE fuzequality.test_executions.status = 'running' OR fuzequality.test_executions.status = EXCLUDED.status
        RETURNING id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,

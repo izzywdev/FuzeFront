@@ -750,6 +750,28 @@ describe('test execution evidence', () => {
     ]))
   })
 
+  it('preserves the newest provider inventory when refreshes finish out of order', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '906', attempt: 1, revision: 'abc', kind: 'post-production' as const, status: 'passed' as const, name: 'Post-production', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [] }
+    await store.saveTestExecution({
+      id: 'newer', ...base,
+      evidenceLinks: [{ kind: 'video', name: 'Current video', url: 'https://github.com/acme/app/actions/runs/906/artifacts/9' }],
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-20T11:02:00.000Z' },
+    })
+    await store.saveTestExecution({
+      id: 'older-finishing-late', ...base,
+      evidenceLinks: [{ kind: 'video', name: 'Expired video', url: 'https://github.com/acme/app/actions/runs/906/artifacts/8' }],
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-20T11:01:00.000Z' },
+    })
+
+    await expect(store.testExecutions('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({
+        evidenceLinks: [expect.objectContaining({ name: 'Current video' })],
+        evidenceCollection: { status: 'complete', checkedAt: '2026-10-20T11:02:00.000Z' },
+      }),
+    ])
+  })
+
   it('applies the same partial-evidence precedence in the Postgres upsert', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
@@ -764,6 +786,7 @@ describe('test execution evidence', () => {
     expect(String(query.mock.calls[0][0])).toContain("EXCLUDED.evidence_collection->>'status' IN ('complete','partial')")
     expect(String(query.mock.calls[0][0])).toContain("EXCLUDED.provider='github-actions' AND EXCLUDED.evidence_collection->>'status'='complete'")
     expect(String(query.mock.calls[0][0])).toContain("existing_link->>'url' !~*")
+    expect(String(query.mock.calls[0][0])).toContain("(EXCLUDED.evidence_collection->>'checkedAt')::timestamptz < (fuzequality.test_executions.evidence_collection->>'checkedAt')::timestamptz")
   })
 
   it('does not regress terminal evidence when a running delivery arrives late', async () => {
