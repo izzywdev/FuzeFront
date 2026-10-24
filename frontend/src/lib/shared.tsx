@@ -30,6 +30,16 @@ export function getPersistedActiveOrganizationId(): string | null {
 }
 
 /**
+ * Return the Security-owned tenant behind the active account's Personal
+ * workspace. Keeping this in the same account vault as the active organization
+ * lets full-page federated-app navigation restore Personal without sharing a
+ * tenant identifier between signed-in accounts.
+ */
+export function getPersistedPersonalTenantId(): string | null {
+  return getActiveValue('personalTenantId')
+}
+
+/**
  * The pinned platform root "FuzeFront" org id (migration 015,
  * `backend/src/migrations/015_seed_root_platform_organization.ts`
  * `ROOT_ORG_ID`). Every user is a member of this org once the
@@ -40,6 +50,10 @@ export const ROOT_ORG_ID = '00000000-0000-0000-0000-000000000010'
 
 function persistActiveOrganizationId(id: string | null): void {
   setActiveValue('activeOrganizationId', id)
+}
+
+function persistPersonalTenantId(id: string | null): void {
+  setActiveValue('personalTenantId', id)
 }
 
 // The session-scoped "workspace provisioned" flag WorkspaceProvisioningGate
@@ -200,6 +214,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       persistActiveOrganizationId(action.payload)
       return { ...state, activeOrganizationId: action.payload }
     case 'SET_PERSONAL_TENANT':
+      persistPersonalTenantId(action.payload)
       return { ...state, personalTenantId: action.payload }
     default:
       return state
@@ -218,7 +233,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Hydrate the previously-selected org so a full-page reload keeps billing
     // pointed at the org the user is actually viewing.
     activeOrganizationId: getPersistedActiveOrganizationId(),
-    personalTenantId: null,
+    personalTenantId: getPersistedPersonalTenantId(),
   })
 
   return (

@@ -66,6 +66,11 @@ function ActiveOrgProbe() {
   return <div data-testid="active-org">{state.activeOrganizationId ?? ''}</div>
 }
 
+function PersonalTenantProbe() {
+  const { state } = useAppContext()
+  return <div data-testid="personal-tenant">{state.personalTenantId ?? ''}</div>
+}
+
 function renderGate(
   children: React.ReactNode = (
     <>
@@ -167,11 +172,6 @@ describe('WorkspaceProvisioningGate', () => {
       '0195a8f2-1234-7abc-8def-0123456789ab'
     )
 
-    function PersonalTenantProbe() {
-      const { state } = useAppContext()
-      return <div data-testid="personal-tenant">{state.personalTenantId ?? ''}</div>
-    }
-
     renderGate(
       <>
         <div>App content</div>
@@ -186,6 +186,111 @@ describe('WorkspaceProvisioningGate', () => {
       '0195a8f2-1234-7abc-8def-0123456789ab'
     )
     expect(api.securitySessionAPI.resolvePersonalTenant).toHaveBeenCalledOnce()
+  })
+
+  it('resolves and retains Personal for a user who also belongs to an organization', async () => {
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+      reclassifiedOrg,
+    ])
+    vi.mocked(api.securitySessionAPI.resolvePersonalTenant).mockResolvedValue(
+      '0195a8f2-1234-7abc-8def-0123456789ab'
+    )
+
+    renderGate(
+      <>
+        <div>App content</div>
+        <ActiveOrgProbe />
+        <PersonalTenantProbe />
+      </>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-1')
+    expect(screen.getByTestId('personal-tenant')).toHaveTextContent(
+      '0195a8f2-1234-7abc-8def-0123456789ab'
+    )
+  })
+
+  it('keeps the newer workspace when an older personal resolution finishes late', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const companyOrg = {
+      id: 'org-company',
+      name: 'Company',
+      type: 'organization',
+      user_role: 'member',
+    }
+    let organizationCalls = 0
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockImplementation(
+      async () => {
+        organizationCalls += 1
+        return organizationCalls < 3 ? [platformOrg] : [companyOrg]
+      }
+    )
+
+    let finishStaleResolution!: (tenantId: string) => void
+    vi.mocked(api.securitySessionAPI.resolvePersonalTenant)
+      .mockResolvedValueOnce(null)
+      .mockReturnValueOnce(
+        new Promise(resolve => { finishStaleResolution = resolve })
+      )
+      .mockResolvedValueOnce('personal-current')
+
+    renderGate()
+    await flushMicrotasks()
+
+    await act(async () => {
+      vi.advanceTimersByTime(1750)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(1750)
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-company')
+
+    await act(async () => finishStaleResolution('personal-stale'))
+
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-company')
+  })
+
+  it('restores a ready Personal workspace without blocking on refresh requests', async () => {
+    sessionStorage.setItem('ff.workspaceReady', '1')
+    sessionStorage.setItem('ff.activeAccountId', 'user-1')
+    localStorage.setItem(
+      'ff.accounts',
+      JSON.stringify([
+        {
+          id: 'user-1',
+          email: 'person@example.com',
+          displayName: 'Person',
+          addedAt: '2026-10-24T00:00:00.000Z',
+        },
+      ])
+    )
+    localStorage.setItem('ff.acct.user-1.personalTenantId', 'personal-cached')
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockRejectedValue(
+      new Error('temporary network failure')
+    )
+
+    renderGate(
+      <>
+        <div>App content</div>
+        <PersonalTenantProbe />
+      </>
+    )
+
+    expect(screen.getByText('App content')).toBeInTheDocument()
+    expect(screen.getByTestId('personal-tenant')).toHaveTextContent(
+      'personal-cached'
+    )
+    await flushMicrotasks()
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument()
   })
 
   it('does not trust a cached ready flag until a personal tenant is proven', async () => {
