@@ -237,7 +237,7 @@ function SmsEnrollInner(props: EnrollFlowProps) {
     inFlight(async () => {
     setPhase({ name: 'confirm-code', factorId, activating: true, invalid: false })
     try {
-      const factor = await api.activateFactor(factorId, code)
+      const factor = await pending.activating(api.activateFactor(factorId, code))
       pending.clear()
       if (props.onActivated) props.onActivated(factor)
       else go(routes.overview)

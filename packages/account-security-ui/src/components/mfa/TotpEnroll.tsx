@@ -194,7 +194,7 @@ function TotpEnrollInner(props: EnrollFlowProps) {
   const activate = (enroll: MfaEnrollResult, code: string) => inFlight(async () => {
     setPhase({ name: 'scan', enroll, activating: true, invalid: false })
     try {
-      const factor = await api.activateFactor(enroll.factorId, code)
+      const factor = await pending.activating(api.activateFactor(enroll.factorId, code))
       pending.clear()
       if (props.onActivated) props.onActivated(factor)
       else go(routes.overview)

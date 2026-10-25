@@ -192,6 +192,54 @@ describe('TotpEnrollFlow', () => {
     await waitFor(() => expect(client.removeFactor).toHaveBeenCalled())
   })
 
+  describe('unmount while an activation is in flight', () => {
+    async function mountAndActivate(activateFactor: ReturnType<typeof vi.fn>) {
+      const user = userEvent.setup()
+      const client = makeClient({ activateFactor })
+      const view = render(<TotpEnrollFlow client={asClient(client)} onActivated={vi.fn()} />)
+      await start(user)
+      await user.click(document.querySelector('[data-component="otp-input"] input')!)
+      await user.keyboard('492017')
+      await user.click(q('[data-action="activate-factor"]')!)
+      await waitFor(() => expect(activateFactor).toHaveBeenCalled())
+      return { client, view }
+    }
+
+    it('activation resolves after unmount → the factor is NOT deleted', async () => {
+      let resolve!: (v: unknown) => void
+      const activateFactor = vi.fn(() => new Promise((r) => { resolve = r }))
+      const { client, view } = await mountAndActivate(activateFactor)
+      view.unmount()
+      await act(async () => { await Promise.resolve() })
+      expect(client.removeFactor).not.toHaveBeenCalled() // not raced against the activation
+      await act(async () => { resolve({ factorId: 'fct_new', type: 'totp', status: 'active' }) })
+      await act(async () => { await Promise.resolve() })
+      expect(client.removeFactor).not.toHaveBeenCalled()
+    })
+
+    it('activation is rejected (wrong code) after unmount → the pending factor is deleted exactly once', async () => {
+      let reject!: (e: unknown) => void
+      const activateFactor = vi.fn(() => new Promise((_, r) => { reject = r }))
+      const { client, view } = await mountAndActivate(activateFactor)
+      view.unmount()
+      await act(async () => { await Promise.resolve() })
+      expect(client.removeFactor).not.toHaveBeenCalled()
+      await act(async () => { reject(err(401, 'NOT_ACTIVE')) })
+      await waitFor(() => expect(client.removeFactor).toHaveBeenCalledTimes(1))
+      expect(client.removeFactor).toHaveBeenCalledWith('fct_new')
+    })
+
+    it('an ambiguous failure (5xx) after unmount never deletes a possibly-activated factor', async () => {
+      let reject!: (e: unknown) => void
+      const activateFactor = vi.fn(() => new Promise((_, r) => { reject = r }))
+      const { client, view } = await mountAndActivate(activateFactor)
+      view.unmount()
+      await act(async () => { reject(err(503)) })
+      await act(async () => { await Promise.resolve() })
+      expect(client.removeFactor).not.toHaveBeenCalled()
+    })
+  })
+
   it('an ACTIVATED factor is never deleted on unmount', async () => {
     const user = userEvent.setup()
     const client = makeClient()
@@ -383,6 +431,29 @@ describe('SmsEnrollFlow', () => {
     expect(enrollFactor).toHaveBeenCalledTimes(1)
     expect(client.removeFactor).not.toHaveBeenCalled()
     await act(async () => { release() })
+  })
+
+  it('unmount during a pending SMS activation: waits for it, keeps the factor on success', async () => {
+    const user = userEvent.setup()
+    let resolve!: (v: unknown) => void
+    const activateFactor = vi.fn(() => new Promise((r) => { resolve = r }))
+    const client = makeClient({
+      getMethods: vi.fn(async () => methods(['sms'])),
+      enrollFactor: vi.fn(async () => ({ factorId: 'f', type: 'sms', status: 'pending', codeSent: true })),
+      activateFactor,
+    })
+    const view = render(<SmsEnrollFlow client={asClient(client)} onActivated={vi.fn()} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '+447700900471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-component="otp-input"]')).toBeTruthy())
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('123456')
+    await user.click(q('[data-action="activate-factor"]')!)
+    view.unmount()
+    await act(async () => { resolve({ factorId: 'f', type: 'sms', status: 'active' }) })
+    await act(async () => { await Promise.resolve() })
+    expect(client.removeFactor).not.toHaveBeenCalled()
   })
 
   it('RESEND replaces the pending factor: the previous one is deleted, only the newest is tracked', async () => {
