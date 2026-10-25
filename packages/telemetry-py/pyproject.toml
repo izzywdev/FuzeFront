@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzefront-telemetry"
+version = "1.0.0"
+description = "OpenTelemetry tracing + structured logging for Python FuzeFront-family microservices -- the Python peer of @izzywdev/fuzefront-telemetry, pinned to the same env vars, log fields, levels and secret-redaction list. init_telemetry(), ASGI + WSGI tracing middleware, with_trace_context, and the family shared JSON logger."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+dependencies = [
+    "opentelemetry-sdk>=1.30.0,<2.0.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0,<2.0.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.30.0,<2.0.0",
+]
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.100", "starlette>=0.27"]
+flask = ["flask>=2.3"]
+dev = [
+    "pytest>=8.0",
+    "fastapi>=0.100",
+    "starlette>=0.27",
+    "httpx>=0.24",
+    "flask>=2.3",
+]
+
+[tool.setuptools.packages.find]
+include = ["fuzefront_telemetry*"]
+
+[tool.setuptools.package-data]
+# The wheel ships a byte-identical copy of the family-shared redaction list so an
+# installed package is self-contained. governance/observability-redaction-paths.json
+# is the source of truth; scripts/gate_telemetry_parity.py fails CI if they drift.
+fuzefront_telemetry = ["redaction_paths.json"]
+
+[tool.ruff]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fuzefront_telemetry"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

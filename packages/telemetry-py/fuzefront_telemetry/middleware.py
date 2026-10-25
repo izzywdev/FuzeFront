@@ -1,0 +1,404 @@
+"""fuzefront-telemetry — ASGI + WSGI tracing middleware.
+
+The Python peer of ``tracingMiddleware`` (``packages/telemetry/src/middleware.py``).
+Each middleware starts (or continues) ONE SERVER span per request and emits an
+entry + exit structured log with the method, the matched route template (never
+the raw path — bounded cardinality, observability-standard.md P14), the status
+and the elapsed ms. The request's ``trace_id``/``span_id``/``reqId`` are stashed
+for ``with_trace_context`` to pick up.
+
+Framework coverage:
+
+- **ASGI** (FastAPI / Starlette, or any ASGI app): ``TelemetryASGIMiddleware``.
+  Pure ASGI — installs without importing Starlette. Reads the matched route from
+  ``scope["route"]`` (set by Starlette's router) when present.
+- **WSGI** (Flask, or any WSGI app): ``TelemetryWSGIMiddleware``, plus
+  ``instrument_flask(app)`` which wires the Flask ``url_rule`` in as the route
+  template. Generic WSGI callers set the template with ``set_matched_route``.
+
+Like the Node middleware, this owns exactly the W3C ``traceparent`` header and
+the ``req``-level trace fields; it never fights the family ``reqId`` convention —
+it accepts an inbound ``x-request-id``, generates one if absent, and propagates
+it on the response.
+"""
+
+from __future__ import annotations
+
+import time
+import uuid
+from collections.abc import Callable
+from typing import Any
+
+from opentelemetry import context as context_api
+from opentelemetry import trace
+from opentelemetry.propagate import extract
+from opentelemetry.trace import SpanKind, set_span_in_context
+
+from .contract import REQUEST_ID_FIELD, REQUEST_ID_HEADER, SPAN_ID_FIELD, TRACE_ID_FIELD
+from .logging import StructuredLogger, get_logger, with_trace_context
+
+TRACER_NAME = "fuzefront-telemetry"
+_REQUEST_STATE_ENVIRON_KEY = "fuzefront_telemetry.request"
+
+
+def _hex_ids(span: trace.Span) -> tuple[str, str]:
+    ctx = span.get_span_context()
+    return format(ctx.trace_id, "032x"), format(ctx.span_id, "016x")
+
+
+def _unmatched_name(method: str) -> str:
+    """Low-cardinality fallback for a request no route matched (a 404, or a
+    reject before routing). NEVER the raw path — that is attacker-controlled and
+    unbounded; echoing it would reintroduce the per-path cardinality the route
+    template exists to collapse.
+    """
+    return f"{method} (unmatched)"
+
+
+# --------------------------------------------------------------------------
+# ASGI
+# --------------------------------------------------------------------------
+
+def _asgi_headers(scope: dict) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for k, v in scope.get("headers", []) or []:
+        key = k.decode("latin1") if isinstance(k, bytes) else str(k)
+        val = v.decode("latin1") if isinstance(v, bytes) else str(v)
+        out[key.lower()] = val
+    return out
+
+
+def _asgi_route_template(scope: dict) -> str | None:
+    route = scope.get("route")
+    path = getattr(route, "path", None)
+    if not path:
+        return None
+    root = scope.get("root_path", "") or ""
+    full = f"{root}{path}".replace("//", "/")
+    return full or "/"
+
+
+class TelemetryASGIMiddleware:
+    """ASGI middleware: one SERVER span + entry/exit log per HTTP request.
+
+    Usage (FastAPI/Starlette)::
+
+        app.add_middleware(TelemetryASGIMiddleware)
+
+    or wrap any ASGI app directly::
+
+        app = TelemetryASGIMiddleware(app)
+    """
+
+    def __init__(
+        self,
+        app: Callable,
+        *,
+        tracer_name: str = TRACER_NAME,
+        tracer_provider: Any = None,
+        logger: StructuredLogger | None = None,
+        log_requests: bool = True,
+    ) -> None:
+        self.app = app
+        self._tracer = (tracer_provider or trace).get_tracer(tracer_name)
+        self._logger = logger or get_logger()
+        self._log_requests = log_requests
+
+    async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = _asgi_headers(scope)
+        parent = extract(headers)
+        method = scope.get("method", "GET")
+
+        span = self._tracer.start_span(method, context=parent, kind=SpanKind.SERVER)
+        trace_id, span_id = _hex_ids(span)
+        req_id = headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex
+
+        state = scope.setdefault("state", {})
+        if isinstance(state, dict):
+            state[TRACE_ID_FIELD] = trace_id
+            state[SPAN_ID_FIELD] = span_id
+            state[REQUEST_ID_FIELD] = req_id
+
+        log = with_trace_context(self._logger, scope, request_id=req_id)
+        if self._log_requests:
+            log.info({"method": method}, "request received")
+
+        status = {"code": 500}
+
+        async def send_wrapper(message: dict) -> None:
+            if message.get("type") == "http.response.start":
+                status["code"] = message.get("status", 200)
+                raw = list(message.get("headers", []) or [])
+                raw.append((REQUEST_ID_HEADER.encode("latin1"), req_id.encode("latin1")))
+                message["headers"] = raw
+            await send(message)
+
+        token = context_api.attach(set_span_in_context(span, parent))
+        started = time.perf_counter()
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception:
+            span.set_attribute("error", True)
+            self._finalize(span, method, scope, status["code"], started, log, errored=True)
+            context_api.detach(token)
+            raise
+        else:
+            self._finalize(span, method, scope, status["code"], started, log, errored=False)
+            context_api.detach(token)
+
+    def _finalize(
+        self,
+        span: trace.Span,
+        method: str,
+        scope: dict,
+        status_code: int,
+        started: float,
+        log: StructuredLogger,
+        *,
+        errored: bool,
+    ) -> None:
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
+        route = _asgi_route_template(scope)
+        if route:
+            span.update_name(f"{method} {route}")
+            span.set_attribute("http.route", route)
+        else:
+            span.update_name(_unmatched_name(method))
+        span.set_attribute("http.method", method)
+        span.set_attribute("http.status_code", status_code)
+        if status_code >= 500:
+            span.set_attribute("error", True)
+        span.end()
+        if self._log_requests:
+            log.info(
+                {
+                    "method": method,
+                    "route": route or "(unmatched)",
+                    "status": status_code,
+                    "elapsed_ms": elapsed_ms,
+                },
+                "request errored" if errored else "request completed",
+            )
+
+
+# --------------------------------------------------------------------------
+# WSGI
+# --------------------------------------------------------------------------
+
+def _wsgi_headers(environ: dict) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key, val in environ.items():
+        if key.startswith("HTTP_"):
+            out[key[5:].replace("_", "-").lower()] = val
+    # Content-Type / Content-Length are not HTTP_-prefixed in WSGI; the
+    # traceparent we care about always is, so this is enough for propagation.
+    return out
+
+
+def set_matched_route(environ: dict, template: str | None) -> None:
+    """Record the matched route template for the current WSGI request, so the
+    span and exit log use the template (``/users/<id>``) rather than the raw
+    path. Frameworks call this once routing has resolved; ``instrument_flask``
+    does it automatically.
+    """
+    state = environ.get(_REQUEST_STATE_ENVIRON_KEY)
+    if isinstance(state, dict) and template:
+        state["route"] = template
+
+
+class TelemetryWSGIMiddleware:
+    """WSGI middleware: one SERVER span + entry/exit log per request.
+
+    Usage::
+
+        app.wsgi_app = TelemetryWSGIMiddleware(app.wsgi_app)
+
+    The route template is resolved from (in order): a value recorded via
+    ``set_matched_route`` during the request, then a ``route_resolver(environ)``
+    callback if given. Absent both, a low-cardinality ``(unmatched)`` name is
+    used — never the raw path.
+    """
+
+    def __init__(
+        self,
+        app: Callable,
+        *,
+        tracer_name: str = TRACER_NAME,
+        tracer_provider: Any = None,
+        logger: StructuredLogger | None = None,
+        route_resolver: Callable[[dict], str | None] | None = None,
+        log_requests: bool = True,
+    ) -> None:
+        self.app = app
+        self._tracer = (tracer_provider or trace).get_tracer(tracer_name)
+        self._logger = logger or get_logger()
+        self._route_resolver = route_resolver
+        self._log_requests = log_requests
+
+    def __call__(self, environ: dict, start_response: Callable) -> Any:
+        headers = _wsgi_headers(environ)
+        parent = extract(headers)
+        method = environ.get("REQUEST_METHOD", "GET")
+
+        span = self._tracer.start_span(method, context=parent, kind=SpanKind.SERVER)
+        trace_id, span_id = _hex_ids(span)
+        req_id = headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex
+
+        environ[_REQUEST_STATE_ENVIRON_KEY] = {
+            "route": None,
+            TRACE_ID_FIELD: trace_id,
+            SPAN_ID_FIELD: span_id,
+            REQUEST_ID_FIELD: req_id,
+        }
+        # Expose the same trace fields under the conventional ASGI-style "state"
+        # key too, so with_trace_context works against a WSGI environ uniformly.
+        environ.setdefault("state", environ[_REQUEST_STATE_ENVIRON_KEY])
+
+        log = with_trace_context(self._logger, environ[_REQUEST_STATE_ENVIRON_KEY], request_id=req_id)
+        if self._log_requests:
+            log.info({"method": method}, "request received")
+
+        status = {"code": 500}
+
+        def sr(wsgi_status: str, response_headers: list, exc_info: Any = None) -> Any:
+            try:
+                status["code"] = int(wsgi_status.split(" ", 1)[0])
+            except (ValueError, AttributeError):
+                status["code"] = 0
+            merged = list(response_headers) + [(REQUEST_ID_HEADER, req_id)]
+            return start_response(wsgi_status, merged, exc_info)
+
+        token = context_api.attach(set_span_in_context(span, parent))
+        started = time.perf_counter()
+
+        def finalize(errored: bool) -> None:
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
+            route = environ[_REQUEST_STATE_ENVIRON_KEY].get("route")
+            if not route and self._route_resolver is not None:
+                try:
+                    route = self._route_resolver(environ)
+                except Exception:  # noqa: BLE001 - a resolver must never break the response; the route name is best-effort
+                    route = None
+            if route:
+                span.update_name(f"{method} {route}")
+                span.set_attribute("http.route", route)
+            else:
+                span.update_name(_unmatched_name(method))
+            span.set_attribute("http.method", method)
+            span.set_attribute("http.status_code", status["code"])
+            if status["code"] >= 500:
+                span.set_attribute("error", True)
+            span.end()
+            context_api.detach(token)
+            if self._log_requests:
+                log.info(
+                    {
+                        "method": method,
+                        "route": route or "(unmatched)",
+                        "status": status["code"],
+                        "elapsed_ms": elapsed_ms,
+                    },
+                    "request errored" if errored else "request completed",
+                )
+
+        try:
+            result = self.app(environ, sr)
+        except Exception:
+            span.set_attribute("error", True)
+            finalize(errored=True)
+            raise
+
+        return _ClosingIterator(result, finalize)
+
+
+class _ClosingIterator:
+    """Wraps a WSGI response iterable so the span is ended only once the body is
+    fully sent (or the server closes the connection) — mirroring the Node
+    middleware ending on both ``finish`` and ``close``.
+    """
+
+    def __init__(self, iterable: Any, finalize: Callable[[bool], None]) -> None:
+        self._iterator = iter(iterable)
+        self._iterable = iterable
+        self._finalize = finalize
+        self._done = False
+
+    def __iter__(self) -> _ClosingIterator:
+        return self
+
+    def __next__(self) -> Any:
+        try:
+            return next(self._iterator)
+        except StopIteration:
+            self._close(errored=False)
+            raise
+        except Exception:
+            self._close(errored=True)
+            raise
+
+    def _close(self, errored: bool) -> None:
+        if self._done:
+            return
+        self._done = True
+        self._finalize(errored)
+
+    def close(self) -> None:
+        # Called by the WSGI server after it has consumed the response.
+        inner_close = getattr(self._iterable, "close", None)
+        try:
+            if callable(inner_close):
+                inner_close()
+        finally:
+            self._close(errored=False)
+
+
+def instrument_flask(
+    app: Any,
+    *,
+    tracer_name: str = TRACER_NAME,
+    tracer_provider: Any = None,
+    logger: StructuredLogger | None = None,
+) -> Any:
+    """Install ``TelemetryWSGIMiddleware`` on a Flask app and wire its matched
+    ``url_rule`` in as the route template.
+
+    Flask resolves ``request.url_rule`` before ``before_request`` handlers run,
+    so the template (``/users/<id>``) is available to record there — giving the
+    span and the exit log a bounded-cardinality name instead of the raw path.
+
+    Returns the app for chaining.
+    """
+    try:
+        from flask import request as flask_request
+    except ImportError as error:  # pragma: no cover
+        raise ImportError(
+            "instrument_flask requires the 'flask' extra: "
+            'pip install "fuzefront-telemetry[flask]"'
+        ) from error
+
+    app.wsgi_app = TelemetryWSGIMiddleware(
+        app.wsgi_app,
+        tracer_name=tracer_name,
+        tracer_provider=tracer_provider,
+        logger=logger,
+    )
+
+    @app.before_request
+    def _record_route() -> None:  # pragma: no cover - exercised via test client
+        rule = getattr(flask_request, "url_rule", None)
+        if rule is not None and getattr(rule, "rule", None):
+            set_matched_route(flask_request.environ, rule.rule)
+
+    return app
+
+
+__all__ = [
+    "TelemetryASGIMiddleware",
+    "TelemetryWSGIMiddleware",
+    "instrument_flask",
+    "set_matched_route",
+]
