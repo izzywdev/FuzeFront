@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { FullAccountSecurityClient } from '../../types'
 import { err, makeClient, methods, sms, totp } from '../../test/helpers'
@@ -362,6 +362,27 @@ describe('SmsEnrollFlow', () => {
       expect(q('[data-error="service-error"]')).toBeTruthy()
       expect(q('[data-error="invalid-code"]')).toBeNull()
     }
+  })
+
+  it('resend is ignored while activation is in flight: the factor being activated is never deleted', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const activateFactor = vi.fn(() => new Promise((r) => { release = () => r({ factorId: 'f', type: 'sms', status: 'active' }) }))
+    const enrollFactor = vi.fn(async () => ({ factorId: 'f', type: 'sms', status: 'pending', codeSent: true }))
+    const client = makeClient({ getMethods: vi.fn(async () => methods(['sms'])), enrollFactor, activateFactor })
+    render(<SmsEnrollFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '+447700900471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-component="otp-input"]')).toBeTruthy())
+    await user.click(document.querySelector('[data-component="otp-input"] input')!)
+    await user.keyboard('123456')
+    await user.click(q('[data-action="activate-factor"]')!)
+    expect(q('[data-action="resend-code"]')).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(q('[data-action="resend-code"]')!)
+    expect(enrollFactor).toHaveBeenCalledTimes(1)
+    expect(client.removeFactor).not.toHaveBeenCalled()
+    await act(async () => { release() })
   })
 
   it('RESEND replaces the pending factor: the previous one is deleted, only the newest is tracked', async () => {

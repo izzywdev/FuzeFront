@@ -6,7 +6,7 @@
  * fuse-seam top bar" every approved frame uses; it is product-layer composition
  * (a graduation candidate if a second family repo needs it).
  */
-import React, { useMemo } from 'react'
+import React, { useCallback, useMemo, useRef } from 'react'
 import { Button, StatusCallout } from '@fuzefront/design-system'
 import {
   AccountSecurityI18nProvider,
@@ -23,6 +23,27 @@ export interface FlowBaseProps {
   /** Bearer-token accessor for the default client. */
   getToken?: () => string | null | undefined
   locale?: AccountSecurityLocale
+}
+
+/**
+ * The package's single in-flight guard. Returns `run(fn)`, which executes `fn`
+ * unless a previous `run` of the SAME guard is still pending (then it is a no-op
+ * resolving to `false`). Share one guard between actions that mutate the same
+ * resource (send vs activate, submit double-clicks) so they serialize. Ref-based,
+ * so it holds even between a click and the re-render that disables the control.
+ */
+export function useInFlight(): (fn: () => Promise<void>) => Promise<boolean> {
+  const busy = useRef(false)
+  return useCallback(async (fn) => {
+    if (busy.current) return false
+    busy.current = true
+    try {
+      await fn()
+    } finally {
+      busy.current = false
+    }
+    return true
+  }, [])
 }
 
 /** Resolve the injected client or build the default same-origin one. */

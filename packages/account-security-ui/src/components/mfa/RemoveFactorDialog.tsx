@@ -3,7 +3,7 @@ import { BottomSheet, Button, Modal, StatusCallout } from '@fuzefront/design-sys
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import { isConflict } from '../../api/errors'
 import type { MfaFactor } from '../../types'
-import { Actions } from '../common/flowKit'
+import { Actions, useInFlight } from '../common/flowKit'
 import { FACTOR_ICON, factorName } from './factorMeta'
 
 type DialogState = 'confirm' | 'removing' | 'remove-last-blocked' | 'removed' | 'error'
@@ -45,6 +45,7 @@ export function RemoveFactorDialog({
 }: RemoveFactorDialogProps) {
   const { messages: m, t } = useAccountSecurityI18n()
   const [state, setState] = useState<DialogState>('confirm')
+  const inFlight = useInFlight()
 
   useEffect(() => {
     if (factor) setState('confirm')
@@ -53,7 +54,7 @@ export function RemoveFactorDialog({
   if (!factor) return null
   const name = factorName(m, factor.type)
 
-  const confirm = async () => {
+  const confirm = () => inFlight(async () => {
     setState('removing')
     try {
       await onRemove(factor.factorId)
@@ -62,7 +63,7 @@ export function RemoveFactorDialog({
     } catch (err) {
       setState(isConflict(err) ? 'remove-last-blocked' : 'error')
     }
-  }
+  })
 
   const title =
     state === 'remove-last-blocked'

@@ -272,7 +272,7 @@ export function MfaChallengeCard({
               aria-disabled={cooldown > 0 ? 'true' : 'false'}
               onClick={(e) => {
                 e.preventDefault()
-                if (cooldown > 0) return
+                if (cooldown > 0 || status === 'verifying') return
                 setResendKey((k) => k + 1)
                 onResend()
               }}
@@ -422,7 +422,8 @@ function StepUpInner({
       }
       // sms / email: ask the server to dispatch a code first. Ignore re-entry
       // (double-click) while a dispatch is pending.
-      if (choosing.current) return
+      // (also never while a verification is in flight, and vice-versa)
+      if (choosing.current || inFlight.current) return
       choosing.current = true
       setChoosingBusy(true)
       try {
@@ -447,7 +448,7 @@ function StepUpInner({
         setStep({ name: 'code', factor, delivered, code: 'error-invalid' })
         return
       }
-      if (inFlight.current) return
+      if (inFlight.current || choosing.current) return
       inFlight.current = true
       setStep({ name: 'code', factor, delivered, code: 'verifying' })
       try {

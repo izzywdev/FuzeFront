@@ -26,6 +26,17 @@ export function classifyCodeFailure(err: unknown): 'invalid' | 'service' {
   return isInvalidCode(err) ? 'invalid' : 'service'
 }
 
+/**
+ * A password the server rejected on policy / validation grounds (400, or 422 /
+ * code PASSWORD_POLICY). The submit must return to the EDITABLE form with an inline
+ * error — never to a screen whose only action replays the same rejected input.
+ */
+export function isPolicyRejection(err: unknown): boolean {
+  const s = statusOf(err)
+  const code = err instanceof HttpError ? err.code : undefined
+  return s === 400 || s === 422 || code === 'PASSWORD_POLICY'
+}
+
 /** 409 — the fail-closed conflict guard (remove-last-factor, password exists, …). */
 export function isConflict(err: unknown): boolean {
   return statusOf(err) === 409

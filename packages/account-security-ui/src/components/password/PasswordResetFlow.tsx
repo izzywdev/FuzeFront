@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { Button, Input, Spinner, StatusCallout } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import { statusOf } from '../../api/errors'
+import { HttpError } from '../../api/http'
 import type { PasswordClient } from '../../types'
 import {
   Actions,
@@ -11,6 +12,7 @@ import {
   FlowRoot,
   Hint,
   SeamCard,
+  useInFlight,
   useSecurityClient,
   type FlowBaseProps,
 } from '../common/flowKit'
@@ -144,9 +146,12 @@ export function ResetSentNotice({
 export function NewPasswordForm({
   onSubmit,
   submitting,
+  policyRejected,
 }: {
   onSubmit: (newPassword: string) => void
   submitting?: boolean
+  /** The server rejected the last password on policy grounds (token still live). */
+  policyRejected?: boolean
 }) {
   const { messages: m } = useAccountSecurityI18n()
   const [value, setValue] = useState('')
@@ -182,10 +187,10 @@ export function NewPasswordForm({
           onConfirm={setConfirm}
           newHook="new-password"
           confirmHook="confirm-password"
-          newError={errors.next}
+          newError={errors.next ?? (policyRejected ? m.password.errors.policy : undefined)}
           confirmError={errors.confirm}
           disabled={submitting}
-          policyErrorHook={Boolean(errors.policy)}
+          policyErrorHook={Boolean(errors.policy || policyRejected)}
         />
         <Actions>
           <Button
@@ -275,11 +280,13 @@ function PasswordResetInner({ client, getToken, token, onSignIn, onNavigate }: P
   const [busy, setBusy] = useState(false)
   const [resent, setResent] = useState(false)
   const [failure, setFailure] = useState<(() => void) | null>(null)
+  const [policyRejected, setPolicyRejected] = useState(false)
+  const inFlight = useInFlight()
 
   const back = onSignIn ?? (onNavigate ? () => onNavigate('/login') : undefined)
 
   const request = useCallback(
-    async (email: string, isResend = false) => {
+    (email: string, isResend = false) => inFlight(async () => {
       setBusy(true)
       try {
         await api.requestPasswordReset(email)
@@ -290,26 +297,29 @@ function PasswordResetInner({ client, getToken, token, onSignIn, onNavigate }: P
       setBusy(false)
       setResent(isResend)
       setStep({ name: 'sent', email })
-    },
-    [api]
+    }),
+    [api, inFlight]
   )
 
   const confirm = useCallback(
-    async (newPassword: string) => {
+    (newPassword: string) => inFlight(async () => {
       setBusy(true)
       setFailure(null)
+      setPolicyRejected(false)
       try {
         await api.confirmPasswordReset(token ?? '', newPassword)
         setStep({ name: 'done' })
       } catch (err) {
         const s = statusOf(err)
-        if (s === 400 || s === 401 || s === 404 || s === 410) setStep({ name: 'invalid' })
+        // 422 PASSWORD_POLICY: the token is still live — back to the editable form.
+        if (s === 422 || (err instanceof HttpError && err.code === 'PASSWORD_POLICY')) setPolicyRejected(true)
+        else if (s === 400 || s === 401 || s === 404 || s === 410) setStep({ name: 'invalid' })
         else setFailure(() => () => void confirm(newPassword))
       } finally {
         setBusy(false)
       }
-    },
-    [api, token]
+    }),
+    [api, token, inFlight]
   )
 
   return (
@@ -332,7 +342,7 @@ function PasswordResetInner({ client, getToken, token, onSignIn, onNavigate }: P
           onBack={back}
         />
       ) : step.name === 'confirm' ? (
-        <NewPasswordForm submitting={busy} onSubmit={(p) => void confirm(p)} />
+        <NewPasswordForm submitting={busy} policyRejected={policyRejected} onSubmit={(p) => void confirm(p)} />
       ) : step.name === 'invalid' ? (
         <TokenInvalidNotice
           onRequestAgain={() => {

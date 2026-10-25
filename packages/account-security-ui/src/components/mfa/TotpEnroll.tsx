@@ -11,6 +11,7 @@ import {
   FlowRoot,
   InlineError,
   SeamCard,
+  useInFlight,
   useSecurityClient,
   type FlowBaseProps,
 } from '../common/flowKit'
@@ -168,10 +169,11 @@ function TotpEnrollInner(props: EnrollFlowProps) {
   const { routes, go } = useMfaNav(props)
   const [phase, setPhase] = useState<TotpPhase>({ name: 'intro' })
   const pending = usePendingFactor(api)
+  const inFlight = useInFlight()
 
   // The factor (and its secret) is created ONLY when the user explicitly starts
   // setup — merely opening the route creates nothing to clean up.
-  const start = useCallback(async () => {
+  const start = useCallback(() => inFlight(async () => {
     setPhase({ name: 'starting' })
     try {
       const enroll = await api.enrollFactor({ type: 'totp' })
@@ -180,15 +182,16 @@ function TotpEnrollInner(props: EnrollFlowProps) {
     } catch {
       setPhase({ name: 'start-failed' })
     }
+  }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api])
+  [api])
 
   const cancel = () => {
     pending.discard()
     go(routes.overview)
   }
 
-  const activate = async (enroll: MfaEnrollResult, code: string) => {
+  const activate = (enroll: MfaEnrollResult, code: string) => inFlight(async () => {
     setPhase({ name: 'scan', enroll, activating: true, invalid: false })
     try {
       const factor = await api.activateFactor(enroll.factorId, code)
@@ -199,7 +202,7 @@ function TotpEnrollInner(props: EnrollFlowProps) {
       if (isInvalidCode(err)) setPhase({ name: 'scan', enroll, activating: false, invalid: true })
       else setPhase({ name: 'activate-failed', enroll, code })
     }
-  }
+  })
 
   return (
     <FlowPage title={m.mfa.totp.title} subtitle={m.mfa.totp.subtitle} data-frame="02-totp-enroll">

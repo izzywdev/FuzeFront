@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { FullAccountSecurityClient } from '../../types'
 import { err, makeClient, STRONG } from '../../test/helpers'
@@ -174,6 +174,32 @@ describe('SetPasswordFlow', () => {
     await waitFor(() => expect(document.querySelector('[data-state="already-has-password"]')).toBeTruthy())
     expect(document.querySelector('[data-action="go-reset"]')).toBeNull()
     expect(document.querySelector('[data-action="go-change"]')).toBeTruthy()
+  })
+
+  it('422 PASSWORD_POLICY on set → back on the editable form with the policy error (not a retry-same-input screen)', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({ setPassword: vi.fn(async () => { throw err(422, 'PASSWORD_POLICY') }) })
+    render(<SetPasswordFlow client={asClient(client)} />)
+    await user.type(document.querySelector('[data-input="set-password"]')!, STRONG)
+    await user.type(document.querySelector('[data-input="set-confirm"]')!, STRONG)
+    await user.click(screen.getByRole('button', { name: /^set password$/i }))
+    await waitFor(() => expect(document.querySelector('[data-input="set-password"]')).toBeTruthy())
+    expect(document.querySelector('[data-state="error"]')).toBeNull()
+    expect(document.querySelector('[data-error="password-policy"]')).toBeTruthy()
+  })
+
+  it('double-submit issues a single setPassword request', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const setPassword = vi.fn(() => new Promise<void>((r) => { release = r }))
+    render(<SetPasswordFlow client={asClient(makeClient({ setPassword }))} />)
+    await user.type(document.querySelector('[data-input="set-password"]')!, STRONG)
+    await user.type(document.querySelector('[data-input="set-confirm"]')!, STRONG)
+    const form = document.querySelector('form')!
+    fireEvent.submit(form)
+    fireEvent.submit(form)
+    expect(setPassword).toHaveBeenCalledTimes(1)
+    release()
   })
 
   it('400 → policy rejected, form stays', async () => {

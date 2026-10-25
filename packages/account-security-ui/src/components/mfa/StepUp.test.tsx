@@ -305,6 +305,26 @@ describe('MfaStepUpMobileFlow (frames 01-02, 375px)', () => {
     expect(client.verifyMfa).not.toHaveBeenCalled()
   })
 
+  it('resend is ignored while a verification is in flight (no concurrent challenge)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    let release!: () => void
+    const verifyMfa = vi.fn(() => new Promise((r) => { release = () => r({ token: 't' }) }))
+    const client = makeClient({ verifyMfa })
+    render(
+      <MfaStepUpMobileFlow client={asClient(client)} challenge={{ challengeId: 'c', factors: [SMS] }} onAuthenticated={vi.fn()} />
+    )
+    await user.click(q('[data-factor="sms"][data-action="challenge"]')!)
+    await waitFor(() => expect(q('[data-value="expires-in"]')).toBeTruthy())
+    await act(async () => { vi.advanceTimersByTime(31_000) })
+    await typeCode(user, '123456')
+    await user.click(q('[data-action="verify-mfa"]')!)
+    await waitFor(() => expect(verifyMfa).toHaveBeenCalledTimes(1))
+    await user.click(q('[data-action="resend"]')!)
+    expect(client.challengeMfa).toHaveBeenCalledTimes(1)
+    await act(async () => { release() })
+  })
+
   it('delivery failure offers resend and other methods', async () => {
     const user = userEvent.setup()
     const client = makeClient({ challengeMfa: vi.fn(async () => { throw err(503) }) })

@@ -12,6 +12,7 @@ import {
   Hint,
   InlineError,
   SeamCard,
+  useInFlight,
   useSecurityClient,
 } from '../common/flowKit'
 import { maskPhone } from './factorMeta'
@@ -137,11 +138,12 @@ export function SmsEnrollPanel(p: SmsEnrollPanelProps) {
         <a
           href="#resend"
           data-action="resend-code"
+          aria-disabled={p.activating ? 'true' : 'false'}
           onClick={(e) => {
             e.preventDefault()
-            p.onResend()
+            if (!p.activating) p.onResend()
           }}
-          style={{ color: 'var(--accent-color)' }}
+          style={{ color: p.activating ? 'var(--text-tertiary)' : 'var(--accent-color)', pointerEvents: p.activating ? 'none' : 'auto' }}
         >
           {m.mfa.sms.resend}
         </a>{' '}
@@ -190,6 +192,9 @@ function SmsEnrollInner(props: EnrollFlowProps) {
   const [phone, setPhone] = useState('')
   const alive = useRef(true)
   const pending = usePendingFactor(api)
+  // send/resend and activate mutate the same pending factor: they serialize, and a
+  // factor whose activation is in flight is never discarded by a resend.
+  const inFlight = useInFlight()
 
   const load = useCallback(async () => {
     setPhase({ name: 'loading' })
@@ -215,7 +220,8 @@ function SmsEnrollInner(props: EnrollFlowProps) {
     }
   }, [load])
 
-  const sendCode = async () => {
+  const sendCode = () =>
+    inFlight(async () => {
     setPhase({ name: 'enter-phone', sending: true, failed: false })
     try {
       pending.discard() // a resend replaces the previous pending factor
@@ -225,9 +231,10 @@ function SmsEnrollInner(props: EnrollFlowProps) {
     } catch {
       setPhase({ name: 'enter-phone', sending: false, failed: true })
     }
-  }
+    })
 
-  const activate = async (factorId: string, code: string) => {
+  const activate = (factorId: string, code: string) =>
+    inFlight(async () => {
     setPhase({ name: 'confirm-code', factorId, activating: true, invalid: false })
     try {
       const factor = await api.activateFactor(factorId, code)
@@ -241,7 +248,7 @@ function SmsEnrollInner(props: EnrollFlowProps) {
       const invalid = classifyCodeFailure(err) === 'invalid'
       setPhase({ name: 'confirm-code', factorId, activating: false, invalid, serviceError: !invalid })
     }
-  }
+    })
 
   return (
     <FlowPage title={m.mfa.sms.title} subtitle={m.mfa.sms.subtitle} data-frame="03-sms-enroll">

@@ -100,6 +100,26 @@ describe('PasswordResetFlow — confirm with token', () => {
     expect(client.confirmPasswordReset).not.toHaveBeenCalled()
   })
 
+  it('422 PASSWORD_POLICY → back on the editable form with an inline policy error, token kept, another password accepted', async () => {
+    const user = userEvent.setup()
+    const confirmPasswordReset = vi.fn().mockRejectedValueOnce(err(422, 'PASSWORD_POLICY')).mockResolvedValueOnce(undefined)
+    render(<PasswordResetFlow client={asClient(makeClient({ confirmPasswordReset }))} token="tok_keep" />)
+    await fill(user)
+    await waitFor(() => expect(document.querySelector('[data-panel="reset-confirm"]')).toBeTruthy())
+    expect(document.querySelector('[data-state="error"]')).toBeNull()
+    expect(document.querySelector('[data-token-state="invalid"]')).toBeNull()
+    expect(document.querySelector('[data-error="password-policy"]')).toBeTruthy()
+    const pw = document.querySelector('[data-input="new-password"]') as HTMLInputElement
+    const cf = document.querySelector('[data-input="confirm-password"]') as HTMLInputElement
+    await user.clear(pw)
+    await user.clear(cf)
+    await user.type(pw, 'Another-Str0ng-Pass!9')
+    await user.type(cf, 'Another-Str0ng-Pass!9')
+    await user.click(document.querySelector('[data-action="set-new-password"]')!)
+    await waitFor(() => expect(document.querySelector('[data-panel="reset-done"]')).toBeTruthy())
+    expect(confirmPasswordReset).toHaveBeenLastCalledWith('tok_keep', 'Another-Str0ng-Pass!9')
+  })
+
   it('a server fault (5xx) → generic retryable error, not a misleading "expired link"', async () => {
     const user = userEvent.setup()
     const confirmPasswordReset = vi.fn().mockRejectedValueOnce(err(503)).mockResolvedValueOnce(undefined)

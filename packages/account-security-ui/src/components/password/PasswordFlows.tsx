@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Spinner, StatusCallout } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
-import { isConflict, statusOf } from '../../api/errors'
+import { isConflict, isPolicyRejection, statusOf } from '../../api/errors'
 import { HttpError } from '../../api/http'
 import type { IdentityConnections, PasswordClient, FullAccountSecurityClient } from '../../types'
 import {
@@ -9,6 +9,7 @@ import {
   ErrorWithRetry,
   FlowPage,
   FlowRoot,
+  useInFlight,
   useSecurityClient,
   type FlowBaseProps,
 } from '../common/flowKit'
@@ -144,10 +145,11 @@ function ChangePasswordInner({
   const api = useSecurityClient<PasswordClient>(client, getToken)
   const [phase, setPhase] = useState<Phase>({ name: 'form' })
   const [errors, setErrors] = useState<PasswordFormErrors>({})
+  const inFlight = useInFlight()
   const nav = (r: string) => (onNavigate ? onNavigate(r) : undefined)
 
   const submit = useCallback(
-    async (current: string, next: string) => {
+    (current: string, next: string) => inFlight(async () => {
       setErrors({})
       setPhase({ name: 'submitting' })
       try {
@@ -164,15 +166,15 @@ function ChangePasswordInner({
           setPhase({ name: 'form' })
         } else if (status === 409) {
           setPhase({ name: 'no-password' })
-        } else if (status === 422 || code === 'PASSWORD_POLICY' || status === 400) {
+        } else if (isPolicyRejection(err)) {
           setErrors({ policy: true })
           setPhase({ name: 'form' })
         } else {
           setPhase({ name: 'error', retry: () => void submit(current, next) })
         }
       }
-    },
-    [api, onDone]
+    }),
+    [api, onDone, inFlight]
   )
 
   return (
@@ -235,10 +237,11 @@ function SetPasswordInner({
   const api = useSecurityClient<PasswordClient>(client, getToken)
   const [phase, setPhase] = useState<Phase>({ name: 'form' })
   const [errors, setErrors] = useState<Pick<PasswordFormErrors, 'policy'>>({})
+  const inFlight = useInFlight()
   const nav = (r: string) => (onNavigate ? onNavigate(r) : undefined)
 
   const submit = useCallback(
-    async (next: string) => {
+    (next: string) => inFlight(async () => {
       setErrors({})
       setPhase({ name: 'submitting' })
       try {
@@ -248,15 +251,16 @@ function SetPasswordInner({
       } catch (err) {
         if (isConflict(err)) {
           setPhase({ name: 'exists' })
-        } else if (statusOf(err) === 400) {
+        } else if (isPolicyRejection(err)) {
+          // 400 / 422 PASSWORD_POLICY: back to the editable form with the policy error.
           setErrors({ policy: true })
           setPhase({ name: 'form' })
         } else {
           setPhase({ name: 'error', retry: () => void submit(next) })
         }
       }
-    },
-    [api, onDone]
+    }),
+    [api, onDone, inFlight]
   )
 
   return (

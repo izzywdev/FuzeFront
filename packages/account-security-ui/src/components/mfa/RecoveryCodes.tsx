@@ -10,6 +10,7 @@ import {
   FlowRoot,
   Hint,
   SeamCard,
+  useInFlight,
   useSecurityClient,
   type FlowBaseProps,
 } from '../common/flowKit'
@@ -181,8 +182,9 @@ function RecoveryCodesInner(props: FlowBaseProps & MfaNavProps) {
   const api = useSecurityClient<MfaClient>(props.client, props.getToken)
   const { routes, go } = useMfaNav(props)
   const [phase, setPhase] = useState<Phase>({ name: 'status' })
+  const inFlight = useInFlight()
 
-  const regenerate = async () => {
+  const regenerate = () => inFlight(async () => {
     setPhase({ name: 'confirm', busy: true })
     try {
       const codes = await api.regenerateRecoveryCodes()
@@ -192,7 +194,7 @@ function RecoveryCodesInner(props: FlowBaseProps & MfaNavProps) {
       // old set may already be invalid. Do NOT reassure; require a successful retry.
       setPhase({ name: 'error' })
     }
-  }
+  })
 
   return (
     <FlowPage title={m.mfa.recovery.title} subtitle={m.mfa.recovery.subtitle} data-frame="04-recovery-codes">
