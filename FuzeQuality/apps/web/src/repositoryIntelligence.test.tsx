@@ -4040,6 +4040,8 @@ describe('RepositoryIntelligence flow inventory', () => {
           reviewStatus: 'proposed',
           revisionScope: 'current',
           subject: '',
+          policyArtifactId: '',
+          gateArtifactId: '',
           minimumConfidencePercent: '',
           maximumConfidencePercent: '',
         }
@@ -4053,6 +4055,8 @@ describe('RepositoryIntelligence flow inventory', () => {
         reviewStatus: '',
         revisionScope: 'current',
         subject: '',
+        policyArtifactId: '',
+        gateArtifactId: '',
         minimumConfidencePercent: '91',
         maximumConfidencePercent: '100',
       })
@@ -4065,6 +4069,8 @@ describe('RepositoryIntelligence flow inventory', () => {
         reviewStatus: '',
         revisionScope: 'current',
         subject: 'deployment',
+        policyArtifactId: '',
+        gateArtifactId: '',
         minimumConfidencePercent: '',
         maximumConfidencePercent: '',
       })
@@ -4121,6 +4127,38 @@ describe('RepositoryIntelligence flow inventory', () => {
     await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
       revision: repository.lastScanRevision,
       subject: 'authentication',
+      cursor: 'policy-page-2',
+    }))
+  })
+
+  it('traces an exact policy-gate relationship across continuation pages', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+
+    fireEvent.change(screen.getByLabelText('Policy artifact'), {
+      target: { value: ' policy-1 ' },
+    })
+    fireEvent.change(screen.getByLabelText('Gate artifact'), {
+      target: { value: ' gate-1 ' },
+    })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      policyArtifactId: 'policy-1',
+      gateArtifactId: 'gate-1',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      policyArtifactId: 'policy-1',
+      gateArtifactId: 'gate-1',
       cursor: 'policy-page-2',
     }))
   })

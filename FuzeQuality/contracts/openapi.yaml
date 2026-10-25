@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.8
+  version: 0.84.9
   license:
     name: UNLICENSED
 servers:
@@ -603,6 +603,14 @@ paths:
           in: query
           description: Exact case-insensitive policy or gate subject retained with the finding.
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: policyArtifactId
+          in: query
+          description: Exact policy artifact or logical identifier participating in the relationship.
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: gateArtifactId
+          in: query
+          description: Exact gate artifact or logical identifier participating in the relationship.
+          schema: { type: string, minLength: 1, maxLength: 500 }
         - name: minConfidence
           in: query
           description: Inclusive lower detector-confidence bound.
@@ -696,6 +704,14 @@ paths:
           in: query
           description: Exact case-insensitive policy or gate subject retained with the finding.
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: policyArtifactId
+          in: query
+          description: Exact policy artifact or logical identifier participating in the relationship.
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: gateArtifactId
+          in: query
+          description: Exact gate artifact or logical identifier participating in the relationship.
+          schema: { type: string, minLength: 1, maxLength: 500 }
         - name: minConfidence
           in: query
           description: Inclusive lower detector-confidence bound.
