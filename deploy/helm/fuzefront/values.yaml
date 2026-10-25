@@ -981,11 +981,13 @@ selectionListService:
     secretName: "selection-list-secrets"
     passwordKey: "DB_PASSWORD"
     # DB_SSL for src/db/knexfile.ts (production default there is TLS ON, with
-    # certificate verification). UNVERIFIED: whether the shared FuzeInfra Postgres
-    # serves TLS with a certificate this client trusts. If the pod logs "server does
-    # not support SSL" or a certificate-verification error, set "false" here (a
-    # reviewable one-line change) -- do not edit the service code.
-    ssl: "true"
+    # certificate verification). VERIFIED 2026-10-25: the shared in-cluster
+    # FuzeInfra Postgres does NOT terminate TLS — with ssl "true" the pod logged
+    # `fatal: Migration failed — "The server does not support SSL connections"`
+    # and CrashLoopBackOff'd on first deploy. Same finding and fix as
+    # devportalService.dbSsl below. "false" is the reviewable one-line change the
+    # original comment prescribed; the service code is left untouched.
+    ssl: "false"
   # Authorization enforcement (env FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED, read by
   # services/selection-list-service/src/middleware/authz.flags.ts). The service
   # runs NODE_ENV=production in-cluster, where authz is ALWAYS enforced whatever

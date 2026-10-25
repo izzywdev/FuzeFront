@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay } from '@fuzefront/design-system'
+import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -405,7 +405,7 @@ export const HomePage: React.FC = () => {
                   </div>
                 ))}
               </div>
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <Wrap gap={4} justify="center">
                 <Link
                   to="/pricing"
                   className="btn-primary flex items-center justify-center gap-2"
@@ -420,7 +420,7 @@ export const HomePage: React.FC = () => {
                 >
                   Talk to sales
                 </Link>
-              </div>
+              </Wrap>
             </motion.div>
           </SectionWrapper>
         </Container>
@@ -482,7 +482,7 @@ export const HomePage: React.FC = () => {
               <p className="text-lg text-gray-600 mb-8">
                 Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
               </p>
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <Wrap gap={4} justify="center">
                 <a
                   href="https://app.fuzefront.com/signup"
                   className="btn-primary flex items-center justify-center gap-2 text-base"
@@ -497,7 +497,7 @@ export const HomePage: React.FC = () => {
                 >
                   Talk to sales
                 </Link>
-              </div>
+              </Wrap>
               <Caption space="lg" tone="primary">
                 No credit card required &middot; Free for 14 days &middot; Scales as you grow
               </Caption>
