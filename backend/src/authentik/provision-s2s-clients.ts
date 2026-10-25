@@ -285,10 +285,16 @@ async function ensureS2SApplication(
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 400) {
       const body = JSON.stringify(error.response.data)
-      if (body.includes('already exists') || body.toLowerCase().includes('slug')) {
+      // Treat as idempotent ONLY for a slug UNIQUENESS error (the app already
+      // exists, so this create is a safe no-op). A different slug 400 — e.g. the
+      // generated `s2s-<slug>` exceeds Authentik's 50-char SlugField limit for a
+      // long service name — means NO application was created; rethrowing it (not
+      // returning the slug) stops the caller writing credentials for a resource
+      // that does not exist.
+      if (body.toLowerCase().includes('already exists')) {
         console.log(
           `[provision-s2s] Application "${appName}" already exists (create returned 400 on ` +
-            `slug collision; treating as idempotent).`
+            `slug uniqueness; treating as idempotent).`
         )
         return slug
       }

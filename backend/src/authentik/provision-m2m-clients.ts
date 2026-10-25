@@ -149,10 +149,13 @@ async function ensureApplication(
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 400) {
       const body = JSON.stringify(error.response.data)
-      if (body.includes('already exists') || body.toLowerCase().includes('slug')) {
+      // Idempotent ONLY for a slug uniqueness error. Any other slug 400 (e.g. a
+      // slug that exceeds Authentik's 50-char limit) means nothing was created,
+      // so rethrow rather than report a non-existent app as provisioned.
+      if (body.toLowerCase().includes('already exists')) {
         console.log(
           `[provision-m2m] Application "${appName}" already exists (create returned 400 on ` +
-            `slug collision; treating as idempotent).`
+            `slug uniqueness; treating as idempotent).`
         )
         return
       }
