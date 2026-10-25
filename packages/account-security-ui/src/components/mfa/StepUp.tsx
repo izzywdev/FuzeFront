@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, OtpInput, Skeleton, Spinner, StatusCallout } from '@fuzefront/design-system'
+import { Button, Input, OtpInput, Skeleton, Spinner, StatusCallout } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
-import { classifyCodeFailure } from '../../api/errors'
+import { classifyCodeFailure, classifyRecoveryFailure } from '../../api/errors'
 import type { MfaFactorRef, MfaFactorType, MfaSession, StepUpClient } from '../../types'
 import {
   Actions,
@@ -27,15 +27,18 @@ type Choice = MfaFactorRef | { type: 'recovery'; factorId?: undefined }
 
 export interface MfaStepUpProps extends FlowBaseProps {
   /** The `mfa_required` challenge from login / social exchange. */
-  challenge: { challengeId: string; factors?: MfaFactorRef[] }
+  challenge: {
+    challengeId: string
+    factors?: MfaFactorRef[]
+    /** `mfa_required.recoveryAvailable`: offer "Recovery code" ONLY when strictly `true` (missing = false). */
+    recoveryAvailable?: boolean
+  }
   /** Optional: fetch the factor list when `challenge.factors` is absent (shows loading / error). */
   loadFactors?: () => Promise<MfaFactorRef[]>
   /** The authenticated session minted by a successful verification. */
   onAuthenticated: (session: MfaSession) => void
   /** Zero-factors fail-closed state: route the user to support. */
   onContactSupport?: () => void
-  /** Offer the "Recovery code" option. DEFAULT OFF — the Security contract has no recovery-code step-up yet. */
-  recoveryEnabled?: boolean
   onBack?: () => void
   /**
    * The host already renders this inside a card (e.g. the login AuthCard): drop our own
@@ -201,7 +204,9 @@ export function MfaChallengeCard({
   const cooldown = useCountdown(RESEND_COOLDOWN_SECONDS, resendKey, delivered)
   const mobile = variant === 'mobile'
   const recovery = factor.type === 'recovery'
-  const needed = recovery ? 8 : 6
+  // A recovery code is opaque (contract: no client-side format validation beyond non-empty),
+  // so it gets a plain text field; factor codes stay a fixed 6-cell OTP.
+  const needed = 6
 
   // Hooks differ per frame: desktop → data-component/mfa-challenge, mobile → data-panel/enter-code.
   const frameAttrs = mobile
@@ -234,10 +239,12 @@ export function MfaChallengeCard({
   }
 
   const prompt =
-    status === 'error-invalid'
-      ? m.stepUp.invalidPrompt
-      : recovery
-        ? m.stepUp.recoveryPrompt
+    recovery
+      ? status === 'error-invalid'
+        ? m.stepUp.recoveryInvalidPrompt
+        : m.stepUp.recoveryPrompt
+      : status === 'error-invalid'
+        ? m.stepUp.invalidPrompt
         : delivered
           ? factor.type === 'email'
             ? m.stepUp.sentPromptEmail
@@ -252,18 +259,42 @@ export function MfaChallengeCard({
         {m.stepUp.codeTitle}
       </h2>
       <Hint>{prompt}</Hint>
-      <OtpInput
-        length={needed}
-        numeric={!recovery}
-        value={code}
-        onChange={setCode}
-        error={status === 'error-invalid'}
-        disabled={status === 'verifying'}
-        size={mobile ? 'touch' : 'md'}
-        aria-label={recovery ? m.stepUp.recoveryLabel : m.stepUp.codeLabel}
-        autoFocus
-      />
-      {status === 'error-invalid' && <InlineError data-error="invalid-code">{m.stepUp.invalid}</InlineError>}
+      {recovery ? (
+        <Input
+          id="mfa-recovery-code"
+          data-field="recovery-code"
+          aria-label={m.stepUp.recoveryLabel}
+          dir="ltr"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={64}
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && status !== 'verifying' && code.trim().length > 0) onVerify(code)
+          }}
+          invalid={status === 'error-invalid'}
+          disabled={status === 'verifying'}
+          autoFocus
+        />
+      ) : (
+        <OtpInput
+          length={needed}
+          numeric
+          value={code}
+          onChange={setCode}
+          error={status === 'error-invalid'}
+          disabled={status === 'verifying'}
+          size={mobile ? 'touch' : 'md'}
+          aria-label={m.stepUp.codeLabel}
+          autoFocus
+        />
+      )}
+      {status === 'error-invalid' && (
+        <InlineError data-error="invalid-code">{recovery ? m.stepUp.recoveryInvalid : m.stepUp.invalid}</InlineError>
+      )}
       {status === 'error-service' && <InlineError data-error="service-error">{m.stepUp.serviceError}</InlineError>}
       {delivered && (
         <>
@@ -301,7 +332,7 @@ export function MfaChallengeCard({
           fullWidth
           data-action="verify-mfa"
           onClick={() => onVerify(code)}
-          disabled={status === 'verifying' || !OtpInput.isComplete(code, needed)}
+          disabled={status === 'verifying' || (recovery ? code.trim().length === 0 : !OtpInput.isComplete(code, needed))}
           aria-busy={status === 'verifying' || undefined}
           leadingIcon={status === 'verifying' ? <Spinner size={16} label={m.stepUp.verifying} /> : undefined}
         >
@@ -361,7 +392,6 @@ function StepUpInner({
   loadFactors,
   onAuthenticated,
   onContactSupport,
-  recoveryEnabled = false,
   onBack,
   hosted = false,
   client,
@@ -370,6 +400,8 @@ function StepUpInner({
 }: MfaStepUpProps & { variant?: Variant }) {
   const { messages: m } = useAccountSecurityI18n()
   const api = useSecurityClient<StepUpClient>(client, getToken)
+  // Fail-closed: only an explicit `true` from the server offers recovery.
+  const recoveryEnabled = challenge.recoveryAvailable === true
   const mobile = variant === 'mobile'
   const [factorsState, setFactorsState] = useState<FactorsState>(
     challenge.factors ? { status: 'ready', factors: challenge.factors } : { status: 'loading' }
@@ -387,7 +419,9 @@ function StepUpInner({
   const expiresAt = useRef(Date.now() + EXPIRY_SECONDS * 1000)
   // Tracked on EVERY path (incl. TOTP, which shows no countdown): once the window
   // closes the server rejects everything, so we must not keep inviting codes.
-  const expired = useDeadlineCountdown(expiresAt.current, true) === 0
+  // The server can also end the challenge early (recovery redeem → 401 NOT_ACTIVE).
+  const [serverExpired, setServerExpired] = useState(false)
+  const expired = useDeadlineCountdown(expiresAt.current, true) === 0 || serverExpired
   const alive = useRef(true)
 
   const loadList = useCallback(async () => {
@@ -451,19 +485,27 @@ function StepUpInner({
 
   const verify = useCallback(
     async (factor: Choice, delivered: boolean, code: string) => {
-      if (!factor.factorId) {
-        // Recovery-code step-up has no contract operation yet (see recoveryEnabled):
-        // fail closed rather than send a request the server cannot honour.
-        setStep({ name: 'code', factor, delivered, code: 'error-invalid' })
-        return
-      }
       if (inFlight.current || choosing.current) return
       inFlight.current = true
       setStep({ name: 'code', factor, delivered, code: 'verifying' })
       try {
-        const session = await api.verifyMfa(challenge.challengeId, factor.factorId, code)
+        const session = factor.factorId
+          ? await api.verifyMfa(challenge.challengeId, factor.factorId, code)
+          : await api.verifyRecoveryCode(challenge.challengeId, code.trim())
         onAuthenticated(session)
       } catch (err) {
+        if (!factor.factorId) {
+          // Recovery redemption has distinct, contract-coded outcomes.
+          const kind = classifyRecoveryFailure(err)
+          if (kind === 'expired') {
+            if (alive.current) setServerExpired(true)
+            return
+          }
+          // 'rate-limited' renders as the retryable service state: the frames have no
+          // dedicated rate-limit screen, and it must not claim the code was wrong.
+          setStep({ name: 'code', factor, delivered, code: kind === 'invalid' ? 'error-invalid' : 'error-service' })
+          return
+        }
         // Fail closed on this screen either way. A rejected code (400/401/403/422)
         // is "invalid"; a 5xx / 429 / network failure is a retryable service error
         // that must not claim the code was wrong.

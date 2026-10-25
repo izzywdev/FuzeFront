@@ -84,24 +84,160 @@ describe('MfaStepUpFlow (desktop, frame 05)', () => {
     await waitFor(() => expect(q('[data-state="error-delivery"]')).toBeTruthy())
   })
 
-  it('the recovery option is NOT offered by default (no contract path), only when enabled', async () => {
+  it('recovery is offered only when the challenge says recoveryAvailable === true (missing/false = hidden)', async () => {
     const user = userEvent.setup()
-    const { unmount } = render(
-      <MfaStepUpFlow client={asClient(makeClient())} challenge={{ challengeId: 'c', factors: [TOTP, SMS] }} onAuthenticated={vi.fn()} />
-    )
-    await user.click(await screen.findByRole('button', { name: /different method/i }))
-    expect(q('[data-factor="recovery"]')).toBeNull()
-    unmount()
+    for (const flag of [undefined, false] as const) {
+      const { unmount } = render(
+        <MfaStepUpFlow
+          client={asClient(makeClient())}
+          challenge={{ challengeId: 'c', factors: [TOTP, SMS], recoveryAvailable: flag }}
+          onAuthenticated={vi.fn()}
+        />
+      )
+      await user.click(await screen.findByRole('button', { name: /different method/i }))
+      expect(q('[data-factor="recovery"]')).toBeNull()
+      unmount()
+    }
     render(
       <MfaStepUpFlow
         client={asClient(makeClient())}
-        challenge={{ challengeId: 'c', factors: [TOTP, SMS] }}
+        challenge={{ challengeId: 'c', factors: [TOTP, SMS], recoveryAvailable: true }}
         onAuthenticated={vi.fn()}
-        recoveryEnabled
       />
     )
     await user.click(await screen.findByRole('button', { name: /different method/i }))
     expect(q('[data-factor="recovery"]')).toBeTruthy()
+  })
+})
+
+describe.each([['desktop', MfaStepUpFlow], ['mobile', MfaStepUpMobileFlow]] as const)(
+  'recovery-code redemption (%s)',
+  (_name, Flow) => {
+    const open = async (client: ReturnType<typeof makeClient>, onAuthenticated = vi.fn()) => {
+      const user = userEvent.setup()
+      render(
+        <Flow
+          client={asClient(client)}
+          challenge={{ challengeId: 'chl_9', factors: [TOTP], recoveryAvailable: true }}
+          onAuthenticated={onAuthenticated}
+        />
+      )
+      const different = screen.queryByRole('button', { name: /different method/i })
+      if (different) await user.click(different)
+      await user.click((await waitFor(() => q('[data-factor="recovery"]')!)) as Element)
+      return user
+    }
+    const submit = async (user: ReturnType<typeof userEvent.setup>, code: string) => {
+      await user.type(q('[data-field="recovery-code"]') as Element, code)
+      await user.click(q('[data-action="verify-mfa"]')!)
+    }
+
+    it('submits { challengeId, recoveryCode } and proceeds like a factor verify', async () => {
+      const client = makeClient()
+      const onAuthenticated = vi.fn()
+      const user = await open(client, onAuthenticated)
+      await submit(user, ' ab12-cd34ef ')
+      await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith({ token: 'tok', sessionId: 's1' }))
+      expect(client.verifyRecoveryCode).toHaveBeenCalledWith('chl_9', 'ab12-cd34ef')
+      expect(client.verifyMfa).not.toHaveBeenCalled()
+    })
+
+    it('verify stays disabled until a non-empty code is entered (no format validation)', async () => {
+      const user = await open(makeClient())
+      expect((q('[data-action="verify-mfa"]') as HTMLButtonElement).disabled).toBe(true)
+      await user.type(q('[data-field="recovery-code"]') as Element, 'x')
+      expect((q('[data-action="verify-mfa"]') as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('RECOVERY_CODE_INVALID: inline error, stays on screen, and the user can retry', async () => {
+      const verifyRecoveryCode = vi.fn().mockRejectedValueOnce(err(401, 'RECOVERY_CODE_INVALID')).mockResolvedValueOnce({ token: 't2' })
+      const onAuthenticated = vi.fn()
+      const user = await open(makeClient({ verifyRecoveryCode }), onAuthenticated)
+      await submit(user, 'wrong')
+      await waitFor(() => expect(q('[data-error="invalid-code"]')).toBeTruthy())
+      expect(onAuthenticated).not.toHaveBeenCalled()
+      expect(q('[data-state="expired"]')).toBeNull()
+      await user.clear(q('[data-field="recovery-code"]') as Element)
+      await user.type(q('[data-field="recovery-code"]') as Element, 'right')
+      await user.click(q('[data-action="verify-mfa"]')!)
+      await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith({ token: 't2' }))
+      expect(verifyRecoveryCode).toHaveBeenCalledTimes(2)
+    })
+
+    it('RATE_LIMITED (429): retryable service state, never claims the code was wrong', async () => {
+      const verifyRecoveryCode = vi.fn(async () => { throw err(429, 'RATE_LIMITED') })
+      const user = await open(makeClient({ verifyRecoveryCode }))
+      await submit(user, 'abc')
+      await waitFor(() => expect(q('[data-error="service-error"]')).toBeTruthy())
+      expect(q('[data-error="invalid-code"]')).toBeNull()
+      expect((q('[data-action="verify-mfa"]') as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('NOT_ACTIVE: challenge gone -> the existing expired state with a restart action', async () => {
+      const verifyRecoveryCode = vi.fn(async () => { throw err(401, 'NOT_ACTIVE') })
+      const onBack = vi.fn()
+      const user = userEvent.setup()
+      render(
+        <Flow
+          client={asClient(makeClient({ verifyRecoveryCode }))}
+          challenge={{ challengeId: 'chl_9', factors: [TOTP], recoveryAvailable: true }}
+          onAuthenticated={vi.fn()}
+          onBack={onBack}
+        />
+      )
+      const different = screen.queryByRole('button', { name: /different method/i })
+      if (different) await user.click(different)
+      await user.click((await waitFor(() => q('[data-factor="recovery"]')!)) as Element)
+      await submit(user, 'abc')
+      await waitFor(() => expect(q('[data-state="expired"]')).toBeTruthy())
+      await user.click(q('[data-action="restart-sign-in"]')!)
+      expect(onBack).toHaveBeenCalled()
+    })
+
+    it('5xx / network: retryable service error, code not judged wrong', async () => {
+      const verifyRecoveryCode = vi.fn(async () => { throw err(503) })
+      const user = await open(makeClient({ verifyRecoveryCode }))
+      await submit(user, 'abc')
+      await waitFor(() => expect(q('[data-error="service-error"]')).toBeTruthy())
+    })
+
+    it('no double submit while a redemption is in flight', async () => {
+      let release!: (v: unknown) => void
+      const verifyRecoveryCode = vi.fn(() => new Promise((r) => { release = r }))
+      const user = await open(makeClient({ verifyRecoveryCode }))
+      await user.type(q('[data-field="recovery-code"]') as Element, 'abc')
+      await user.click(q('[data-action="verify-mfa"]')!)
+      await user.keyboard('{Enter}')
+      await user.click(q('[data-action="verify-mfa"]')!)
+      expect(verifyRecoveryCode).toHaveBeenCalledTimes(1)
+      await act(async () => release({ token: 't' }))
+    })
+
+    it('with no listed factors but recoveryAvailable, recovery is the offered way in (not the dead-end state)', async () => {
+      render(
+        <Flow
+          client={asClient(makeClient())}
+          challenge={{ challengeId: 'c', factors: [], recoveryAvailable: true }}
+          onAuthenticated={vi.fn()}
+        />
+      )
+      await waitFor(() => expect(q('[data-factor="recovery"]')).toBeTruthy())
+      expect(q('[data-state="empty"]')).toBeNull()
+    })
+  }
+)
+
+describe('classifyCodeFailure / classifyRecoveryFailure', () => {
+  it('maps the contract outcomes', async () => {
+    const { classifyCodeFailure, classifyRecoveryFailure } = await import('../../api/errors')
+    expect(classifyCodeFailure(err(401, 'NOT_ACTIVE'))).toBe('invalid')
+    expect(classifyCodeFailure(err(429))).toBe('rate-limited')
+    expect(classifyCodeFailure(err(503))).toBe('service')
+    expect(classifyRecoveryFailure(err(401, 'RECOVERY_CODE_INVALID'))).toBe('invalid')
+    expect(classifyRecoveryFailure(err(401, 'NOT_ACTIVE'))).toBe('expired')
+    expect(classifyRecoveryFailure(err(429, 'RATE_LIMITED'))).toBe('rate-limited')
+    expect(classifyRecoveryFailure(err(400, 'MALFORMED'))).toBe('service')
+    expect(classifyRecoveryFailure(new Error('network'))).toBe('service')
   })
 })
 

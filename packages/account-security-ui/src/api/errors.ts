@@ -22,8 +22,31 @@ export function isInvalidCode(err: unknown): boolean {
  * where nothing says the code was wrong (show a retryable service error and keep
  * the entered code). Every code-entry catch must use this, never a bare catch.
  */
-export function classifyCodeFailure(err: unknown): 'invalid' | 'service' {
-  return isInvalidCode(err) ? 'invalid' : 'service'
+export function classifyCodeFailure(err: unknown): CodeFailure {
+  return isInvalidCode(err) ? 'invalid' : isRateLimited(err) ? 'rate-limited' : 'service'
+}
+
+/** 429 / `RATE_LIMITED` — too many failed attempts; the credential was NOT judged wrong. */
+export function isRateLimited(err: unknown): boolean {
+  return statusOf(err) === 429 || (err instanceof HttpError && err.code === 'RATE_LIMITED')
+}
+
+export type CodeFailure = 'invalid' | 'service' | 'rate-limited'
+
+/**
+ * Classify a failed RECOVERY-code redemption (`POST /mfa/verify` with `recoveryCode`).
+ * Unlike a factor code, the contract gives each outcome its own code:
+ *  - `RECOVERY_CODE_INVALID` (401) → 'invalid'  (challenge stays live; the user may retry)
+ *  - `NOT_ACTIVE` (401)            → 'expired'  (challenge unknown / expired / completed)
+ *  - 429 `RATE_LIMITED`            → 'rate-limited'
+ * Anything else (400 MALFORMED, 5xx, network) is 'service': nothing says the code was wrong.
+ */
+export function classifyRecoveryFailure(err: unknown): CodeFailure | 'expired' {
+  if (isRateLimited(err)) return 'rate-limited'
+  const code = err instanceof HttpError ? err.code : undefined
+  if (code === 'NOT_ACTIVE') return 'expired'
+  if (code === 'RECOVERY_CODE_INVALID') return 'invalid'
+  return 'service'
 }
 
 /**

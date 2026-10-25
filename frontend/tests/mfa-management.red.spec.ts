@@ -9,6 +9,7 @@
  *   POST   /v1/security/mfa/factors/{id}/activate     -> 200 MfaFactor | 400
  *   DELETE /v1/security/mfa/factors/{id}              -> 204 | 409 (remove-last)
  *   POST   /v1/security/mfa/recovery-codes            -> { codes: string[] }  (REVEAL ONCE)
+ *   GET    /v1/security/mfa/recovery-codes            -> { remaining, total } (counts only, never codes)
  *   POST   /v1/security/mfa/challenge | /mfa/verify   -> step-up (/login/mfa, pre-auth)
  *
  * Flows (build.flows): mfa-overview, totp-enroll, sms-enroll, recovery-codes,
@@ -310,12 +311,39 @@ test.describe('Recovery codes (frame 04) — REVEAL ONCE', () => {
     await mockFactors(page, [TOTP])
   })
 
+  /** GET -> counts (never codes); POST -> regenerate. `onRegen` counts POSTs only. */
+  const mockRecovery = async (
+    page: Page,
+    opts: { regen?: () => ReturnType<typeof json>; counts?: ReturnType<typeof json>; onRegen?: () => void } = {},
+  ) => {
+    await page.route('**/v1/security/mfa/recovery-codes', route => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill(opts.counts ?? json(200, { remaining: 8, total: 10 }))
+      }
+      opts.onRegen?.()
+      return route.fulfill(opts.regen ? opts.regen() : json(200, { codes: CODES }))
+    })
+  }
+
+  test('status shows "N of M recovery codes left" from the GET counts', async ({ page }) => {
+    await mockRecovery(page)
+    await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
+    const count = page.locator("[data-value='recovery-count']")
+    await expect(count).toContainText('8 of 10')
+    await expect(page.locator('[data-codes] code')).toHaveCount(0)
+  })
+
+  test('status count failure is explicit with a retry; regenerate stays available', async ({ page }) => {
+    await mockRecovery(page, { counts: json(500, { error: 'boom' }) })
+    await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator("[data-state='counts-error']")).toBeVisible()
+    await expect(page.locator("[data-action='retry-counts']")).toBeVisible()
+    await expect(page.locator("[data-action='regenerate-open']")).toBeVisible()
+  })
+
   test('landing shows STATUS only — codes are never fetched or displayed until regenerated', async ({ page }) => {
     let regenCalls = 0
-    await page.route('**/v1/security/mfa/recovery-codes', route => {
-      regenCalls += 1
-      return route.fulfill(json(200, { codes: CODES }))
-    })
+    await mockRecovery(page, { onRegen: () => { regenCalls += 1 } })
     await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
     await expect(page.locator("[data-component='recovery-codes'][data-state='status']")).toBeVisible()
     await expect(page.locator('[data-codes] code')).toHaveCount(0)
@@ -323,7 +351,7 @@ test.describe('Recovery codes (frame 04) — REVEAL ONCE', () => {
   })
 
   test('regenerate requires an explicit acknowledgement that old codes stop working', async ({ page }) => {
-    await page.route('**/v1/security/mfa/recovery-codes', route => route.fulfill(json(200, { codes: CODES })))
+    await mockRecovery(page)
     await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
     await page.locator("[data-action='regenerate-open']").click()
     const dialog = page.locator("[data-component='recovery-codes'][data-state='regenerate-confirm']")
@@ -335,10 +363,7 @@ test.describe('Recovery codes (frame 04) — REVEAL ONCE', () => {
 
   test('codes are shown exactly ONCE: after dismissing they cannot be re-read and are never re-fetched', async ({ page }) => {
     let calls = 0
-    await page.route('**/v1/security/mfa/recovery-codes', route => {
-      calls += 1
-      return route.fulfill(json(200, { codes: CODES }))
-    })
+    await mockRecovery(page, { onRegen: () => { calls += 1 } })
     await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
     await page.locator("[data-action='regenerate-open']").click()
     await page.locator("[data-field='ack-invalidate']").check()
@@ -370,7 +395,7 @@ test.describe('Recovery codes (frame 04) — REVEAL ONCE', () => {
   })
 
   test('regeneration failure surfaces an error and reveals NO codes', async ({ page }) => {
-    await page.route('**/v1/security/mfa/recovery-codes', route => route.fulfill(json(500, { error: 'boom' })))
+    await mockRecovery(page, { regen: () => json(500, { error: 'boom' }) })
     await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
     await page.locator("[data-action='regenerate-open']").click()
     await page.locator("[data-field='ack-invalidate']").check()
