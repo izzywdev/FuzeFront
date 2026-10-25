@@ -714,10 +714,12 @@ export class MemoryCatalogStore implements CatalogStore {
     ) return
     if (index >= 0) {
       const existing = this.executions[index]
-      this.executions[index] = withTestExecutionCreatedAt(
+      const merged = withTestExecutionCreatedAt(
         mergeTestExecutionEvidence(existing, execution),
         testExecutionCursorCreatedAt(existing),
       )
+      if (JSON.stringify(existing) === JSON.stringify(merged)) return
+      this.executions[index] = merged
     } else {
       this.executions.push(withTestExecutionCreatedAt(execution, new Date().toISOString()))
     }
@@ -2023,7 +2025,13 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async saveTestExecution(item: TestExecution): Promise<void> {
     await this.pool.query(
-      `WITH upserted AS (
+      `WITH existing AS MATERIALIZED (
+       SELECT id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
+              started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection
+       FROM fuzequality.test_executions
+       WHERE repository_id=$2 AND provider=$4 AND external_run_id=$5 AND attempt=$6
+       FOR UPDATE
+       ), upserted AS (
        INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection,summary)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
        ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET
@@ -2072,13 +2080,18 @@ export class PostgresCatalogStore implements CatalogStore {
        WHERE fuzequality.test_executions.status = 'running' OR fuzequality.test_executions.status = EXCLUDED.status
        RETURNING id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
                  started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection
+       ), changed AS (
+       SELECT merged.*
+       FROM upserted AS merged
+       LEFT JOIN existing AS prior ON true
+       WHERE prior.id IS NULL OR to_jsonb(merged) IS DISTINCT FROM to_jsonb(prior)
        )
        INSERT INTO fuzequality.test_execution_versions
          (execution_id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
           started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection)
        SELECT id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
               started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection
-       FROM upserted`,
+       FROM changed`,
       [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.branch ?? null,item.headRepository ?? null,item.kind,item.status,item.name,item.workflowPath ?? null,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.evidenceCollection ? JSON.stringify(item.evidenceCollection) : null,item.summary ?? null],
     )
   }

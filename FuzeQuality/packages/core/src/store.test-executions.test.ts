@@ -572,10 +572,33 @@ describe('test execution evidence', () => {
     })
 
     const sql = String(query.mock.calls[0][0])
-    expect(sql).toContain('WITH upserted AS')
+    expect(sql).toContain('WITH existing AS MATERIALIZED')
+    expect(sql).toContain('upserted AS')
     expect(sql).toContain('INSERT INTO fuzequality.test_execution_versions')
     expect(sql).toContain('gate_evaluations,thresholds,evidence_links')
-    expect(sql).toContain('FROM upserted')
+    expect(sql).toContain('to_jsonb(merged) IS DISTINCT FROM to_jsonb(prior)')
+    expect(sql).toContain('FROM changed')
+  })
+
+  it('does not append unchanged in-memory execution snapshots', async () => {
+    const store = new MemoryCatalogStore()
+    const execution = {
+      id: 'run-1', repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const,
+      externalRunId: '123', attempt: 1, revision: 'abc', kind: 'integration' as const, status: 'running' as const,
+      name: 'Integration', workflowPath: '.github/workflows/integration.yml',
+      policyArtifactIds: ['policy-1'], gateArtifactIds: ['gate-1'],
+      gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'running' as const }],
+      thresholds: [], evidenceLinks: [],
+    }
+
+    await store.saveTestExecution(execution)
+    await store.saveTestExecution({ ...execution, id: 'duplicate-delivery' })
+
+    const versions = (store as unknown as { executionVersions: unknown[] }).executionVersions
+    expect(versions).toHaveLength(1)
+
+    await store.saveTestExecution({ ...execution, id: 'completed-delivery', status: 'passed', completedAt: '2026-10-25T10:00:00.000Z' })
+    expect(versions).toHaveLength(2)
   })
 
   it('bounds in-memory policy-gate aggregates without returning an unbounded revision list', async () => {
