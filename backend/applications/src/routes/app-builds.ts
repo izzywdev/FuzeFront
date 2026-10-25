@@ -803,7 +803,8 @@ router.get(
 // GET /apps). Order of checks is the same as the sibling publication endpoints:
 // authenticate -> flag -> authorize (fail closed) -> validate -> read.
 //
-// AuthZ: platform admins only, the SAME decision approve/reject make (the
+// AuthZ: interactive platform-admin SESSIONS only (the synthetic consumer /
+// registration-token identity is rejected: this is cross-org data), the SAME role decision approve/reject make (the
 // queue is the work-list for exactly those two actions, so a principal who can
 // see it but not act on it would be a dead end). It is deliberately NOT keyed
 // on any id the caller supplies — there is none — and a non-admin gets a plain
@@ -831,6 +832,17 @@ router.get(
       const caller = await resolveCaller(req.user)
       if (!(await publishGate(res, { organizationId: caller.organizationIds[0], userId: caller.userId }))) return
 
+      // This is a CROSS-ORG collection with no tenant filtering, so unlike the
+      // per-app approve/reject siblings it must be a real human session. The
+      // platform-wide registration/consumer token is mapped to a synthetic
+      // `admin` by authenticateConsumerOrSession; any workload holding that
+      // shared token would otherwise read every org's private publication
+      // metadata and creator contact. Reject it explicitly, BEFORE the role
+      // check, even though it carries the `admin` role.
+      if (caller.userId === SYNTHETIC_CONSUMER_USER_ID) {
+        log.warn('publication queue denied: service/consumer identity', { userId: caller.userId })
+        return forbidden(res, 'The publication review queue requires an interactive platform-admin session')
+      }
       if (!caller.isPlatformAdmin) {
         log.warn('publication queue denied: not platform admin', { userId: caller.userId })
         return forbidden(res, 'Only platform admins can review marketplace publication requests')

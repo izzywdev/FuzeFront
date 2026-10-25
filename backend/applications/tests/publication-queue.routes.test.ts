@@ -127,6 +127,24 @@ describe('GET /publication-requests — flag + authz (fail closed)', () => {
     expect(res.status).toBe(403)
   })
 
+  it('flag ON: the synthetic consumer/registration-token identity (role admin) -> 403, store never read', async () => {
+    const consumer = { id: 'consumer-registration', roles: ['admin'], organizationIds: [] as string[] }
+    const res = await request(app).get(URL).set(as(consumer))
+    expect(res.status).toBe(403)
+    expect(res.body.error).toBe('forbidden')
+    expect(spy).not.toHaveBeenCalled()
+    expect(JSON.stringify(res.body)).not.toContain('casey@example.com')
+    // a real admin session is still served
+    expect((await request(app).get(URL).set(as(admin))).status).toBe(200)
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('flag OFF: the consumer identity is still dark (503) — flag check precedes authz', async () => {
+    publishFlag = false
+    const consumer = { id: 'consumer-registration', roles: ['admin'], organizationIds: [] as string[] }
+    expect((await request(app).get(URL).set(as(consumer))).status).toBe(503)
+  })
+
   it('flag ON: platform admin -> 200', async () => {
     expect((await request(app).get(URL).set(as(admin))).status).toBe(200)
   })
