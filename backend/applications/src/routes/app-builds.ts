@@ -918,7 +918,7 @@ router.get(
         const dto = dtos[idx]
         const item: Record<string, unknown> = {
           slug: entry.app.slug,
-          name: entry.app.manifest.name,
+          name: entry.app.manifest.name ?? entry.app.slug,
           icon: queueIcon((entry.app.manifest as any).icon),
           organizationId: dto.organizationId ?? null,
           publication: toPublicationDto(entry.app.slug, entry.app.manifest.visibility ?? 'private', entry.publication),

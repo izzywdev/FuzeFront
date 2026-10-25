@@ -102,6 +102,7 @@ describe('publication review queue (real Postgres)', () => {
       updated_at timestamptz DEFAULT now()
     )`)
 
+    await up019(testDb) // defines apps_try_timestamptz() used by the rejected sort key
     const t0 = Date.parse('2026-01-01T00:00:00.000Z')
     const at = (s: number) => new Date(t0 + s * 1000)
     // pending: p3,p4 share an identical submittedAt (slug tiebreak); inserted out of order.
@@ -116,10 +117,26 @@ describe('publication review queue (real Postgres)', () => {
     await seed('a2', { is_marketplace_approved: true, marketplace_submitted_at: at(200), marketplace_approved_at: at(300), created_at: at(1) })
     await seed('a1', { is_marketplace_approved: true, marketplace_submitted_at: at(100), marketplace_approved_at: at(400), created_at: at(1) })
     await seed('a0', { is_marketplace_approved: true, marketplace_submitted_at: at(5), marketplace_approved_at: null, created_at: at(350) })
+    // approved rows whose stored instants are unusable: infinite, out-of-range year, or
+    // both timestamps NULL. They must fall back (created_at / epoch), never raise or vanish.
+    await seed('a-inf', { is_marketplace_approved: true, marketplace_approved_at: testDb.raw("'infinity'::timestamptz"), created_at: at(375) })
+    await seed('a-far', { is_marketplace_approved: true, marketplace_approved_at: testDb.raw("'20000-01-01 00:00:00+00'::timestamptz"), created_at: at(380) })
+    await seed('a-null', { is_marketplace_approved: true, marketplace_approved_at: null, created_at: null })
     // rejected (submission cleared; ordered by rejectedAt); r-none has none -> excluded everywhere.
     await seed('r2', { marketplace_metadata: JSON.stringify({ publication: { rejection: { reason: 'x', rejectedAt: at(2000).toISOString() } } }) })
     await seed('r1', { marketplace_metadata: JSON.stringify({ publication: { rejection: { reason: 'y', rejectedAt: at(1000).toISOString() } } }) })
     await seed('r-bad', { marketplace_metadata: JSON.stringify({ publication: { rejection: { reason: 'z', rejectedAt: 'garbage' } } }), created_at: at(5) })
+    // malformed rejectedAt values that LOOK valid (prefix-matching) or are not strings at all:
+    // each must fall back to created_at instead of making the whole queue raise.
+    const rej = (rejectedAt: unknown) => JSON.stringify({ publication: { rejection: { reason: 'q', rejectedAt } } })
+    await seed('r-prefix', { marketplace_metadata: rej('2026-01-01Tbogus'), created_at: at(10) })
+    await seed('r-feb30', { marketplace_metadata: rej('2026-02-30T00:00:00Z'), created_at: at(20) })
+    await seed('r-zone', { marketplace_metadata: rej('2026-01-01T00:00:00 Not/AZone'), created_at: at(30) })
+    await seed('r-now', { marketplace_metadata: rej('now'), created_at: at(40) })
+    await seed('r-num', { marketplace_metadata: rej(12345), created_at: at(45) })
+    await seed('r-far', { marketplace_metadata: rej('+020000-01-01T00:00:00.000Z'), created_at: at(46) })
+    // a `rejection: null` is NOT a rejection (mirrors publicationStatus) -> in no queue
+    await seed('r-nullrej', { marketplace_metadata: JSON.stringify({ publication: { rejection: null } }) })
     await seed('none1')
   }, 60000)
 
@@ -180,6 +197,36 @@ describe('publication review queue (real Postgres)', () => {
     }
   })
 
+  it('pending: an infinite / out-of-range / NULL-free-but-unusable submittedAt cannot raise or vanish (falls back to the epoch, first)', async () => {
+    if (!reachable) return
+    await seed('p-inf', { marketplace_submitted_at: testDb.raw("'infinity'::timestamptz") })
+    await seed('p-ninf', { marketplace_submitted_at: testDb.raw("'-infinity'::timestamptz") })
+    await seed('p-far', { marketplace_submitted_at: testDb.raw("'20000-01-01 00:00:00+00'::timestamptz") })
+    try {
+      for (const limit of [1, 2, 50]) {
+        const { slugs } = await walk('pending', limit)
+        expect(slugs).toEqual(['p-far', 'p-inf', 'p-ninf', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'])
+      }
+    } finally {
+      await testDb('apps').whereIn('slug', ['p-inf', 'p-ninf', 'p-far']).del()
+    }
+  })
+
+  it('forged cursors that would make Postgres raise are rejected as 400-class (extended year, non-canonical, NUL slug)', async () => {
+    if (!reachable) return
+    const enc = (v: string) => Buffer.from(v, 'utf8').toString('base64url')
+    for (const bad of [
+      enc('pq1|pending|+020000-01-01T00:00:00.000Z|x'),
+      enc('pq1|pending|2026-01-01T00:00:00Z|x'),
+      enc('pq1|pending|2026-01-01T00:00:00.000Z|x\u0000y'),
+      enc('pq1|pending|2026-02-30T00:00:00.000Z|x'),
+    ]) {
+      await expect(
+        appRegistryService.listPublicationRequests({ status: 'pending', cursor: bad })
+      ).rejects.toBeInstanceOf(InvalidCursorError)
+    }
+  })
+
   it('limit is clamped server-side to the max (over-max request does not error or exceed 200)', async () => {
     if (!reachable) return
     const page = await appRegistryService.listPublicationRequests({ status: 'pending', limit: 100000 })
@@ -187,19 +234,20 @@ describe('publication review queue (real Postgres)', () => {
     expect(page.items).toHaveLength(7)
   })
 
-  it('approved: ordered by approvedAt (NOT submission), legacy row with no approvedAt falls back to created_at; cursor walks it', async () => {
+  it('approved: ordered by approvedAt (NOT submission); infinite / out-of-range / NULL instants fall back, never raise; cursor walks it', async () => {
     if (!reachable) return
-    // a1 submitted first but approved LAST; a2 submitted later, approved earlier;
-    // a0 has no approvedAt -> created_at (+350s, between a2 +300s and a1 +400s).
-    const { slugs } = await walk('approved', 1)
-    expect(slugs).toEqual(['a2', 'a0', 'a1'])
-    expect((await walk('approved', 2)).slugs).toEqual(['a2', 'a0', 'a1'])
+    // a-null: approved_at and created_at both NULL -> epoch (first). a2 +300s;
+    // a0 (no approvedAt) -> created_at +350s; a-inf / a-far -> created_at +375s / +380s; a1 +400s.
+    const expected = ['a-null', 'a2', 'a0', 'a-inf', 'a-far', 'a1']
+    expect((await walk('approved', 1)).slugs).toEqual(expected)
+    expect((await walk('approved', 2)).slugs).toEqual(expected)
   })
 
-  it('rejected: ordered by recorded rejectedAt; malformed rejectedAt falls back to created_at (no cast error)', async () => {
+  it('rejected: ordered by recorded rejectedAt; malformed / prefix-valid-but-bogus / non-string rejectedAt falls back to created_at (no cast error)', async () => {
     if (!reachable) return
     const { slugs } = await walk('rejected', 1)
-    expect(slugs).toEqual(['r-bad', 'r1', 'r2'])
+    expect((await walk('rejected', 3)).slugs).toEqual(slugs)
+    expect(slugs).toEqual(['r-bad', 'r-prefix', 'r-feb30', 'r-zone', 'r-now', 'r-num', 'r-far', 'r1', 'r2'])
   })
 
   it('a cursor is bound to its status and malformed cursors are rejected', async () => {

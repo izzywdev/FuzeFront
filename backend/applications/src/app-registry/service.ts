@@ -78,6 +78,21 @@ export interface AppCaller {
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
 
+/**
+ * Total timestamp -> ISO conversion for response mapping. A stored 'infinity' /
+ * '-infinity' (node-postgres: a non-finite Date/number) or a year outside
+ * 0000..9999 (extended-year ISO, not RFC 3339) must never throw and turn a read
+ * into a 500; it maps to null so the caller can fall back.
+ */
+export function safeIso(d: unknown): string | null {
+  if (d === null || d === undefined || d === '') return null
+  const t = new Date(d as any)
+  if (Number.isNaN(t.getTime())) return null
+  const y = t.getUTCFullYear()
+  if (y < 0 || y > 9999) return null
+  return t.toISOString()
+}
+
 function rowToApp(row: any): AppRecord {
   const manifest: AppManifest =
     typeof row.manifest === 'string' ? JSON.parse(row.manifest) : row.manifest
@@ -90,9 +105,9 @@ function rowToApp(row: any): AppRecord {
     createdByUserId: row.created_by_user_id ?? null,
     manifest,
     isHealthy: row.is_healthy === null || row.is_healthy === undefined ? null : Boolean(row.is_healthy),
-    lastSeenAt: row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null,
-    createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
-    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+    lastSeenAt: safeIso(row.last_seen_at),
+    createdAt: safeIso(row.created_at) ?? new Date().toISOString(),
+    updatedAt: safeIso(row.updated_at) ?? new Date().toISOString(),
   }
 }
 
@@ -222,7 +237,7 @@ function readJson(v: unknown): Record<string, any> {
 }
 
 function rowToPublication(row: any): PublicationRow {
-  const iso = (d: unknown) => (d ? new Date(d as any).toISOString() : null)
+  const iso = safeIso
   return {
     submittedAt: iso(row.marketplace_submitted_at),
     isApproved: Boolean(row.is_marketplace_approved),
@@ -261,28 +276,52 @@ export class InvalidCursorError extends Error {
  *              can complete out of submission order.
  *  - rejected: reject clears marketplace_submitted_at, so the stable instant is
  *              the recorded rejectedAt (immutable until resubmission moves the
- *              row to pending). The regex guard keeps one malformed JSON value
- *              from turning the whole queue into a cast error.
+ *              row to pending); a missing/unparseable value falls back to
+ *              creation time (see "cast-safety" below).
  * Every expression is truncated to ms so it compares exactly with the
  * ms-precision ISO string carried in the cursor (JS Date has no microseconds).
  */
 function publicationSortExpr(status: PublicationQueueStatus): string {
   switch (status) {
     case 'pending':
-      // Truncated like the others: the cursor carries a ms-precision ISO string
-      // (node-postgres returns a JS Date), so a bare column with sub-ms digits
-      // would compare GREATER than its own cursor and the boundary row would be
-      // returned on two consecutive pages.
-      return "date_trunc('milliseconds', marketplace_submitted_at)"
+      return sortInstant('marketplace_submitted_at')
     case 'approved':
-      return "date_trunc('milliseconds', COALESCE(marketplace_approved_at, created_at))"
+      return sortInstant('marketplace_approved_at', 'created_at')
     case 'rejected':
-      return (
-        "date_trunc('milliseconds', COALESCE(" +
-        "CASE WHEN (marketplace_metadata #>> '{publication,rejection,rejectedAt}') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' " +
-        "THEN (marketplace_metadata #>> '{publication,rejection,rejectedAt}')::timestamptz END, created_at))"
-      )
+      return sortInstant(REJECTED_AT_SQL, 'created_at')
   }
+}
+
+// ── cast-safety for the sort key ───────────────────────────────────────────────
+// Nothing stored may make the queue query RAISE or yield a key the cursor cannot
+// round-trip, or one bad legacy row would 500 (or silently skip rows from) the
+// whole view. Hazards handled here:
+//  - a rejectedAt string that is shape-valid but not a real timestamp
+//    ('2026-01-01Tbogus', '2026-02-30T00:00:00Z', bad zone): cast via
+//    apps_try_timestamptz() (migration 019), which yields NULL instead of raising.
+//    The prefilter regex also excludes the PG special inputs ('now', 'today',
+//    'epoch', ...) that cast fine but are NOT stable instants.
+//  - 'infinity' / '-infinity' / years outside 0001..9999 (JS Date.toISOString
+//    would emit an extended year or throw, and the cursor would no longer parse):
+//    bounded() turns them into NULL.
+//  - a NULL key (keyset `NULL > x` is NULL -> the row would vanish): the final
+//    COALESCE fallback is the epoch, so every row has a finite, total-ordered key.
+const EPOCH_SQL = "'1970-01-01 00:00:00+00'::timestamptz"
+const REJECTED_AT_SQL =
+  "(CASE WHEN (marketplace_metadata #>> '{publication,rejection,rejectedAt}') " +
+  "~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}' " +
+  "THEN apps_try_timestamptz(marketplace_metadata #>> '{publication,rejection,rejectedAt}') END)"
+
+function bounded(expr: string): string {
+  return (
+    `(CASE WHEN ${expr} >= '0001-01-01 00:00:00+00'::timestamptz ` +
+    `AND ${expr} <= '9999-12-31 23:59:59.999+00'::timestamptz THEN ${expr} END)`
+  )
+}
+
+/** First usable candidate, ms-truncated, never NULL, never infinite, always in 0001..9999. */
+function sortInstant(...candidates: string[]): string {
+  return `date_trunc('milliseconds', COALESCE(${candidates.map(bounded).join(', ')}, ${EPOCH_SQL}))`
 }
 
 function encodePublicationCursor(status: PublicationQueueStatus, at: unknown, slug: string): string {
@@ -298,10 +337,14 @@ function decodePublicationCursor(
     if (parts.length < 4 || parts[0] !== 'pq1') return null
     // A cursor is only valid for the queue it was issued for.
     if (parts[1] !== status) return null
+    // Strict ms-precision UTC ISO, years 0001..9999 only: anything else (forged,
+    // extended-year, non-canonical) is a 400 here rather than a cast error later.
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/.test(parts[2])) return null
     const t = new Date(parts[2])
     if (Number.isNaN(t.getTime()) || t.toISOString() !== parts[2]) return null
     const slug = parts.slice(3).join('|')
-    if (!slug) return null
+    // A NUL byte in a bound parameter makes Postgres raise (500), so reject it.
+    if (!slug || slug.includes('\u0000')) return null
     return { at: parts[2], slug }
   } catch {
     return null
@@ -597,7 +640,7 @@ export class AppRegistryService {
         query = query
           .whereRaw('COALESCE(is_marketplace_approved, false) = false')
           .whereNull('marketplace_submitted_at')
-          .whereRaw("marketplace_metadata #> '{publication,rejection}' IS NOT NULL")
+          .whereRaw("jsonb_typeof(marketplace_metadata #> '{publication,rejection}') = 'object'")
         break
     }
 
