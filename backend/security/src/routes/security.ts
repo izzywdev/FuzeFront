@@ -622,6 +622,25 @@ router.get('/email-available', emailAvailableRateLimiter, async (req: Request, r
   }
 })
 
+// GET /v1/security/signup/email-available?email=<addr>
+// Inline availability check for the signup form — same source of truth as
+// POST /signup. Rate-limited to guard enumeration. Returns only `available`
+// (no email echo) per the SignupEmailAvailability contract.
+router.get('/signup/email-available', emailAvailableRateLimiter, async (req: Request, res: Response) => {
+  const raw = typeof req.query.email === 'string' ? req.query.email : ''
+  const email = raw.trim().toLowerCase()
+  if (!email || !EMAIL_RE.test(email)) {
+    res.status(400).json({ error: 'A valid email is required', code: 'MALFORMED' })
+    return
+  }
+  try {
+    const exists = await getIdentityProvider().emailExists(email)
+    res.status(200).json({ available: !exists })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 // ── Capabilities ──────────────────────────────────────────────────────────
 /**
  * The SMS transport is a two-condition gate like email's: an SMS path only
