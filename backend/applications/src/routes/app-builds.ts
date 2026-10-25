@@ -7,7 +7,8 @@
 //   createBuildSession, listBuildSessions, getBuildSession, cancelBuildSession,
 //   reportBuildSessionStatus,
 //   requestAppPublication, approveAppPublication, rejectAppPublication,
-//   getAppPublication.
+//   getAppPublication, listPublicationRequests (GET /publication-requests —
+//   the cross-app admin review queue).
 //
 // Flags (release, default OFF, fail-safe):
 //   fuzefront.apps.build-with-agent        -> every /build-sessions* endpoint
@@ -26,7 +27,16 @@ import { z } from 'zod'
 import { mintId, toUuid, parseId, isUuid } from '@izzywdev/fuzefront-identity'
 import { authenticateConsumerOrSession, SYNTHETIC_CONSUMER_USER_ID } from '../middleware/consumer-auth'
 import { resolveCaller } from '../app-registry/caller'
-import { appRegistryService, canRead, canMutate } from '../app-registry/service'
+import {
+  appRegistryService,
+  canRead,
+  canMutate,
+  InvalidCursorError,
+  PUBLICATION_QUEUE_STATUSES,
+  type PublicationQueueStatus,
+} from '../app-registry/service'
+import { toAppDtos } from '../app-registry/app-dto'
+import { isPrefixedIdsEnabled } from '../identity/flags'
 import { checkAppRegistryPermission, assignAppCreatorRole } from '../app-registry/permit'
 import {
   isBuildWithAgentEnabled,
@@ -783,6 +793,114 @@ router.get(
     } catch (err) {
       log.error('getAppPublication error', errInfo(err))
       return res.status(500).json({ error: 'internal_error', message: 'Failed to get publication' })
+    }
+  }
+)
+
+// ── GET /publication-requests — listPublicationRequests ──────────────────────
+// The marketplace review queue (frame (g)). A single-service collection over
+// app-registry's own `apps` table (NOT a cross-service join, NOT a scan of
+// GET /apps). Order of checks is the same as the sibling publication endpoints:
+// authenticate -> flag -> authorize (fail closed) -> validate -> read.
+//
+// AuthZ: platform admins only, the SAME decision approve/reject make (the
+// queue is the work-list for exactly those two actions, so a principal who can
+// see it but not act on it would be a dead end). It is deliberately NOT keyed
+// on any id the caller supplies — there is none — and a non-admin gets a plain
+// 403. NOTE: this is the role signal resolveCaller derives for the sibling
+// endpoints; there is no distinct "reviewer" Permit action declared anywhere
+// in this repo, so none is invented here (see the PR notes).
+const DEFAULT_QUEUE_ICON = { kind: 'emoji', value: '📦' } as const
+
+function queueIcon(icon: unknown) {
+  const i = icon as { kind?: unknown; value?: unknown } | null | undefined
+  if (i && (i.kind === 'emoji' || i.kind === 'url') && typeof i.value === 'string' && i.value) {
+    return { kind: i.kind, value: i.value }
+  }
+  // The contract requires `icon`; an app that never declared one still needs a
+  // renderable placeholder in the queue.
+  return DEFAULT_QUEUE_ICON
+}
+
+router.get(
+  '/publication-requests',
+  buildReadRateLimiter,
+  authenticateConsumerOrSession,
+  async (req: any, res) => {
+    try {
+      const caller = await resolveCaller(req.user)
+      if (!(await publishGate(res, { organizationId: caller.organizationIds[0], userId: caller.userId }))) return
+
+      if (!caller.isPlatformAdmin) {
+        log.warn('publication queue denied: not platform admin', { userId: caller.userId })
+        return forbidden(res, 'Only platform admins can review marketplace publication requests')
+      }
+
+      const rawStatus = req.query.status
+      let status: PublicationQueueStatus = 'pending'
+      if (rawStatus !== undefined) {
+        if (typeof rawStatus !== 'string' || !(PUBLICATION_QUEUE_STATUSES as readonly string[]).includes(rawStatus)) {
+          return res.status(400).json({ error: 'validation_error', message: 'status must be one of pending, approved, rejected' })
+        }
+        status = rawStatus as PublicationQueueStatus
+      }
+
+      let limit = DEFAULT_LIMIT
+      if (req.query.limit !== undefined) {
+        const raw = req.query.limit
+        limit = typeof raw === 'string' && /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN
+        if (Number.isNaN(limit) || limit < 1) {
+          return res.status(400).json({ error: 'validation_error', message: 'invalid limit' })
+        }
+        limit = Math.min(limit, MAX_LIMIT) // clamp, never trust the client
+      }
+
+      let cursor: string | undefined
+      if (req.query.cursor !== undefined) {
+        if (typeof req.query.cursor !== 'string' || !req.query.cursor) {
+          return res.status(400).json({ error: 'validation_error', message: 'invalid cursor' })
+        }
+        cursor = req.query.cursor
+      }
+
+      let result
+      try {
+        result = await appRegistryService.listPublicationRequests({ status, limit, cursor })
+      } catch (err) {
+        if (err instanceof InvalidCursorError) {
+          return res.status(400).json({ error: 'validation_error', message: 'invalid cursor' })
+        }
+        throw err
+      }
+
+      const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+      const dtos = await toAppDtos(
+        result.items.map(i => i.app),
+        {
+          prefixed: await isPrefixedIdsEnabled(flagCtx),
+          creatorOwnership: await isCreatorOwnershipEnabled({ userId: caller.userId }),
+        }
+      )
+      const items = result.items.map((entry, idx) => {
+        const dto = dtos[idx]
+        const item: Record<string, unknown> = {
+          slug: entry.app.slug,
+          name: entry.app.manifest.name,
+          icon: queueIcon((entry.app.manifest as any).icon),
+          organizationId: dto.organizationId ?? null,
+          publication: toPublicationDto(entry.app.slug, entry.app.manifest.visibility ?? 'private', entry.publication),
+        }
+        // `creator` is present only while fuzefront.apps.creator-ownership is
+        // ON (null when the app has no recorded creator); the former-member
+        // rule (no name/contact) is applied by toAppDtos.
+        if ('creator' in dto) item.creator = dto.creator
+        return item
+      })
+      log.info('publication queue listed', { status, count: items.length, by: caller.userId })
+      return res.json({ items, page: { nextCursor: result.nextCursor, hasMore: result.hasMore } })
+    } catch (err) {
+      log.error('listPublicationRequests error', errInfo(err))
+      return res.status(500).json({ error: 'internal_error', message: 'Failed to list publication requests' })
     }
   }
 )

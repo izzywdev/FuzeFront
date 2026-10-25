@@ -7,10 +7,11 @@
 // byte-identical to the pre-feature shape (`createdByUserId` is internal and is
 // ALWAYS stripped). When ON the DTO gains:
 //   createdBy: <usr_… | null>
-//   creator:   { userId, isCurrentMember, displayName? } | null
-// `displayName` is returned ONLY while the creator is still an active member of
-// the owning org — a former member is reduced to a "former member" signal
-// (isCurrentMember:false, no name/contact) so the UI never shows a stale contact.
+//   creator:   { userId, isCurrentMember, displayName?, contactEmail? } | null
+// `displayName` and `contactEmail` (contract 1.6.0) are returned ONLY while the
+// creator is still an active member of the owning org — a former member is
+// reduced to a "former member" signal (isCurrentMember:false, no name/contact)
+// so the UI never shows a stale contact.
 import { db } from '../config/database'
 import { toWireId, prefixDtoIds } from '../identity/serializer'
 import { log, errInfo } from './log'
@@ -19,6 +20,8 @@ import type { AppRecord } from './service'
 export interface CreatorInfo {
   isCurrentMember: boolean
   displayName: string | null
+  /** Optional so injected test resolvers predating 1.6.0 stay valid. */
+  contactEmail?: string | null
 }
 
 export interface CreatorResolver {
@@ -34,16 +37,18 @@ export const knexCreatorResolver: CreatorResolver = {
       .first()
     if (!m) return { isCurrentMember: false, displayName: null }
     let displayName: string | null = null
+    let contactEmail: string | null = null
     try {
       const u = await db('users').where('id', userId).first()
       if (u) {
+        contactEmail = typeof u.email === 'string' && u.email.trim() ? u.email.trim() : null
         const full = [u.first_name, u.last_name].filter(Boolean).join(' ').trim()
         displayName = full || u.email || null
       }
     } catch (err) {
       log.warn('creator display-name lookup failed (continuing)', { userId, ...errInfo(err) })
     }
-    return { isCurrentMember: true, displayName }
+    return { isCurrentMember: true, displayName, contactEmail }
   },
 }
 
@@ -89,6 +94,8 @@ export async function toAppDtos(apps: AppRecord[], opts: AppDtoOptions): Promise
         isCurrentMember: info.isCurrentMember,
       }
       if (info.isCurrentMember && info.displayName) creator.displayName = info.displayName
+      // Same former-member rule as displayName: never for a non-member.
+      if (info.isCurrentMember && info.contactEmail) creator.contactEmail = info.contactEmail
       return { ...dto, createdBy: userWire, creator }
     })
   )

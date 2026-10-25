@@ -232,6 +232,76 @@ function rowToPublication(row: any): PublicationRow {
   }
 }
 
+// ── marketplace review queue (GET /publication-requests) ──────────────────────
+export type PublicationQueueStatus = 'pending' | 'approved' | 'rejected'
+export const PUBLICATION_QUEUE_STATUSES: readonly PublicationQueueStatus[] = ['pending', 'approved', 'rejected']
+
+export interface PublicationQueuePage {
+  items: { app: AppRecord; publication: PublicationRow }[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
+/** Thrown for a malformed / wrong-status cursor; the route maps it to 400. */
+export class InvalidCursorError extends Error {
+  constructor() {
+    super('invalid cursor')
+    this.name = 'InvalidCursorError'
+  }
+}
+
+/**
+ * The instant each queue is ordered by ("oldest first by submittedAt"). It MUST
+ * be a value that does not change while the row stays in that queue, or the
+ * keyset cursor would skip/repeat rows under concurrent writes:
+ *  - pending : marketplace_submitted_at (immutable until decided).
+ *  - approved: submission instant retained by approve; legacy rows with no
+ *              submission fall back to approval, then creation.
+ *  - rejected: reject clears marketplace_submitted_at, so the stable instant is
+ *              the recorded rejectedAt (immutable until resubmission moves the
+ *              row to pending). The regex guard keeps one malformed JSON value
+ *              from turning the whole queue into a cast error.
+ * Non-pending expressions are truncated to ms so they compare exactly with the
+ * ms-precision ISO string carried in the cursor (JS Date has no microseconds).
+ */
+function publicationSortExpr(status: PublicationQueueStatus): string {
+  switch (status) {
+    case 'pending':
+      return 'marketplace_submitted_at'
+    case 'approved':
+      return "date_trunc('milliseconds', COALESCE(marketplace_submitted_at, marketplace_approved_at, created_at))"
+    case 'rejected':
+      return (
+        "date_trunc('milliseconds', COALESCE(" +
+        "CASE WHEN (marketplace_metadata #>> '{publication,rejection,rejectedAt}') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' " +
+        "THEN (marketplace_metadata #>> '{publication,rejection,rejectedAt}')::timestamptz END, created_at))"
+      )
+  }
+}
+
+function encodePublicationCursor(status: PublicationQueueStatus, at: unknown, slug: string): string {
+  return Buffer.from(`pq1|${status}|${new Date(at as any).toISOString()}|${slug}`, 'utf8').toString('base64url')
+}
+
+function decodePublicationCursor(
+  cursor: string,
+  status: PublicationQueueStatus
+): { at: string; slug: string } | null {
+  try {
+    const parts = Buffer.from(cursor, 'base64url').toString('utf8').split('|')
+    if (parts.length < 4 || parts[0] !== 'pq1') return null
+    // A cursor is only valid for the queue it was issued for.
+    if (parts[1] !== status) return null
+    const t = new Date(parts[2])
+    if (Number.isNaN(t.getTime()) || t.toISOString() !== parts[2]) return null
+    const slug = parts.slice(3).join('|')
+    if (!slug) return null
+    return { at: parts[2], slug }
+  } catch {
+    return null
+  }
+}
+
 export class AppRegistryService {
   /**
    * BOLA-safe, paginated list. Visibility filtering is applied IN SQL so a caller
@@ -484,6 +554,73 @@ export class AppRegistryService {
   async getPublication(slug: string): Promise<PublicationRow | null> {
     const row = await db('apps').where('slug', slug).whereNotNull('manifest').first()
     return row ? rowToPublication(row) : null
+  }
+
+  /**
+   * Cross-app marketplace review queue (`GET /publication-requests`). A
+   * single-service collection over this service's own `apps` table — NOT a
+   * cross-service join. Oldest first on the per-status sort instant (see
+   * publicationSortExpr), `slug` as the total-order tiebreak, keyset-paginated
+   * with an opaque cursor that is bound to the requested status.
+   *
+   * NO visibility/BOLA filter here by design: the caller is authorised as a
+   * platform admin by the route BEFORE this runs (fail closed), and the queue
+   * is by definition cross-org.
+   */
+  async listPublicationRequests(params: {
+    status: PublicationQueueStatus
+    limit?: number
+    cursor?: string | null
+  }): Promise<PublicationQueuePage> {
+    const limit = Math.min(Math.max(params.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT)
+    const sortExpr = publicationSortExpr(params.status)
+
+    let query = db('apps').whereNotNull('slug').whereNotNull('manifest')
+    switch (params.status) {
+      case 'pending':
+        query = query
+          .whereNotNull('marketplace_submitted_at')
+          .whereRaw('COALESCE(is_marketplace_approved, false) = false')
+        break
+      case 'approved':
+        query = query.whereRaw('COALESCE(is_marketplace_approved, false) = true')
+        break
+      case 'rejected':
+        // Mirrors publicationStatus(): not approved, submission cleared, and a
+        // recorded rejection.
+        query = query
+          .whereRaw('COALESCE(is_marketplace_approved, false) = false')
+          .whereNull('marketplace_submitted_at')
+          .whereRaw("marketplace_metadata #> '{publication,rejection}' IS NOT NULL")
+        break
+    }
+
+    if (params.cursor) {
+      const c = decodePublicationCursor(params.cursor, params.status)
+      if (!c) throw new InvalidCursorError()
+      query = query.whereRaw(`(${sortExpr} > ?::timestamptz OR (${sortExpr} = ?::timestamptz AND slug > ?))`, [
+        c.at,
+        c.at,
+        c.slug,
+      ])
+    }
+
+    const rows = await query
+      .select('apps.*', db.raw(`${sortExpr} AS queue_sort_at`))
+      .orderByRaw(`${sortExpr} ASC`)
+      .orderBy('slug', 'asc')
+      .limit(limit + 1)
+
+    const hasMore = rows.length > limit
+    const page = hasMore ? rows.slice(0, limit) : rows
+    const last = page[page.length - 1]
+    const nextCursor = hasMore && last ? encodePublicationCursor(params.status, last.queue_sort_at, last.slug) : null
+
+    return {
+      items: page.map((row: any) => ({ app: rowToApp(row), publication: rowToPublication(row) })),
+      nextCursor,
+      hasMore,
+    }
   }
 
   /** Marks the app as submitted to the marketplace (pending review). */
