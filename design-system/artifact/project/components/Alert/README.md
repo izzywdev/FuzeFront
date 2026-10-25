@@ -4,6 +4,7 @@
 
 - `tone?`
 - `title?`
+- `icon?` — Decorative glyph on the logical start edge; inherits the tone colour.
 - `onDismiss?`
 - `role?`
 
