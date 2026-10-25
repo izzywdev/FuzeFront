@@ -198,4 +198,55 @@ describe('LoginPage — MFA step-up', () => {
     expect(JSON.parse(String(init.body))).toEqual({ challengeId: 'chl_1', factorId: 'fct_totp_1', code: '123456' })
     vi.unstubAllGlobals()
   })
+
+  describe.each([
+    ['flags OFF (desktop)', false],
+    ['mfa-stepup-mobile ON + compact (mobile)', true],
+  ])('recovery-code redemption — %s', (_label, mobile) => {
+    const arrange = (recoveryAvailable: boolean | undefined) => {
+      setCompact(mobile)
+      setFlags(mobile ? { [MOBILE]: true } : undefined)
+      vi.spyOn(authAPI, 'handleAuthCallback').mockResolvedValue({
+        result: { ...CHALLENGE, ...(recoveryAvailable === undefined ? {} : { recoveryAvailable }) },
+      } as never)
+    }
+    const openPicker = async (user: ReturnType<typeof userEvent.setup>) => {
+      await waitFor(() => expect(document.querySelector('[data-component="mfa-challenge"], [data-panel="choose-factor"]')).toBeTruthy())
+      const different = screen.queryByRole('button', { name: /different method/i })
+      if (different) await user.click(different)
+    }
+
+    it('recoveryAvailable missing/false: no recovery option (fail-closed)', async () => {
+      for (const flag of [undefined, false]) {
+        arrange(flag)
+        const user = userEvent.setup()
+        const { unmount } = render(<LoginPage />)
+        await openPicker(user)
+        await waitFor(() => expect(document.querySelector('[data-component="factor-picker"]')).toBeTruthy())
+        expect(document.querySelector('[data-factor="recovery"]')).toBeNull()
+        unmount()
+      }
+    })
+
+    it('recoveryAvailable true: redeems { challengeId, recoveryCode } and persists the session', async () => {
+      arrange(true)
+      const persist = vi.spyOn(authAPI, 'completeMfaSession').mockImplementation(() => {})
+      vi.spyOn(authAPI, 'getCurrentUser').mockRejectedValue(new Error('stop after persist'))
+      const fetchMock = vi.fn(async () =>
+        new Response(JSON.stringify({ token: 'tok_r', sessionId: 'sess_r' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      const user = userEvent.setup()
+      render(<LoginPage />)
+      await openPicker(user)
+      await user.click(await waitFor(() => document.querySelector('[data-factor="recovery"]')! as Element))
+      await user.type(document.querySelector('[data-field="recovery-code"]')!, 'a1b2c3d4e5')
+      await user.click(document.querySelector('[data-action="verify-mfa"]')!)
+      await waitFor(() => expect(persist).toHaveBeenCalledWith({ token: 'tok_r', sessionId: 'sess_r' }))
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(url).toBe('/api/v1/security/mfa/verify')
+      expect(JSON.parse(String(init.body))).toEqual({ challengeId: 'chl_1', recoveryCode: 'a1b2c3d4e5' })
+      vi.unstubAllGlobals()
+    })
+  })
 })

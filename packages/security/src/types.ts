@@ -24,7 +24,7 @@
  */
 import type { components } from './generated';
 
-export const SECURITY_CONTRACT_VERSION = '1.2.0' as const;
+export const SECURITY_CONTRACT_VERSION = '1.3.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -90,6 +90,7 @@ export type SecurityErrorCode =
   | 'LAST_FACTOR'
   | 'NO_PASSWORD'
   | 'RATE_LIMITED'
+  | 'RECOVERY_CODE_INVALID'
   | 'UNKNOWN';
 
 /** Supported social provider slugs. Extensible; `google` is first. */
@@ -159,6 +160,13 @@ export type SessionResult =
       status: 'mfa_required';
       challengeId: string;
       factors: { factorId: string; type: MfaFactorType }[];
+      /**
+       * True when the user holds an unused recovery code, so
+       * `POST /mfa/verify` with `{ challengeId, recoveryCode }` can succeed.
+       * Offer "use a recovery code" ONLY when `true`; absent/false = not
+       * available (fail-closed). Since contract 1.3.0.
+       */
+      recoveryAvailable?: boolean;
     };
 
 /** Contact-ownership verification status for the current user. */

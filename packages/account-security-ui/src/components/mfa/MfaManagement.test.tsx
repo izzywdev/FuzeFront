@@ -745,6 +745,47 @@ describe('RecoveryCodesFlow — REVEAL ONCE', () => {
     expect(text).toMatch(/may no longer work/i)
   })
 
+  it('status shows "N of M codes left" from the GET and never fetches codes', async () => {
+    const client = makeClient({ getRecoveryCodesStatus: vi.fn(async () => ({ remaining: 8, total: 10 })) })
+    render(<RecoveryCodesFlow client={asClient(client)} />)
+    expect(q('[data-state="counts-loading"]')).toBeTruthy()
+    await waitFor(() => expect(q('[data-value="recovery-count"]')).toBeTruthy())
+    expect(q('[data-value="recovery-count"]')!.textContent).toMatch(/8 of 10 recovery codes left/)
+    expect(client.regenerateRecoveryCodes).not.toHaveBeenCalled()
+  })
+
+  it('status falls back to the count-less text when no set was ever generated (total 0)', async () => {
+    const client = makeClient({ getRecoveryCodesStatus: vi.fn(async () => ({ remaining: 0, total: 0 })) })
+    render(<RecoveryCodesFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-state="counts-loading"]')).toBeNull())
+    expect(q('[data-value="recovery-count"]')).toBeNull()
+    expect(q('[data-component="recovery-codes"][data-state="status"]')!.textContent).toMatch(/never show existing codes/i)
+  })
+
+  it('status count failure: explicit error + retry; regenerate stays available', async () => {
+    const user = userEvent.setup()
+    const getRecoveryCodesStatus = vi.fn().mockRejectedValueOnce(err(500)).mockResolvedValueOnce({ remaining: 3, total: 10 })
+    render(<RecoveryCodesFlow client={asClient(makeClient({ getRecoveryCodesStatus }))} />)
+    await waitFor(() => expect(q('[data-state="counts-error"]')).toBeTruthy())
+    expect(q('[data-action="regenerate-open"]')).toBeTruthy()
+    await user.click(q('[data-action="retry-counts"]')!)
+    await waitFor(() => expect(q('[data-value="recovery-count"]')!.textContent).toMatch(/3 of 10/))
+  })
+
+  it('re-reads the counts after regenerating (back on status)', async () => {
+    const user = userEvent.setup()
+    const getRecoveryCodesStatus = vi.fn().mockResolvedValueOnce({ remaining: 2, total: 10 }).mockResolvedValue({ remaining: 10, total: 10 })
+    const client = makeClient({ getRecoveryCodesStatus, regenerateRecoveryCodes: vi.fn(async () => CODES) })
+    render(<RecoveryCodesFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-value="recovery-count"]')!.textContent).toMatch(/2 of 10/))
+    await user.click(q('[data-action="regenerate-open"]')!)
+    await user.click(q('[data-field="ack-invalidate"]')!)
+    await user.click(q('[data-action="regenerate-confirm"]')!)
+    await waitFor(() => expect(q('[data-state="shown-once"]')).toBeTruthy())
+    await user.click(q('[data-action="codes-saved"]')!)
+    await waitFor(() => expect(q('[data-value="recovery-count"]')!.textContent).toMatch(/10 of 10/))
+  })
+
   it('cancel returns to status without calling the server', async () => {
     const user = userEvent.setup()
     const client = makeClient()

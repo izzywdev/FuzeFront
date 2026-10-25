@@ -58,12 +58,13 @@ async function signInToChallenge(
   page: Page,
   factors: Array<{ factorId: string; type: string }>,
   flagOn = true,
+  extra: Record<string, unknown> = {},
 ) {
   await preAuthFlag(page, flagOn)
   await page.route('**/v1/security/methods', route => route.fulfill(json(200, methodsBody(['totp', 'sms']))))
   await page.route('**/v1/security/session', route => {
     if (route.request().method() === 'POST') {
-      return route.fulfill(json(200, { status: 'mfa_required', challengeId: 'chl_1', factors }))
+      return route.fulfill(json(200, { status: 'mfa_required', challengeId: 'chl_1', factors, ...extra }))
     }
     return route.fulfill(json(401, { error: 'no session', code: 'NO_TOKEN' }))
   })
@@ -119,9 +120,34 @@ test.describe('Step-up, choose a factor (frame 01-choose-factor)', () => {
     for (const f of ['totp', 'email', 'sms']) {
       await expect(panel.locator(`[data-factor='${f}']`)).toBeVisible()
     }
-    // HONEST DEGRADE: the frame also draws a "Recovery code" row, but the Security contract has
-    // no recovery-code step-up operation yet, so it is not offered (recoveryEnabled defaults OFF).
+    // The frame's "Recovery code" row appears ONLY when the challenge says recoveryAvailable === true
+    // (security contract 1.3.0); a missing flag is fail-closed.
     await expect(panel.locator("[data-factor='recovery']")).toHaveCount(0)
+  })
+
+  test('recoveryAvailable: true offers the Recovery code row, and redeeming it signs in', async ({ page }) => {
+    let verifyBody: unknown
+    await page.route('**/v1/security/mfa/verify', route => {
+      verifyBody = route.request().postDataJSON()
+      return route.fulfill(json(200, { token: 'tok_r', sessionId: 's_r' }))
+    })
+    await signInToChallenge(page, [{ factorId: 'fct_totp_1', type: 'totp' }], true, { recoveryAvailable: true })
+    const panel = page.locator("[data-panel='choose-factor'][data-state='loaded']")
+    await panel.locator("[data-factor='recovery'][data-action='use-recovery']").click()
+    await page.locator("[data-field='recovery-code']").fill('a1b2c3d4e5')
+    await page.locator("[data-action='verify-mfa']").click()
+    await expect.poll(() => verifyBody).toEqual({ challengeId: 'chl_1', recoveryCode: 'a1b2c3d4e5' })
+  })
+
+  test('RECOVERY_CODE_INVALID keeps the user on the entry with an inline error', async ({ page }) => {
+    await page.route('**/v1/security/mfa/verify', route =>
+      route.fulfill(json(401, { error: 'invalid recovery code', code: 'RECOVERY_CODE_INVALID' })))
+    await signInToChallenge(page, [{ factorId: 'fct_totp_1', type: 'totp' }], true, { recoveryAvailable: true })
+    await page.locator("[data-factor='recovery'][data-action='use-recovery']").click()
+    await page.locator("[data-field='recovery-code']").fill('wrongcode')
+    await page.locator("[data-action='verify-mfa']").click()
+    await expect(page.locator("[data-error='invalid-code']")).toBeVisible()
+    await expect(page.locator("[data-field='recovery-code']")).toBeEnabled()
   })
 
   test('touch targets are at least 44px tall at 375px', async ({ page }) => {

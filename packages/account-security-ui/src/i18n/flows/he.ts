@@ -64,6 +64,13 @@ export const flowsHe: DeepPartial<FlowMessages> = {
       webauthn: 'מפתח אבטחה',
       recovery: 'קוד שחזור',
     },
+    recovery: {
+      statusCount: 'נותרו לך {fraction} קודי שחזור. מטעמי בטיחות איננו מציגים קודים קיימים או משומשים — צור/י קבוצה חדשה.',
+      statusFraction: '{remaining} מתוך {total}',
+      statusLoadingLabel: 'טוען את קודי השחזור',
+      statusErrorText: 'לא הצלחנו לבדוק כמה קודי שחזור נותרו לך. הקודים לא השתנו.',
+      statusRetry: 'נסה/י שוב',
+    },
     overview: {
       heading: 'השיטות שלך',
       retry: 'נסה/י שוב',
@@ -83,6 +90,8 @@ export const flowsHe: DeepPartial<FlowMessages> = {
     codeTitle: 'הזן/י את הקוד',
     verify: 'אימות והתחברות',
     verifyShort: 'אימות והמשך',
+    recoveryInvalid: 'קוד השחזור לא התקבל. בדוק/י אותו ונסה/י שוב — כל קוד תקף פעם אחת.',
+    recoveryInvalidPrompt: 'זה לא עבד. הזן/י אחד מקודי השחזור ששמרת.',
     useDifferent: 'שימוש בשיטה אחרת',
     serviceError: 'לא הצלחנו לאמת את הקוד כרגע. הקוד לא נדחה — נסה/י שוב בעוד רגע.',
     retry: 'נסה/י שוב',

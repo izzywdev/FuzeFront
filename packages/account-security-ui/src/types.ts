@@ -153,6 +153,8 @@ export interface MfaFactorRef {
   factorId: string
   type: MfaFactorType
 }
+/** Status of the current recovery-code set (contract `RecoveryCodesStatus`) — counts only, never codes. */
+export type RecoveryCodesStatusResult = components['schemas']['RecoveryCodesStatus']
 /** Ack of `POST /mfa/challenge` (contract `MfaChallengeAck`). */
 export type MfaChallengeAck = components['schemas']['MfaChallengeAck']
 /** Contact-verification state (contract `VerificationStatus`). */
@@ -181,6 +183,8 @@ export interface MfaClient {
   removeFactor(factorId: string): Promise<void>
   /** `POST /v1/security/mfa/recovery-codes` — codes are returned ONCE. */
   regenerateRecoveryCodes(): Promise<string[]>
+  /** `GET /v1/security/mfa/recovery-codes` → `{ remaining, total }` (counts only). */
+  getRecoveryCodesStatus(): Promise<RecoveryCodesStatusResult>
 }
 
 /** Login step-up (pre-auth; the challengeId is the credential). */
@@ -189,6 +193,11 @@ export interface StepUpClient {
   challengeMfa(challengeId: string, factorId: string): Promise<MfaChallengeAck>
   /** `POST /v1/security/mfa/verify` → 200 session | 401. */
   verifyMfa(challengeId: string, factorId: string, code: string): Promise<MfaSession>
+  /**
+   * `POST /v1/security/mfa/verify` with `{ challengeId, recoveryCode }` → 200 session |
+   * 401 `RECOVERY_CODE_INVALID` (challenge stays live) | 401 `NOT_ACTIVE` (challenge gone) | 429.
+   */
+  verifyRecoveryCode(challengeId: string, recoveryCode: string): Promise<MfaSession>
 }
 
 /** Contact verification (authenticated). */

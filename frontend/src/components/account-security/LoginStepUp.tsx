@@ -14,6 +14,8 @@ const SUPPORT_MAILTO = 'mailto:support@frontfuse.dev'
 export interface StepUpChallenge {
   challengeId: string
   factors?: { factorId: string; type: 'totp' | 'sms' | 'email' | 'webauthn' }[]
+  /** `mfa_required.recoveryAvailable` (security contract 1.3.0); missing = false (fail-closed). */
+  recoveryAvailable?: boolean
 }
 
 /**

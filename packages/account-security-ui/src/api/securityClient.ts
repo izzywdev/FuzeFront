@@ -11,6 +11,7 @@ import type {
   MfaEnrollResult,
   MfaFactor,
   MfaSession,
+  RecoveryCodesStatusResult,
   SocialLinkStart,
   VerificationStatus,
 } from '../types'
@@ -90,12 +91,20 @@ export function createAccountSecurityClient(
       return Array.isArray(res?.codes) ? res.codes : []
     },
 
+    getRecoveryCodesStatus() {
+      return http.get<RecoveryCodesStatusResult>(`${BASE}/mfa/recovery-codes`)
+    },
+
     // ── Login step-up (FFRNT-141 / FFRNT-362) ───────────────────────────────
     challengeMfa(challengeId, factorId) {
       return http.post<MfaChallengeAck>(`${BASE}/mfa/challenge`, { challengeId, factorId })
     },
     verifyMfa(challengeId, factorId, code) {
       return http.post<MfaSession>(`${BASE}/mfa/verify`, { challengeId, factorId, code })
+    },
+
+    verifyRecoveryCode(challengeId, recoveryCode) {
+      return http.post<MfaSession>(`${BASE}/mfa/verify`, { challengeId, recoveryCode })
     },
 
     // ── Contact verification (FFRNT-362) ────────────────────────────────────
