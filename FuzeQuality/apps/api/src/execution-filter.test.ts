@@ -10,6 +10,7 @@ describe('execution evidence filter', () => {
       name: 'Post-production browser suite',
       evidenceKind: 'video',
       evidenceCollectionStatus: 'partial',
+      evidenceCollectionErrorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED',
       evidenceCheckedAfter: '2026-10-01T00:00:00.000Z',
       evidenceCheckedBefore: '2026-10-07T00:00:00.000Z',
       evidenceRequirement: 'post-production-video-missing',
@@ -57,6 +58,15 @@ describe('execution evidence filter', () => {
     expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'unavailable' }).evidenceCollectionStatus).toBe('unavailable')
     expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'not-collected' }).evidenceCollectionStatus).toBe('not-collected')
     expect(executionFilterSchema.safeParse({ evidenceCollectionStatus: 'unknown' }).success).toBe(false)
+  })
+
+  it('accepts only retained provider evidence failure codes', () => {
+    expect(executionFilterSchema.parse({ evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT' }).evidenceCollectionErrorCode)
+      .toBe('PROVIDER_TIMEOUT')
+    expect(executionPageFilterSchema.parse({ evidenceCollectionErrorCode: 'PROVIDER_RESPONSE_INVALID' }).evidenceCollectionErrorCode)
+      .toBe('PROVIDER_RESPONSE_INVALID')
+    expect(executionFilterSchema.safeParse({ evidenceCollectionErrorCode: 'UNKNOWN_PROVIDER_FAILURE' }).success)
+      .toBe(false)
   })
 
   it('accepts only a chronological ISO-8601 provider evidence window', () => {

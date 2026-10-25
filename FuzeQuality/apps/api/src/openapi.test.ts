@@ -228,6 +228,7 @@ describe('contract discovery', () => {
         expect(parameterRefs).toContain('#/components/parameters/ExecutionName')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceKind')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCollectionStatus')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCollectionErrorCode')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCheckedAfter')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCheckedBefore')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceRequirement')
@@ -251,6 +252,14 @@ describe('contract discovery', () => {
         name: 'evidenceCollectionStatus',
         in: 'query',
         schema: { type: 'string', enum: ['complete', 'partial', 'unavailable', 'not-collected'] },
+      })
+      expect(document.components.parameters.ExecutionEvidenceCollectionErrorCode).toMatchObject({
+        name: 'evidenceCollectionErrorCode',
+        in: 'query',
+        schema: {
+          type: 'string',
+          enum: ['PROVIDER_TIMEOUT', 'PROVIDER_UNAVAILABLE', 'PROVIDER_RESPONSE_INVALID', 'PROVIDER_RESULT_LIMIT_EXCEEDED'],
+        },
       })
       expect(document.components.parameters.ExecutionEvidenceCheckedAfter).toMatchObject({
         name: 'evidenceCheckedAfter',

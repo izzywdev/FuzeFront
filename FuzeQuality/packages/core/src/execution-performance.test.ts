@@ -146,6 +146,8 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'unavailable' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'partial' })).toEqual([])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'not-collected' })).toEqual([executions[0]])
+  expect(filterTestExecutions(executions, { evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT' })).toEqual([executions[1]])
+  expect(filterTestExecutions(executions, { evidenceCollectionErrorCode: 'PROVIDER_UNAVAILABLE' })).toEqual([])
   expect(filterTestExecutions(executions, { evidenceCheckedAfter: '2026-10-08T00:00:00.000Z' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceCheckedAfter: '2026-10-09T00:00:00.000Z' })).toEqual([])
   expect(filterTestExecutions(executions, { evidenceCheckedBefore: '2026-10-08T00:00:00.000Z' })).toEqual([executions[2]])

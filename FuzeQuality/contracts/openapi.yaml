@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.9
+  version: 0.84.10
   license:
     name: UNLICENSED
 servers:
@@ -937,6 +937,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceCollectionErrorCode'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedAfter'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedBefore'
         - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
@@ -1187,6 +1188,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceCollectionErrorCode'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedAfter'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedBefore'
         - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
@@ -1246,6 +1248,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceCollectionErrorCode'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedAfter'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedBefore'
         - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
@@ -1506,6 +1509,11 @@ components:
       in: query
       description: Require a provider artifact-discovery outcome, or `not-collected` for executions with no retained collection attempt.
       schema: { type: string, enum: [complete, partial, unavailable, not-collected] }
+    ExecutionEvidenceCollectionErrorCode:
+      name: evidenceCollectionErrorCode
+      in: query
+      description: Require an exact retained provider artifact-discovery failure or truncation code.
+      schema: { type: string, enum: [PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, PROVIDER_RESPONSE_INVALID, PROVIDER_RESULT_LIMIT_EXCEEDED] }
     ExecutionEvidenceCheckedAfter:
       name: evidenceCheckedAfter
       in: query

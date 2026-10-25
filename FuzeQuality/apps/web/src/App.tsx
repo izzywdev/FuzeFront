@@ -3852,6 +3852,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCollectionStatus, setExecutionEvidenceCollectionStatus] = useState<
     NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected' | ''
   >('')
+  const [executionEvidenceCollectionErrorCode, setExecutionEvidenceCollectionErrorCode] = useState<
+    NonNullable<TestExecution['evidenceCollection']>['errorCode'] | ''
+  >('')
   const [executionEvidenceCheckedAfter, setExecutionEvidenceCheckedAfter] = useState('')
   const [executionEvidenceCheckedBefore, setExecutionEvidenceCheckedBefore] = useState('')
   const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
@@ -4285,6 +4288,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         provider: executionProvider,
         evidenceKind: executionEvidenceKind,
         evidenceCollectionStatus: executionEvidenceCollectionStatus,
+        evidenceCollectionErrorCode: executionEvidenceCollectionErrorCode,
         evidenceCheckedAfter: iso(executionEvidenceCheckedAfter),
         evidenceCheckedBefore: iso(executionEvidenceCheckedBefore),
         evidenceRequirement: executionEvidenceRequirement,
@@ -4308,7 +4312,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionEvidenceCheckedAfter, executionEvidenceCheckedBefore, executionEvidenceRequirement, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionEvidenceCollectionErrorCode, executionEvidenceCheckedAfter, executionEvidenceCheckedBefore, executionEvidenceRequirement, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -6366,6 +6370,23 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="post-production-video-missing">Missing post-production video</option>
                 <option value="performance-threshold-missing">Missing performance thresholds</option>
                 <option value="terminal-timing-missing">Missing terminal timing</option>
+              </select>
+            </label>
+            <label>
+              Evidence collection failure
+              <select
+                value={executionEvidenceCollectionErrorCode}
+                onChange={event =>
+                  setExecutionEvidenceCollectionErrorCode(
+                    event.target.value as NonNullable<TestExecution['evidenceCollection']>['errorCode'] | ''
+                  )
+                }
+              >
+                <option value="">All provider outcomes</option>
+                <option value="PROVIDER_TIMEOUT">Provider timeout</option>
+                <option value="PROVIDER_UNAVAILABLE">Provider service unavailable</option>
+                <option value="PROVIDER_RESPONSE_INVALID">Invalid provider response</option>
+                <option value="PROVIDER_RESULT_LIMIT_EXCEEDED">Provider result limit exceeded</option>
               </select>
             </label>
             <label>

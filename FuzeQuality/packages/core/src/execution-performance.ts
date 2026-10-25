@@ -61,6 +61,7 @@ export type ExecutionFilter = Partial<Pick<TestExecution, 'id' | 'kind' | 'statu
   headRepository?: string
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
   evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
+  evidenceCollectionErrorCode?: NonNullable<TestExecution['evidenceCollection']>['errorCode']
   evidenceCheckedAfter?: string
   evidenceCheckedBefore?: string
   evidenceRequirement?: ExecutionEvidenceRequirement
@@ -222,6 +223,7 @@ export function filterTestExecutions(
     )) return false
     if (filter.evidenceCollectionStatus === 'not-collected' && execution.evidenceCollection) return false
     if (filter.evidenceCollectionStatus && filter.evidenceCollectionStatus !== 'not-collected' && execution.evidenceCollection?.status !== filter.evidenceCollectionStatus) return false
+    if (filter.evidenceCollectionErrorCode && execution.evidenceCollection?.errorCode !== filter.evidenceCollectionErrorCode) return false
     if (evidenceCheckedAfter !== undefined) {
       const checkedAt = Date.parse(execution.evidenceCollection?.checkedAt ?? '')
       if (!Number.isFinite(checkedAt) || checkedAt < evidenceCheckedAfter) return false

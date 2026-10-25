@@ -371,6 +371,7 @@ describe('test execution evidence', () => {
       name: 'Post-production browser suite',
       evidenceKind: 'video',
       evidenceCollectionStatus: 'unavailable',
+      evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT',
       evidenceCheckedAfter: '2026-01-10T00:00:00.000Z',
       evidenceCheckedBefore: '2026-01-20T00:00:00.000Z',
       evidenceRequirement: 'post-production-video-missing',
@@ -439,12 +440,13 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $27")
     expect(String(sql)).toContain('executions.id=$28')
     expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($29)")
+    expect(String(sql)).toContain("executions.evidence_collection->>'errorCode'=$30")
     expect(String(sql)).toContain("$25='github-run-provenance-missing' AND executions.head_repository IS NULL")
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', 'failed', 'github-actions', 'abc',
       '.github/workflows/post-prod.yml', 'recovered', 60_000, 180_000, '2026-01-01T00:00:00.000Z',
       '2026-01-31T00:00:00.000Z', '2026-01-15T00:00:00.000Z', 'run-2', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'unavailable',
-      'post-production-video-missing', '2026-01-20T00:00:00.000Z', '2026-01-10T00:00:00.000Z', 'execution-detail-1', 'acme/app',
+      'post-production-video-missing', '2026-01-20T00:00:00.000Z', '2026-01-10T00:00:00.000Z', 'execution-detail-1', 'acme/app', 'PROVIDER_TIMEOUT',
     ])
   })
 
@@ -454,7 +456,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
-      kind: 'integration', name: 'Integration suite', externalRunId: 'provider-run-42', branch: 'feature/checkout', headRepository: 'acme/app', evidenceKind: 'report', evidenceCollectionStatus: 'complete', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'passed', gateOutcome: 'passed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
+      kind: 'integration', name: 'Integration suite', externalRunId: 'provider-run-42', branch: 'feature/checkout', headRepository: 'acme/app', evidenceKind: 'report', evidenceCollectionStatus: 'complete', evidenceCollectionErrorCode: 'PROVIDER_RESPONSE_INVALID', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'passed', gateOutcome: 'passed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
     })).resolves.toEqual([
       { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 2_592_000_000, maximumDurationMs: 2_678_400_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
     ])
@@ -504,8 +506,9 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $27")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
     expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($28)")
+    expect(String(sql)).toContain("executions.evidence_collection->>'errorCode'=$29")
     expect(String(sql)).toContain("$25='github-run-provenance-missing' AND executions.head_repository IS NULL")
-    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42', 'policy-1', 'gate-1', 'report', 'passed', 'Integration suite', 'passed', 'feature/checkout', 'complete', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app'])
+    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42', 'policy-1', 'gate-1', 'report', 'passed', 'Integration suite', 'passed', 'feature/checkout', 'complete', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app', 'PROVIDER_RESPONSE_INVALID'])
   })
 
   it('pushes filtered policy-gate aggregation and its stable cursor into Postgres', async () => {
@@ -519,7 +522,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.policyGatePerformance('repo-1', 'org-1', {
-      kind: 'post-production', name: 'Post-production browser suite', provider: 'github-actions', externalRunId: 'provider-run-42', branch: 'release/quality', headRepository: 'acme/app', evidenceKind: 'video', evidenceCollectionStatus: 'partial', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'failed', gateOutcome: 'failed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', attemptScope: 'recovered', minimumDurationMs: 90_000, maximumDurationMs: 300_000,
+      kind: 'post-production', name: 'Post-production browser suite', provider: 'github-actions', externalRunId: 'provider-run-42', branch: 'release/quality', headRepository: 'acme/app', evidenceKind: 'video', evidenceCollectionStatus: 'partial', evidenceCollectionErrorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'failed', gateOutcome: 'failed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', attemptScope: 'recovered', minimumDurationMs: 90_000, maximumDurationMs: 300_000,
       after: { failed: 3, passed: 5, gateArtifactId: 'gate-0', policyArtifactId: 'policy-0' },
       limit: 51,
     })).resolves.toEqual([{
@@ -562,13 +565,14 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $30")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
     expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($31)")
+    expect(String(sql)).toContain("executions.evidence_collection->>'errorCode'=$32")
     expect(String(sql)).toContain("$28='github-run-provenance-missing' AND executions.head_repository IS NULL")
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
     expect(String(sql)).toContain('AS pass_rate')
     expect(String(sql)).toContain('ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id')
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', null, 'github-actions', null, null, 'recovered', 90_000, 300_000, null, null, null,
-      3, 5, 'gate-0', 'policy-0', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'partial', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app',
+      3, 5, 'gate-0', 'policy-0', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'partial', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app', 'PROVIDER_RESULT_LIMIT_EXCEEDED',
     ])
   })
 

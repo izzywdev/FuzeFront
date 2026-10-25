@@ -96,6 +96,7 @@ export type TestExecutionQuery = {
   provider?: TestExecution['provider']
   name?: string
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']; evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
+  evidenceCollectionErrorCode?: NonNullable<TestExecution['evidenceCollection']>['errorCode']
   evidenceCheckedAfter?: string
   evidenceCheckedBefore?: string
   evidenceRequirement?: ExecutionEvidenceRequirement
@@ -1702,9 +1703,10 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($28::text IS NULL OR executions.id=$28)
          AND ($29::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($29)
            OR ($25='github-run-provenance-missing' AND executions.head_repository IS NULL))
+         AND ($30::text IS NULL OR executions.evidence_collection->>'errorCode'=$30)
        ORDER BY executions.created_at DESC,executions.id DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.id ?? null, query.headRepository ?? null],
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.id ?? null, query.headRepository ?? null, query.evidenceCollectionErrorCode ?? null],
     )
     return result.rows.map(row => withTestExecutionCreatedAt(
       { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined },
@@ -1976,10 +1978,11 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
          AND ($28::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($28)
            OR ($25='github-run-provenance-missing' AND executions.head_repository IS NULL))
+         AND ($29::text IS NULL OR executions.evidence_collection->>'errorCode'=$29)
        GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
        ORDER BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.headRepository ?? null],
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.headRepository ?? null, query.evidenceCollectionErrorCode ?? null],
     )
     return result.rows.map(row => ({
       date: row.date,
@@ -2089,6 +2092,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND ($30::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $30)
            AND ($31::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($31)
              OR ($28='github-run-provenance-missing' AND executions.head_repository IS NULL))
+           AND ($32::text IS NULL OR executions.evidence_collection->>'errorCode'=$32)
        ), explicit_pairs AS (
          SELECT execution.repository_id,execution.revision,execution.completed_at,execution.occurred_at,
                 fuzequality.quality_artifact_logical_id(
@@ -2147,7 +2151,7 @@ export class PostgresCatalogStore implements CatalogStore {
           OR (failed=$14 AND passed=$15 AND gate_artifact_id=$16 AND policy_artifact_id > $17)
        ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id
        LIMIT COALESCE($18::integer,2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.snapshotAt ?? null, query.after?.failed ?? null, query.after?.passed ?? null, query.after?.gateArtifactId ?? null, query.after?.policyArtifactId ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.headRepository ?? null],
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.snapshotAt ?? null, query.after?.failed ?? null, query.after?.passed ?? null, query.after?.gateArtifactId ?? null, query.after?.policyArtifactId ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.headRepository ?? null, query.evidenceCollectionErrorCode ?? null],
     )
     return result.rows.map(row => ({
       repositoryId: row.repository_id,

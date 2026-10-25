@@ -3432,6 +3432,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('isolates execution history, trends, and policy-gate outcomes by provider failure code', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Evidence collection failure'), {
+      target: { value: 'PROVIDER_TIMEOUT' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT',
+      })
+    })
+  })
+
   it('isolates execution evidence inside an exact provider verification window', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
