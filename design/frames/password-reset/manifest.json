@@ -33,25 +33,25 @@
         "id": "reset",
         "orchestrator": "PasswordResetFlow",
         "route": "/reset",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:49:23.613Z"
       },
       {
         "id": "change-password",
         "orchestrator": "ChangePasswordFlow",
         "route": "/account/security/password",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:49:48.085Z"
       },
       {
         "id": "set-password",
         "orchestrator": "SetPasswordFlow",
         "route": "/account/security/password",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:49:54.887Z"
       }
     ],
     "components": [

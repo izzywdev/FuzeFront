@@ -30,7 +30,8 @@ on:
             app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
             authz-enabled       — fuzefront.billing.authz-enabled (100%) — run AFTER prod-billing-s2s-provision succeeds
             root-membership     — fuzefront.identity.root-membership (100%): new signups take the root-membership path instead of a personal org (FF-EPIC-17-S1/S2; the S2 backfill is #1095, deployed)
-            selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + fuzefront.selection-lists.seed-defaults, left OFF
+            selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + seed-defaults + shared-lists, left OFF
+            config-management   — fuzefront.config.management-console + .key-catalog + .secrets-audit (100%): Configuration Management Console UI (EPIC-19). Web-exposed; requires the catalog-registering build (#1571) deployed.
         required: true
         default: billing-portal
         type: choice
@@ -45,6 +46,7 @@ on:
           - root-membership
           - selection-lists-create
           - billing-plan-flag-sync
+          - config-management
           - all-flags
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
@@ -311,13 +313,34 @@ jobs:
               "Release flag (FF-EPIC-17-S1/S2, backend). ON = signup/auth self-heal upserts a root membership(role=member) instead of a personal org. S2 backfill = #1095 (deployed). GA per owner decision 2026-10-05 (izzy). Owner: platform team. Removal: drop the type=personal provisioning branch once 100% of signups take the root-membership path."
           }
 
+          # ── Configuration Management Console (EPIC-19) ─────────────────────
+          # Three web-exposed release flags (packages/feature-flags: FLAG_KEYS +
+          # WEB_EXPOSED_FLAGS, registered in #1571). ON at 100% surfaces the
+          # top-level "Configuration" left-nav item + /config settings editor,
+          # the /admin/config/catalog* catalog surface, and the
+          # /admin/config/keys/:key/history secret+audit surface. Web-exposed, so
+          # the browser only sees them once the catalog-registering build (#1571)
+          # has deployed (frontend + backend rebuilt); enabling before that is
+          # harmless (the key is absent from /api/flags, useFlag() reads its OFF
+          # default). GA per owner decision 2026-10-19 (izzy). Owner:
+          # feature-flags-engineer. Removal: console GA at 100% for 30 days.
+          apply_config_management() {
+            enable_ga "fuzefront.config.management-console" \
+              "Release flag (EPIC-19, web-exposed). ON surfaces the top-level Configuration nav item + /config settings editor. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
+            enable_ga "fuzefront.config.key-catalog" \
+              "Release flag (EPIC-19, web-exposed). ON surfaces the /admin/config/catalog + /admin/config/catalog/:key admin surfaces. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
+            enable_ga "fuzefront.config.secrets-audit" \
+              "Release flag (EPIC-19, web-exposed). ON surfaces the /admin/config/keys/:key/history secret + audit-history surface. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
+          }
+
           # ── Selection Lists (CREATE ONLY) ───────────────────────────────────
           # Release flags, default OFF (packages/feature-flags/flag-registry.yaml).
           # Reuses create_only: creates the flags if absent (409 = already exists,
           # left exactly as-is), and never turns the environment on, never adds a
           # strategy, never calls `off` -- so re-running it can't undo or alter a
           # later deliberate enablement or an existing ramp of the master flag.
-          # seed-defaults is evaluated with { orgId, app } and no userId, so when it
+          # shared-lists (SL9) is created the same way: OFF, no strategy, never touched
+          # again by this set. seed-defaults is evaluated with { orgId, app } and no userId, so when it
           # is enabled later use a per-org `orgId IN [org_...]` constraint (TypeID
           # form), not a percentage -- see the seeding-operations runbook.
           apply_selection_lists_create() {
@@ -325,6 +348,8 @@ jobs:
               "Release flag, default OFF. Gates ALL selection-list UI (shell nav + /settings/selection-lists routes) and the selection-list-service API (404 when OFF). Owner: platform team (feature-flags-engineer admin). Removal: when GA at 100% of orgs and stable for one release cycle; delete the flag, the SidePanel/App.tsx guards and services/selection-list-service/src/flags.ts gate."
             create_only "fuzefront.selection-lists.seed-defaults" \
               "Release flag, default OFF. Gates BOTH selection-list-service seeding consumers (identity.org.created seeding and the selection-lists.seed.requested handler) plus the reconciler/backfill; additionally requires fuzefront.selection-lists.service. Server-side only; fails closed. Evaluated with orgId (org_ TypeID) and no userId - target per org, not by percentage. Owner: izzywdev. Removal: seeding ON for all orgs for 30 consecutive days with zero selection-lists.seed.failed, reconciler backfill complete; delete the flag, FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS and isSeedDefaultsEnabled() in one cleanup PR."
+            create_only "fuzefront.selection-lists.shared-lists" \
+              "Release flag, default OFF. Gates shared/common selection lists (list visibility, shared read, include_shared, fork, resolve redirect, list.forked/visibility.changed events, seed-list visibility) in selection-list-service and the UI common badge/fork flow; additionally requires fuzefront.selection-lists.service. Real authorization stays in Permit. Owner: izzywdev. Removal: ON for all orgs for 30 consecutive days with no fork / shared-read incident; delete the flag, FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS, the WEB_EXPOSED_FLAGS entry, isSharedListsEnabled() and the off-path branches in one cleanup PR."
           }
 
           # ── ALL FLAGS — owner-directed bulk GA (2026-10-18) ────────────────
@@ -370,6 +395,7 @@ jobs:
             authz-enabled)       apply_authz_enabled ;;
             root-membership)     apply_root_membership ;;
             selection-lists-create) apply_selection_lists_create ;;
+            config-management)   apply_config_management ;;
             all-flags)           apply_all_flags ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
@@ -403,8 +429,9 @@ jobs:
           echo "=== Verification ==="
           check_flag() {
             local FLAG="$1"
-            # Remove any prior response so a failed fetch can't read a stale file
-            # from the previous flag and report the wrong state.
+            # curl -f leaves a previous run's output file intact on an HTTP error, so a
+            # flag that was never created would print the PRECEDING flag's state; remove
+            # it first, and treat a failed fetch as UNREACHABLE rather than a misread.
             rm -f /tmp/flag_state.json
             if ! curl -sf \
               "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT" \
@@ -445,10 +472,16 @@ jobs:
               check_flag "fuzefront.billing.authz-enabled" ;;
             root-membership)
               check_flag "fuzefront.identity.root-membership" ;;
+            config-management)
+              check_flag "fuzefront.config.management-console"
+              check_flag "fuzefront.config.key-catalog"
+              check_flag "fuzefront.config.secrets-audit" ;;
             selection-lists-create)
               check_flag "fuzefront.selection-lists.service"
               check_flag "fuzefront.selection-lists.seed-defaults"
-              for F in fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults; do
+              check_flag "fuzefront.selection-lists.shared-lists"
+              for F in fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.selection-lists.shared-lists; do
+                rm -f /tmp/flag_meta.json
                 curl -sf "$UNLEASH/api/admin/projects/$PROJECT/features/$F" \
                   -H "Authorization: $TOKEN" -o /tmp/flag_meta.json 2>/dev/null || true
                 F="$F" python3 -c "

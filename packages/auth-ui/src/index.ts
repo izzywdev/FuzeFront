@@ -14,6 +14,9 @@ export type {
   AuthMethods,
   LoginRequest,
   SignupRequest,
+  SignupEmailAvailability,
+  PasswordPolicy,
+  CaptchaMethod,
 } from './types'
 export { DEFAULT_AUTH_LABELS } from './types'
 
@@ -44,3 +47,26 @@ export type {
   VerificationStatus,
   AuthErrorKind,
 } from './components/verify-reset/types'
+
+// ── redesigned signup (flag: fuzefront.auth.experience) ──────────────────────
+export { SignUpFlow } from './components/signup/SignUpFlow'
+export type { SignUpFlowProps } from './components/signup/SignUpFlow'
+export { DEFAULT_SIGNUP_LABELS } from './components/signup/labels'
+export type { SignUpLabels } from './components/signup/labels'
+export { DEFAULT_PASSWORD_POLICY, buildPolicyRules, meetsPolicy } from './components/signup/policy'
+export type { PolicyRule, PolicyRuleId } from './components/signup/policy'
+export { FullNameField } from './components/fields/FullNameField'
+export type { FullNameFieldProps } from './components/fields/FullNameField'
+export { InlineAvailabilityField } from './components/fields/InlineAvailabilityField'
+export type {
+  InlineAvailabilityFieldProps,
+  AvailabilityState,
+} from './components/fields/InlineAvailabilityField'
+export { PasswordPolicyChecklist } from './components/fields/PasswordPolicyChecklist'
+export type { PasswordPolicyChecklistProps } from './components/fields/PasswordPolicyChecklist'
+export { TurnstileField, TURNSTILE_TEST_SITE_KEY } from './components/fields/TurnstileField'
+export type { TurnstileFieldProps, TurnstileFieldState } from './components/fields/TurnstileField'
+export { VerifyGateBanner } from './components/fields/VerifyGateBanner'
+export type { VerifyGateBannerProps } from './components/fields/VerifyGateBanner'
+export { SocialButton } from './components/SocialButton'
+export type { SocialButtonProps } from './components/SocialButton'

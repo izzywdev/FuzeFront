@@ -1,8 +1,9 @@
 jest.mock('../src/services/session-tenant', () => ({
   ...jest.requireActual('../src/services/session-tenant'),
   proveSessionTenant: jest.fn(),
+  listSessionWorkspaces: jest.fn(),
 }))
-import { proveSessionTenant } from '../src/services/session-tenant'
+import { listSessionWorkspaces, proveSessionTenant } from '../src/services/session-tenant'
 /**
  * Unit tests for the `/api/v1/security` AuthN router.
  *
@@ -1403,5 +1404,48 @@ describe('GET /session explicit tenant proof', () => {
   it('rejects malformed tenant query and missing bearer', async () => {
     expect((await request(app).get('/api/v1/security/session?tenant=invalid').set('Authorization','Bearer tok')).status).toBe(400)
     expect((await request(app).get('/api/v1/security/session').query({tenant})).status).toBe(401)
+  })
+})
+
+describe('GET /session/workspaces', () => {
+  beforeEach(() => {
+    setIdentityProvider(fakeProvider())
+    ;(listSessionWorkspaces as jest.Mock).mockReset()
+  })
+
+  it('returns canonical active memberships supplied by the tenant service', async () => {
+    ;(listSessionWorkspaces as jest.Mock).mockResolvedValue([
+      { id: '0195a8f2-6c3d-7f11-8b2e-012345678901', name: 'Personal', type: 'personal' },
+      { id: '0195a8f2-6c3d-7f11-8b2e-012345678902', name: 'Acme', type: 'organization' },
+    ])
+
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/session/workspaces')
+      .set('Authorization', 'Bearer tok')
+      .expect(200)
+
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(res.body.workspaces).toHaveLength(2)
+    expect(listSessionWorkspaces).toHaveBeenCalledWith('u1')
+  })
+
+  it('requires a bearer before exposing workspace membership', async () => {
+    await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/session/workspaces')
+      .expect(401)
+    expect(listSessionWorkspaces).not.toHaveBeenCalled()
+  })
+
+  it('keeps an authenticated workspace lookup retryable when storage is unavailable', async () => {
+    ;(listSessionWorkspaces as jest.Mock).mockRejectedValue(new Error('private SQL connection failure'))
+
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/session/workspaces')
+      .set('Authorization', 'Bearer tok')
+      .expect(503)
+
+    expect(res.body).toEqual({ error: 'Workspace discovery unavailable' })
+    expect(res.text).not.toContain('private SQL')
+    expect(listSessionWorkspaces).toHaveBeenCalledWith('u1')
   })
 })

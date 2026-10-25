@@ -11,7 +11,7 @@ prevent. Those charts can afford that default because they are gated off
 (`enabled: false`) and deploy nothing.
 
 FuzeQuality is different: this chart is LIVE. values-prod.yaml pins real image
-tags, enables the ingress on quality.prod.fuzefront.com, and Argo syncs it with
+tags, enables the ingress on fuzequality.fuzefront.com, and Argo syncs it with
 prune + selfHeal. Adding a required init container to the running frontend
 Deployment would take effect on the next sync — and `register.sh` exits non-zero
 when it cannot read its bearer token, by design, so if the
@@ -99,6 +99,8 @@ spec:
                   key: token
                   # NOT optional: a missing secret must fail the Job, not
                   # silently skip registration and report success.
+            - name: FUZEFRONT_REMOTE_HEALTH_URL
+              value: {{ .Values.registration.remoteHealthUrl | quote }}
             - name: REGISTRATION_DIR
               value: /registration
           volumeMounts:

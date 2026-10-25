@@ -65,6 +65,7 @@ export const ACCOUNT_SCOPED_KEYS = [
   'sessionId',
   'user',
   'activeOrganizationId',
+  'personalTenantId',
 ] as const
 
 export type AccountScopedKey = (typeof ACCOUNT_SCOPED_KEYS)[number]

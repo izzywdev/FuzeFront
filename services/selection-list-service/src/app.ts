@@ -24,6 +24,7 @@ import healthRouter from './routes/health';
 import docsRouter from './routes/docs';
 import quotaRouter from './routes/quota';
 import listsRouter from './routes/lists';
+import forkRouter from './routes/fork';
 import itemsRouter from './routes/items';
 import translationsRouter from './routes/translations';
 import accessRouter from './routes/access';
@@ -66,6 +67,7 @@ export function createApp(): Application {
   app.use('/v1/selection-lists', quotaRouter);
 
   app.use('/v1/selection-lists', listsRouter);
+  app.use('/v1/selection-lists', forkRouter);
   app.use('/v1/selection-lists', itemsRouter);
   app.use('/v1/selection-lists', translationsRouter);
   app.use('/v1/selection-lists', accessRouter);

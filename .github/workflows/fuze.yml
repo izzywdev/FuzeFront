@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:0ef72b7a2a8803f7812a771503d26afda5beccd44bae662397be76a19989dcaf
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:28aa760e265c4a24f9fd4d50855efaeb0ac4c86e4a8be001a051ebbc86a39968
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -216,35 +216,70 @@ jobs:
           rm -rf .github/actions
           cp -a "${RUNNER_TEMP}/trusted-fuze-actions" .github/actions
 
-      # CODER IDENTITY (docs/identity-and-roles.md). Prefer the least-privilege `fuzeoneagent`
-      # collaborator token as the coding/commit/push credential when it is provisioned; fall
-      # back to today's GITHUB_TOKEN with a ::warning:: when it is not, so an un-provisioned
-      # repo degrades rather than breaks (behaviour is byte-for-byte today's when the secret is
-      # unset). When the token IS set, also stamp the git author as fuzeoneagent — repo-local
-      # `git config` here persists into the fuze-code-action composite steps in this same job —
-      # so commits this run pushes are attributed to the coder role, not the org owner. Least
-      # privilege: coding must never run as the admin `izzywdev` identity.
-      # fuze:secret-sourcing FUZEONEAGENT_TOKEN=fleet — provision-secrets.yml (FLEET_SOURCED); least-privilege coder identity
-      - name: Resolve coding identity (fuzeoneagent when its token is set)
+      # CODER IDENTITY (docs/identity-and-roles.md). The coder is the org-wide `fuze-agent`
+      # GitHub App — a durable App identity, NOT the retired `fuzeoneagent` user account
+      # (suspended by GitHub 2026-10-14). Mint a short-lived App installation token and use it
+      # as the coding/commit/push credential, stamping the git author as the App's bot — the
+      # repo-local `git config` here persists into the fuze-code-action composite steps in this
+      # same job — so commits this run pushes are attributed to `fuze-agent[bot]`, not the admin
+      # `izzywdev`; author ≠ reviewer is preserved (the App bot authors, izzywdev/FuzeApprover
+      # reviews). When the App secrets are absent the resolve step falls back to GITHUB_TOKEN
+      # with a ::warning::, byte-for-byte default-safe so an un-provisioned repo degrades rather
+      # than breaks. Signing note: an App-token `git push` is NOT signed — `required_signatures`
+      # on the default branch is satisfied by the server-signed squash-merge, exactly as before.
+      # fuze:secret-sourcing FUZE_AGENT_APP_ID=fleet — provision-secrets.yml (FLEET_SOURCED); durable coder identity
+      # fuze:secret-sourcing FUZE_AGENT_APP_PRIVATE_KEY=fleet — provision-secrets.yml (FLEET_SOURCED); durable coder identity
+      # fuze:secret-sourcing FUZEONEAGENT_TOKEN=fleet — provision-secrets.yml (FLEET_SOURCED); least-privilege coder (probed fallback)
+      - name: Mint fuze-agent App token (coder identity)
+        id: coder_app
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+      - name: Resolve coding identity (fuze-agent App; GITHUB_TOKEN fallback)
         id: coder
         env:
+          APP_TOKEN: ${{ steps.coder_app.outputs.token }}
           CODER_TOKEN: ${{ secrets.FUZEONEAGENT_TOKEN }}
           GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
-          if [ -n "${CODER_TOKEN:-}" ]; then
-            tok="$CODER_TOKEN"
-            who="fuzeoneagent (FUZEONEAGENT_TOKEN — least-privilege coder)"
-            git config user.name "fuzeoneagent"
-            git config user.email "330369996+fuzeoneagent@users.noreply.github.com"
-            # claude-code-action's configureGitAuth overwrites the git config above, so the
-            # author must ALSO be handed to the action as bot_name/bot_id (below).
-            bot_name="fuzeoneagent"; bot_id="330369996"
+          # Coder ladder: fuze-agent App (durable primary coder) -> fuzeoneagent (probed:
+          # used only if GitHub accepts the token right now) -> GITHUB_TOKEN (default). A token
+          # that is SET is not a token that WORKS — a suspended/revoked account still leaves the
+          # secret populated — so the fuzeoneagent rung is probed before use.
+          if [ -n "${APP_TOKEN:-}" ]; then
+            tok="$APP_TOKEN"
+            who="fuze-agent[bot] (fuze-agent App installation token — durable coder)"
+            git config user.name "fuze-agent[bot]"
+            git config user.email "fuze-agent[bot]@users.noreply.github.com"
+            bot_name="fuze-agent[bot]"; bot_id="321521006"
           else
-            bot_name="claude[bot]"; bot_id="41898282"   # claude-code-action's own defaults
-            tok="$GH_DEFAULT"
-            who="GITHUB_TOKEN (default — FUZEONEAGENT_TOKEN unset)"
-            echo "::warning title=coder-identity::FUZEONEAGENT_TOKEN is unset on this repo — @fuze codes/commits/pushes under the default GITHUB_TOKEN identity, exactly as before. Set FUZEONEAGENT_TOKEN to author as the least-privilege coder account (docs/identity-and-roles.md)."
+            coder_ok=false
+            if [ -n "${CODER_TOKEN:-}" ]; then
+              probe=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+                -H "Authorization: Bearer ${CODER_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/user" 2>/dev/null || true)
+              if [ "${probe:-}" = "200" ]; then
+                coder_ok=true
+              else
+                echo "::warning title=coder-identity::FUZEONEAGENT_TOKEN is set but GitHub rejected it (HTTP ${probe:-none}; the account may be suspended or the token revoked). Falling back to the default GITHUB_TOKEN identity. Replace or remove the secret to clear this warning."
+              fi
+            fi
+            if [ "$coder_ok" = "true" ]; then
+              tok="$CODER_TOKEN"
+              who="fuzeoneagent (FUZEONEAGENT_TOKEN — least-privilege coder, probed fallback)"
+              git config user.name "fuzeoneagent"
+              git config user.email "330369996+fuzeoneagent@users.noreply.github.com"
+              bot_name="fuzeoneagent"; bot_id="330369996"
+            else
+              bot_name="claude[bot]"; bot_id="41898282"   # claude-code-action's own defaults
+              tok="$GH_DEFAULT"
+              who="GITHUB_TOKEN (default — fuze-agent App secrets unset; FUZEONEAGENT_TOKEN unset or rejected)"
+              echo "::warning title=coder-identity::Neither the fuze-agent App secrets (FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY) nor a working FUZEONEAGENT_TOKEN resolved — @fuze codes/commits/pushes under the default GITHUB_TOKEN identity, exactly as before. Set the fuze-agent App secrets to author as the durable coder identity (docs/identity-and-roles.md)."
+            fi
           fi
           echo "::add-mask::$tok"
           {
@@ -263,8 +298,8 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/fuze-code-action
         with:
-          # Coder credential: fuzeoneagent when provisioned, else GITHUB_TOKEN (see the
-          # Resolve coding identity step — default-safe when FUZEONEAGENT_TOKEN is unset).
+          # Coder credential: fuze-agent App token when provisioned, else GITHUB_TOKEN (see the
+          # Resolve coding identity step — default-safe when the App secrets are unset).
           github-token: ${{ steps.coder.outputs.token }}
           # Commit author. Must be passed here: claude-code-action overwrites `git config`.
           bot-name: ${{ steps.coder.outputs.bot-name }}
@@ -393,7 +428,7 @@ jobs:
           if [ "${STEP_OUTCOME:-}" = "failure" ] || [ "${CONCLUSION:-}" = "failure" ]; then
             failed=true
             if [ "${AVAILABILITY:-}" = "true" ]; then
-              reason="fuze-code-action reported an AVAILABILITY failure (mode=${MODE:-?}); ${sub}. 'Availability' does NOT by itself prove an LLM credit/key outage — a rung that aborts at claude-code-action's GitHub permission precheck (coding-identity token's account suspended or lacking repo access) produces no execution log and is classified identically. READ the 'Rung 1a'/'Rung 1' step logs in the run for the exact error before assuming credits. Candidate causes, in priority order: (1) the coding identity (FUZEONEAGENT_TOKEN, else GITHUB_TOKEN) account suspended or missing repo access; (2) an expired/revoked CLAUDE_CODE_OAUTH_TOKEN; (3) exhausted ANTHROPIC_API_KEY / LITELLM_FUZE_KEY credit."
+              reason="fuze-code-action reported an AVAILABILITY failure (mode=${MODE:-?}); ${sub}. 'Availability' does NOT by itself prove an LLM credit/key outage — a rung that aborts at claude-code-action's GitHub permission precheck (coding-identity token's account suspended or lacking repo access) produces no execution log and is classified identically. READ the 'Rung 1a'/'Rung 1' step logs in the run for the exact error before assuming credits. Candidate causes, in priority order: (1) the coding identity (fuze-agent App installation token, else GITHUB_TOKEN) could not be minted or lacks repo access; (2) an expired/revoked CLAUDE_CODE_OAUTH_TOKEN; (3) exhausted ANTHROPIC_API_KEY / LITELLM_FUZE_KEY credit."
             elif [ "${AVAILABILITY:-}" = "false" ]; then
               reason="fuze-code-action failed with a TASK failure (mode=${MODE:-?}) — a real error from the work itself, not a provider-availability problem; ${sub}. See the run log."
             else

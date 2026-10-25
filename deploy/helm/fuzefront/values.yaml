@@ -358,6 +358,34 @@ securityService:
     appName: "security-service"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
     tokenSecretName: ""
+  # Cloudflare Turnstile CAPTCHA for the signup redesign (backend/security/src/
+  # services/turnstile.ts; gated UI = fuzefront.auth.experience, default OFF).
+  # DEFAULT = ABSENT = captcha OFF: the service advertises AuthMethods.captcha
+  # only when BOTH TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY are non-empty, and
+  # runs normally without them. Every key is declared here with an explicit empty
+  # default (Helm values hygiene, CLAUDE.md) — the template renders the whole
+  # block only when siteKey is non-empty, so an unset overlay renders NOTHING new.
+  #
+  # TO ENABLE (separate, owner-gated change — do NOT do it in this PR):
+  #   1. owner supplies the Turnstile secret key; FuzeInfra seals it (see
+  #      deploy/contabo/sealed/turnstile-secrets.yaml.template for the exact
+  #      `@fuze` delegation) into Secret/turnstile-secrets, key TURNSTILE_SECRET_KEY
+  #   2. in values-prod.yaml set turnstile.siteKey (public) and
+  #      turnstile.secretName: "turnstile-secrets", in a deploy window
+  turnstile:
+    # PUBLIC widget key (safe in values / configmap). "" = captcha OFF.
+    siteKey: ""
+    # Name of the Secret holding the server-side secret key. "" = the chart's
+    # shared fuzefront-secrets Secret (same convention as featureFlags.
+    # tokenSecretName); set to "turnstile-secrets" to use the dedicated
+    # SealedSecret scaffolded under deploy/contabo/sealed/.
+    secretName: ""
+    # Key inside that Secret. The secretKeyRef is optional:true, so a missing
+    # key leaves captcha OFF (fail-safe) instead of wedging the pod.
+    secretKey: "TURNSTILE_SECRET_KEY"
+    # TURNSTILE_VERIFY_TIMEOUT_MS — siteverify round-trip bound, integer ms.
+    # "" = env var not set, so the code default (5000) applies.
+    verifyTimeoutMs: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -965,6 +993,33 @@ selectionListService:
   # at all). Declared true so the rendered manifest states the real posture; the
   # key only has an effect outside production (dev/test).
   authzEnabled: true
+  # The platform organization's wire id (`org_...` TypeID), env
+  # SELECTION_LIST_PLATFORM_ORG_ID (SL9 shared/common lists; docs/planning/
+  # selection-lists-shared-and-fork.md D2/D5). Common (`platform`) lists are
+  # owned by this organization and only an operator acting in it may publish
+  # one. OPTIONAL and EMPTY by default, declared here explicitly (never absorbed
+  # by a template default/cast): empty makes the service fail CLOSED on every
+  # platform feature (no common lists served or created), so shared lists stay
+  # dark. There is deliberately NO fallback to an org typed `platform` in the
+  # org projection: that type is client-suppliable on org creation. Shared lists
+  # are additionally gated by the release flag fuzefront.selection-lists.shared-lists
+  # (default OFF).
+  #
+  # CONFIGURABLE per environment, ENFORCED in production. Local and any other
+  # overlay may use any id. The PRODUCTION overlay (values-prod.yaml) may only
+  # ever be "" (service disabled, fail closed) or the immutable root platform
+  # organization. CI job `gate-platform-org-pin` (scripts/gate_platform_org_pin.py)
+  # DERIVES that id from the code (ROOT_ORG_ID in backend/security/src/
+  # migrations/014_seed_root_platform_organization.ts, currently
+  # 00000000-0000-0000-0000-000000000010, TypeID "org_0000000000000000000000000g")
+  # rather than from any typed-in value or repo variable, cross-checks every other
+  # ROOT_ORG_ID copy, and enforces it against values-prod.yaml, the Helm-merged
+  # values and the rendered Deployment env. It fails when
+  # selectionListService.enabled is true in production with any other value
+  # (including empty). Details: docs/runbooks/selection-lists-rollout.md 2.4.
+  # Never coerce or default this value in a template (CLAUDE.md "Helm values
+  # hygiene"): the comparison is strict string equality.
+  platformOrgId: ""
   # @fuzefront/feature-flags client wiring (UNLEASH_URL/APP_NAME/CLIENT_TOKEN).
   # Empty unleashUrl (base default) renders no UNLEASH_* env -> in-code fail-safe
   # OFF. The CLIENT token is a SECRET (sealed) -- referenced, never inline.

@@ -104,8 +104,8 @@ export async function findUserPk(email: string): Promise<number> {
  */
 export async function findOrCreateUserPk(
   email: string,
-  firstName?: string,
-  lastName?: string
+  /** Single display name, forwarded 1:1 to the identity store's `name`. */
+  name?: string
 ): Promise<number> {
   try {
     return await findUserPk(email)
@@ -114,14 +114,14 @@ export async function findOrCreateUserPk(
     // different message but findUserPk only throws "not found" on a clean 200
     // with no match; a real transport failure re-throws below via the create call.
   }
-  const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email
+  const displayName = (name ?? '').trim() || email
   const res = await call('/api/v3/core/users/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       username: email,
       email,
-      name,
+      name: displayName,
       is_active: true,
       // `internal` service-account-free human account; Authentik defaults path.
       type: 'internal',

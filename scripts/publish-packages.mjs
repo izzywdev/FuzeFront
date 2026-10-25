@@ -153,17 +153,78 @@ export function assertAliasable(targets) {
   return targets
 }
 
+/**
+ * Fail the whole run if any publish target depends on a workspace that is not
+ * itself publishable through a local (`file:`/`link:`/`workspace:`/`portal:`)
+ * specifier.
+ *
+ * `rewriteForPublish` already refuses this one package at a time — a local
+ * specifier has no version to pin unless its target is a publishable
+ * workspace, and a tarball naming a dependency that resolves nowhere installs
+ * for nobody. But it only refuses inside a matrix leg, at `--dry-run`, which
+ * means the symptom is a single red leg among two dozen green ones. That reads
+ * as flakiness, and it is the same shape of failure `assertAliasable` exists to
+ * pull forward: one package's manifest invalidating a release, discovered one
+ * leg at a time instead of once, up front.
+ *
+ * Measured: @fuzefront/billing-service (a deployable service that was never
+ * meant to publish) gained a `file:` dependency on the private
+ * @fuzefront/billing-types in #1541, which also added both to `workspaces` so
+ * npm could link them. Being non-private, billing-service entered the publish
+ * matrix for the first time and failed its leg on every run for days while the
+ * other 29 went green (fixed in #1640 by marking it private). Nothing failed at
+ * matrix-resolution time, so `verify` stayed green throughout.
+ *
+ * Like `assertAliasable` this throws EARLY, from `publishable()`, before
+ * `--list-json` hands the workflow its matrix — so the run stops with one loud
+ * error naming the package, the dependency and both ways out, instead of
+ * shipping 29 packages and calling the release a failure.
+ */
+export function assertLocalDepsResolvable(targets) {
+  // The predicate is `rewriteForPublish`'s own, exactly: it rewrites a local
+  // specifier to `^${versionByName[name]}` and throws when that is falsy. So a
+  // publishable workspace carrying no version fails there too, and checking
+  // only for the NAME here would let that one case through to a matrix leg —
+  // the very thing this exists to prevent.
+  const versionByName = Object.fromEntries(targets.map(({ pkg }) => [pkg.name, pkg.version]))
+  const bad = []
+  for (const { dir, pkg } of targets) {
+    for (const field of DEP_FIELDS) {
+      for (const [name, spec] of Object.entries(pkg[field] ?? {})) {
+        if (LOCAL_PROTOCOL.test(spec) && !versionByName[name]) {
+          bad.push(`  - ${pkg.name} (${dir}): ${field}.${name} = ${spec}`)
+        }
+      }
+    }
+  }
+  if (bad.length) {
+    throw new Error(
+      `Not publishable — these packages depend on a workspace that does not publish, via a ` +
+        `local specifier that has no version to rewrite to. The published tarball would name a ` +
+        `dependency that resolves on no registry:\n` +
+        bad.join('\n') +
+        `\nEither make the dependency publishable (drop its "private": true, and give it a ` +
+        `version if it has none), or mark the DEPENDENT workspace "private": true if it is a ` +
+        `deployable app rather than a consumable library — every other service and backend app ` +
+        `in this repo is.`
+    )
+  }
+  return targets
+}
+
 function workspaces() {
   return (readJson(`${root}/package.json`).workspaces ?? []).filter((w) => !w.includes('*'))
 }
 
 /** Publishable = a workspace that is not marked private. One source of truth. */
 function publishable() {
-  return assertAliasable(
-    workspaces()
-      .filter((dir) => existsSync(`${root}/${dir}/package.json`))
-      .map((dir) => ({ dir, pkg: readJson(`${root}/${dir}/package.json`) }))
-      .filter(({ pkg }) => !pkg.private && pkg.name)
+  return assertLocalDepsResolvable(
+    assertAliasable(
+      workspaces()
+        .filter((dir) => existsSync(`${root}/${dir}/package.json`))
+        .map((dir) => ({ dir, pkg: readJson(`${root}/${dir}/package.json`) }))
+        .filter(({ pkg }) => !pkg.private && pkg.name)
+    )
   )
 }
 

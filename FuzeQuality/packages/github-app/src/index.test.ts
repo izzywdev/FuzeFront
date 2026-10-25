@@ -19,7 +19,7 @@ const TEST_WEBHOOK_SECRET = process.env.TEST_WEBHOOK_SECRET ?? 'test-only-not-a-
 
 describe('FuzeQuality GitHub App contract', () => {
   it('declares the narrowly required workflow dispatch permission and webhook events', () => {
-    expect(GITHUB_APP_PERMISSIONS).toEqual({ metadata: 'read', contents: 'read', pull_requests: 'read', actions: 'write' })
+    expect(GITHUB_APP_PERMISSIONS).toEqual({ metadata: 'read', contents: 'write', pull_requests: 'read', actions: 'write' })
     expect(GITHUB_APP_EVENTS).toEqual(['push', 'repository', 'installation', 'installation_repositories', 'workflow_run'])
   })
 
@@ -43,8 +43,8 @@ describe('FuzeQuality GitHub App contract', () => {
 
   it('reconciles installations and default-branch changes', () => {
     expect(webhookScanCommands('repository', {
-      action: 'edited', repository: { full_name: 'izzywdev/FuzeOne' }, changes: { default_branch: { from: 'master' } },
-    }, repositories)).toEqual([{ repositoryId: 'repo-1', trigger: 'reconcile' }])
+      action: 'edited', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, changes: { default_branch: { from: 'master' } },
+    }, repositories)).toEqual([{ repositoryId: 'repo-1', defaultBranch: 'main', trigger: 'reconcile' }])
     expect(webhookScanCommands('installation_repositories', {
       action: 'added', installation: { id: 42 }, repositories_added: [{ full_name: 'izzywdev/FuzeOne' }],
     }, repositories)).toEqual([{ repositoryId: 'repo-1', trigger: 'reconcile' }])
@@ -55,11 +55,140 @@ describe('FuzeQuality GitHub App contract', () => {
       .toBe('clone https://github.com/org/repo.git token=[REDACTED]')
   })
 
-  it('maps completed default-branch workflow runs to execution evidence', () => {
-    expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { id: 101, run_attempt: 2, head_branch: 'main', head_sha: 'a'.repeat(40), name: 'Post-production integration', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({
+  it('maps completed workflow runs to execution evidence with branch provenance', () => {
+    expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { id: 101, run_attempt: 2, head_branch: 'main', head_repository: { full_name: 'izzywdev/FuzeOne' }, head_sha: 'a'.repeat(40), name: 'Post-production integration', path: '.github/workflows/post-prod.yml', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({
       repositoryId: 'repo-1', provider: 'github-actions', externalRunId: '101', attempt: 2, kind: 'post-production', status: 'passed',
+      branch: 'main',
+      headRepository: 'izzywdev/FuzeOne',
+      workflowPath: '.github/workflows/post-prod.yml',
       evidenceLinks: [{ kind: 'report', name: 'GitHub Actions artifacts', url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101#artifacts' }],
     })])
+  })
+
+  it('retains stale GitHub workflow conclusions as failed execution evidence', () => {
+    const executions = webhookWorkflowExecutions('workflow_run', {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 108, run_attempt: 1, head_branch: 'main', head_sha: '8'.repeat(40),
+        name: 'Post-production browser suite', path: '.github/workflows/post-production.yml',
+        status: 'completed', conclusion: 'stale',
+        html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/108',
+        run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }, repositories)
+
+    expect(executions).toEqual([expect.objectContaining({
+      externalRunId: '108', kind: 'post-production', status: 'failed', summary: 'stale',
+      completedAt: '2026-01-01T00:01:00.000Z',
+    })])
+  })
+
+  it('retains pull-request branch evidence without treating it as analyzed policy linkage', () => {
+    const executions = webhookWorkflowExecutions('workflow_run', {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 104, run_attempt: 1, head_branch: 'feature/checkout', head_sha: 'f'.repeat(40),
+        name: 'Pull request CI', path: '.github/workflows/ci.yml', status: 'completed',
+        conclusion: 'failure', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/104',
+        run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }, repositories)
+
+    expect(executions).toEqual([expect.objectContaining({
+      externalRunId: '104', branch: 'feature/checkout', revision: 'f'.repeat(40), status: 'failed',
+    })])
+  })
+
+  it('retains fork provenance even when the fork branch matches the default branch name', () => {
+    const execution = webhookWorkflowExecutions('workflow_run', {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 105, run_attempt: 1, head_branch: 'main',
+        head_repository: { full_name: 'contributor/FuzeOne' },
+        head_sha: '1'.repeat(40), name: 'Integration suite',
+        path: '.github/workflows/integration.yml', status: 'completed', conclusion: 'success',
+        run_started_at: null, updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }, repositories)[0]
+
+    expect(execution).toMatchObject({
+      branch: 'main',
+      headRepository: 'contributor/FuzeOne',
+    })
+  })
+
+  it('classifies a generically named run from its workflow file', () => {
+    const payload = {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 102, run_attempt: 1, head_branch: 'main', head_sha: 'd'.repeat(40), name: 'Quality checks',
+        path: '.github/workflows/post_prod_playwright.yml', status: 'completed', conclusion: 'success',
+        run_started_at: null, updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }
+
+    expect(webhookWorkflowExecutions('workflow_run', payload, repositories)[0]).toMatchObject({
+      kind: 'post-production',
+      workflowPath: '.github/workflows/post_prod_playwright.yml',
+    })
+  })
+
+  it('keeps production deployment workflows out of post-production test evidence', () => {
+    const payload = {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 106, run_attempt: 1, head_branch: 'main', head_sha: '6'.repeat(40),
+        name: 'Production deployment', path: '.github/workflows/production-deploy.yml',
+        status: 'completed', conclusion: 'success', run_started_at: null,
+        updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }
+
+    expect(webhookWorkflowExecutions('workflow_run', payload, repositories)[0]).toMatchObject({
+      kind: 'ci',
+      workflowPath: '.github/workflows/production-deploy.yml',
+    })
+  })
+
+  it('retains explicit post-production validation workflows as test evidence', () => {
+    const payload = {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 107, run_attempt: 1, head_branch: 'main', head_sha: '7'.repeat(40),
+        name: 'Post-production smoke tests', path: '.github/workflows/post-production-smoke.yml',
+        status: 'completed', conclusion: 'success', run_started_at: null,
+        updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }
+
+    expect(webhookWorkflowExecutions('workflow_run', payload, repositories)[0]).toMatchObject({
+      kind: 'post-production',
+      workflowPath: '.github/workflows/post-production-smoke.yml',
+    })
+  })
+
+  it('strips GitHub workflow refs before classifying and persisting a run', () => {
+    const payload = {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'production' },
+      workflow_run: {
+        id: 103, run_attempt: 1, head_branch: 'production', head_sha: 'e'.repeat(40), name: 'Quality checks',
+        path: '.github/workflows/ci.yml@production', status: 'completed', conclusion: 'success',
+        run_started_at: null, updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }
+    const productionRepository = [{ ...repositories[0], defaultBranch: 'production' }]
+
+    expect(webhookWorkflowExecutions('workflow_run', payload, productionRepository)[0]).toMatchObject({
+      kind: 'ci',
+      workflowPath: '.github/workflows/ci.yml',
+    })
   })
 
   it('keeps one run attempt identity while its lifecycle advances', () => {
