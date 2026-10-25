@@ -308,7 +308,7 @@ describe('SignUpFlow — error states are explicit, never a crash or a blank', (
     expect(alert).toHaveAttribute('data-state', 'signup-pw-weak-submit')
     expect(alert).toHaveTextContent("That password doesn't meet our requirements.")
     expect(screen.getByLabelText('Password')).toHaveAttribute('aria-invalid', 'true')
-    expect(ts.reset).toHaveBeenCalled() // tokens are single-use
+    await waitFor(() => expect(ts.reset).toHaveBeenCalled()) // tokens are single-use
     expect(submitBtn()).toBeDisabled() // until a fresh token arrives
   })
 
@@ -361,7 +361,7 @@ describe('SignUpFlow — error states are explicit, never a crash or a blank', (
     await solveCaptcha()
     fireEvent.click(submitBtn())
     await waitFor(() => expect(document.querySelector('[data-turnstile]')).toHaveAttribute('data-state', 'failed'))
-    expect(ts.reset).toHaveBeenCalled()
+    await waitFor(() => expect(ts.reset).toHaveBeenCalled())
   })
 })
 
