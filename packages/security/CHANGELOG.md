@@ -1,5 +1,50 @@
 # Changelog — @fuzefront/security-client
 
+## 1.0.0 — Auth-experience signup redesign (BREAKING, unreleased)
+
+`info.version` 0.12.0 -> 1.0.0, `SECURITY_CONTRACT_VERSION` 0.12.0 -> 1.0.0,
+package `version` 0.12.0 -> 1.0.0. MAJOR because `SignupRequest` drops
+`firstName`/`lastName` under `additionalProperties: false` — a request valid
+against 0.12.0 (sending `firstName`/`lastName`) is rejected by 1.0.0.
+
+Implements the frozen `design/frames/auth-experience/manifest.json`
+`contract.deltas` (all four build flows owner-approved). Contract + generated
+client only — no backend/UI/test implementation (fanned out after freeze).
+
+### BREAKING
+
+- `SignupRequest`: `firstName` + `lastName` REMOVED; replaced by a single
+  OPTIONAL `name` (display name; maps 1:1 to the identity store's single `name`,
+  i18n-safe). `additionalProperties: false` retained, so a client still sending
+  `firstName`/`lastName` now fails validation. Only in-repo consumer is the host
+  frontend via `@fuzefront/security-client`; `packages/auth-ui` re-derives its
+  `SignupRequest` from the regenerated client in a later (frontend-engineer)
+  phase — NOT edited here.
+
+### Added
+
+- `GET /v1/security/signup/email-available?email=` (`getSignupEmailAvailable`),
+  public/unauthenticated → `200 SignupEmailAvailability { available: boolean }`;
+  `400` malformed/missing email; `429` rate-limited. Debounced inline signup
+  check; client contract is FAIL-OPEN (never blocks submit on error);
+  documented MUST be per-IP rate-limited + captcha-gated so it is not an
+  enumeration oracle (backend enforces). NOTE — overlaps the pre-existing,
+  already-implemented `GET /v1/security/email-available` (`getEmailAvailable`,
+  `EmailAvailability { available, email }`); see the delivery note / flagged
+  item — consolidation of the two paths is an owner/orchestrator decision, not
+  resolved by this contract PR.
+- `SignupRequest.turnstileToken` (string, optional in-schema): Cloudflare
+  Turnstile token, REQUIRED server-side when `AuthMethods.captcha` is present.
+  The conditional depends on server config, not another request field, so it is
+  documented + enforced server-side rather than expressed as a static schema
+  constraint.
+- `AuthMethods.captcha` `{ provider: 'turnstile', siteKey }` (optional; absent
+  when captcha disabled) and `AuthMethods.passwordPolicy`
+  `{ minLength, requireUpper, requireLower, requireDigit, requireSymbol }`
+  (optional) so the client renders the authoritative policy. Both ADDITIVE /
+  non-breaking. Hand-authored `AuthMethods` in `src/types.ts` extended in
+  lockstep (`CaptchaMethod`, `PasswordPolicy`).
+
 ## 0.12.0 — Account: change password; MFA last-factor guard (unreleased)
 
 `info.version` 0.11.0 -> 0.12.0, `SECURITY_CONTRACT_VERSION` 0.11.0 -> 0.12.0.
