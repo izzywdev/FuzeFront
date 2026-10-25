@@ -13,7 +13,7 @@ import {
   useSecurityClient,
   type FlowBaseProps,
 } from '../common/flowKit'
-import { maskPhone } from './factorMeta'
+import { isSendablePhone, maskPhone, normalizePhone } from './factorMeta'
 
 type PanelState = 'enter-phone' | 'sending' | 'enter-code' | 'verifying' | 'error-invalid' | 'error-service' | 'error-send' | 'verified'
 
@@ -24,6 +24,8 @@ export interface ContactVerifyPanelProps {
   onSendCode: () => void
   onVerify: (code: string) => void
   onResend: () => void
+  /** Back to the editable phone entry (after a delivery failure). */
+  onChangeNumber?: () => void
   onSkip?: () => void
   onContinue?: () => void
 }
@@ -62,13 +64,16 @@ export function ContactVerifyPanel(p: ContactVerifyPanelProps) {
               value={p.phone}
               onChange={(e) => p.onPhone(e.target.value)}
             />
+            {p.phone.trim() !== '' && !isSendablePhone(p.phone) && (
+              <Hint data-hint="phone-format" style={{ color: 'var(--error-color)' }}>{m.contact.phoneFormat}</Hint>
+            )}
             <Actions>
               <Button
                 variant="primary"
                 fullWidth
                 data-action="send-code"
                 onClick={p.onSendCode}
-                disabled={p.phone.replace(/\D/g, '').length < 6}
+                disabled={!isSendablePhone(p.phone)}
               >
                 {m.contact.sendCode}
               </Button>
@@ -127,6 +132,9 @@ export function ContactVerifyPanel(p: ContactVerifyPanelProps) {
               <Button variant="primary" fullWidth data-action="send-code" onClick={p.onSendCode}>
                 {m.contact.tryAgain}
               </Button>
+              <Button variant="ghost" fullWidth data-action="change-number" onClick={p.onChangeNumber}>
+                {m.contact.changeNumber}
+              </Button>
               {p.onSkip && (
                 <Button variant="ghost" fullWidth data-action="skip" onClick={p.onSkip}>
                   {m.contact.skip}
@@ -184,7 +192,7 @@ function ConfirmContactInner({ client, getToken, onSkip, onDone }: ConfirmContac
   const send = async () => {
     setState('sending')
     try {
-      await api.startPhoneVerification(phone)
+      await api.startPhoneVerification(normalizePhone(phone))
       setState('enter-code')
     } catch {
       setState('error-send')
@@ -194,7 +202,7 @@ function ConfirmContactInner({ client, getToken, onSkip, onDone }: ConfirmContac
   const verify = async (code: string) => {
     setState('verifying')
     try {
-      await api.confirmPhoneVerification(phone, code)
+      await api.confirmPhoneVerification(normalizePhone(phone), code)
       setState('verified')
     } catch (err) {
       // Stay on this screen, fail closed: a rejected code is "invalid"; 5xx / 429 /
@@ -212,6 +220,7 @@ function ConfirmContactInner({ client, getToken, onSkip, onDone }: ConfirmContac
         onSendCode={() => void send()}
         onVerify={(c) => void verify(c)}
         onResend={() => void send()}
+        onChangeNumber={() => setState('enter-phone')}
         onSkip={onSkip}
         onContinue={onDone}
       />

@@ -360,11 +360,11 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
     await user.type(q('#phone')!, '+1 555 000 4471')
     await user.click(q('[data-action="send-code"]')!)
     await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="enter-code"]')).toBeTruthy())
-    expect(client.startPhoneVerification).toHaveBeenCalledWith('+1 555 000 4471')
+    expect(client.startPhoneVerification).toHaveBeenCalledWith('+15550004471')
     await typeCode(user, '123456')
     await user.click(q('[data-action="verify-contact"]')!)
     await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="verified"]')).toBeTruthy())
-    expect(client.confirmPhoneVerification).toHaveBeenCalledWith('+1 555 000 4471', '123456')
+    expect(client.confirmPhoneVerification).toHaveBeenCalledWith('+15550004471', '123456')
     await user.click(q('[data-action="continue"]')!)
     expect(onDone).toHaveBeenCalled()
   })
@@ -408,6 +408,32 @@ describe('ConfirmContactFlow (frame 03, phone)', () => {
     expect(document.querySelectorAll('[data-action="skip"]')).toHaveLength(1)
     await user.click(q('[data-action="skip"]')!)
     expect(onSkip).toHaveBeenCalled()
+  })
+
+  it('a non-E.164 number keeps Send disabled with a format hint', async () => {
+    const user = userEvent.setup()
+    render(<ConfirmContactFlow client={asClient(makeClient())} />)
+    await user.type(q('#phone')!, '555 000 4471')
+    expect(q('[data-action="send-code"]')).toBeDisabled()
+    expect(q('[data-hint="phone-format"]')).toBeTruthy()
+  })
+
+  it('after a send failure "Change number" returns to the editable phone entry and a corrected number is sent', async () => {
+    const user = userEvent.setup()
+    const startPhoneVerification = vi.fn().mockRejectedValueOnce(err(400)).mockResolvedValueOnce(undefined)
+    render(<ConfirmContactFlow client={asClient(makeClient({ startPhoneVerification }))} />)
+    await user.type(q('#phone')!, '+1 555 000 4471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="error-send"]')).toBeTruthy())
+    await user.click(q('[data-action="change-number"]')!)
+    expect(q('[data-panel="confirm-contact"][data-state="enter-phone"]')).toBeTruthy()
+    const input = q('#phone') as HTMLInputElement
+    expect(input.value).toBe('+1 555 000 4471') // kept, editable
+    await user.clear(input)
+    await user.type(input, '+15550009999')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-panel="confirm-contact"][data-state="enter-code"]')).toBeTruthy())
+    expect(startPhoneVerification).toHaveBeenLastCalledWith('+15550009999')
   })
 
   it('skip is available on the first step', () => {

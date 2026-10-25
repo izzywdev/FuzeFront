@@ -409,7 +409,7 @@ describe('SmsEnrollFlow', () => {
     await user.type(q('[data-field="phone"]')!, '+44 7700 900471')
     await user.click(q('[data-action="send-code"]')!)
     await waitFor(() => expect(q('[data-component="sms-enroll"][data-state="confirm-code"]')).toBeTruthy())
-    expect(client.enrollFactor).toHaveBeenCalledWith({ type: 'sms', phone: '+44 7700 900471' })
+    expect(client.enrollFactor).toHaveBeenCalledWith({ type: 'sms', phone: '+447700900471' })
     expect(screen.getByText(/0471/)).toBeInTheDocument()
     await user.click(document.querySelector('[data-component="otp-input"] input')!)
     await user.keyboard('319028')
@@ -540,6 +540,45 @@ describe('SmsEnrollFlow', () => {
     await waitFor(() => expect(q('[data-component="sms-enroll"][data-state="confirm-code"]')).toBeTruthy())
     unmount()
     await waitFor(() => expect(client.removeFactor).toHaveBeenCalledWith('fct_sms_pending'))
+  })
+
+  it('formatted input is normalised to E.164; a non-E.164 number keeps Send disabled with a format hint', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({
+      getMethods: vi.fn(async () => methods(['sms'])),
+      enrollFactor: vi.fn(async () => ({ factorId: 'f', type: 'sms', status: 'pending', codeSent: true })),
+    })
+    render(<SmsEnrollFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '5550004471')
+    expect(q('[data-action="send-code"]')).toBeDisabled()
+    expect(q('[data-hint="phone-format"]')).toBeTruthy()
+    await user.clear(q('[data-field="phone"]')!)
+    await user.type(q('[data-field="phone"]')!, '+1 (555) 000-4471')
+    expect(q('[data-action="send-code"]')).not.toBeDisabled()
+    expect(q('[data-hint="phone-format"]')).toBeNull()
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(client.enrollFactor).toHaveBeenCalledWith({ type: 'sms', phone: '+15550004471' }))
+  })
+
+  it('after a send failure the number stays editable and can be corrected and re-sent', async () => {
+    const user = userEvent.setup()
+    const enrollFactor = vi
+      .fn()
+      .mockRejectedValueOnce(err(400))
+      .mockResolvedValueOnce({ factorId: 'f', type: 'sms', status: 'pending', codeSent: true })
+    const client = makeClient({ getMethods: vi.fn(async () => methods(['sms'])), enrollFactor })
+    render(<SmsEnrollFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '+447700900471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(q('[data-state="error-send"]')).toBeTruthy())
+    const input = q('[data-field="phone"]') as HTMLInputElement
+    expect(input.disabled).toBe(false)
+    await user.clear(input)
+    await user.type(input, '+447700900999')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(enrollFactor).toHaveBeenLastCalledWith({ type: 'sms', phone: '+447700900999' }))
   })
 
   it('a send failure stays on the phone step with an error', async () => {

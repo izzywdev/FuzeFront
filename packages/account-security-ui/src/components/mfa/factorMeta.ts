@@ -26,6 +26,21 @@ export function maskPhone(phone: string): string {
   return digits.length >= 4 ? `•••• •• ${digits.slice(-4)}` : '••••'
 }
 
+/**
+ * Normalise a typed phone number to the wire format the SMS service accepts:
+ * strip spaces, dashes, dots and parentheses, keep a single leading `+`.
+ */
+export function normalizePhone(raw: string): string {
+  const trimmed = raw.trim()
+  const plus = trimmed.startsWith('+') ? '+' : ''
+  return plus + trimmed.replace(/[\s\-.()]/g, '').replace(/^\+/, '')
+}
+
+/** E.164, exactly the SMS service's rule (`/^\+[1-9]\d{6,14}$/`). Send is enabled only for these. */
+export function isSendablePhone(raw: string): boolean {
+  return /^\+[1-9]\d{6,14}$/.test(normalizePhone(raw))
+}
+
 /** Only fully activated factors are "your methods"; pending enrolments are not. */
 export function activeFactors(items: MfaFactor[]): MfaFactor[] {
   return items.filter((f) => f.status === 'active')

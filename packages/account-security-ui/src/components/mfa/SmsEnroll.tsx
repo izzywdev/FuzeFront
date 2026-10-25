@@ -15,7 +15,7 @@ import {
   useInFlight,
   useSecurityClient,
 } from '../common/flowKit'
-import { maskPhone } from './factorMeta'
+import { isSendablePhone, maskPhone, normalizePhone } from './factorMeta'
 import { useMfaNav } from './MfaOverview'
 import { usePendingFactor } from './pendingFactor'
 import type { EnrollFlowProps } from './TotpEnroll'
@@ -95,6 +95,9 @@ export function SmsEnrollPanel(p: SmsEnrollPanelProps) {
           data-field="phone"
         />
         <Hint style={{ marginBlockStart: 'var(--space-2)' }}>{m.mfa.sms.phoneHint}</Hint>
+        {p.phone.trim() !== '' && !isSendablePhone(p.phone) && (
+          <Hint data-hint="phone-format" style={{ color: 'var(--error-color)' }}>{m.mfa.sms.phoneFormat}</Hint>
+        )}
         {p.sendFailed && (
           <InlineError data-state="error-send">
             {m.mfa.sms.sendFailedTitle}. {m.mfa.sms.sendFailedText}
@@ -105,7 +108,7 @@ export function SmsEnrollPanel(p: SmsEnrollPanelProps) {
             variant="primary"
             data-action="send-code"
             onClick={p.onSendCode}
-            disabled={p.sending || p.phone.replace(/\D/g, '').length < 6}
+            disabled={p.sending || !isSendablePhone(p.phone)}
             aria-busy={p.sending || undefined}
             leadingIcon={p.sending ? <Spinner size={16} label={m.mfa.sms.sending} /> : undefined}
           >
@@ -225,7 +228,7 @@ function SmsEnrollInner(props: EnrollFlowProps) {
     setPhase({ name: 'enter-phone', sending: true, failed: false })
     try {
       pending.discard() // a resend replaces the previous pending factor
-      const res = await api.enrollFactor({ type: 'sms', phone })
+      const res = await api.enrollFactor({ type: 'sms', phone: normalizePhone(phone) })
       pending.track(res.factorId)
       setPhase({ name: 'confirm-code', factorId: res.factorId, activating: false, invalid: false })
     } catch {

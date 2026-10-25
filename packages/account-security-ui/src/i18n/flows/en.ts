@@ -192,6 +192,7 @@ export const flowsEn = {
       phoneLabel: 'Phone number',
       phonePlaceholder: '+44 …',
       phoneHint: 'Standard message rates may apply. We only use it for sign-in codes.',
+      phoneFormat: 'Enter the number in international format, starting with + and the country code (for example +15551234567).',
       phoneDisabledHint: 'Disabled until text delivery is available.',
       sendCode: 'Send code',
       sending: 'Sending…',
@@ -308,6 +309,8 @@ export const flowsEn = {
     resend: 'Resend code',
     invalid: 'Wrong or expired code.',
     serviceError: "We couldn't confirm your code right now. It wasn't rejected — try again in a moment.",
+    phoneFormat: 'Enter the number in international format, starting with + and the country code (for example +15551234567).',
+    changeNumber: 'Change number',
     sendFailedText:
       "We couldn't send a code to that number. Check it and try again, or skip for now — you can finish this from your security settings later.",
     verifiedText: 'Phone verified. {phone} can now receive text-message codes.',
