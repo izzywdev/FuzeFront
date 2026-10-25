@@ -367,7 +367,7 @@ describe('contract discovery', () => {
         ].schema
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.ExecutionOutcomeTrend.required).toEqual(
-        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount']
+        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount', 'evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount']
       )
       expect(schemas.ExecutionOutcomeTrend.properties.passRate).toMatchObject({
         type: 'number', format: 'double', minimum: 0, maximum: 1,
@@ -378,6 +378,9 @@ describe('contract discovery', () => {
       expect(schemas.ExecutionOutcomeTrend.properties.maximumDurationMs).toMatchObject({
         type: 'integer', minimum: 0,
       })
+      for (const property of ['evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount']) {
+        expect(schemas.ExecutionOutcomeTrend.properties[property]).toMatchObject({ type: 'integer', minimum: 0 })
+      }
       expect(schemas.ExecutionOutcomeTrend.properties.successfulRetryCount).toMatchObject({
         type: 'integer', minimum: 0,
       })

@@ -316,6 +316,14 @@ export type ExecutionOutcomeTrend = {
   successfulRetryCount: number
   /** Passed retry attempts with an explicitly retained failed earlier attempt for the same provider run. */
   recoveredRunCount: number
+  /** Provider evidence collections that completed without a retained collection error. */
+  evidenceCompleteCount?: number
+  /** Provider evidence collections that completed with bounded or incomplete results. */
+  evidencePartialCount?: number
+  /** Provider evidence collections that failed before usable results were retained. */
+  evidenceUnavailableCount?: number
+  /** Executions with no retained provider evidence collection attempt. */
+  evidenceNotCollectedCount?: number
 }
 
 /** Produces an evidence-only daily outcome series; missing days are not invented. */
@@ -347,10 +355,21 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       retryAttemptCount: 0,
       successfulRetryCount: 0,
       recoveredRunCount: 0,
+      evidenceCompleteCount: 0,
+      evidencePartialCount: 0,
+      evidenceUnavailableCount: 0,
+      evidenceNotCollectedCount: 0,
       totalDurationMs: 0,
     }
     current.total++
     current[execution.status]++
+    if (execution.evidenceCollection) {
+      if (execution.evidenceCollection.status === 'complete') current.evidenceCompleteCount = (current.evidenceCompleteCount ?? 0) + 1
+      if (execution.evidenceCollection.status === 'partial') current.evidencePartialCount = (current.evidencePartialCount ?? 0) + 1
+      if (execution.evidenceCollection.status === 'unavailable') current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + 1
+    } else {
+      current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + 1
+    }
     if (execution.attempt > 1) {
       current.retryAttemptCount++
       if (execution.status === 'passed') {

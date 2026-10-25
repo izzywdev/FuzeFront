@@ -1178,7 +1178,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       page: { nextCursor: 'older-executions', hasMore: true },
     })
     vi.mocked(api.executionTrend).mockResolvedValue([
-      { date: '2026-10-01', total: 10, passed: 7, failed: 2, cancelled: 1, running: 0, passRate: 0.7, durationSampleCount: 9, averageDurationMs: 95_000, maximumDurationMs: 180_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
+      { date: '2026-10-01', total: 10, passed: 7, failed: 2, cancelled: 1, running: 0, passRate: 0.7, durationSampleCount: 9, averageDurationMs: 95_000, maximumDurationMs: 180_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1, evidenceCompleteCount: 6, evidencePartialCount: 1, evidenceUnavailableCount: 2, evidenceNotCollectedCount: 1 },
     ])
 
     render(<RepositoryIntelligence data={portfolio} />)
@@ -1193,6 +1193,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(trend).toHaveTextContent('1m 35s average · 3m 0s slowest · 9 timed')
     expect(trend).toHaveTextContent('3 retries · 2 passed retries')
     expect(trend).toHaveTextContent('1 recovered after failure')
+    expect(trend).toHaveTextContent('Provider evidence: 6 complete · 1 partial · 2 unavailable · 1 not collected')
     expect(api.executionTrend).toHaveBeenCalledWith(repository.id, {})
   })
 

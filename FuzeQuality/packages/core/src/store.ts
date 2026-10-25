@@ -1842,7 +1842,11 @@ export class PostgresCatalogStore implements CatalogStore {
                     AND previous.attempt<executions.attempt
                     AND previous.status='failed'
                 )
-              )::integer AS recovered_run_count
+              )::integer AS recovered_run_count,
+              count(*) FILTER (WHERE evidence_collection->>'status'='complete')::integer AS evidence_complete_count,
+              count(*) FILTER (WHERE evidence_collection->>'status'='partial')::integer AS evidence_partial_count,
+              count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_unavailable_count,
+              count(*) FILTER (WHERE evidence_collection IS NULL)::integer AS evidence_not_collected_count
        FROM snapshot_executions executions
        WHERE COALESCE(executions.completed_at,executions.started_at) IS NOT NULL
          AND ($3::text IS NULL OR executions.kind=$3)
@@ -1998,6 +2002,10 @@ export class PostgresCatalogStore implements CatalogStore {
       retryAttemptCount: row.retry_attempt_count,
       successfulRetryCount: row.successful_retry_count,
       recoveredRunCount: row.recovered_run_count,
+      evidenceCompleteCount: row.evidence_complete_count,
+      evidencePartialCount: row.evidence_partial_count,
+      evidenceUnavailableCount: row.evidence_unavailable_count,
+      evidenceNotCollectedCount: row.evidence_not_collected_count,
     }))
   }
 

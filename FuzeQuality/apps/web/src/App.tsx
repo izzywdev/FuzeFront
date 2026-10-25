@@ -208,6 +208,10 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       retryAttemptCount: 0,
       successfulRetryCount: 0,
       recoveredRunCount: 0,
+      evidenceCompleteCount: 0,
+      evidencePartialCount: 0,
+      evidenceUnavailableCount: 0,
+      evidenceNotCollectedCount: 0,
     }
     const itemDurationSampleCount = item.durationSampleCount ?? 0
     const itemAverageDurationMs = item.averageDurationMs ?? 0
@@ -229,6 +233,10 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.retryAttemptCount += item.retryAttemptCount ?? 0
     current.successfulRetryCount += item.successfulRetryCount ?? 0
     current.recoveredRunCount += item.recoveredRunCount ?? 0
+    current.evidenceCompleteCount = (current.evidenceCompleteCount ?? 0) + (item.evidenceCompleteCount ?? 0)
+    current.evidencePartialCount = (current.evidencePartialCount ?? 0) + (item.evidencePartialCount ?? 0)
+    current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + (item.evidenceUnavailableCount ?? 0)
+    current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + (item.evidenceNotCollectedCount ?? 0)
     merged.set(item.date, current)
   }
   return [...merged.values()].sort((left, right) => left.date.localeCompare(right.date))
@@ -6624,6 +6632,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 </span>
                 <span>
                   {day.retryAttemptCount} retries · {day.successfulRetryCount} passed retries · {day.recoveredRunCount} recovered after failure
+                </span>
+                <span>
+                  Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected
                 </span>
               </div>
             ))}
