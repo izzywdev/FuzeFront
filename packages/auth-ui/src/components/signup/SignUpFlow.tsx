@@ -362,7 +362,13 @@ export function SignUpFlow({
             {captcha && (
               <TurnstileField
                 siteKey={captcha.siteKey}
-                onToken={setToken}
+                onToken={(t) => {
+                  setToken(t)
+                  // A fresh valid token means the challenge was solved again —
+                  // clear a stale captcha error so the widget leaves its "failed"
+                  // state instead of staying red after a prior 400 CAPTCHA_FAILED.
+                  if (t) setError((e) => (e?.kind === 'captcha' ? null : e))
+                }}
                 resetSignal={resetSignal}
                 failed={error?.kind === 'captcha'}
                 language={captchaLanguage}
