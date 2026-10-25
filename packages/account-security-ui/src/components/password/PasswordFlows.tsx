@@ -39,6 +39,7 @@ type Phase =
   | { name: 'form' }
   | { name: 'submitting' }
   | { name: 'error'; retry: () => void }
+  | { name: 'indeterminate' }
   | { name: 'exists' }
   | { name: 'no-password' }
   | { name: 'success' }
@@ -169,6 +170,10 @@ function ChangePasswordInner({
         } else if (isPolicyRejection(err)) {
           setErrors({ policy: true })
           setPhase({ name: 'form' })
+        } else if (status === undefined || status >= 500) {
+          // Transport failure / 5xx: the server may have committed the change before the
+          // response was lost. Do NOT claim "unchanged" and do NOT offer a blind replay.
+          setPhase({ name: 'indeterminate' })
         } else {
           setPhase({ name: 'error', retry: () => void submit(current, next) })
         }
@@ -192,6 +197,21 @@ function ChangePasswordInner({
         />
       ) : phase.name === 'no-password' ? (
         <NoPasswordYet onSet={() => nav(ROUTES.password + '?mode=set')} />
+      ) : phase.name === 'indeterminate' ? (
+        <div data-state="indeterminate" role="alert">
+          <StatusCallout
+            tone="warning"
+            icon="!"
+            title={m.password.errors.indeterminateTitle}
+            actions={
+              <Button variant="ghost" data-action="back" onClick={() => (onCancel ? onCancel() : nav(ROUTES.security))}>
+                {m.password.success.back}
+              </Button>
+            }
+          >
+            {m.password.errors.indeterminateText}
+          </StatusCallout>
+        </div>
       ) : phase.name === 'error' ? (
         <ErrorWithRetry
           data-state="error"

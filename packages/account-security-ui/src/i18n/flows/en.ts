@@ -58,6 +58,8 @@ export const flowsEn = {
       policy: 'That password is too weak or too common. Use at least 12 characters with upper and lower case, a number and a symbol.',
       genericTitle: "We couldn't update your password",
       genericText: 'Something went wrong on our side. Your password is unchanged — try again.',
+      indeterminateTitle: "We couldn't confirm the change",
+      indeterminateText: "We couldn't confirm the change. Try signing in with your new password; if that fails, your old password still works.",
       retry: 'Try again',
     },
     exists: {

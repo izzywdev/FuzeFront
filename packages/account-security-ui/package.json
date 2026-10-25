@@ -30,8 +30,8 @@
     "qrcode-generator": "^1.4.4"
   },
   "peerDependencies": {
-    "@fuzefront/design-system": "^1.5.0",
-    "@fuzefront/security-client": "^0.12.0 || ^1.0.0",
+    "@fuzefront/design-system": "^1.6.0",
+    "@fuzefront/security-client": "^1.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

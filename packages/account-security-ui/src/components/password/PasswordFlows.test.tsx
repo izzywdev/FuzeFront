@@ -96,9 +96,27 @@ describe('ChangePasswordFlow', () => {
     expect(client.changePassword).not.toHaveBeenCalled()
   })
 
-  it('generic failure → retryable error, then success', async () => {
+  it.each([['5xx', () => err(500)], ['transport', () => new TypeError('Failed to fetch')]])(
+    '%s on change → indeterminate: no "unchanged" claim, no retry, no auto-replay',
+    async (_n, make) => {
+      const user = userEvent.setup()
+      const changePassword = vi.fn().mockRejectedValue(make())
+      render(<ChangePasswordFlow client={asClient(makeClient({ changePassword }))} />)
+      await fillChange(user)
+      await user.click(screen.getByRole('button', { name: /save new password/i }))
+      await waitFor(() => expect(document.querySelector('[data-state="indeterminate"]')).toBeTruthy())
+      const text = document.body.textContent ?? ''
+      expect(text).toMatch(/couldn't confirm the change/i)
+      expect(text).toMatch(/old password still works/i)
+      expect(text).not.toMatch(/unchanged/i)
+      expect(screen.queryByRole('button', { name: /try again/i })).toBeNull()
+      expect(changePassword).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('other unmapped failure (429) → retryable error, then success', async () => {
     const user = userEvent.setup()
-    const changePassword = vi.fn().mockRejectedValueOnce(err(500)).mockResolvedValueOnce(undefined)
+    const changePassword = vi.fn().mockRejectedValueOnce(err(429)).mockResolvedValueOnce(undefined)
     render(<ChangePasswordFlow client={asClient(makeClient({ changePassword }))} />)
     await fillChange(user)
     await user.click(screen.getByRole('button', { name: /save new password/i }))

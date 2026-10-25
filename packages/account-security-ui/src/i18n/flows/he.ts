@@ -33,6 +33,8 @@ export const flowsHe: DeepPartial<FlowMessages> = {
       mismatch: 'הסיסמאות אינן תואמות.',
       wrongCurrent: 'זו אינה הסיסמה הנוכחית שלך. בדוק/י אותה או אפס/י את הסיסמה.',
       genericTitle: 'לא הצלחנו לעדכן את הסיסמה',
+      indeterminateTitle: 'לא הצלחנו לאשר את השינוי',
+      indeterminateText: 'לא הצלחנו לאשר את השינוי. נסה/י להתחבר עם הסיסמה החדשה; אם זה נכשל, הסיסמה הישנה שלך עדיין תקפה.',
       retry: 'נסה/י שוב',
     },
     exists: {
