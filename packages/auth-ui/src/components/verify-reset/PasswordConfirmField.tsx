@@ -39,6 +39,7 @@ export function PasswordConfirmField({
       value={value}
       onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
       data-match={typed ? String(matches) : undefined}
+      {...(typed && !matches ? { 'data-state': 'confirm-mismatch' } : {})}
       state={!typed ? 'idle' : matches ? 'valid' : 'invalid'}
       help={matches ? labels.matches : undefined}
       error={typed && !matches ? labels.mismatch : ''}

@@ -499,6 +499,44 @@ describe('InlineAvailabilityField — debounced, fail-open', () => {
   })
 })
 
+describe('06-states.html data-state hooks (frontend-test-engineer drives Playwright against these)', () => {
+  it('email availability: email-idle -> email-checking -> email-available / email-taken / email-check-error', async () => {
+    const results: Array<() => Promise<{ available: boolean }>> = [
+      () => Promise.resolve({ available: true }),
+      () => Promise.resolve({ available: false }),
+      () => Promise.reject(httpErr(500)),
+    ]
+    let i = 0
+    const transport = makeTransport({ checkEmailAvailable: vi.fn(() => results[i++]()) })
+    setup({}, transport)
+    const wrap = () => document.querySelector('[data-avail-state]')!
+    expect(wrap()).toHaveAttribute('data-state', 'email-idle')
+    for (const expected of ['email-available', 'email-taken', 'email-check-error']) {
+      fill('Work email', `user${i}@lovelace.io`)
+      await waitFor(() => expect(wrap()).toHaveAttribute('data-state', expected))
+    }
+  })
+
+  it('pw-weak / pw-strong on the meter, confirm-mismatch on the confirm field', () => {
+    setup()
+    fill('Password', 'abc')
+    expect(document.querySelector('[data-state="pw-weak"]')).toHaveAttribute('data-pwmeter')
+    fill('Password', STRONG)
+    expect(document.querySelector('[data-state="pw-strong"]')).toHaveAttribute('data-pwmeter')
+    fill('Confirm password', 'different')
+    expect(document.querySelector('[data-state="confirm-mismatch"]')).toBe(screen.getByLabelText('Confirm password'))
+    fill('Confirm password', STRONG)
+    expect(document.querySelector('[data-state="confirm-mismatch"]')).toBeNull()
+  })
+
+  it('the signup-initial root state flips to editing once the user types', () => {
+    const { $ } = setup()
+    expect($('[data-frame="01-signup"]')).toHaveAttribute('data-state', 'signup-initial')
+    fill('Work email', 'a@b.co')
+    expect($('[data-frame="01-signup"]')).toHaveAttribute('data-state', 'editing')
+  })
+})
+
 describe('field components', () => {
   it('FullNameField is controlled and exposes the test hook', () => {
     const onChange = vi.fn()

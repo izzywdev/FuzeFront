@@ -4,6 +4,7 @@ import { isEmployeeUser } from '../utils/employee'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { iconGlyph, iconImageUrl, integrationTypeOf, appHref } from '../platform/appManifest'
 import type { App as RegistryApp } from '@fuzefront/app-registry-client'
+import { UnverifiedGate } from '../components/UnverifiedGate'
 
 /**
  * An app is visible on the dashboard when it is platform-global
@@ -105,6 +106,8 @@ function DashboardPage() {
 
   return (
     <div className="dashboard">
+      {/* fuzefront.auth.experience: verify-to-continue gate (renders nothing when the flag is off). */}
+      <UnverifiedGate email={user?.email} />
       <div className="dashboard-header">
         <h1>
           Welcome to FuzeFront{user?.firstName ? `, ${user.firstName}` : ''}!

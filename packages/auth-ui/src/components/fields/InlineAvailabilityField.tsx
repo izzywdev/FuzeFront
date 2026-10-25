@@ -41,7 +41,8 @@ const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
  * authoritative duplicate check is the 409 from `POST /signup`).
  *
  * Hooks: the status chip carries `data-avail="checking|available|taken|error"`; the
- * wrapper carries `data-avail-state` (also while `idle`).
+ * wrapper carries `data-avail-state` (also while `idle`) and the frame's
+ * `data-state="email-idle|email-checking|email-available|email-taken|email-check-error"`.
  */
 export function InlineAvailabilityField({
   value,
@@ -142,7 +143,11 @@ export function InlineAvailabilityField({
     )
 
   return (
-    <div className="fzf-su-field" data-avail-state={state}>
+    <div
+      className="fzf-su-field"
+      data-avail-state={state}
+      data-state={state === 'error' ? 'email-check-error' : `email-${state}`}
+    >
       <InlineValidatedInput
         id={id}
         name={name}
