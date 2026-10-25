@@ -85,6 +85,7 @@ import {
   type NotificationClient,
 } from './notifications'
 import * as totp from './totp'
+import { ChallengeNotActiveError, RecoveryCodeInvalidError } from '../errors'
 import {
   idpProxyPrefix,
   jwtSecret,
@@ -106,22 +107,31 @@ export class MfaRequiredError extends Error {
 }
 
 /**
- * A submitted recovery code was wrong, already used, or from a replaced set.
- * The causes are deliberately indistinguishable (contract 1.3.0). Maps to
- * 401 RECOVERY_CODE_INVALID. Intentionally NOT an UnauthorizedError subclass so
- * it can never be flattened into NOT_ACTIVE.
+ * Canonical form of a user-typed recovery code: trim, drop spaces/hyphens,
+ * case-fold. Codes are stored as sha256 of this canonical form.
  */
-export class RecoveryCodeInvalidError extends Error {
-  constructor() {
-    super('invalid recovery code')
-    this.name = 'RecoveryCodeInvalidError'
+/** Scheme 2: >= 80 bits (10 random bytes). Scheme 1 (legacy, 40 bit) is never redeemable. */
+export const RECOVERY_SCHEME_CURRENT = 2
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+
+/** 10 random bytes (80 bits) as 16 Crockford-base32 chars, grouped XXXX-XXXX-XXXX-XXXX. */
+export function generateRecoveryCode(): string {
+  const bytes = crypto.randomBytes(10)
+  let bits = 0
+  let acc = 0
+  let out = ''
+  for (const b of bytes) {
+    acc = (acc << 8) | b
+    bits += 8
+    while (bits >= 5) {
+      out += CROCKFORD[(acc >>> (bits - 5)) & 31]
+      bits -= 5
+    }
+    acc &= (1 << bits) - 1
   }
+  return out.match(/.{4}/g)!.join('-')
 }
 
-/**
- * Canonical form of a user-typed recovery code: trim, drop spaces/hyphens,
- * case-fold. Stored codes are lowercase hex, hashed with sha256.
- */
 export function normalizeRecoveryCode(raw: string): string {
   return String(raw ?? '').replace(/[\s-]+/g, '').toLowerCase()
 }
@@ -149,15 +159,6 @@ export class UnauthorizedError extends Error {
     this.name = 'UnauthorizedError'
   }
 }
-
-/** Unknown/expired/completed/in-flight challenge. 401 NOT_ACTIVE; not counted per-challenge. */
-export class ChallengeNotActiveError extends UnauthorizedError {
-  constructor() {
-    super('invalid or expired challenge')
-    this.name = 'ChallengeNotActiveError'
-  }
-}
-
 
 // TokenError lives in the provider-neutral layer; re-exported for existing importers.
 export { TokenError }
@@ -498,7 +499,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   private async hasUnusedRecoveryCode(userId: string): Promise<boolean> {
     try {
       const rows = await this.db('mfa_recovery_codes')
-        .where({ user_id: userId, used: false })
+        .where({ user_id: userId, used: false, scheme_version: RECOVERY_SCHEME_CURRENT })
         .select('id')
       return rows.length > 0
     } catch (err) {
@@ -1089,21 +1090,29 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
   async regenerateRecoveryCodes(token: string): Promise<string[]> {
     const { user } = await this.getUserInfo(token)
-    await this.db('mfa_recovery_codes').where({ user_id: user.id }).del()
-    const codes: string[] = []
-    for (let i = 0; i < 10; i++) {
-      codes.push(crypto.randomBytes(5).toString('hex'))
-    }
-    await this.db('mfa_recovery_codes').insert(
-      codes.map(c => ({ id: uuidv4(), user_id: user.id, code_hash: sha256(c), used: false }))
-    )
+    const codes = Array.from({ length: 10 }, () => generateRecoveryCode())
+    // One transaction under a per-user row lock: two overlapping regenerations
+    // serialize, so exactly one 10-code set survives (never 20 live codes).
+    await this.db.transaction(async (trx: any) => {
+      await trx('users').where({ id: user.id }).forUpdate().first()
+      await trx('mfa_recovery_codes').where({ user_id: user.id }).del()
+      await trx('mfa_recovery_codes').insert(
+        codes.map(c => ({
+          id: uuidv4(),
+          user_id: user.id,
+          code_hash: sha256(normalizeRecoveryCode(c)),
+          used: false,
+          scheme_version: RECOVERY_SCHEME_CURRENT,
+        }))
+      )
+    })
     return codes
   }
 
   async getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }> {
     const { user } = await this.getUserInfo(token)
     const rows: Array<{ used: boolean }> = await this.db('mfa_recovery_codes')
-      .where({ user_id: user.id })
+      .where({ user_id: user.id, scheme_version: RECOVERY_SCHEME_CURRENT })
       .select('used')
     return { remaining: rows.filter(r => !r.used).length, total: rows.length }
   }
@@ -1208,7 +1217,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       const session = await this.db.transaction(async (trx: any) => {
         this.assertStillClaimed(challengeId, ch)
         const burned = await trx('mfa_recovery_codes')
-          .where({ user_id: ch.userId, code_hash: codeHash, used: false })
+          .where({ user_id: ch.userId, code_hash: codeHash, used: false, scheme_version: RECOVERY_SCHEME_CURRENT })
           .update({ used: true })
         if (!burned) throw new RecoveryCodeInvalidError()
         // Reads + session insert ride the transaction connection (no second

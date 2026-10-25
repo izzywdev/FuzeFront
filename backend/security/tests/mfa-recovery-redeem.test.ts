@@ -16,11 +16,12 @@ import { setIdentityProvider } from '../src/providers/factory'
 import {
   AuthentikIdentityProvider,
   MfaRequiredError,
-  RecoveryCodeInvalidError,
-  ChallengeNotActiveError,
   UnauthorizedError,
   normalizeRecoveryCode,
+  generateRecoveryCode,
 } from '../src/providers/authentik/AuthentikIdentityProvider'
+import { RecoveryCodeInvalidError, ChallengeNotActiveError } from '../src/providers/errors'
+import { MockIdentityProvider } from './security-api/mockIdentityProvider'
 import type { IdentityProvider, BrokeredSession } from '../src/providers/IdentityProvider'
 
 const SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret'
@@ -50,6 +51,9 @@ function makeFakeDb() {
       where(cond: any, val?: any) {
         const prev = filter
         filter = (r: any) => prev(r) && matches(r, cond, val)
+        return api
+      },
+      forUpdate() {
         return api
       },
       async first() {
@@ -114,7 +118,7 @@ function setup(codes: string[] = CODES) {
   })
   db.__tables.mfa_factors.push({ id: 'f1', user_id: 'u1', type: 'totp', status: 'active' })
   codes.forEach((c, i) =>
-    db.__tables.mfa_recovery_codes.push({ id: `r${i}`, user_id: 'u1', code_hash: sha(c), used: false })
+    db.__tables.mfa_recovery_codes.push({ id: `r${i}`, user_id: 'u1', code_hash: sha(c), used: false, scheme_version: 2 })
   )
   const provider = new AuthentikIdentityProvider({
     db,
@@ -192,26 +196,26 @@ describe('provider: verifyMfaRecovery', () => {
     const { provider } = setup()
     const ch = await openChallenge(provider)
     await provider.verifyMfaRecovery(ch.challengeId, CODES[0])
-    await expect(provider.verifyMfaRecovery(ch.challengeId, CODES[1])).rejects.toBeInstanceOf(UnauthorizedError)
+    await expect(provider.verifyMfaRecovery(ch.challengeId, CODES[1])).rejects.toBeInstanceOf(ChallengeNotActiveError)
   })
 
-  it('unknown challenge -> UnauthorizedError (NOT_ACTIVE), not RECOVERY_CODE_INVALID', async () => {
+  it('unknown challenge -> ChallengeNotActiveError (NOT_ACTIVE), not RECOVERY_CODE_INVALID', async () => {
     const { provider } = setup()
-    await expect(provider.verifyMfaRecovery('nope', CODES[0])).rejects.toBeInstanceOf(UnauthorizedError)
+    await expect(provider.verifyMfaRecovery('nope', CODES[0])).rejects.toBeInstanceOf(ChallengeNotActiveError)
   })
 
-  it('expired challenge -> UnauthorizedError and consumes nothing', async () => {
+  it('expired challenge -> ChallengeNotActiveError and consumes nothing', async () => {
     const db = makeFakeDb()
     let t = 1_000_000
     db.__tables.users.push({ id: 'u1', email: 'u@e.com', first_name: 'U', last_name: 'E', roles: '["user"]' })
     db.__tables.mfa_factors.push({ id: 'f1', user_id: 'u1', type: 'totp', status: 'active' })
-    db.__tables.mfa_recovery_codes.push({ id: 'r0', user_id: 'u1', code_hash: sha(CODES[0]), used: false })
+    db.__tables.mfa_recovery_codes.push({ id: 'r0', user_id: 'u1', code_hash: sha(CODES[0]), used: false, scheme_version: 2 })
     const provider = new AuthentikIdentityProvider({
       db, passwordLoginFn: jest.fn().mockResolvedValue({ id: 'u1', email: 'u@e.com', roles: [] }), now: () => t,
     } as any)
     const ch = await openChallenge(provider)
     t += 60 * 60_000
-    await expect(provider.verifyMfaRecovery(ch.challengeId, CODES[0])).rejects.toBeInstanceOf(UnauthorizedError)
+    await expect(provider.verifyMfaRecovery(ch.challengeId, CODES[0])).rejects.toBeInstanceOf(ChallengeNotActiveError)
     expect(db.__tables.mfa_recovery_codes[0].used).toBe(false)
   })
 
@@ -402,7 +406,7 @@ describe('route: POST /mfa/verify', () => {
   })
 
   it('401 NOT_ACTIVE for an unknown/expired/completed challenge', async () => {
-    const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new UnauthorizedError('x')) })
+    const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new ChallengeNotActiveError()) })
     const res = await post(makeApp(p), { challengeId: 'gone', recoveryCode: 'abc' })
     expect(res.status).toBe(401)
     expect(res.body.code).toBe('NOT_ACTIVE')
@@ -541,5 +545,122 @@ describe('route: login response + GET /mfa/recovery-codes', () => {
     const res = await request(makeApp(p)).get('/api/v1/security/mfa/recovery-codes')
     expect(res.status).toBe(401)
     expect(p.getRecoveryCodesStatus).not.toHaveBeenCalled()
+  })
+})
+
+describe('code scheme: v2 only, >= 80 bits', () => {
+  it('generated codes are 80 bits of Crockford base32, hyphen-grouped, and round-trip normalization', () => {
+    const seen = new Set<string>()
+    for (let i = 0; i < 200; i++) {
+      const c = generateRecoveryCode()
+      expect(c).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/)
+      const n = normalizeRecoveryCode(c)
+      expect(n).toHaveLength(16) // 16 chars x 5 bits = 80 bits
+      expect(normalizeRecoveryCode(c.toLowerCase().replace(/-/g, ' '))).toBe(n)
+      expect(normalizeRecoveryCode(`  ${c}  `)).toBe(n)
+      seen.add(c)
+    }
+    expect(seen.size).toBe(200)
+  })
+
+  it('regenerated codes are scheme 2 and redeemable as typed (lower case, spaces)', async () => {
+    const { db, provider, token } = setup([])
+    const codes = await provider.regenerateRecoveryCodes(token)
+    expect(db.__tables.mfa_recovery_codes.every((r: any) => r.scheme_version === 2)).toBe(true)
+    const ch = await openChallenge(provider)
+    await expect(provider.verifyMfaRecovery(ch.challengeId, codes[0].toLowerCase().replace(/-/g, ' '))).resolves.toBeTruthy()
+  })
+
+  it('legacy v1 codes are rejected with RECOVERY_CODE_INVALID, stay unused, and are not "available"', async () => {
+    const { db, provider, token } = setup([])
+    db.__tables.mfa_recovery_codes.push({ id: 'old', user_id: 'u1', code_hash: sha(CODES[0]), used: false, scheme_version: 1 })
+    const ch = await openChallenge(provider)
+    expect(ch.recoveryAvailable).toBe(false)
+    await expect(provider.verifyMfaRecovery(ch.challengeId, CODES[0])).rejects.toBeInstanceOf(RecoveryCodeInvalidError)
+    expect(db.__tables.mfa_recovery_codes[0].used).toBe(false)
+    expect(await provider.getRecoveryCodesStatus(token)).toEqual({ remaining: 0, total: 0 })
+  })
+
+  it('regeneration replaces legacy rows entirely', async () => {
+    const { db, provider, token } = setup([])
+    db.__tables.mfa_recovery_codes.push({ id: 'old', user_id: 'u1', code_hash: sha(CODES[0]), used: false, scheme_version: 1 })
+    await provider.regenerateRecoveryCodes(token)
+    expect(db.__tables.mfa_recovery_codes).toHaveLength(10)
+    expect(db.__tables.mfa_recovery_codes.some((r: any) => r.id === 'old')).toBe(false)
+  })
+
+  it('two concurrent regenerations leave exactly 10 codes, all from one set', async () => {
+    const { db, provider, token } = setup([])
+    const [a, b] = await Promise.all([provider.regenerateRecoveryCodes(token), provider.regenerateRecoveryCodes(token)])
+    const hashes = db.__tables.mfa_recovery_codes.map((r: any) => r.code_hash).sort()
+    expect(hashes).toHaveLength(10)
+    const setA = a.map(c => sha(normalizeRecoveryCode(c))).sort()
+    const setB = b.map(c => sha(normalizeRecoveryCode(c))).sort()
+    expect([setA, setB]).toContainEqual(hashes)
+  })
+})
+
+describe('route: Retry-After', () => {
+  const post = (app: any, body: any) => request(app).post('/api/v1/security/mfa/verify').send(body)
+  afterEach(() => jest.useRealTimers())
+
+  it('is derived from the exhausted counter, not a fixed 900', async () => {
+    const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new RecoveryCodeInvalidError()) })
+    const app = makeApp(p)
+    const t0 = Date.now()
+    const spy = jest.spyOn(Date, 'now')
+    spy.mockReturnValue(t0)
+    for (let i = 0; i < 5; i++) await post(app, { challengeId: 'ra', recoveryCode: 'bad' })
+    spy.mockReturnValue(t0 + 600_000 + 400) // 10 min + 0.4s later
+    const res = await post(app, { challengeId: 'ra', recoveryCode: 'bad' })
+    expect(res.status).toBe(429)
+    expect(res.headers['retry-after']).toBe('300') // 299.6s rounded up
+    spy.mockRestore()
+  })
+
+  it('uses the max across exhausted keys and never below 1', async () => {
+    const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new RecoveryCodeInvalidError()) })
+    const app = makeApp(p)
+    const t0 = Date.now()
+    const spy = jest.spyOn(Date, 'now')
+    spy.mockReturnValue(t0)
+    for (let i = 0; i < 4; i++) await post(app, { challengeId: 'rb', recoveryCode: 'bad' }) // ip=4, ch=4
+    spy.mockReturnValue(t0 + 100_000)
+    await post(app, { challengeId: 'rb', recoveryCode: 'bad' }) // ch exhausted (5): resets at t0+... (first fail t0)
+    // challenge key window started at t0 -> 800s left; ip likewise not exhausted
+    const res = await post(app, { challengeId: 'rb', recoveryCode: 'bad' })
+    expect(res.status).toBe(429)
+    expect(Number(res.headers['retry-after'])).toBe(800)
+    spy.mockReturnValue(t0 + 900_000 - 1) // 1ms left -> clamp to 1
+    const res2 = await post(app, { challengeId: 'rb', recoveryCode: 'bad' })
+    expect(res2.headers['retry-after']).toBe('1')
+    spy.mockRestore()
+  })
+})
+
+describe('route: provider-neutral errors (Mock provider, no Authentik import)', () => {
+  const post = (app: any, body: any) => request(app).post('/api/v1/security/mfa/verify').send(body)
+
+  it('unknown challenge -> 401 NOT_ACTIVE; live challenge + bad code -> 401 RECOVERY_CODE_INVALID', async () => {
+    const mock = new MockIdentityProvider()
+    const app = makeApp(mock as unknown as IdentityProvider)
+    const unknown = await post(app, { challengeId: 'nope', recoveryCode: 'x' })
+    expect(unknown.status).toBe(401)
+    expect(unknown.body.code).toBe('NOT_ACTIVE')
+    ;(mock as any).mfaChallenges.set('live-1', { userId: 'u', factorId: 'f' })
+    const bad = await post(app, { challengeId: 'live-1', recoveryCode: 'x' })
+    expect(bad.status).toBe(401)
+    expect(bad.body.code).toBe('RECOVERY_CODE_INVALID')
+  })
+
+  it('both errors feed the shared limiter; NOT_ACTIVE counts per-IP only', async () => {
+    const mock = new MockIdentityProvider()
+    const app = makeApp(mock as unknown as IdentityProvider)
+    ;(mock as any).mfaChallenges.set('live-2', { userId: 'u', factorId: 'f' })
+    for (let i = 0; i < 5; i++) await post(app, { challengeId: 'live-2', recoveryCode: 'x' })
+    expect((await post(app, { challengeId: 'live-2', recoveryCode: 'x' })).status).toBe(429)
+    for (let i = 0; i < 5; i++) expect((await post(app, { challengeId: 'ghost', recoveryCode: 'x' })).status).toBe(401)
+    // 'ghost' never hit a per-challenge cap of 5 (it would be 429 on the 6th if it had)
+    expect((await post(app, { challengeId: 'ghost', recoveryCode: 'x' })).status).toBe(401)
   })
 })

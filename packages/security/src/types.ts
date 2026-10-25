@@ -246,3 +246,15 @@ export interface SubjectAttributesWriteResult {
   attributes: Record<string, AttributeValue>;
   updatedAt: number;
 }
+
+/**
+ * Exclusive step-up proof for `POST /mfa/verify`. The generated
+ * `components['schemas']['MfaVerifyRequest']` is a plain union, which TypeScript
+ * lets a caller satisfy with a MIXED body (`{challengeId, factorId, code,
+ * recoveryCode}`) that the server rejects with 400 MALFORMED. Use this type for
+ * request construction so the mix is a compile error. (`generated.ts` is emitted
+ * by openapi-typescript and is never hand-edited.)
+ */
+export type MfaVerifyRequest =
+  | (components['schemas']['MfaFactorVerifyRequest'] & { recoveryCode?: never })
+  | (components['schemas']['MfaRecoveryVerifyRequest'] & { factorId?: never; code?: never });
