@@ -30,7 +30,6 @@ import {
   SEC,
   STRONG,
   WEAK,
-  POLICY,
   SIGNUP_OK,
   BENIGN,
   TURNSTILE_TEST_SITE_KEY,
@@ -1304,7 +1303,7 @@ test.describe('built UI matches the approved frame hook set', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Create your account' })).toHaveCount(1)
   })
 
-  test('06-states: every signup-relevant state the manifest names is reachable in the built app', async ({ page }) => {
+  test('06-states: every signup-relevant state the manifest names is reachable in the built app', async () => {
     // Reachability matrix — each is asserted in detail above; here we prove the SET is complete.
     const manifest = JSON.parse(
       (await import('node:fs')).readFileSync(

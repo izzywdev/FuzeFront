@@ -83,7 +83,7 @@ export type TurnstileMode = 'auto-pass' | 'manual' | 'interactive' | 'error' | '
  */
 export async function stubTurnstile(page: Page, mode: TurnstileMode = 'auto-pass') {
   await page.addInitScript(m => {
-    ;(window as any).__TS_MODE = m
+    (window as any).__TS_MODE = m
   }, mode)
   await page.route(/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js/, route =>
     route.fulfill({
@@ -165,7 +165,7 @@ export async function boot(page: Page, opts: BootOpts): Promise<Harness> {
   // `flag: null` leaves the override UNSET so the build-time default (OFF) is what runs.
   if (opts.flag !== null) {
     await page.addInitScript(on => {
-      ;(window as any).__FF_AUTH_EXPERIENCE__ = on
+      (window as any).__FF_AUTH_EXPERIENCE__ = on
     }, opts.flag)
   }
 
