@@ -248,13 +248,14 @@ Not done / tracked separately (do not read this guide as saying otherwise):
 - **Real-browser runtime validation** (Chrome DevTools MCP console-clean pass
   under TLS with the Module-Federation shell) of the new signup is not recorded
   as done.
-- **Playwright e2e** for the new signup flow is tracked, not shipped: the only
-  auth-experience spec in `frontend/tests/` is the red-first
-  `auth-experience-verify-reset.red.spec.ts` (verify/reset), and nothing there
-  drives `SignUpFlow` or Turnstile.
-- **Turnstile production keys are pending.** Until they are provisioned and
-  wired into the security pod, production serves no captcha (see the Turnstile
-  runbook, including the chart gap documented there).
+- **Playwright e2e** for the new signup flow is shipped under `frontend/tests/`
+  (`auth-experience-signup*.spec.ts`), but is **not yet wired into the CI e2e
+  workflow** and carries a few open findings (tracked separately); treat it as
+  authored, not yet gating.
+- **Turnstile production keys are pending.** The Helm chart now wires the
+  `TURNSTILE_*` env (default OFF — see the Turnstile runbook); until the owner
+  provisions the Cloudflare keys and sets `securityService.turnstile.siteKey` +
+  the sealed secret, production serves no captcha.
 - The `design/frames/auth-experience/manifest.json` feature-level `approved`
   is still `false` (per-flow approvals are recorded in `build.flows`).
 - This documentation change does not flip the flag in any environment; whether

@@ -42,37 +42,27 @@ Once configured (and the backend flag `fuzefront.auth.experience` is ON, since
   (default 5 s, `TURNSTILE_VERIFY_TIMEOUT_MS`) or answering garbage -> `503
   PROVIDER_UNAVAILABLE` with `Retry-After: 5` (fail-closed).
 
-## Current gap: the Helm chart does not pass these variables yet
+## Helm wiring (shipped)
 
-Verified on this branch: `grep -ri turnstile deploy/` matches only a comment in
-`deploy/scripts/check-sealed-key-regression.sh`. Specifically:
+The security chart wires these variables, **defaulting to captcha OFF** (empty
+`siteKey`, so the env vars don't render and the pod boots unchanged):
 
-- `deploy/helm/fuzefront/templates/security.yaml` defines no
-  `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` env entries for the security
-  pod.
-- `deploy/contabo/sealed/fuzefront-secrets.yaml` currently has no `TURNSTILE_*`
-  keys. (That script's header records that earlier `TURNSTILE_SECRET_KEY` and
-  `TURNSTILE_SITE_KEY` keys were silently dropped from that SealedSecret by a
-  from-scratch re-seal in 2026-07; see issue #500.)
+- `deploy/helm/fuzefront/values.yaml` declares a `securityService.turnstile`
+  block with explicit empty defaults (`siteKey: ""`, `secretName: ""`,
+  `secretKey: "TURNSTILE_SECRET_KEY"`, `verifyTimeoutMs: ""`).
+- `deploy/helm/fuzefront/templates/security.yaml` renders the three env vars
+  **only when `turnstile.siteKey` is non-empty**: `TURNSTILE_SITE_KEY` (plain),
+  `TURNSTILE_SECRET_KEY` (a `secretKeyRef` with `optional: true`, so a missing
+  Secret/key leaves captcha off and never wedges the pod), and
+  `TURNSTILE_VERIFY_TIMEOUT_MS` (only when `verifyTimeoutMs` is set).
+- `deploy/contabo/sealed/turnstile-secrets.yaml.template` is the SealedSecret
+  scaffold (ciphertext intentionally not committed — see Step 2).
 
-So sealing the keys alone is **not enough**: a chart change is also required, or
-production keeps serving no captcha regardless of the secret.
-That change is `devops-engineer` scope and **is not done**. It needs, at
-minimum, on the security container:
-
-```yaml
-- name: TURNSTILE_SITE_KEY      # public; values.yaml or the Secret
-- name: TURNSTILE_SECRET_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "fuzefront.secretName" . }}
-      key: TURNSTILE_SECRET_KEY
-      optional: true            # unset => captcha stays absent, pod still boots
-```
-
-`optional: true` preserves the "absent unless configured" behaviour; without it
-a missing key would wedge the pod. (Shape is a recommendation, not shipped
-code.)
+So with the chart in place, turning captcha on is a values change
+(`securityService.turnstile.siteKey` + `secretName`) plus the sealed secret —
+no further template work. `helm template` output is byte-identical to before
+while `siteKey` is empty, so merging this is a safe no-op in every environment
+until the owner configures the keys below.
 
 ## Step 1 - Owner: create the Turnstile widget
 
