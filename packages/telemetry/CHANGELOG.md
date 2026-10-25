@@ -3,6 +3,35 @@
 All notable changes to this package are documented here. Versioned
 independently — bump on every interface change (SemVer).
 
+## 0.2.0 — browser real-user monitoring (RUM)
+
+### Added
+
+- `@fuzefront/telemetry/browser` now exports `initBrowserRum()` (observability-
+  standard P31–P36): Core Web Vitals (LCP, CLS, INP, TTFB, FCP) via the new
+  `web-vitals` dependency; navigation timing and slow/failed resource timing via
+  `PerformanceObserver`; uncaught errors + unhandled rejections (via
+  `addEventListener`, so existing handlers are not clobbered); and a leveled
+  `logger` (`error`/`warn`/`info`/`debug`) for deliberate structured client logs.
+- Events are batched and shipped with `navigator.sendBeacon` (fallback
+  `fetch` + `keepalive`) to the same-origin `/api/v1/rum` (override with
+  `endpoint`), each tagged with the active `trace_id`/`span_id`, a stable
+  per-tab `session_id` (sessionStorage, in-memory fallback), the app `release`,
+  and the route (pathname only).
+- Client-side token-bucket rate limit (`maxEventsPerMinute`), batch cap, and
+  session-level `sampleRate` (errors and warn/error logs are never
+  session-sampled); secrets/PII redacted (key- and value-based; URLs lose
+  query/hash). Everything is fail-open: telemetry never throws into the app.
+- Exported helpers: `getRumSessionId`, `redactString`, `redactAttrs`,
+  `sanitizeUrl`, `sendRumPayload`; `getActiveTraceId`/`getActiveSpanId` moved
+  to `rum-trace.ts` (still exported from `/browser`, no API change).
+
+### Changed
+
+- New runtime dependency: `web-vitals` (browser entry only; the Node entry and
+  the browser bundle still pull no Node-only OTel package).
+- Consumers' range moves to `^0.2.0` (`0.x` MINOR is not covered by `^0.1.0`).
+
 ## 0.1.6 — a bare RegExp route.path no longer crashes the req.route setter
 
 ### Fixed
