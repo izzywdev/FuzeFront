@@ -45,6 +45,7 @@ function makeFakeDb() {
   const tables: Record<string, any[]> = {
     users: [], sessions: [], mfa_factors: [], mfa_recovery_codes: [],
   }
+  const log: string[] = []
   function qb(table: string) {
     let filter = (_r: any) => true
     const api: any = {
@@ -54,6 +55,7 @@ function makeFakeDb() {
         return api
       },
       forUpdate() {
+        log.push(`lock:${table}`)
         return api
       },
       async first() {
@@ -64,17 +66,20 @@ function makeFakeDb() {
         return Promise.resolve(tables[table].filter(filter))
       },
       async insert(row: any) {
+        log.push(`insert:${table}`)
         await Promise.resolve()
         tables[table].push(...(Array.isArray(row) ? row : [row]))
         return [1]
       },
       async update(patch: any) {
+        log.push(`update:${table}`)
         await Promise.resolve() // yield: lets concurrent callers interleave
         let n = 0
         for (const r of tables[table]) if (filter(r)) { Object.assign(r, patch); n++ }
         return n
       },
       async del() {
+        log.push(`delete:${table}`)
         const before = tables[table].length
         tables[table] = tables[table].filter(r => !filter(r))
         return before - tables[table].length
@@ -106,6 +111,7 @@ function makeFakeDb() {
     }
   }
   db.__tables = tables
+  db.__log = log
   return db
 }
 
@@ -597,6 +603,38 @@ describe('code scheme: v2 only, >= 80 bits', () => {
     const setA = a.map(c => sha(normalizeRecoveryCode(c))).sort()
     const setB = b.map(c => sha(normalizeRecoveryCode(c))).sort()
     expect([setA, setB]).toContainEqual(hashes)
+  })
+})
+
+describe('lock order (user -> codes -> sessions) on both recovery paths', () => {
+  const idx = (log: string[], e: string) => log.indexOf(e)
+
+  it('redemption locks the users row BEFORE updating the recovery code, then inserts the session', async () => {
+    const { db, provider } = setup()
+    const ch = await openChallenge(provider)
+    db.__log.length = 0
+    await provider.verifyMfaRecovery(ch.challengeId, CODES[0])
+    const log: string[] = db.__log
+    expect(idx(log, 'lock:users')).toBeGreaterThanOrEqual(0)
+    expect(idx(log, 'lock:users')).toBeLessThan(idx(log, 'update:mfa_recovery_codes'))
+    expect(idx(log, 'update:mfa_recovery_codes')).toBeLessThan(idx(log, 'insert:sessions'))
+  })
+
+  it('regeneration locks the users row BEFORE deleting/inserting codes (same order)', async () => {
+    const { db, provider, token } = setup()
+    db.__log.length = 0
+    await provider.regenerateRecoveryCodes(token)
+    const log: string[] = db.__log
+    expect(idx(log, 'lock:users')).toBeGreaterThanOrEqual(0)
+    expect(idx(log, 'lock:users')).toBeLessThan(idx(log, 'delete:mfa_recovery_codes'))
+    expect(idx(log, 'delete:mfa_recovery_codes')).toBeLessThan(idx(log, 'insert:mfa_recovery_codes'))
+  })
+
+  it('a failed redemption (wrong code) still consumes nothing under the lock', async () => {
+    const { db, provider } = setup()
+    const ch = await openChallenge(provider)
+    await expect(provider.verifyMfaRecovery(ch.challengeId, 'deadbeef00')).rejects.toBeInstanceOf(RecoveryCodeInvalidError)
+    expect(db.__tables.mfa_recovery_codes.every((r: any) => !r.used)).toBe(true)
   })
 })
 

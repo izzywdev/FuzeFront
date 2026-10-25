@@ -1216,6 +1216,10 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       const codeHash = sha256(normalized)
       const session = await this.db.transaction(async (trx: any) => {
         this.assertStillClaimed(challengeId, ch)
+        // Lock order is user -> codes -> sessions on EVERY path (regeneration
+        // locks the users row first too). Taking the codes row first and then the
+        // session insert's FK key-share lock on users deadlocks against it.
+        await trx('users').where({ id: ch.userId }).forUpdate().first()
         const burned = await trx('mfa_recovery_codes')
           .where({ user_id: ch.userId, code_hash: codeHash, used: false, scheme_version: RECOVERY_SCHEME_CURRENT })
           .update({ used: true })
