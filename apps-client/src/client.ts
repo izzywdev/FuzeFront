@@ -7,6 +7,8 @@ import type {
   HeartbeatRequest,
   ListAppsParams,
   ListAppsResult,
+  ListPublicationRequestsParams,
+  ListPublicationRequestsResult,
   ProductPolicy,
   RegisterAppRequest,
 } from './types';
@@ -117,6 +119,23 @@ export class AppRegistryClient {
       `/apps/${encodeURIComponent(slug)}/heartbeat`,
       body,
       { headers: { Authorization: `Bearer ${heartbeatToken}` } },
+    );
+    return data;
+  }
+
+  /**
+   * GET /publication-requests — the marketplace review queue (admin/reviewer).
+   *
+   * Cross-app, cursor-paginated collection of apps whose publication is in the
+   * requested `status` (default `pending`), oldest first. Platform admins /
+   * reviewers only; authorization is enforced server-side via Permit.
+   */
+  async listPublicationRequests(
+    params: ListPublicationRequestsParams = {},
+  ): Promise<ListPublicationRequestsResult> {
+    const { data } = await this.http.get<ListPublicationRequestsResult>(
+      '/publication-requests',
+      { params },
     );
     return data;
   }

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront App Registry API
-  version: 1.6.0
+  version: 1.6.1
   description: >-
     REST API for the FuzeFront **app registry** — the contract by which a
     federated (or standalone) application is registered, activated, and surfaced
@@ -36,6 +36,15 @@ info:
     may keep purely as a live UI push).
 
     ### Changelog
+      * **1.6.1** — corrections to 1.6.0 before release (non-breaking):
+        `PublicationQueueItem.organizationId` is a wire-typed TypeID-or-UUID
+        string, not `format: uuid` (a prefixed `org_…` id is not a syntactic
+        UUID); the review-queue sort is documented per status (pending →
+        `submittedAt`, rejected → `rejectedAt`, approved → `approvedAt` with a
+        creation-time fallback), since a reject clears `marketplace_submitted_at`;
+        `PublicationQueueItem.icon` documented as always-present (server
+        placeholder when the manifest has none); and the personal-vs-platform
+        ownership wording on `organizationId` corrected.
       * **1.6.0** — additive, non-breaking. Completes the app-builder design
         frames (`design/frames/app-builder/`, `commissionedByApproval`): adds
         the optional `AppCreator.contactEmail` (frame (e1) "Contact creator"
@@ -749,11 +758,18 @@ paths:
       description: >-
         The cross-app review queue that backs frame (g). Returns one row per app
         whose publication is in the requested `status` (default `pending`),
-        **oldest first** (by `submittedAt` ascending, so the longest-waiting
-        request is reviewed first), each carrying the app's publication state
-        plus the minimal display context a reviewer needs — app display name,
-        icon, owning `organizationId`, and the creator contact (subject to the
-        same former-member rule as `App.creator`).
+        **oldest first** so the longest-waiting item leads. "Oldest" is measured
+        by the instant that defines the requested status, because a rejected
+        request clears `marketplace_submitted_at`:
+          * `status=pending` — ascending by `submittedAt`;
+          * `status=rejected` — ascending by `rejection.rejectedAt`;
+          * `status=approved` — ascending by `approvedAt`, falling back to the
+            app's creation time when an approved app has no recorded
+            `approvedAt` (legacy/pre-attribution rows).
+        Each row carries the app's publication state plus the minimal display
+        context a reviewer needs — app display name, icon, owning
+        `organizationId`, and the creator contact (subject to the same
+        former-member rule as `App.creator`).
 
         **Platform admins / reviewers only (403 otherwise).** As everywhere in
         this contract, the authorization decision is Permit's, not this flag's
@@ -790,7 +806,7 @@ paths:
           schema: { type: string }
       responses:
         '200':
-          description: A page of publication requests, oldest first.
+          description: A page of publication requests, oldest first (per-status instant; see operation description).
           content:
             application/json:
               schema:
@@ -1723,19 +1739,30 @@ components:
         an app's publication state together with the minimal app display context
         a reviewer needs to triage it without a second call. Every field is
         owned by the app-registry service — this is not a cross-service join.
+        `icon` is REQUIRED here even though `AppManifest.icon` is optional: the
+        queue row always renders an icon cell, so the server substitutes a
+        placeholder (`{ kind: emoji, value: "📦" }`) when the app's manifest has
+        none. Consumers can therefore rely on `icon` being present and non-null.
       properties:
         slug: { $ref: '#/components/schemas/Slug' }
         name:
           type: string
           description: App display name (`manifest.name`), for the "App" column.
-        icon: { $ref: '#/components/schemas/Icon' }
+        icon:
+          $ref: '#/components/schemas/Icon'
+          description: >-
+            Always present — the app's manifest icon, or a server-provided
+            placeholder (`📦` emoji) when the manifest declares none.
         organizationId:
           type: [string, 'null']
-          format: uuid
           description: >-
-            Owning org (the publisher), or null for platform-global/personal
-            apps. A reference to the organization that owns the app; the owning
-            org's display name is resolved by the caller, not embedded here.
+            Owning org (the publisher) as a wire-typed reference — a TypeID
+            (`org_…`, the value prefixed-ids returns in prod) or a bare UUID
+            (legacy/unprefixed). NOT `format: uuid`: a prefixed TypeID is not a
+            syntactic UUID and would fail that constraint. A personal app is
+            owned by the caller's personal org and still carries that org's id;
+            `null` is reserved for a genuinely platform-global app with no owning
+            org. The org's display name is resolved by the caller, not embedded.
         creator:
           description: >-
             The creator as an in-org contact, or null — rendered in the

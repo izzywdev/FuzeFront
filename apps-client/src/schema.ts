@@ -382,7 +382,13 @@ export interface paths {
         };
         /**
          * List marketplace publication requests (admin review queue)
-         * @description The cross-app review queue that backs frame (g). Returns one row per app whose publication is in the requested `status` (default `pending`), **oldest first** (by `submittedAt` ascending, so the longest-waiting request is reviewed first), each carrying the app's publication state plus the minimal display context a reviewer needs — app display name, icon, owning `organizationId`, and the creator contact (subject to the same former-member rule as `App.creator`).
+         * @description The cross-app review queue that backs frame (g). Returns one row per app whose publication is in the requested `status` (default `pending`), **oldest first** so the longest-waiting item leads. "Oldest" is measured by the instant that defines the requested status, because a rejected request clears `marketplace_submitted_at`:
+         *       * `status=pending` — ascending by `submittedAt`;
+         *       * `status=rejected` — ascending by `rejection.rejectedAt`;
+         *       * `status=approved` — ascending by `approvedAt`, falling back to the
+         *         app's creation time when an approved app has no recorded
+         *         `approvedAt` (legacy/pre-attribution rows).
+         *     Each row carries the app's publication state plus the minimal display context a reviewer needs — app display name, icon, owning `organizationId`, and the creator contact (subject to the same former-member rule as `App.creator`).
          *     **Platform admins / reviewers only (403 otherwise).** As everywhere in this contract, the authorization decision is Permit's, not this flag's and not the knowledge of any id — admin/reviewer is enforced server-side via Permit.
          *     All data returned is owned by the app-registry service itself (apps, their publication state, and the in-org creator contact), so this is a single-service collection, **not** a client-side or cross-service join — the frames deliberately do not scan `GET /apps`.
          *     Cursor-paginated (`limit` default 50, max 200 — larger values are clamped; `cursor` is opaque; a malformed cursor is a 400). Feature flag: `fuzefront.apps.marketplace-publishing` (release, default OFF).
@@ -420,7 +426,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description URL-safe unique identifier, immutable once registered. */
+        /**
+         * @description URL-safe unique identifier, immutable once registered.
+         * @example clock
+         * @example market
+         */
         Slug: string;
         /**
          * @description A surface the app can be served on. NOT mutually exclusive — see `AppManifest.modes`, which is the multi-valued form. `portal` — mounted inside the host shell at `/app/:slug` with chrome. `standalone` — rendered without portal chrome on its own host/path (`routing.host`). This is the surface a mobile TWA/APK wraps, and the only one that can be, because an app store needs a URL that stands on its own. `embed` — rendered inside a THIRD-PARTY page via an SDK, with neither portal chrome nor FuzeFront navigation. An embed-only product is not a portal destination and may not register a menu entry at all.
@@ -501,8 +511,10 @@ export interface components {
             order: number;
             suite?: components["schemas"]["Suite"];
         };
-        /** @description Groups sibling apps that are surfaces of ONE product into a single named menu group. A repo that ships several independently-mountable surfaces — FuzeHub's talent / recruiter / ventures / marketplace / admin remotes — must register one app per surface, because `roles`, `visibility`, `integration` and `nav` are all per-surface and a single row cannot hold five of each. Without this key those five register as five unrelated top-level entries and the product disappears as a concept.
-         *     Each sibling carries its own copy rather than the platform holding a central suite table, for the same reason `nav.section` is self-declared: onboarding a product must never require a FuzeFront edit. Siblings are expected to agree; the host resolves disagreement deterministically (lowest `order` wins, ties on the alphabetically-first `slug`) instead of picking arbitrarily. */
+        /**
+         * @description Groups sibling apps that are surfaces of ONE product into a single named menu group. A repo that ships several independently-mountable surfaces — FuzeHub's talent / recruiter / ventures / marketplace / admin remotes — must register one app per surface, because `roles`, `visibility`, `integration` and `nav` are all per-surface and a single row cannot hold five of each. Without this key those five register as five unrelated top-level entries and the product disappears as a concept.
+         *     Each sibling carries its own copy rather than the platform holding a central suite table, for the same reason `nav.section` is self-declared: onboarding a product must never require a FuzeFront edit. Siblings are expected to agree; the host resolves disagreement deterministically (lowest `order` wins, ties on the alphabetically-first `slug`) instead of picking arbitrarily.
+         */
         Suite: {
             /** @description Stable group key, shared verbatim by every sibling. Apps with the same `id` in the same `section` render as one group. */
             id: components["schemas"]["Slug"];
@@ -885,16 +897,14 @@ export interface components {
                 rejectedBy?: string | null;
             } | null;
         };
-        /** @description One row of the marketplace review queue (`GET /publication-requests`): an app's publication state together with the minimal app display context a reviewer needs to triage it without a second call. Every field is owned by the app-registry service — this is not a cross-service join. */
+        /** @description One row of the marketplace review queue (`GET /publication-requests`): an app's publication state together with the minimal app display context a reviewer needs to triage it without a second call. Every field is owned by the app-registry service — this is not a cross-service join. `icon` is REQUIRED here even though `AppManifest.icon` is optional: the queue row always renders an icon cell, so the server substitutes a placeholder (`{ kind: emoji, value: "📦" }`) when the app's manifest has none. Consumers can therefore rely on `icon` being present and non-null. */
         PublicationQueueItem: {
             slug: components["schemas"]["Slug"];
             /** @description App display name (`manifest.name`), for the "App" column. */
             name: string;
+            /** @description Always present — the app's manifest icon, or a server-provided placeholder (`📦` emoji) when the manifest declares none. */
             icon: components["schemas"]["Icon"];
-            /**
-             * Format: uuid
-             * @description Owning org (the publisher), or null for platform-global/personal apps. A reference to the organization that owns the app; the owning org's display name is resolved by the caller, not embedded here.
-             */
+            /** @description Owning org (the publisher) as a wire-typed reference — a TypeID (`org_…`, the value prefixed-ids returns in prod) or a bare UUID (legacy/unprefixed). NOT `format: uuid`: a prefixed TypeID is not a syntactic UUID and would fail that constraint. A personal app is owned by the caller's personal org and still carries that org's id; `null` is reserved for a genuinely platform-global app with no owning org. The org's display name is resolved by the caller, not embedded. */
             organizationId?: string | null;
             /** @description The creator as an in-org contact, or null — rendered in the publisher/contact column. Subject to the SAME former-member rule as `App.creator` (a former member is reduced to `isCurrentMember:false` with no name/contact, per frame (e)). Present only when `fuzefront.apps.creator-ownership` is ON. */
             creator?: components["schemas"]["AppCreator"] | null;
@@ -1682,7 +1692,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description A page of publication requests, oldest first. */
+            /** @description A page of publication requests, oldest first (per-status instant; see operation description). */
             200: {
                 headers: {
                     [name: string]: unknown;
