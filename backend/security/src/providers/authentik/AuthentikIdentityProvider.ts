@@ -96,11 +96,34 @@ import {
 export class MfaRequiredError extends Error {
   constructor(
     public challengeId: string,
-    public factors: { factorId: string; type: MfaFactorType }[]
+    public factors: { factorId: string; type: MfaFactorType }[],
+    /** True when the user holds >=1 unused recovery code (contract 1.3.0). */
+    public recoveryAvailable: boolean = false
   ) {
     super('mfa_required')
     this.name = 'MfaRequiredError'
   }
+}
+
+/**
+ * A submitted recovery code was wrong, already used, or from a replaced set.
+ * The causes are deliberately indistinguishable (contract 1.3.0). Maps to
+ * 401 RECOVERY_CODE_INVALID. Intentionally NOT an UnauthorizedError subclass so
+ * it can never be flattened into NOT_ACTIVE.
+ */
+export class RecoveryCodeInvalidError extends Error {
+  constructor() {
+    super('invalid recovery code')
+    this.name = 'RecoveryCodeInvalidError'
+  }
+}
+
+/**
+ * Canonical form of a user-typed recovery code: trim, drop spaces/hyphens,
+ * case-fold. Stored codes are lowercase hex, hashed with sha256.
+ */
+export function normalizeRecoveryCode(raw: string): string {
+  return String(raw ?? '').replace(/[\s-]+/g, '').toLowerCase()
 }
 
 /** Thrown when an email already has an account (signup conflict). */
@@ -203,6 +226,8 @@ interface SocialState {
 interface MfaChallenge {
   userId: string
   expiresAt: number
+  /** Set synchronously while a recovery redemption is in flight (single-flight). */
+  inFlight?: boolean
 }
 /** An in-flight LINK handshake, bound to the account that started it. */
 interface SocialLinkState {
@@ -460,6 +485,19 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return rows.map(rowToFactor)
   }
 
+  /** Fail-safe: any lookup error means "not available" and never blocks login. */
+  private async hasUnusedRecoveryCode(userId: string): Promise<boolean> {
+    try {
+      const rows = await this.db('mfa_recovery_codes')
+        .where({ user_id: userId, used: false })
+        .select('id')
+      return rows.length > 0
+    } catch (err) {
+      logger.warn({ userId, err }, 'authentik: recovery-code availability lookup failed')
+      return false
+    }
+  }
+
   /** Gate a freshly-authenticated user through MFA step-up when factors exist. */
   private async sessionOrChallenge(
     user: BrokeredUser,
@@ -474,7 +512,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       })
       throw new MfaRequiredError(
         challengeId,
-        factors.map(f => ({ factorId: f.factorId, type: f.type }))
+        factors.map(f => ({ factorId: f.factorId, type: f.type })),
+        await this.hasUnusedRecoveryCode(user.id)
       )
     }
     return this.mintSession(user, ctx)
@@ -1052,6 +1091,14 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return codes
   }
 
+  async getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }> {
+    const { user } = await this.getUserInfo(token)
+    const rows: Array<{ used: boolean }> = await this.db('mfa_recovery_codes')
+      .where({ user_id: user.id })
+      .select('used')
+    return { remaining: rows.filter(r => !r.used).length, total: rows.length }
+  }
+
   // ── MFA login step-up ─────────────────────────────────────────────────────
   async challengeMfa(challengeId: string, factorId: string): Promise<MfaChallengeAck> {
     const ch = this.mfaChallenges.get(challengeId)
@@ -1098,6 +1145,54 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     this.mfaChallenges.delete(challengeId)
     const user = await this.loadUser(ch.userId)
     return this.mintSession(user, ctx)
+  }
+
+  /**
+   * Redeem a single-use recovery code against a login challenge.
+   *
+   * Atomicity: the code is burned by one conditional UPDATE
+   * (`used=false` -> `true`, rowcount checked) inside a transaction that also
+   * mints the session, so two concurrent redemptions of the same code succeed at
+   * most once and a failure after the burn rolls the burn back. The challenge is
+   * single-flighted in-process (claimed synchronously before any await) so two
+   * different codes cannot both complete the same challenge. A failed attempt
+   * consumes nothing and leaves the challenge usable. The code is never logged.
+   */
+  async verifyMfaRecovery(
+    challengeId: string,
+    recoveryCode: string,
+    ctx?: SessionContext
+  ): Promise<BrokeredSession> {
+    const ch = this.mfaChallenges.get(challengeId)
+    if (!ch || ch.expiresAt < this.now() || ch.inFlight) {
+      if (ch && ch.expiresAt < this.now()) this.mfaChallenges.delete(challengeId)
+      logger.info({ outcome: 'challenge_not_active' }, 'authentik: recovery redeem rejected')
+      throw new UnauthorizedError('invalid or expired challenge')
+    }
+    ch.inFlight = true
+    try {
+      const normalized = normalizeRecoveryCode(recoveryCode)
+      if (!normalized) throw new RecoveryCodeInvalidError()
+      const codeHash = sha256(normalized)
+      const session = await this.db.transaction(async (trx: any) => {
+        const burned = await trx('mfa_recovery_codes')
+          .where({ user_id: ch.userId, code_hash: codeHash, used: false })
+          .update({ used: true })
+        if (!burned) throw new RecoveryCodeInvalidError()
+        const user = await this.loadUser(ch.userId)
+        return this.mintSession(user, ctx)
+      })
+      this.mfaChallenges.delete(challengeId)
+      logger.info({ userId: ch.userId, outcome: 'redeemed' }, 'authentik: recovery code redeemed')
+      return session
+    } catch (err) {
+      if (err instanceof RecoveryCodeInvalidError) {
+        logger.info({ userId: ch.userId, outcome: 'invalid_code' }, 'authentik: recovery redeem failed')
+      }
+      throw err
+    } finally {
+      ch.inFlight = false
+    }
   }
 
   // ── Self-service password reset ───────────────────────────────────────────

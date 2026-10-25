@@ -398,6 +398,21 @@ export interface IdentityProvider {
     ctx?: SessionContext
   ): Promise<BrokeredSession>;
 
+  /**
+   * Redeem a single-use recovery code for a login challenge (contract 1.3.0).
+   * Rejects with RecoveryCodeInvalidError (wrong/used/replaced — indistinguishable)
+   * or UnauthorizedError (unknown/expired/completed challenge). A failed attempt
+   * consumes nothing.
+   */
+  verifyMfaRecovery(
+    challengeId: string,
+    recoveryCode: string,
+    ctx?: SessionContext
+  ): Promise<BrokeredSession>;
+
+  /** Counts for the caller's current recovery-code set. Never returns codes. */
+  getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }>;
+
   // ── Self-service password reset ──
 
   /**

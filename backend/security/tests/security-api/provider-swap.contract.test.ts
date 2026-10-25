@@ -140,6 +140,12 @@ class AltIdentityProvider implements IdentityProvider {
   async verifyMfa(): Promise<BrokeredSession> {
     throw new ProviderError('INVALID_CODE', 'n/a', 401)
   }
+  async verifyMfaRecovery(): Promise<BrokeredSession> {
+    throw new ProviderError('INVALID_CODE', 'n/a', 401)
+  }
+  async getRecoveryCodesStatus(): Promise<{ remaining: number; total: number }> {
+    return { remaining: 0, total: 0 }
+  }
   async startEmailVerification(): Promise<void> {}
   async confirmEmailVerification(i: { token?: string; code?: string }): Promise<VerificationStatus> {
     if (i.token === 'expired') throw new TokenError('TOKEN_EXPIRED')
