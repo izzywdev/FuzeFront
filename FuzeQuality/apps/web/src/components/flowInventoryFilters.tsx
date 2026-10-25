@@ -8,20 +8,42 @@ export function FlowInventoryFilters({
   source,
   status,
   revisionScope,
+  model,
+  promptVersion,
+  schemaVersion,
+  minimumConfidencePercent,
+  maximumConfidencePercent,
+  invalidConfidenceRange,
   onRepositoryIdChange,
   onSourceChange,
   onStatusChange,
   onRevisionScopeChange,
+  onModelChange,
+  onPromptVersionChange,
+  onSchemaVersionChange,
+  onMinimumConfidencePercentChange,
+  onMaximumConfidencePercentChange,
 }: {
   repositories: Repository[]
   repositoryId: string
   source: RepositoryFlowCandidate['source'] | ''
   status: RepositoryFlowCandidate['status'] | ''
   revisionScope: FlowRevisionScope
+  model: string
+  promptVersion: string
+  schemaVersion: string
+  minimumConfidencePercent: string
+  maximumConfidencePercent: string
+  invalidConfidenceRange: boolean
   onRepositoryIdChange: (value: string) => void
   onSourceChange: (value: RepositoryFlowCandidate['source'] | '') => void
   onStatusChange: (value: RepositoryFlowCandidate['status'] | '') => void
   onRevisionScopeChange: (value: FlowRevisionScope) => void
+  onModelChange: (value: string) => void
+  onPromptVersionChange: (value: string) => void
+  onSchemaVersionChange: (value: string) => void
+  onMinimumConfidencePercentChange: (value: string) => void
+  onMaximumConfidencePercentChange: (value: string) => void
 }) {
   return (
     <div className="catalog-filters" aria-label="UX flow inventory filters">
@@ -59,6 +81,26 @@ export function FlowInventoryFilters({
           <option value="all">All revisions</option>
           <option value="current">Current repository revision</option>
         </select>
+      </label>
+      <label>
+        Analysis model
+        <input value={model} placeholder="All models" onChange={event => onModelChange(event.target.value)} />
+      </label>
+      <label>
+        Prompt version
+        <input value={promptVersion} placeholder="All prompt versions" onChange={event => onPromptVersionChange(event.target.value)} />
+      </label>
+      <label>
+        Schema version
+        <input value={schemaVersion} placeholder="All schema versions" onChange={event => onSchemaVersionChange(event.target.value)} />
+      </label>
+      <label>
+        Minimum confidence (%)
+        <input type="number" min="0" max="100" step="1" value={minimumConfidencePercent} placeholder="Any" onChange={event => onMinimumConfidencePercentChange(event.target.value)} />
+      </label>
+      <label>
+        Maximum confidence (%)
+        <input type="number" min="0" max="100" step="1" value={maximumConfidencePercent} placeholder="Any" aria-invalid={invalidConfidenceRange} onChange={event => onMaximumConfidencePercentChange(event.target.value)} />
       </label>
     </div>
   )

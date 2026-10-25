@@ -563,7 +563,7 @@ and product availability are approved.
 Proposed endpoints, subject to DNS approval:
 
 ```text
-quality.fuzefront.com       FuzeQuality dashboard/API
+fuzequality.fuzefront.com   FuzeQuality standalone dashboard/API and Android TWA origin
 components.fuzefront.com    Self-hosted Storybook component/state catalog
 quality-plan.fuzefront.com  Kiwi TCMS (or path-routed behind quality)
 quality-runs.fuzefront.com  ReportPortal (or path-routed behind quality)
@@ -871,7 +871,7 @@ Approval should explicitly answer these items:
    the FuzeQuality UI and exported to Git?
 7. What branches and result freshness windows define valid coverage?
 8. Which artifact retention periods are acceptable?
-9. Is a single `quality.fuzefront.com` entry point preferred?
+9. Is the canonical `fuzequality.fuzefront.com` standalone entry point healthy?
 10. May FuzeQuality reuse shared FuzeInfra PostgreSQL/RabbitMQ/OpenSearch services,
     or must quality data be isolated?
 

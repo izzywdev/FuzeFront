@@ -598,6 +598,35 @@ export const organizationsAPI = {
   },
 }
 
+export interface SessionWorkspace {
+  id: string
+  name: string
+  type: 'personal' | 'organization'
+}
+
+/**
+ * Resolve the Security-owned tenant behind the portal's first-class Personal
+ * context. Discovery is deliberately followed by the membership-proof call;
+ * a workspace-list response alone is not authorization to use that tenant.
+ */
+export const securitySessionAPI = {
+  async resolvePersonalTenant(): Promise<string | null> {
+    const discovery = await api.get('/v1/security/session/workspaces')
+    const workspaces = (discovery.data?.workspaces ?? []) as SessionWorkspace[]
+    const personal = workspaces.find(workspace => workspace.type === 'personal')
+    if (!personal) return null
+
+    const proof = await api.get('/v1/security/session', {
+      params: { tenant: personal.id },
+    })
+    const tenantId = proof.data?.identity?.tenantId
+    if (typeof tenantId !== 'string' || tenantId.length === 0) {
+      throw new Error('Security did not return a tenant-scoped identity')
+    }
+    return tenantId
+  },
+}
+
 // ---------------------------------------------------------------------------
 // Backward-compatible standalone exports.
 // Components import these named functions/types directly. They wrap the *API
