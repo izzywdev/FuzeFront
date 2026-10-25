@@ -186,7 +186,9 @@ export function assertLocalDepsResolvable(targets) {
   // publishable workspace carrying no version fails there too, and checking
   // only for the NAME here would let that one case through to a matrix leg —
   // the very thing this exists to prevent.
-  const versionByName = Object.fromEntries(targets.map(({ pkg }) => [pkg.name, pkg.version]))
+  const versionByName = Object.fromEntries(
+    targets.map(({ pkg }) => [pkg.name, pkg.version])
+  )
   const bad = []
   for (const { dir, pkg } of targets) {
     for (const field of DEP_FIELDS) {
@@ -213,7 +215,9 @@ export function assertLocalDepsResolvable(targets) {
 }
 
 function workspaces() {
-  return (readJson(`${root}/package.json`).workspaces ?? []).filter((w) => !w.includes('*'))
+  return (readJson(`${root}/package.json`).workspaces ?? []).filter(
+    w => !w.includes('*')
+  )
 }
 
 /** Publishable = a workspace that is not marked private. One source of truth. */
@@ -221,8 +225,8 @@ function publishable() {
   return assertLocalDepsResolvable(
     assertAliasable(
       workspaces()
-        .filter((dir) => existsSync(`${root}/${dir}/package.json`))
-        .map((dir) => ({ dir, pkg: readJson(`${root}/${dir}/package.json`) }))
+        .filter(dir => existsSync(`${root}/${dir}/package.json`))
+        .map(dir => ({ dir, pkg: readJson(`${root}/${dir}/package.json`) }))
         .filter(({ pkg }) => !pkg.private && pkg.name)
     )
   )
@@ -285,9 +289,13 @@ export function rewriteForPublish(pkg, versionByName) {
 
 function alreadyPublished(name, version) {
   try {
-    execFileSync('npm', ['view', `${name}@${version}`, 'version', `--registry=${REGISTRY}`], {
-      stdio: 'pipe',
-    })
+    execFileSync(
+      'npm',
+      ['view', `${name}@${version}`, 'version', `--registry=${REGISTRY}`],
+      {
+        stdio: 'pipe',
+      }
+    )
     return true
   } catch {
     return false
@@ -296,115 +304,124 @@ function alreadyPublished(name, version) {
 
 // Only run the publish loop when invoked as a script. Importing this module
 // (the tests do) must not publish anything.
-const invokedDirectly = process.argv[1]?.endsWith('publish-packages.mjs') ?? false
+const invokedDirectly =
+  process.argv[1]?.endsWith('publish-packages.mjs') ?? false
 if (!invokedDirectly) {
   // eslint-disable-next-line no-empty
 } else {
-main()
+  main()
 }
 
 function main() {
-const allTargets = publishable()
+  const allTargets = publishable()
 
-if (listJson) {
-  // One name per publishable package, for packages-publish.yml's matrix.
-  // Deliberately independent of --dry-run/--only: the matrix needs the full
-  // list to build its legs, not a filtered view of one.
-  console.log(JSON.stringify(allTargets.map(({ pkg }) => pkg.name)))
-  return
-}
-
-if (listDirs) {
-  // One workspace DIRECTORY per publishable package, newline-separated, for
-  // auto-merge.yml's "did this merge touch anything publishable?" test.
-  //
-  // That test used to be a hand-maintained regex of publishable directories —
-  // a second source of truth for a question this file already answers, and it
-  // had already drifted twice (api-client/, sdk/ and config-client/ were all
-  // missing, so their releases were invisible). It now builds its pattern from
-  // this output, so adding a workspace can no longer silently fail to publish.
-  for (const { dir } of allTargets) console.log(dir)
-  return
-}
-
-// versionByName always comes from the FULL set, even under --only: a local
-// dependency's version is needed for the rewrite whether or not that
-// dependency is this leg's publish target (it may already be published).
-const versionByName = Object.fromEntries(allTargets.map(({ pkg }) => [pkg.name, pkg.version]))
-const targets = filterTargets(allTargets, only)
-
-console.log(`publish-packages: ${targets.length} publishable package(s)${dryRun ? ' (dry run)' : ''}\n`)
-
-const skipped = []
-const published = []
-const failed = []
-
-for (const { dir, pkg } of targets) {
-  const manifestPath = `${root}/${dir}/package.json`
-  const original = readFileSync(manifestPath, 'utf8')
-  let rewritten
-  try {
-    rewritten = rewriteForPublish(pkg, versionByName)
-  } catch (err) {
-    failed.push(`${pkg.name}: ${err.message}`)
-    console.error(`  ✗ ${pkg.name} — ${err.message}`)
-    continue
+  if (listJson) {
+    // One name per publishable package, for packages-publish.yml's matrix.
+    // Deliberately independent of --dry-run/--only: the matrix needs the full
+    // list to build its legs, not a filtered view of one.
+    console.log(JSON.stringify(allTargets.map(({ pkg }) => pkg.name)))
+    return
   }
 
-  const target = `${rewritten.name}@${pkg.version}`
-
-  if (dryRun) {
-    const renamedDeps = DEP_FIELDS.flatMap((f) =>
-      Object.keys(rewritten[f] ?? {}).filter((n) => !(pkg[f] ?? {})[n])
-    )
-    console.log(
-      `  → ${pkg.name} -> ${target}` +
-        (renamedDeps.length ? `  (deps rewritten: ${renamedDeps.join(', ')})` : '')
-    )
-    continue
+  if (listDirs) {
+    // One workspace DIRECTORY per publishable package, newline-separated, for
+    // auto-merge.yml's "did this merge touch anything publishable?" test.
+    //
+    // That test used to be a hand-maintained regex of publishable directories —
+    // a second source of truth for a question this file already answers, and it
+    // had already drifted twice (api-client/, sdk/ and config-client/ were all
+    // missing, so their releases were invisible). It now builds its pattern from
+    // this output, so adding a workspace can no longer silently fail to publish.
+    for (const { dir } of allTargets) console.log(dir)
+    return
   }
 
-  if (alreadyPublished(rewritten.name, pkg.version)) {
-    skipped.push(target)
-    console.log(`  = ${target} already published — skipping`)
-    continue
-  }
+  // versionByName always comes from the FULL set, even under --only: a local
+  // dependency's version is needed for the rewrite whether or not that
+  // dependency is this leg's publish target (it may already be published).
+  const versionByName = Object.fromEntries(
+    allTargets.map(({ pkg }) => [pkg.name, pkg.version])
+  )
+  const targets = filterTargets(allTargets, only)
 
-  try {
-    // Write the aliased manifest, publish, then ALWAYS restore. Leaving a
-    // renamed manifest behind would break every workspace link in the job.
-    writeFileSync(manifestPath, JSON.stringify(rewritten, null, 2) + '\n')
-    execFileSync('npm', ['publish', `--registry=${REGISTRY}`], {
-      cwd: `${root}/${dir}`,
-      stdio: 'inherit',
-    })
-    published.push(target)
-    console.log(`  ✓ ${target}`)
-  } catch (err) {
-    // The interim per-package publishers still run on the same push, so two
-    // jobs can pass the existence check and then both publish. The loser gets a
-    // 409. That is a race, not a fault — if the version is in the registry now,
-    // the release succeeded and whose upload won does not matter.
+  console.log(
+    `publish-packages: ${targets.length} publishable package(s)${dryRun ? ' (dry run)' : ''}\n`
+  )
+
+  const skipped = []
+  const published = []
+  const failed = []
+
+  for (const { dir, pkg } of targets) {
+    const manifestPath = `${root}/${dir}/package.json`
+    const original = readFileSync(manifestPath, 'utf8')
+    let rewritten
+    try {
+      rewritten = rewriteForPublish(pkg, versionByName)
+    } catch (err) {
+      failed.push(`${pkg.name}: ${err.message}`)
+      console.error(`  ✗ ${pkg.name} — ${err.message}`)
+      continue
+    }
+
+    const target = `${rewritten.name}@${pkg.version}`
+
+    if (dryRun) {
+      const renamedDeps = DEP_FIELDS.flatMap(f =>
+        Object.keys(rewritten[f] ?? {}).filter(n => !(pkg[f] ?? {})[n])
+      )
+      console.log(
+        `  → ${pkg.name} -> ${target}` +
+          (renamedDeps.length
+            ? `  (deps rewritten: ${renamedDeps.join(', ')})`
+            : '')
+      )
+      continue
+    }
+
     if (alreadyPublished(rewritten.name, pkg.version)) {
       skipped.push(target)
-      console.log(`  = ${target} published concurrently by another job — treating as done`)
-    } else {
-      failed.push(`${target}: ${err.message}`)
-      console.error(`  ✗ ${target} — ${err.message}`)
+      console.log(`  = ${target} already published — skipping`)
+      continue
     }
-  } finally {
-    writeFileSync(manifestPath, original)
-  }
-}
 
-if (!dryRun) {
-  console.log(
-    `\npublish-packages: ${published.length} published, ${skipped.length} skipped, ${failed.length} failed`
-  )
-}
-if (failed.length) {
-  console.error('\nFailures:')
-  for (const f of failed) console.error(`  ✗ ${f}`)
-  process.exit(1)
-}
+    try {
+      // Write the aliased manifest, publish, then ALWAYS restore. Leaving a
+      // renamed manifest behind would break every workspace link in the job.
+      writeFileSync(manifestPath, JSON.stringify(rewritten, null, 2) + '\n')
+      execFileSync('npm', ['publish', `--registry=${REGISTRY}`], {
+        cwd: `${root}/${dir}`,
+        stdio: 'inherit',
+      })
+      published.push(target)
+      console.log(`  ✓ ${target}`)
+    } catch (err) {
+      // The interim per-package publishers still run on the same push, so two
+      // jobs can pass the existence check and then both publish. The loser gets a
+      // 409. That is a race, not a fault — if the version is in the registry now,
+      // the release succeeded and whose upload won does not matter.
+      if (alreadyPublished(rewritten.name, pkg.version)) {
+        skipped.push(target)
+        console.log(
+          `  = ${target} published concurrently by another job — treating as done`
+        )
+      } else {
+        failed.push(`${target}: ${err.message}`)
+        console.error(`  ✗ ${target} — ${err.message}`)
+      }
+    } finally {
+      writeFileSync(manifestPath, original)
+    }
+  }
+
+  if (!dryRun) {
+    console.log(
+      `\npublish-packages: ${published.length} published, ${skipped.length} skipped, ${failed.length} failed`
+    )
+  }
+  if (failed.length) {
+    console.error('\nFailures:')
+    for (const f of failed) console.error(`  ✗ ${f}`)
+    process.exit(1)
+  }
 }
