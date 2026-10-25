@@ -362,6 +362,15 @@ export class MockIdentityProvider implements IdentityProvider {
     throw new ProviderError('INVALID_CODE', 'user gone', 401)
   }
 
+  async verifyMfaRecovery(): Promise<BrokeredSession> {
+    throw new ProviderError('INVALID_CODE', 'recovery not supported by mock', 401)
+  }
+
+  async getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }> {
+    this.userByToken(token)
+    return { remaining: 0, total: 0 }
+  }
+
   /** Called by the route when password login hits an MFA-enabled account. */
   openMfaChallenge(email: string): { challengeId: string; factors: MfaFactor[] } {
     const u = this.users.get(email.toLowerCase())!

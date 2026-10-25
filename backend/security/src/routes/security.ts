@@ -24,6 +24,8 @@ import {
   NotFoundError,
   LastFactorError,
   NoPasswordError,
+  RecoveryCodeInvalidError,
+  ChallengeNotActiveError,
   CurrentPasswordInvalidError,
   PasswordPolicyRejectedError,
   emailVerificationEnabled,
@@ -230,7 +232,107 @@ function authenticatedSession(session: BrokeredSession) {
 }
 
 /** Map a thrown provider error to a fail-closed HTTP response. */
+function mfaRequiredBody(err: MfaRequiredError) {
+  return {
+    status: 'mfa_required',
+    challengeId: err.challengeId,
+    factors: err.factors,
+    recoveryAvailable: err.recoveryAvailable === true,
+  }
+}
+
+// ── MFA step-up failed-attempt limiter ───────────────────────────────────────
+// ONE limiter for POST /mfa/verify, shared by the factor-code and recovery-code
+// shapes (so alternating shapes buys no extra guesses). Counts FAILED attempts
+// (401) per client IP and per challengeId; a key at its cap answers 429
+// RATE_LIMITED before any proof is evaluated. Successes are never counted.
+// In-process (matches the in-process challenge store); per-replica under HPA.
+const MFA_VERIFY_WINDOW_MS = 15 * 60_000
+const MFA_VERIFY_MAX_FAILS_PER_IP = 20
+const MFA_VERIFY_MAX_FAILS_PER_CHALLENGE = 5
+const MFA_VERIFY_MAX_KEYS = 10_000
+const mfaVerifyFails = new Map<string, { count: number; resetAt: number }>()
+// In-flight attempts, reserved synchronously BEFORE the provider is invoked so a
+// concurrent burst cannot slip past the cap before any failure is recorded.
+const mfaVerifyPending = new Map<string, number>()
+
+function mfaFailKeys(req: Request): Array<{ key: string; max: number }> {
+  const keys = [{ key: `ip:${req.ip ?? 'unknown'}`, max: MFA_VERIFY_MAX_FAILS_PER_IP }]
+  const cid = req.body?.challengeId
+  if (typeof cid === 'string' && cid.length > 0 && cid.length <= 256) {
+    keys.push({ key: `ch:${cid}`, max: MFA_VERIFY_MAX_FAILS_PER_CHALLENGE })
+  }
+  return keys
+}
+
+/**
+ * Atomically (single sync tick) check the cap counting recorded failures AND
+ * in-flight attempts, and reserve a slot on every key. Returns the reserved
+ * keys, or null when any key is at its cap (nothing reserved).
+ */
+function reserveMfaVerifyAttempt(req: Request): string[] | null {
+  const now = Date.now()
+  const keys = mfaFailKeys(req)
+  for (const { key, max } of keys) {
+    let e = mfaVerifyFails.get(key)
+    if (e && e.resetAt <= now) {
+      mfaVerifyFails.delete(key)
+      e = undefined
+    }
+    if ((e?.count ?? 0) + (mfaVerifyPending.get(key) ?? 0) >= max) return null
+  }
+  // Capacity: evict only EXPIRED entries; if still full, existing counters stay
+  // authoritative and brand-new keys fail closed (429) instead of resetting them.
+  if (mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS) {
+    for (const [k, e] of mfaVerifyFails) if (e.resetAt <= now) mfaVerifyFails.delete(k)
+    if (mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS && keys.some(({ key }) => !mfaVerifyFails.has(key))) {
+      return null
+    }
+  }
+  for (const { key } of keys) mfaVerifyPending.set(key, (mfaVerifyPending.get(key) ?? 0) + 1)
+  return keys.map(k => k.key)
+}
+
+function releaseMfaVerifyAttempt(keys: string[]): void {
+  for (const key of keys) {
+    const n = (mfaVerifyPending.get(key) ?? 0) - 1
+    if (n <= 0) mfaVerifyPending.delete(key)
+    else mfaVerifyPending.set(key, n)
+  }
+}
+
+function recordMfaVerifyFailure(req: Request, opts: { skipChallenge?: boolean } = {}): void {
+  const now = Date.now()
+  for (const { key } of mfaFailKeys(req)) {
+    if (opts.skipChallenge && key.startsWith('ch:')) continue
+    const e = mfaVerifyFails.get(key)
+    if (!e || e.resetAt <= now) {
+      // Never grow past the bound and never drop unexpired counters.
+      if (!e && mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS) continue
+      mfaVerifyFails.set(key, { count: 1, resetAt: now + MFA_VERIFY_WINDOW_MS })
+    } else e.count++
+  }
+}
+
+/** Test seam: clear limiter state. */
+/** Test seam: shrink-free fill of the failure map to its bound. */
+export function __fillMfaVerifyLimiterForTest(): void {
+  const resetAt = Date.now() + MFA_VERIFY_WINDOW_MS
+  for (let i = 0; mfaVerifyFails.size < MFA_VERIFY_MAX_KEYS; i++) {
+    mfaVerifyFails.set(`filler:${i}`, { count: 1, resetAt })
+  }
+}
+
+export function resetMfaVerifyLimiter(): void {
+  mfaVerifyFails.clear()
+  mfaVerifyPending.clear()
+}
+
 function sendError(res: Response, err: unknown): void {
+  if (err instanceof RecoveryCodeInvalidError) {
+    res.status(401).json({ error: err.message, code: 'RECOVERY_CODE_INVALID' })
+    return
+  }
   if (err instanceof LastFactorError) {
     res.status(409).json({ error: err.message, code: 'LAST_FACTOR' })
     return
@@ -384,7 +486,7 @@ router.post('/session', async (req: Request, res: Response) => {
     res.status(200).json(authenticatedSession(session))
   } catch (err) {
     if (err instanceof MfaRequiredError) {
-      res.status(200).json({ status: 'mfa_required', challengeId: err.challengeId, factors: err.factors })
+      res.status(200).json(mfaRequiredBody(err))
       return
     }
     sendError(res, err)
@@ -455,7 +557,7 @@ router.post('/session/exchange', async (req: Request, res: Response) => {
     res.status(200).json(authenticatedSession(session))
   } catch (err) {
     if (err instanceof MfaRequiredError) {
-      res.status(200).json({ status: 'mfa_required', challengeId: err.challengeId, factors: err.factors })
+      res.status(200).json(mfaRequiredBody(err))
       return
     }
     sendError(res, err)
@@ -1057,6 +1159,17 @@ router.post('/mfa/recovery-codes', async (req: Request, res: Response) => {
   }
 })
 
+router.get('/mfa/recovery-codes', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const { remaining, total } = await getIdentityProvider().getRecoveryCodesStatus(token)
+    res.status(200).json({ remaining, total })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 // ── MFA login step-up ─────────────────────────────────────────────────────
 router.post('/mfa/challenge', async (req: Request, res: Response) => {
   try {
@@ -1071,19 +1184,54 @@ router.post('/mfa/challenge', async (req: Request, res: Response) => {
 })
 
 router.post('/mfa/verify', async (req: Request, res: Response) => {
+  const log = withReqId(req.get('x-request-id') ?? undefined, req as any)
+  const reserved = reserveMfaVerifyAttempt(req)
+  if (!reserved) {
+    log.warn({ route: 'mfa/verify' }, 'mfa verify: rate limited')
+    res.setHeader('Retry-After', String(Math.ceil(MFA_VERIFY_WINDOW_MS / 1000)))
+    res.status(429).json({ error: 'Too many attempts, please try again later', code: 'RATE_LIMITED' })
+    return
+  }
   try {
-    if (!req.body?.challengeId || !req.body?.factorId || !req.body?.code) {
-      throw new InvalidInputError('challengeId, factorId and code are required')
+    const body = req.body ?? {}
+    let session
+    if (Object.prototype.hasOwnProperty.call(body, 'recoveryCode')) {
+      // Recovery variant: exactly { challengeId, recoveryCode }, nothing else.
+      const extra = Object.keys(body).filter(k => k !== 'challengeId' && k !== 'recoveryCode')
+      if (
+        extra.length > 0 ||
+        typeof body.challengeId !== 'string' || !body.challengeId ||
+        typeof body.recoveryCode !== 'string' || body.recoveryCode.length < 1 || body.recoveryCode.length > 64
+      ) {
+        throw new InvalidInputError('body must be { challengeId, recoveryCode } or { challengeId, factorId, code }')
+      }
+      log.info({ route: 'mfa/verify', proof: 'recovery' }, 'mfa verify: recovery attempt')
+      session = await getIdentityProvider().verifyMfaRecovery(
+        body.challengeId,
+        body.recoveryCode,
+        sessionContext(req)
+      )
+    } else {
+      if (!body.challengeId || !body.factorId || !body.code) {
+        throw new InvalidInputError('challengeId, factorId and code are required')
+      }
+      session = await getIdentityProvider().verifyMfa(
+        body.challengeId,
+        body.factorId,
+        body.code,
+        sessionContext(req)
+      )
     }
-    const session = await getIdentityProvider().verifyMfa(
-      req.body.challengeId,
-      req.body.factorId,
-      req.body.code,
-      sessionContext(req)
-    )
     res.status(200).json({ token: session.token, sessionId: session.sessionId, user: toApiUser(session.user) })
   } catch (err) {
+    if (err instanceof RecoveryCodeInvalidError || err instanceof UnauthorizedError) {
+      // A non-existent/expired/in-flight challenge must not mint per-challenge
+      // entries (attacker-controlled ids); it still counts against the IP.
+      recordMfaVerifyFailure(req, { skipChallenge: err instanceof ChallengeNotActiveError })
+    }
     sendError(res, err)
+  } finally {
+    releaseMfaVerifyAttempt(reserved)
   }
 })
 
