@@ -118,6 +118,10 @@
       "sourcePath": "components/feedback/Stepper.jsx"
     },
     {
+      "name": "StrengthMeter",
+      "sourcePath": "components/feedback/StrengthMeter.jsx"
+    },
+    {
       "name": "Toast",
       "sourcePath": "components/feedback/Toast.jsx"
     },
@@ -136,6 +140,10 @@
     {
       "name": "FileDropZone",
       "sourcePath": "components/forms/FileDropZone.jsx"
+    },
+    {
+      "name": "InlineValidatedInput",
+      "sourcePath": "components/forms/InlineValidatedInput.jsx"
     },
     {
       "name": "Input",
@@ -168,6 +176,10 @@
     {
       "name": "Toggle",
       "sourcePath": "components/forms/Toggle.jsx"
+    },
+    {
+      "name": "TurnstileContainer",
+      "sourcePath": "components/forms/TurnstileContainer.jsx"
     },
     {
       "name": "AppCard",

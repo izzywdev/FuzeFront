@@ -494,6 +494,8 @@ export declare function StatGroup(props: StatGroupProps): JSX.Element;
 export interface AlertProps {
   tone?: "error" | "warning" | "success" | "info";
   title?: string;
+  /** Decorative glyph on the logical start edge; inherits the tone colour. */
+  icon?: ReactNode;
   children?: ReactNode;
   onDismiss?: () => void;
   role?: string;
@@ -645,6 +647,28 @@ export interface StepperProps extends React.HTMLAttributes<HTMLOListElement> {
  */
 export function Stepper(props: StepperProps): React.JSX.Element;
 
+// ----- StrengthMeter (feedback) -----
+export type StrengthLevel = "empty" | "weak" | "fair" | "good" | "strong";
+
+/**
+ * Segmented strength meter — bars lit to a level, tone-tinted, with a caption
+ * row and an optional child slot (a requirements checklist).
+ */
+export interface StrengthMeterProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "children"> {
+  /** Level to render; `empty` lights no bars. Default `empty`. */
+  strength?: StrengthLevel;
+  /** Caption on the logical start of the caption row (e.g. "Password strength"). */
+  label?: React.ReactNode;
+  /** The level word on the logical end, tinted with the tone (e.g. "Strong"). */
+  valueLabel?: React.ReactNode;
+  /** Number of bars (default 4). */
+  bars?: number;
+  /** Rendered below the bars + caption (e.g. a `PasswordChecklist`). */
+  children?: React.ReactNode;
+}
+
+export function StrengthMeter(props: StrengthMeterProps): React.JSX.Element;
+
 // ----- Toast (feedback) -----
 /**
  * A single toast notification — bg-tertiary card with a level-colored left bar.
@@ -743,6 +767,29 @@ export interface FileDropZoneProps extends React.HTMLAttributes<HTMLDivElement> 
 
 export function FileDropZone(props: FileDropZoneProps): React.JSX.Element;
 
+// ----- InlineValidatedInput (forms) -----
+export type InlineValidatedInputState = "idle" | "checking" | "valid" | "invalid";
+
+/**
+ * Text field with a live validation state — END-edge check adornment, success /
+ * error ring, a label row that carries an inline status `accessory`, and
+ * optional help / error lines. Composes `Input` + `FieldLabel`.
+ */
+export interface InlineValidatedInputProps
+  extends Omit<InputProps, "label" | "valid" | "invalid" | "adornment"> {
+  label?: React.ReactNode;
+  /** Inline status shown on the logical end of the label row (announced politely). */
+  accessory?: React.ReactNode;
+  /** Validation state; drives the ring, the adornment and `aria-busy`. Default `idle`. */
+  state?: InlineValidatedInputState;
+  /** Help line below the field; wired to the input via `aria-describedby`. */
+  help?: React.ReactNode;
+  /** Appends a required marker to the label. */
+  required?: boolean;
+}
+
+export function InlineValidatedInput(props: InlineValidatedInputProps): React.JSX.Element;
+
 // ----- Input (forms) -----
 /**
  * Labeled text field — accepts all native input attributes. Focus lights the
@@ -763,6 +810,19 @@ export interface InputProps
    * Defaults to `true`; set `false` to opt out. No effect on non-password inputs.
    */
   revealToggle?: boolean;
+  /** Accessible name of the reveal toggle while the value is hidden (localizable). Default "Show password". */
+  showPasswordLabel?: string;
+  /** Accessible name of the reveal toggle while the value is shown (localizable). Default "Hide password". */
+  hidePasswordLabel?: string;
+  /**
+   * Decorative node pinned to the logical END edge of the field (mirrors under
+   * RTL). Ignored on a revealable password field, which owns that slot.
+   */
+  adornment?: React.ReactNode;
+  /** Success ring (e.g. an availability check passed). */
+  valid?: boolean;
+  /** Error ring + `aria-invalid` without a message — the explanation is rendered elsewhere. */
+  invalid?: boolean;
 }
 
 export function Input(props: InputProps): React.JSX.Element;
@@ -842,6 +902,14 @@ export interface PasswordChecklistProps
   rules?: PasswordRule[];
   /** Heading shown above the list; pass "" to hide. */
   title?: string;
+  /** Lay the rules out in this many grid columns (default 1). */
+  columns?: number;
+  /** Tint still-unmet rules with the error colour (e.g. after a rejected submit). Default false. */
+  highlightUnmet?: boolean;
+  /** Visually-hidden suffix announced for a met rule (default " — met"). Localize it. */
+  metLabel?: string;
+  /** Visually-hidden suffix announced for an unmet rule (default " — not met"). Localize it. */
+  unmetLabel?: string;
 }
 
 export function PasswordChecklist(props: PasswordChecklistProps): React.JSX.Element;
@@ -967,6 +1035,36 @@ export interface ToggleProps {
 }
 
 export declare function Toggle(props: ToggleProps): JSX.Element;
+
+// ----- TurnstileContainer (forms) -----
+export type TurnstileContainerState = "loading" | "ready" | "verified" | "failed";
+
+export interface TurnstileContainerLabels {
+  loading: string;
+  ready: string;
+  verified: string;
+  failed: string;
+  /** Shown as an alert in the `failed` state. */
+  error: string;
+  /** The challenge vendor's name (approved exception to the vendor-name rule). */
+  brand: string;
+}
+
+/**
+ * Shell for a managed anti-abuse challenge widget: the chrome + the
+ * loading / ready / verified / failed states. The widget itself is `children`
+ * and stays mounted in every state.
+ */
+export interface TurnstileContainerProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "children"> {
+  /** Default `loading`. Exposed as `data-state`. */
+  state?: TurnstileContainerState;
+  /** Localizable copy; any omitted key falls back to the English default. */
+  labels?: Partial<TurnstileContainerLabels>;
+  /** The vendor widget (mounted in a slot that persists across states). */
+  children?: React.ReactNode;
+}
+
+export function TurnstileContainer(props: TurnstileContainerProps): React.JSX.Element;
 
 // ----- AppCard (launcher) -----
 /**

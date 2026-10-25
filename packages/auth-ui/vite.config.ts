@@ -22,6 +22,7 @@ export default defineConfig({
         'react-dom',
         'react/jsx-runtime',
         '@fuzefront/design-system',
+        '@marsidev/react-turnstile',
         /^@fuzefront\/design-system\/.*/,
       ],
     },
