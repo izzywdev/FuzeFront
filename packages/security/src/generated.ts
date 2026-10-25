@@ -3851,9 +3851,11 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description `RATE_LIMITED` — too many failed step-up attempts for this IP or challenge. One limiter covers both factor-code and recovery-code attempts. */
+            /** @description `RATE_LIMITED` — too many failed step-up attempts for this IP or challenge. One limiter covers both factor-code and recovery-code attempts. `Retry-After` gives the wait; clients show it and must not retry sooner. */
             429: {
                 headers: {
+                    /** @description Whole seconds until the exhausted limiter counter resets (rounded up, never less than 1). Always sent with this 429. */
+                    "Retry-After": number;
                     [name: string]: unknown;
                 };
                 content: {

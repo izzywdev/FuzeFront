@@ -23,7 +23,8 @@ Contract + generated client only — backend/UI/tests fan out after this freeze.
   completed challenge — unchanged behaviour), `401 RECOVERY_CODE_INVALID`
   (wrong, already-used, or superseded code; indistinguishable by design; the
   challenge stays live), and new `429 RATE_LIMITED` — one failed-attempt limiter
-  shared by both proofs.
+  shared by both proofs. The 429 declares a required `Retry-After` header
+  (integer seconds, `minimum: 1`, from the exhausted counter's reset time).
 - `MfaRequiredChallenge.recoveryAvailable` (optional boolean) — true when the
   user holds an unused recovery code. Clients offer "use a recovery code" only
   when `true`; absent = not available (fail-closed). No count is exposed

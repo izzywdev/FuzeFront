@@ -2099,7 +2099,17 @@ paths:
           description: >-
             `RATE_LIMITED` — too many failed step-up attempts for this IP or
             challenge. One limiter covers both factor-code and recovery-code
-            attempts.
+            attempts. `Retry-After` gives the wait; clients show it and must not
+            retry sooner.
+          headers:
+            Retry-After:
+              description: >-
+                Whole seconds until the exhausted limiter counter resets
+                (rounded up, never less than 1). Always sent with this 429.
+              required: true
+              schema:
+                type: integer
+                minimum: 1
           content:
             application/json:
               schema:
