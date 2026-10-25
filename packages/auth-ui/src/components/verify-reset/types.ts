@@ -26,7 +26,13 @@ export interface VerifyResetTransport {
 }
 
 /** Provider-neutral failure classes the flows render distinct states for. */
-export type AuthErrorKind = 'expired' | 'policy' | 'rate-limited' | 'unavailable' | 'unknown'
+export type AuthErrorKind =
+  | 'expired'
+  | 'policy'
+  | 'rate-limited'
+  | 'unavailable'
+  | 'conflict'
+  | 'unknown'
 
 export interface VerifyResetLabels {
   // check inbox
@@ -83,6 +89,9 @@ export interface VerifyResetLabels {
   strengthGood: string
   strengthStrong: string
   mismatch: string
+  matches: string
+  showPassword: string
+  hidePassword: string
   // shared errors
   passwordPolicy: string
   rateLimited: string
@@ -145,6 +154,9 @@ export const DEFAULT_VERIFY_RESET_LABELS: VerifyResetLabels = {
   strengthGood: 'Good',
   strengthStrong: 'Strong',
   mismatch: "Passwords don't match yet.",
+  matches: 'Passwords match.',
+  showPassword: 'Show password',
+  hidePassword: 'Hide password',
   passwordPolicy: 'That password does not meet the password policy. Choose a different one.',
   rateLimited: 'Too many attempts. Please wait a moment before trying again.',
   genericError: 'Something went wrong. Please try again.',

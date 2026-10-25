@@ -15,6 +15,7 @@ interface ErrorLike {
  *    operation, where a bad token is the only 400 there is)
  *  - 422 / PASSWORD_POLICY / legacy 400 MALFORMED (when `malformedIsPolicy`) → 'policy'
  *  - 502/503/504 / PROVIDER_UNAVAILABLE → 'unavailable'
+ *  - 409 / CONFLICT → 'conflict' (an account with that email already exists — signup)
  */
 export function classifyAuthError(
   err: unknown,
@@ -24,6 +25,7 @@ export function classifyAuthError(
   const status = e.status ?? e.response?.status
   const code = e.response?.data?.code ?? e.code
   if (status === 429 || code === 'RATE_LIMITED') return 'rate-limited'
+  if (status === 409 || code === 'CONFLICT') return 'conflict'
   if (
     code === 'EXPIRED' ||
     code === 'INVALID_CODE' ||

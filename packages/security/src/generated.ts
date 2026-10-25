@@ -300,6 +300,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/signup/email-available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inline signup email-availability check
+         * @description Public, unauthenticated inline check for the signup form: is this email free to register? Backs the debounced "available / already registered" adornment on the create-account field. Consults the SAME source of truth `POST /v1/security/signup` uses to reject a duplicate, so the answer cannot disagree with signup. The email is normalized (trimmed + lowercased) server-side before checking.
+         *
+         *     **Fail-open (client contract).** This endpoint is a UX convenience, never a gate: the client MUST treat any error (timeout, 4xx, 5xx, network) as "unknown/available" and NEVER block submit on it. Authoritative duplicate-rejection happens at `POST /v1/security/signup` (`409`).
+         *
+         *     **Enumeration posture.** It intentionally reveals whether an address is registered (the product requires inline feedback), so it MUST be per-IP rate-limited AND captcha-gated (the SAME `AuthMethods.captcha` Turnstile verification signup uses) so it cannot be used as a bulk account-enumeration oracle beyond the signup UX. The backend enforces both; this contract specifies the requirement. Exceeding the limit returns `429`.
+         */
+        get: operations["getSignupEmailAvailable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/methods": {
         parameters: {
             query?: never;
@@ -1293,8 +1317,10 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
-            firstName?: string;
-            lastName?: string;
+            /** @description Optional display name. Maps 1:1 to the identity store's single `name` field (i18n-safe), REPLACING the former `firstName`/`lastName` split — many names do not decompose into given/family parts. A client that still sends `firstName`/`lastName` is rejected (`additionalProperties: false`): this is the breaking change behind the 1.0.0 major bump. */
+            name?: string;
+            /** @description Cloudflare Turnstile token for server-side (anti-abuse) captcha verification. REQUIRED when `GET /v1/security/methods` reports `AuthMethods.captcha` (captcha enabled); omitted when captcha is disabled. The condition depends on SERVER configuration (`AuthMethods.captcha`), not on another field of this request body, so it cannot be expressed as a static JSON-Schema constraint here and is enforced server-side (fail-closed: a missing/invalid token when captcha is enabled rejects the signup). `turnstile`/`turnstileToken` is a DELIBERATE, approved exception to the vendor-name rule: a captcha is a browser widget the client must load with the vendor's own script + `siteKey`, so — unlike the hidden IDENTITY provider — the captcha vendor is necessarily consumer-visible. */
+            turnstileToken?: string;
             /** @description Optional tenant/organization name to provision on signup. */
             tenantName?: string;
             /** @description Optional single-use invitation bind token (from the `202` accept response, `InvitationEnrollResponse.bindToken`). When present, the server verifies the signup identity matches the invited channel identity, then auto-binds the invited membership (with its `memberType`/`role`) as part of signup — redeeming the invite without a second round-trip. Mismatch or an expired token fails signup-bind closed (the account may still be created; the bind is rejected). */
@@ -1349,6 +1375,11 @@ export interface components {
              */
             email: string;
         };
+        /** @description Result of the inline signup email-availability check (`GET /v1/security/signup/email-available`). `available` is false when an account already exists for the normalized email. The client treats any error as "available" and never blocks submit on this (fail-open). */
+        SignupEmailAvailability: {
+            /** @description True when no account exists for the email and it is free to register. */
+            available: boolean;
+        };
         /** @description Neutral auth capability descriptor. Replaces `oidcConfigured`. Lets the UI render affordances (password form, social buttons, MFA, contact verification) without knowing any provider. */
         AuthMethods: {
             /** @description Whether password login/signup is available. */
@@ -1364,6 +1395,29 @@ export interface components {
             verification: {
                 email: boolean;
                 sms: boolean;
+            };
+            /** @description Captcha capability for pre-auth forms (signup / sign-in). PRESENT only when captcha is enabled; ABSENT when disabled. When present, `SignupRequest.turnstileToken` is required and the client renders the captcha widget. `provider`/`siteKey` is a DELIBERATE, approved exception to the vendor-name rule: the captcha is a browser widget the client must load with the vendor's own script + public `siteKey`, so the captcha vendor is necessarily consumer-visible (unlike the hidden identity provider). */
+            captcha?: {
+                /**
+                 * @description Captcha widget provider. `turnstile` = Cloudflare Turnstile.
+                 * @enum {string}
+                 */
+                provider: "turnstile";
+                /** @description Public site key for the captcha widget. Safe to expose to the browser (it is designed to be public); the secret key lives only server-side for verification. */
+                siteKey: string;
+            };
+            /** @description Authoritative password policy so the client renders the REAL rules (strength meter + per-rule checklist) instead of a hard-coded, drift-prone client copy. Advisory for UX; the server independently enforces the same policy and is the source of truth (`422 PASSWORD_POLICY`). */
+            passwordPolicy?: {
+                /** @description Minimum password length (currently 12). */
+                minLength: number;
+                /** @description Requires at least one uppercase letter. */
+                requireUpper: boolean;
+                /** @description Requires at least one lowercase letter. */
+                requireLower: boolean;
+                /** @description Requires at least one digit. */
+                requireDigit: boolean;
+                /** @description Requires at least one symbol. */
+                requireSymbol: boolean;
             };
         };
         /**
@@ -2684,6 +2738,47 @@ export interface operations {
                 };
             };
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getSignupEmailAvailable: {
+        parameters: {
+            query: {
+                /** @description The email address to check. Normalized (trim + lowercase) server-side. */
+                email: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignupEmailAvailability"];
+                };
+            };
+            /** @description The `email` query param is missing or malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Rate limit exceeded (per-IP enumeration guard). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     getAuthMethods: {
