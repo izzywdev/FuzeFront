@@ -72,9 +72,9 @@
         "id": "sms-enroll",
         "orchestrator": "SmsEnrollFlow",
         "route": "/account/security/mfa/add/phone",
-        "approved": true,
-        "approvedBy": "izzywdev",
-        "approvedAt": "2026-10-21T06:50:02.427Z"
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
       },
       {
         "id": "recovery-codes",
@@ -176,15 +176,16 @@
       "label": "(03) Add a phone (text message)",
       "route": "/account/security/mfa/add/phone",
       "flow": "sms-enroll",
-      "summary": "Enter phone -> confirm code. LEADS with the channel-unavailable state (prod reality: text delivery not configured); shows available enter/confirm and invalid-code states too.",
-      "acceptanceNotes": "Gate the entire flow on methods.mfa.types including 'sms'. When absent, render ChannelUnavailableNotice with a disabled field and route the user to TOTP. Never send a code that cannot be delivered.",
+      "summary": "Enter phone -> confirm code. LEADS with the channel-unavailable state (prod reality: text delivery not configured); shows available enter/confirm and invalid-code states too. Both the confirm-code and invalid-code states offer 'Use a different number'.",
+      "acceptanceNotes": "Gate the entire flow on methods.mfa.types including 'sms'. When absent, render ChannelUnavailableNotice with a disabled field and route the user to TOTP. Never send a code that cannot be delivered. 'Use a different number' (data-action='change-number') is a secondary action on BOTH the confirm-code and error-invalid states: it discards the pending, not-yet-activated phone factor (DELETE /mfa/factors/{factorId}) and returns to the enter-phone step with the previous number prefilled. Returning to step 1 is not blocked if that discard request fails; the pending factor was never active and cannot be used to sign in.",
       "testHooks": [
         "[data-frame='03-sms-enroll']",
         "[data-component='channel-unavailable'][data-available='false']",
         "[data-component='sms-enroll'][data-state='enter-phone']",
         "[data-component='sms-enroll'][data-state='confirm-code']",
         "[data-action='send-code']",
-        "[data-state='error-invalid']"
+        "[data-state='error-invalid']",
+        "[data-action='change-number']"
       ]
     },
     {
@@ -291,5 +292,5 @@
       ]
     }
   ],
-  "stamp": "cae0cd374fb2e50cd217c5936d4878a9394464e6af29795f898563d5729eec6b"
+  "stamp": "de11665ca9357f6fb2afbc2b7c432f5eda666a0dbd9938b3ab7b1ea8390e8986"
 }
