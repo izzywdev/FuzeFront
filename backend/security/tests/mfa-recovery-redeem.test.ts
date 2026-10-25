@@ -252,10 +252,17 @@ describe('provider: verifyMfaRecovery', () => {
   it('rolls the burn back if session minting fails after the code was consumed', async () => {
     const { db, provider } = setup()
     const ch = await openChallenge(provider)
-    const orig = db.__tables.sessions.push.bind(db.__tables.sessions)
-    db.__tables.sessions.push = () => { throw new Error('db down') }
-    await expect(provider.verifyMfaRecovery(ch.challengeId, CODES[0])).rejects.toThrow('db down')
-    db.__tables.sessions.push = orig
+    // Fail AFTER the session insert, from inside the transaction: the insert
+    // must roll back together with the code burn.
+    const origTrx = db.transaction
+    db.transaction = async (fn: any) =>
+      origTrx(async (trx: any) => {
+        await fn(trx)
+        throw new Error('commit failed')
+      })
+    await expect(provider.verifyMfaRecovery(ch.challengeId, CODES[0])).rejects.toThrow('commit failed')
+    db.transaction = origTrx
+    expect(db.__tables.sessions.filter((s: any) => s.id !== 's-cur')).toHaveLength(0)
     expect(db.__tables.mfa_recovery_codes.every((r: any) => !r.used)).toBe(true)
     await expect(provider.verifyMfaRecovery(ch.challengeId, CODES[0])).resolves.toBeTruthy()
   })
@@ -392,6 +399,40 @@ describe('route: POST /mfa/verify', () => {
     expect((await post(app, { challengeId: 'chY', recoveryCode: 'bad' })).status).toBe(401)
     // blocked requests never reach the provider
     expect((p.verifyMfaRecovery as jest.Mock).mock.calls.filter(c => c[0] === 'chX')).toHaveLength(2)
+  })
+
+  it('a concurrent burst of wrong attempts never exceeds the per-challenge cap at the provider', async () => {
+    const p = routeProvider({
+      verifyMfaRecovery: jest.fn().mockImplementation(async () => {
+        await new Promise(r => setTimeout(r, 20))
+        throw new RecoveryCodeInvalidError()
+      }),
+    })
+    const app = makeApp(p)
+    const rs = await Promise.all(
+      Array.from({ length: 15 }, () => post(app, { challengeId: 'burst', recoveryCode: 'bad' }))
+    )
+    expect(rs.filter(r => r.status === 401)).toHaveLength(5)
+    expect(rs.filter(r => r.status === 429)).toHaveLength(10)
+    expect(p.verifyMfaRecovery).toHaveBeenCalledTimes(5)
+  })
+
+  it('a concurrent burst across challenges never exceeds the per-IP cap', async () => {
+    const p = routeProvider({
+      verifyMfaRecovery: jest.fn().mockImplementation(async () => {
+        await new Promise(r => setTimeout(r, 20))
+        throw new RecoveryCodeInvalidError()
+      }),
+    })
+    const app = makeApp(p)
+    await Promise.all(Array.from({ length: 40 }, (_, i) => post(app, { challengeId: `b${i}`, recoveryCode: 'bad' })))
+    expect(p.verifyMfaRecovery).toHaveBeenCalledTimes(20)
+  })
+
+  it('in-flight reservations are released on success (no slot leak)', async () => {
+    const app = makeApp(routeProvider())
+    await Promise.all(Array.from({ length: 30 }, () => post(app, { challengeId: 'okc', recoveryCode: 'ok' })))
+    expect((await post(app, { challengeId: 'okc', recoveryCode: 'ok' })).status).toBe(200)
   })
 
   it('per-IP cap applies across challenges', async () => {

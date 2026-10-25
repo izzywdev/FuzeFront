@@ -438,7 +438,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   }
 
   // ── Session minting ───────────────────────────────────────────────────────
-  private async mintSession(user: BrokeredUser, ctx?: SessionContext): Promise<BrokeredSession> {
+  private async mintSession(user: BrokeredUser, ctx?: SessionContext, trx?: any): Promise<BrokeredSession> {
     const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(this.now() + SESSION_TTL_MS)
     // `tid` binds the session to the tenant that minted it. Without it a token
@@ -454,7 +454,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     const token = jwt.sign({ userId: user.id, sessionId, tid: sessionTenantId() }, jwtSecret(), {
       expiresIn: '24h',
     })
-    await this.db('sessions').insert({
+    await (trx ?? this.db)('sessions').insert({
       id: sessionId,
       user_id: user.id,
       expires_at: expiresAt,
@@ -872,8 +872,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return decoded as any
   }
 
-  private async loadUser(userId: string): Promise<BrokeredUser> {
-    const row = await this.db('users').where('id', userId).first()
+  private async loadUser(userId: string, trx?: any): Promise<BrokeredUser> {
+    const row = await (trx ?? this.db)('users').where('id', userId).first()
     if (!row) throw new UnauthorizedError('user not found')
     return {
       id: row.id,
@@ -1179,8 +1179,10 @@ export class AuthentikIdentityProvider implements IdentityProvider {
           .where({ user_id: ch.userId, code_hash: codeHash, used: false })
           .update({ used: true })
         if (!burned) throw new RecoveryCodeInvalidError()
-        const user = await this.loadUser(ch.userId)
-        return this.mintSession(user, ctx)
+        // Reads + session insert ride the transaction connection (no second
+        // pool connection; the session rolls back with the code burn).
+        const user = await this.loadUser(ch.userId, trx)
+        return this.mintSession(user, ctx, trx)
       })
       this.mfaChallenges.delete(challengeId)
       logger.info({ userId: ch.userId, outcome: 'redeemed' }, 'authentik: recovery code redeemed')

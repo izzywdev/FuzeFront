@@ -251,6 +251,9 @@ const MFA_VERIFY_MAX_FAILS_PER_IP = 20
 const MFA_VERIFY_MAX_FAILS_PER_CHALLENGE = 5
 const MFA_VERIFY_MAX_KEYS = 10_000
 const mfaVerifyFails = new Map<string, { count: number; resetAt: number }>()
+// In-flight attempts, reserved synchronously BEFORE the provider is invoked so a
+// concurrent burst cannot slip past the cap before any failure is recorded.
+const mfaVerifyPending = new Map<string, number>()
 
 function mfaFailKeys(req: Request): Array<{ key: string; max: number }> {
   const keys = [{ key: `ip:${req.ip ?? 'unknown'}`, max: MFA_VERIFY_MAX_FAILS_PER_IP }]
@@ -261,17 +264,32 @@ function mfaFailKeys(req: Request): Array<{ key: string; max: number }> {
   return keys
 }
 
-function mfaVerifyBlocked(req: Request): boolean {
+/**
+ * Atomically (single sync tick) check the cap counting recorded failures AND
+ * in-flight attempts, and reserve a slot on every key. Returns the reserved
+ * keys, or null when any key is at its cap (nothing reserved).
+ */
+function reserveMfaVerifyAttempt(req: Request): string[] | null {
   const now = Date.now()
-  return mfaFailKeys(req).some(({ key, max }) => {
-    const e = mfaVerifyFails.get(key)
-    if (!e) return false
-    if (e.resetAt <= now) {
+  const keys = mfaFailKeys(req)
+  for (const { key, max } of keys) {
+    let e = mfaVerifyFails.get(key)
+    if (e && e.resetAt <= now) {
       mfaVerifyFails.delete(key)
-      return false
+      e = undefined
     }
-    return e.count >= max
-  })
+    if ((e?.count ?? 0) + (mfaVerifyPending.get(key) ?? 0) >= max) return null
+  }
+  for (const { key } of keys) mfaVerifyPending.set(key, (mfaVerifyPending.get(key) ?? 0) + 1)
+  return keys.map(k => k.key)
+}
+
+function releaseMfaVerifyAttempt(keys: string[]): void {
+  for (const key of keys) {
+    const n = (mfaVerifyPending.get(key) ?? 0) - 1
+    if (n <= 0) mfaVerifyPending.delete(key)
+    else mfaVerifyPending.set(key, n)
+  }
 }
 
 function recordMfaVerifyFailure(req: Request): void {
@@ -290,6 +308,7 @@ function recordMfaVerifyFailure(req: Request): void {
 /** Test seam: clear limiter state. */
 export function resetMfaVerifyLimiter(): void {
   mfaVerifyFails.clear()
+  mfaVerifyPending.clear()
 }
 
 function sendError(res: Response, err: unknown): void {
@@ -1149,7 +1168,8 @@ router.post('/mfa/challenge', async (req: Request, res: Response) => {
 
 router.post('/mfa/verify', async (req: Request, res: Response) => {
   const log = withReqId(req.get('x-request-id') ?? undefined, req as any)
-  if (mfaVerifyBlocked(req)) {
+  const reserved = reserveMfaVerifyAttempt(req)
+  if (!reserved) {
     log.warn({ route: 'mfa/verify' }, 'mfa verify: rate limited')
     res.setHeader('Retry-After', String(Math.ceil(MFA_VERIFY_WINDOW_MS / 1000)))
     res.status(429).json({ error: 'Too many attempts, please try again later', code: 'RATE_LIMITED' })
@@ -1191,6 +1211,8 @@ router.post('/mfa/verify', async (req: Request, res: Response) => {
       recordMfaVerifyFailure(req)
     }
     sendError(res, err)
+  } finally {
+    releaseMfaVerifyAttempt(reserved)
   }
 })
 
