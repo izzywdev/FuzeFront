@@ -19,7 +19,7 @@ const TEST_WEBHOOK_SECRET = process.env.TEST_WEBHOOK_SECRET ?? 'test-only-not-a-
 
 describe('FuzeQuality GitHub App contract', () => {
   it('declares the narrowly required workflow dispatch permission and webhook events', () => {
-    expect(GITHUB_APP_PERMISSIONS).toEqual({ metadata: 'read', contents: 'read', pull_requests: 'read', actions: 'write' })
+    expect(GITHUB_APP_PERMISSIONS).toEqual({ metadata: 'read', contents: 'write', pull_requests: 'read', actions: 'write' })
     expect(GITHUB_APP_EVENTS).toEqual(['push', 'repository', 'installation', 'installation_repositories', 'workflow_run'])
   })
 

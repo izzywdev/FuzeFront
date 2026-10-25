@@ -346,19 +346,47 @@ export async function dispatchTestWorkflow(input: {
   if (branch.commit?.sha?.toLowerCase() !== input.sourceRevision.toLowerCase()) {
     throw new Error('Analyzed branch has advanced; rescan the repository before dispatch')
   }
+  const immutableRef = `fuzequality-revision-${input.sourceRevision.toLowerCase()}`
+  const immutableRefUrl = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/git/ref/tags/${immutableRef}`
+  const verifyImmutableRef = async (response: Response) => {
+    if (!response.ok) throw new Error(`GitHub immutable dispatch ref verification failed: ${response.status}`)
+    const body = (await response.json()) as { object?: { sha?: string } }
+    if (body.object?.sha?.toLowerCase() !== input.sourceRevision.toLowerCase()) {
+      throw new Error('GitHub immutable dispatch ref does not match the analyzed commit')
+    }
+  }
+  const existingRef = await fetchGithub(immutableRefUrl, { headers })
+  if (existingRef.status === 404) {
+    const createdRef = await fetchGithub(
+      `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/git/refs`,
+      {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ ref: `refs/tags/${immutableRef}`, sha: input.sourceRevision }),
+      },
+    )
+    if (createdRef.status === 422) {
+      // A concurrent dispatch may have created the deterministic tag first.
+      await verifyImmutableRef(await fetchGithub(immutableRefUrl, { headers }))
+    } else {
+      await verifyImmutableRef(createdRef)
+    }
+  } else {
+    await verifyImmutableRef(existingRef)
+  }
   const response = await fetchGithub(
     `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/workflows/${encodeURIComponent(basename(input.workflowPath))}/dispatches`,
     {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
       body: JSON.stringify({
-        ref: input.sourceRef,
+        ref: immutableRef,
         ...(inputEntries.length ? { inputs: normalizedInputs } : {}),
       }),
     },
   )
   if (!response.ok) throw new Error(`GitHub test workflow dispatch failed: ${response.status}`)
-  return { ref: input.sourceRef, sourceRevision: input.sourceRevision }
+  return { ref: immutableRef, sourceRevision: input.sourceRevision }
 }
 
 /** @deprecated Use dispatchTestWorkflow for new executable test-suite paths. */

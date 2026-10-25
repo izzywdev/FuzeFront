@@ -135,7 +135,7 @@ scoped `ff_live_` service tokens, and namespaced `fuzequality` product-policy
 authorization. The scaffold's `FUZEQUALITY_API_TOKEN` is development-only and
 must not be deployed as the production security boundary.
 
-GitHub App permissions are read-only `Metadata`, `Contents`, and `Pull requests`.
+GitHub App permissions are read-only `Metadata` and `Pull requests`, write `Actions`, and write `Contents` so reviewed workflow dispatches can use deterministic immutable revision tags instead of mutable branches.
 Subscribe it to push, repository, installation, and default-branch events. Never
 store a PAT or installation token in a repository URL.
 

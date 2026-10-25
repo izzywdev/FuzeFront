@@ -4,7 +4,7 @@ import { normalizeWorkflowPath, type TestExecutionEvidenceLink } from '@fuzequal
 
 export const GITHUB_APP_PERMISSIONS = {
   metadata: 'read',
-  contents: 'read',
+  contents: 'write',
   pull_requests: 'read',
   actions: 'write',
 } as const

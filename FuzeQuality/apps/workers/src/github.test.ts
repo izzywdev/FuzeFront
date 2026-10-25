@@ -105,12 +105,17 @@ describe('secure GitHub checkout', () => {
 describe('controlled performance workflow dispatch', () => {
   it('revalidates the analyzed branch before dispatching the scanned workflow', async () => {
     const sourceRevision = 'a'.repeat(40)
+    const immutableRef = `fuzequality-revision-${sourceRevision}`
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: sourceRevision } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ object: { sha: sourceRevision } }), { status: 201 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
-    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).resolves.toEqual({ ref: 'main', sourceRevision })
+    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).resolves.toEqual({ ref: immutableRef, sourceRevision })
     expect(fetcher).toHaveBeenNthCalledWith(1, expect.stringContaining('/branches/main'), expect.objectContaining({ headers: expect.objectContaining({ authorization: 'Bearer secret' }) }))
-    expect(fetcher).toHaveBeenNthCalledWith(2, expect.stringContaining('/actions/workflows/load-test.yml/dispatches'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: 'main' }) }))
+    expect(fetcher).toHaveBeenNthCalledWith(2, expect.stringContaining(`/git/ref/tags/${immutableRef}`), expect.objectContaining({ headers: expect.objectContaining({ authorization: 'Bearer secret' }) }))
+    expect(fetcher).toHaveBeenNthCalledWith(3, expect.stringContaining('/git/refs'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: `refs/tags/${immutableRef}`, sha: sourceRevision }) }))
+    expect(fetcher).toHaveBeenNthCalledWith(4, expect.stringContaining('/actions/workflows/load-test.yml/dispatches'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: immutableRef }) }))
     await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234', workflowPath: '../workflow.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('Only a scanned')
     await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234', workflowPath: '.github/workflows/nested/load.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('Only a scanned')
     await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision: 'main', sourceRef: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('exact analyzed commit')
@@ -126,20 +131,34 @@ describe('controlled performance workflow dispatch', () => {
     const sourceRevision = 'a'.repeat(40)
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: sourceRevision } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ object: { sha: sourceRevision } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
     await dispatchPerformanceWorkflow({
       owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234',
       workflowPath: '.github/workflows/load-test.yml', inputs: { environment: 'staging', duration: '5m' },
       tokenProvider: async () => 'secret', fetcher,
     })
-    expect(fetcher).toHaveBeenNthCalledWith(2, expect.any(String), expect.objectContaining({
-      body: JSON.stringify({ ref: 'main', inputs: { environment: 'staging', duration: '5m' } }),
+    expect(fetcher).toHaveBeenNthCalledWith(3, expect.any(String), expect.objectContaining({
+      body: JSON.stringify({ ref: `fuzequality-revision-${sourceRevision}`, inputs: { environment: 'staging', duration: '5m' } }),
     }))
     await expect(dispatchPerformanceWorkflow({
       owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234',
       workflowPath: '.github/workflows/load-test.yml', inputs: { environment: '' },
       tokenProvider: async () => 'secret', fetcher,
     })).rejects.toThrow('bounded non-empty')
+  })
+
+  it('rejects an existing immutable dispatch ref bound to another commit', async () => {
+    const sourceRevision = 'a'.repeat(40)
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: sourceRevision } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ object: { sha: 'b'.repeat(40) } }), { status: 200 }))
+
+    await expect(dispatchPerformanceWorkflow({
+      owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234',
+      workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher,
+    })).rejects.toThrow('does not match the analyzed commit')
+    expect(fetcher).toHaveBeenCalledTimes(2)
   })
 })
 
