@@ -358,6 +358,34 @@ securityService:
     appName: "security-service"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
     tokenSecretName: ""
+  # Cloudflare Turnstile CAPTCHA for the signup redesign (backend/security/src/
+  # services/turnstile.ts; gated UI = fuzefront.auth.experience, default OFF).
+  # DEFAULT = ABSENT = captcha OFF: the service advertises AuthMethods.captcha
+  # only when BOTH TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY are non-empty, and
+  # runs normally without them. Every key is declared here with an explicit empty
+  # default (Helm values hygiene, CLAUDE.md) — the template renders the whole
+  # block only when siteKey is non-empty, so an unset overlay renders NOTHING new.
+  #
+  # TO ENABLE (separate, owner-gated change — do NOT do it in this PR):
+  #   1. owner supplies the Turnstile secret key; FuzeInfra seals it (see
+  #      deploy/contabo/sealed/turnstile-secrets.yaml.template for the exact
+  #      `@fuze` delegation) into Secret/turnstile-secrets, key TURNSTILE_SECRET_KEY
+  #   2. in values-prod.yaml set turnstile.siteKey (public) and
+  #      turnstile.secretName: "turnstile-secrets", in a deploy window
+  turnstile:
+    # PUBLIC widget key (safe in values / configmap). "" = captcha OFF.
+    siteKey: ""
+    # Name of the Secret holding the server-side secret key. "" = the chart's
+    # shared fuzefront-secrets Secret (same convention as featureFlags.
+    # tokenSecretName); set to "turnstile-secrets" to use the dedicated
+    # SealedSecret scaffolded under deploy/contabo/sealed/.
+    secretName: ""
+    # Key inside that Secret. The secretKeyRef is optional:true, so a missing
+    # key leaves captcha OFF (fail-safe) instead of wedging the pod.
+    secretKey: "TURNSTILE_SECRET_KEY"
+    # TURNSTILE_VERIFY_TIMEOUT_MS — siteverify round-trip bound, integer ms.
+    # "" = env var not set, so the code default (5000) applies.
+    verifyTimeoutMs: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
