@@ -689,8 +689,32 @@ billingService:
   # flag and the dead OFF-path rather than leaving a permanent toggle.
   authz:
     enabled: true
+    # register.enabled drives the billing-s2s-register PreSync Job. Set to FALSE
+    # on 2026-10-25 to break a production sync wedge, NOT because provisioning is
+    # unwanted. The Job's `register` init container (provision-s2s-clients.ts)
+    # reached Authentik fine — scope mapping and OAuth2 provider (pk=26) already
+    # existed from an earlier successful run — then failed on ensureS2SApplication
+    # with `Request failed with status code 400`: its findAcrossPages lookup
+    # misses the already-existing `s2s-billing-service` application, so it POSTs a
+    # duplicate slug and Authentik 400s. With backoffLimit: 0 that failed PreSync
+    # hook aborted the ENTIRE fuzefront Argo sync on every retry for 7+ days, so
+    # no new resource in the chart (selection-list-service included) could deploy.
+    # The init container's own message names this exact escape hatch ("set
+    # billingService.authz.register.enabled=false to skip provisioning"). authz
+    # stays enabled: true — billing-service keeps its existing (already-minted)
+    # Secret/billing-s2s-credentials, which is why billing is CrashLoopBackOff and
+    # not CreateContainerConfigError. Re-enable once the idempotency fix to
+    # ensureS2SApplication ships in a backend image (tracked separately).
+    #
+    # externallyProvisioned: true satisfies billing.assertAuthzCredentialSource
+    # (billing-service.yaml): with register off, it asserts that
+    # Secret/billing-s2s-credentials is provisioned by other means. It is — a
+    # prior sync's Job already minted and published it (provider pk=26 exists)
+    # and the Secret is still present — so the billing Deployment keeps starting
+    # with its current creds. Flip back to false when register.enabled returns.
     register:
-      enabled: true
+      enabled: false
+    externallyProvisioned: true
   # Was: a soft `preferred` affinity to hostname `fuzefront-node-2`, which does
   # not exist as a node label anywhere in the live Contabo cluster (see the
   # note by chatService below) — so this never actually steered anything; the
