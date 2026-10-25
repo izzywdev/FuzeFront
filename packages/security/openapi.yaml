@@ -4251,6 +4251,7 @@ components:
           description: True when an OTP was dispatched; false/omitted for TOTP prompts.
       required: [challengeId, factorId]
     MfaVerifyRequest:
+      type: object
       description: >-
         Step-up proof for `POST /mfa/verify`: EITHER a factor code
         (`MfaFactorVerifyRequest`) OR a recovery code
