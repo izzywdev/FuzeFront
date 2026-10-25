@@ -115,10 +115,14 @@ async function ensureApplication(
   const slug = 'fuzesocial-registration'
   const appName = 'FuzeSocial Registration'
 
-  // Check existence across all pages; slug param is a hint only
+  // superuser_full_list: Authentik's application LIST filters by the requesting
+  // user's per-object view permission even for a superuser admin token unless
+  // this is set, so a re-run misses the application it created earlier and POSTs
+  // a duplicate slug (Authentik then 400s). Same root cause as the S2S incident
+  // 2026-10-25; see provision-s2s-clients.ts.
   const found = await findAcrossPages<{ slug: string; name: string }>(
     `${baseUrl}/api/v3/core/applications/`,
-    { slug },
+    { slug, superuser_full_list: 'true' },
     headers,
     a => a.slug === slug
   )
@@ -127,19 +131,35 @@ async function ensureApplication(
     return
   }
 
-  // Create
-  await axios.post(
-    `${baseUrl}/api/v3/core/applications/`,
-    {
-      name: appName,
-      slug,
-      provider: providerPk,
-      meta_description: 'Machine-identity application for FuzeSocial client_credentials registration',
-      policy_engine_mode: 'any',
-    },
-    { headers, timeout: AUTHENTIK_TIMEOUT_MS }
-  )
-  console.log(`[provision-m2m] Created application "${appName}" (slug=${slug})`)
+  // Idempotent create: treat a 400 slug-collision as success (the app exists but
+  // the list did not surface it, or a concurrent run won the race).
+  try {
+    await axios.post(
+      `${baseUrl}/api/v3/core/applications/`,
+      {
+        name: appName,
+        slug,
+        provider: providerPk,
+        meta_description: 'Machine-identity application for FuzeSocial client_credentials registration',
+        policy_engine_mode: 'any',
+      },
+      { headers, timeout: AUTHENTIK_TIMEOUT_MS }
+    )
+    console.log(`[provision-m2m] Created application "${appName}" (slug=${slug})`)
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 400) {
+      const body = JSON.stringify(error.response.data)
+      if (body.includes('already exists') || body.toLowerCase().includes('slug')) {
+        console.log(
+          `[provision-m2m] Application "${appName}" already exists (create returned 400 on ` +
+            `slug collision; treating as idempotent).`
+        )
+        return
+      }
+      console.error(`[provision-m2m] Application create rejected (HTTP 400): ${body}`)
+    }
+    throw error
+  }
 }
 
 /**
