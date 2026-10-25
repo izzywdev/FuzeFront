@@ -216,6 +216,11 @@ export function FlowInspector({
                   </div>
                 )}
               </>
+            ) : flow.source === 'litellm' ? (
+              <div className="flow-inspector-state form-error" role="alert">
+                <AlertTriangle size={16} />
+                This legacy FuzeInfra LiteLLM proposal has no stored model, prompt, and schema provenance. Do not confirm it; regenerate repository analysis or reject the proposal.
+              </div>
             ) : (
               <small>Deterministic analysis; no model invocation.</small>
             )}

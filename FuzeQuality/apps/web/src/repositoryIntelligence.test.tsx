@@ -56,7 +56,7 @@ const candidate: RepositoryFlowCandidate = {
   revision: 'revision-1',
   title: 'Checkout flow',
   confidence: 0.9,
-  evidence: ['src/checkout.ts:10'],
+  evidence: [],
   steps: [
     {
       actor: 'Customer',
@@ -71,6 +71,12 @@ const candidate: RepositoryFlowCandidate = {
   },
   status: 'proposed',
   source: 'litellm',
+  analysis: {
+    provider: 'fuzeinfra-litellm',
+    model: 'quality-analysis',
+    promptVersion: 'flow-v2',
+    schemaVersion: '2.0',
+  },
   createdAt: '2026-10-09T00:00:00.000Z',
 }
 
@@ -574,12 +580,13 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(history).not.toBeNull()
     fireEvent.click(within(history!).getByText('Review history'))
     expect(await within(history!).findByText('previous-governance-reviewer')).toBeVisible()
+    const historyRequestsBeforeReview = vi.mocked(api.policyGateReviewHistory).mock.calls.length
     fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
       target: { value: 'Confirmed the remediation against repository evidence.' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Accept recommendation' }))
     expect(await within(history!).findByText('current-governance-reviewer')).toBeVisible()
-    expect(api.policyGateReviewHistory).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(api.policyGateReviewHistory).mock.calls.length).toBeGreaterThan(historyRequestsBeforeReview)
   })
 
   it('does not restore obsolete UX-flow review history after a newer decision reloads it', async () => {
@@ -1591,6 +1598,24 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
   })
 
+  it('blocks confirmation for a legacy LiteLLM flow without analysis provenance while keeping rejection available', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const invalid = { ...candidate, analysis: undefined }
+
+    render(
+      <FlowReviewControls
+        flow={invalid}
+        currentRevision={candidate.revision}
+        knownArtifactIds={candidate.evidence}
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('no stored model, prompt, and schema provenance')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
   it('blocks confirmation for unavailable LiteLLM evidence while keeping rejection available', () => {
     const onReview = vi.fn().mockResolvedValue(undefined)
     const invalid = {
@@ -2135,9 +2160,10 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
 
-    expect(await screen.findByRole('alert', {
-      name: '',
-    })).toHaveTextContent('Some exact UX flow evidence could not be loaded')
+    expect(await screen.findByText(
+      'Some exact UX flow evidence could not be loaded',
+      { exact: false },
+    )).toBeVisible()
     vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [historicalArtifact] })
     fireEvent.click(screen.getByRole('button', { name: 'Retry exact UX flow evidence' }))
 

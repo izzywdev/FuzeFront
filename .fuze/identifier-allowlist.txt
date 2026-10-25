@@ -31,8 +31,8 @@
 # broadening the exception.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality test-implementation entity
 src FuzeQuality/apps/api/src/index.ts:505                   # FuzeQuality test-execution entity
-src FuzeQuality/apps/api/src/index.ts:1088                  # FuzeQuality controlled test-suite dispatch audit entity
-src FuzeQuality/apps/api/src/index.ts:1155                  # FuzeQuality legacy performance dispatch audit entity
+src FuzeQuality/apps/api/src/index.ts:1090                  # FuzeQuality controlled test-suite dispatch audit entity
+src FuzeQuality/apps/api/src/index.ts:1157                  # FuzeQuality legacy performance dispatch audit entity
 src FuzeQuality/packages/core/src/store.ts:525              # FuzeQuality repository-flow review audit entity
 src FuzeQuality/packages/core/src/store.ts:584              # FuzeQuality policy-gate review audit entity
 src FuzeQuality/packages/core/src/store.ts:815              # FuzeQuality repository entity

@@ -3098,6 +3098,7 @@ export function FlowReviewControls({
       (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
   )
   const groundingRationaleMissing = hasGroundingGaps && reason.trim().length < 3
+  const analysisProvenanceMissing = flow.source === 'litellm' && !flow.analysis
   const wireframeMissing = flow.wireframe.nodes.length === 0
   const unavailableTargetIds = unavailableFlowArtifactTargetIds(flow, knownArtifactIds)
 
@@ -3166,6 +3167,11 @@ export function FlowReviewControls({
             LiteLLM returned unverified repository references. Confirmation requires a reviewer rationale; rejection remains available.
           </p>
         )}
+        {analysisProvenanceMissing && (
+          <p className="form-error" role="alert">
+            Confirmation is blocked because this FuzeInfra LiteLLM proposal has no stored model, prompt, and schema provenance. Reject it or regenerate repository analysis.
+          </p>
+        )}
         {wireframeMissing && (
           <p className="form-error" role="alert">
             Confirmation is blocked because this flow has no reviewable wireframe. Reject this proposal or regenerate repository analysis.
@@ -3179,7 +3185,7 @@ export function FlowReviewControls({
         <div className="row-actions">
           <QualityAction
             intent="secondary"
-            disabled={busy || !isReviewable || groundingRationaleMissing || wireframeMissing || unavailableTargetIds.length > 0}
+            disabled={busy || !isReviewable || groundingRationaleMissing || analysisProvenanceMissing || wireframeMissing || unavailableTargetIds.length > 0}
             onClick={() => void submit('confirmed')}
           >
             <Check size={14} /> Confirm

@@ -124,6 +124,21 @@ describe('FlowInspector', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Do not confirm it')
   })
 
+  it('blocks reviewer trust when a legacy LiteLLM proposal has no analysis provenance', () => {
+    render(
+      <FlowInspector
+        open
+        flow={{ ...flow, analysis: undefined }}
+        artifacts={[artifact]}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('no stored model, prompt, and schema provenance')
+    expect(screen.getByRole('alert')).toHaveTextContent('Do not confirm it')
+    expect(screen.queryByText('Deterministic analysis; no model invocation.')).not.toBeInTheDocument()
+  })
+
   it('blocks reviewer trust when LiteLLM evidence is unavailable even if targets still resolve', () => {
     render(
       <FlowInspector

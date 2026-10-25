@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.2
+  version: 0.84.3
   license:
     name: UNLICENSED
 servers:
@@ -471,9 +471,10 @@ paths:
                   - { $ref: '#/components/schemas/StaleFlowReviewError' }
         '422':
           description: >-
-            Confirmation requires reviewer rationale for LiteLLM grounding gaps and
-            a reviewable wireframe; every LiteLLM evidence, step, or wireframe artifact
-            reference must resolve in the candidate's exact repository revision.
+            Confirmation requires complete FuzeInfra LiteLLM model, prompt, and schema
+            provenance, reviewer rationale for grounding gaps, and a reviewable wireframe;
+            every LiteLLM evidence, step, or wireframe artifact reference must resolve in
+            the candidate's exact repository revision.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }

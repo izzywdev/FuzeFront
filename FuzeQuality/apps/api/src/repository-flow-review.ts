@@ -57,6 +57,20 @@ export function repositoryFlowGroundingRationaleConflict(
   } as const
 }
 
+export function repositoryFlowAnalysisProvenanceConflict(
+  candidate: RepositoryFlowCandidate,
+  status: 'confirmed' | 'rejected',
+) {
+  if (status !== 'confirmed' || candidate.source !== 'litellm' || candidate.analysis) return undefined
+
+  return {
+    error: 'This FuzeInfra LiteLLM flow has no stored model, prompt, and schema provenance. Regenerate the repository analysis before confirming it.',
+    code: 'FLOW_ANALYSIS_PROVENANCE_REQUIRED',
+    candidateId: candidate.id,
+    revision: candidate.revision,
+  } as const
+}
+
 export function repositoryFlowWireframeConflict(
   candidate: RepositoryFlowCandidate,
   status: 'confirmed' | 'rejected',
