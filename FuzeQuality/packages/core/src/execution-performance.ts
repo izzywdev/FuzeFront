@@ -50,6 +50,7 @@ export type PolicyGatePerformancePage = {
 
 export type ExecutionEvidenceRequirement =
   | 'evidence-url-invalid'
+  | 'github-run-provenance-missing'
   | 'policy-gate-outcome-missing'
   | 'post-production-video-missing'
   | 'performance-threshold-missing'
@@ -213,7 +214,8 @@ export function filterTestExecutions(
     if (
       filter.headRepository &&
       execution.provider === 'github-actions' &&
-      execution.headRepository?.toLowerCase() !== filter.headRepository.toLowerCase()
+      execution.headRepository?.toLowerCase() !== filter.headRepository.toLowerCase() &&
+      !(filter.evidenceRequirement === 'github-run-provenance-missing' && execution.headRepository === undefined)
     ) return false
     if (filter.evidenceKind && !execution.evidenceLinks.some(link =>
       link.kind === filter.evidenceKind && safeExecutionEvidenceUrl(link.url)
@@ -231,6 +233,14 @@ export function filterTestExecutions(
     if (
       filter.evidenceRequirement === 'evidence-url-invalid' &&
       !execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'github-run-provenance-missing' &&
+      (execution.provider !== 'github-actions' ||
+        (execution.headRepository !== undefined &&
+          execution.workflowPath !== undefined &&
+          execution.sourceUrl !== undefined &&
+          safeExecutionEvidenceUrl(execution.sourceUrl)))
     ) return false
     if (
       filter.evidenceRequirement === 'post-production-video-missing' &&

@@ -179,6 +179,30 @@ it('filters and trends only timestamped execution evidence', () => {
     [...executions, postProductionWithUnsafeLegacyVideo],
     { evidenceRequirement: 'evidence-url-invalid' },
   )).toEqual([postProductionWithUnsafeLegacyVideo])
+  const githubRunWithoutProvenance = {
+    ...executions[0],
+    id: 'github-run-without-provenance',
+    provider: 'github-actions' as const,
+    externalRunId: 'github-run-without-provenance',
+  }
+  const githubRunWithProvenance = {
+    ...githubRunWithoutProvenance,
+    id: 'github-run-with-provenance',
+    externalRunId: 'github-run-with-provenance',
+    headRepository: 'acme/app',
+    workflowPath: '.github/workflows/ci.yml',
+    sourceUrl: 'https://github.com/acme/app/actions/runs/42',
+  }
+  const githubForkWithoutProvenance = {
+    ...githubRunWithoutProvenance,
+    id: 'github-fork-without-provenance',
+    externalRunId: 'github-fork-without-provenance',
+    headRepository: 'contributor/app',
+  }
+  expect(filterTestExecutions(
+    [githubRunWithoutProvenance, githubRunWithProvenance, githubForkWithoutProvenance, executions[0]],
+    { evidenceRequirement: 'github-run-provenance-missing', headRepository: 'acme/app' },
+  )).toEqual([githubRunWithoutProvenance])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'performance-threshold-missing' })).toEqual([executions[1]])
   const explicitPolicyGateOutcome = {
     ...executions[0],

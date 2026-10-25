@@ -1644,6 +1644,12 @@ export class PostgresCatalogStore implements CatalogStore {
                SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
+           OR ($25='github-run-provenance-missing'
+             AND executions.provider='github-actions'
+             AND (executions.head_repository IS NULL
+               OR executions.workflow_path IS NULL
+               OR executions.source_url IS NULL
+               OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -1665,7 +1671,8 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
          AND ($28::text IS NULL OR executions.id=$28)
-         AND ($29::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($29))
+         AND ($29::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($29)
+           OR ($25='github-run-provenance-missing' AND executions.head_repository IS NULL))
        ORDER BY executions.created_at DESC,executions.id DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.id ?? null, query.headRepository ?? null],
@@ -1912,6 +1919,12 @@ export class PostgresCatalogStore implements CatalogStore {
                SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
+           OR ($25='github-run-provenance-missing'
+             AND executions.provider='github-actions'
+             AND (executions.head_repository IS NULL
+               OR executions.workflow_path IS NULL
+               OR executions.source_url IS NULL
+               OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -1932,7 +1945,8 @@ export class PostgresCatalogStore implements CatalogStore {
                AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1)))
          AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
          AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
-         AND ($28::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($28))
+         AND ($28::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($28)
+           OR ($25='github-run-provenance-missing' AND executions.head_repository IS NULL))
        GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
        ORDER BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
@@ -2018,6 +2032,12 @@ export class PostgresCatalogStore implements CatalogStore {
                  SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
                  WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
                ))
+             OR ($28='github-run-provenance-missing'
+               AND executions.provider='github-actions'
+               AND (executions.head_repository IS NULL
+                 OR executions.workflow_path IS NULL
+                 OR executions.source_url IS NULL
+                 OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
              OR ($28='post-production-video-missing'
                AND executions.kind='post-production'
                AND NOT EXISTS (
@@ -2038,7 +2058,8 @@ export class PostgresCatalogStore implements CatalogStore {
                  AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1)))
            AND ($29::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $29)
            AND ($30::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $30)
-           AND ($31::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($31))
+           AND ($31::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($31)
+             OR ($28='github-run-provenance-missing' AND executions.head_repository IS NULL))
        ), explicit_pairs AS (
          SELECT execution.repository_id,execution.revision,execution.completed_at,execution.occurred_at,
                 fuzequality.quality_artifact_logical_id(

@@ -3837,7 +3837,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCheckedAfter, setExecutionEvidenceCheckedAfter] = useState('')
   const [executionEvidenceCheckedBefore, setExecutionEvidenceCheckedBefore] = useState('')
   const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
-    'evidence-url-invalid' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+    'evidence-url-invalid' | 'github-run-provenance-missing' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
   >('')
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
@@ -6300,12 +6300,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 value={executionEvidenceRequirement}
                 onChange={event =>
                   setExecutionEvidenceRequirement(
-                    event.target.value as 'evidence-url-invalid' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+                    event.target.value as 'evidence-url-invalid' | 'github-run-provenance-missing' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
                   )
                 }
               >
                 <option value="">All requirements</option>
                 <option value="evidence-url-invalid">Invalid or non-HTTPS artifact URL</option>
+                <option value="github-run-provenance-missing">Missing GitHub run provenance</option>
                 <option value="policy-gate-outcome-missing">Missing policy–gate outcome</option>
                 <option value="post-production-video-missing">Missing post-production video</option>
                 <option value="performance-threshold-missing">Missing performance thresholds</option>

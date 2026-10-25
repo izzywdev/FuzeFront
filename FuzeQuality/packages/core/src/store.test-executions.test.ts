@@ -419,6 +419,11 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")
     expect(String(sql)).toContain("$25='post-production-video-missing'")
     expect(String(sql)).toContain("$25='evidence-url-invalid'")
+    expect(String(sql)).toContain("$25='github-run-provenance-missing'")
+    expect(String(sql)).toContain("executions.provider='github-actions'")
+    expect(String(sql)).toContain('executions.head_repository IS NULL')
+    expect(String(sql)).toContain('executions.workflow_path IS NULL')
+    expect(String(sql)).toContain('executions.source_url IS NULL')
     expect(String(sql)).toContain("COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'")
     expect(String(sql)).toContain("required_evidence.value->>'kind'='video'")
     expect(String(sql)).toContain("required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'")
@@ -434,6 +439,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $27")
     expect(String(sql)).toContain('executions.id=$28')
     expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($29)")
+    expect(String(sql)).toContain("$25='github-run-provenance-missing' AND executions.head_repository IS NULL")
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', 'failed', 'github-actions', 'abc',
       '.github/workflows/post-prod.yml', 'recovered', 60_000, 180_000, '2026-01-01T00:00:00.000Z',
@@ -490,6 +496,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")
     expect(String(sql)).toContain("$25='post-production-video-missing'")
     expect(String(sql)).toContain("$25='evidence-url-invalid'")
+    expect(String(sql)).toContain("$25='github-run-provenance-missing'")
     expect(String(sql)).toContain("$25='terminal-timing-missing'")
     expect(String(sql)).toContain("$25='performance-threshold-missing'")
     expect(String(sql)).toContain("$25='policy-gate-outcome-missing'")
@@ -497,6 +504,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $27")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
     expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($28)")
+    expect(String(sql)).toContain("$25='github-run-provenance-missing' AND executions.head_repository IS NULL")
     expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42', 'policy-1', 'gate-1', 'report', 'passed', 'Integration suite', 'passed', 'feature/checkout', 'complete', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app'])
   })
 
@@ -545,6 +553,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$27")
     expect(String(sql)).toContain("$28='post-production-video-missing'")
     expect(String(sql)).toContain("$28='evidence-url-invalid'")
+    expect(String(sql)).toContain("$28='github-run-provenance-missing'")
     expect(String(sql)).toContain("required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'")
     expect(String(sql)).toContain("$28='terminal-timing-missing'")
     expect(String(sql)).toContain("$28='performance-threshold-missing'")
@@ -553,6 +562,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $30")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
     expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($31)")
+    expect(String(sql)).toContain("$28='github-run-provenance-missing' AND executions.head_repository IS NULL")
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
     expect(String(sql)).toContain('AS pass_rate')
     expect(String(sql)).toContain('ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id')
