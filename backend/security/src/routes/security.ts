@@ -1,4 +1,4 @@
-import { canonicalSessionTenant, proveSessionTenant } from '../services/session-tenant'
+import { canonicalSessionTenant, listSessionWorkspaces, proveSessionTenant } from '../services/session-tenant'
 /**
  * The FuzeFront Security API — AuthN surface under `/api/v1/security`.
  *
@@ -252,10 +252,11 @@ function sendError(res: Response, err: unknown): void {
     return
   }
   if (err instanceof CaptchaRejectedError) {
-    // The captcha token is part of the request body, so a missing/invalid one is
-    // a 400 `MALFORMED` (the frozen ErrorBody.code enum has no captcha-specific
-    // value). Distinct from 409 email-exists, 422 PASSWORD_POLICY and 503.
-    res.status(400).json({ error: err.message, code: 'MALFORMED' })
+    // A rejected/invalid/missing Turnstile token → 400 `CAPTCHA_FAILED` (added to
+    // ErrorBody.code in contract v1.1.0), distinct from a generic MALFORMED body,
+    // 409 email-exists, 422 PASSWORD_POLICY, and the 503 when Cloudflare itself is
+    // unreachable. The UI maps this code to the Turnstile "failed" state.
+    res.status(400).json({ error: err.message, code: 'CAPTCHA_FAILED' })
     return
   }
   if (err instanceof CaptchaUnavailableError) {
@@ -407,6 +408,26 @@ router.get('/session', async (req: Request, res: Response) => {
       return void res.status(200).json({ identity: { ...identity, tenantId: verifiedTenant }, user: toApiUser(user) })
     }
     res.status(200).json({ identity, user: toApiUser(user) })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// Active tenant choices for standalone products. Discovery alone is not tenant
+// authority: the chosen id must still pass GET /session?tenant= membership proof.
+router.get('/session/workspaces', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const { identity } = await getIdentityProvider().getUserInfo(token)
+    let workspaces
+    try {
+      workspaces = await listSessionWorkspaces(identity.userId)
+    } catch {
+      return void res.status(503).json({ error: 'Workspace discovery unavailable' })
+    }
+    res.setHeader('Cache-Control', 'no-store')
+    res.status(200).json({ workspaces })
   } catch (err) {
     sendError(res, err)
   }

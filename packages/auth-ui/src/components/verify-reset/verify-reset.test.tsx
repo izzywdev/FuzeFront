@@ -33,6 +33,8 @@ describe('classifyAuthError', () => {
     expect(classifyAuthError(httpErr(400, 'EXPIRED'))).toBe('expired')
     expect(classifyAuthError(httpErr(400, 'INVALID_CODE'))).toBe('expired')
     expect(classifyAuthError(httpErr(503, 'PROVIDER_UNAVAILABLE'))).toBe('unavailable')
+    expect(classifyAuthError(httpErr(400, 'CAPTCHA_FAILED'))).toBe('captcha')
+    expect(classifyAuthError({ status: 400, code: 'CAPTCHA_FAILED' }, { malformedIsPolicy: true })).toBe('captcha')
     expect(classifyAuthError(httpErr(400, 'MALFORMED'))).toBe('unknown')
     expect(classifyAuthError(httpErr(400, 'MALFORMED'), { badRequestIsExpired: true })).toBe('expired')
     expect(classifyAuthError(httpErr(400, 'TOKEN_EXPIRED'))).toBe('expired')

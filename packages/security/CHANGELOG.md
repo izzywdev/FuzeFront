@@ -1,5 +1,13 @@
 # Changelog — @fuzefront/security-client
 
+## 1.2.0 — Tenant workspace discovery (additive, unreleased)
+
+`info.version` 1.1.0 -> 1.2.0, `SECURITY_CONTRACT_VERSION` 1.1.0 -> 1.2.0,
+package `version` 1.1.0 -> 1.2.0. MINOR — adds the authenticated,
+provider-agnostic `GET /v1/security/session/workspaces` discovery contract used
+by portal and standalone clients before proving a personal or organization
+tenant. Existing operations and response shapes are unchanged.
+
 ## 1.1.0 — Auth-experience signup contract reconciliation (additive, unreleased)
 
 `info.version` 1.0.0 -> 1.1.0, `SECURITY_CONTRACT_VERSION` 1.0.0 -> 1.1.0,

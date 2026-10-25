@@ -271,7 +271,7 @@ describe('POST /signup — flag ON (1.0.0 contract)', () => {
         const p = provider()
         const res = await signup(makeApp(p), { email: 'a@b.co', password: STRONG })
         expect(res.status).toBe(400)
-        expect(res.body.code).toBe('MALFORMED')
+        expect(res.body.code).toBe('CAPTCHA_FAILED')
         expect(fetchMock).not.toHaveBeenCalled()
         expect(p.signup).not.toHaveBeenCalled()
       })
@@ -282,6 +282,7 @@ describe('POST /signup — flag ON (1.0.0 contract)', () => {
         const p = provider()
         const res = await signup(makeApp(p), { email: 'a@b.co', password: STRONG, turnstileToken: TOKEN })
         expect(res.status).toBe(400)
+        expect(res.body.code).toBe('CAPTCHA_FAILED')
         expect(p.signup).not.toHaveBeenCalled()
       })
 

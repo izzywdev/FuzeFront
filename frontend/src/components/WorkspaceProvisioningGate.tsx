@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { organizationsAPI } from '../services/api'
+import { organizationsAPI, securitySessionAPI } from '../services/api'
 import {
   useAppContext,
   useCurrentUser,
   getPersistedActiveOrganizationId,
+  getPersistedPersonalTenantId,
   ROOT_ORG_ID,
 } from '../lib/shared'
 import { isEmployeeUser } from '../utils/employee'
@@ -20,6 +21,20 @@ const READY_SESSION_KEY = 'ff.workspaceReady'
 
 interface WorkspaceProvisioningGateProps {
   children: React.ReactNode
+}
+
+function hasRestorableWorkspace(): boolean {
+  if (
+    typeof sessionStorage === 'undefined' ||
+    sessionStorage.getItem(READY_SESSION_KEY) !== '1'
+  ) {
+    return false
+  }
+
+  return (
+    getPersistedActiveOrganizationId() !== null ||
+    getPersistedPersonalTenantId() !== null
+  )
 }
 
 /**
@@ -57,10 +72,6 @@ function isProvisionedMembership(o: Organization): boolean {
   return o.type !== 'platform'
 }
 
-function hasProvisionedOrg(orgs: Organization[]): boolean {
-  return orgs.some(isProvisionedMembership)
-}
-
 /**
  * WorkspaceProvisioningGate
  *
@@ -91,14 +102,15 @@ export function WorkspaceProvisioningGate({
     // Optimistically render the app on reload if we already confirmed the
     // workspace this session — the background check below still runs to populate
     // org context. This is what removes the per-navigation provisioning flash.
-    typeof sessionStorage !== 'undefined' &&
-    sessionStorage.getItem(READY_SESSION_KEY) === '1'
+    hasRestorableWorkspace()
       ? 'ready'
       : 'checking'
   )
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startTimeRef = useRef<number>(0)
+  const requestGenerationRef = useRef(0)
+  const mountedRef = useRef(false)
 
   const stopPolling = () => {
     if (intervalRef.current !== null) {
@@ -107,7 +119,18 @@ export function WorkspaceProvisioningGate({
     }
   }
 
-  const onOrgsLoaded = (orgs: Organization[]) => {
+  const markReady = () => {
+    try {
+      sessionStorage.setItem(READY_SESSION_KEY, '1')
+    } catch {
+      // ignore
+    }
+    stopPolling()
+    setGateState('ready')
+  }
+
+  const onOrgsLoaded = async (orgs: Organization[]): Promise<boolean> => {
+    const requestGeneration = ++requestGenerationRef.current
     dispatch({ type: 'SET_ORGANIZATIONS', payload: orgs })
     // Only orgs the caller actually belongs to are candidates for "active" —
     // never the always-visible platform org they merely have visibility into.
@@ -115,8 +138,28 @@ export function WorkspaceProvisioningGate({
     // Non-employees cannot have ROOT_ORG_ID as their active organization
     const eligibleOrgs = memberOrgs.filter(o => isEmployee || o.id !== ROOT_ORG_ID)
 
+    const personal = eligibleOrgs.find(o => o.type === 'personal')
+
+    // Personal is a Security-owned tenant, independent of organization
+    // membership. Resolve it even for organization members so selecting
+    // Personal later cannot mount a federated app without tenant context.
+    const resolvedPersonalTenantId =
+      await securitySessionAPI.resolvePersonalTenant()
+
+    // setInterval callbacks can overlap. An older Security request must never
+    // overwrite a workspace selected by a newer poll, nor dispatch after the
+    // gate has unmounted.
+    if (
+      !mountedRef.current ||
+      requestGeneration !== requestGenerationRef.current
+    ) {
+      return false
+    }
+
+    const personalTenantId = resolvedPersonalTenantId ?? personal?.id ?? null
+    dispatch({ type: 'SET_PERSONAL_TENANT', payload: personalTenantId })
+
     if (eligibleOrgs.length > 0) {
-      const personal = eligibleOrgs.find(o => o.type === 'personal')
       // Prefer the org the user previously selected (persisted across reloads)
       // over blindly forcing the personal org — otherwise every reload reset
       // the active org to personal and billed the wrong org. Only fall back to
@@ -128,23 +171,20 @@ export function WorkspaceProvisioningGate({
         : null
       const active = persisted ?? personal ?? eligibleOrgs[0]
       dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: active.id })
-      try {
-        sessionStorage.setItem(READY_SESSION_KEY, '1')
-      } catch {
-        // ignore
-      }
-      stopPolling()
-      setGateState('ready')
+      markReady()
+      return true
     } else {
-      // Non-employee with no customer orgs defaults to personal context (null)
-      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: null })
-      try {
-        sessionStorage.setItem(READY_SESSION_KEY, '1')
-      } catch {
-        // ignore
+      // The portal models Personal as a null active organization, but products
+      // still require the Security-owned tenant that persists and authorizes
+      // personal data. Discover it and prove membership before mounting any
+      // federated application; otherwise the first API calls race with an
+      // unresolved tenant and fail as "tenant-scoped identity required".
+      if (personalTenantId) {
+        dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: null })
+        markReady()
+        return true
       }
-      stopPolling()
-      setGateState('ready')
+      return false
     }
   }
 
@@ -161,9 +201,7 @@ export function WorkspaceProvisioningGate({
 
       try {
         const orgs: Organization[] = await organizationsAPI.getOrganizations()
-        if (hasProvisionedOrg(orgs)) {
-          onOrgsLoaded(orgs)
-        }
+        await onOrgsLoaded(orgs)
       } catch {
         stopPolling()
         setGateState('error')
@@ -177,21 +215,20 @@ export function WorkspaceProvisioningGate({
   }
 
   useEffect(() => {
+    mountedRef.current = true
     let cancelled = false
     // If we rendered the app optimistically (workspace already confirmed this
     // session), the background check only refreshes org context — it must never
     // downgrade to the provisioning/error card and re-flash on navigation.
-    const startedReady =
-      typeof sessionStorage !== 'undefined' &&
-      sessionStorage.getItem(READY_SESSION_KEY) === '1'
+    const startedReady = hasRestorableWorkspace()
 
     const check = async () => {
       try {
         const orgs: Organization[] = await organizationsAPI.getOrganizations()
         if (cancelled) return
-        if (hasProvisionedOrg(orgs)) {
-          onOrgsLoaded(orgs)
-        } else if (!startedReady) {
+        const resolved = await onOrgsLoaded(orgs)
+        if (cancelled) return
+        if (!resolved && !startedReady) {
           startPolling()
         }
       } catch {
@@ -205,6 +242,8 @@ export function WorkspaceProvisioningGate({
 
     return () => {
       cancelled = true
+      mountedRef.current = false
+      requestGenerationRef.current += 1
       stopPolling()
     }
   }, [])
