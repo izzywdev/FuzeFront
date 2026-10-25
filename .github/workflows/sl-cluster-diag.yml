@@ -46,7 +46,7 @@ jobs:
           k() { curl -sS --cacert "$CA" -H "Authorization: Bearer $TOKEN" "$API$1"; }
 
           echo "::group::Deployment status"
-          k "/apis/apps/v1/namespaces/$NS/deployments/$APP" | python3 -c '
+          { k "/apis/apps/v1/namespaces/$NS/deployments/$APP" || true; } | python3 -c '
           import sys, json
           try:
               d = json.load(sys.stdin)
@@ -98,9 +98,12 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Bootstrap Job (DB role/db provisioner, pre-sync hook)"
-          k "/apis/batch/v1/namespaces/$NS/jobs/$JOB" | python3 -c '
+          { k "/apis/batch/v1/namespaces/$NS/jobs/$JOB" || true; } | python3 -c '
           import sys, json
-          d = json.load(sys.stdin)
+          try:
+              d = json.load(sys.stdin)
+          except Exception as e:
+              print("could not parse job response:", e); sys.exit(0)
           if d.get("kind") == "Status":
               print("job GET ->", d.get("status"), d.get("reason"), d.get("message")); sys.exit(0)
           s = d.get("status", {})
@@ -111,9 +114,14 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Recent events mentioning selection-list"
-          k "/api/v1/namespaces/$NS/events" | python3 -c '
+          { k "/api/v1/namespaces/$NS/events" || true; } | python3 -c '
           import sys, json
-          d = json.load(sys.stdin)
+          try:
+              d = json.load(sys.stdin)
+          except Exception as e:
+              print("could not parse events response:", e); sys.exit(0)
+          if d.get("kind") == "Status":
+              print("events LIST -> API error:", d.get("status"), d.get("code"), d.get("reason"), "|", d.get("message")); sys.exit(0)
           evs = d.get("items", [])
           def key(e):
               return e.get("lastTimestamp") or e.get("eventTime") or ""
