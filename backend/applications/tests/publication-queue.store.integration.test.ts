@@ -112,10 +112,10 @@ describe('publication review queue (real Postgres)', () => {
     await seed('p2', { marketplace_submitted_at: at(20) })
     await seed('p6', { marketplace_submitted_at: at(60) })
     await seed('p7', { marketplace_submitted_at: at(70) })
-    // approved (submission retained by approve) + one legacy row with no submission.
-    await seed('a2', { is_marketplace_approved: true, marketplace_submitted_at: at(200), marketplace_approved_at: at(300) })
-    await seed('a1', { is_marketplace_approved: true, marketplace_submitted_at: at(100), marketplace_approved_at: at(400) })
-    await seed('a0', { is_marketplace_approved: true, marketplace_submitted_at: null, marketplace_approved_at: at(50) })
+    // approved: ordered by approval time; a0 is a legacy row with no approvedAt.
+    await seed('a2', { is_marketplace_approved: true, marketplace_submitted_at: at(200), marketplace_approved_at: at(300), created_at: at(1) })
+    await seed('a1', { is_marketplace_approved: true, marketplace_submitted_at: at(100), marketplace_approved_at: at(400), created_at: at(1) })
+    await seed('a0', { is_marketplace_approved: true, marketplace_submitted_at: at(5), marketplace_approved_at: null, created_at: at(350) })
     // rejected (submission cleared; ordered by rejectedAt); r-none has none -> excluded everywhere.
     await seed('r2', { marketplace_metadata: JSON.stringify({ publication: { rejection: { reason: 'x', rejectedAt: at(2000).toISOString() } } }) })
     await seed('r1', { marketplace_metadata: JSON.stringify({ publication: { rejection: { reason: 'y', rejectedAt: at(1000).toISOString() } } }) })
@@ -162,11 +162,13 @@ describe('publication review queue (real Postgres)', () => {
     expect(page.items).toHaveLength(7)
   })
 
-  it('approved: ordered by retained submission instant, legacy row falls back to approval time', async () => {
+  it('approved: ordered by approvedAt (NOT submission), legacy row with no approvedAt falls back to created_at; cursor walks it', async () => {
     if (!reachable) return
-    const { slugs } = await walk('approved', 2)
-    // a0 -> approval(50), a1 -> submitted(100), a2 -> submitted(200)
-    expect(slugs).toEqual(['a0', 'a1', 'a2'])
+    // a1 submitted first but approved LAST; a2 submitted later, approved earlier;
+    // a0 has no approvedAt -> created_at (+350s, between a2 +300s and a1 +400s).
+    const { slugs } = await walk('approved', 1)
+    expect(slugs).toEqual(['a2', 'a0', 'a1'])
+    expect((await walk('approved', 2)).slugs).toEqual(['a2', 'a0', 'a1'])
   })
 
   it('rejected: ordered by recorded rejectedAt; malformed rejectedAt falls back to created_at (no cast error)', async () => {

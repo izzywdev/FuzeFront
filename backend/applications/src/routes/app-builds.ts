@@ -886,14 +886,34 @@ router.get(
       }
 
       const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-      const dtos = await toAppDtos(
-        result.items.map(i => i.app),
-        {
-          prefixed: await isPrefixedIdsEnabled(flagCtx),
-          creatorOwnership: await isCreatorOwnershipEnabled({ userId: caller.userId }),
-          caller,
-        }
-      )
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      // fuzefront.apps.creator-ownership is evaluated per OWNING org, exactly as
+      // the per-app GET (dtoOptions in routes/app-registry.ts) does, so the queue
+      // never hides/shows creator data differently from the app's own GET if the
+      // flag is ever rolled out with an org constraint. Rows are grouped by org
+      // (one evaluation + one toAppDtos call per distinct org); the original
+      // order is restored below.
+      const byOrg = new Map<string, number[]>()
+      result.items.forEach((entry, idx) => {
+        const key = entry.app.organizationId ?? ''
+        const bucket = byOrg.get(key)
+        if (bucket) bucket.push(idx)
+        else byOrg.set(key, [idx])
+      })
+      const dtos: any[] = new Array(result.items.length)
+      for (const [orgKey, idxs] of byOrg) {
+        const creatorOwnership = await isCreatorOwnershipEnabled({
+          organizationId: orgKey || req.user?.organizationId,
+          userId: caller.userId,
+        })
+        const group = await toAppDtos(
+          idxs.map(i => result.items[i].app),
+          { prefixed, creatorOwnership, caller }
+        )
+        idxs.forEach((i, n) => {
+          dtos[i] = group[n]
+        })
+      }
       const items = result.items.map((entry, idx) => {
         const dto = dtos[idx]
         const item: Record<string, unknown> = {

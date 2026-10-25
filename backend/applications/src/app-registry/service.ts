@@ -255,8 +255,10 @@ export class InvalidCursorError extends Error {
  * be a value that does not change while the row stays in that queue, or the
  * keyset cursor would skip/repeat rows under concurrent writes:
  *  - pending : marketplace_submitted_at (immutable until decided).
- *  - approved: submission instant retained by approve; legacy rows with no
- *              submission fall back to approval, then creation.
+ *  - approved: marketplace_approved_at (the contract's `approvedAt`, set once by
+ *              approve), falling back to creation time for legacy rows with no
+ *              recorded approval. NOT the retained submission instant: reviews
+ *              can complete out of submission order.
  *  - rejected: reject clears marketplace_submitted_at, so the stable instant is
  *              the recorded rejectedAt (immutable until resubmission moves the
  *              row to pending). The regex guard keeps one malformed JSON value
@@ -269,7 +271,7 @@ function publicationSortExpr(status: PublicationQueueStatus): string {
     case 'pending':
       return 'marketplace_submitted_at'
     case 'approved':
-      return "date_trunc('milliseconds', COALESCE(marketplace_submitted_at, marketplace_approved_at, created_at))"
+      return "date_trunc('milliseconds', COALESCE(marketplace_approved_at, created_at))"
     case 'rejected':
       return (
         "date_trunc('milliseconds', COALESCE(" +

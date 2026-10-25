@@ -49,11 +49,17 @@ const as = (u: any) => ({ 'x-test-user': JSON.stringify(u) })
 
 let publishFlag = true
 let creatorFlag = true
+let creatorFlagByOrg: Record<string, boolean> | null = null
+const creatorEvalCtx: any[] = []
 let prefixedFlag = false
 setFlagClient({
-  getBooleanValue: async (key: string, def: boolean) => {
+  getBooleanValue: async (key: string, def: boolean, ctx?: any) => {
     if (key === FLAGS.MARKETPLACE_PUBLISHING) return publishFlag
-    if (key === FLAGS.CREATOR_OWNERSHIP) return creatorFlag
+    if (key === FLAGS.CREATOR_OWNERSHIP) {
+      creatorEvalCtx.push(ctx)
+      if (creatorFlagByOrg) return Boolean(ctx?.orgId && creatorFlagByOrg[ctx.orgId])
+      return creatorFlag
+    }
     return def
   },
 })
@@ -87,7 +93,7 @@ let spy: jest.SpyInstance
 let creatorInfo: any
 
 beforeEach(() => {
-  publishFlag = true; creatorFlag = true; prefixedFlag = false
+  publishFlag = true; creatorFlag = true; prefixedFlag = false; creatorFlagByOrg = null; creatorEvalCtx.length = 0
   permitChecks.length = 0
   creatorInfo = { isCurrentMember: true, displayName: 'Casey Creator', contactEmail: 'casey@example.com' }
   setCreatorResolver({ resolve: async () => creatorInfo })
@@ -235,6 +241,24 @@ describe('GET /publication-requests — PublicationQueueItem shape', () => {
     creatorInfo = { isCurrentMember: false, displayName: null, contactEmail: null }
     const res = await request(app).get(URL).set(as(admin))
     expect(res.body.items[0].creator).toEqual({ userId: fromUuid('user', CREATOR), isCurrentMember: false })
+  })
+
+  it('creator-ownership is evaluated per OWNING org (as the per-app GET does), rows keep their order', async () => {
+    const ORG2 = '20000000-0000-4000-8000-000000000002'
+    creatorFlagByOrg = { [ORG]: true } // ON for ORG only, OFF for ORG2
+    page.items = [
+      { app: appRecord('one'), publication: pendingPub('2026-01-02T00:00:00.000Z') },
+      { app: appRecord('two', { organizationId: ORG2 }), publication: pendingPub('2026-01-03T00:00:00.000Z') },
+      { app: appRecord('three'), publication: pendingPub('2026-01-04T00:00:00.000Z') },
+    ]
+    const res = await request(app).get(URL).set(as(admin))
+    expect(res.status).toBe(200)
+    expect(res.body.items.map((i: any) => i.slug)).toEqual(['one', 'two', 'three'])
+    expect(res.body.items[0]).toHaveProperty('creator')
+    expect(res.body.items[1]).not.toHaveProperty('creator')
+    expect(res.body.items[2]).toHaveProperty('creator')
+    // one evaluation per distinct owning org, each carrying that org
+    expect(creatorEvalCtx.map(c => c.orgId).sort()).toEqual([ORG, ORG2].sort())
   })
 
   it('app with no recorded creator -> creator null (flag ON)', async () => {
