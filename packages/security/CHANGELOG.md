@@ -1,5 +1,13 @@
 # Changelog — @fuzefront/security-client
 
+## 1.2.0 — Tenant workspace discovery (additive, unreleased)
+
+`info.version` 1.1.0 -> 1.2.0, `SECURITY_CONTRACT_VERSION` 1.1.0 -> 1.2.0,
+package `version` 1.1.0 -> 1.2.0. MINOR — adds the authenticated,
+provider-agnostic `GET /v1/security/session/workspaces` discovery contract used
+by portal and standalone clients before proving a personal or organization
+tenant. Existing operations and response shapes are unchanged.
+
 ## 1.1.0 — Auth-experience signup contract reconciliation (additive, unreleased)
 
 `info.version` 1.0.0 -> 1.1.0, `SECURITY_CONTRACT_VERSION` 1.0.0 -> 1.1.0,
@@ -13,10 +21,6 @@ backend/UI/test fan out after this freeze.
 
 ### Added
 
-- `GET /v1/security/session/workspaces` and the generated
-  `SessionWorkspaceList` contract used by portal and standalone clients to
-  discover canonical personal and organization workspaces before proving the
-  selected tenant.
 - `ErrorBody.code` enum: `CAPTCHA_FAILED`. A rejected/invalid/missing Cloudflare
   Turnstile token on `POST /v1/security/signup` now returns **400 with code
   `CAPTCHA_FAILED`** — distinct from a generic `MALFORMED` (previously the
