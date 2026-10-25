@@ -460,9 +460,11 @@ test.describe('FuzeQuality implemented UX flows', () => {
       'Explicit outcome linkage'
     )
     const gateEvidence = page.getByLabel('Policy gate evidence')
-    await expect(gateEvidence.getByText('Administrative suspension policy')).toBeVisible()
-    await expect(gateEvidence.getByText('Suspension authorization gate')).toBeVisible()
-    await expect(gateEvidence).toContainText('docs/policies/apps.md → .github/workflows/quality.yml')
+    // Summary rows only have stable artifact IDs. Historical titles and paths are
+    // resolved from the execution's exact catalog revision inside the inspector.
+    await expect(gateEvidence.getByText('policy-artifact')).toBeVisible()
+    await expect(gateEvidence.getByText('gate-artifact')).toBeVisible()
+    await expect(gateEvidence).not.toContainText('docs/policies/apps.md')
     await expect(productionExecution.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
     const executionDetailRequest = page.waitForRequest(request =>
       request.url().endsWith('/test-executions/execution-1')
