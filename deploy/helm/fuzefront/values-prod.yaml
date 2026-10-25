@@ -1060,10 +1060,24 @@ notificationService:
 # bump step only rewrites a tag: found on the line directly following a matched
 # repository: anchor.
 selectionListService:
-  enabled: false
+  # Enabled for prod go-live (FF-EPIC-17 / FFRNT-200). The SealedSecret
+  # `selection-list-secrets` (DB_PASSWORD) is provisioned; the pre-sync Job
+  # `fuzefront-svcdb-selection-list-service` creates role selection_list_svc +
+  # database fuzefront_selection_list on this sync, then the Deployment runs its
+  # knex migrations as the owner. The release flag fuzefront.selection-lists.service
+  # remains the visibility gate (ramped separately via prod-unleash-ops).
+  enabled: true
   # Authorization is ALWAYS enforced in production (code-level, review H-1); the
   # explicit true keeps the rendered manifest honest. Do not set false.
   authzEnabled: true
+  # Platform organization wire id (SELECTION_LIST_PLATFORM_ORG_ID). Required to be
+  # pinned to the immutable root platform org once the service is enabled in prod:
+  # gate-platform-org-pin (enabled-requires-pinned) derives this from ROOT_ORG_ID
+  # (00000000-0000-0000-0000-000000000010) and enforces exact string equality — an
+  # enabled prod service with "" fails closed AND fails the gate. Not coerced in the
+  # template (CLAUDE.md Helm values hygiene). Shared/common lists stay additionally
+  # gated by fuzefront.selection-lists.shared-lists (default OFF).
+  platformOrgId: org_0000000000000000000000000g
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
     tag: 0f6363b34083

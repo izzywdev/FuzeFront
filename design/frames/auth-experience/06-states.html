@@ -76,6 +76,30 @@
       </div>
     </div>
 
+    <!-- Signup form: empty / initial (nothing typed yet) -->
+    <div class="state-card" data-state="signup-initial">
+      <p class="state-card__label">Signup · empty / initial</p>
+      <div class="field" style="margin:0 0 var(--space-3)">
+        <label class="field__label" for="n0"><span>Full name <span class="field__optional">optional</span></span></label>
+        <div class="input-wrap"><input class="input" id="n0" type="text" data-field="full-name"
+          placeholder="Ada Lovelace" /></div>
+      </div>
+      <div class="pwmeter" data-strength="weak" data-pwmeter style="margin-top:0">
+        <div class="pwmeter__label"><span>Password strength</span><b>—</b></div>
+        <ul class="pwreq" data-pwreq>
+          <li data-met="false" data-req="length"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>12+ characters</li>
+          <li data-met="false" data-req="upper"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Uppercase</li>
+          <li data-met="false" data-req="lower"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Lowercase</li>
+          <li data-met="false" data-req="digit"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Number</li>
+          <li data-met="false" data-req="symbol"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Symbol</li>
+        </ul>
+      </div>
+      <button type="button" class="btn-ds btn-ds--primary" data-action="submit" disabled
+        style="margin-top:var(--space-4)">Create account</button>
+      <p class="field__help">Full name is optional; email + a policy-passing password are required.
+        Submit stays disabled until the checklist is satisfied.</p>
+    </div>
+
     <!-- Password strength: weak -->
     <div class="state-card" data-state="pw-weak">
       <p class="state-card__label">Password strength · weak</p>
@@ -190,6 +214,29 @@
       </div>
     </div>
 
+    <!-- Signup · weak password rejected on submit (server enforces the policy even if
+         the inline checklist was bypassed). Post-submit form-level error, complementing
+         the inline pw-weak state above. -->
+    <div class="state-card" data-state="signup-pw-weak-submit">
+      <p class="state-card__label">Signup · weak password (post-submit)</p>
+      <div class="alert alert--error" style="margin:0 0 var(--space-3)">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor"
+          stroke-width="1.6"/><path d="M10 6v5M10 14h.01" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round"/></svg>
+        <span><b>That password doesn't meet our requirements.</b> Fix the highlighted items and try again.</span>
+      </div>
+      <div class="pwmeter" data-strength="weak" data-pwmeter style="margin-top:0">
+        <div class="pwmeter__label"><span>Password strength</span><b>Weak</b></div>
+        <ul class="pwreq" data-pwreq>
+          <li data-met="false" data-req="length"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>12+ characters</li>
+          <li data-met="true" data-req="lower"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Lowercase</li>
+          <li data-met="false" data-req="upper"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Uppercase</li>
+          <li data-met="false" data-req="digit"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Number</li>
+          <li data-met="false" data-req="symbol"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Symbol</li>
+        </ul>
+      </div>
+    </div>
+
     <!-- Provider unavailable -->
     <div class="state-card" data-state="provider-unavailable">
       <p class="state-card__label">Service · provider unavailable</p>
@@ -199,6 +246,31 @@
           stroke-linecap="round"/></svg>
         <span><b>Sign-in is temporarily unavailable.</b> Please try again in a moment.</span>
       </div>
+    </div>
+
+    <!-- Signup · identity provider down / requires browser flow. Generic service-unavailable
+         for signup: the identity provider can't complete a direct password sign-up (down, or
+         the account needs the hosted browser flow). Fail closed with a usable fallback. -->
+    <div class="state-card" data-state="signup-service-unavailable">
+      <p class="state-card__label">Signup · service unavailable (browser flow)</p>
+      <div class="alert alert--error" style="margin:0 0 var(--space-4)">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor"
+          stroke-width="1.6"/><path d="M10 6v5M10 14h.01" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round"/></svg>
+        <span><b>We couldn't create your account right now.</b> Sign-up is temporarily unavailable —
+          continue in your browser or try again shortly.</span>
+      </div>
+      <button type="button" class="social-btn" data-action="social-google">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><!-- ds-conformance-allow: third-party brand mark -->
+          <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.7-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8Z"/>
+          <path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.9-3c-1.1.7-2.4 1.2-4 1.2-3.1 0-5.7-2.1-6.6-4.9H1.4v3.1C3.4 21.4 7.4 24 12 24Z"/>
+          <path fill="#FBBC05" d="M5.4 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4V6.5H1.4C.5 8.2 0 10 0 12s.5 3.8 1.4 5.5l4-3.1Z"/>
+          <path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4C17.9 1.2 15.2 0 12 0 7.4 0 3.4 2.6 1.4 6.5l4 3.1C6.3 6.8 8.9 4.8 12 4.8Z"/>
+        </svg>
+        Continue with Google
+      </button>
+      <p class="field__help" style="text-align:center">
+        <button type="button" class="resend" data-action="retry" style="padding:0">Try again</button></p>
     </div>
 
     <!-- MFA required handoff -->
@@ -231,7 +303,7 @@
 </main>
 
 <nav class="frame-nav" aria-label="Frame navigation">
-  <span class="caption"><b>06 · States</b> — availability (idle/checking/available/taken/error) · strength · match · Turnstile · in-flight · errors · MFA · gate</span>
+  <span class="caption"><b>06 · States</b> — signup empty/initial · availability (idle/checking/available/taken/error) · strength + checklist · weak-password (inline + post-submit) · match · Turnstile · in-flight · email-exists conflict · service-unavailable (browser flow) · MFA · gate</span>
   <span>
     <a class="btn-ds btn-ds--secondary" href="index.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Index</a>
     <a class="btn-ds btn-ds--primary" href="01-signup.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Restart flow →</a>
