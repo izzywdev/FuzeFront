@@ -49,6 +49,7 @@ export type PolicyGatePerformancePage = {
 }
 
 export type ExecutionEvidenceRequirement =
+  | 'evidence-url-invalid'
   | 'policy-gate-outcome-missing'
   | 'post-production-video-missing'
   | 'performance-threshold-missing'
@@ -227,6 +228,10 @@ export function filterTestExecutions(
       const checkedAt = Date.parse(execution.evidenceCollection?.checkedAt ?? '')
       if (!Number.isFinite(checkedAt) || checkedAt > evidenceCheckedBefore) return false
     }
+    if (
+      filter.evidenceRequirement === 'evidence-url-invalid' &&
+      !execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))
+    ) return false
     if (
       filter.evidenceRequirement === 'post-production-video-missing' &&
       (execution.kind !== 'post-production' || execution.evidenceLinks.some(link =>

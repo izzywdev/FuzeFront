@@ -420,6 +420,7 @@ export function ExecutionEvidenceCoverage({
 }) {
   const thresholds = execution.thresholds?.length ?? 0
   const usableLinks = (execution.evidenceLinks ?? []).filter(link => safeExecutionHref(link.url))
+  const withheldLinks = (execution.evidenceLinks?.length ?? 0) - usableLinks.length
   const links = usableLinks.filter(link => !(execution.provider === 'github-actions' && link.kind === 'report' && link.name === 'GitHub Actions artifacts' && link.url.endsWith('#artifacts'))).length
   const hasVideo = usableLinks.some(link => link.kind === 'video')
   const gatePairs = execution.gateEvaluations?.length ?? 0
@@ -446,6 +447,11 @@ export function ExecutionEvidenceCoverage({
     <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
       <strong>Evidence coverage</strong>
       <small>{thresholds} thresholds · {links} artifacts · {gatePairs} policy–gate outcomes</small>
+      {withheldLinks > 0 && (
+        <span className="status-pill status-failed">
+          {withheldLinks} invalid or non-HTTPS artifact {withheldLinks === 1 ? 'link was' : 'links were'} withheld
+        </span>
+      )}
       {collection && (
         <small>
           Provider evidence checked{' '}

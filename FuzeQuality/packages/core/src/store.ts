@@ -1625,6 +1625,11 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($23::text IS NULL OR executions.branch=$23)
          AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
          AND ($25::text IS NULL
+           OR ($25='evidence-url-invalid'
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
+               WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
+             ))
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -1888,6 +1893,11 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($23::text IS NULL OR executions.branch=$23)
          AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
          AND ($25::text IS NULL
+           OR ($25='evidence-url-invalid'
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
+               WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
+             ))
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -1989,6 +1999,11 @@ export class PostgresCatalogStore implements CatalogStore {
            AND ($26::text IS NULL OR executions.branch=$26)
            AND ($27::text IS NULL OR ($27='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$27)
            AND ($28::text IS NULL
+             OR ($28='evidence-url-invalid'
+               AND EXISTS (
+                 SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
+                 WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
+               ))
              OR ($28='post-production-video-missing'
                AND executions.kind='post-production'
                AND NOT EXISTS (

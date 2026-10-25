@@ -265,7 +265,7 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionEvidenceRequirement).toMatchObject({
         name: 'evidenceRequirement',
         in: 'query',
-        schema: { type: 'string', enum: ['policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
+        schema: { type: 'string', enum: ['evidence-url-invalid', 'policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
       })
       expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
         .toContain('exact tenant-scoped repository revision')

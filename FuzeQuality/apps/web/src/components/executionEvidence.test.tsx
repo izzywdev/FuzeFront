@@ -241,6 +241,7 @@ describe('ExecutionThresholdEvidence', () => {
     }} />)
 
     expect(screen.getByText('2 thresholds · 0 artifacts · 1 policy–gate outcomes')).toBeVisible()
+    expect(screen.getByText('1 invalid or non-HTTPS artifact link was withheld')).toBeVisible()
     expect(screen.getByText('Required post-production video evidence is missing')).toBeVisible()
     unmount()
   })
