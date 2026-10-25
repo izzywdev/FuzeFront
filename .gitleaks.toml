@@ -51,6 +51,11 @@ paths = [
   # exactly this reason — this closes that gap rather than widening the rule. Five of the
   # ten full-history findings were this one file, re-sealed across five commits.
   '''FuzeQuality/deploy/helm/fuzequality/templates/chroma-sealed-secret\.yaml''',
+  # backend/tests/rum-ingest.test.ts — test fixtures for the re-redaction defense-in-depth
+  # test. The test deliberately includes placeholder values (Bearer abcdef123456, hunter2,
+  # access_token: tok) to verify that the RUM ingest endpoint strips secrets/PII the client
+  # failed to sanitize before logging. These are NOT real credentials.
+  '''backend/tests/rum-ingest\.test\.ts''',
   # services/selection-list-service/tests/ — TEST_SECRET is a jwt.sign() key used only by
   # supertest inside this package's unit tests; no production code path reaches it. Same
   # category as backend/security/tests/ above.
