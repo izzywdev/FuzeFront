@@ -161,6 +161,20 @@ it('filters and trends only timestamped execution evidence', () => {
     [...executions, postProductionWithoutVideo],
     { evidenceRequirement: 'post-production-video-missing' },
   )).toEqual([postProductionWithoutVideo])
+  const postProductionWithUnsafeLegacyVideo = {
+    ...postProductionWithoutVideo,
+    id: 'post-production-with-unsafe-video',
+    externalRunId: 'post-production-with-unsafe-video',
+    evidenceLinks: [{ kind: 'video' as const, name: 'Legacy unsafe video', url: 'javascript:alert(1)' }],
+  }
+  expect(filterTestExecutions(
+    [...executions, postProductionWithUnsafeLegacyVideo],
+    { evidenceRequirement: 'post-production-video-missing' },
+  )).toEqual([postProductionWithUnsafeLegacyVideo])
+  expect(filterTestExecutions(
+    [postProductionWithUnsafeLegacyVideo],
+    { evidenceKind: 'video' },
+  )).toEqual([])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'performance-threshold-missing' })).toEqual([executions[1]])
   const explicitPolicyGateOutcome = {
     ...executions[0],

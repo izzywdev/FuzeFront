@@ -232,6 +232,19 @@ describe('ExecutionThresholdEvidence', () => {
     unmount()
   })
 
+  it('does not count an unsafe legacy video as post-production evidence', () => {
+    const { unmount } = render(<ExecutionEvidenceCoverage execution={{
+      ...execution,
+      kind: 'post-production',
+      evidenceLinks: [{ kind: 'video', name: 'Unsafe legacy video', url: 'javascript:alert(1)' }],
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-20T08:00:00.000Z' },
+    }} />)
+
+    expect(screen.getByText('2 thresholds · 0 artifacts · 1 policy–gate outcomes')).toBeVisible()
+    expect(screen.getByText('Required post-production video evidence is missing')).toBeVisible()
+    unmount()
+  })
+
   it('matches a scanner-verified performance workflow only to its current artifact kind', () => {
     const artifact: QualityArtifact = {
       id: 'performance-workflow',

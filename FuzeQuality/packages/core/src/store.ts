@@ -1592,6 +1592,7 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($19::text IS NULL OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS evidence(value)
            WHERE evidence.value->>'kind'=$19
+             AND evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
          ))
          AND ($20::text IS NULL OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.thresholds,'[]'::jsonb)) AS threshold(value)
@@ -1629,6 +1630,7 @@ export class PostgresCatalogStore implements CatalogStore {
              AND NOT EXISTS (
                SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
                WHERE required_evidence.value->>'kind'='video'
+                 AND required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
              ))
            OR ($25='terminal-timing-missing'
              AND executions.status<>'running'
@@ -1853,6 +1855,7 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($19::text IS NULL OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS evidence(value)
            WHERE evidence.value->>'kind'=$19
+             AND evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
          ))
          AND ($20::text IS NULL OR EXISTS (
            SELECT 1 FROM jsonb_array_elements(COALESCE(executions.thresholds,'[]'::jsonb)) AS threshold(value)
@@ -1890,6 +1893,7 @@ export class PostgresCatalogStore implements CatalogStore {
              AND NOT EXISTS (
                SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
                WHERE required_evidence.value->>'kind'='video'
+                 AND required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
              ))
            OR ($25='terminal-timing-missing'
              AND executions.status<>'running'
@@ -1975,6 +1979,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND ($22::text IS NULL OR EXISTS (
              SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS evidence(value)
              WHERE evidence.value->>'kind'=$22
+               AND evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
            ))
            AND ($23::text IS NULL OR EXISTS (
              SELECT 1 FROM jsonb_array_elements(COALESCE(executions.thresholds,'[]'::jsonb)) AS threshold(value)
@@ -1989,6 +1994,7 @@ export class PostgresCatalogStore implements CatalogStore {
                AND NOT EXISTS (
                  SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
                  WHERE required_evidence.value->>'kind'='video'
+                   AND required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
                ))
              OR ($28='terminal-timing-missing'
                AND executions.status<>'running'

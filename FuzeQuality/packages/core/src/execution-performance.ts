@@ -1,5 +1,5 @@
 import { normalizeWorkflowPath, type QualityArtifact, type Repository, type TestExecution } from '@fuzequality/contracts'
-import { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
+import { executableWorkflowTarget, safeExecutionEvidenceUrl } from '@fuzequality/contracts/workflow-execution'
 
 export { executableWorkflowTarget, isPreferredWorkflowExecutionArtifact, validateWorkflowDispatchInputs } from '@fuzequality/contracts/workflow-execution'
 
@@ -214,7 +214,9 @@ export function filterTestExecutions(
       execution.provider === 'github-actions' &&
       execution.headRepository?.toLowerCase() !== filter.headRepository.toLowerCase()
     ) return false
-    if (filter.evidenceKind && !execution.evidenceLinks.some(link => link.kind === filter.evidenceKind)) return false
+    if (filter.evidenceKind && !execution.evidenceLinks.some(link =>
+      link.kind === filter.evidenceKind && safeExecutionEvidenceUrl(link.url)
+    )) return false
     if (filter.evidenceCollectionStatus === 'not-collected' && execution.evidenceCollection) return false
     if (filter.evidenceCollectionStatus && filter.evidenceCollectionStatus !== 'not-collected' && execution.evidenceCollection?.status !== filter.evidenceCollectionStatus) return false
     if (evidenceCheckedAfter !== undefined) {
@@ -227,7 +229,9 @@ export function filterTestExecutions(
     }
     if (
       filter.evidenceRequirement === 'post-production-video-missing' &&
-      (execution.kind !== 'post-production' || execution.evidenceLinks.some(link => link.kind === 'video'))
+      (execution.kind !== 'post-production' || execution.evidenceLinks.some(link =>
+        link.kind === 'video' && safeExecutionEvidenceUrl(link.url)
+      ))
     ) return false
     if (
       filter.evidenceRequirement === 'performance-threshold-missing' &&
