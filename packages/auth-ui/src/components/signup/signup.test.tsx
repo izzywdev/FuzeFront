@@ -354,8 +354,8 @@ describe('SignUpFlow — error states are explicit, never a crash or a blank', (
     expect(await screen.findByRole('alert')).toHaveAttribute('data-state', 'form-error')
   })
 
-  it('403 with a captcha present -> Turnstile failed state + a fresh challenge', async () => {
-    const transport = makeTransport({ signup: vi.fn().mockRejectedValue(httpErr(403, 'FORBIDDEN')) })
+  it('400 CAPTCHA_FAILED with a captcha present -> Turnstile failed state + a fresh challenge', async () => {
+    const transport = makeTransport({ signup: vi.fn().mockRejectedValue(httpErr(400, 'CAPTCHA_FAILED')) })
     setup({ methods: methods({ captcha: CAPTCHA }) }, transport)
     fillValid()
     await solveCaptcha()

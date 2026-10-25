@@ -252,10 +252,11 @@ function sendError(res: Response, err: unknown): void {
     return
   }
   if (err instanceof CaptchaRejectedError) {
-    // The captcha token is part of the request body, so a missing/invalid one is
-    // a 400 `MALFORMED` (the frozen ErrorBody.code enum has no captcha-specific
-    // value). Distinct from 409 email-exists, 422 PASSWORD_POLICY and 503.
-    res.status(400).json({ error: err.message, code: 'MALFORMED' })
+    // A rejected/invalid/missing Turnstile token → 400 `CAPTCHA_FAILED` (added to
+    // ErrorBody.code in contract v1.1.0), distinct from a generic MALFORMED body,
+    // 409 email-exists, 422 PASSWORD_POLICY, and the 503 when Cloudflare itself is
+    // unreachable. The UI maps this code to the Turnstile "failed" state.
+    res.status(400).json({ error: err.message, code: 'CAPTCHA_FAILED' })
     return
   }
   if (err instanceof CaptchaUnavailableError) {
