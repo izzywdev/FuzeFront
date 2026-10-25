@@ -11,12 +11,13 @@ import crypto from 'crypto'
 import express from 'express'
 import jwt from 'jsonwebtoken'
 import request from 'supertest'
-import securityRouter, { resetMfaVerifyLimiter } from '../src/routes/security'
+import securityRouter, { resetMfaVerifyLimiter, __fillMfaVerifyLimiterForTest } from '../src/routes/security'
 import { setIdentityProvider } from '../src/providers/factory'
 import {
   AuthentikIdentityProvider,
   MfaRequiredError,
   RecoveryCodeInvalidError,
+  ChallengeNotActiveError,
   UnauthorizedError,
   normalizeRecoveryCode,
 } from '../src/providers/authentik/AuthentikIdentityProvider'
@@ -249,6 +250,43 @@ describe('provider: verifyMfaRecovery', () => {
     expect(db.__tables.sessions.filter((s: any) => s.id !== 's-cur')).toHaveLength(1)
   })
 
+  it('concurrent valid factor proof and valid recovery proof on ONE challenge: exactly one wins; recovery code untouched if factor won', async () => {
+    const { db, provider } = setup()
+    // TOTP verification stub: valid code, async so the two proofs interleave.
+    ;(provider as any).verifyFactorCode = async () => { await new Promise(r => setTimeout(r, 5)); return true }
+    const ch = await openChallenge(provider)
+    const results = await Promise.allSettled([
+      provider.verifyMfa(ch.challengeId, 'f1', '123456'),
+      provider.verifyMfaRecovery(ch.challengeId, CODES[0]),
+    ])
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1)
+    expect((results[0] as any).status).toBe('fulfilled') // factor claimed first
+    expect(db.__tables.mfa_recovery_codes.every((r: any) => !r.used)).toBe(true)
+    expect(db.__tables.sessions.filter((s: any) => s.id !== 's-cur')).toHaveLength(1)
+    const rej = results[1] as PromiseRejectedResult
+    expect(rej.reason).toBeInstanceOf(ChallengeNotActiveError)
+  })
+
+  it('two concurrent valid factor proofs on one challenge also yield one session', async () => {
+    const { db, provider } = setup()
+    ;(provider as any).verifyFactorCode = async () => { await new Promise(r => setTimeout(r, 5)); return true }
+    const ch = await openChallenge(provider)
+    const results = await Promise.allSettled([
+      provider.verifyMfa(ch.challengeId, 'f1', '1'),
+      provider.verifyMfa(ch.challengeId, 'f1', '1'),
+    ])
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1)
+    expect(db.__tables.sessions.filter((s: any) => s.id !== 's-cur')).toHaveLength(1)
+  })
+
+  it('a failed factor attempt releases the claim (challenge stays usable)', async () => {
+    const { provider } = setup()
+    ;(provider as any).verifyFactorCode = async () => false
+    const ch = await openChallenge(provider)
+    await expect(provider.verifyMfa(ch.challengeId, 'f1', 'bad')).rejects.toBeInstanceOf(UnauthorizedError)
+    await expect(provider.verifyMfaRecovery(ch.challengeId, CODES[0])).resolves.toBeTruthy()
+  })
+
   it('rolls the burn back if session minting fails after the code was consumed', async () => {
     const { db, provider } = setup()
     const ch = await openChallenge(provider)
@@ -433,6 +471,30 @@ describe('route: POST /mfa/verify', () => {
     const app = makeApp(routeProvider())
     await Promise.all(Array.from({ length: 30 }, () => post(app, { challengeId: 'okc', recoveryCode: 'ok' })))
     expect((await post(app, { challengeId: 'okc', recoveryCode: 'ok' })).status).toBe(200)
+  })
+
+  it('at map capacity a previously blocked challenge stays blocked (no mass reset)', async () => {
+    const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new RecoveryCodeInvalidError()) })
+    const app = makeApp(p)
+    for (let i = 0; i < 5; i++) expect((await post(app, { challengeId: 'locked', recoveryCode: 'bad' })).status).toBe(401)
+    expect((await post(app, { challengeId: 'locked', recoveryCode: 'bad' })).status).toBe(429)
+    __fillMfaVerifyLimiterForTest()
+    // new keys fail closed; the locked challenge is still blocked, not cleared
+    expect((await post(app, { challengeId: 'locked', recoveryCode: 'bad' })).status).toBe(429)
+    expect((await post(app, { challengeId: 'brand-new', recoveryCode: 'bad' })).status).toBe(429)
+  })
+
+  it('unknown/expired challenge ids count against the IP only, never create per-challenge entries', async () => {
+    const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new ChallengeNotActiveError()) })
+    const app = makeApp(p)
+    for (let i = 0; i < 10; i++) {
+      expect((await post(app, { challengeId: 'ghost', recoveryCode: 'x' })).status).toBe(401)
+    }
+    // per-challenge cap (5) was never reached for 'ghost'; per-IP count is 10
+    p.verifyMfaRecovery = jest.fn().mockRejectedValue(new RecoveryCodeInvalidError())
+    expect((await post(app, { challengeId: 'ghost', recoveryCode: 'x' })).status).toBe(401)
+    for (let i = 0; i < 9; i++) await post(makeApp(p), { challengeId: `o${i}`, recoveryCode: 'x' })
+    expect((await post(app, { challengeId: 'another', recoveryCode: 'x' })).status).toBe(429) // IP cap 20 reached
   })
 
   it('per-IP cap applies across challenges', async () => {

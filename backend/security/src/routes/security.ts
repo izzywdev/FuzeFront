@@ -25,6 +25,7 @@ import {
   LastFactorError,
   NoPasswordError,
   RecoveryCodeInvalidError,
+  ChallengeNotActiveError,
   CurrentPasswordInvalidError,
   PasswordPolicyRejectedError,
   emailVerificationEnabled,
@@ -280,6 +281,14 @@ function reserveMfaVerifyAttempt(req: Request): string[] | null {
     }
     if ((e?.count ?? 0) + (mfaVerifyPending.get(key) ?? 0) >= max) return null
   }
+  // Capacity: evict only EXPIRED entries; if still full, existing counters stay
+  // authoritative and brand-new keys fail closed (429) instead of resetting them.
+  if (mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS) {
+    for (const [k, e] of mfaVerifyFails) if (e.resetAt <= now) mfaVerifyFails.delete(k)
+    if (mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS && keys.some(({ key }) => !mfaVerifyFails.has(key))) {
+      return null
+    }
+  }
   for (const { key } of keys) mfaVerifyPending.set(key, (mfaVerifyPending.get(key) ?? 0) + 1)
   return keys.map(k => k.key)
 }
@@ -292,20 +301,28 @@ function releaseMfaVerifyAttempt(keys: string[]): void {
   }
 }
 
-function recordMfaVerifyFailure(req: Request): void {
+function recordMfaVerifyFailure(req: Request, opts: { skipChallenge?: boolean } = {}): void {
   const now = Date.now()
-  if (mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS) {
-    for (const [k, e] of mfaVerifyFails) if (e.resetAt <= now) mfaVerifyFails.delete(k)
-    if (mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS) mfaVerifyFails.clear() // bounded memory
-  }
   for (const { key } of mfaFailKeys(req)) {
+    if (opts.skipChallenge && key.startsWith('ch:')) continue
     const e = mfaVerifyFails.get(key)
-    if (!e || e.resetAt <= now) mfaVerifyFails.set(key, { count: 1, resetAt: now + MFA_VERIFY_WINDOW_MS })
-    else e.count++
+    if (!e || e.resetAt <= now) {
+      // Never grow past the bound and never drop unexpired counters.
+      if (!e && mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS) continue
+      mfaVerifyFails.set(key, { count: 1, resetAt: now + MFA_VERIFY_WINDOW_MS })
+    } else e.count++
   }
 }
 
 /** Test seam: clear limiter state. */
+/** Test seam: shrink-free fill of the failure map to its bound. */
+export function __fillMfaVerifyLimiterForTest(): void {
+  const resetAt = Date.now() + MFA_VERIFY_WINDOW_MS
+  for (let i = 0; mfaVerifyFails.size < MFA_VERIFY_MAX_KEYS; i++) {
+    mfaVerifyFails.set(`filler:${i}`, { count: 1, resetAt })
+  }
+}
+
 export function resetMfaVerifyLimiter(): void {
   mfaVerifyFails.clear()
   mfaVerifyPending.clear()
@@ -1208,7 +1225,9 @@ router.post('/mfa/verify', async (req: Request, res: Response) => {
     res.status(200).json({ token: session.token, sessionId: session.sessionId, user: toApiUser(session.user) })
   } catch (err) {
     if (err instanceof RecoveryCodeInvalidError || err instanceof UnauthorizedError) {
-      recordMfaVerifyFailure(req)
+      // A non-existent/expired/in-flight challenge must not mint per-challenge
+      // entries (attacker-controlled ids); it still counts against the IP.
+      recordMfaVerifyFailure(req, { skipChallenge: err instanceof ChallengeNotActiveError })
     }
     sendError(res, err)
   } finally {

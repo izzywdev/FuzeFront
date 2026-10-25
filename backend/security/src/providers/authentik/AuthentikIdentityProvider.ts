@@ -150,6 +150,15 @@ export class UnauthorizedError extends Error {
   }
 }
 
+/** Unknown/expired/completed/in-flight challenge. 401 NOT_ACTIVE; not counted per-challenge. */
+export class ChallengeNotActiveError extends UnauthorizedError {
+  constructor() {
+    super('invalid or expired challenge')
+    this.name = 'ChallengeNotActiveError'
+  }
+}
+
+
 // TokenError lives in the provider-neutral layer; re-exported for existing importers.
 export { TokenError }
 
@@ -1125,26 +1134,54 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return { challengeId, factorId, delivered: false }
   }
 
+  /**
+   * Synchronously claim a challenge for ONE in-flight proof (factor OR recovery).
+   * No await between the check and the flag, so concurrent proofs on the same
+   * challenge cannot both proceed. Always pair with releaseChallenge in finally.
+   */
+  private claimChallenge(challengeId: string): MfaChallenge {
+    const ch = this.mfaChallenges.get(challengeId)
+    if (!ch || ch.expiresAt < this.now() || ch.inFlight) {
+      if (ch && ch.expiresAt < this.now()) this.mfaChallenges.delete(challengeId)
+      throw new ChallengeNotActiveError()
+    }
+    ch.inFlight = true
+    return ch
+  }
+
+  private releaseChallenge(ch: MfaChallenge): void {
+    ch.inFlight = false
+  }
+
+  /** After an await: the claimed challenge must still be the live one. */
+  private assertStillClaimed(challengeId: string, ch: MfaChallenge): void {
+    if (this.mfaChallenges.get(challengeId) !== ch || ch.expiresAt < this.now()) {
+      throw new ChallengeNotActiveError()
+    }
+  }
+
   async verifyMfa(
     challengeId: string,
     factorId: string,
     code: string,
     ctx?: SessionContext
   ): Promise<BrokeredSession> {
-    const ch = this.mfaChallenges.get(challengeId)
-    if (!ch || ch.expiresAt < this.now()) {
+    const ch = this.claimChallenge(challengeId)
+    try {
+      const factor = await this.db('mfa_factors')
+        .where({ id: factorId, user_id: ch.userId, status: 'active' })
+        .first()
+      if (!factor) throw new UnauthorizedError('factor not found')
+      const ok = await this.verifyFactorCode(factor, code)
+      if (!ok) throw new UnauthorizedError('invalid code')
+      this.assertStillClaimed(challengeId, ch)
+      const user = await this.loadUser(ch.userId)
+      const session = await this.mintSession(user, ctx)
       this.mfaChallenges.delete(challengeId)
-      throw new UnauthorizedError('invalid or expired challenge')
+      return session
+    } finally {
+      this.releaseChallenge(ch)
     }
-    const factor = await this.db('mfa_factors')
-      .where({ id: factorId, user_id: ch.userId, status: 'active' })
-      .first()
-    if (!factor) throw new UnauthorizedError('factor not found')
-    const ok = await this.verifyFactorCode(factor, code)
-    if (!ok) throw new UnauthorizedError('invalid code')
-    this.mfaChallenges.delete(challengeId)
-    const user = await this.loadUser(ch.userId)
-    return this.mintSession(user, ctx)
   }
 
   /**
@@ -1152,29 +1189,24 @@ export class AuthentikIdentityProvider implements IdentityProvider {
    *
    * Atomicity: the code is burned by one conditional UPDATE
    * (`used=false` -> `true`, rowcount checked) inside a transaction that also
-   * mints the session, so two concurrent redemptions of the same code succeed at
-   * most once and a failure after the burn rolls the burn back. The challenge is
-   * single-flighted in-process (claimed synchronously before any await) so two
-   * different codes cannot both complete the same challenge. A failed attempt
-   * consumes nothing and leaves the challenge usable. The code is never logged.
+   * mints the session (same connection), so two concurrent redemptions of the
+   * same code succeed at most once and a later failure rolls the burn back. The
+   * challenge is claimed synchronously (shared with the factor path) so no two
+   * proofs can complete one challenge. A failed attempt consumes nothing and
+   * leaves the challenge usable. The code is never logged.
    */
   async verifyMfaRecovery(
     challengeId: string,
     recoveryCode: string,
     ctx?: SessionContext
   ): Promise<BrokeredSession> {
-    const ch = this.mfaChallenges.get(challengeId)
-    if (!ch || ch.expiresAt < this.now() || ch.inFlight) {
-      if (ch && ch.expiresAt < this.now()) this.mfaChallenges.delete(challengeId)
-      logger.info({ outcome: 'challenge_not_active' }, 'authentik: recovery redeem rejected')
-      throw new UnauthorizedError('invalid or expired challenge')
-    }
-    ch.inFlight = true
+    const ch = this.claimChallenge(challengeId)
     try {
       const normalized = normalizeRecoveryCode(recoveryCode)
       if (!normalized) throw new RecoveryCodeInvalidError()
       const codeHash = sha256(normalized)
       const session = await this.db.transaction(async (trx: any) => {
+        this.assertStillClaimed(challengeId, ch)
         const burned = await trx('mfa_recovery_codes')
           .where({ user_id: ch.userId, code_hash: codeHash, used: false })
           .update({ used: true })
@@ -1193,7 +1225,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       }
       throw err
     } finally {
-      ch.inFlight = false
+      this.releaseChallenge(ch)
     }
   }
 
