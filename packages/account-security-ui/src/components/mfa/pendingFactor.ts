@@ -22,35 +22,60 @@ const noop = () => undefined
  * one exists, and a lost response / retried code can leave the client unable to
  * tell, so the client never infers status from the outcomes it saw. The cost is one
  * extra list request on abandon.
+ *
+ * An enrolment still in flight when the flow unmounts is covered too: register it
+ * with `enrolling()` (and `track()` after disposal) so the factor it later creates
+ * goes through the same reconcile-then-delete path, once.
  */
 export function usePendingFactor(api: Pick<MfaClient, 'removeFactor' | 'listFactors'>) {
   const pending = useRef<string | null>(null)
   const activation = useRef<Promise<unknown> | null>(null)
+  const disposed = useRef(false)
+  // Ids already routed through reconcile-then-delete, so the several paths that can
+  // reach one id (enrol settle, track-after-dispose, discard) issue ONE DELETE.
+  const reconciled = useRef<Set<string>>(new Set())
   const apiRef = useRef(api)
   apiRef.current = api
 
-  const discard = useCallback(() => {
-    const id = pending.current
-    pending.current = null
-    if (!id) return
-    const inFlight = activation.current
-    const removal = (inFlight ? inFlight.then(noop, noop) : Promise.resolve()).then(async () => {
+  /** Reconcile with the server, then DELETE only a factor it still reports `pending`. */
+  const reconcileAndDelete = useCallback((id: string, after?: Promise<unknown> | null) => {
+    if (reconciled.current.has(id)) return
+    reconciled.current.add(id)
+    const removal = (after ? after.then(noop, noop) : Promise.resolve()).then(async () => {
       const factors = await apiRef.current.listFactors() // a failure rejects → no delete
       if (factors.find((f) => f.factorId === id)?.status === 'pending') {
         await apiRef.current.removeFactor(id)
       }
     })
-    void removal
-      .catch(() => {
-        /* best-effort cleanup */
-      })
+    void removal.catch(() => {
+      /* best-effort cleanup */
+    })
   }, [])
 
-  useEffect(() => discard, [discard])
+  const discard = useCallback(() => {
+    const id = pending.current
+    pending.current = null
+    if (!id) return
+    reconcileAndDelete(id, activation.current)
+  }, [reconcileAndDelete])
+
+  useEffect(() => {
+    disposed.current = false
+    return () => {
+      disposed.current = true
+      discard()
+    }
+  }, [discard])
 
   return {
     /** Remember the pending factor so abandoning the flow removes it. */
     track: (factorId: string) => {
+      if (disposed.current) {
+        // The flow was abandoned while the enrolment was in flight: nobody will
+        // activate this factor, so route it through the same cleanup.
+        reconcileAndDelete(factorId, activation.current)
+        return
+      }
       pending.current = factorId
     },
     /** The factor was activated: it is a real method now, never discard it. */
@@ -67,6 +92,21 @@ export function usePendingFactor(api: Pick<MfaClient, 'removeFactor' | 'listFact
       })
       activation.current = tracked
       return tracked
+    },
+    /**
+     * Register the outstanding enrolment (CREATE of the pending factor) request.
+     * If the flow is disposed before it settles, a resolved factor id is
+     * reconciled and deleted if still pending; a rejection does nothing. Returns
+     * the same promise.
+     */
+    enrolling: <T extends { factorId: string }>(request: Promise<T>): Promise<T> => {
+      request.then(
+        (res) => {
+          if (disposed.current && res?.factorId) reconcileAndDelete(res.factorId)
+        },
+        noop
+      )
+      return request
     },
     discard,
   }

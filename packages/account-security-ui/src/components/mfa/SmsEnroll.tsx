@@ -228,7 +228,7 @@ function SmsEnrollInner(props: EnrollFlowProps) {
     setPhase({ name: 'enter-phone', sending: true, failed: false })
     try {
       pending.discard() // a resend replaces the previous pending factor
-      const res = await api.enrollFactor({ type: 'sms', phone: normalizePhone(phone) })
+      const res = await pending.enrolling(api.enrollFactor({ type: 'sms', phone: normalizePhone(phone) }))
       pending.track(res.factorId)
       setPhase({ name: 'confirm-code', factorId: res.factorId, activating: false, invalid: false })
     } catch {

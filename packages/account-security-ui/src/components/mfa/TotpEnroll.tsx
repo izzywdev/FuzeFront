@@ -176,7 +176,7 @@ function TotpEnrollInner(props: EnrollFlowProps) {
   const start = useCallback(() => inFlight(async () => {
     setPhase({ name: 'starting' })
     try {
-      const enroll = await api.enrollFactor({ type: 'totp' })
+      const enroll = await pending.enrolling(api.enrollFactor({ type: 'totp' }))
       pending.track(enroll.factorId)
       setPhase({ name: 'scan', enroll, activating: false, invalid: false })
     } catch {

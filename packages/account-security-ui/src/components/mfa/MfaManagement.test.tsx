@@ -239,6 +239,52 @@ describe('TotpEnrollFlow', () => {
 
   })
 
+  describe('unmount while the enrolment (CREATE) is still in flight', () => {
+    async function startThenUnmount(listFactors: ReturnType<typeof vi.fn>, enrolOutcome: 'resolve' | 'reject') {
+      const user = userEvent.setup()
+      let settle!: () => void
+      const enrollFactor = vi.fn(
+        () =>
+          new Promise((res, rej) => {
+            settle = () =>
+              enrolOutcome === 'resolve'
+                ? res({ factorId: 'fct_new', type: 'totp', status: 'pending', secret: 'ABCDEFGH', provisioningUri: 'otpauth://totp/x?secret=ABCDEFGH' })
+                : rej(err(500, 'BOOM'))
+          })
+      )
+      const client = makeClient({ enrollFactor, listFactors })
+      const view = render(<TotpEnrollFlow client={asClient(client)} />)
+      await user.click(await screen.findByRole('button', { name: /set up authenticator/i }))
+      await waitFor(() => expect(enrollFactor).toHaveBeenCalled())
+      view.unmount()
+      await act(async () => { await Promise.resolve() })
+      expect(client.removeFactor).not.toHaveBeenCalled()
+      await act(async () => { settle() })
+      return client
+    }
+
+    it('enrol resolves after unmount and the server says pending → deleted exactly once', async () => {
+      const client = await startThenUnmount(serverSaysPending(), 'resolve')
+      await waitFor(() => expect(client.removeFactor).toHaveBeenCalledTimes(1))
+      expect(client.removeFactor).toHaveBeenCalledWith('fct_new')
+    })
+
+    it('enrol resolves after unmount but the server says active → NOT deleted', async () => {
+      const client = await startThenUnmount(serverSaysActive(), 'resolve')
+      await waitFor(() => expect(client.listFactors).toHaveBeenCalled())
+      await act(async () => { await Promise.resolve() })
+      expect(client.removeFactor).not.toHaveBeenCalled()
+    })
+
+    it('enrol rejects after unmount → no listing, no DELETE', async () => {
+      const listFactors = serverSaysPending()
+      const client = await startThenUnmount(listFactors, 'reject')
+      await act(async () => { await Promise.resolve() })
+      expect(listFactors).not.toHaveBeenCalled()
+      expect(client.removeFactor).not.toHaveBeenCalled()
+    })
+  })
+
   describe('abandon ALWAYS reconciles with the server listing before any DELETE', () => {
     async function activateRejectingThenUnmount(
       rejections: unknown[],
@@ -479,6 +525,28 @@ describe('SmsEnrollFlow', () => {
     expect(enrollFactor).toHaveBeenCalledTimes(1)
     expect(client.removeFactor).not.toHaveBeenCalled()
     await act(async () => { release() })
+  })
+
+  it('unmount while the SMS enrolment (CREATE) is in flight: the factor it later creates is deleted once', async () => {
+    const user = userEvent.setup()
+    let resolve!: (v: unknown) => void
+    const enrollFactor = vi.fn(() => new Promise((r) => { resolve = r }))
+    const client = makeClient({
+      getMethods: vi.fn(async () => methods(['sms'])),
+      enrollFactor,
+      listFactors: serverSaysPending(),
+    })
+    const view = render(<SmsEnrollFlow client={asClient(client)} />)
+    await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+    await user.type(q('[data-field="phone"]')!, '+447700900471')
+    await user.click(q('[data-action="send-code"]')!)
+    await waitFor(() => expect(enrollFactor).toHaveBeenCalled())
+    view.unmount()
+    await act(async () => { await Promise.resolve() })
+    expect(client.removeFactor).not.toHaveBeenCalled()
+    await act(async () => { resolve({ factorId: 'fct_sms_pending', type: 'sms', status: 'pending', codeSent: true }) })
+    await waitFor(() => expect(client.removeFactor).toHaveBeenCalledTimes(1))
+    expect(client.removeFactor).toHaveBeenCalledWith('fct_sms_pending')
   })
 
   it('unmount during a pending SMS activation: waits for it, keeps the factor on success', async () => {
