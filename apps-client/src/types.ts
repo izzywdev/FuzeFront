@@ -31,6 +31,10 @@ export type Visibility = components['schemas']['Visibility'];
 export type RegisterAppRequest = components['schemas']['RegisterAppRequest'];
 export type HeartbeatRequest = components['schemas']['HeartbeatRequest'];
 export type ErrorBody = components['schemas']['Error'];
+export type AppCreator = components['schemas']['AppCreator'];
+export type AppPublication = components['schemas']['AppPublication'];
+/** One row of the marketplace review queue (`GET /publication-requests`). */
+export type PublicationQueueItem = components['schemas']['PublicationQueueItem'];
 
 export interface AppRegistryClientConfig {
   /** Base URL of the app-registry service, e.g. `/api/v1/app-registry` (same-origin). */
@@ -51,4 +55,16 @@ export interface ListAppsParams {
 export interface ListAppsResult {
   apps: App[];
   nextCursor: string | null;
+}
+
+export interface ListPublicationRequestsParams {
+  /** Which publication requests to list. Defaults to `pending` server-side. */
+  status?: 'pending' | 'approved' | 'rejected';
+  limit?: number;
+  cursor?: string;
+}
+
+export interface ListPublicationRequestsResult {
+  items: PublicationQueueItem[];
+  page: { nextCursor: string | null; hasMore: boolean };
 }
