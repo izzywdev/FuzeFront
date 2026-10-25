@@ -1260,24 +1260,25 @@ export class PostgresCatalogStore implements CatalogStore {
     if (!await this.repository(id, tenantId)) return []
     const values: unknown[] = [id]
     const after = query.after?.scannedAt
-      ? `AND (r.scanned_at < $2::timestamptz OR (r.scanned_at = $2::timestamptz AND r.id < $3::uuid) OR r.scanned_at IS NULL)`
+      ? `AND (COALESCE(s.finished_at,s.started_at) < $2::timestamptz OR (COALESCE(s.finished_at,s.started_at) = $2::timestamptz AND s.id < $3::uuid))`
       : query.after
-        ? `AND r.scanned_at IS NULL AND r.id < $2::uuid`
+        ? `AND s.id < $2::uuid`
         : ''
     if (query.after?.scannedAt) values.push(query.after.scannedAt, query.after.id)
     else if (query.after) values.push(query.after.id)
     values.push(query.limit ?? 25)
     const limitParameter = values.length
     const result = await this.pool.query(
-      `SELECT r.id, r.commit_sha, r.branch, r.status AS revision_status, r.scanned_at, s.trigger, s.counts
-       FROM fuzequality.repository_revisions r
-       LEFT JOIN LATERAL (SELECT * FROM fuzequality.scan_runs WHERE revision_id=r.id ORDER BY started_at DESC LIMIT 1) s ON true
-       WHERE r.repository_id=$1 ${after}
-       ORDER BY r.scanned_at DESC NULLS LAST, r.id DESC
+      `SELECT s.id, r.commit_sha, r.branch, s.status AS scan_status,
+              COALESCE(s.finished_at,s.started_at) AS scanned_at, s.trigger, s.counts
+       FROM fuzequality.scan_runs s
+       JOIN fuzequality.repository_revisions r ON r.id=s.revision_id
+       WHERE s.repository_id=$1 ${after}
+       ORDER BY COALESCE(s.finished_at,s.started_at) DESC, s.id DESC
        LIMIT $${limitParameter}`,
       values,
     )
-    return result.rows.map(row => ({ id: row.id, revision: row.commit_sha, branch: row.branch, status: row.revision_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
+    return result.rows.map(row => ({ id: row.id, revision: row.commit_sha, branch: row.branch, status: row.scan_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
   }
 
   async catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string) {
@@ -2623,7 +2624,7 @@ export class PostgresCatalogStore implements CatalogStore {
          ON CONFLICT (repository_id,source_revision) DO UPDATE SET catalog_revision=EXCLUDED.catalog_revision,scanned_at=EXCLUDED.scanned_at`,
         [result.repository.id, result.scanDetails.sourceRevision, result.revision, result.scannedAt],
       )
-      await client.query(`INSERT INTO fuzequality.scan_runs (repository_id,revision_id,trigger,status,counts,finished_at) VALUES ($1,$2,$3,'complete',$4,now())`, [result.repository.id, revision.rows[0].id, result.trigger ?? 'manual', JSON.stringify({ operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length })])
+      await client.query(`INSERT INTO fuzequality.scan_runs (repository_id,revision_id,trigger,status,counts,started_at,finished_at) VALUES ($1,$2,$3,'complete',$4,$5,$5)`, [result.repository.id, revision.rows[0].id, result.trigger ?? 'manual', JSON.stringify({ operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length }), result.scannedAt])
       await client.query(
         `UPDATE fuzequality.test_expectations
          SET active=false, updated_at=now()

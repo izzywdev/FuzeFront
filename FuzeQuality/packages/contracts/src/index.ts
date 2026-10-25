@@ -113,7 +113,7 @@ export type QualityMembership = {
 }
 
 export type RepositoryScanHistoryEntry = {
-  /** Stable revision-row identity used for audit links and keyset pagination. */
+  /** Stable scan-run identity used for audit links and keyset pagination. */
   id: string
   revision: string
   branch: string

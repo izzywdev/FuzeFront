@@ -35,7 +35,7 @@ describe('repository scan history storage', () => {
     await expect(store.repositoryScanHistory(repository.id, 'another-tenant', { limit: 2 })).resolves.toEqual([])
   })
 
-  it('uses a timestamp and UUID keyset in the bounded Postgres query', async () => {
+  it('pages immutable scan runs instead of mutable revision timestamps in Postgres', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
     vi.spyOn(store, 'repository').mockResolvedValue({ id: 'repo-1' } as never)
@@ -47,8 +47,11 @@ describe('repository scan history storage', () => {
     })
 
     const [sql, parameters] = query.mock.calls[0]
-    expect(String(sql)).toContain('r.scanned_at = $2::timestamptz AND r.id < $3::uuid')
-    expect(String(sql)).toContain('ORDER BY r.scanned_at DESC NULLS LAST, r.id DESC')
+    expect(String(sql)).toContain('FROM fuzequality.scan_runs s')
+    expect(String(sql)).toContain('JOIN fuzequality.repository_revisions r ON r.id=s.revision_id')
+    expect(String(sql)).toContain('COALESCE(s.finished_at,s.started_at) = $2::timestamptz AND s.id < $3::uuid')
+    expect(String(sql)).toContain('ORDER BY COALESCE(s.finished_at,s.started_at) DESC, s.id DESC')
+    expect(String(sql)).not.toContain('r.scanned_at')
     expect(String(sql)).toContain('LIMIT $4')
     expect(parameters).toEqual([
       'repo-1', '2026-10-11T02:00:00.000Z', '00000000-0000-4000-8000-000000000002', 26,
