@@ -273,6 +273,7 @@ export interface CatalogStore {
     tenantId: string,
     value: { ownership?: RepositoryInput['ownership'] | null; jiraBindings: RepositoryInput['jiraBindings']; storybookBaseUrl?: RepositoryInput['storybookBaseUrl'] | null }
   ): Promise<Repository | undefined>
+  setRepositoryDefaultBranch(id: string, defaultBranch: string): Promise<void>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
   setRepositoryScanFailure(id: string, failure: NonNullable<Repository['lastScanFailure']>): Promise<void>
   setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>): Promise<void>
@@ -819,6 +820,11 @@ export class MemoryCatalogStore implements CatalogStore {
       repository.lastScanStatus = status
       if (status !== 'failed') repository.lastScanFailure = undefined
     }
+  }
+
+  async setRepositoryDefaultBranch(id: string, defaultBranch: string) {
+    const repository = this.data.repositories.find(item => item.id === id)
+    if (repository) repository.defaultBranch = defaultBranch
   }
 
   async setRepositoryScanFailure(id: string, failure: NonNullable<Repository['lastScanFailure']>) {
@@ -2507,6 +2513,15 @@ export class PostgresCatalogStore implements CatalogStore {
        SET last_scan_status=$2,last_scan_failure=CASE WHEN $2 <> 'failed' THEN NULL ELSE last_scan_failure END,updated_at=now()
        WHERE id=$1`,
       [id, status],
+    )
+  }
+
+  async setRepositoryDefaultBranch(id: string, defaultBranch: string) {
+    await this.pool.query(
+      `UPDATE fuzequality.repositories
+       SET default_branch=$2,updated_at=now()
+       WHERE id=$1`,
+      [id, defaultBranch],
     )
   }
 

@@ -4,7 +4,7 @@ import type { CatalogStore, EventBus } from '@fuzequality/core'
 import type { RepositoryAccessVerifier } from './repository-onboarding'
 
 type WebhookScanDependencies = {
-  store: Pick<CatalogStore, 'setRepositoryStatus'>
+  store: Pick<CatalogStore, 'setRepositoryDefaultBranch' | 'setRepositoryStatus'>
   repositoryAccess: RepositoryAccessVerifier
   events: EventBus
 }
@@ -22,6 +22,10 @@ export async function dispatchWebhookScans(
   for (const command of commands) {
     const repository = repositories.find(item => item.id === command.repositoryId)
     if (!repository) continue
+    const defaultBranch = command.defaultBranch ?? repository.defaultBranch
+    if (command.defaultBranch && command.defaultBranch !== repository.defaultBranch) {
+      await dependencies.store.setRepositoryDefaultBranch(repository.id, command.defaultBranch)
+    }
     let commitSha = command.commitSha
     if (!commitSha) {
       if (!repository.installationId) continue
@@ -29,7 +33,7 @@ export async function dispatchWebhookScans(
         const access = await dependencies.repositoryAccess.verify({
           owner: repository.owner,
           name: repository.name,
-          defaultBranch: repository.defaultBranch,
+          defaultBranch,
           installationId: repository.installationId,
         })
         commitSha = access.commitSha

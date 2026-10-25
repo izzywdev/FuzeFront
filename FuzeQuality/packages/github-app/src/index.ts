@@ -34,6 +34,7 @@ export type OnboardedRepository = {
 export type ScanCommand = {
   repositoryId: string
   commitSha?: string
+  defaultBranch?: string
   trigger: 'push' | 'reconcile'
 }
 
@@ -75,7 +76,10 @@ const pushSchema = z.object({
 
 const repositorySchema = z.object({
   action: z.string(),
-  repository: z.object({ full_name: z.string(), default_branch: z.string().optional() }),
+  repository: z.object({
+    full_name: z.string(),
+    default_branch: z.string().trim().min(1).max(255).optional(),
+  }),
   changes: z.object({ default_branch: z.unknown().optional() }).passthrough().optional(),
 })
 
@@ -126,7 +130,13 @@ export function webhookScanCommands(
     )
     const relevantAction = defaultBranchChanged || ['renamed', 'transferred'].includes(parsed.data.action)
     return relevantAction
-      ? findRepositories(repositories, parsed.data.repository).map(repository => ({ repositoryId: repository.id, trigger: 'reconcile' as const }))
+      ? findRepositories(repositories, parsed.data.repository).map(repository => ({
+          repositoryId: repository.id,
+          trigger: 'reconcile' as const,
+          ...(defaultBranchChanged && parsed.data.repository.default_branch
+            ? { defaultBranch: parsed.data.repository.default_branch }
+            : {}),
+        }))
       : []
   }
 

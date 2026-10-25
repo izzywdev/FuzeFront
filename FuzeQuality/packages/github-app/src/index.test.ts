@@ -43,8 +43,8 @@ describe('FuzeQuality GitHub App contract', () => {
 
   it('reconciles installations and default-branch changes', () => {
     expect(webhookScanCommands('repository', {
-      action: 'edited', repository: { full_name: 'izzywdev/FuzeOne' }, changes: { default_branch: { from: 'master' } },
-    }, repositories)).toEqual([{ repositoryId: 'repo-1', trigger: 'reconcile' }])
+      action: 'edited', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, changes: { default_branch: { from: 'master' } },
+    }, repositories)).toEqual([{ repositoryId: 'repo-1', defaultBranch: 'main', trigger: 'reconcile' }])
     expect(webhookScanCommands('installation_repositories', {
       action: 'added', installation: { id: 42 }, repositories_added: [{ full_name: 'izzywdev/FuzeOne' }],
     }, repositories)).toEqual([{ repositoryId: 'repo-1', trigger: 'reconcile' }])
