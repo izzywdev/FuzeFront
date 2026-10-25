@@ -17,6 +17,7 @@ import {
 import { AccountsProvider } from './contexts/AccountsContext'
 import { useT } from '@fuzefront/i18n'
 import { installBridge, bridge } from './platform/bridge'
+import { resolveFederatedTenantId } from './platform/tenantContext'
 import { AppRegistryProvider } from './platform/appRegistry'
 import { FeatureFlagProvider, useFlag, useFlagState } from './platform/featureFlags'
 import StandaloneAppSurface from './components/StandaloneAppSurface'
@@ -216,8 +217,11 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     // persisted and authorized through the user's provisioned personal org.
     // Federated products need that canonical tenant just as they need an
     // explicitly selected organization.
-    const personalOrg = state.organizations.find(o => o.type === 'personal')
-    const tenantId = activeOrg?.id ?? state.personalTenantId ?? personalOrg?.id ?? null
+    const tenantId = resolveFederatedTenantId({
+      activeOrganizationId: state.activeOrganizationId,
+      organizations: state.organizations,
+      personalTenantId: state.personalTenantId,
+    })
     bridge.setContext({
       user: state.user
         ? {

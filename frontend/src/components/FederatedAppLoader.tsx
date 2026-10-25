@@ -3,6 +3,7 @@ import type { App } from '@fuzefront/app-registry-client'
 import { useCurrentUser, useOrganizations } from '../lib/shared'
 import { getActiveAuthToken } from '../lib/accounts'
 import { useAppRegistry } from '../platform/appRegistry'
+import { resolveFederatedTenantId } from '../platform/tenantContext'
 import { Button } from '@fuzefront/design-system'
 import {
   loadFederatedAppFromManifest,
@@ -58,8 +59,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   const { apps, loading: appsLoading, getBySlug } = useAppRegistry()
   const { user } = useCurrentUser()
   const { organizations, activeOrganizationId, personalTenantId } = useOrganizations()
-  const personalOrganization = organizations.find(item => item.type === 'personal')
-  const tenantId = activeOrganizationId ?? personalTenantId ?? personalOrganization?.id ?? null
+  const tenantId = resolveFederatedTenantId({ activeOrganizationId, organizations, personalTenantId })
   const [FederatedComponent, setFederatedComponent] =
     useState<React.ComponentType<{ getToken?: () => string | null }> | null>(null)
   const [loading, setLoading] = useState(true)
