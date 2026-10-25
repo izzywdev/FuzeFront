@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { TestSuiteDispatch } from '@fuzequality/contracts'
-import { MemoryCatalogStore } from './store'
+import { MemoryCatalogStore, PostgresCatalogStore } from './store'
 
 function dispatch(overrides: Partial<TestSuiteDispatch> = {}): TestSuiteDispatch {
   return {
@@ -41,6 +41,26 @@ describe('test-suite dispatch audit', () => {
     ])
     expect(JSON.stringify(await store.latestTestSuiteDispatches(pending.repositoryId, pending.tenantId)))
       .not.toContain('production-secret')
+  })
+
+  it('persists the provider-accepted ref when completing a PostgreSQL dispatch lifecycle', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+    const accepted = dispatch({
+      ref: `fuzequality-revision-${'b'.repeat(40)}`,
+      sourceRevision: 'b'.repeat(40),
+      status: 'accepted',
+      completedAt: '2026-10-22T20:00:01.000Z',
+    })
+
+    await store.saveTestSuiteDispatch(accepted)
+
+    const [sql, parameters] = query.mock.calls[0]
+    expect(String(sql)).toContain('source_ref=EXCLUDED.source_ref')
+    expect(String(sql)).toContain('source_revision=EXCLUDED.source_revision')
+    expect(parameters[7]).toBe(accepted.ref)
+    expect(parameters[8]).toBe(accepted.sourceRevision)
   })
 
   it('returns only the newest receipt per logical suite within the requested tenant', async () => {

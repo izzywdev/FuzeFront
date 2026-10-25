@@ -2210,6 +2210,8 @@ export class PostgresCatalogStore implements CatalogStore {
           source_revision,requested_by,input_names,status,error,requested_at,completed_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT (id) DO UPDATE SET
+         source_ref=EXCLUDED.source_ref,
+         source_revision=EXCLUDED.source_revision,
          status=EXCLUDED.status,
          error=EXCLUDED.error,
          completed_at=EXCLUDED.completed_at`,
