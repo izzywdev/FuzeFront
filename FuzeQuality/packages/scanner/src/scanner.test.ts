@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Repository } from '@fuzequality/contracts'
 import {
+  MAX_QUALITY_EVIDENCE_SOURCE_BYTES,
   MAX_SCAN_RESULT_BYTES,
+  SCANNER_VERSION,
   ScanTransportLimitError,
   boundQualityArtifactsForTransport,
   isCredentialFreeRepositoryUrl,
@@ -114,6 +116,26 @@ describe('repository scanner', () => {
       category: 'repository',
       severity: 'error',
       code: 'unreadable-quality-evidence',
+    }))
+    expect(result.scanDetails.partial).toBe(true)
+  })
+
+  it('bounds aggregate quality evidence sources before reviewed analysis', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-aggregate-evidence-'))
+    const fileCount = 7
+    const payload = `policy: every release requires its gate\n${'x'.repeat(Math.floor(MAX_QUALITY_EVIDENCE_SOURCE_BYTES / 6))}`
+    for (let index = 0; index < fileCount; index++) {
+      await writeFile(join(root, `policy-${index}.md`), payload)
+    }
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'policy')).toHaveLength(5)
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      sourcePath: '.',
+      category: 'repository',
+      severity: 'warning',
+      code: 'quality-evidence-source-budget',
     }))
     expect(result.scanDetails.partial).toBe(true)
   })
@@ -464,7 +486,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.11.0',
+      scannerVersion: SCANNER_VERSION,
       partial: false,
       counts: {
         operations: 1,

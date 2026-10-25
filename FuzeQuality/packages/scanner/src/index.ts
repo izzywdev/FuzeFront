@@ -65,13 +65,16 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.11.0'
+export const SCANNER_VERSION = '1.12.0'
 export const MAX_SCAN_RESULT_BYTES = 4_500_000
+export const MAX_QUALITY_EVIDENCE_SOURCE_BYTES = 16 * 1024 * 1024
+export const MAX_QUALITY_EVIDENCE_SOURCE_FILES = 500
 const TRANSPORT_DIAGNOSTIC_RESERVE_BYTES = 2_048
 const QUALITY_EVIDENCE_FILE_LIMIT = 100
 const PARTIAL_SCAN_DIAGNOSTIC_CODES = new Set([
   'quality-evidence-file-limit',
   'documentation-evidence-file-limit',
+  'quality-evidence-source-budget',
 ])
 
 const serializedBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8')
@@ -302,29 +305,53 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
   const artifacts = new Map<string, QualityArtifact>()
   const fingerprints = new Map<string, string>()
   const diagnostics = new Map<string, ScanDiagnostic>()
-  const sources = new Map<string, Promise<string | undefined>>()
-  const qualitySource = (file: string) => {
+  const admittedSources = new Set<string>()
+  const rejectedSources = new Set<string>()
+  const budgetOmissions = new Set<string>()
+  let admittedSourceBytes = 0
+  const recordBudgetOmission = (sourcePath: string) => {
+    rejectedSources.add(sourcePath)
+    budgetOmissions.add(sourcePath)
+    diagnostics.set('limit:aggregate-quality-evidence', {
+      sourcePath: '.',
+      category: 'repository',
+      severity: 'warning',
+      code: 'quality-evidence-source-budget',
+      message: `Omitted ${budgetOmissions.size} quality evidence source files after retaining ${admittedSources.size} files (${admittedSourceBytes} bytes); the aggregate scan budget is ${MAX_QUALITY_EVIDENCE_SOURCE_FILES} files and ${MAX_QUALITY_EVIDENCE_SOURCE_BYTES} bytes. Narrow the repository scan scope and rescan for complete reviewed analysis.`,
+    })
+  }
+  const qualitySource = async (file: string) => {
     const sourcePath = normalize(file)
-    const existing = sources.get(sourcePath)
-    if (existing) return existing
-    const pending = readText(root, file).then(
-      source => {
+    if (rejectedSources.has(sourcePath)) return undefined
+    const previouslyAdmitted = admittedSources.has(sourcePath)
+    if (!previouslyAdmitted && admittedSources.size >= MAX_QUALITY_EVIDENCE_SOURCE_FILES) {
+      recordBudgetOmission(sourcePath)
+      return undefined
+    }
+    try {
+      const source = await readText(root, file)
+      if (!previouslyAdmitted) {
+        const sourceBytes = Buffer.byteLength(source, 'utf8')
+        if (admittedSourceBytes + sourceBytes > MAX_QUALITY_EVIDENCE_SOURCE_BYTES) {
+          recordBudgetOmission(sourcePath)
+          return undefined
+        }
+        admittedSources.add(sourcePath)
+        admittedSourceBytes += sourceBytes
         fingerprints.set(sourcePath, `${sourcePath}:${fingerprint(source)}`)
-        return source
-      },
-      error => {
-        diagnostics.set(sourcePath, {
-          sourcePath,
-          category: 'repository',
-          severity: 'error',
-          code: 'unreadable-quality-evidence',
-          message: error instanceof Error ? error.message : String(error),
-        })
-        return undefined
-      },
-    )
-    sources.set(sourcePath, pending)
-    return pending
+      }
+      return source
+    } catch (error) {
+      rejectedSources.add(sourcePath)
+      diagnostics.set(sourcePath, {
+        sourcePath,
+        category: 'repository',
+        severity: 'error',
+        code: 'unreadable-quality-evidence',
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+    }
   }
   for (const candidate of QUALITY_ARTIFACT_GLOBS) {
     // Repository evidence must be physically contained by the checkout. Following
