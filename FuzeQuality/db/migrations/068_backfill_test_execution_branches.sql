@@ -16,4 +16,3 @@ FROM fuzequality.repositories AS repository
 WHERE version.repository_id = repository.id
   AND version.provider = 'github-actions'
   AND version.branch IS NULL;
-

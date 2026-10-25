@@ -228,8 +228,9 @@ export class MockIdentityProvider implements IdentityProvider {
     const u = this.seedUser({
       email: input.email,
       password: input.password,
-      firstName: input.firstName,
-      lastName: input.lastName,
+      // Contract 1.0.0: signup carries one `name`; the mock stores it as the
+      // display name (firstName slot) — it deliberately does not split it.
+      firstName: input.name,
       roles: ['user'],
       mfaEnabled: false,
     })
