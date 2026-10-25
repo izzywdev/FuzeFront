@@ -263,13 +263,17 @@ export class InvalidCursorError extends Error {
  *              the recorded rejectedAt (immutable until resubmission moves the
  *              row to pending). The regex guard keeps one malformed JSON value
  *              from turning the whole queue into a cast error.
- * Non-pending expressions are truncated to ms so they compare exactly with the
+ * Every expression is truncated to ms so it compares exactly with the
  * ms-precision ISO string carried in the cursor (JS Date has no microseconds).
  */
 function publicationSortExpr(status: PublicationQueueStatus): string {
   switch (status) {
     case 'pending':
-      return 'marketplace_submitted_at'
+      // Truncated like the others: the cursor carries a ms-precision ISO string
+      // (node-postgres returns a JS Date), so a bare column with sub-ms digits
+      // would compare GREATER than its own cursor and the boundary row would be
+      // returned on two consecutive pages.
+      return "date_trunc('milliseconds', marketplace_submitted_at)"
     case 'approved':
       return "date_trunc('milliseconds', COALESCE(marketplace_approved_at, created_at))"
     case 'rejected':

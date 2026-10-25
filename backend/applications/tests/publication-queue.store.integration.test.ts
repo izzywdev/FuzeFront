@@ -155,6 +155,31 @@ describe('publication review queue (real Postgres)', () => {
     await testDb('apps').where('slug', 'late').del()
   })
 
+  it('pending: sub-millisecond timestamps never duplicate or skip a row across a page boundary (limit 1)', async () => {
+    if (!reachable) return
+    // Same millisecond, different microseconds (and one exactly-on-ms row): with a
+    // bare-column sort the boundary row compared GREATER than its own ms-truncated
+    // cursor and was returned on two consecutive pages. Truncation makes them
+    // equal-at-ms, ordered by slug.
+    for (const [slug, ts] of [
+      ['us-c', '2026-01-03 00:00:00.123900+00'],
+      ['us-a', '2026-01-03 00:00:00.123456+00'],
+      ['us-b', '2026-01-03 00:00:00.123789+00'],
+      ['us-d', '2026-01-03 00:00:00.124000+00'],
+    ]) {
+      await seed(slug, { marketplace_submitted_at: testDb.raw('?::timestamptz', [ts]) })
+    }
+    try {
+      for (const limit of [1, 2, 3]) {
+        const { slugs } = await walk('pending', limit)
+        expect(slugs).toEqual(['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'us-a', 'us-b', 'us-c', 'us-d'])
+        expect(new Set(slugs).size).toBe(slugs.length)
+      }
+    } finally {
+      await testDb('apps').whereIn('slug', ['us-a', 'us-b', 'us-c', 'us-d']).del()
+    }
+  })
+
   it('limit is clamped server-side to the max (over-max request does not error or exceed 200)', async () => {
     if (!reachable) return
     const page = await appRegistryService.listPublicationRequests({ status: 'pending', limit: 100000 })
@@ -209,7 +234,7 @@ describe('publication review queue (real Postgres)', () => {
       const r = await trx.raw(
         `EXPLAIN SELECT * FROM apps
            WHERE marketplace_submitted_at IS NOT NULL AND COALESCE(is_marketplace_approved, false) = false
-           ORDER BY marketplace_submitted_at ASC, slug ASC LIMIT 51`
+           ORDER BY date_trunc('milliseconds', marketplace_submitted_at) ASC, slug ASC LIMIT 51`
       )
       return r.rows.map((x: any) => x['QUERY PLAN']).join('\n')
     })
