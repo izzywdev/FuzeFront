@@ -387,13 +387,22 @@ class _ClosingIterator:
         self._finalize(errored)
 
     def close(self) -> None:
-        # Called by the WSGI server after it has consumed the response.
+        # Called by the WSGI server after it has consumed the response (or on an
+        # early close when a client disconnects mid-stream).
         inner_close = getattr(self._iterable, "close", None)
+        errored = False
         try:
             if callable(inner_close):
                 inner_close()
+        except BaseException:
+            # The wrapped iterable's cleanup failed (e.g. a generator's finally
+            # raised after an early disconnect). For a response that already sent
+            # 200 OK the status alone can't show that, so flag the span errored —
+            # same as a failure during __next__ — and let it propagate.
+            errored = True
+            raise
         finally:
-            self._close(errored=False)
+            self._close(errored=errored)
 
 
 def instrument_flask(

@@ -338,3 +338,38 @@ def test_flask_handler_reuses_middleware_request_id():
         assert header_id
     finally:
         provider.shutdown()
+
+
+# --- Finding 11: WSGI iterable close() raising after 200 flags the span errored ---
+
+def test_wsgi_iterable_close_raising_flags_span_and_propagates():
+    provider, exporter = _provider()
+    try:
+        buf = io.StringIO()
+
+        class _BodyWhoseCloseRaises:
+            def __iter__(self):
+                return iter([b"part"])
+
+            def close(self):
+                raise RuntimeError("cleanup failed after client disconnect")
+
+        def app(environ, start_response):
+            start_response("200 OK", [("Content-Type", "text/plain")])
+            return _BodyWhoseCloseRaises()
+
+        mw = TelemetryWSGIMiddleware(
+            app, tracer_provider=provider, logger=StructuredLogger(level="info", stream=buf)
+        )
+        result = mw({"REQUEST_METHOD": "GET", "PATH_INFO": "/s"}, lambda *a, **k: None)
+        # Early server close (do NOT drain first) — the wrapped close() raises.
+        with pytest.raises(RuntimeError):
+            result.close()
+
+        (span,) = exporter.get_finished_spans()
+        assert span.attributes["http.status_code"] == 200
+        assert span.attributes["error"] is True  # not hidden behind the 200
+        assert "request errored" in buf.getvalue()
+        assert "request completed" not in buf.getvalue()
+    finally:
+        provider.shutdown()
