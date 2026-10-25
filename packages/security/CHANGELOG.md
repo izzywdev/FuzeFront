@@ -1,5 +1,48 @@
 # Changelog — @fuzefront/security-client
 
+## 1.1.0 — Auth-experience signup contract reconciliation (additive, unreleased)
+
+`info.version` 1.0.0 -> 1.1.0, `SECURITY_CONTRACT_VERSION` 1.0.0 -> 1.1.0,
+package `version` 1.0.0 -> 1.1.0. MINOR — additive error codes, a newly
+documented (already-implemented) response, and description corrections. No
+existing request/response shape is narrowed; oasdiff reports non-breaking.
+
+Reconciles three contract/implementation gaps surfaced while building the three
+auth-experience signup slices against 1.0.0. Contract + generated client only —
+backend/UI/test fan out after this freeze.
+
+### Added
+
+- `ErrorBody.code` enum: `CAPTCHA_FAILED`. A rejected/invalid/missing Cloudflare
+  Turnstile token on `POST /v1/security/signup` now returns **400 with code
+  `CAPTCHA_FAILED`** — distinct from a generic `MALFORMED` (previously the
+  backend returned `400 MALFORMED` and the frontend guessed `403`, so they
+  disagreed). Cloudflare being unreachable stays **503 `PROVIDER_UNAVAILABLE`**
+  (fail-closed), never `CAPTCHA_FAILED`. `ErrorBody.description` documents this.
+- `POST /v1/security/signup`: **422** response (body `ErrorBody`, `code:
+  PASSWORD_POLICY`) for a password that fails the authoritative policy — distinct
+  from 409 email-exists and 503 provider errors. `AuthMethods.passwordPolicy`
+  already referenced `422 PASSWORD_POLICY`; the operation now declares it. The
+  `PASSWORD_POLICY` code already existed in the enum.
+- Hand-authored `SecurityErrorCode` union in `src/types.ts` brought into full
+  lockstep with the `ErrorBody.code` enum — adds the two codes above plus
+  previously-drifted values (`REDIRECT_URI_NOT_ALLOWED`, `TOKEN_EXPIRED`,
+  `TOKEN_INVALID`, `PASSWORD_POLICY`, `LAST_FACTOR`, `NO_PASSWORD`,
+  `RATE_LIMITED`). Pure additive widening of a string-literal union.
+
+### Changed (documentation only)
+
+- `POST /v1/security/signup` `400` response: was a generic `BadRequest` ref; now
+  an inline description documenting both `MALFORMED` and `CAPTCHA_FAILED` and the
+  503-on-unreachable distinction. Same `ErrorBody` schema — non-breaking.
+- `GET /v1/security/signup/email-available` and the sibling
+  `GET /v1/security/email-available`: enumeration-posture text CORRECTED. The real
+  control is **per-IP rate-limiting** (the check fires per keystroke on a debounce
+  and Turnstile tokens are single-use, so a captcha cannot gate it); the prior
+  "per-IP rate-limited AND captcha-gated" claim was wrong. Now states explicitly
+  it is NOT captcha-gated. No captcha parameter added; the documented `429`
+  remains.
+
 ## 1.0.0 — Auth-experience signup redesign (BREAKING, unreleased)
 
 `info.version` 0.12.0 -> 1.0.0, `SECURITY_CONTRACT_VERSION` 0.12.0 -> 1.0.0,

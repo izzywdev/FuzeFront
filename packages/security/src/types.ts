@@ -24,7 +24,7 @@
  */
 import type { components } from './generated';
 
-export const SECURITY_CONTRACT_VERSION = '1.0.0' as const;
+export const SECURITY_CONTRACT_VERSION = '1.1.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -61,7 +61,10 @@ export interface Identity {
  */
 export type AuthMode = 'legacy-hs256' | 'federated-jwks';
 
-/** Stable, provider-neutral error codes. Fail-closed. */
+/**
+ * Stable, provider-neutral error codes. Fail-closed. Mirrors the full
+ * `ErrorBody.code` enum in openapi.yaml — keep the two in lockstep.
+ */
 export type SecurityErrorCode =
   | 'NO_TOKEN'
   | 'MALFORMED'
@@ -75,10 +78,18 @@ export type SecurityErrorCode =
   | 'VERIFIER_UNAVAILABLE'
   | 'INVALID_CREDENTIALS'
   | 'INVALID_CODE'
+  | 'REDIRECT_URI_NOT_ALLOWED'
   | 'CONFLICT'
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'PROVIDER_UNAVAILABLE'
+  | 'TOKEN_EXPIRED'
+  | 'TOKEN_INVALID'
+  | 'PASSWORD_POLICY'
+  | 'CAPTCHA_FAILED'
+  | 'LAST_FACTOR'
+  | 'NO_PASSWORD'
+  | 'RATE_LIMITED'
   | 'UNKNOWN';
 
 /** Supported social provider slugs. Extensible; `google` is first. */

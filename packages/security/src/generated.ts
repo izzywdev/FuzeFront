@@ -313,7 +313,7 @@ export interface paths {
          *
          *     **Fail-open (client contract).** This endpoint is a UX convenience, never a gate: the client MUST treat any error (timeout, 4xx, 5xx, network) as "unknown/available" and NEVER block submit on it. Authoritative duplicate-rejection happens at `POST /v1/security/signup` (`409`).
          *
-         *     **Enumeration posture.** It intentionally reveals whether an address is registered (the product requires inline feedback), so it MUST be per-IP rate-limited AND captcha-gated (the SAME `AuthMethods.captcha` Turnstile verification signup uses) so it cannot be used as a bulk account-enumeration oracle beyond the signup UX. The backend enforces both; this contract specifies the requirement. Exceeding the limit returns `429`.
+         *     **Enumeration posture.** It intentionally reveals whether an address is registered (the product requires inline feedback), so the enumeration control is PER-IP RATE-LIMITING so it cannot be used as a bulk account-enumeration oracle beyond the signup UX. The backend enforces the limit; this contract specifies the requirement. Exceeding it returns `429`. It is NOT captcha-gated: the check fires per keystroke on a debounce and Turnstile tokens are single-use, so a captcha cannot gate a repeated, interactive check. Captcha applies only to the authoritative `POST /v1/security/signup` action.
          */
         get: operations["getSignupEmailAvailable"];
         put?: never;
@@ -355,7 +355,7 @@ export interface paths {
          * Check whether an email is available to register
          * @description Public, unauthenticated inline check for the signup form: is this email free to register? Consults the SAME source of truth `signup` uses to reject a duplicate, so the answer cannot disagree with signup. The email is normalized (trimmed + lowercased) before checking and echoed back.
          *
-         *     This endpoint intentionally reveals whether an address is registered (product requires inline "available / already registered" feedback), so it is per-IP rate-limited (20/min/IP) as the deliberate mitigation for the resulting enumeration exposure. Exceeding the limit returns 429.
+         *     This endpoint intentionally reveals whether an address is registered (product requires inline "available / already registered" feedback), so the enumeration control is per-IP rate-limiting (20/min/IP) as the deliberate mitigation for the resulting enumeration exposure. Exceeding the limit returns 429. It is NOT captcha-gated: the check fires per keystroke on a debounce and Turnstile tokens are single-use, so a captcha cannot gate it; captcha applies only to the authoritative `signup` action.
          */
         get: operations["getEmailAvailable"];
         put?: never;
@@ -2102,11 +2102,11 @@ export interface components {
             items: components["schemas"]["Portal"][];
             page: components["schemas"]["PageInfo"];
         };
-        /** @description Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED (past TTL or already used) and TOKEN_INVALID (matches nothing) are returned as 400 by the email-verify and password-reset confirm operations; they are NOT session failures and clients must not treat them as 401 session expiry. PASSWORD_POLICY (422) is returned by reset-confirm when the identity provider rejects the new password; the reset token stays live so a compliant retry succeeds. */
+        /** @description Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED (past TTL or already used) and TOKEN_INVALID (matches nothing) are returned as 400 by the email-verify and password-reset confirm operations; they are NOT session failures and clients must not treat them as 401 session expiry. PASSWORD_POLICY (422) is returned by reset-confirm when the identity provider rejects the new password (and by `POST /v1/security/signup` when the chosen password fails the policy); the reset token stays live so a compliant retry succeeds. CAPTCHA_FAILED (400) is returned by `POST /v1/security/signup` when the supplied Cloudflare Turnstile token is rejected, invalid, or missing — a distinct, explicit failure from a generic MALFORMED body. A rejected captcha is a 400 (client-correctable: fetch a fresh token and retry); Cloudflare being unreachable is instead 503 PROVIDER_UNAVAILABLE (fail-closed), never CAPTCHA_FAILED. */
         ErrorBody: {
             error: string;
             /** @enum {string} */
-            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "TOKEN_EXPIRED" | "TOKEN_INVALID" | "PASSWORD_POLICY" | "LAST_FACTOR" | "NO_PASSWORD" | "RATE_LIMITED" | "UNKNOWN";
+            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "TOKEN_EXPIRED" | "TOKEN_INVALID" | "PASSWORD_POLICY" | "CAPTCHA_FAILED" | "LAST_FACTOR" | "NO_PASSWORD" | "RATE_LIMITED" | "UNKNOWN";
         };
     };
     responses: {
@@ -2727,9 +2727,26 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description The request is rejected before account creation. `code: MALFORMED` for a malformed/invalid body; `code: CAPTCHA_FAILED` when the supplied Cloudflare Turnstile token is rejected, invalid, or missing (distinct from MALFORMED so the client can prompt for a fresh captcha and retry rather than treating it as a generic bad request). Cloudflare being unreachable is NOT a 400 — it fails closed as `503 PROVIDER_UNAVAILABLE`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description An account with that email already exists. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The chosen password fails the authoritative password policy (`code: PASSWORD_POLICY`), distinct from 409 email-exists and 503 provider errors. The server independently enforces the same policy advertised by `AuthMethods.passwordPolicy`; the client may render the per-rule checklist and let the user retry with a compliant password. */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
