@@ -69,6 +69,11 @@ def _asgi_headers(scope: dict) -> dict[str, str]:
 
 
 def _asgi_route_template(scope: dict) -> str | None:
+    # Starlette's router sets scope["route"] to the matched Route once routing
+    # resolves (since Starlette 0.33; FastAPI inherits it) — that is the matched
+    # TEMPLATE (/users/{id}), the bounded-cardinality name we want, not the raw
+    # path. The package floor requires that Starlette, so this is the supported
+    # path; anything older simply falls through to the (unmatched) name.
     route = scope.get("route")
     path = getattr(route, "path", None)
     if not path:
@@ -139,15 +144,18 @@ class TelemetryASGIMiddleware:
 
         token = context_api.attach(set_span_in_context(span, parent))
         started = time.perf_counter()
+        errored = False
+        # finalize + detach live in `finally` so a cancellation — asyncio.CancelledError
+        # is a BaseException, not an Exception (server shutdown, a streaming-request
+        # timeout) — still ends and exports the span and detaches the context, instead
+        # of leaking an unended span and a dangling context into an enclosing scope.
         try:
             await self.app(scope, receive, send_wrapper)
-        except Exception:
-            span.set_attribute("error", True)
-            self._finalize(span, method, scope, status["code"], started, log, errored=True)
-            context_api.detach(token)
+        except BaseException:
+            errored = True
             raise
-        else:
-            self._finalize(span, method, scope, status["code"], started, log, errored=False)
+        finally:
+            self._finalize(span, method, scope, status["code"], started, log, errored=errored)
             context_api.detach(token)
 
     def _finalize(
@@ -170,7 +178,10 @@ class TelemetryASGIMiddleware:
             span.update_name(_unmatched_name(method))
         span.set_attribute("http.method", method)
         span.set_attribute("http.status_code", status_code)
-        if status_code >= 500:
+        # An exception/cancellation marks the span errored even when a 2xx status
+        # line was already sent (a body that failed mid-stream), so trace-based
+        # error queries still surface it.
+        if errored or status_code >= 500:
             span.set_attribute("error", True)
         span.end()
         if self._log_requests:
@@ -258,7 +269,12 @@ class TelemetryWSGIMiddleware:
         # key too, so with_trace_context works against a WSGI environ uniformly.
         environ.setdefault("state", environ[_REQUEST_STATE_ENVIRON_KEY])
 
-        log = with_trace_context(self._logger, environ[_REQUEST_STATE_ENVIRON_KEY], request_id=req_id)
+        # Pass the environ (not the bare state dict): with_trace_context resolves
+        # the stash via environ["state"] (set just above), so the entry/exit logs
+        # carry this request's trace_id/span_id — they are bound once here and the
+        # new request span is attached only below, so reading the stash (not the
+        # not-yet-active span) is what correlates the logs with the exported span.
+        log = with_trace_context(self._logger, environ, request_id=req_id)
         if self._log_requests:
             log.info({"method": method}, "request received")
 
@@ -290,7 +306,9 @@ class TelemetryWSGIMiddleware:
                 span.update_name(_unmatched_name(method))
             span.set_attribute("http.method", method)
             span.set_attribute("http.status_code", status["code"])
-            if status["code"] >= 500:
+            # errored covers a body that raised mid-iteration after a 2xx status
+            # line was already sent, which the status alone would hide.
+            if errored or status["code"] >= 500:
                 span.set_attribute("error", True)
             span.end()
             context_api.detach(token)
@@ -308,7 +326,6 @@ class TelemetryWSGIMiddleware:
         try:
             result = self.app(environ, sr)
         except Exception:
-            span.set_attribute("error", True)
             finalize(errored=True)
             raise
 

@@ -16,12 +16,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-fastapi = ["fastapi>=0.100", "starlette>=0.27"]
+fastapi = ["fastapi>=0.100", "starlette>=0.35"]
 flask = ["flask>=2.3"]
 dev = [
     "pytest>=8.0",
     "fastapi>=0.100",
-    "starlette>=0.27",
+    "starlette>=0.35",
     "httpx>=0.24",
     "flask>=2.3",
 ]
