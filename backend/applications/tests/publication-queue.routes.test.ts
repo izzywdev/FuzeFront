@@ -277,7 +277,8 @@ describe('GET /publication-requests — PublicationQueueItem shape', () => {
 })
 
 describe('AppCreator.contactEmail (toAppDtos)', () => {
-  const opts = { prefixed: false, creatorOwnership: true }
+  const sameOrg = { userId: CREATOR, organizationIds: [ORG], isPlatformAdmin: false }
+  const opts = { prefixed: false, creatorOwnership: true, caller: sameOrg }
   it('present while a current member; absent when email unknown', async () => {
     creatorInfo = { isCurrentMember: true, displayName: 'Casey', contactEmail: 'c@example.com' }
     expect((await toAppDtos([appRecord('a') as any], opts))[0].creator.contactEmail).toBe('c@example.com')
@@ -288,6 +289,21 @@ describe('AppCreator.contactEmail (toAppDtos)', () => {
     creatorInfo = { isCurrentMember: false, displayName: null, contactEmail: 'stale@example.com' }
     const c = (await toAppDtos([appRecord('a') as any], opts))[0].creator
     expect(c).toEqual({ userId: fromUuid('user', CREATOR), isCurrentMember: false })
+  })
+  it('caller matrix: same-org member / admin see it; outside-org, no caller, consumer identity do not (displayName kept)', async () => {
+    const email = (caller: any) => toAppDtos([appRecord('a') as any], { ...opts, caller }).then(d => d[0].creator)
+    expect((await email(sameOrg)).contactEmail).toBe('casey@example.com')
+    expect((await email({ userId: 'x', organizationIds: [], isPlatformAdmin: true })).contactEmail).toBe('casey@example.com')
+    for (const c of [
+      { userId: 'x', organizationIds: ['other-org'], isPlatformAdmin: false },
+      null,
+      undefined,
+      { userId: 'consumer-registration', organizationIds: [], isPlatformAdmin: true },
+    ]) {
+      const cr = await email(c)
+      expect(cr).not.toHaveProperty('contactEmail')
+      expect(cr.displayName).toBe('Casey Creator')
+    }
   })
   it('flag OFF: no creator surface at all', async () => {
     const dto = (await toAppDtos([appRecord('a') as any], { prefixed: false, creatorOwnership: false }))[0]

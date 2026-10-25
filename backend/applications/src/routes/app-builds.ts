@@ -891,6 +891,7 @@ router.get(
         {
           prefixed: await isPrefixedIdsEnabled(flagCtx),
           creatorOwnership: await isCreatorOwnershipEnabled({ userId: caller.userId }),
+          caller,
         }
       )
       const items = result.items.map((entry, idx) => {

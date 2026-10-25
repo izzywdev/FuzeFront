@@ -16,6 +16,7 @@ import { db } from '../config/database'
 import { toWireId, prefixDtoIds } from '../identity/serializer'
 import { log, errInfo } from './log'
 import type { AppRecord } from './service'
+import { SYNTHETIC_CONSUMER_USER_ID } from '../middleware/consumer-auth'
 
 export interface CreatorInfo {
   isCurrentMember: boolean
@@ -59,9 +60,35 @@ export function setCreatorResolver(r: CreatorResolver | null): void {
   resolver = r ?? knexCreatorResolver
 }
 
+/** The slice of the resolved caller (app-registry/caller.ts) the DTO needs. */
+export interface DtoCaller {
+  userId: string
+  organizationIds: string[]
+  isPlatformAdmin: boolean
+}
+
 export interface AppDtoOptions {
   prefixed: boolean
   creatorOwnership: boolean
+  /**
+   * The requesting principal. Gates `creator.contactEmail` ONLY (displayName /
+   * isCurrentMember are unaffected). Absent/undefined => the relationship is
+   * unknown => contactEmail is OMITTED (fail closed).
+   */
+  caller?: DtoCaller | null
+}
+
+/**
+ * contactEmail is more sensitive than displayName, so it is emitted only to a
+ * member of the app's OWNING org or an interactive platform admin. The
+ * synthetic consumer/registration-token identity carries an `admin` role but is
+ * a shared workload secret, not a person — it never gets a creator's email.
+ */
+export function canSeeCreatorContact(caller: DtoCaller | null | undefined, organizationId: string | null | undefined): boolean {
+  if (!caller || !caller.userId || caller.userId === SYNTHETIC_CONSUMER_USER_ID) return false
+  if (caller.isPlatformAdmin) return true
+  if (!organizationId) return false
+  return Array.isArray(caller.organizationIds) && caller.organizationIds.includes(organizationId)
 }
 
 export async function toAppDtos(apps: AppRecord[], opts: AppDtoOptions): Promise<any[]> {
@@ -95,7 +122,12 @@ export async function toAppDtos(apps: AppRecord[], opts: AppDtoOptions): Promise
       }
       if (info.isCurrentMember && info.displayName) creator.displayName = info.displayName
       // Same former-member rule as displayName: never for a non-member.
-      if (info.isCurrentMember && info.contactEmail) creator.contactEmail = info.contactEmail
+      // ...and ONLY to the owning org's members / platform admins (see
+      // canSeeCreatorContact); everyone else, incl. public/marketplace readers,
+      // gets no email even for a current member.
+      if (info.isCurrentMember && info.contactEmail && canSeeCreatorContact(opts.caller, app.organizationId)) {
+        creator.contactEmail = info.contactEmail
+      }
       return { ...dto, createdBy: userWire, creator }
     })
   )
