@@ -75,7 +75,8 @@ describe('PasswordStrengthMeter', () => {
     const meter = container.querySelector('[data-pwmeter]')!
     expect(meter).toHaveAttribute('data-strength', 'good')
     expect(screen.getByText('Good')).toBeInTheDocument()
-    expect(container.querySelectorAll('.fzf-pwmeter__bar--on')).toHaveLength(3)
+    expect(container.querySelectorAll('[data-on="true"]')).toHaveLength(3)
+    expect(meter).toHaveAttribute('data-state', 'pw-good')
     rerender(<PasswordStrengthMeter value="abc" />)
     expect(container.querySelector('[data-pwmeter]')).toHaveAttribute('data-strength', 'weak')
   })

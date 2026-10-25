@@ -1,5 +1,5 @@
 import React from 'react'
-import { PasswordChecklist } from '@fuzefront/design-system'
+import { PasswordChecklist, StrengthMeter } from '@fuzefront/design-system'
 import { DEFAULT_VERIFY_RESET_LABELS, type VerifyResetLabels } from './types'
 
 export type PasswordStrength = 'empty' | 'weak' | 'fair' | 'good' | 'strong'
@@ -19,25 +19,45 @@ export function scorePassword(value: string, rules: Rule[] = PasswordChecklist.r
   return 'weak'
 }
 
-const BARS: Record<PasswordStrength, number> = { empty: 0, weak: 1, fair: 2, good: 3, strong: 4 }
-
 export interface PasswordStrengthMeterProps {
   value: string
   rules?: Rule[]
   labels?: Partial<VerifyResetLabels>
-  /** Also render the per-rule checklist (DS PasswordChecklist). Default true. */
+  /** Also render the per-rule checklist (DS PasswordChecklist) inside the meter. Default true. */
   showChecklist?: boolean
+  /** Checklist grid columns (default 1; the signup form uses 2). */
+  checklistColumns?: number
+  /** Localized visually-hidden per-row suffixes for the checklist. */
+  metLabel?: string
+  unmetLabel?: string
+  /** Tint still-unmet rules with the error colour (after a rejected submit). */
+  highlightUnmet?: boolean
+  /** DOM id, so the password input can point `aria-describedby` at the meter. */
+  id?: string
+  /** Rendered inside the meter, after the built-in checklist (pass `showChecklist={false}` to use only these). */
+  children?: React.ReactNode
 }
 
+/**
+ * PasswordStrengthMeter — scores `value` against the policy rules and renders the
+ * design-system `StrengthMeter` (segmented bars + word), with the live per-rule
+ * checklist nested inside it. Exposes `data-pwmeter` + `data-strength`; the
+ * checklist rows carry `data-pwreq` / `data-req` / `data-met`.
+ */
 export function PasswordStrengthMeter({
   value,
   rules,
   labels: overrides,
   showChecklist = true,
+  checklistColumns = 1,
+  metLabel,
+  unmetLabel,
+  highlightUnmet,
+  id,
+  children,
 }: PasswordStrengthMeterProps) {
   const labels = { ...DEFAULT_VERIFY_RESET_LABELS, ...overrides }
   const strength = scorePassword(value, rules)
-  const on = BARS[strength]
   const word =
     strength === 'weak' ? labels.strengthWeak
     : strength === 'fair' ? labels.strengthFair
@@ -45,17 +65,26 @@ export function PasswordStrengthMeter({
     : strength === 'strong' ? labels.strengthStrong
     : ''
   return (
-    <div className="fzf-pwmeter" data-pwmeter data-strength={strength}>
-      <div className="fzf-pwmeter__bars" aria-hidden="true">
-        {[1, 2, 3, 4].map(i => (
-          <span key={i} className={`fzf-pwmeter__bar${i <= on ? ' fzf-pwmeter__bar--on' : ''}`} />
-        ))}
-      </div>
-      <div className="fzf-pwmeter__label" aria-live="polite">
-        <span>{labels.strengthLabel}</span>
-        {word && <b>{word}</b>}
-      </div>
-      {showChecklist && <PasswordChecklist value={value} rules={rules} title="" />}
-    </div>
+    <StrengthMeter
+      id={id}
+      data-pwmeter
+      data-state={`pw-${strength}`}
+      strength={strength}
+      label={labels.strengthLabel}
+      valueLabel={word || undefined}
+    >
+      {showChecklist && (
+        <PasswordChecklist
+          value={value}
+          rules={rules}
+          title=""
+          columns={checklistColumns}
+          metLabel={metLabel}
+          unmetLabel={unmetLabel}
+          highlightUnmet={highlightUnmet}
+        />
+      )}
+      {children}
+    </StrengthMeter>
   )
 }

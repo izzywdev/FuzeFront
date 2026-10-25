@@ -1,5 +1,5 @@
 import React from 'react'
-import { Input } from '@fuzefront/design-system'
+import { InlineValidatedInput } from '@fuzefront/design-system'
 import { DEFAULT_VERIFY_RESET_LABELS, type VerifyResetLabels } from './types'
 
 export interface PasswordConfirmFieldProps {
@@ -12,7 +12,11 @@ export interface PasswordConfirmFieldProps {
   labels?: Partial<VerifyResetLabels>
 }
 
-/** Confirm-password input with a live match state (`data-match`) and an inline error once the user has typed. */
+/**
+ * Confirm-password input with a live match state. Nothing is shown until the user
+ * has typed; then `data-match="true"` (success ring + check + "Passwords match.")
+ * or `data-match="false"` (error ring, `aria-invalid`, inline "don't match" message).
+ */
 export function PasswordConfirmField({
   password,
   value,
@@ -26,7 +30,7 @@ export function PasswordConfirmField({
   const typed = value.length > 0
   const matches = typed && value === password
   return (
-    <Input
+    <InlineValidatedInput
       id={id}
       name={name}
       type="password"
@@ -35,7 +39,11 @@ export function PasswordConfirmField({
       value={value}
       onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
       data-match={typed ? String(matches) : undefined}
+      state={!typed ? 'idle' : matches ? 'valid' : 'invalid'}
+      help={matches ? labels.matches : undefined}
       error={typed && !matches ? labels.mismatch : ''}
+      showPasswordLabel={labels.showPassword}
+      hidePasswordLabel={labels.hidePassword}
     />
   )
 }
