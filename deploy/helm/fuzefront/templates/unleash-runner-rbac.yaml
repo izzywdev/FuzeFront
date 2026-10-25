@@ -59,4 +59,43 @@ roleRef:
   kind: Role
   name: unleash-runner-secret-reader
   apiGroup: rbac.authorization.k8s.io
+---
+# Read-only diagnostic access so the in-cluster runner can explain why a workload
+# is unhealthy (sl-cluster-diag.yml inspects selection-list-service). get/list on
+# pods (+ logs), deployments/replicasets, jobs and events in THIS namespace only —
+# no secrets, no write verbs, no cluster scope. TEMPORARY: remove together with
+# sl-cluster-diag.yml once the selection-list deploy is confirmed healthy.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: unleash-runner-diag-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: unleash-runner-diag-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.unleash.ciRunner.serviceAccountName }}
+    namespace: {{ .Values.unleash.ciRunner.serviceAccountNamespace | default .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: unleash-runner-diag-reader
+  apiGroup: rbac.authorization.k8s.io
 {{- end }}

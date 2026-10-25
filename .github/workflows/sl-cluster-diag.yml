@@ -66,10 +66,17 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Pods"
-          PODS_JSON=$(k "/api/v1/namespaces/$NS/pods?labelSelector=app%3D$APP")
+          PODS_JSON=$(k "/api/v1/namespaces/$NS/pods?labelSelector=app%3D$APP" || true)
           echo "$PODS_JSON" | python3 -c '
           import sys, json
-          d = json.load(sys.stdin)
+          try:
+              d = json.load(sys.stdin)
+          except Exception as e:
+              print("could not parse pods response:", e); sys.exit(0)
+          if d.get("kind") == "Status":
+              print("pods LIST -> API error:", d.get("status"), d.get("code"), d.get("reason"), "|", d.get("message"))
+              print("(NOT an empty pod list — the query itself failed; e.g. 403 means the runner RBAC lacks pod read)")
+              sys.exit(0)
           items = d.get("items", [])
           print("pod count:", len(items))
           for p in items:
@@ -121,7 +128,11 @@ jobs:
           echo "::group::Pod logs (current + previous, tail 80)"
           FIRST_POD=$(echo "$PODS_JSON" | python3 -c '
           import sys, json
-          items = json.load(sys.stdin).get("items", [])
+          try:
+              d = json.load(sys.stdin)
+          except Exception:
+              d = {}
+          items = d.get("items", []) if d.get("kind") != "Status" else []
           print(items[0]["metadata"]["name"] if items else "")
           ')
           if [ -n "$FIRST_POD" ]; then
@@ -130,6 +141,6 @@ jobs:
             echo "--- pod: $FIRST_POD (previous, if crashlooped) ---"
             k "/api/v1/namespaces/$NS/pods/$FIRST_POD/log?container=selection-list-service&previous=true&tailLines=80" || echo "(no previous log)"
           else
-            echo "(no pod exists — sync likely never created the Deployment's pod, or pre-sync Job blocks it)"
+            echo "(no pod name resolved — see the Pods section above: either an API error/403 was reported, or the list is genuinely empty, meaning the sync never created the pod / the pre-sync Job blocks it)"
           fi
           echo "::endgroup::"
