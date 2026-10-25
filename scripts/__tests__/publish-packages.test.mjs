@@ -17,6 +17,7 @@ import {
   filterTargets,
   isPublishableName,
   assertAliasable,
+  assertLocalDepsResolvable,
 } from '../publish-packages.mjs'
 
 test('aliasFor maps the canonical scope onto the owner scope', () => {
@@ -89,6 +90,118 @@ test('assertAliasable passes the real workspace set', () => {
 
   assert.ok(targets.length > 0, 'expected at least one publishable workspace')
   assert.doesNotThrow(() => assertAliasable(targets))
+})
+
+test('assertLocalDepsResolvable rejects a local dep on a non-publishable workspace', () => {
+  // The @fuzefront/billing-service failure, reduced: a publishable package
+  // with a `file:` dependency on a private workspace. rewriteForPublish
+  // already refuses this, but only once the leg is running.
+  assert.throws(
+    () =>
+      assertLocalDepsResolvable([
+        {
+          dir: 'services/thing',
+          pkg: {
+            name: '@fuzefront/thing',
+            dependencies: { '@fuzefront/thing-types': 'file:../../packages/thing-types' },
+          },
+        },
+      ]),
+    /@fuzefront\/thing-types/
+  )
+  // The message has to name both ways out, because which one is correct is a
+  // judgement about the dependent, not a mechanical fix.
+  assert.throws(
+    () =>
+      assertLocalDepsResolvable([
+        {
+          dir: 'services/thing',
+          pkg: {
+            name: '@fuzefront/thing',
+            dependencies: { '@fuzefront/thing-types': 'file:../../packages/thing-types' },
+          },
+        },
+      ]),
+    /"private": true/
+  )
+})
+
+test('assertLocalDepsResolvable allows a local dep between two publishable workspaces', () => {
+  // This is the normal case and must not be broken: the specifier is local,
+  // but the target publishes, so rewriteForPublish has a version to pin.
+  assert.doesNotThrow(() =>
+    assertLocalDepsResolvable([
+      {
+        dir: 'packages/ui',
+        pkg: {
+          name: '@fuzefront/ui',
+          dependencies: { '@fuzefront/tokens': 'file:../tokens' },
+        },
+      },
+      { dir: 'packages/tokens', pkg: { name: '@fuzefront/tokens', version: '1.0.0' } },
+    ])
+  )
+})
+
+test('assertLocalDepsResolvable ignores registry specifiers on non-publishable names', () => {
+  // Only LOCAL specifiers are a problem. A normal semver range on a name this
+  // repo does not publish is just an external dependency.
+  assert.doesNotThrow(() =>
+    assertLocalDepsResolvable([
+      {
+        dir: 'packages/ui',
+        pkg: { name: '@fuzefront/ui', dependencies: { react: '^19.2.0', pg: '^8' } },
+      },
+    ])
+  )
+})
+
+test('assertLocalDepsResolvable checks peerDependencies too', () => {
+  assert.throws(
+    () =>
+      assertLocalDepsResolvable([
+        {
+          dir: 'packages/ui',
+          pkg: {
+            name: '@fuzefront/ui',
+            peerDependencies: { '@fuzefront/private-ds': 'workspace:*' },
+          },
+        },
+      ]),
+    /@fuzefront\/private-ds/
+  )
+})
+
+test('assertLocalDepsResolvable rejects a local dep on a versionless publishable workspace', () => {
+  // rewriteForPublish pins `^${version}`, so a publishable target with no
+  // version throws there just as a private one does. Matching its predicate
+  // exactly is what keeps this guard from being a near-miss.
+  assert.throws(
+    () =>
+      assertLocalDepsResolvable([
+        {
+          dir: 'packages/ui',
+          pkg: { name: '@fuzefront/ui', dependencies: { '@fuzefront/tokens': 'file:../tokens' } },
+        },
+        { dir: 'packages/tokens', pkg: { name: '@fuzefront/tokens' } },
+      ]),
+    /@fuzefront\/tokens/
+  )
+})
+
+test('assertLocalDepsResolvable passes the real workspace set', () => {
+  // The regression guard with teeth, same shape as the assertAliasable one
+  // above: reads the ACTUAL tree, so re-introducing the billing-service defect
+  // fails here rather than in one matrix leg on master.
+  const root = fileURLToPath(new URL('../../', import.meta.url))
+  const ws = JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).workspaces ?? []
+  const targets = ws
+    .filter((dir) => !dir.includes('*') && existsSync(`${root}/${dir}/package.json`))
+    .map((dir) => ({ dir, pkg: JSON.parse(readFileSync(`${root}/${dir}/package.json`, 'utf8')) }))
+    .filter(({ pkg }) => !pkg.private && pkg.name)
+
+  assert.ok(targets.length > 0, 'expected at least one publishable workspace')
+  assert.doesNotThrow(() => assertLocalDepsResolvable(targets))
 })
 
 test('rewrites in-family dependencies, not just the package name', () => {
