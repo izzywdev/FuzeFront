@@ -91,10 +91,13 @@ def _asgi_route_template(scope: dict) -> str | None:
 class TelemetryASGIMiddleware:
     """ASGI middleware: one SERVER span + entry/exit log per HTTP request.
 
-    RECOMMENDED install — wrap the app, so this sits OUTSIDE the framework's
-    error handler::
+    RECOMMENDED install — register your routes FIRST, then wrap the app as the
+    LAST step (the wrapper is the ASGI entrypoint and does not forward ``.get``
+    etc., so wrap after the app is fully configured)::
 
-        app = TelemetryASGIMiddleware(app)  # FastAPI/Starlette or any ASGI app
+        api = FastAPI()          # or Starlette(...) / any ASGI app
+        # ... register routes on `api` ...
+        app = TelemetryASGIMiddleware(api)   # wrap last; `app` is the entrypoint
 
     This matters for error responses: Starlette's ``ServerErrorMiddleware`` is
     the outermost layer, so an unhandled-exception 500 is produced *outside*

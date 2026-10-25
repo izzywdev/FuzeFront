@@ -42,24 +42,30 @@ and before every publish.
 ### FastAPI / Starlette (ASGI)
 
 ```python
+from fastapi import FastAPI, Request
+
 from fuzefront_telemetry import init_telemetry, TelemetryASGIMiddleware, get_logger, with_trace_context
 
 init_telemetry("fuzefront-py-svc", service_version="1.0.0")  # once, at startup
 
-# RECOMMENDED: wrap the app so this sits OUTSIDE Starlette's ServerErrorMiddleware.
-# Then an unhandled-exception 500 still flows back through the middleware and
-# carries x-request-id (a client can correlate the failure).
-app = TelemetryASGIMiddleware(app)
+api = FastAPI()
 
-# `app.add_middleware(TelemetryASGIMiddleware)` also works, but has a known
-# limitation: a 500 produced by Starlette's ServerErrorMiddleware is generated
-# outside user middleware, so it will NOT carry x-request-id. Prefer wrapping.
-
-@app.get("/users/{user_id}")
+@api.get("/users/{user_id}")
 async def get_user(user_id: str, request: Request):
     log = with_trace_context(get_logger(), request.scope)
     log.info({"user_id": user_id}, "fetched user")   # carries reqId AND trace_id/span_id
     ...
+
+# RECOMMENDED: register your routes on the app FIRST, then wrap it as the LAST
+# step — the wrapper is the ASGI entrypoint and does not forward `.get`/etc, so
+# wrapping before registering routes would fail. Wrapping puts this OUTSIDE
+# Starlette's ServerErrorMiddleware, so an unhandled-exception 500 still flows
+# back through the middleware and carries x-request-id (clients can correlate it).
+app = TelemetryASGIMiddleware(api)
+
+# `api.add_middleware(TelemetryASGIMiddleware)` also works, but has a known
+# limitation: a 500 produced by Starlette's ServerErrorMiddleware is generated
+# outside user middleware, so it will NOT carry x-request-id. Prefer wrapping.
 ```
 
 ### Flask (WSGI)
