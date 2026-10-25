@@ -63,18 +63,18 @@ PATCH /api/v1/app-registry/portals/{}/catalog/{}  # app-registry: update catalog
 DELETE /api/v1/app-registry/portals/{}/catalog/{}  # app-registry: remove from catalog; not in spec
 #
 # --- O1: Main backend (no OpenAPI spec; covers org, app, token, auth routes) ---
-GET /api/apps  # backend: app listing; backend/src lacks openapi.yaml
-GET /api/apps/health  # backend: health; backend/src lacks openapi.yaml
-GET /api/apps/installed  # backend: installed apps; backend/src lacks openapi.yaml
-GET /api/apps/{}/installations  # backend: app installations; backend/src lacks openapi.yaml
-POST /api/apps  # backend: register app; backend/src lacks openapi.yaml
-POST /api/apps/register  # backend: register app (alt); backend/src lacks openapi.yaml
-POST /api/apps/{}/heartbeat  # backend: heartbeat; backend/src lacks openapi.yaml
-POST /api/apps/{}/install  # backend: install app; backend/src lacks openapi.yaml
-PUT /api/apps/{}/activate  # backend: activate app; backend/src lacks openapi.yaml
-PUT /api/apps/{}  # backend: update an app's editable presentation/integration fields (admin Edit form); backend/src lacks openapi.yaml, same debt as the rest of the legacy /api/apps surface
-DELETE /api/apps/{}  # backend: delete app; backend/src lacks openapi.yaml
-DELETE /api/apps/{}/install/{}  # backend: uninstall app; backend/src lacks openapi.yaml
+GET /api/apps  # backend: app listing; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+GET /api/apps/health  # backend: health; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+GET /api/apps/installed  # backend: installed apps; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+GET /api/apps/{}/installations  # backend: app installations; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+POST /api/apps  # backend: register app; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+POST /api/apps/register  # backend: register app (alt); legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+POST /api/apps/{}/heartbeat  # backend: heartbeat; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+POST /api/apps/{}/install  # backend: install app; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+PUT /api/apps/{}/activate  # backend: activate app; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+PUT /api/apps/{}  # backend: LEGACY edit for manifest-less rows only (409 USE_APP_REGISTRY for registry rows); legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+DELETE /api/apps/{}  # backend: delete app; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
+DELETE /api/apps/{}/install/{}  # backend: uninstall app; legacy /api/apps in backend/applications; superseded by services/app-registry-service/openapi.yaml
 GET /api/organizations  # backend: org list; backend/src lacks openapi.yaml
 GET /api/organizations/slug-available  # backend: real-time slug availability probe; backend/src lacks openapi.yaml (same debt as the whole org family)
 GET /organizations/slug-available  # frontend client call for the above; resolved without the /api base by the scanner
@@ -180,7 +180,7 @@ POST /organizations/${}/members  # frontend api.ts client call — not a server 
 PUT /organizations/${}/members/${}  # frontend api.ts client call — not a server route
 DELETE /organizations/${}/members/${}  # frontend api.ts client call — not a server route
 PUT /apps/${}/activate  # frontend api.ts client call — not a server route
-PUT /apps/${}  # frontend api.ts client call (updateApp) — not a server route
+PUT /apps/${}  # frontend api.ts client call (legacy manifest-less updateApp) — not a server route
 POST /apps/${}/install  # frontend api.ts client call — not a server route
 DELETE /apps/${}/install/${}  # frontend api.ts client call — not a server route
 GET /apps/installed  # frontend api.ts client call — not a server route

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { Alert, Button, Input, Select, Textarea } from '@fuzefront/design-system'
 import { useAppContext, App } from '../lib/shared'
 import { useFlag } from '../platform/featureFlags'
+import { useAppRegistry } from '../platform/appRegistry'
+import type { AppManifest } from '@fuzefront/app-registry-client'
 import {
   createApp,
   updateApp,
@@ -22,6 +24,80 @@ interface AppFormData {
   description: string
 }
 
+/**
+ * Merge the edited form fields into a registry manifest. Only fields the admin
+ * actually changed (vs. the values the form was seeded with) are written, so a
+ * name-only edit never rewrites integration URLs the legacy list derived.
+ */
+export function mergeFormIntoManifest(
+  manifest: AppManifest,
+  next: AppFormData,
+  seeded: AppFormData
+): AppManifest {
+  const merged: AppManifest = {
+    ...manifest,
+    integration: { ...manifest.integration },
+  }
+  const changed = (k: keyof AppFormData) => next[k] !== seeded[k]
+  const setOrDrop = (
+    obj: Record<string, unknown>,
+    key: string,
+    value: string
+  ) => {
+    const v = value.trim()
+    if (v) obj[key] = v
+    else delete obj[key]
+  }
+  const integ = merged.integration as Record<string, unknown>
+  if (changed('name')) merged.name = next.name.trim()
+  if (changed('description')) {
+    setOrDrop(merged as unknown as Record<string, unknown>, 'description', next.description)
+  }
+  if (changed('iconUrl')) {
+    const v = next.iconUrl.trim()
+    if (v) merged.icon = { kind: 'url', value: v }
+    else delete merged.icon
+  }
+  if (changed('integrationType')) {
+    merged.integration.type = next.integrationType
+  }
+  if (changed('url')) setOrDrop(integ, 'url', next.url)
+  if (changed('remoteUrl')) setOrDrop(integ, 'remoteEntry', next.remoteUrl)
+  if (changed('scope')) setOrDrop(integ, 'scope', next.scope)
+  if (changed('module')) setOrDrop(integ, 'module', next.module)
+  return merged
+}
+
+/** Map an updateApp / getApp failure to a user-facing message by status. */
+function describeSaveError(err: unknown): string {
+  const e = err as {
+    response?: { status?: number; data?: { message?: string; fields?: { path: string; message: string }[] } }
+    message?: string
+  }
+  const status = e?.response?.status
+  const data = e?.response?.data
+  switch (status) {
+    case 400: {
+      const detail = data?.fields?.map(f => `${f.path}: ${f.message}`).join('; ')
+      return `Invalid app data${detail ? ` (${detail})` : data?.message ? ` (${data.message})` : ''}`
+    }
+    case 403:
+      return 'You do not have permission to edit this app'
+    case 404:
+      return 'App not found - it may have been removed'
+    case 503:
+      return 'App editing is not enabled yet'
+    default:
+      if (status && status >= 500) return 'Failed to save app (server error)'
+      return e?.message || 'Failed to save app'
+  }
+}
+
+// Contract (`Integration.url` / `remoteEntry`): an absolute http(s) URL OR a
+// same-origin absolute path such as /apps/clock/. `type="url"` would reject the
+// latter, making registry-managed same-origin apps impossible to save.
+const URL_OR_SAME_ORIGIN_PATH = '^(https?://\\S+|/(?![/\\\\])[^\\s?#\\\\]*)$'
+
 const initialFormData: AppFormData = {
   name: '',
   url: '',
@@ -40,7 +116,9 @@ export default function AdminPage() {
   const { state, dispatch } = useAppContext()
   const [showForm, setShowForm] = useState(false)
   const [editingApp, setEditingApp] = useState<App | null>(null)
+  const { client: registryClient } = useAppRegistry()
   const [formData, setFormData] = useState<AppFormData>(initialFormData)
+  const [seededForm, setSeededForm] = useState<AppFormData>(initialFormData)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -69,8 +147,19 @@ export default function AdminPage() {
 
     try {
       if (editingApp) {
-        // Persist the edited fields via PUT /api/apps/:id, then refresh.
-        await updateApp(editingApp.id, formData)
+        if (editingApp.slug) {
+          // Registry-managed app: the manifest is the source of truth, so edit
+          // it through the contracted updateApp (PUT /api/v1/app-registry/
+          // apps/{slug}) rather than the legacy flat-column route.
+          const current = await registryClient.getApp(editingApp.slug)
+          await registryClient.updateApp(
+            editingApp.slug,
+            mergeFormIntoManifest(current.manifest, formData, seededForm)
+          )
+        } else {
+          // Legacy manifest-less row (created via POST /api/apps).
+          await updateApp(editingApp.id, formData)
+        }
         await loadApps()
       } else {
         // Create new app
@@ -83,7 +172,7 @@ export default function AdminPage() {
       setShowForm(false)
       setEditingApp(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save app')
+      setError(editingApp ? describeSaveError(err) : err instanceof Error ? err.message : 'Failed to save app')
     } finally {
       setLoading(false)
     }
@@ -91,7 +180,7 @@ export default function AdminPage() {
 
   const handleEdit = (app: App) => {
     setEditingApp(app)
-    setFormData({
+    const seeded: AppFormData = {
       name: app.name,
       url: app.url,
       iconUrl: app.iconUrl || '',
@@ -100,7 +189,9 @@ export default function AdminPage() {
       scope: app.scope || '',
       module: app.module || '',
       description: app.description || '',
-    })
+    }
+    setSeededForm(seeded)
+    setFormData(seeded)
     setShowForm(true)
   }
 
@@ -206,7 +297,8 @@ export default function AdminPage() {
 
               <Input
                 label="App URL *"
-                type="url"
+                type="text"
+                pattern={URL_OR_SAME_ORIGIN_PATH}
                 value={formData.url}
                 onChange={e => handleInputChange('url', e.target.value)}
                 required
@@ -225,7 +317,8 @@ export default function AdminPage() {
                 <>
                   <Input
                     label="Remote URL *"
-                    type="url"
+                    type="text"
+                    pattern={URL_OR_SAME_ORIGIN_PATH}
                     value={formData.remoteUrl}
                     onChange={e =>
                       handleInputChange('remoteUrl', e.target.value)
@@ -260,7 +353,8 @@ export default function AdminPage() {
                 <>
                   <Input
                     label="Script URL"
-                    type="url"
+                    type="text"
+                    pattern={URL_OR_SAME_ORIGIN_PATH}
                     value={formData.remoteUrl}
                     onChange={e =>
                       handleInputChange('remoteUrl', e.target.value)
