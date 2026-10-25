@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Recovery-code entry (step-up) — MFA frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: var(--space-8) var(--space-6) var(--space-16); }
+  .stack { display: grid; gap: var(--space-6); width: 100%; max-width: 420px; }
+  .brand { text-align: center; margin-bottom: var(--space-2); }
+  .brand .wordmark { font-size: var(--text-xl); }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    overflow: hidden; }
+  .card__seam { height: 2px; background: var(--seam); }
+  .card__body { padding: var(--space-6); }
+  .card h2 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); }
+  .card p.sub { margin: 0 0 var(--space-5); color: var(--text-secondary); font-size: var(--text-md); line-height: 1.5; }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); text-align: center; }
+  .state-label code { font-family: var(--font-mono); }
+
+  /* DS CodeField stand-in: label + single-line mono <input> + helper / error below */
+  .rc-field { display: grid; gap: var(--space-2); }
+  .rc-field label { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-primary); }
+  .rc-field input { width: 100%; font-family: var(--font-mono); font-size: var(--text-lg); letter-spacing: 0.08em;
+    color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
+  .rc-field input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .rc-field input[disabled] { opacity: 0.7; }
+  .rc-field.is-error input { border-color: var(--error-color); }
+  .rc-help { color: var(--text-tertiary); font-size: var(--text-sm); line-height: 1.5; }
+  .field-error { color: var(--error-color); font-size: var(--text-sm); line-height: 1.5;
+    display: flex; align-items: flex-start; gap: var(--space-2); }
+
+  /* DS StatusCallout stand-in */
+  .callout { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-4);
+    margin-bottom: var(--space-5); border-radius: var(--radius-md); border: 1px solid var(--border-color);
+    color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+  .callout b { display: block; color: var(--text-primary); font-size: var(--text-md); margin-bottom: var(--space-1); }
+  .callout--warning { background: var(--warning-soft); border-color: var(--warning-color); }
+  .callout--error { background: var(--error-soft); border-color: var(--error-color); }
+  .callout__ico { flex: none; }
+  .callout--warning .callout__ico { color: var(--warning-color); }
+  .callout--error .callout__ico { color: var(--error-color); }
+
+  .actions { margin-top: var(--space-5); display: grid; gap: var(--space-3); }
+  .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+  .spinner { width: var(--space-4); height: var(--space-4); border-radius: var(--radius-pill);
+    border: 2px solid var(--border-strong); border-top-color: var(--text-primary); display: inline-block;
+    vertical-align: middle; margin-right: var(--space-2); animation: rcspin var(--duration-base) linear infinite; }
+  @keyframes rcspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce){ .spinner { animation: none; } }
+  .switch { text-align: center; margin-top: var(--space-4); font-size: var(--text-sm); display: grid; gap: var(--space-2); }
+  .switch a { color: var(--accent-color); }
+  .note { margin: var(--space-4) 0 0; padding: var(--space-3); border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-md); color: var(--text-tertiary); font-size: var(--text-sm); line-height: 1.5; }
+  .note code { font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+<div class="auth-wrap" data-frame="07-recovery-code-entry" data-route="/login/mfa">
+  <div class="stack">
+    <div class="brand"><span class="wordmark">Fuze<span class="fuse">Front</span></span></div>
+
+    <!-- ═══ Recovery-code prompt (idle) ═══ -->
+    <div class="state-label">Default · recovery-code entry (reached from “Recovery code” in frame 05, only when <code>recoveryAvailable: true</code>)</div>
+    <div class="card" data-component="mfa-challenge" data-state="recovery-prompt" data-factor="recovery">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Use a recovery code</h2>
+        <p class="sub">Enter one of the recovery codes you saved when you turned on two-factor authentication
+          for <b>amara@rowan.co</b>.</p>
+        <div class="rc-field" data-component="recovery-code-input">
+          <label for="rc-1">Recovery code</label>
+          <input id="rc-1" type="text" data-field="recovery-code" autocomplete="one-time-code" autocapitalize="none"
+            spellcheck="false" maxlength="64" aria-describedby="rc-1-help" />
+          <span class="rc-help" id="rc-1-help" data-help="recovery-code">Each code works once. Spaces and dashes are
+            fine — type it the way you saved it.</span>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="verify-recovery" disabled>Verify &amp; sign in</button>
+        </div>
+        <div class="switch">
+          <a href="05-step-up-challenge.html" data-action="choose-factor">Use a different method</a>
+          <a href="#" data-action="contact-support">Lost your recovery codes too? Contact support</a>
+        </div>
+        <p class="note">One text field, not OTP cells: the code is opaque (up to 64 characters; today's are 10
+          characters) and the client must not check its format. Disable “Verify” only while the trimmed value is
+          empty. Send exactly what was typed as <code>recoveryCode</code>; the server strips spaces and dashes and
+          ignores case. No numeric keyboard, no auto-capitalise, no spellcheck.</p>
+      </div>
+    </div>
+
+    <!-- ═══ Verifying (in flight) ═══ -->
+    <div class="state-label">State · verifying (in flight, no double submit)</div>
+    <div class="card" data-component="mfa-challenge" data-state="recovery-verifying" data-factor="recovery">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Use a recovery code</h2>
+        <p class="sub">Enter one of the recovery codes you saved when you turned on two-factor authentication
+          for <b>amara@rowan.co</b>.</p>
+        <div class="rc-field" data-component="recovery-code-input">
+          <label for="rc-2">Recovery code</label>
+          <input id="rc-2" type="text" data-field="recovery-code" value="4f2a9-c11e0" disabled aria-describedby="rc-2-help" />
+          <span class="rc-help" id="rc-2-help">Each code works once. Spaces and dashes are fine — type it the way you saved it.</span>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="verify-recovery" disabled aria-busy="true"><span class="spinner" aria-hidden="true"></span>Verifying…</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Invalid (401 RECOVERY_CODE_INVALID) ═══ -->
+    <div class="state-label">State · code didn't work (401 RECOVERY_CODE_INVALID, fail-closed, retry allowed)</div>
+    <div class="card" data-component="mfa-challenge" data-state="recovery-error-invalid" data-http-status="401" data-factor="recovery">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Use a recovery code</h2>
+        <p class="sub">That didn't work. Enter one of your saved recovery codes.</p>
+        <div class="rc-field is-error" data-component="recovery-code-input">
+          <label for="rc-3">Recovery code</label>
+          <input id="rc-3" type="text" data-field="recovery-code" value="4f2a9-c11e7" aria-invalid="true" aria-describedby="rc-3-err" />
+          <span class="field-error" id="rc-3-err" data-error="recovery-invalid"><span aria-hidden="true">⚠</span>
+            <span>That recovery code didn't work. Check it for typos, or try another of your codes — each code works only once.</span></span>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="verify-recovery">Try again</button>
+        </div>
+        <div class="switch"><a href="05-step-up-challenge.html" data-action="choose-factor">Use a different method</a></div>
+        <p class="note">One message for wrong, already used and replaced codes — the API makes them look the same on
+          purpose, so the UI never says which. Nothing about time (“codes change every 30 seconds” is authenticator-app
+          copy and is wrong here). The challenge is still live: keep the typed value, focus and select it, and allow
+          another try.</p>
+      </div>
+    </div>
+
+    <!-- ═══ Rate limited (429 RATE_LIMITED) ═══ -->
+    <div class="state-label">State · too many attempts (429 RATE_LIMITED, fail-closed)</div>
+    <div class="card" data-component="mfa-challenge" data-state="recovery-rate-limited" data-http-status="429" data-factor="recovery">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Use a recovery code</h2>
+        <div class="callout callout--warning" role="alert" data-error="rate-limited">
+          <span class="callout__ico" aria-hidden="true">⏳</span>
+          <span><b>Too many attempts</b>
+            For your security we've paused verification for a few minutes. Wait, then try again. Switching to
+            another method won't skip the wait.</span>
+        </div>
+        <div class="rc-field" data-component="recovery-code-input">
+          <label for="rc-4">Recovery code</label>
+          <input id="rc-4" type="text" data-field="recovery-code" value="4f2a9-c11e0" aria-describedby="rc-4-help" />
+          <span class="rc-help" id="rc-4-help">Each code works once. Spaces and dashes are fine — type it the way you saved it.</span>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="verify-recovery">Try again</button>
+        </div>
+        <div class="switch"><a href="#" data-action="back-to-sign-in">Back to sign in</a></div>
+        <p class="note">Same limiter, same copy as the authenticator-code state in frame 05. Not a wrong-code message:
+          the field is not red and the value is kept. No countdown — <code>POST /mfa/verify</code> 429 has no
+          <code>Retry-After</code> in the contract. “Try again” stays enabled; a retry during the pause gets 429 again
+          and shows this state again.</p>
+      </div>
+    </div>
+
+    <!-- ═══ Sign-in expired (401 NOT_ACTIVE) ═══ -->
+    <div class="state-label">State · sign-in timed out (401 NOT_ACTIVE — challenge unknown/expired/completed)</div>
+    <div class="card" data-component="mfa-challenge" data-state="recovery-error-expired" data-http-status="401" data-factor="recovery">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <div class="callout callout--error" role="alert" data-error="challenge-expired">
+          <span class="callout__ico" aria-hidden="true">⚠</span>
+          <span><b>Your sign-in timed out</b>
+            For your security this sign-in expired before it was finished. Start again — your recovery code was not used.</span>
+        </div>
+        <div class="actions">
+          <a class="btn btn-primary" href="#" data-action="restart-sign-in" style="text-decoration:none;text-align:center">Back to sign in</a>
+        </div>
+        <p class="note">A failed verify uses up nothing (contract), so “not used” is true here. The old
+          <code>challengeId</code> is dead: no field and no “Try again” on this screen.</p>
+      </div>
+    </div>
+
+    <!-- ═══ Couldn't reach the server (network / 5xx / unknown) ═══ -->
+    <div class="state-label">State · couldn't check the code (network / 5xx / unrecognised error)</div>
+    <div class="card" data-component="mfa-challenge" data-state="recovery-error-generic" data-factor="recovery">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Use a recovery code</h2>
+        <div class="callout callout--error" role="alert" data-error="recovery-generic">
+          <span class="callout__ico" aria-hidden="true">⚠</span>
+          <span><b>We couldn't check your code</b>
+            Something went wrong while checking it. Check your connection and try again.</span>
+        </div>
+        <div class="rc-field" data-component="recovery-code-input">
+          <label for="rc-6">Recovery code</label>
+          <input id="rc-6" type="text" data-field="recovery-code" value="4f2a9-c11e0" aria-describedby="rc-6-help" />
+          <span class="rc-help" id="rc-6-help">Each code works once. Spaces and dashes are fine — type it the way you saved it.</span>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="verify-recovery">Try again</button>
+        </div>
+        <p class="note">This copy does not say the code is still unused: if the server accepted it but the reply was
+          lost, the code is gone. Never describe this as a wrong code.</p>
+      </div>
+    </div>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>07</b> · Recovery-code entry (step-up, from frame 05) · <b>/login/mfa</b></span>
+    <span><a class="btn btn-ghost" href="05-step-up-challenge.html">← Step-up</a> <a class="btn btn-primary" href="index.html" style="text-decoration:none">Back to all frames</a></span>
+  </div>
+</div>
+</body>
+</html>

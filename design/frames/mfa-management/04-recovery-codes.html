@@ -19,7 +19,6 @@
   .codes code { font-family: var(--font-mono); font-size: var(--text-md); letter-spacing: 0.1em;
     color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-color);
     border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); text-align: center; }
-  .codes code.used { color: var(--text-tertiary); text-decoration: line-through; }
   .actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
   .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
     text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-8) 0 var(--space-2); }
@@ -27,6 +26,45 @@
   .dialog h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); }
   .dialog p { margin: 0 0 var(--space-5); color: var(--text-secondary); font-size: var(--text-md); line-height: 1.6; }
   .ack { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-5); font-size: var(--text-sm); color: var(--text-secondary); }
+
+  /* ── Status card (counts only — GET /mfa/recovery-codes → { remaining, total }) ── */
+  .rc-status__count { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-xl);
+    color: var(--text-primary); }
+  .rc-status__text { margin: 0 0 var(--space-5); color: var(--text-secondary); font-size: var(--text-md); line-height: 1.6; }
+  .rc-status__text b { color: var(--text-primary); }
+  .rc-skel { display: grid; gap: var(--space-3); margin-bottom: var(--space-5); }
+  .rc-skel .ffb-skel.w-40 { width: 40%; }
+  .rc-skel .ffb-skel.w-90 { width: 90%; }
+  .rc-skel .ffb-skel.w-70 { width: 70%; }
+  /* StatusCallout (DS) stand-in: tone tint + border + title + body + actions */
+  .callout { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-4);
+    border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: var(--space-5);
+    font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
+  .callout b { display: block; color: var(--text-primary); font-size: var(--text-md); margin-bottom: var(--space-1); }
+  .callout--warning { background: var(--warning-soft); border-color: var(--warning-color); }
+  .callout--error { background: var(--error-soft); border-color: var(--error-color); }
+  .callout--info { background: var(--neutral-soft); }
+  .callout__ico { flex: none; }
+  .callout--warning .callout__ico { color: var(--warning-color); }
+  .callout--error .callout__ico { color: var(--error-color); }
+  .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+  .spec-note { margin: 0 0 var(--space-5); padding: var(--space-3) var(--space-4); border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.6; }
+  .spec-note code { font-family: var(--font-mono); color: var(--text-secondary); }
+
+  /* ── 375px (TWA) treatment of the same status card ── */
+  .m-row { display: flex; gap: var(--space-6); flex-wrap: wrap; align-items: flex-start; }
+  /* ds-conformance-allow: 375px is the device-mock width (frame chrome), not a product UI value */
+  .m-phone { width: 375px; max-width: 100%; background: var(--bg-primary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl); overflow: hidden; box-shadow: var(--shadow-lg); }
+  .m-phone__bar { padding: var(--space-3) var(--space-4); background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color); font-family: var(--font-display);
+    font-weight: var(--weight-semibold); font-size: var(--text-md); }
+  .m-phone__body { padding: var(--space-5) var(--space-4); }
+  .m-phone .card { margin-bottom: 0; }
+  .m-phone .card__body { padding: var(--space-4); }
+  .m-phone .actions { flex-direction: column; }
+  .m-phone .actions .btn { width: 100%; }
 </style>
 </head>
 <body>
@@ -49,7 +87,14 @@
       <h1 class="page-title">Recovery codes</h1>
       <p class="page-sub">If you lose your phone, a recovery code gets you back in. Each one works once.</p>
 
+      <p class="spec-note">What the API can supply: <code>POST /mfa/recovery-codes</code> returns the codes <b>once</b>
+        (shown-once state). After that, <code>GET /mfa/recovery-codes</code> returns <b>only counts</b> —
+        <code>{ remaining, total }</code> — never codes, never which ones were used. So every returning state
+        below shows a count sentence and nothing that looks like a code. No masked or struck-through code tiles:
+        the client has no per-code data to draw them from.</p>
+
       <!-- ═══ Shown once (just generated) ═══ -->
+      <div class="state-label">State · shown once · just generated (POST response)</div>
       <div class="card" data-component="recovery-codes" data-state="shown-once">
         <div class="card__seam"></div>
         <div class="warn-banner">
@@ -59,11 +104,11 @@
         </div>
         <div class="card__body">
           <div class="codes" data-codes>
-            <code>4f2a-9c11</code><code>8b7d-1e04</code>
-            <code>2a6f-77bc</code><code>c390-4de1</code>
-            <code>9e15-6a02</code><code>0b84-3f7a</code>
-            <code>7d21-e9c8</code><code>5c60-12ab</code>
-            <code>a1f9-84d3</code><code>3e77-b520</code>
+            <code>4f2a9c11e0</code><code>8b7d1e04a3</code>
+            <code>2a6f77bc19</code><code>c3904de15b</code>
+            <code>9e156a02f7</code><code>0b843f7ac6</code>
+            <code>7d21e9c84d</code><code>5c6012ab38</code>
+            <code>a1f984d3e2</code><code>3e77b52091</code>
           </div>
           <div class="actions">
             <button class="btn btn-primary" data-action="download-codes">Download</button>
@@ -73,19 +118,97 @@
         </div>
       </div>
 
-      <!-- ═══ Status (returning; codes hidden, only counts) ═══ -->
-      <div class="state-label">State · returning · codes hidden</div>
+      <!-- ═══ Loading (GET /mfa/recovery-codes in flight) ═══ -->
+      <div class="state-label">State · returning · loading the count</div>
+      <div class="card" data-component="recovery-codes" data-state="loading" aria-busy="true" aria-label="Loading your recovery codes">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <div class="rc-skel" aria-hidden="true">
+            <div class="ffb-skel w-40"></div>
+            <div class="ffb-skel w-90"></div>
+            <div class="ffb-skel w-70"></div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost" data-action="regenerate-open" disabled>Regenerate codes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Status (returning; counts only) ═══ -->
+      <div class="state-label">State · returning · counts only (remaining 8, total 10)</div>
       <div class="card" data-component="recovery-codes" data-state="status">
         <div class="card__seam"></div>
         <div class="card__body">
-          <p style="margin:0 0 var(--space-4); color:var(--text-secondary)">You have <b style="color:var(--text-primary)">8 of 10</b>
-            recovery codes left. For your safety we don't show used or existing codes — regenerate to get a fresh set.</p>
-          <div class="codes" aria-hidden="true">
-            <code class="used">•••• ••••</code><code class="used">•••• ••••</code>
-            <code>•••• ••••</code><code>•••• ••••</code>
-          </div>
+          <p class="rc-status__count"><span data-value="remaining">8</span> of <span data-value="total">10</span> left</p>
+          <p class="rc-status__text">You have <b>8 of 10</b> recovery codes left. For your safety we never show
+            your codes again after you save them — regenerate to get a fresh set.</p>
           <div class="actions">
             <button class="btn btn-ghost" data-action="regenerate-open">Regenerate codes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Low (remaining 1–2) ═══ -->
+      <div class="state-label">State · returning · running low (remaining ≤ 2)</div>
+      <div class="card" data-component="recovery-codes" data-state="low">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <p class="rc-status__count"><span data-value="remaining">1</span> of <span data-value="total">10</span> left</p>
+          <div class="callout callout--warning" role="status">
+            <span class="callout__ico" aria-hidden="true">⚠</span>
+            <span><b>You're almost out of recovery codes</b>
+              Only 1 code is left. Generate a new set now so you aren't locked out if you lose your phone.</span>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="regenerate-open">Generate new codes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Exhausted (remaining 0, total > 0) ═══ -->
+      <div class="state-label">State · returning · all used (remaining 0, total 10)</div>
+      <div class="card" data-component="recovery-codes" data-state="exhausted">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <p class="rc-status__count"><span data-value="remaining">0</span> of <span data-value="total">10</span> left</p>
+          <div class="callout callout--error" role="alert">
+            <span class="callout__ico" aria-hidden="true">⚠</span>
+            <span><b>You have no recovery codes left</b>
+              Signing in with a recovery code won't be offered until you generate a new set.</span>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="regenerate-open">Generate new codes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ None (never generated: remaining 0, total 0) ═══ -->
+      <div class="state-label">State · returning · never generated (remaining 0, total 0)</div>
+      <div class="card" data-component="recovery-codes" data-state="none">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <p class="rc-status__count">No recovery codes yet</p>
+          <p class="rc-status__text">Recovery codes are one-time codes that get you back in if you lose your phone.
+            You'll see them once, so have somewhere safe to save them.</p>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="generate-codes">Generate recovery codes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Error (count could not be loaded) ═══ -->
+      <div class="state-label">State · returning · couldn't load the count (fail-closed, retry)</div>
+      <div class="card" data-component="recovery-codes" data-state="error">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <div class="callout callout--error" role="alert" data-error="status-load">
+            <span class="callout__ico" aria-hidden="true">⚠</span>
+            <span><b>We couldn't check your recovery codes</b>
+              We couldn't check how many recovery codes you have left. Your codes are unchanged.</span>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="retry">Try again</button>
+            <button class="btn btn-ghost" data-action="regenerate-open">Generate new codes</button>
           </div>
         </div>
       </div>
@@ -102,6 +225,46 @@
           <div class="actions">
             <button class="btn btn-primary" data-action="regenerate-confirm">Regenerate</button>
             <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ 375px (Android TWA) — same card, same states, stacked actions ═══ -->
+      <div class="state-label">Mobile · 375px (TWA) · status and couldn't-load states</div>
+      <div class="m-row" data-viewport="375">
+        <div class="m-phone">
+          <div class="m-phone__bar">Recovery codes</div>
+          <div class="m-phone__body">
+            <div class="card" data-component="recovery-codes" data-state="status">
+              <div class="card__seam"></div>
+              <div class="card__body">
+                <p class="rc-status__count"><span data-value="remaining">8</span> of <span data-value="total">10</span> left</p>
+                <p class="rc-status__text">You have <b>8 of 10</b> recovery codes left. For your safety we never show
+                  your codes again after you save them — regenerate to get a fresh set.</p>
+                <div class="actions">
+                  <button class="btn btn-ghost" data-action="regenerate-open">Regenerate codes</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="m-phone">
+          <div class="m-phone__bar">Recovery codes</div>
+          <div class="m-phone__body">
+            <div class="card" data-component="recovery-codes" data-state="error">
+              <div class="card__seam"></div>
+              <div class="card__body">
+                <div class="callout callout--error" role="alert" data-error="status-load">
+                  <span class="callout__ico" aria-hidden="true">⚠</span>
+                  <span><b>We couldn't check your recovery codes</b>
+                    We couldn't check how many recovery codes you have left. Your codes are unchanged.</span>
+                </div>
+                <div class="actions">
+                  <button class="btn btn-primary" data-action="retry">Try again</button>
+                  <button class="btn btn-ghost" data-action="regenerate-open">Generate new codes</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
