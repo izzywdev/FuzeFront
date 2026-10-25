@@ -322,15 +322,12 @@ function MfaOverviewInner(props: FlowBaseProps & MfaNavProps) {
         factor={removing}
         otherCount={others}
         onRemove={(id) => api.removeFactor(id)}
-        onRemoved={() => {
+        onRemoved={(gone) => {
           // The DELETE succeeded: drop the factor locally first so a failed
           // follow-up reload can never leave a removed factor shown as active.
-          const gone = removing?.factorId
-          if (gone) {
-            setState((s) =>
-              s.status === 'ready' ? { ...s, factors: s.factors.filter((f) => f.factorId !== gone) } : s
-            )
-          }
+          setState((s) =>
+            s.status === 'ready' ? { ...s, factors: s.factors.filter((f) => f.factorId !== gone) } : s
+          )
           void reloadQuietly()
         }}
         onClose={() => setRemoving(null)}

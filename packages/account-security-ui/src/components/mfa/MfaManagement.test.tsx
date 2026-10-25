@@ -4,12 +4,19 @@ import userEvent from '@testing-library/user-event'
 import type { FullAccountSecurityClient } from '../../types'
 import { err, makeClient, methods, sms, totp } from '../../test/helpers'
 import { MfaOverviewFlow } from './MfaOverview'
+import { RemoveFactorDialog } from './RemoveFactorDialog'
 import { TotpEnrollFlow, buildQrMatrix } from './TotpEnroll'
 import { SmsEnrollFlow } from './SmsEnroll'
 import { RecoveryCodesFlow } from './RecoveryCodes'
 
 const asClient = (c: unknown) => c as Partial<FullAccountSecurityClient>
 const q = (sel: string) => document.querySelector(sel)
+/** Server view in which the enrolment's factor is still pending (discard reconciles against it). */
+const serverSaysPending = () =>
+  vi.fn(async () =>
+    ['fct_new', 'fct_sms_1', 'fct_sms_2', 'fct_sms_pending'].map((factorId) => ({ ...totp, factorId, status: 'pending' as const }))
+  )
+const serverSaysActive = (factorId = 'fct_new') => vi.fn(async () => [{ ...totp, factorId, status: 'active' as const }])
 
 describe('MfaOverviewFlow', () => {
   it('loaded: lists active factors with neutral labels and remove actions', async () => {
@@ -166,7 +173,7 @@ describe('TotpEnrollFlow', () => {
   it('CANCEL deletes the pending factor (best-effort) and navigates back', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
-    const client = makeClient()
+    const client = makeClient({ listFactors: serverSaysPending() })
     render(<TotpEnrollFlow client={asClient(client)} onNavigate={onNavigate} />)
     await start(user)
     await user.click(q('[data-component="totp-enroll"] [data-action="cancel"]')!)
@@ -176,16 +183,17 @@ describe('TotpEnrollFlow', () => {
 
   it('UNMOUNT (abandoning the route) deletes the pending factor', async () => {
     const user = userEvent.setup()
-    const client = makeClient()
+    const client = makeClient({ listFactors: serverSaysPending() })
     const { unmount } = render(<TotpEnrollFlow client={asClient(client)} />)
     await start(user)
     unmount()
-    await waitFor(() => expect(client.removeFactor).toHaveBeenCalledWith('fct_new'))
+    await waitFor(() => expect(client.removeFactor).toHaveBeenCalledTimes(1))
+    expect(client.removeFactor).toHaveBeenCalledWith('fct_new')
   })
 
   it('a failing cleanup DELETE never throws or blocks (best-effort)', async () => {
     const user = userEvent.setup()
-    const client = makeClient({ removeFactor: vi.fn(async () => { throw err(500) }) })
+    const client = makeClient({ listFactors: serverSaysPending(), removeFactor: vi.fn(async () => { throw err(500) }) })
     const { unmount } = render(<TotpEnrollFlow client={asClient(client)} />)
     await start(user)
     expect(() => unmount()).not.toThrow()
@@ -193,9 +201,9 @@ describe('TotpEnrollFlow', () => {
   })
 
   describe('unmount while an activation is in flight', () => {
-    async function mountAndActivate(activateFactor: ReturnType<typeof vi.fn>) {
+    async function mountAndActivate(activateFactor: ReturnType<typeof vi.fn>, listFactors = serverSaysPending()) {
       const user = userEvent.setup()
-      const client = makeClient({ activateFactor })
+      const client = makeClient({ activateFactor, listFactors })
       const view = render(<TotpEnrollFlow client={asClient(client)} onActivated={vi.fn()} />)
       await start(user)
       await user.click(document.querySelector('[data-component="otp-input"] input')!)
@@ -208,7 +216,7 @@ describe('TotpEnrollFlow', () => {
     it('activation resolves after unmount → the factor is NOT deleted', async () => {
       let resolve!: (v: unknown) => void
       const activateFactor = vi.fn(() => new Promise((r) => { resolve = r }))
-      const { client, view } = await mountAndActivate(activateFactor)
+      const { client, view } = await mountAndActivate(activateFactor, serverSaysActive())
       view.unmount()
       await act(async () => { await Promise.resolve() })
       expect(client.removeFactor).not.toHaveBeenCalled() // not raced against the activation
@@ -229,52 +237,51 @@ describe('TotpEnrollFlow', () => {
       expect(client.removeFactor).toHaveBeenCalledWith('fct_new')
     })
 
-    it('an ambiguous failure (5xx) after unmount never deletes a possibly-activated factor', async () => {
-      let reject!: (e: unknown) => void
-      const activateFactor = vi.fn(() => new Promise((_, r) => { reject = r }))
-      const { client, view } = await mountAndActivate(activateFactor)
-      view.unmount()
-      await act(async () => { reject(err(503)) })
-      await act(async () => { await Promise.resolve() })
-      expect(client.removeFactor).not.toHaveBeenCalled()
-    })
   })
 
-  describe('after an AMBIGUOUS activation outcome, abandon reconciles with the server listing', () => {
-    async function ambiguousThenUnmount(listFactors: ReturnType<typeof vi.fn>) {
+  describe('abandon ALWAYS reconciles with the server listing before any DELETE', () => {
+    async function activateRejectingThenUnmount(
+      rejections: unknown[],
+      listFactors: ReturnType<typeof vi.fn>
+    ) {
       const user = userEvent.setup()
-      const client = makeClient({
-        activateFactor: vi.fn(async () => { throw err(503) }),
-        listFactors,
-      })
+      const activateFactor = vi.fn()
+      for (const e of rejections) activateFactor.mockRejectedValueOnce(e)
+      const client = makeClient({ activateFactor, listFactors })
       const view = render(<TotpEnrollFlow client={asClient(client)} />)
       await start(user)
       await user.click(document.querySelector('[data-component="otp-input"] input')!)
       await user.keyboard('492017')
       await user.click(q('[data-action="activate-factor"]')!)
-      await waitFor(() => expect(q('[data-state="error"]')).toBeTruthy())
+      // Retry through the ambiguous "try again" screen until every rejection is consumed.
+      for (let i = 1; i < rejections.length; i++) {
+        await waitFor(() => expect(q('[data-state="error"] [data-action="retry"], [data-action="retry"]')).toBeTruthy())
+        await user.click(q('[data-action="retry"]')!)
+      }
+      await waitFor(() => expect(activateFactor).toHaveBeenCalledTimes(rejections.length))
+      await waitFor(() => expect(q('[data-state="error"], [data-state="error-invalid"]')).toBeTruthy())
       view.unmount()
       return client
     }
 
-    it('server says the factor is active → no DELETE', async () => {
-      const listFactors = vi.fn(async () => [{ ...totp, factorId: 'fct_new', status: 'active' }])
-      const client = await ambiguousThenUnmount(listFactors)
+    it('commit lost (503) then a retried code is rejected (401) while the server says ACTIVE → no DELETE', async () => {
+      const listFactors = serverSaysActive()
+      const client = await activateRejectingThenUnmount([err(503), err(401, 'NOT_ACTIVE')], listFactors)
+      expect(client.activateFactor).toHaveBeenCalledTimes(2)
       await waitFor(() => expect(listFactors).toHaveBeenCalled())
       await act(async () => { await Promise.resolve() })
       expect(client.removeFactor).not.toHaveBeenCalled()
     })
 
-    it('server says the factor is still pending → DELETE exactly once', async () => {
-      const listFactors = vi.fn(async () => [{ ...totp, factorId: 'fct_new', status: 'pending' }])
-      const client = await ambiguousThenUnmount(listFactors)
+    it('rejected code, server says still PENDING → DELETE exactly once', async () => {
+      const client = await activateRejectingThenUnmount([err(401, 'NOT_ACTIVE')], serverSaysPending())
       await waitFor(() => expect(client.removeFactor).toHaveBeenCalledTimes(1))
       expect(client.removeFactor).toHaveBeenCalledWith('fct_new')
     })
 
-    it('the listing itself fails → no DELETE (left inert)', async () => {
+    it('the listing fails → no DELETE (left inert)', async () => {
       const listFactors = vi.fn(async () => { throw err(500) })
-      const client = await ambiguousThenUnmount(listFactors)
+      const client = await activateRejectingThenUnmount([err(503)], listFactors)
       await waitFor(() => expect(listFactors).toHaveBeenCalled())
       await act(async () => { await Promise.resolve() })
       expect(client.removeFactor).not.toHaveBeenCalled()
@@ -501,6 +508,7 @@ describe('SmsEnrollFlow', () => {
     const user = userEvent.setup()
     let n = 0
     const client = makeClient({
+      listFactors: serverSaysPending(),
       getMethods: vi.fn(async () => methods(['sms'])),
       enrollFactor: vi.fn(async () => ({ factorId: `fct_sms_${++n}`, type: 'sms', status: 'pending', codeSent: true })),
     })
@@ -521,6 +529,7 @@ describe('SmsEnrollFlow', () => {
   it('cancel / unmount after sending deletes the pending sms factor (best-effort)', async () => {
     const user = userEvent.setup()
     const client = makeClient({
+      listFactors: serverSaysPending(),
       getMethods: vi.fn(async () => methods(['sms'])),
       enrollFactor: vi.fn(async () => ({ factorId: 'fct_sms_pending', type: 'sms', status: 'pending', codeSent: true })),
     })
@@ -637,5 +646,43 @@ describe('RecoveryCodesFlow — REVEAL ONCE', () => {
     await user.click(q('[data-action="cancel"]')!)
     expect(q('[data-component="recovery-codes"][data-state="status"]')).toBeTruthy()
     expect(client.regenerateRecoveryCodes).not.toHaveBeenCalled()
+  })
+})
+
+describe('RemoveFactorDialog — slow DELETE', () => {
+  const dialog = (factor: typeof totp, onRemove: () => Promise<void>, onClose = vi.fn(), onRemoved = vi.fn()) => (
+    <RemoveFactorDialog factor={factor} otherCount={1} onRemove={onRemove} onClose={onClose} onRemoved={onRemoved} onAddAnother={vi.fn()} />
+  )
+
+  it('cannot be dismissed (Escape / backdrop path) while the DELETE is in flight', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const onClose = vi.fn()
+    render(dialog(totp, () => new Promise<void>((r) => { release = r }), onClose))
+    await user.click(q('[data-action="remove-confirm"]')!)
+    expect(q('[data-component="remove-factor-dialog"][data-state="removing"]')).toBeTruthy()
+    await user.keyboard('{Escape}')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(q('[data-component="remove-factor-dialog"]')).toBeTruthy()
+    await act(async () => { release() })
+    await waitFor(() => expect(q('[data-component="remove-factor-dialog"][data-state="removed"]')).toBeTruthy())
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it("a stale completion for factor A never marks factor B 'removed' or shows A's error", async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const onRemoved = vi.fn()
+    const slowA = () => new Promise<void>((r) => { release = r })
+    const view = render(dialog(totp, slowA, vi.fn(), onRemoved))
+    await user.click(q('[data-action="remove-confirm"]')!)
+    // the parent swaps to factor B while A's DELETE is still pending
+    view.rerender(dialog(sms, async () => {}, vi.fn(), onRemoved))
+    await waitFor(() => expect(q('[data-component="remove-factor-dialog"][data-state="confirm"]')).toBeTruthy())
+    await act(async () => { release() })
+    expect(onRemoved).toHaveBeenCalledWith('fct_totp_1') // truth is reported against A's id
+    expect(q('[data-component="remove-factor-dialog"][data-state="confirm"]')).toBeTruthy()
+    expect(q('[data-factor-id="fct_sms_1"]')).toBeTruthy()
   })
 })

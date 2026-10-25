@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BottomSheet, Button, Modal, StatusCallout } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import { isConflict } from '../../api/errors'
@@ -17,7 +17,8 @@ export interface RemoveFactorDialogProps {
   onRemove: (factorId: string) => Promise<void>
   onClose: () => void
   /** Called after a successful removal (parent refreshes its list). */
-  onRemoved?: () => void
+  /** Called with the id of the factor whose DELETE succeeded (never inferred from current selection). */
+  onRemoved?: (factorId: string) => void
   /** "Add another method" from the blocked state. */
   onAddAnother: () => void
   /** False when the add-method route is unavailable (flag OFF): the blocked state offers no dead link. */
@@ -46,6 +47,10 @@ export function RemoveFactorDialog({
   const { messages: m, t } = useAccountSecurityI18n()
   const [state, setState] = useState<DialogState>('confirm')
   const inFlight = useInFlight()
+  // The factor currently shown; a completion for any other (stale) factor must not
+  // touch this dialog's state.
+  const currentId = useRef<string | null>(null)
+  currentId.current = factor?.factorId ?? null
 
   useEffect(() => {
     if (factor) setState('confirm')
@@ -55,15 +60,21 @@ export function RemoveFactorDialog({
   const name = factorName(m, factor.type)
 
   const confirm = () => inFlight(async () => {
+    const submittedId = factor.factorId
     setState('removing')
     try {
-      await onRemove(factor.factorId)
-      setState('removed')
-      onRemoved?.()
+      await onRemove(submittedId)
+      onRemoved?.(submittedId) // the server removed it regardless of what is shown now
+      if (currentId.current === submittedId) setState('removed')
     } catch (err) {
-      setState(isConflict(err) ? 'remove-last-blocked' : 'error')
+      if (currentId.current === submittedId) setState(isConflict(err) ? 'remove-last-blocked' : 'error')
     }
   })
+
+  // A slow DELETE must not be abandoned by Escape / backdrop / the close button.
+  const safeClose = () => {
+    if (state !== 'removing') onClose()
+  }
 
   const title =
     state === 'remove-last-blocked'
@@ -176,11 +187,11 @@ export function RemoveFactorDialog({
   )
 
   return presentation === 'sheet' ? (
-    <BottomSheet open title={title} onClose={onClose}>
+    <BottomSheet open title={title} onClose={safeClose}>
       {body}
     </BottomSheet>
   ) : (
-    <Modal open title={title} onClose={onClose}>
+    <Modal open title={title} onClose={safeClose}>
       {body}
     </Modal>
   )
