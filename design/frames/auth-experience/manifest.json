@@ -51,9 +51,9 @@
         "id": "signup",
         "orchestrator": "SignUpFlow",
         "route": "/signup",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-25T04:21:43.451Z"
       },
       {
         "id": "signin",
