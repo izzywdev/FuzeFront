@@ -680,7 +680,7 @@
     },
     {
       "name": "listPublicationRequests",
-      "description": "[READ-ONLY] List marketplace publication requests — admin review queue (GET /publication-requests). Platform admins/reviewers only (403 otherwise). Returns one row per app whose publication matches the requested status (default `pending`), oldest first (by submittedAt ascending). Each row carries the app's publication state plus minimal display context (name, icon, organizationId, creator). Feature flag: fuzefront.apps.marketplace-publishing (default OFF).",
+      "description": "[READ-ONLY] List marketplace publication requests — admin review queue (GET /publication-requests). Platform admins/reviewers only (403 otherwise). Returns one row per app whose publication matches the requested status (default `pending`), oldest first (by the status-appropriate instant: submittedAt for pending, rejectedAt for rejected, approvedAt for approved). Each row carries the app's publication state plus minimal display context (name, icon, organizationId, creator). Feature flag: fuzefront.apps.marketplace-publishing (default OFF).",
       "mutates": false,
       "inputSchema": {
         "type": "object",
