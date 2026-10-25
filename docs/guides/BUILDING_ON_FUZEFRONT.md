@@ -383,7 +383,13 @@ Consumer AuthN endpoints:
 - `GET /api/v1/security/social/{provider}/start` → provider consent →
   `GET /api/v1/security/social/callback` returns a single-use `?code=`, which you
   exchange at `POST /api/v1/security/session/exchange` (no token in the URL).
-- `POST /api/v1/security/signup` — server-brokered account creation.
+- `POST /api/v1/security/signup` — server-brokered account creation. Body is
+  `{ email, password, name?, turnstileToken? }` (contract 1.1.0: one `name`, no
+  `firstName`/`lastName`; errors include `CAPTCHA_FAILED` 400 and
+  `PASSWORD_POLICY` 422). `GET /api/v1/security/signup/email-available` backs the
+  inline check, and `GET /methods` advertises `captcha`/`passwordPolicy`. The
+  stricter behaviour is gated by `fuzefront.auth.experience` (default OFF); see
+  [`AUTH_EXPERIENCE_SIGNUP.md`](./AUTH_EXPERIENCE_SIGNUP.md).
 - `GET /api/v1/security/session` — the current stable `Identity` ("me");
   `DELETE /api/v1/security/session` — logout.
 
