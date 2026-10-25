@@ -169,15 +169,13 @@ export function SignUpFlow({
       })
       onAuthenticated(session, { mode: 'signup', email: email.trim() })
     } catch (err) {
-      const status = (err as { status?: number; response?: { status?: number } } | undefined)
-      const httpStatus = status?.status ?? status?.response?.status
       const kind = classifyAuthError(err, { malformedIsPolicy: true })
       setError(
         kind === 'conflict' ? { kind: 'conflict' }
+        : kind === 'captcha' ? { kind: 'captcha' }
         : kind === 'policy' ? { kind: 'policy' }
         : kind === 'unavailable' ? { kind: 'unavailable' }
         : kind === 'rate-limited' ? { kind: 'rate-limited' }
-        : captcha && httpStatus === 403 ? { kind: 'captcha' }
         : { kind: 'generic' },
       )
       // A Turnstile token is single-use: whatever failed, the next attempt needs a new one.
@@ -364,7 +362,13 @@ export function SignUpFlow({
             {captcha && (
               <TurnstileField
                 siteKey={captcha.siteKey}
-                onToken={setToken}
+                onToken={(t) => {
+                  setToken(t)
+                  // A fresh valid token means the challenge was solved again —
+                  // clear a stale captcha error so the widget leaves its "failed"
+                  // state instead of staying red after a prior 400 CAPTCHA_FAILED.
+                  if (t) setError((e) => (e?.kind === 'captcha' ? null : e))
+                }}
                 resetSignal={resetSignal}
                 failed={error?.kind === 'captcha'}
                 language={captchaLanguage}

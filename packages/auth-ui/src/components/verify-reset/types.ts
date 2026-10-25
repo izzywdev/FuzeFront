@@ -32,6 +32,7 @@ export type AuthErrorKind =
   | 'rate-limited'
   | 'unavailable'
   | 'conflict'
+  | 'captcha'
   | 'unknown'
 
 export interface VerifyResetLabels {
