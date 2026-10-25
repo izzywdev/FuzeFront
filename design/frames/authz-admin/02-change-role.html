@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Change role — authz-admin frame (b)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="02-change-role">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (b) · route /settings/access</div>
+  <h1>Change role</h1>
+  <p class="lead">Promote or demote a member within the fixed role enum. Three variants: the ordinary
+    change, and the two refusals that keep an organization governable — it can never be left with no
+    admin, and never with no owner.</p>
+
+  <!-- b1 ordinary change -->
+  <div class="state-block">
+    <div class="state-label">(b1) Ordinary change</div>
+    <div class="modal" data-panel="change-role" data-variant="ordinary">
+      <div class="modal-head"><h2>Change role — rhea@northwind.example</h2></div>
+      <div class="modal-body">
+        <label class="radio-row" data-role-option="admin">
+          <input type="radio" name="r1" value="admin" />
+          <span><span class="rl">Admin</span><span class="rd">Full access, including managing members and roles.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="member" data-selected="true">
+          <input type="radio" name="r1" value="member" checked />
+          <span><span class="rl">Member</span><span class="rd">Uses the organization's apps. Cannot manage members.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="viewer">
+          <input type="radio" name="r1" value="viewer" />
+          <span><span class="rl">Viewer</span><span class="rd">Read-only access.</span></span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent" data-action="submit-change-role">Save role</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- b2 last admin — refused -->
+  <div class="state-block">
+    <div class="state-label">(b2) Last admin — refused (409)</div>
+    <div class="modal" data-panel="change-role" data-variant="last-admin" data-state="blocked">
+      <div class="modal-head"><h2>Change role — grace@northwind.example</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-warn" data-error-code="LAST_ADMIN" data-http="409">
+          <span>
+            <b>Northwind needs at least one admin</b>
+            <p>Grace is the only admin. Promote someone else to admin first, then change Grace's role.</p>
+          </span>
+        </div>
+        <label class="radio-row" data-role-option="admin" data-selected="true">
+          <input type="radio" name="r2" value="admin" checked />
+          <span><span class="rl">Admin</span><span class="rd">Full access, including managing members and roles.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="member" data-disabled="true">
+          <input type="radio" name="r2" value="member" disabled />
+          <span><span class="rl">Member</span><span class="rd">Unavailable — would leave Northwind with no admin.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="viewer" data-disabled="true">
+          <input type="radio" name="r2" value="viewer" disabled />
+          <span><span class="rl">Viewer</span><span class="rd">Unavailable — would leave Northwind with no admin.</span></span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent" data-action="submit-change-role" disabled>Save role</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- b3 last owner — refused -->
+  <div class="state-block">
+    <div class="state-label">(b3) Last owner — refused (409)</div>
+    <div class="modal" data-panel="change-role" data-variant="last-owner" data-state="blocked">
+      <div class="modal-head"><h2>Change role — ada@northwind.example</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-error" data-error-code="LAST_OWNER" data-http="409">
+          <span>
+            <b>Northwind needs at least one owner</b>
+            <p>Ada is the only owner. An owner can only step down once another owner exists — transfer
+              ownership first by promoting someone to owner, then change Ada's role.</p>
+          </span>
+        </div>
+        <label class="radio-row" data-role-option="owner" data-selected="true">
+          <input type="radio" name="r3" value="owner" checked />
+          <span><span class="rl">Owner</span><span class="rd">Full control of the organization, including ownership and billing.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="admin" data-disabled="true">
+          <input type="radio" name="r3" value="admin" disabled />
+          <span><span class="rl">Admin</span><span class="rd">Unavailable — would leave Northwind with no owner.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="member" data-disabled="true">
+          <input type="radio" name="r3" value="member" disabled />
+          <span><span class="rl">Member</span><span class="rd">Unavailable — would leave Northwind with no owner.</span></span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent" data-action="submit-change-role" disabled>Save role</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> <code>PUT /v1/security/tenants/{tenantId}/members/{userId}/roles</code>
+    (<code>RoleAssignment</code> → <code>200 Member</code>). The Security service applies the assignment
+    and <b>reflects it into Permit</b> (role-grant sync) in the same owned write — the browser never
+    calls Permit and never infers authorization from client state.
+    <br /><br />
+    <b>⚠ Two refusals are commissioned by this frame — neither exists in the contract today.</b>
+    (b2) a <code>409 LAST_ADMIN</code> when the change would leave the org with zero admins, and (b3) a
+    <code>409 LAST_OWNER</code> when it would leave the org with zero owners. The last-owner invariant is
+    the same one <code>org-invitations-v2</code> commissions on ownership-affecting actions. Each pairs a
+    server refusal with a client pre-check that disables the offending options. <b>The disabled control
+    is an affordance, not the enforcement</b> — the server must refuse independently, because a
+    client-side guard is not a guard.
+    <br /><br />
+    <b>⚠ Role replacement is non-atomic today.</b> The provider implements "replace" as
+    remove-then-re-add, so a partial failure can leave a member with <i>no</i> role. Until it is atomic,
+    a failed save must re-fetch and show the member's true current role — never assume the prior value
+    held. A <code>403</code> on save (caller lost the manage permission) is shown in place per frame (e),
+    never a sign-in redirect.
+  </p>
+
+  <nav class="pager"><a href="01-members.html">← Members</a><a href="03-remove-member.html">Next: Remove member →</a></nav>
+</div>
+</body>
+</html>

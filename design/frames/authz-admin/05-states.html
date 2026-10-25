@@ -13,8 +13,9 @@
   <div class="eyebrow">Frame (e) · route /settings/access</div>
   <h1>States</h1>
   <p class="lead">Every state a consumer must render is contract, not decoration. Loading, the
-    single-member org, a load failure, an empty role catalogue, and — the one that is most often
-    got wrong — an authorization denial that must never become a sign-in prompt.</p>
+    single-member org, a load failure, an authorization denial on an attempted action, and the
+    non-member state — with the one rule most often got wrong: an authorization denial must never
+    become a sign-in prompt.</p>
 
   <!-- e1 loading -->
   <div class="state-block">
@@ -37,13 +38,15 @@
     <div class="panel" data-panel="member-list" data-state="empty">
       <div class="panel-head">
         <div><h2>Members</h2><p class="sub"><span data-count="members">1</span> person in Northwind</p></div>
-        <button class="btn btn-accent" data-action="add-member">Add member</button>
+        <a class="btn btn-accent" href="../org-invitations-v2/index.html" data-action="invite-member"
+           data-links-to="org-invitations-v2">Invite a member</a>
       </div>
       <div class="empty">
         <h3>You're the only member</h3>
-        <p>You're the admin of Northwind. Invite teammates to collaborate — they'll get the role
-          you choose when you add them.</p>
-        <button class="btn btn-accent" data-action="add-member">Add your first teammate</button>
+        <p>You're the owner of Northwind. Invite teammates to collaborate — you'll choose their role when
+          you invite them.</p>
+        <a class="btn btn-accent" href="../org-invitations-v2/index.html" data-action="invite-member"
+           data-links-to="org-invitations-v2">Invite your first teammate</a>
       </div>
     </div>
   </div>
@@ -65,62 +68,46 @@
     </div>
   </div>
 
-  <!-- e4 empty role catalogue -->
+  <!-- e4 action denied — 403 on an attempted write, shown in place -->
   <div class="state-block">
-    <div class="state-label">(e4) No roles to assign — add-member blocked</div>
-    <div class="modal" data-panel="add-member" data-state="no-roles">
-      <div class="modal-head"><h2>Add member to Northwind</h2></div>
+    <div class="state-label">(e4) Action not allowed — 403 on the write, never a sign-in redirect</div>
+    <div class="modal" data-panel="change-role" data-state="action-denied">
+      <div class="modal-head"><h2>Change role — rhea@northwind.example</h2></div>
       <div class="modal-body">
-        <div class="banner banner-warn" data-error-code="NO_ROLES">
+        <div class="banner banner-info" data-error-code="FORBIDDEN" data-http="403">
           <span>
-            <b>No roles are available right now</b>
-            <p>We can't add someone without a role, so this is paused. This is usually temporary —
-              try again in a moment. If it persists, contact support.</p>
+            <b>You can't change roles in Northwind</b>
+            <p>Your permission to manage members was removed, so this change was declined. You're still
+              signed in — this is an authorization denial, not a sign-in problem. Ask an owner or admin
+              if you need this.</p>
           </span>
         </div>
       </div>
       <div class="modal-foot">
-        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
-        <button class="btn btn-accent" data-action="submit-add-member" disabled>Add member</button>
+        <button class="btn btn-ghost" data-action="cancel">Close</button>
+        <button class="btn btn-accent" data-action="submit-change-role" disabled>Save role</button>
       </div>
     </div>
   </div>
 
-  <!-- e5 403 forbidden — NOT a login prompt -->
+  <!-- e5 non-member — and why root is now MEMBER, not GUEST -->
   <div class="state-block">
-    <div class="state-label">(e5) Not allowed — 403, never a sign-in redirect</div>
-    <div class="panel" data-panel="member-list" data-state="forbidden">
-      <div class="panel-head"><div><h2>Members</h2></div></div>
-      <div class="empty">
-        <div class="banner banner-info" data-error-code="FORBIDDEN" data-http="403" style="text-align: left">
-          <span>
-            <b>You don't have access to manage members</b>
-            <p>You're signed in, but your role in Northwind can't add, remove, or change members.
-              Ask an admin of Northwind if you need this.</p>
-          </span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- e6 non-member — and why root is now MEMBER, not GUEST -->
-  <div class="state-block">
-    <div class="state-label">(e6) Not a member — but root is now MEMBER, never GUEST</div>
+    <div class="state-label">(e5) Not a member — but root is now MEMBER, never GUEST</div>
     <div class="panel" data-panel="member-list" data-state="non-member" data-role="none">
       <div class="panel-head"><div><h2>Members</h2></div></div>
       <div class="empty">
         <div class="banner banner-info" data-error-code="NOT_A_MEMBER" data-http="403" style="text-align: left">
           <span>
             <b>You're not a member of this organization</b>
-            <p>You can see it exists, but you hold no membership here. Ask an owner to add you.
-              This is an <b>authorization</b> state shown in place — never a sign-in redirect.</p>
+            <p>You can see it exists, but you hold no membership here. Ask an owner to invite you. This is
+              an <b>authorization</b> state shown in place — never a sign-in redirect.</p>
           </span>
         </div>
         <p class="sub" data-rule="root-is-member" style="margin-top: var(--space-3)">
-          <b>Reconciliation:</b> this GUEST/non-member state <b>no longer applies to the root
+          <b>Reconciliation:</b> this non-member state <b>no longer applies to the root
           <code>FuzeFront</code> org</b>. Signup now writes a real
           <code>organization_memberships(role='member')</code> row for root, so the root org resolves to
-          <code>user_role='member'</code> and shows a <b>MEMBER</b> badge — the #529 root GUEST state is
+          <code>user_role='member'</code> and shows a <b>Member</b> badge — the #529 root GUEST state is
           retired. It still applies to ordinary orgs you have not joined.
         </p>
       </div>
@@ -129,21 +116,21 @@
 
   <p class="note">
     <b>Contract.</b> Loading covers the in-flight
-    <code>GET /v1/security/tenants/{tenantId}/members</code>. Empty is a real, common state — a
-    brand-new org has exactly one member. Error covers a non-2xx list response with
-    <code>data-action="retry"</code>. (e4) covers
-    <code>GET /v1/security/tenants/{tenantId}/roles</code> returning <code>{ items: [] }</code> —
-    the add/change forms must fail closed, never render a submittable form with zero roles.
+    <code>GET /v1/security/tenants/{tenantId}/members</code> with <code>aria-busy</code>. Empty is a
+    real, common state — a brand-new org has exactly one member (its creator, the owner). Error covers a
+    non-2xx list response with <code>data-action="retry"</code>.
     <br /><br />
-    <b>⚠ (e5) is the rule this frame exists to enforce. A <code>403</code> is an authorization
-    denial, NOT an authentication failure.</b> The member is signed in; their token is valid; they
-    simply lack permission. The UI shows this denial <i>in place</i> and never redirects to
-    sign-in. Only a <code>401</code> (no/expired session) triggers re-authentication. Conflating
-    the two — bouncing a permission-denied user to a login page they'll sail straight back through —
-    is the exact failure this state is contract for.
+    <b>⚠ (e4) and (e5) are the rule this frame exists to enforce. A <code>403</code> is an authorization
+    denial, NOT an authentication failure.</b> The caller is signed in and their token is valid; they
+    simply lack permission. (e4) is the fail-closed response when a write is <i>attempted</i> without
+    <code>organization:manage-members</code> (e.g. the permission was revoked between render and click) —
+    the denial is shown in place on the dialog. (e5) is the caller who isn't a member of the org at all.
+    Both render in place and <b>never</b> redirect to sign-in. Only a <code>401</code> (no/expired
+    session) re-authenticates. Conflating the two — bouncing a permission-denied user to a login page
+    they'll sail straight back through — is the exact failure these states are contract for.
   </p>
 
-  <nav class="pager"><a href="04-remove-member.html">← Remove member</a><a href="index.html">Back to index →</a></nav>
+  <nav class="pager"><a href="04-read-only.html">← Read-only</a><a href="index.html">Back to index →</a></nav>
 </div>
 </body>
 </html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Read-only (non-admin) — authz-admin frame (d)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="04-read-only">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (d) · route /settings/access</div>
+  <h1>Read-only (non-admin)</h1>
+  <p class="lead">A member or viewer can open Access &amp; Roles and see who is in the organization — but
+    holds no permission to change roles or remove anyone. The management affordances are
+    <b>absent</b>, not merely disabled: the UI never renders a control the caller cannot use, and the
+    service refuses the write regardless.</p>
+
+  <div class="panel" data-panel="member-list" data-state="read-only" data-role="member">
+    <div class="panel-head">
+      <div>
+        <h2>Members</h2>
+        <p class="sub"><span data-count="members">4</span> people in Northwind</p>
+      </div>
+      <span class="pill" data-role-pill="member">You are a member</span>
+    </div>
+
+    <div class="panel-body" style="padding-bottom: 0">
+      <div class="banner banner-info" data-rule="view-is-member-manage-is-admin">
+        <span>
+          <b>You can view this organization's members</b>
+          <p>Managing members — changing roles or removing people — needs owner or admin access. Ask an
+            owner or admin of Northwind if you need to make a change.</p>
+        </span>
+      </div>
+    </div>
+
+    <table class="tbl">
+      <thead>
+        <tr><th>Person</th><th>Role</th></tr>
+      </thead>
+      <tbody>
+        <tr data-member="u_1001" data-role="owner">
+          <td><div class="who">ada@northwind.example</div></td>
+          <td><span class="pill pill-accent" data-role-pill="owner">Owner</span></td>
+        </tr>
+        <tr data-member="u_1002" data-role="admin">
+          <td><div class="who">grace@northwind.example</div></td>
+          <td><span class="pill pill-accent" data-role-pill="admin">Admin</span></td>
+        </tr>
+        <tr data-member="u_1003" data-role="member" data-self="true">
+          <td><div class="who">rhea@northwind.example <span class="tag">You</span></div></td>
+          <td><span class="pill" data-role-pill="member">Member</span></td>
+        </tr>
+        <tr data-member="u_1004" data-role="viewer">
+          <td><div class="who">edsger@northwind.example</div></td>
+          <td><span class="pill" data-role-pill="viewer">Viewer</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> Same read as frame (a): <code>GET /v1/security/tenants/{tenantId}/members</code>
+    succeeds for any member of the org. What differs is derived from the caller's Permit decision for
+    <code>organization:manage-members</code> on this org: when it is <b>denied</b>, the Actions column,
+    the per-row Change role / Remove buttons, and the Invite action are <b>not rendered at all</b> —
+    there is no disabled-but-present management control. The caller's own row is tagged <b>You</b>.
+    <br /><br />
+    <b>Why absent, not disabled.</b> A member/viewer legitimately has this page (membership grants the
+    read); rendering greyed-out management controls would mis-state that they <i>could</i> act if
+    something changed, and invite probing. Absence is the honest representation. This is distinct from
+    frame (e)'s <code>403</code>, which is the fail-closed response when a write is <i>attempted</i>
+    anyway (e.g. the caller lost the permission between render and click) — defense in depth: the UI
+    hides, the server still refuses.
+  </p>
+
+  <nav class="pager"><a href="03-remove-member.html">← Remove member</a><a href="05-states.html">Next: States →</a></nav>
+</div>
+</body>
+</html>
