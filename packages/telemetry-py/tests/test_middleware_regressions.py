@@ -275,3 +275,66 @@ def test_wsgi_base_exception_during_streaming_ends_span_and_propagates():
         _assert_context_detached()
     finally:
         provider.shutdown()
+
+
+# --- Finding 9 (F1): wrapped ASGI middleware tags the error 500 with x-request-id ---
+
+def test_asgi_wrapped_error_response_carries_request_id():
+    pytest.importorskip("starlette")
+    from starlette.applications import Starlette
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    provider, _exporter = _provider()
+    try:
+        async def boom(request):
+            raise RuntimeError("kaboom")
+
+        base = Starlette(routes=[Route("/boom", boom)])
+        # RECOMMENDED install: wrap, so the middleware is OUTSIDE Starlette's
+        # ServerErrorMiddleware and the 500 flows back through send_wrapper.
+        app = TelemetryASGIMiddleware(
+            base, tracer_provider=provider, logger=StructuredLogger(stream=io.StringIO())
+        )
+        resp = TestClient(app, raise_server_exceptions=False).get("/boom")
+        assert resp.status_code == 500
+        assert resp.headers.get("x-request-id")  # present + non-empty
+    finally:
+        provider.shutdown()
+
+
+# --- Finding 10 (F2): Flask handler reuses the middleware's stashed reqId ---
+
+def test_flask_handler_reuses_middleware_request_id():
+    pytest.importorskip("flask")
+    import flask
+
+    from fuzefront_telemetry import instrument_flask
+
+    provider, _exporter = _provider()
+    try:
+        seen = {}
+        app = flask.Flask(__name__)
+
+        @app.route("/u/<uid>")
+        def u(uid):
+            l1 = with_trace_context(StructuredLogger(stream=io.StringIO()), flask.request)
+            l2 = with_trace_context(StructuredLogger(stream=io.StringIO()), flask.request)
+            seen["r1"] = l1._bindings.get("reqId")
+            seen["r2"] = l2._bindings.get("reqId")
+            return {"ok": uid}
+
+        instrument_flask(app, tracer_provider=provider, logger=StructuredLogger(stream=io.StringIO()))
+        resp = app.test_client().get("/u/42")  # NO inbound x-request-id
+        header_id = resp.headers.get("x-request-id")
+        # The test client defers close()-ing the WSGI iterable; do it so the span
+        # ends and the middleware detaches its context (otherwise it leaks into
+        # later tests' ambient context).
+        resp.close()
+        # Both handler calls reuse the one reqId the middleware stashed, which is
+        # also the response header — so handler logs join the entry/exit logs.
+        assert seen["r1"] == seen["r2"]
+        assert seen["r1"] == header_id
+        assert header_id
+    finally:
+        provider.shutdown()

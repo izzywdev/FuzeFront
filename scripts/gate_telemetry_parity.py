@@ -60,15 +60,64 @@ def _read(path: str) -> str | None:
         return f.read()
 
 
+def _strip_ts_comments(src: str) -> str:
+    """Remove ``/* ... */`` and ``// ...`` comments so the gate measures CODE,
+    not prose. Without this, the parity checks are vacuous: a doc comment that
+    still mentions the old field/env name keeps the gate green after the actual
+    emitted name was renamed — exactly the "gate that enforces nothing" failure
+    FuzeFront's CLAUDE.md calls out. String/template literals are preserved so a
+    ``//`` inside a URL string is not mistaken for a comment.
+    """
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.DOTALL)
+    out: list[str] = []
+    for line in src.splitlines():
+        quote: str | None = None
+        i = 0
+        kept: list[str] = []
+        while i < len(line):
+            c = line[i]
+            if quote:
+                kept.append(c)
+                if c == "\\" and i + 1 < len(line):
+                    kept.append(line[i + 1])
+                    i += 2
+                    continue
+                if c == quote:
+                    quote = None
+                i += 1
+                continue
+            if c in ("'", '"', "`"):
+                quote = c
+                kept.append(c)
+            elif c == "/" and i + 1 < len(line) and line[i + 1] == "/":
+                break  # rest of the line is a comment
+            else:
+                kept.append(c)
+            i += 1
+        out.append("".join(kept))
+    return "\n".join(out)
+
+
 def _node_env_vars(node_config_ts: str) -> set[str]:
-    # Only env vars actually READ (`env.OTEL_...`), never ones merely named in a
-    # comment (config.ts mentions OTEL_TRACES_SAMPLER in prose but reads
-    # OTEL_TRACES_SAMPLER_ARG).
-    return set(re.findall(r"env\.(OTEL_[A-Z_]+)", node_config_ts))
+    # Only env vars actually READ (`env.OTEL_...`) in CODE — comments stripped
+    # first, so an env name mentioned only in prose is never counted.
+    return set(re.findall(r"env\.(OTEL_[A-Z_]+)", _strip_ts_comments(node_config_ts)))
 
 
-def _node_trace_fields(node_logging_ts: str) -> set[str]:
-    return set(re.findall(r"\b(trace_id|span_id)\b", node_logging_ts))
+def _node_trace_fields(node_logging_ts: str) -> set[str] | None:
+    """The trace-correlation keys the Node ``withTraceContext`` ACTUALLY emits —
+    the object keys of its ``logger.child({ ... })`` binding, with comments
+    stripped — NOT every place the names ``trace_id``/``span_id`` appear. A
+    whole-file substring search passes even after the real emitted keys are
+    renamed, as long as a comment still mentions the old names; parsing the emit
+    is what lets the gate catch that cross-language break. Returns ``None`` when
+    the emit can't be located (reported as its own violation)."""
+    code = _strip_ts_comments(node_logging_ts)
+    m = re.search(r"withTraceContext\b.*?\.child\(\s*\{(.*?)\}", code, re.DOTALL)
+    if not m:
+        return None
+    # Object keys (`name:`) inside the child binding — the emitted field names.
+    return set(re.findall(r"(\w+)\s*:", m.group(1)))
 
 
 def _py_tuple_strings(py_text: str, name: str) -> set[str] | None:
@@ -142,7 +191,13 @@ def check_parity(root: str) -> list[str]:
         )
         if v
     }
-    if node_fields != py_fields:
+    if node_fields is None:
+        violations.append(
+            "telemetry parity — could not locate the withTraceContext logger.child({...}) "
+            "binding in packages/telemetry/src/logging.ts; cannot verify the emitted "
+            "trace-correlation field names, so the Node<->Python trace-field parity is unchecked"
+        )
+    elif node_fields != py_fields:
         for key in sorted(node_fields ^ py_fields):
             where = "Node only" if key in node_fields else "Python only"
             violations.append(

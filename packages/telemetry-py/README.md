@@ -46,7 +46,14 @@ from fuzefront_telemetry import init_telemetry, TelemetryASGIMiddleware, get_log
 
 init_telemetry("fuzefront-py-svc", service_version="1.0.0")  # once, at startup
 
-app.add_middleware(TelemetryASGIMiddleware)
+# RECOMMENDED: wrap the app so this sits OUTSIDE Starlette's ServerErrorMiddleware.
+# Then an unhandled-exception 500 still flows back through the middleware and
+# carries x-request-id (a client can correlate the failure).
+app = TelemetryASGIMiddleware(app)
+
+# `app.add_middleware(TelemetryASGIMiddleware)` also works, but has a known
+# limitation: a 500 produced by Starlette's ServerErrorMiddleware is generated
+# outside user middleware, so it will NOT carry x-request-id. Prefer wrapping.
 
 @app.get("/users/{user_id}")
 async def get_user(user_id: str, request: Request):

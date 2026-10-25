@@ -29,7 +29,18 @@ const headers = env.OTEL_EXPORTER_OTLP_HEADERS;
 """
 
 LOGGING_TS = """
-return logger.child({ trace_id: req.traceId, span_id: req.spanId });
+/**
+ * withTraceContext binds trace_id and span_id onto the child logger so a Loki
+ * query can join on trace_id / span_id. (The old names appear in THIS comment
+ * deliberately: the gate must parse the real emit, not be fooled by prose.)
+ */
+export function withTraceContext(logger, req) {
+  if (!req.traceId) return logger;
+  return logger.child({
+    trace_id: req.traceId,
+    ...(req.spanId ? { span_id: req.spanId } : {}),
+  });
+}
 """
 
 CONTRACT_PY = '''
@@ -104,6 +115,35 @@ class TelemetryParityGateTest(unittest.TestCase):
             result = run_gate(root)
             self.assertEqual(result.returncode, 1)
             self.assertIn("trace log field", result.stderr)
+
+    def test_fails_when_node_emit_keys_renamed_despite_comment(self):
+        # The crux of the "vacuous gate" finding: rename ONLY the emitted keys
+        # (trace_id/span_id -> traceId/spanId) in logger.child({...}); the doc
+        # comment still mentions the old names. A whole-file substring search
+        # would still find them in the comment and pass — parsing the real emit
+        # must make the gate FAIL.
+        logging_ts = LOGGING_TS.replace(
+            "trace_id: req.traceId", "traceId: req.traceId"
+        ).replace("span_id: req.spanId", "spanId: req.spanId")
+        self.assertIn("binds trace_id and span_id", logging_ts)  # comment retains old names
+        with tempfile.TemporaryDirectory() as root:
+            build_tree(root)
+            with open(os.path.join(root, "packages/telemetry/src/logging.ts"), "w") as f:
+                f.write(logging_ts)
+            result = run_gate(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("trace log field", result.stderr)
+
+    def test_fails_when_emit_binding_absent(self):
+        # If the withTraceContext child binding can't be located, the trace-field
+        # parity is UNCHECKED — the gate must say so and fail, not pass silently.
+        with tempfile.TemporaryDirectory() as root:
+            build_tree(root)
+            with open(os.path.join(root, "packages/telemetry/src/logging.ts"), "w") as f:
+                f.write("export function withTraceContext(logger, req) { return logger; }\n")
+            result = run_gate(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("could not locate", result.stderr)
 
     def test_fails_on_request_id_drift(self):
         contract = CONTRACT_PY.replace('REQUEST_ID_FIELD: str = "reqId"', 'REQUEST_ID_FIELD: str = "request_id"')

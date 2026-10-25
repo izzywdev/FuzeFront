@@ -163,16 +163,35 @@ def _header(request: Any, name: str) -> str | None:
     return str(val) if val is not None else None
 
 
+def _request_stash(request: Any) -> Any:
+    """The dict the tracing middleware stashed for this request.
+
+    It lives at different places per framework: ``scope["state"]`` (ASGI),
+    ``environ["state"]`` (WSGI, whether the environ was passed directly or is
+    reached via a Flask request's ``.environ``), or ``request.state``
+    (Starlette). A Flask request is neither a Mapping nor has ``.state``, so its
+    WSGI ``environ`` is consulted too — without that, a Flask handler's
+    ``with_trace_context(logger, request)`` can't see the middleware's reqId and
+    would mint a fresh one, breaking the reqId join across the entry/exit logs,
+    the handler logs, and the response header.
+    """
+    if request is None:
+        return None
+    if isinstance(request, Mapping):
+        return request.get("state")
+    stash = getattr(request, "state", None)
+    if stash is None:
+        environ = getattr(request, "environ", None)
+        if isinstance(environ, Mapping):
+            stash = environ.get("state")
+    return stash
+
+
 def _trace_context_from(request: Any) -> tuple[str | None, str | None]:
     """Resolve ``(trace_id, span_id)`` for a request: prefer ids the middleware
     stashed on the request/scope, else the currently-active span.
     """
-    # Middleware stashes onto scope["state"] (ASGI) or request.state (Starlette).
-    stash: Any = None
-    if isinstance(request, Mapping):
-        stash = request.get("state")
-    else:
-        stash = getattr(request, "state", None)
+    stash = _request_stash(request)
     if stash is not None:
         tid = stash.get(TRACE_ID_FIELD) if isinstance(stash, Mapping) else getattr(stash, TRACE_ID_FIELD, None)
         sid = stash.get(SPAN_ID_FIELD) if isinstance(stash, Mapping) else getattr(stash, SPAN_ID_FIELD, None)
@@ -209,8 +228,9 @@ def with_trace_context(
         req_id = _header(request, REQUEST_ID_HEADER)
     if req_id is None and request is not None:
         # A reqId the tracing middleware already stashed (so a standalone
-        # with_trace_context call stays consistent with the middleware's choice).
-        stash = request.get("state") if isinstance(request, Mapping) else getattr(request, "state", None)
+        # with_trace_context call stays consistent with the middleware's choice,
+        # including a Flask request whose stash lives on request.environ).
+        stash = _request_stash(request)
         if isinstance(stash, Mapping):
             req_id = stash.get(REQUEST_ID_FIELD)
         elif stash is not None:
