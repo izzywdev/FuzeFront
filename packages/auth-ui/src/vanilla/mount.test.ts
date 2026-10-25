@@ -105,6 +105,24 @@ describe('vanilla mount()', () => {
     expect(socialWrap.style.display).toBe('block')
   })
 
+  it('signup mode sends the contract\'s single optional `name` (no firstName/lastName)', async () => {
+    const transport = makeTransport()
+    mount(container, { transport, onAuthenticated: vi.fn(), mode: 'signup' })
+    expect(container.querySelector('#fzf-auth-vanilla-name')).toHaveProperty('autocomplete', 'name')
+    expect(container.querySelector('#fzf-auth-vanilla-firstName')).toBeNull()
+    expect(container.querySelector('#fzf-auth-vanilla-lastName')).toBeNull()
+    ;(container.querySelector('#fzf-auth-vanilla-name') as HTMLInputElement).value = ' Ada Lovelace '
+    ;(container.querySelector('#fzf-auth-vanilla-email') as HTMLInputElement).value = 'ada@ex.com'
+    ;(container.querySelector('#fzf-auth-vanilla-password') as HTMLInputElement).value = 'S3cret!!!!'
+    container.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(transport.signup).toHaveBeenCalledWith({
+      email: 'ada@ex.com',
+      password: 'S3cret!!!!',
+      name: 'Ada Lovelace',
+    })
+  })
+
   it('unmount() removes the rendered markup', () => {
     const handle = mount(container, { transport: makeTransport(), onAuthenticated: vi.fn() })
     expect(container.querySelector('.fzf-auth-panel')).toBeTruthy()

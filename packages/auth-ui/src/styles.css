@@ -230,54 +230,136 @@
   text-align: start;
 }
 
-/* Password strength meter (segmented bar + word) — tone follows data-strength. */
-.fzf-pwmeter {
-  --fzf-pw-tone: var(--border-strong);
+/*
+ * ── new signup experience (SignUpFlow, flag fuzefront.auth.experience) ───────
+ * Frames: design/frames/auth-experience/01-signup + 06-states. The password
+ * strength meter, policy checklist, validated input, Turnstile shell and alert
+ * variants are design-system primitives that own their own presentation; these
+ * rules only lay out the wrapper markup. Tokens + logical properties only, so
+ * everything mirrors under RTL (ar/he).
+ */
+.fzf-su {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  margin-block-start: var(--space-2);
   font-family: var(--font-sans);
+  color: var(--text-primary);
 }
 
-.fzf-pwmeter[data-strength='weak'] {
-  --fzf-pw-tone: var(--error-color);
+.fzf-su-field {
+  display: flex;
+  flex-direction: column;
 }
 
-.fzf-pwmeter[data-strength='fair'] {
-  --fzf-pw-tone: var(--warning-color);
+.fzf-su-optional {
+  font-weight: var(--weight-regular);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  text-transform: lowercase;
 }
 
-.fzf-pwmeter[data-strength='good'],
-.fzf-pwmeter[data-strength='strong'] {
-  --fzf-pw-tone: var(--success-color);
+.fzf-su-help {
+  margin-block: var(--space-2) 0;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  line-height: 1.4;
 }
 
-.fzf-pwmeter__bars {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+.fzf-su-avail {
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-1);
 }
 
-.fzf-pwmeter__bar {
-  block-size: var(--space-1);
-  border-radius: var(--radius-pill);
-  background: var(--border-color);
-  transition: background var(--duration-base) var(--ease-standard);
-}
-
-.fzf-pwmeter__bar--on {
-  background: var(--fzf-pw-tone);
-}
-
-.fzf-pwmeter__label {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--text-xs);
+.fzf-su-avail--checking,
+.fzf-su-avail--error {
   color: var(--text-tertiary);
 }
 
-.fzf-pwmeter__label b {
-  color: var(--fzf-pw-tone);
-  font-weight: var(--weight-semibold);
+.fzf-su-avail--available {
+  color: var(--success-color);
+}
+
+.fzf-su-avail--taken {
+  color: var(--warning-color);
+}
+
+.fzf-su-avail__icon {
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+}
+
+.fzf-su-link,
+.fzf-su-foot a,
+.fzf-su-textbtn {
+  color: var(--accent-color);
+  text-decoration: none;
+  font-weight: var(--weight-medium);
+}
+
+.fzf-su-link:hover,
+.fzf-su-foot a:hover,
+.fzf-su-textbtn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.fzf-su-link:focus-visible,
+.fzf-su-foot a:focus-visible,
+.fzf-su-textbtn:focus-visible,
+.fzf-su-legal a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-radius: var(--radius-sm);
+}
+
+.fzf-su-textbtn {
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+}
+
+.fzf-su-textbtn:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.fzf-su-alert {
+  margin-block-end: var(--space-4);
+}
+
+.fzf-su-unavailable {
+  display: flex;
+  flex-direction: column;
+}
+
+.fzf-su-center {
+  margin-block: var(--space-3) 0;
+  text-align: center;
+}
+
+.fzf-su-rule {
+  flex: 1;
+  block-size: var(--border-width);
+  background: var(--border-color);
+}
+
+.fzf-su-foot {
+  margin-block: var(--space-6) 0;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.fzf-su-legal {
+  margin-block: var(--space-5) 0;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.fzf-su-legal a {
+  color: var(--text-secondary);
 }
