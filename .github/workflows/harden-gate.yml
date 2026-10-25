@@ -719,6 +719,22 @@ jobs:
         shell: bash
         run: python scripts/gate_identifier.py . --source
 
+      - name: Telemetry parity gate — self-tests (the gate must be known to FIRE)
+        # Same philosophy as the identifier self-tests above: assert the gate
+        # FAILS on an injected Node<->Python drift, not merely that it passes on
+        # a clean tree. Stdlib-only, so no extra install is needed.
+        shell: bash
+        run: python -m unittest scripts.__tests__.test_gate_telemetry_parity -v
+
+      - name: Telemetry parity gate — Node<->Python contract (enforcing)
+        # Fails if the Python telemetry package (packages/telemetry-py) drifts
+        # from the Node package (packages/telemetry) on OTLP env var names, the
+        # trace_id/span_id log field keys, the pino log-level scale, or the
+        # shared secret-redaction list — mirroring gate_identifier --registry-parity.
+        # Reads source text only; needs no OpenTelemetry install.
+        shell: bash
+        run: python scripts/gate_telemetry_parity.py .
+
   gate-vacuous-check:
     # A verification step whose LAST EFFECTIVE COMMAND is a lint/test/type-check/security
     # tool suffixed `|| true` (or `continue-on-error: true` on a step/job that exists to
