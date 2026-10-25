@@ -1829,6 +1829,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         model: '',
         promptVersion: '',
         schemaVersion: '',
+        analysisRisk: '',
         minimumConfidencePercent: '',
         maximumConfidencePercent: '',
       })
@@ -1845,6 +1846,7 @@ describe('RepositoryIntelligence flow inventory', () => {
           model: '',
           promptVersion: '',
           schemaVersion: '',
+          analysisRisk: '',
           minimumConfidencePercent: '',
           maximumConfidencePercent: '',
         }
@@ -1859,6 +1861,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         model: '',
         promptVersion: '',
         schemaVersion: '',
+        analysisRisk: '',
         minimumConfidencePercent: '91',
         maximumConfidencePercent: '100',
       })
@@ -1908,6 +1911,21 @@ describe('RepositoryIntelligence flow inventory', () => {
         maxConfidence: '0.9',
       })
     )
+  })
+
+  it('queries UX flows by retained LiteLLM review risk', async () => {
+    mockEvidenceApis()
+    const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    fireEvent.change(screen.getByLabelText('Analysis review risk'), {
+      target: { value: 'grounding-gaps' },
+    })
+
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      analysisRisk: 'grounding-gaps',
+    }))
   })
 
   it('shows reviewers how much repository evidence the LiteLLM prompt omitted', async () => {

@@ -53,6 +53,7 @@ export type RepositoryFlowCandidateQuery = {
   model?: string
   promptVersion?: string
   schemaVersion?: string
+  analysisRisk?: 'grounding-gaps' | 'prompt-truncated' | 'provenance-missing'
   minConfidence?: number
   maxConfidence?: number
   after?: HistoryCursor
@@ -482,6 +483,16 @@ export class MemoryCatalogStore implements CatalogStore {
         (!query.model || item.analysis?.model === query.model) &&
         (!query.promptVersion || item.analysis?.promptVersion === query.promptVersion) &&
         (!query.schemaVersion || item.analysis?.schemaVersion === query.schemaVersion) &&
+        (!query.analysisRisk || (
+          query.analysisRisk === 'grounding-gaps'
+            ? item.source === 'litellm' && Boolean(item.analysis?.grounding && (
+                item.analysis.grounding.rejectedArtifactCount > 0 ||
+                item.analysis.grounding.ungroundedStepCount > 0
+              ))
+            : query.analysisRisk === 'prompt-truncated'
+              ? item.source === 'litellm' && item.analysis?.promptTruncated === true
+              : item.source === 'litellm' && !item.analysis
+        )) &&
         (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
         (query.maxConfidence === undefined || item.confidence <= query.maxConfidence)
       )
@@ -1379,10 +1390,16 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($9::text IS NULL OR analysis_provenance->>'schemaVersion'=$9)
          AND ($10::double precision IS NULL OR confidence >= $10)
          AND ($11::double precision IS NULL OR confidence <= $11)
-         AND ($12::timestamptz IS NULL OR (created_at,id) < ($12::timestamptz,$13::text))
+         AND ($12::text IS NULL
+           OR ($12='grounding-gaps' AND source='litellm' AND (
+             COALESCE((analysis_provenance->'grounding'->>'rejectedArtifactCount')::integer,0)>0
+             OR COALESCE((analysis_provenance->'grounding'->>'ungroundedStepCount')::integer,0)>0))
+           OR ($12='prompt-truncated' AND source='litellm' AND analysis_provenance->>'promptTruncated'='true')
+           OR ($12='provenance-missing' AND source='litellm' AND analysis_provenance IS NULL))
+         AND ($13::timestamptz IS NULL OR (created_at,id) < ($13::timestamptz,$14::text))
        ORDER BY created_at DESC,id DESC
-       LIMIT COALESCE($14::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.source ?? null, query.status ?? null, query.revision ?? null, query.model ?? null, query.promptVersion ?? null, query.schemaVersion ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+       LIMIT COALESCE($15::integer, 2147483647)`,
+      [repositoryId, tenantId, query.id ?? null, query.source ?? null, query.status ?? null, query.revision ?? null, query.model ?? null, query.promptVersion ?? null, query.schemaVersion ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.analysisRisk ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, analysis: row.analysis_provenance ?? undefined, source: row.source, createdAt: row.created_at.toISOString() }))
   }

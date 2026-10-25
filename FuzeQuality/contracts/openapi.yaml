@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.7
+  version: 0.84.8
   license:
     name: UNLICENSED
 servers:
@@ -372,6 +372,10 @@ paths:
           in: query
           description: Exact structured-output schema version.
           schema: { type: string, minLength: 1, maxLength: 100 }
+        - name: analysisRisk
+          in: query
+          description: Isolate FuzeInfra LiteLLM proposals requiring additional review because grounding was rejected or absent, the repository prompt was bounded, or legacy model provenance is missing.
+          schema: { type: string, enum: [grounding-gaps, prompt-truncated, provenance-missing] }
         - name: minConfidence
           in: query
           description: Inclusive lower detector-confidence bound.

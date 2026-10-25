@@ -86,7 +86,7 @@ import {
 import { PolicyGateEvidence, policyGateArtifactReferenceProblems } from './components/governanceEvidence'
 import { GovernanceInspector } from './components/governanceInspector'
 import { ExecutionInspector } from './components/executionInspector'
-import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
+import { FlowInventoryFilters, type FlowAnalysisRisk, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector, flowArtifactTargetIds, unavailableFlowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
@@ -3469,6 +3469,7 @@ type FlowInventorySelection = {
   model: string
   promptVersion: string
   schemaVersion: string
+  analysisRisk: FlowAnalysisRisk | ''
   minimumConfidencePercent: string
   maximumConfidencePercent: string
 }
@@ -3715,6 +3716,18 @@ export function flowCandidateMatchesInventory(
     flow.analysis?.schemaVersion !== selection.schemaVersion
   )
     return false
+  if (selection.analysisRisk === 'grounding-gaps' && !(
+    flow.source === 'litellm' && flow.analysis?.grounding && (
+      flow.analysis.grounding.rejectedArtifactCount > 0 ||
+      flow.analysis.grounding.ungroundedStepCount > 0
+    )
+  )) return false
+  if (selection.analysisRisk === 'prompt-truncated' && !(
+    flow.source === 'litellm' && flow.analysis?.promptTruncated === true
+  )) return false
+  if (selection.analysisRisk === 'provenance-missing' && !(
+    flow.source === 'litellm' && !flow.analysis
+  )) return false
   if (selection.minimumConfidencePercent !== '' && flow.confidence < Number(selection.minimumConfidencePercent) / 100) return false
   if (selection.maximumConfidencePercent !== '' && flow.confidence > Number(selection.maximumConfidencePercent) / 100) return false
   if (selection.revisionScope === 'current') {
@@ -3756,6 +3769,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowModel, setFlowModel] = useState('')
   const [flowPromptVersion, setFlowPromptVersion] = useState('')
   const [flowSchemaVersion, setFlowSchemaVersion] = useState('')
+  const [flowAnalysisRisk, setFlowAnalysisRisk] = useState<FlowAnalysisRisk | ''>('')
   const [flowMinimumConfidencePercent, setFlowMinimumConfidencePercent] = useState('')
   const [flowMaximumConfidencePercent, setFlowMaximumConfidencePercent] = useState('')
   const invalidFlowConfidenceRange = Boolean(
@@ -3941,6 +3955,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     model: flowModel.trim(),
     promptVersion: flowPromptVersion.trim(),
     schemaVersion: flowSchemaVersion.trim(),
+    analysisRisk: flowAnalysisRisk,
     minimumConfidencePercent: flowMinimumConfidencePercent,
     maximumConfidencePercent: flowMaximumConfidencePercent,
   }
@@ -3958,6 +3973,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowModel.trim(),
     flowPromptVersion.trim(),
     flowSchemaVersion.trim(),
+    flowAnalysisRisk,
     flowMinimumConfidencePercent,
     flowMaximumConfidencePercent,
   ])
@@ -4506,6 +4522,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     model: flowModel.trim(),
                     promptVersion: flowPromptVersion.trim(),
                     schemaVersion: flowSchemaVersion.trim(),
+                    analysisRisk: flowAnalysisRisk,
                     minConfidence: flowMinimumConfidencePercent === '' ? '' : String(Number(flowMinimumConfidencePercent) / 100),
                     maxConfidence: flowMaximumConfidencePercent === '' ? '' : String(Number(flowMaximumConfidencePercent) / 100),
                   }).filter(([, value]) => Boolean(value))
@@ -4544,6 +4561,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowModel,
     flowPromptVersion,
     flowSchemaVersion,
+    flowAnalysisRisk,
     flowMinimumConfidencePercent,
     flowMaximumConfidencePercent,
     invalidFlowConfidenceRange,
@@ -4973,6 +4991,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             model: flowModel.trim(),
             promptVersion: flowPromptVersion.trim(),
             schemaVersion: flowSchemaVersion.trim(),
+            analysisRisk: flowAnalysisRisk,
             minConfidence: flowMinimumConfidencePercent === '' ? '' : String(Number(flowMinimumConfidencePercent) / 100),
             maxConfidence: flowMaximumConfidencePercent === '' ? '' : String(Number(flowMaximumConfidencePercent) / 100),
             cursor,
@@ -5303,6 +5322,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             model={flowModel}
             promptVersion={flowPromptVersion}
             schemaVersion={flowSchemaVersion}
+            analysisRisk={flowAnalysisRisk}
             minimumConfidencePercent={flowMinimumConfidencePercent}
             maximumConfidencePercent={flowMaximumConfidencePercent}
             invalidConfidenceRange={invalidFlowConfidenceRange}
@@ -5313,6 +5333,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             onModelChange={setFlowModel}
             onPromptVersionChange={setFlowPromptVersion}
             onSchemaVersionChange={setFlowSchemaVersion}
+            onAnalysisRiskChange={setFlowAnalysisRisk}
             onMinimumConfidencePercentChange={setFlowMinimumConfidencePercent}
             onMaximumConfidencePercentChange={setFlowMaximumConfidencePercent}
           />
