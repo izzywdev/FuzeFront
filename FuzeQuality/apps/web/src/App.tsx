@@ -3073,11 +3073,13 @@ export function FlowReviewControls({
   flow,
   currentRevision,
   knownArtifactIds = [],
+  evidenceVerification,
   onReview,
 }: {
   flow: RepositoryFlowCandidate
   currentRevision?: string
   knownArtifactIds?: Iterable<string>
+  evidenceVerification?: 'loading' | 'ready' | 'unavailable'
   onReview: (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -3100,7 +3102,10 @@ export function FlowReviewControls({
   const groundingRationaleMissing = hasGroundingGaps && reason.trim().length < 3
   const analysisProvenanceMissing = flow.source === 'litellm' && !flow.analysis
   const wireframeMissing = flow.wireframe.nodes.length === 0
-  const unavailableTargetIds = unavailableFlowArtifactTargetIds(flow, knownArtifactIds)
+  const unavailableTargetIds = evidenceVerification !== 'loading' && evidenceVerification !== 'unavailable'
+    ? unavailableFlowArtifactTargetIds(flow, knownArtifactIds)
+    : []
+  const evidenceVerificationBlocked = evidenceVerification === 'loading' || evidenceVerification === 'unavailable'
 
   useEffect(() => {
     setStale(false)
@@ -3177,6 +3182,16 @@ export function FlowReviewControls({
             Confirmation is blocked because this flow has no reviewable wireframe. Reject this proposal or regenerate repository analysis.
           </p>
         )}
+        {evidenceVerification === 'loading' && (
+          <p className="performance-inventory-only" role="status">
+            Verifying UX-flow evidence for this exact repository revision before confirmation.
+          </p>
+        )}
+        {evidenceVerification === 'unavailable' && (
+          <p className="form-error" role="alert">
+            Confirmation is blocked because exact-revision UX-flow evidence could not be verified. Reject this proposal or retry after repository evidence is available.
+          </p>
+        )}
         {unavailableTargetIds.length > 0 && (
           <p className="form-error" role="alert">
             Confirmation is blocked because {unavailableTargetIds.length} artifact reference {unavailableTargetIds.length === 1 ? 'is' : 'are'} unavailable in this exact repository revision. Reject this proposal or regenerate repository analysis.
@@ -3185,7 +3200,7 @@ export function FlowReviewControls({
         <div className="row-actions">
           <QualityAction
             intent="secondary"
-            disabled={busy || !isReviewable || groundingRationaleMissing || analysisProvenanceMissing || wireframeMissing || unavailableTargetIds.length > 0}
+            disabled={busy || !isReviewable || groundingRationaleMissing || analysisProvenanceMissing || wireframeMissing || evidenceVerificationBlocked || unavailableTargetIds.length > 0}
             onClick={() => void submit('confirmed')}
           >
             <Check size={14} /> Confirm
@@ -3725,7 +3740,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [governanceEvidenceLoading, setGovernanceEvidenceLoading] = useState(false)
   const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
   const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
-  const [flowEvidenceFailures, setFlowEvidenceFailures] = useState(0)
+  const [flowEvidenceFailureRepositories, setFlowEvidenceFailureRepositories] = useState<string[]>([])
+  const [flowEvidenceLoadingRepositories, setFlowEvidenceLoadingRepositories] = useState<string[]>([])
   const [flowEvidenceReloadKey, setFlowEvidenceReloadKey] = useState(0)
   const [omittedFlowEvidenceRevisions, setOmittedFlowEvidenceRevisions] = useState(0)
   const [flowCandidates, setFlowCandidates] = useState<
@@ -4536,7 +4552,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     let active = true
     if (!flowResultsAreCurrent) {
       setFlowEvidenceArtifacts([])
-      setFlowEvidenceFailures(0)
+      setFlowEvidenceFailureRepositories([])
+      setFlowEvidenceLoadingRepositories([])
       setOmittedFlowEvidenceRevisions(0)
       return () => { active = false }
     }
@@ -4545,7 +4562,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       : { selected: [], omitted: 0 }
     setOmittedFlowEvidenceRevisions(selection.omitted)
     setFlowEvidenceArtifacts([])
-    setFlowEvidenceFailures(0)
+    setFlowEvidenceFailureRepositories([])
     const currentRevisions = new Map(
       data.repositories.map(repository => [repository.id, repository.lastScanRevision])
     )
@@ -4569,20 +4586,25 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     })
     const requests = [...evidenceIds.values()].flatMap(({ repositoryId, revision, ids }) => {
       const values = [...ids]
-      return Array.from({ length: Math.ceil(values.length / 100) }, (_, index) =>
-        api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100), revision)
+      return Array.from({ length: Math.ceil(values.length / 100) }, (_, index) => ({
+        repositoryId,
+        request: api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100), revision)
           .then(response => response.items.map(artifact => ({
             ...artifact,
             revision: artifact.revision ?? revision,
-          })))
-      )
+          }))),
+      }))
     })
-    void Promise.allSettled(requests).then(results => {
+    setFlowEvidenceLoadingRepositories([...new Set(requests.map(request => request.repositoryId))])
+    void Promise.allSettled(requests.map(request => request.request)).then(results => {
       if (!active) return
       setFlowEvidenceArtifacts(results.flatMap(result =>
         result.status === 'fulfilled' ? result.value : []
       ))
-      setFlowEvidenceFailures(results.filter(result => result.status === 'rejected').length)
+      setFlowEvidenceFailureRepositories([...new Set(results.flatMap((result, index) =>
+        result.status === 'rejected' ? [requests[index].repositoryId] : []
+      ))])
+      setFlowEvidenceLoadingRepositories([])
     })
     return () => { active = false }
   }, [artifacts, data.repositories, flowCandidates, flowEvidenceReloadKey, flowResultsAreCurrent, flowRevisionScope])
@@ -5324,7 +5346,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               Some exact policy and gate evidence could not be loaded. Evidence from successful repositories remains visible.
             </p>
           )}
-          {flowEvidenceFailures > 0 && (
+          {flowEvidenceFailureRepositories.length > 0 && (
             <div className="form-error" role="alert">
               Some exact UX flow evidence could not be loaded. Evidence from successful requests remains visible.{' '}
               <QualityAction
@@ -5765,6 +5787,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   artifact.id,
                                   ...(artifact.logicalId ? [artifact.logicalId] : []),
                                 ])}
+                              evidenceVerification={flowEvidenceLoadingRepositories.includes(flow.repositoryId)
+                                ? 'loading'
+                                : flowEvidenceFailureRepositories.includes(flow.repositoryId)
+                                  ? 'unavailable'
+                                  : 'ready'}
                               currentRevision={
                                 data.repositories.find(
                                   repository => repository.id === flow.repositoryId

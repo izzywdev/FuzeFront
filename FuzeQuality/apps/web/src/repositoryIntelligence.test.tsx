@@ -1585,6 +1585,40 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
   })
 
+  it('blocks confirmation while exact-revision flow evidence is loading', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <FlowReviewControls
+        flow={candidate}
+        currentRevision={candidate.revision}
+        evidenceVerification="loading"
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('Verifying UX-flow evidence')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
+  it('blocks confirmation when exact-revision flow evidence verification is unavailable', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <FlowReviewControls
+        flow={candidate}
+        currentRevision={candidate.revision}
+        evidenceVerification="unavailable"
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('could not be verified')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
   it('blocks confirmation for a legacy flow without a wireframe while keeping rejection available', () => {
     const onReview = vi.fn().mockResolvedValue(undefined)
     const invalid = {
@@ -2172,6 +2206,8 @@ describe('RepositoryIntelligence flow inventory', () => {
       'Some exact UX flow evidence could not be loaded',
       { exact: false },
     )).toBeVisible()
+    expect(screen.getByText(/exact-revision UX-flow evidence could not be verified/i)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
     vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [historicalArtifact] })
     fireEvent.click(screen.getByRole('button', { name: 'Retry exact UX flow evidence' }))
 

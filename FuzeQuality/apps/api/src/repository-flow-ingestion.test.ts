@@ -83,6 +83,33 @@ describe('repository flow candidate ingestion', () => {
         },
       }],
     }).success).toBe(false)
+    expect(repositoryFlowCandidateIngestionSchema.safeParse({
+      candidates: [{
+        ...candidate,
+        wireframe: {
+          kind: 'sequence',
+          nodes: [{ label: 'Confirmation', targetIds: ['route-2'] }],
+        },
+      }],
+    }).success).toBe(false)
+    expect(repositoryFlowCandidateIngestionSchema.safeParse({
+      candidates: [{
+        ...candidate,
+        wireframe: {
+          kind: 'sequence',
+          nodes: [{ label: 'Confirmation', targetIds: ['route-2'] }],
+        },
+        analysis: {
+          ...candidate.analysis!,
+          grounding: {
+            referencedArtifactCount: 2,
+            groundedArtifactCount: 2,
+            rejectedArtifactCount: 0,
+            ungroundedStepCount: 0,
+          },
+        },
+      }],
+    }).success).toBe(true)
   })
 
   it('requires every LiteLLM evidence, step, and wireframe reference to resolve in the exact repository revision', async () => {
