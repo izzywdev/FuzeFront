@@ -217,3 +217,61 @@ def test_with_trace_context_without_request_binds_active_span():
         assert line["span_id"] == span_id
     finally:
         provider.shutdown()
+
+
+# --- Finding 8: WSGI BaseException parity with the ASGI cancellation fix ---
+
+class _BaseBoom(BaseException):
+    """A BaseException subclass (like KeyboardInterrupt/SystemExit) — NOT caught
+    by `except Exception`."""
+
+
+def _assert_context_detached():
+    from opentelemetry import trace
+
+    assert not trace.get_current_span().get_span_context().is_valid
+
+
+def test_wsgi_base_exception_from_app_call_ends_span_and_propagates():
+    provider, exporter = _provider()
+    try:
+        def app(environ, start_response):
+            raise _BaseBoom()
+
+        mw = TelemetryWSGIMiddleware(
+            app, tracer_provider=provider, logger=StructuredLogger(stream=io.StringIO())
+        )
+        with pytest.raises(_BaseBoom):
+            mw({"REQUEST_METHOD": "GET", "PATH_INFO": "/x"}, lambda *a, **k: None)
+
+        (span,) = exporter.get_finished_spans()  # span was ended + exported
+        assert span.attributes["error"] is True
+        _assert_context_detached()  # token detached, no leaked context
+    finally:
+        provider.shutdown()
+
+
+def test_wsgi_base_exception_during_streaming_ends_span_and_propagates():
+    provider, exporter = _provider()
+    try:
+        def app(environ, start_response):
+            start_response("200 OK", [("Content-Type", "text/plain")])
+
+            def gen():
+                yield b"part1"
+                raise _BaseBoom()
+
+            return gen()
+
+        mw = TelemetryWSGIMiddleware(
+            app, tracer_provider=provider, logger=StructuredLogger(stream=io.StringIO())
+        )
+        result = mw({"REQUEST_METHOD": "GET", "PATH_INFO": "/s"}, lambda *a, **k: None)
+        with pytest.raises(_BaseBoom):
+            list(result)
+
+        (span,) = exporter.get_finished_spans()
+        assert span.attributes["error"] is True
+        _assert_context_detached()
+    finally:
+        provider.shutdown()

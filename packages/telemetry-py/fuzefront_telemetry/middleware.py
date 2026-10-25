@@ -330,7 +330,10 @@ class TelemetryWSGIMiddleware:
 
         try:
             result = self.app(environ, sr)
-        except Exception:
+        except BaseException:
+            # BaseException (KeyboardInterrupt/SystemExit, a GeneratorExit-class
+            # escape) must still end + export the span and detach the context,
+            # then propagate — mirroring the ASGI finally/except BaseException.
             finalize(errored=True)
             raise
 
@@ -358,7 +361,10 @@ class _ClosingIterator:
         except StopIteration:
             self._close(errored=False)
             raise
-        except Exception:
+        except BaseException:
+            # Same reason as the __call__ path: a BaseException raised while the
+            # body streams must still finalize (end + detach) and propagate, not
+            # leak an unended span. StopIteration (normal end) is handled above.
             self._close(errored=True)
             raise
 
