@@ -43,6 +43,9 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(dockerfile).toContain(
       'ln -s /workspace/FuzeQuality/node_modules /workspace/node_modules'
     )
+    expect(dockerfile).toContain(
+      'COPY .github/workflows/fuzequality-android-apk.yml /workspace/.github/workflows/fuzequality-android-apk.yml'
+    )
   })
 
   it('renders the prerequisite ConfigMaps even while the registration Job is disabled', () => {
