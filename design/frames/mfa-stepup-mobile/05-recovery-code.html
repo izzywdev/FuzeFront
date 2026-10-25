@@ -39,6 +39,7 @@
   .callout--warning { background: var(--warning-soft); border-color: var(--warning-color); }
   .callout--error { background: var(--error-soft); border-color: var(--error-color); }
   .callout__ico { flex: none; }
+  .callout b.rl-wait { display: inline; margin: 0; font-size: inherit; font-variant-numeric: tabular-nums; }
   .callout--warning .callout__ico { color: var(--warning-color); }
   .callout--error .callout__ico { color: var(--error-color); }
 
@@ -91,7 +92,7 @@
     <p class="m-sub">Enter one of the recovery codes you saved when you turned on two-factor authentication.</p>
     <div class="rc-field" data-component="recovery-code-input">
       <label for="m-rc-2">Recovery code</label>
-      <input id="m-rc-2" type="text" data-field="recovery-code" value="4f2a9 c11e0" disabled />
+      <input id="m-rc-2" type="text" data-field="recovery-code" value="7k3m 9qxr 2vhd 8fwb" disabled />
     </div>
     <div class="actions">
       <button class="btn btn-primary" data-action="verify-recovery" disabled aria-busy="true"><span class="spinner" aria-hidden="true"></span>Verifying…</button>
@@ -107,7 +108,7 @@
     <p class="m-sub">That didn't work. Enter one of your saved recovery codes.</p>
     <div class="rc-field is-error" data-component="recovery-code-input">
       <label for="m-rc-3">Recovery code</label>
-      <input id="m-rc-3" type="text" data-field="recovery-code" value="4f2a9 c11e7" aria-invalid="true" aria-describedby="m-rc-3-err" />
+      <input id="m-rc-3" type="text" data-field="recovery-code" value="7K3M-9QXR-2VHD-8FWE" aria-invalid="true" aria-describedby="m-rc-3-err" />
       <span class="field-error" id="m-rc-3-err" data-error="recovery-invalid"><span aria-hidden="true">⚠</span>
         <span>That recovery code didn't work. Check it for typos, or try another of your codes — each code works only once.</span></span>
     </div>
@@ -120,7 +121,7 @@
   </main>
 </div>
 
-<div class="state-label">Too many attempts · 429 RATE_LIMITED (fail-closed, no countdown)</div>
+<div class="state-label">Too many attempts · 429 RATE_LIMITED (fail-closed, Retry-After countdown)</div>
 <div class="phone" data-frame="05-recovery-code" data-state="rate-limited">
   <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Use a recovery code</span></header>
   <div class="m-seam"></div>
@@ -128,31 +129,30 @@
     <div class="callout callout--warning" role="alert" data-error="rate-limited">
       <span class="callout__ico" aria-hidden="true">⏳</span>
       <span><b>Too many attempts</b>
-        For your security we've paused verification for a few minutes. Wait, then try again. Switching to another
-        method won't skip the wait.</span>
+        For your security we've paused verification. Try again in <b class="rl-wait" data-value="retry-after">4:59</b>. Switching to another method won't skip the wait.</span>
     </div>
     <div class="rc-field" data-component="recovery-code-input">
       <label for="m-rc-4">Recovery code</label>
-      <input id="m-rc-4" type="text" data-field="recovery-code" value="4f2a9 c11e0" />
+      <input id="m-rc-4" type="text" data-field="recovery-code" value="7k3m 9qxr 2vhd 8fwb" />
     </div>
     <div class="actions">
-      <button class="btn btn-primary" data-action="verify-recovery">Try again</button>
+      <button class="btn btn-primary" data-action="verify-recovery" data-state="cooldown" disabled aria-disabled="true">Try again in 4:59</button>
       <a class="btn btn-ghost" href="#" data-action="back-to-sign-in">Back to sign in</a>
     </div>
-    <p class="note">Same copy and limiter as frame 02's authenticator-code state. Field not red, value kept. No
-      Retry-After on this 429 in the contract, so no timer.</p>
+    <p class="note">Same copy and limiter as frame 02. Wait = 429 <code class="mono">Retry-After</code> (seconds), shown as a live m:ss countdown; “Try again” disabled until it
+      hits zero. Header missing/invalid → “Wait a few minutes, then try again.”, button enabled. Code kept, not marked red.</p>
   </main>
 </div>
 
-<div class="state-label">Sign-in timed out · 401 NOT_ACTIVE (challenge dead — restart)</div>
+<div class="state-label">Sign-in expired · 401 NOT_ACTIVE (challenge dead — restart; no claim about the code)</div>
 <div class="phone" data-frame="05-recovery-code" data-state="error-expired">
   <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Use a recovery code</span></header>
   <div class="m-seam"></div>
   <main class="m-body" data-panel="recovery-code" data-state="error-expired" data-http-status="401" data-factor="recovery">
     <div class="callout callout--error" role="alert" data-error="challenge-expired">
       <span class="callout__ico" aria-hidden="true">⚠</span>
-      <span><b>Your sign-in timed out</b>
-        For your security this sign-in expired before it was finished. Start again — your recovery code was not used.</span>
+      <span><b>Your sign-in expired</b>
+        Start again to sign in.</span>
     </div>
     <div class="actions">
       <a class="btn btn-primary" href="#" data-action="restart-sign-in">Back to sign in</a>
@@ -172,7 +172,7 @@
     </div>
     <div class="rc-field" data-component="recovery-code-input">
       <label for="m-rc-6">Recovery code</label>
-      <input id="m-rc-6" type="text" data-field="recovery-code" value="4f2a9 c11e0" />
+      <input id="m-rc-6" type="text" data-field="recovery-code" value="7k3m 9qxr 2vhd 8fwb" />
     </div>
     <div class="actions">
       <button class="btn btn-primary" data-action="verify-recovery">Try again</button>

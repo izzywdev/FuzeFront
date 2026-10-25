@@ -34,6 +34,8 @@
     margin-bottom: var(--space-5); border-radius: var(--radius-md); border: 1px solid var(--warning-color);
     background: var(--warning-soft); color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
   .rl-callout b { display: block; color: var(--text-primary); font-size: var(--text-md); margin-bottom: var(--space-1); }
+  .rl-wait { display: inline; margin: 0; font-size: inherit; font-variant-numeric: tabular-nums; }
+  .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
   .rl-callout__ico { flex: none; color: var(--warning-color); }
   .rl-note { margin: var(--space-4) 0 0; padding: var(--space-3); border: 1px dashed var(--border-strong);
     border-radius: var(--radius-md); color: var(--text-tertiary); font-size: var(--text-sm); line-height: 1.5; }
@@ -158,8 +160,8 @@
         <div class="rl-callout" role="alert" data-error="rate-limited">
           <span class="rl-callout__ico" aria-hidden="true">⏳</span>
           <span><b>Too many attempts</b>
-            For your security we've paused verification for a few minutes. Wait, then try again. Switching to
-            another method won't skip the wait.</span>
+            For your security we've paused verification. Try again in <b class="rl-wait" data-value="retry-after">4:59</b>.
+            Switching to another method won't skip the wait.</span>
         </div>
         <div class="otp" data-component="otp-input" role="group" aria-label="One-time code">
           <input inputmode="numeric" maxlength="1" value="4" aria-label="digit 1" />
@@ -170,13 +172,13 @@
           <input inputmode="numeric" maxlength="1" value="9" aria-label="digit 6" />
         </div>
         <div class="actions">
-          <button class="btn btn-primary" data-action="verify-mfa">Try again</button>
+          <button class="btn btn-primary" data-action="verify-mfa" data-state="cooldown" disabled aria-disabled="true">Try again in 4:59</button>
         </div>
         <div class="switch"><a href="#" data-action="back-to-sign-in">Back to sign in</a></div>
-        <p class="rl-note">No countdown: the contract does not send <code>Retry-After</code> on
-          <code>POST /mfa/verify</code> 429, so the UI must not invent a wait time. The entered code is kept and not
-          marked red (it wasn't judged wrong). “Try again” stays enabled; if the pause is still on, the server answers
-          429 again and this same state re-renders.</p>
+        <p class="rl-note">Wait comes from the 429's <code>Retry-After</code> header (seconds): show a live m:ss countdown in the
+          callout and on the disabled button, and enable “Try again” when it reaches zero. If the header is missing or not a
+          positive integer, show “Wait a few minutes, then try again.” with the button enabled. The entered code is kept
+          and not marked red (it wasn't judged wrong). A retry that still gets 429 restarts the countdown from the new header.</p>
       </div>
     </div>
 

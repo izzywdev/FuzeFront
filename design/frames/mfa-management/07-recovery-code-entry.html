@@ -41,6 +41,7 @@
   .callout--warning { background: var(--warning-soft); border-color: var(--warning-color); }
   .callout--error { background: var(--error-soft); border-color: var(--error-color); }
   .callout__ico { flex: none; }
+  .callout b.rl-wait { display: inline; margin: 0; font-size: inherit; font-variant-numeric: tabular-nums; }
   .callout--warning .callout__ico { color: var(--warning-color); }
   .callout--error .callout__ico { color: var(--error-color); }
 
@@ -85,8 +86,8 @@
           <a href="05-step-up-challenge.html" data-action="choose-factor">Use a different method</a>
           <a href="#" data-action="contact-support">Lost your recovery codes too? Contact support</a>
         </div>
-        <p class="note">One text field, not OTP cells: the code is opaque (up to 64 characters; today's are 10
-          characters) and the client must not check its format. Disable “Verify” only while the trimmed value is
+        <p class="note">One text field, not OTP cells: the code is opaque (up to 64 characters; today's look like
+          <code>XXXX-XXXX-XXXX-XXXX</code>) and the client must not check its format. Disable “Verify” only while the trimmed value is
           empty. Send exactly what was typed as <code>recoveryCode</code>; the server strips spaces and dashes and
           ignores case. No numeric keyboard, no auto-capitalise, no spellcheck.</p>
       </div>
@@ -102,7 +103,7 @@
           for <b>amara@rowan.co</b>.</p>
         <div class="rc-field" data-component="recovery-code-input">
           <label for="rc-2">Recovery code</label>
-          <input id="rc-2" type="text" data-field="recovery-code" value="4f2a9-c11e0" disabled aria-describedby="rc-2-help" />
+          <input id="rc-2" type="text" data-field="recovery-code" value="7k3m 9qxr 2vhd 8fwb" disabled aria-describedby="rc-2-help" />
           <span class="rc-help" id="rc-2-help">Each code works once. Spaces and dashes are fine — type it the way you saved it.</span>
         </div>
         <div class="actions">
@@ -120,7 +121,7 @@
         <p class="sub">That didn't work. Enter one of your saved recovery codes.</p>
         <div class="rc-field is-error" data-component="recovery-code-input">
           <label for="rc-3">Recovery code</label>
-          <input id="rc-3" type="text" data-field="recovery-code" value="4f2a9-c11e7" aria-invalid="true" aria-describedby="rc-3-err" />
+          <input id="rc-3" type="text" data-field="recovery-code" value="7K3M-9QXR-2VHD-8FWE" aria-invalid="true" aria-describedby="rc-3-err" />
           <span class="field-error" id="rc-3-err" data-error="recovery-invalid"><span aria-hidden="true">⚠</span>
             <span>That recovery code didn't work. Check it for typos, or try another of your codes — each code works only once.</span></span>
         </div>
@@ -144,40 +145,41 @@
         <div class="callout callout--warning" role="alert" data-error="rate-limited">
           <span class="callout__ico" aria-hidden="true">⏳</span>
           <span><b>Too many attempts</b>
-            For your security we've paused verification for a few minutes. Wait, then try again. Switching to
-            another method won't skip the wait.</span>
+            For your security we've paused verification. Try again in <b class="rl-wait" data-value="retry-after">4:59</b>.
+            Switching to another method won't skip the wait.</span>
         </div>
         <div class="rc-field" data-component="recovery-code-input">
           <label for="rc-4">Recovery code</label>
-          <input id="rc-4" type="text" data-field="recovery-code" value="4f2a9-c11e0" aria-describedby="rc-4-help" />
+          <input id="rc-4" type="text" data-field="recovery-code" value="7k3m 9qxr 2vhd 8fwb" aria-describedby="rc-4-help" />
           <span class="rc-help" id="rc-4-help">Each code works once. Spaces and dashes are fine — type it the way you saved it.</span>
         </div>
         <div class="actions">
-          <button class="btn btn-primary" data-action="verify-recovery">Try again</button>
+          <button class="btn btn-primary" data-action="verify-recovery" data-state="cooldown" disabled aria-disabled="true">Try again in 4:59</button>
         </div>
         <div class="switch"><a href="#" data-action="back-to-sign-in">Back to sign in</a></div>
-        <p class="note">Same limiter, same copy as the authenticator-code state in frame 05. Not a wrong-code message:
-          the field is not red and the value is kept. No countdown — <code>POST /mfa/verify</code> 429 has no
-          <code>Retry-After</code> in the contract. “Try again” stays enabled; a retry during the pause gets 429 again
-          and shows this state again.</p>
+        <p class="note">Same limiter, same copy as frame 05. Wait comes from the 429's <code>Retry-After</code> header (seconds): show a live m:ss countdown in the
+          callout and on the disabled button, and enable “Try again” when it reaches zero. If the header is missing or not a
+          positive integer, show “Wait a few minutes, then try again.” with the button enabled. The entered code is kept
+          and not marked red (it wasn't judged wrong). A retry that still gets 429 restarts the countdown from the new header.</p>
       </div>
     </div>
 
     <!-- ═══ Sign-in expired (401 NOT_ACTIVE) ═══ -->
-    <div class="state-label">State · sign-in timed out (401 NOT_ACTIVE — challenge unknown/expired/completed)</div>
+    <div class="state-label">State · sign-in expired (401 NOT_ACTIVE — challenge unknown/expired/completed)</div>
     <div class="card" data-component="mfa-challenge" data-state="recovery-error-expired" data-http-status="401" data-factor="recovery">
       <div class="card__seam"></div>
       <div class="card__body">
         <div class="callout callout--error" role="alert" data-error="challenge-expired">
           <span class="callout__ico" aria-hidden="true">⚠</span>
-          <span><b>Your sign-in timed out</b>
-            For your security this sign-in expired before it was finished. Start again — your recovery code was not used.</span>
+          <span><b>Your sign-in expired</b>
+            Start again to sign in.</span>
         </div>
         <div class="actions">
           <a class="btn btn-primary" href="#" data-action="restart-sign-in" style="text-decoration:none;text-align:center">Back to sign in</a>
         </div>
-        <p class="note">A failed verify uses up nothing (contract), so “not used” is true here. The old
-          <code>challengeId</code> is dead: no field and no “Try again” on this screen.</p>
+        <p class="note">No promise about the recovery code here. <code>NOT_ACTIVE</code> also covers an
+          already-completed challenge — e.g. a successful verify whose reply was lost, then retried — in which case the
+          code <b>was</b> consumed. The old <code>challengeId</code> is dead: no field and no “Try again” on this screen.</p>
       </div>
     </div>
 
@@ -194,7 +196,7 @@
         </div>
         <div class="rc-field" data-component="recovery-code-input">
           <label for="rc-6">Recovery code</label>
-          <input id="rc-6" type="text" data-field="recovery-code" value="4f2a9-c11e0" aria-describedby="rc-6-help" />
+          <input id="rc-6" type="text" data-field="recovery-code" value="7k3m 9qxr 2vhd 8fwb" aria-describedby="rc-6-help" />
           <span class="rc-help" id="rc-6-help">Each code works once. Spaces and dashes are fine — type it the way you saved it.</span>
         </div>
         <div class="actions">

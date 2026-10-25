@@ -165,7 +165,7 @@
       "flow": "mfa-stepup-mobile",
       "viewport": "mobile",
       "summary": "Mobile OTP entry (auto-advance, paste-aware, 44px+ touch cells) with in-flight/verifying, wrong/expired fail-closed (no navigation), 429 too-many-attempts, expiry countdown + resend cooldown, and delivery-failure fallback.",
-      "acceptanceNotes": "Verify via POST /mfa/verify; a wrong/expired code stays on screen with an inline error, never navigates away. The verify button disables and shows a spinner while in flight so a slow network can't produce a double-submit. Resend is disabled during the cooldown window with a live countdown. 429 RATE_LIMITED: warning callout 'Too many attempts' (shared limiter with recovery codes, so switching method won't skip the wait); copy must not say the code was wrong; code kept and not marked red; no countdown because the contract declares no Retry-After on this 429; 'Try again' stays enabled and re-renders this state while the pause lasts; 'Back to sign in' available.",
+      "acceptanceNotes": "Verify via POST /mfa/verify; a wrong/expired code stays on screen with an inline error, never navigates away. The verify button disables and shows a spinner while in flight so a slow network can't produce a double-submit. Resend is disabled during the cooldown window with a live countdown. 429 RATE_LIMITED: warning callout 'Too many attempts' (shared limiter with recovery codes, so switching method won't skip the wait); copy must not say the code was wrong; code kept and not marked red; the wait comes from the 429 Retry-After header (integer seconds): render 'Try again in <m:ss>' as a live countdown in the callout (data-value='retry-after') and on the 'Try again' button, which is disabled (data-state='cooldown') until it reaches zero and then re-enables; a retry that gets 429 again restarts the countdown from the new header; if Retry-After is missing or not a positive integer, show 'Wait a few minutes, then try again.' with the button enabled; 'Back to sign in' available.",
       "testHooks": [
         "[data-frame='02-enter-code']",
         "[data-panel='enter-code'][data-state='idle']",
@@ -179,7 +179,9 @@
         "[data-error='invalid-code']",
         "[data-panel='enter-code'][data-state='rate-limited'][data-http-status='429']",
         "[data-error='rate-limited']",
-        "[data-action='back-to-sign-in']"
+        "[data-action='back-to-sign-in']",
+        "[data-value='retry-after']",
+        "[data-action='verify-mfa'][data-state='cooldown']"
       ]
     },
     {
@@ -236,8 +238,8 @@
       "route": "/login/mfa",
       "flow": "mfa-stepup-mobile",
       "viewport": "mobile",
-      "summary": "Mobile (375px) recovery-code entry reached from frame 01's 'Recovery code' choice: one full-width text field (not OTP cells) with helper text, verifying, 401 RECOVERY_CODE_INVALID, 429 RATE_LIMITED, 401 NOT_ACTIVE (sign-in timed out) and a generic couldn't-check error. Same behavioural contract as mfa-management frame 07.",
-      "acceptanceNotes": "Offered only when recoveryAvailable === true. POST /mfa/verify { challengeId, recoveryCode }. Field: DS CodeField full-width, touch height >= the 48px space-12 token, type=text, autocomplete=one-time-code, autocapitalize=none, spellcheck=false, maxlength=64, default text keyboard (no numeric inputmode). Value sent as typed; no client format check; 'Verify' disabled only while trimmed value is empty. 401 RECOVERY_CODE_INVALID: inline error 'That recovery code didn't work. Check it for typos, or try another of your codes — each code works only once.' — one message for wrong/used/superseded, no time-based copy; stays on screen, value kept, retry allowed. 429 RATE_LIMITED: 'Too many attempts' warning callout, field not red, value kept, no countdown (no Retry-After declared), 'Try again' enabled. 401 NOT_ACTIVE: 'Your sign-in timed out', no field, 'Back to sign in' only. Network/5xx: 'We couldn't check your code' + retry; must not claim the code is unused. Actions stack full-width.",
+      "summary": "Mobile (375px) recovery-code entry reached from frame 01's 'Recovery code' choice: one full-width text field (not OTP cells) with helper text, verifying, 401 RECOVERY_CODE_INVALID, 429 RATE_LIMITED, 401 NOT_ACTIVE (sign-in expired) and a generic couldn't-check error. Same behavioural contract as mfa-management frame 07.",
+      "acceptanceNotes": "Offered only when recoveryAvailable === true. POST /mfa/verify { challengeId, recoveryCode }. Field: DS CodeField full-width, touch height >= the 48px space-12 token, type=text, autocomplete=one-time-code, autocapitalize=none, spellcheck=false, maxlength=64, default text keyboard (no numeric inputmode). Value sent as typed; no client format check; 'Verify' disabled only while trimmed value is empty. 401 RECOVERY_CODE_INVALID: inline error 'That recovery code didn't work. Check it for typos, or try another of your codes — each code works only once.' — one message for wrong/used/superseded, no time-based copy; stays on screen, value kept, retry allowed. 429 RATE_LIMITED: 'Too many attempts' warning callout, field not red, value kept, the wait comes from the 429 Retry-After header (integer seconds): render 'Try again in <m:ss>' as a live countdown in the callout (data-value='retry-after') and on the 'Try again' button, which is disabled (data-state='cooldown') until it reaches zero and then re-enables; a retry that gets 429 again restarts the countdown from the new header; if Retry-After is missing or not a positive integer, show 'Wait a few minutes, then try again.' with the button enabled. 401 NOT_ACTIVE: neutral callout 'Your sign-in expired' / 'Start again to sign in.', no field, 'Back to sign in' only; must NOT claim the code was or was not used (NOT_ACTIVE also covers an already-completed challenge whose success reply was lost). Network/5xx: 'We couldn't check your code' + retry; must not claim the code is unused. Actions stack full-width.",
       "testHooks": [
         "[data-frame='05-recovery-code']",
         "[data-panel='recovery-code'][data-state='idle']",
@@ -256,9 +258,11 @@
         "[data-error='recovery-generic']",
         "[data-action='restart-sign-in']",
         "[data-action='choose-factor']",
-        "[data-action='contact-support']"
+        "[data-action='contact-support']",
+        "[data-value='retry-after']",
+        "[data-action='verify-recovery'][data-state='cooldown']"
       ]
     }
   ],
-  "stamp": "02294fd17723449b97da2cc245d253ee65b4c4a0fa2d8482b5874ada5fe403c8"
+  "stamp": "fa186df3683d42e6191c734fb96e2949379061ee01ceaeea54bd31366638f575"
 }

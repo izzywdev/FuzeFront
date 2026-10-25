@@ -109,7 +109,7 @@
       <div class="step">Frame 05 · /login/mfa (from frame 01)</div>
       <h3>Use a recovery code</h3>
       <p>Full-width text field for an opaque recovery code (not OTP cells). Offered only when <code>recoveryAvailable</code> is true. Part of the step-up flow, same as frames 01–02.</p>
-      <div class="states"><span class="tag">entry</span><span class="tag">verifying</span><span class="tag err">code didn't work (401)</span><span class="tag err">too many attempts (429)</span><span class="tag err">sign-in timed out</span><span class="tag err">couldn't check</span></div>
+      <div class="states"><span class="tag">entry</span><span class="tag">verifying</span><span class="tag err">code didn't work (401)</span><span class="tag err">too many attempts (429)</span><span class="tag err">sign-in expired</span><span class="tag err">couldn't check</span></div>
     </a>
   </div>
 
@@ -164,12 +164,8 @@
   </div>
 
   <div class="inv" data-open-questions>
-    <h3>Recovery-code revision — open questions for the owner</h3>
+    <h3>Recovery-code revision — open question for the owner</h3>
     <dl>
-      <dt>Wait time on 429</dt>
-      <dd>Frames show <b>no countdown</b>: <code>POST /mfa/verify</code> 429 declares no <code>Retry-After</code> header
-        in contract 1.3.0. If a wait time should be shown, <code>contract-designer</code> adds the header first and these
-        frames are amended to add a timer. The UI must not guess one.</dd>
       <dt>After a recovery sign-in</dt>
       <dd>Not framed: a “you used a recovery code — N left” prompt after signing in. Assumed <b>not in scope</b>. The
         count is already visible under Security → Recovery codes.</dd>
