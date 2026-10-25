@@ -1,4 +1,4 @@
-"""Regression tests for the four Codex P2 findings on PR #1663.
+"""Regression tests for the Codex findings on PR #1663.
 
 Each asserts the observable behaviour the finding was about, so the fix is
 pinned and a reintroduction fails CI.
@@ -16,6 +16,8 @@ from fuzefront_telemetry import (
     StructuredLogger,
     TelemetryASGIMiddleware,
     TelemetryWSGIMiddleware,
+    redact,
+    with_trace_context,
 )
 
 
@@ -135,5 +137,83 @@ def test_wsgi_streaming_error_after_200_flags_span():
         # so trace-based error queries surface it.
         assert span.attributes["http.status_code"] == 200
         assert span.attributes["error"] is True
+    finally:
+        provider.shutdown()
+
+
+# --- Finding 5 (P1): redaction walks non-dict Mappings (Starlette Headers) ---
+
+def test_redaction_walks_starlette_headers_mapping():
+    pytest.importorskip("starlette")
+    from starlette.datastructures import Headers
+
+    headers = Headers(
+        {
+            "authorization": "Bearer SECRET_TOKEN_123",
+            "cookie": "session=SECRETCOOKIE",
+            "x-ok": "fine",
+        }
+    )
+    payload = {"req": {"headers": headers}}
+
+    # Direct redaction path.
+    rendered = json.dumps(redact(payload), default=str)
+    assert "SECRET_TOKEN_123" not in rendered
+    assert "SECRETCOOKIE" not in rendered
+    assert "fine" in rendered  # non-secret key survives
+
+    # The single shared path the logger uses (StructuredLogger._emit -> redact).
+    buf = io.StringIO()
+    StructuredLogger(level="info", stream=buf).info(payload, "req")
+    emitted = buf.getvalue()
+    assert "SECRET_TOKEN_123" not in emitted
+    assert "SECRETCOOKIE" not in emitted
+
+
+# --- Finding 6 (P2): parameterized mount -> template route, never the resolved value ---
+
+def test_asgi_parameterized_mount_route_is_template_not_resolved():
+    pytest.importorskip("starlette")
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Mount, Route
+    from starlette.testclient import TestClient
+
+    provider, exporter = _provider()
+    try:
+        async def user(request):
+            return PlainTextResponse("ok")
+
+        sub = Starlette(routes=[Route("/users/{id}", user)])
+        app = Starlette(routes=[Mount("/tenants/{tenant}", app=sub)])
+        app = TelemetryASGIMiddleware(
+            app, tracer_provider=provider, logger=StructuredLogger(stream=io.StringIO())
+        )
+        TestClient(app).get("/tenants/alpha/users/42")
+        (span,) = exporter.get_finished_spans()
+        # Template only — the resolved tenant ("alpha") must never reach the span.
+        assert span.attributes["http.route"] == "/users/{id}"
+        assert "alpha" not in span.name
+        assert "alpha" not in span.attributes["http.route"]
+    finally:
+        provider.shutdown()
+
+
+# --- Finding 7 (P3): request-free with_trace_context binds the active span ---
+
+def test_with_trace_context_without_request_binds_active_span():
+    provider, _exporter = _provider()
+    try:
+        tracer = provider.get_tracer("t")
+        buf = io.StringIO()
+        logger = StructuredLogger(stream=buf)
+        with tracer.start_as_current_span("op") as span:
+            log = with_trace_context(logger)  # no request argument
+            log.info("inside span")
+            trace_id = format(span.get_span_context().trace_id, "032x")
+            span_id = format(span.get_span_context().span_id, "016x")
+        line = json.loads(buf.getvalue().splitlines()[0])
+        assert line["trace_id"] == trace_id
+        assert line["span_id"] == span_id
     finally:
         provider.shutdown()

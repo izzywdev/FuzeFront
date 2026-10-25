@@ -78,9 +78,14 @@ def _asgi_route_template(scope: dict) -> str | None:
     path = getattr(route, "path", None)
     if not path:
         return None
-    root = scope.get("root_path", "") or ""
-    full = f"{root}{path}".replace("//", "/")
-    return full or "/"
+    # Use ONLY the matched route's own template. Do NOT prepend scope["root_path"]:
+    # for a parameterized Starlette Mount (``/tenants/{tenant}``) root_path is the
+    # RESOLVED prefix (``/tenants/alpha``), so concatenating it would put the
+    # request-supplied tenant value into the span name / http.route — unbounded
+    # per-tenant cardinality, the opposite of the template-only contract (P14).
+    # Starlette exposes only the resolved root_path, not the mount's registered
+    # template, so the bounded-safe choice is the inner template alone.
+    return str(path).replace("//", "/") or "/"
 
 
 class TelemetryASGIMiddleware:

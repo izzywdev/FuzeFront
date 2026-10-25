@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from functools import lru_cache
 from typing import Any
 
@@ -95,7 +96,13 @@ def redact(value: Any) -> Any:
 
 
 def _redact(value: Any, keys: frozenset[str]) -> Any:
-    if isinstance(value, dict):
+    # Any Mapping, not just dict — a Starlette ``Headers``, a ``MappingProxyType``,
+    # or any other framework mapping is walked and rebuilt as a plain dict, so a
+    # handler logging ``{"req": {"headers": request.headers}}`` has its
+    # authorization/cookie values redacted instead of reaching the log line via
+    # ``json.dumps(default=str)`` (which would serialize the mapping's repr
+    # verbatim, leaking exactly the values these paths exist to redact).
+    if isinstance(value, Mapping):
         out: dict[Any, Any] = {}
         for k, v in value.items():
             if isinstance(k, str) and k.lower() in keys:

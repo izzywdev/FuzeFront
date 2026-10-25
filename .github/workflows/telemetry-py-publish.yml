@@ -35,6 +35,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # full history so the ancestry guard's merge-base is correct
+
+      - name: Refuse to publish from an unreviewed ref
+        # The version/overwrite checks below only stop REPLACING an existing tag;
+        # nothing here stops an unreviewed ref (a workflow_dispatch from a feature
+        # branch, or a tag pushed straight at an un-merged commit) from minting the
+        # FIRST canonical tag + wheel and bypassing every PR gate — and every
+        # service installs and executes that wheel. So, before any build/publish or
+        # contents:write step: fail unless this commit is an ancestor of the
+        # default branch (i.e. it was merged through the PR gates). Default branch
+        # is resolved from the event payload, not hardcoded.
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BUILT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEFAULT_BRANCH:-}" ]; then
+            echo "::error::could not resolve the repository default branch from the event payload"; exit 1
+          fi
+          # Explicit refspec: actions/checkout configures a narrow fetch refspec,
+          # so name the destination remote-tracking ref ourselves rather than rely
+          # on it existing.
+          git fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          if ! git merge-base --is-ancestor "$BUILT_SHA" "origin/$DEFAULT_BRANCH"; then
+            echo "::error::refusing to publish: $BUILT_SHA is not an ancestor of origin/$DEFAULT_BRANCH -- only reviewed, merged default-branch commits may mint a canonical telemetry-py tag + wheel"
+            exit 1
+          fi
+          echo "ok: $BUILT_SHA is on origin/$DEFAULT_BRANCH"
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with: { python-version: '3.12' }

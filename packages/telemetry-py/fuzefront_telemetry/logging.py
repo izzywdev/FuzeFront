@@ -222,12 +222,15 @@ def with_trace_context(
 
     bindings: dict[str, Any] = {REQUEST_ID_FIELD: req_id}
 
-    if request is not None:
-        trace_id, span_id = _trace_context_from(request)
-        if trace_id:
-            bindings[TRACE_ID_FIELD] = trace_id
-            if span_id:
-                bindings[SPAN_ID_FIELD] = span_id
+    # Resolve trace ids even in the documented request-free form
+    # (``with_trace_context(logger)`` inside an active span): _trace_context_from
+    # handles request=None by falling straight through to the active span, so a
+    # background/worker log line inside a span still carries trace_id/span_id.
+    trace_id, span_id = _trace_context_from(request)
+    if trace_id:
+        bindings[TRACE_ID_FIELD] = trace_id
+        if span_id:
+            bindings[SPAN_ID_FIELD] = span_id
 
     return logger.bind(**bindings)
 
