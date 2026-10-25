@@ -227,11 +227,11 @@ describe('signup', () => {
     const db = makeFakeDb()
     const signupFn = jest.fn().mockImplementation(async (input: any) => {
       // Simulate the synced projection the OIDC callback would create.
-      await db('users').insert({ id: 'ak-1', email: input.email, first_name: input.firstName, roles: JSON.stringify(['user']) })
-      return { id: 'ak-1', email: input.email, firstName: input.firstName, roles: ['user'] }
+      await db('users').insert({ id: 'ak-1', email: input.email, first_name: input.name, roles: JSON.stringify(['user']) })
+      return { id: 'ak-1', email: input.email, firstName: input.name, roles: ['user'] }
     })
     const p = newProvider(db, { signupFn })
-    const s = await p.signup({ email: 'new@e.com', password: 'pw', firstName: 'N' })
+    const s = await p.signup({ email: 'new@e.com', password: 'pw', name: 'N' })
     expect(s.token).toBeTruthy()
     expect(s.user.id).toBe('ak-1')
     expect(signupFn).toHaveBeenCalledWith(expect.objectContaining({ email: 'new@e.com', password: 'pw' }))
