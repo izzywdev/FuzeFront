@@ -61,6 +61,7 @@ export function useLoginStepUp(
       <Flow
         challenge={challenge}
         locale={locale}
+        hosted
         onAuthenticated={onSession}
         onContactSupport={() => window.location.assign(SUPPORT_MAILTO)}
         onBack={() => setChallenge(null)}

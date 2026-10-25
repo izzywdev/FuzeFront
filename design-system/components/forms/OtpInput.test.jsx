@@ -13,6 +13,17 @@ describe("<OtpInput>", () => {
     expect(screen.getByLabelText("digit 1")).toHaveAttribute("autocomplete", "one-time-code");
   });
 
+  it("md cells shrink with the container (min-width 0) so the row never clips in a narrow card; touch cells keep the tap target", () => {
+    const { unmount } = render(<OtpInput />);
+    const md = screen.getByLabelText("digit 1");
+    expect(md.style.minWidth).toMatch(/^0(px)?$/);
+    expect(md.style.flex).toContain("1 1");
+    expect(screen.getByRole("group").style.maxWidth).toBe("100%");
+    unmount();
+    render(<OtpInput size="touch" />);
+    expect(screen.getByLabelText("digit 1").style.minWidth).toBe("var(--touch-target)");
+  });
+
   it("auto-advances while typing and fires onComplete with the full code", async () => {
     const user = userEvent.setup();
     const onComplete = vi.fn();

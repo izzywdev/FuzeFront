@@ -325,6 +325,19 @@ describe('MfaStepUpMobileFlow (frames 01-02, 375px)', () => {
     await act(async () => { release() })
   })
 
+  it('hosted: drops its own card chrome on the desktop variant (no nested card), standalone keeps it', async () => {
+    const mk = (hosted: boolean) => (
+      <MfaStepUpFlow client={asClient(makeClient())} challenge={{ challengeId: 'c', factors: [TOTP] }} onAuthenticated={vi.fn()} hosted={hosted} />
+    )
+    const { unmount } = render(mk(true))
+    await waitFor(() => expect(q('[data-component="mfa-challenge"]')).toBeTruthy())
+    expect((q('[data-component="mfa-challenge"]') as HTMLElement).style.overflow).not.toBe('hidden')
+    unmount()
+    render(mk(false))
+    await waitFor(() => expect(q('[data-component="mfa-challenge"]')).toBeTruthy())
+    expect((q('[data-component="mfa-challenge"]') as HTMLElement).style.overflow).toBe('hidden')
+  })
+
   it('delivery failure offers resend and other methods', async () => {
     const user = userEvent.setup()
     const client = makeClient({ challengeMfa: vi.fn(async () => { throw err(503) }) })

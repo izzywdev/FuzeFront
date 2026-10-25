@@ -139,6 +139,18 @@ describe('LoginPage — MFA step-up', () => {
     vi.unstubAllGlobals()
   })
 
+  it('flag OFF + compact viewport: the desktop step-up is HOSTED flush inside the login card (no nested card chrome)', async () => {
+    setCompact(true)
+    setFlags(undefined)
+    render(<LoginPage />)
+    await waitFor(() => expect(document.querySelector('[data-component="mfa-challenge"]')).toBeTruthy())
+    expect(document.querySelector('[data-frame="05-step-up-challenge"]')).toBeTruthy()
+    const card = document.querySelector('[data-component="mfa-challenge"]') as HTMLElement
+    // A non-flush SeamCard is `overflow: hidden` with padding + border; flush has none.
+    expect(card.style.overflow).not.toBe('hidden')
+    expect(card.style.padding).toBe('')
+  })
+
   it('mfa-management ON: the desktop step-up renders for the challenge', async () => {
     setFlags({ [MGMT]: true })
     render(<LoginPage />)

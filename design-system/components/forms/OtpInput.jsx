@@ -18,7 +18,10 @@ export function isOtpComplete(value, length = 6) {
  * Controlled (`value` + `onChange`) or uncontrolled. `onComplete` fires once
  * every cell is filled. `error` borders the cells red and sets `aria-invalid`.
  * `size="touch"` gives each cell a >= 44px tap target for mobile / TWA use.
- * Tokens only.
+ * Cells are container-relative: below their nominal width they SHRINK (flex) to
+ * keep the whole row inside the host's content box instead of clipping the last
+ * cell when the group is nested in a narrow card. `touch` cells never shrink below
+ * the touch target. Tokens only.
  */
 export function OtpInput({
   length = 6,
@@ -125,7 +128,11 @@ export function OtpInput({
   const cellStyle = {
     boxSizing: "border-box",
     width: touch ? "var(--touch-target)" : "var(--space-10)",
-    minWidth: touch ? "var(--touch-target)" : undefined,
+    // md cells shrink with the container (min-width:0 overrides the input's intrinsic
+    // minimum); touch cells keep their tap target.
+    flex: touch ? undefined : "1 1 auto",
+    minWidth: touch ? "var(--touch-target)" : 0,
+    maxWidth: touch ? undefined : "var(--space-10)",
     height: touch ? "calc(var(--touch-target) + var(--space-2))" : "var(--space-12)",
     textAlign: "center",
     fontFamily: "var(--font-mono)",
@@ -150,7 +157,7 @@ export function OtpInput({
       aria-label={ariaLabel}
       dir="ltr"
       data-component="otp-input"
-      style={{ display: "flex", gap: touch ? "var(--space-2)" : "var(--space-3)", ...style }}
+      style={{ display: "flex", maxWidth: "100%", gap: touch ? "var(--space-2)" : "var(--space-3)", ...style }}
       {...rest}
     >
       {Array.from({ length }, (_, i) => (

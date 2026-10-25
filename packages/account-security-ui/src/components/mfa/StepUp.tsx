@@ -37,6 +37,11 @@ export interface MfaStepUpProps extends FlowBaseProps {
   /** Offer the "Recovery code" option. DEFAULT OFF — the Security contract has no recovery-code step-up yet. */
   recoveryEnabled?: boolean
   onBack?: () => void
+  /**
+   * The host already renders this inside a card (e.g. the login AuthCard): drop our own
+   * card chrome on EVERY variant so the nested padding/border can't squeeze the OTP row.
+   */
+  hosted?: boolean
 }
 
 function formatClock(totalSeconds: number): string {
@@ -171,6 +176,7 @@ export function MfaChallengeCard({
   onResend,
   onChooseFactor,
   expiresAt,
+  hosted = false,
   variant = 'desktop',
 }: {
   factor: Choice
@@ -182,6 +188,8 @@ export function MfaChallengeCard({
   onChooseFactor?: () => void
   /** Fixed challenge deadline (epoch ms). Defaults to now + the expiry window, captured once. */
   expiresAt?: number
+  /** Rendered inside a host card: no card chrome of our own. */
+  hosted?: boolean
   variant?: Variant
 }) {
   const { messages: m } = useAccountSecurityI18n()
@@ -206,7 +214,7 @@ export function MfaChallengeCard({
 
   if (status === 'error-delivery') {
     return (
-      <SeamCard flush={mobile} {...frameAttrs}>
+      <SeamCard flush={mobile || hosted} {...frameAttrs}>
         <h2 style={{ margin: '0 0 var(--space-2)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
           {m.stepUp.deliveryTitle}
         </h2>
@@ -239,7 +247,7 @@ export function MfaChallengeCard({
             : m.stepUp.totpPrompt
 
   return (
-    <SeamCard flush={mobile} {...frameAttrs}>
+    <SeamCard flush={mobile || hosted} {...frameAttrs}>
       <h2 style={{ margin: '0 0 var(--space-2)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
         {m.stepUp.codeTitle}
       </h2>
@@ -355,6 +363,7 @@ function StepUpInner({
   onContactSupport,
   recoveryEnabled = false,
   onBack,
+  hosted = false,
   client,
   getToken,
   variant = 'desktop',
@@ -502,6 +511,7 @@ function StepUpInner({
         onResend={() => void choose(step.factor)}
         onChooseFactor={() => setStep({ name: 'choose' })}
         expiresAt={expiresAt.current}
+        hosted={hosted}
       />
     )
   } else if (factorsState.status === 'loading') {
@@ -574,7 +584,7 @@ function StepUpInner({
         {picker}
       </div>
     ) : (
-      <SeamCard data-component="mfa-challenge" data-state="choose-factor">
+      <SeamCard flush={hosted} data-component="mfa-challenge" data-state="choose-factor">
         <h2 style={{ margin: '0 0 var(--space-2)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
           {m.stepUp.chooseTitle}
         </h2>

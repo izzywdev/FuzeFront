@@ -78,7 +78,7 @@ async function signInToChallenge(
 }
 
 /** Every OTP cell must be fully inside the viewport AND inside the OTP group (no clipping / overflow). */
-async function expectOtpCellsUnclipped(page: Page) {
+async function expectOtpCellsUnclipped(page: Page, minCell = 44) {
   const group = page.locator("[data-component='otp-input']")
   const g = await group.boundingBox()
   const vw = page.viewportSize()?.width ?? 375
@@ -90,7 +90,7 @@ async function expectOtpCellsUnclipped(page: Page) {
     expect(b!.x, `cell ${i + 1} left edge`).toBeGreaterThanOrEqual(0)
     expect(b!.x + b!.width, `cell ${i + 1} right edge inside viewport`).toBeLessThanOrEqual(vw)
     expect(b!.x + b!.width, `cell ${i + 1} right edge inside its container`).toBeLessThanOrEqual(g!.x + g!.width + 0.5)
-    expect(b!.width, `cell ${i + 1} stays a >=44px tap target`).toBeGreaterThanOrEqual(44)
+    expect(b!.width, `cell ${i + 1} stays a >=${minCell}px tap target`).toBeGreaterThanOrEqual(minCell)
   }
   const overflow = await group.evaluate(el => el.scrollWidth > el.clientWidth)
   expect(overflow).toBe(false)
@@ -102,6 +102,9 @@ test.describe('Step-up, choose a factor (frame 01-choose-factor)', () => {
     await expect(page.locator("[data-component='mfa-challenge']")).toBeVisible()
     await expect(page.locator("[data-panel='choose-factor']")).toHaveCount(0)
     await expect(page.locator("[data-component='otp-input'] input")).toHaveCount(6)
+    // Flag OFF renders the DESKTOP cells (nominal 40px) inside the 400px login card at 375px:
+    // the hosted step-up is flush and the cells shrink to fit — no clipped last cell.
+    await expectOtpCellsUnclipped(page, 32)
   })
 
   test('loaded: only the enrolled factors the server lists (email / sms only when offered)', async ({ page }) => {
