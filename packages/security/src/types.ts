@@ -24,7 +24,7 @@
  */
 import type { components } from './generated';
 
-export const SECURITY_CONTRACT_VERSION = '0.12.0' as const;
+export const SECURITY_CONTRACT_VERSION = '1.0.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -87,6 +87,26 @@ export type SocialProvider = 'google';
 /** Neutral MFA factor type. `webauthn` reserved for later. */
 export type MfaFactorType = 'totp' | 'sms' | 'email' | 'webauthn';
 
+/** Captcha capability for pre-auth forms (mirrors API `AuthMethods.captcha`). */
+export interface CaptchaMethod {
+  /** `turnstile` = Cloudflare Turnstile. Deliberate approved vendor-name exception (browser widget). */
+  provider: 'turnstile';
+  /** Public site key for the captcha widget (safe to expose to the browser). */
+  siteKey: string;
+}
+
+/**
+ * Authoritative password policy (mirrors API `AuthMethods.passwordPolicy`) so
+ * the client renders the real strength-meter rules rather than a hard-coded copy.
+ */
+export interface PasswordPolicy {
+  minLength: number;
+  requireUpper: boolean;
+  requireLower: boolean;
+  requireDigit: boolean;
+  requireSymbol: boolean;
+}
+
 /** Neutral auth capability descriptor (replaces `oidcConfigured`). */
 export interface AuthMethods {
   password: boolean;
@@ -99,6 +119,10 @@ export interface AuthMethods {
     email: boolean;
     sms: boolean;
   };
+  /** Present only when captcha is enabled; absent when disabled. */
+  captcha?: CaptchaMethod;
+  /** Authoritative password policy for client-side strength rendering. */
+  passwordPolicy?: PasswordPolicy;
 }
 
 /**

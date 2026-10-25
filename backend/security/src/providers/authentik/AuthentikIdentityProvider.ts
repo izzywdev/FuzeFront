@@ -380,8 +380,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
         const user = await defaultSignup({
           email: input.email,
           password: input.password,
-          firstName: input.firstName,
-          lastName: input.lastName,
+          name: input.name,
         })
         return { ...user, roles: user.roles ?? [] } as BrokeredUser
       })
@@ -403,7 +402,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       (async (identity, provider) => {
         // Provision/link IN the identity store so the IdP stays system-of-record
         // and password+Google de-dupe to ONE account by email.
-        const pk = await findOrCreateUserPk(identity.email, identity.firstName, identity.lastName)
+        const pk = await findOrCreateUserPk(
+          identity.email,
+          // Prefer the IdP's own single display name; only if it sent none fall
+          // back to joining the parts it did send (Google always sends `name`).
+          identity.name ?? ([identity.firstName, identity.lastName].filter(Boolean).join(' ') || undefined)
+        )
         await ensureOAuthConnection(pk, provider, identity.sub)
       })
   }
