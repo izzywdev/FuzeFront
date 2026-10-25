@@ -110,6 +110,20 @@ describe('FlowInspector', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Do not confirm this flow')
   })
 
+  it('blocks reviewer trust when a legacy flow has no wireframe', () => {
+    render(
+      <FlowInspector
+        open
+        flow={{ ...flow, wireframe: { kind: 'sequence', nodes: [] } }}
+        artifacts={[artifact]}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('No reviewable wireframe is stored')
+    expect(screen.getByRole('alert')).toHaveTextContent('Do not confirm it')
+  })
+
   it('blocks reviewer trust when LiteLLM evidence is unavailable even if targets still resolve', () => {
     render(
       <FlowInspector

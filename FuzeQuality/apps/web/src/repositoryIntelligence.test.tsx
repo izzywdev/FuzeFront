@@ -1570,6 +1570,27 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
   })
 
+  it('blocks confirmation for a legacy flow without a wireframe while keeping rejection available', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const invalid = {
+      ...candidate,
+      wireframe: { kind: 'sequence' as const, nodes: [] },
+    }
+
+    render(
+      <FlowReviewControls
+        flow={invalid}
+        currentRevision={candidate.revision}
+        knownArtifactIds={candidate.evidence}
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('no reviewable wireframe')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
   it('blocks confirmation for unavailable LiteLLM evidence while keeping rejection available', () => {
     const onReview = vi.fn().mockResolvedValue(undefined)
     const invalid = {

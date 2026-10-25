@@ -53,7 +53,7 @@ import { decodePerformanceCursor, performancePage } from './execution-performanc
 import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateArtifactReferenceError, candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
-import { repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
+import { repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateArtifactReferenceConflict, policyGateArtifactReferenceError, policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
@@ -682,6 +682,8 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
   if (conflict) return response.status(409).json(conflict)
   const groundingConflict = repositoryFlowGroundingRationaleConflict(existingCandidate, parsed.data.status, parsed.data.reason)
   if (groundingConflict) return response.status(422).json(groundingConflict)
+  const wireframeConflict = repositoryFlowWireframeConflict(existingCandidate, parsed.data.status)
+  if (wireframeConflict) return response.status(422).json(wireframeConflict)
   const artifactConflict = repositoryFlowArtifactReferenceConflict(
     existingCandidate,
     parsed.data.status === 'confirmed'

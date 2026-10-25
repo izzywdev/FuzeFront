@@ -472,8 +472,8 @@ paths:
         '422':
           description: >-
             Confirmation requires reviewer rationale for LiteLLM grounding gaps and
-            every LiteLLM evidence, step, or wireframe artifact reference must resolve
-            in the candidate's exact repository revision.
+            a reviewable wireframe; every LiteLLM evidence, step, or wireframe artifact
+            reference must resolve in the candidate's exact repository revision.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -1738,6 +1738,7 @@ components:
         kind: { type: string, enum: [sequence] }
         nodes:
           type: array
+          minItems: 1
           items:
             type: object
             required: [label, targetIds]
@@ -1761,6 +1762,7 @@ components:
           items: { type: string }
         steps:
           type: array
+          minItems: 1
           items: { $ref: '#/components/schemas/FlowStep' }
         wireframe: { $ref: '#/components/schemas/FlowWireframe' }
         status: { type: string, enum: [proposed, confirmed, rejected] }

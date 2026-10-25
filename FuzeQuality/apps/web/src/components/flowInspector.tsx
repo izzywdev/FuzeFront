@@ -122,6 +122,11 @@ export function FlowInspector({
                 </li>
               ))}
             </ol>
+            {flow.wireframe.nodes.length === 0 && (
+              <div className="flow-inspector-state form-error" role="alert">
+                <AlertTriangle size={16} /> No reviewable wireframe is stored for this flow. Do not confirm it until repository analysis is regenerated.
+              </div>
+            )}
             {evidenceError && (
               <div className="flow-inspector-state form-error" role="alert">
                 <AlertTriangle size={16} /> Exact revision evidence could not be loaded: {evidenceError}

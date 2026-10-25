@@ -472,6 +472,9 @@ describe('contract discovery', () => {
       ).toContain('grounding gaps')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
+      ).toContain('reviewable wireframe')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
       ).toContain('exact repository revision')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
@@ -514,6 +517,8 @@ describe('contract discovery', () => {
         required: ['items', 'page'],
       })
       expect(schemas.RepositoryFlowCandidatePage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
+      expect(schemas.RepositoryFlowCandidate.properties.steps.minItems).toBe(1)
+      expect(schemas.FlowWireframe.properties.nodes.minItems).toBe(1)
       expect(schemas.PolicyGateEvaluationPage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
       expect(schemas.HistoryCursorPage.required).toEqual(['nextCursor', 'hasMore'])
       expect(schemas.HistoryCursorPage.properties.nextCursor.nullable).toBe(true)

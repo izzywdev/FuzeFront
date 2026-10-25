@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
+import { repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
 
 const repository = {
   id: 'repo-1',
@@ -117,6 +117,22 @@ describe('repository UX-flow review revision guard', () => {
     })
     expect(repositoryFlowGroundingRationaleConflict(incomplete, 'rejected')).toBeUndefined()
     expect(repositoryFlowGroundingRationaleConflict(candidate, 'confirmed')).toBeUndefined()
+  })
+
+  it('blocks confirmation when a legacy candidate has no reviewable wireframe', () => {
+    const withoutWireframe = {
+      ...candidate,
+      wireframe: { kind: 'sequence' as const, nodes: [] },
+    }
+
+    expect(repositoryFlowWireframeConflict(withoutWireframe, 'confirmed')).toEqual({
+      error: 'This UX-flow candidate has no reviewable wireframe. Regenerate the repository analysis before confirming it.',
+      code: 'FLOW_WIREFRAME_REQUIRED',
+      candidateId: candidate.id,
+      revision: candidate.revision,
+    })
+    expect(repositoryFlowWireframeConflict(withoutWireframe, 'rejected')).toBeUndefined()
+    expect(repositoryFlowWireframeConflict(candidate, 'confirmed')).toBeUndefined()
   })
 
   it('blocks confirmation when an exact-revision target is unavailable but preserves rejection', () => {

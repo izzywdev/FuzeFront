@@ -57,6 +57,20 @@ export function repositoryFlowGroundingRationaleConflict(
   } as const
 }
 
+export function repositoryFlowWireframeConflict(
+  candidate: RepositoryFlowCandidate,
+  status: 'confirmed' | 'rejected',
+) {
+  if (status !== 'confirmed' || candidate.wireframe.nodes.length > 0) return undefined
+
+  return {
+    error: 'This UX-flow candidate has no reviewable wireframe. Regenerate the repository analysis before confirming it.',
+    code: 'FLOW_WIREFRAME_REQUIRED',
+    candidateId: candidate.id,
+    revision: candidate.revision,
+  } as const
+}
+
 export function repositoryFlowArtifactReferenceConflict(
   candidate: RepositoryFlowCandidate,
   artifacts: QualityArtifact[],
