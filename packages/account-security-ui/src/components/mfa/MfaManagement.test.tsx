@@ -240,6 +240,47 @@ describe('TotpEnrollFlow', () => {
     })
   })
 
+  describe('after an AMBIGUOUS activation outcome, abandon reconciles with the server listing', () => {
+    async function ambiguousThenUnmount(listFactors: ReturnType<typeof vi.fn>) {
+      const user = userEvent.setup()
+      const client = makeClient({
+        activateFactor: vi.fn(async () => { throw err(503) }),
+        listFactors,
+      })
+      const view = render(<TotpEnrollFlow client={asClient(client)} />)
+      await start(user)
+      await user.click(document.querySelector('[data-component="otp-input"] input')!)
+      await user.keyboard('492017')
+      await user.click(q('[data-action="activate-factor"]')!)
+      await waitFor(() => expect(q('[data-state="error"]')).toBeTruthy())
+      view.unmount()
+      return client
+    }
+
+    it('server says the factor is active → no DELETE', async () => {
+      const listFactors = vi.fn(async () => [{ ...totp, factorId: 'fct_new', status: 'active' }])
+      const client = await ambiguousThenUnmount(listFactors)
+      await waitFor(() => expect(listFactors).toHaveBeenCalled())
+      await act(async () => { await Promise.resolve() })
+      expect(client.removeFactor).not.toHaveBeenCalled()
+    })
+
+    it('server says the factor is still pending → DELETE exactly once', async () => {
+      const listFactors = vi.fn(async () => [{ ...totp, factorId: 'fct_new', status: 'pending' }])
+      const client = await ambiguousThenUnmount(listFactors)
+      await waitFor(() => expect(client.removeFactor).toHaveBeenCalledTimes(1))
+      expect(client.removeFactor).toHaveBeenCalledWith('fct_new')
+    })
+
+    it('the listing itself fails → no DELETE (left inert)', async () => {
+      const listFactors = vi.fn(async () => { throw err(500) })
+      const client = await ambiguousThenUnmount(listFactors)
+      await waitFor(() => expect(listFactors).toHaveBeenCalled())
+      await act(async () => { await Promise.resolve() })
+      expect(client.removeFactor).not.toHaveBeenCalled()
+    })
+  })
+
   it('an ACTIVATED factor is never deleted on unmount', async () => {
     const user = userEvent.setup()
     const client = makeClient()

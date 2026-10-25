@@ -19,10 +19,18 @@ import { isInvalidCode } from '../../api/errors'
  * for the activation to settle, then: success → keep (clear); a definitive code
  * rejection (400/401/403/422) → delete; an ambiguous failure (5xx / 429 / network —
  * the server may have committed) → leave it, never risk deleting a live method.
+ *
+ * INVARIANT: discard never DELETEs a factor whose server status it has not
+ * confirmed. After an ambiguous activation outcome (5xx / 429 / network) the factor
+ * is `indeterminate`: the server may have activated it, and the backend can delete
+ * an active factor when another active one exists. Discard then reconciles via the
+ * factor listing and deletes only if the server still reports it `pending`; an
+ * active factor is kept, and a failed listing leaves it inert (no delete).
  */
-export function usePendingFactor(api: Pick<MfaClient, 'removeFactor'>) {
+export function usePendingFactor(api: Pick<MfaClient, 'removeFactor' | 'listFactors'>) {
   const pending = useRef<string | null>(null)
   const activation = useRef<Promise<unknown> | null>(null)
+  const indeterminate = useRef(false)
   const apiRef = useRef(api)
   apiRef.current = api
 
@@ -31,12 +39,21 @@ export function usePendingFactor(api: Pick<MfaClient, 'removeFactor'>) {
     pending.current = null
     if (!id) return
     const inFlight = activation.current
+    // Delete only what the server confirms is still pending.
+    const reconcile = async () => {
+      const factors = await apiRef.current.listFactors() // a failure rejects → no delete
+      if (factors.find((f) => f.factorId === id)?.status === 'pending') {
+        await apiRef.current.removeFactor(id)
+      }
+    }
     const removal = inFlight
       ? inFlight.then(
           () => undefined, // activated: a real method now — never delete
-          (err) => (isInvalidCode(err) ? apiRef.current.removeFactor(id) : undefined)
+          (err) => (isInvalidCode(err) ? apiRef.current.removeFactor(id) : reconcile())
         )
-      : Promise.resolve().then(() => apiRef.current.removeFactor(id))
+      : indeterminate.current
+        ? Promise.resolve().then(reconcile)
+        : Promise.resolve().then(() => apiRef.current.removeFactor(id))
     void removal
       .catch(() => {
         /* best-effort cleanup */
@@ -49,6 +66,7 @@ export function usePendingFactor(api: Pick<MfaClient, 'removeFactor'>) {
     /** Remember the pending factor so abandoning the flow removes it. */
     track: (factorId: string) => {
       pending.current = factorId
+      indeterminate.current = false
     },
     /** The factor was activated: it is a real method now, never discard it. */
     clear: () => {
@@ -59,9 +77,16 @@ export function usePendingFactor(api: Pick<MfaClient, 'removeFactor'>) {
      * waits for it instead of racing a DELETE against it. Returns the promise.
      */
     activating: <T,>(request: Promise<T>): Promise<T> => {
-      const tracked = request.finally(() => {
-        if (activation.current === tracked) activation.current = null
-      })
+      indeterminate.current = false
+      const tracked = request
+        .catch((err: unknown) => {
+          // Not a definitive rejection → the server may have activated it.
+          if (!isInvalidCode(err)) indeterminate.current = true
+          throw err
+        })
+        .finally(() => {
+          if (activation.current === tracked) activation.current = null
+        })
       activation.current = tracked
       return tracked
     },
