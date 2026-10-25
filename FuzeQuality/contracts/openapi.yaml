@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.3
+  version: 0.84.4
   license:
     name: UNLICENSED
 servers:
@@ -639,7 +639,8 @@ paths:
       summary: Persist policy/gate evaluations produced by an analysis worker
       description: >-
         Persists tenant-owned findings only after every policy, gate, and quoted
-        source path resolves in the exact repository analysis revision.
+        source path resolves in the exact repository analysis revision and each
+        decisive passage signal matches the referenced policy or gate kind.
       tags: [worker-intelligence]
       security: [{ serviceToken: [] }]
       requestBody:
@@ -787,7 +788,8 @@ paths:
         '422':
           description: >-
             Accepting an anomaly remediation requires reviewer rationale and every
-            policy, gate, and quoted source path must resolve in the finding's exact
+            policy, gate, quoted source path, and decisive passage signal must resolve
+            consistently in the finding's exact
             repository revision.
           content:
             application/json:

@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { PolicyGateEvaluation, QualityArtifact } from '@fuzequality/contracts'
-import { PolicyGateEvidence } from './governanceEvidence'
+import { PolicyGateEvidence, policyGateArtifactReferenceProblems } from './governanceEvidence'
 
 const evaluation: PolicyGateEvaluation = {
   id: 'evaluation-1',
@@ -142,5 +142,12 @@ describe('PolicyGateEvidence', () => {
 
     expect(view.container.querySelector('.governance-passages')).toBeNull()
     expect(view.container).not.toHaveTextContent('policy evidence discovered during repository analysis')
+  })
+
+  it('rejects a decisive passage whose signal does not match its artifact kind', () => {
+    expect(policyGateArtifactReferenceProblems({
+      ...evaluation,
+      evidencePassages: [{ ...evaluation.evidencePassages![0], signal: 'gate' }],
+    }, artifacts)).toEqual(['policy-auth'])
   })
 })

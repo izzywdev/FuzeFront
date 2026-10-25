@@ -413,6 +413,9 @@ describe('contract discovery', () => {
         document.paths['/api/v1/internal/policy-gate-evaluations'].post.description
       ).toContain('exact repository analysis revision')
       expect(
+        document.paths['/api/v1/internal/policy-gate-evaluations'].post.description
+      ).toContain('passage signal')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
@@ -500,6 +503,9 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['422'].description
       ).toContain('exact repository revision')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['422'].description
+      ).toContain('passage signal')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.requestBody.content[
           'application/json'

@@ -3317,11 +3317,13 @@ export function PolicyGateReviewControls({
   evaluation,
   currentRevision,
   evidenceArtifacts,
+  evidenceVerification,
   onReview,
 }: {
   evaluation: PolicyGateEvaluation
   currentRevision?: string
   evidenceArtifacts?: QualityArtifact[]
+  evidenceVerification?: 'loading' | 'ready' | 'unavailable'
   onReview: (
     evaluation: PolicyGateEvaluation,
     status: 'accepted' | 'dismissed',
@@ -3339,9 +3341,10 @@ export function PolicyGateReviewControls({
   const requiresAcceptanceRationale = evaluation.kind !== 'guarded-policy'
   const acceptanceRationaleMissing =
     requiresAcceptanceRationale && reason.trim().length < 3
-  const unavailableEvidenceIds = evidenceArtifacts
+  const unavailableEvidenceIds = evidenceVerification !== 'loading' && evidenceVerification !== 'unavailable' && evidenceArtifacts
     ? policyGateArtifactReferenceProblems(evaluation, evidenceArtifacts)
     : []
+  const evidenceVerificationBlocked = evidenceVerification === 'loading' || evidenceVerification === 'unavailable'
 
   useEffect(() => {
     setStale(false)
@@ -3401,6 +3404,16 @@ export function PolicyGateReviewControls({
               Accepting this anomaly creates reviewed remediation evidence and requires a rationale. Dismissal remains available.
             </p>
           )}
+          {evidenceVerification === 'loading' && (
+            <p className="flow-review-guidance" role="status">
+              Verifying policy and gate evidence for this exact repository revision before acceptance.
+            </p>
+          )}
+          {evidenceVerification === 'unavailable' && (
+            <p className="form-error" role="alert">
+              Acceptance is blocked because exact-revision policy and gate evidence could not be verified. Dismiss this recommendation or retry after repository evidence is available.
+            </p>
+          )}
           {unavailableEvidenceIds.length > 0 && (
             <p className="form-error" role="alert">
               Acceptance is blocked because {unavailableEvidenceIds.length} policy/gate evidence reference {unavailableEvidenceIds.length === 1 ? 'is' : 'are'} unavailable or mismatched in this exact repository revision. Dismiss this recommendation or regenerate repository analysis.
@@ -3409,7 +3422,7 @@ export function PolicyGateReviewControls({
           <div className="row-actions">
             <QualityAction
               intent="secondary"
-              disabled={busy || !isReviewable || acceptanceRationaleMissing || unavailableEvidenceIds.length > 0}
+              disabled={busy || !isReviewable || acceptanceRationaleMissing || evidenceVerificationBlocked || unavailableEvidenceIds.length > 0}
               onClick={() => void submit('accepted')}
             >
               <Check size={14} /> Accept recommendation
@@ -3709,6 +3722,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [repositoryFlowFailures, setRepositoryFlowFailures] = useState<string[]>([])
   const [governanceEvidenceFailures, setGovernanceEvidenceFailures] = useState<string[]>([])
   const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
+  const [governanceEvidenceLoading, setGovernanceEvidenceLoading] = useState(false)
   const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
   const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [flowEvidenceFailures, setFlowEvidenceFailures] = useState(0)
@@ -4385,8 +4399,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     if (!batches.length) {
       setGovernanceEvidenceArtifacts([])
       setGovernanceEvidenceFailures([])
+      setGovernanceEvidenceLoading(false)
       return () => { active = false }
     }
+    setGovernanceEvidenceLoading(true)
     void Promise.allSettled(
       batches.map(batch => api.qualityArtifactsByIds(batch.repositoryId, batch.artifactIds, batch.revision))
     ).then(results => {
@@ -4397,6 +4413,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setGovernanceEvidenceFailures([...new Set(results.flatMap((result, index) =>
         result.status === 'rejected' ? [batches[index].repositoryId] : []
       ))])
+      setGovernanceEvidenceLoading(false)
     })
     return () => { active = false }
   }, [data.repositories, policyGateEvaluations, policyGateRevisionScope])
@@ -5192,6 +5209,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           <PolicyGateReviewControls
             evaluation={inspectedPolicyGate}
             evidenceArtifacts={policyGateInspectorArtifacts}
+            evidenceVerification={policyGateInspectorLoading
+              ? 'loading'
+              : policyGateInspectorEvidenceError
+                ? 'unavailable'
+                : 'ready'}
             currentRevision={data.repositories.find(
               repository => repository.id === inspectedPolicyGate.repositoryId
             )?.lastScanRevision}
@@ -5788,6 +5810,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               />
                               <PolicyGateReviewControls
                                 evaluation={evaluation}
+                                evidenceArtifacts={evidenceArtifacts.filter(artifact =>
+                                  artifact.repositoryId === evaluation.repositoryId &&
+                                  (!artifact.revision || artifact.revision === evaluation.revision)
+                                )}
+                                evidenceVerification={governanceEvidenceLoading
+                                  ? 'loading'
+                                  : governanceEvidenceFailures.includes(evaluation.repositoryId)
+                                    ? 'unavailable'
+                                    : 'ready'}
                                 currentRevision={
                                   data.repositories.find(
                                     repository =>

@@ -253,8 +253,16 @@ const integrationExecution: TestExecution = {
 
 function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifacts').mockResolvedValue([])
-  vi.spyOn(api, 'qualityArtifactsByIds').mockResolvedValue({ items: [] })
-  vi.spyOn(api, 'qualityArtifactsByIdsBatched').mockResolvedValue({ items: [] })
+  vi.spyOn(api, 'qualityArtifactsByIds').mockImplementation(async (_repositoryId, ids) => ({
+    items: [policyArtifact, gateArtifact].filter(artifact =>
+      ids.includes(artifact.id) || Boolean(artifact.logicalId && ids.includes(artifact.logicalId))
+    ),
+  }))
+  vi.spyOn(api, 'qualityArtifactsByIdsBatched').mockImplementation(async (_repositoryId, ids) => ({
+    items: [policyArtifact, gateArtifact].filter(artifact =>
+      ids.includes(artifact.id) || Boolean(artifact.logicalId && ids.includes(artifact.logicalId))
+    ),
+  }))
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
   vi.spyOn(api, 'testExecution').mockResolvedValue(loadExecution)
@@ -3888,6 +3896,26 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
   })
 
+  it('blocks governance acceptance while exact-revision evidence verification is unavailable', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    render(
+      <PolicyGateReviewControls
+        evaluation={governanceEvaluation}
+        currentRevision={repository.lastScanRevision}
+        evidenceArtifacts={[]}
+        evidenceVerification="unavailable"
+        onReview={onReview}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
+      target: { value: 'Verified remediation ownership.' },
+    })
+    expect(screen.getByRole('alert')).toHaveTextContent('could not be verified')
+    expect(screen.getByRole('button', { name: 'Accept recommendation' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+  })
+
   it('removes a reviewed governance finding that no longer matches the active filter', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([
@@ -3915,9 +3943,11 @@ describe('RepositoryIntelligence flow inventory', () => {
     fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
       target: { value: 'Confirmed the proposed remediation and audit scope.' },
     })
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Accept recommendation' })
-    )
+    const acceptRecommendation = screen.getByRole('button', {
+      name: 'Accept recommendation',
+    })
+    await waitFor(() => expect(acceptRecommendation).toBeEnabled())
+    fireEvent.click(acceptRecommendation)
 
     await waitFor(() =>
       expect(screen.queryByText(governanceEvaluation.title)).not.toBeInTheDocument()

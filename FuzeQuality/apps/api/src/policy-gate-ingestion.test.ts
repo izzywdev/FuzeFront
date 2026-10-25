@@ -33,6 +33,10 @@ describe('policy gate evaluation ingestion', () => {
       evidencePassages: [{ ...evaluation.evidencePassages![0], artifactId: 'unrelated-artifact' }],
     }] }).success).toBe(false)
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{
+      ...evaluation,
+      evidencePassages: [{ ...evaluation.evidencePassages![0], signal: 'gate' }],
+    }] }).success).toBe(false)
+    expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{
       ...evaluation, policyArtifactIds: [], evidencePassages: [],
     }] }).success).toBe(false)
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{
@@ -116,6 +120,13 @@ describe('policy gate evaluation ingestion', () => {
     }], lookup)).resolves.toMatchObject({
       artifactId: 'policy-auth', expectedSourcePath: 'governance/other.md',
       actualSourcePath: 'governance/auth.md', reason: 'source-path-mismatch',
+    })
+    await expect(policyGateArtifactReferenceError([{
+      ...evaluation,
+      evidencePassages: [{ ...evaluation.evidencePassages![0], signal: 'gate' }],
+    }], lookup)).resolves.toMatchObject({
+      artifactId: 'policy-auth', signal: 'gate', expectedKind: 'gate',
+      actualKind: 'policy', reason: 'signal-kind-mismatch',
     })
   })
 })
