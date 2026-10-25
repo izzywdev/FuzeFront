@@ -342,6 +342,12 @@ class TelemetryWSGIMiddleware:
 
         try:
             result = self.app(environ, sr)
+            # Construct the wrapper INSIDE the guard: _ClosingIterator calls
+            # iter(result) in its constructor, so an iterable that raises from
+            # __iter__() while initializing a stream must finalize here (end span
+            # + error + detach) rather than leak an unended span and an attached
+            # context token into the next request in this worker.
+            wrapped = _ClosingIterator(result, finalize)
         except BaseException:
             # BaseException (KeyboardInterrupt/SystemExit, a GeneratorExit-class
             # escape) must still end + export the span and detach the context,
@@ -349,7 +355,7 @@ class TelemetryWSGIMiddleware:
             finalize(errored=True)
             raise
 
-        return _ClosingIterator(result, finalize)
+        return wrapped
 
 
 class _ClosingIterator:

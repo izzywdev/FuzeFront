@@ -373,3 +373,37 @@ def test_wsgi_iterable_close_raising_flags_span_and_propagates():
         assert "request completed" not in buf.getvalue()
     finally:
         provider.shutdown()
+
+
+# --- Finding 12: WSGI iterable raising on __iter__() finalizes (no cross-request leak) ---
+
+def test_wsgi_iterable_iter_raising_finalizes_and_propagates():
+    provider, exporter = _provider()
+    try:
+        class _BodyIterRaises:
+            def __iter__(self):
+                raise RuntimeError("stream init failed")
+
+        def app(environ, start_response):
+            start_response("200 OK", [("Content-Type", "text/plain")])
+            return _BodyIterRaises()
+
+        mw = TelemetryWSGIMiddleware(
+            app, tracer_provider=provider, logger=StructuredLogger(stream=io.StringIO())
+        )
+        with pytest.raises(RuntimeError):
+            mw({"REQUEST_METHOD": "GET", "PATH_INFO": "/s"}, lambda *a, **k: None)
+
+        # iter() failure happens in _ClosingIterator.__init__, previously OUTSIDE
+        # the guard -> span leaked. It must now be ended/exported with error set.
+        (span,) = exporter.get_finished_spans()
+        assert span.attributes["error"] is True
+
+        # And the context token must be detached — no cross-request contamination:
+        _assert_context_detached()
+        # A fresh span after the failed request is a root (no leaked parent).
+        nxt = provider.get_tracer("t").start_span("next")
+        assert nxt.parent is None
+        nxt.end()
+    finally:
+        provider.shutdown()
