@@ -72,6 +72,23 @@ describe('identity lifecycle event bridge', () => {
     },
   )
 
+  it.each(['soft', 'hard'] as const)(
+    'preserves the %s organization-deletion cascade for local privacy handling',
+    async cascade => {
+      await runtime.handler?.('identity.org.deleted', {
+        organizationId, slug: 'quality-team', ownerId: userId, cascade,
+      })
+
+      expect(postedBody()).toEqual({ type: 'organization.deleted', organizationId, cascade })
+    },
+  )
+
+  it('defaults legacy organization-deletion events to a soft local cascade', async () => {
+    await runtime.handler?.('identity.org.deleted', { organizationId })
+
+    expect(postedBody()).toEqual({ type: 'organization.deleted', organizationId, cascade: 'soft' })
+  })
+
   it('defaults legacy user-deletion events to a soft local cascade', async () => {
     await runtime.handler?.('identity.user.deleted', {
       userId, email: 'person@example.com',

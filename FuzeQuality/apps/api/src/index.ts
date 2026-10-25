@@ -158,7 +158,11 @@ const identityLifecycleEventSchema = z.discriminatedUnion('type', [
     organizationId: z.string().uuid(), slug: z.string().min(1), name: z.string().min(1),
     organizationType: z.enum(['platform', 'organization', 'personal']), ownerId: z.string().uuid().nullable(), isActive: z.boolean(),
   }).strict(),
-  z.object({ type: z.literal('organization.deleted'), organizationId: z.string().uuid() }).strict(),
+  z.object({
+    type: z.literal('organization.deleted'),
+    organizationId: z.string().uuid(),
+    cascade: z.enum(['soft', 'hard']).default('soft'),
+  }).strict(),
   z.object({
     type: z.literal('user.upsert'), userId: z.string().uuid(), email: z.string().email(),
     firstName: z.string().optional(), lastName: z.string().optional(),
@@ -518,8 +522,8 @@ app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {
       break
     case 'organization.deleted':
       changed = await store.projectIdentityLifecycle(
-        { type: event.type, tenantId: event.organizationId },
-        { topic: TOPICS.TENANT_DELETED, payload: { tenantId: event.organizationId }, key: event.organizationId },
+        { type: event.type, tenantId: event.organizationId, cascade: event.cascade },
+        { topic: TOPICS.TENANT_DELETED, payload: { tenantId: event.organizationId, cascade: event.cascade }, key: event.organizationId },
       )
       break
     case 'user.upsert':

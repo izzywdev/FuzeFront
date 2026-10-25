@@ -6779,7 +6779,7 @@ export function App({
 } = {}) {
   const [view, setView] = useState<View>('overview')
   const [data, setData] = useState<Portfolio | null>(null)
-  const [error, setError] = useState<string>()
+  const [error, setError] = useState<Error>()
   const [organizations, setOrganizations] =
     useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
@@ -6821,7 +6821,7 @@ export function App({
       }
     } catch (value) {
       if (generation === reloadGeneration.current)
-        setError(value instanceof Error ? value.message : String(value))
+        setError(value instanceof Error ? value : new Error(String(value)))
     } finally {
       if (generation === reloadGeneration.current) setLoading(false)
     }
@@ -6900,12 +6900,22 @@ export function App({
             <div className="error-banner" role="alert">
               <AlertTriangle />{' '}
               <div>
-                <strong>Catalog API unavailable</strong>
-                <span>{error}</span>
+                <strong>{
+                  error instanceof CatalogApiError && ['TENANT_FORBIDDEN', 'TENANT_UNRESOLVED', 'TENANT_CONTEXT_MISMATCH'].includes(error.code ?? '')
+                    ? 'Workspace access unavailable'
+                    : 'Catalog API unavailable'
+                }</strong>
+                <span>{error.message}</span>
               </div>
-              <QualityAction intent="secondary" onClick={() => void reload()}>
-                Retry
-              </QualityAction>
+              {onSignOut && error instanceof CatalogApiError && ['TENANT_FORBIDDEN', 'TENANT_UNRESOLVED', 'TENANT_CONTEXT_MISMATCH'].includes(error.code ?? '') ? (
+                <QualityAction intent="secondary" onClick={onSignOut}>
+                  Choose another workspace
+                </QualityAction>
+              ) : (
+                <QualityAction intent="secondary" onClick={() => void reload()}>
+                  Retry
+                </QualityAction>
+              )}
             </div>
           )}
           {!data ? (

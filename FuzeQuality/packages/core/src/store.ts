@@ -177,7 +177,7 @@ function matchesCurrentOrAcceptedDispatch(
 }
 export type IdentityLifecycleProjection =
   | { type: 'organization.upsert'; tenant: QualityTenant }
-  | { type: 'organization.deleted'; tenantId: string }
+  | { type: 'organization.deleted'; tenantId: string; cascade?: 'soft' | 'hard' }
   | { type: 'user.upsert'; principal: QualityPrincipal }
   | { type: 'user.deleted'; principalId: string; cascade?: 'soft' | 'hard' }
   | { type: 'membership.changed'; membership: QualityMembership }
@@ -312,7 +312,7 @@ export interface CatalogStore {
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
   recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>): Promise<AdminContextAudit>
   upsertTenant(tenant: QualityTenant): Promise<boolean>
-  deactivateTenant(tenantId: string): Promise<boolean>
+  deactivateTenant(tenantId: string, cascade?: 'soft' | 'hard'): Promise<boolean>
   upsertPrincipal(principal: QualityPrincipal): Promise<boolean>
   deactivatePrincipal(principalId: string, cascade?: 'soft' | 'hard'): Promise<boolean>
   setOrganizationMembership(membership: QualityMembership): Promise<boolean>
@@ -1063,10 +1063,24 @@ export class MemoryCatalogStore implements CatalogStore {
     return changed
   }
 
-  async deactivateTenant(tenantId: string) {
+  async deactivateTenant(tenantId: string, cascade: 'soft' | 'hard' = 'soft') {
     const tenant = this.tenants.get(tenantId)
-    if (!tenant || !tenant.active) return false
-    tenant.active = false
+    if (!tenant) return false
+    const redactedSlug = `deleted-${tenantId}`
+    const changed = tenant.active || (
+      cascade === 'hard' && (
+        tenant.slug !== redactedSlug ||
+        tenant.name !== 'Deleted organization' ||
+        tenant.ownerId !== undefined
+      )
+    )
+    if (!changed) return false
+    Object.assign(tenant, {
+      active: false,
+      ...(cascade === 'hard'
+        ? { slug: redactedSlug, name: 'Deleted organization', ownerId: undefined }
+        : {}),
+    })
     for (const membership of this.memberships.values()) {
       if (membership.tenantId === tenantId) membership.active = false
     }
@@ -1117,7 +1131,7 @@ export class MemoryCatalogStore implements CatalogStore {
     switch (projection.type) {
       case 'organization.upsert': changed = await this.upsertTenant(projection.tenant); break
       case 'organization.deleted': {
-        changed = await this.deactivateTenant(projection.tenantId)
+        changed = await this.deactivateTenant(projection.tenantId, projection.cascade)
         for (const membership of this.memberships.values()) {
           if (membership.tenantId === projection.tenantId && membership.active) {
             membership.active = false
@@ -2328,11 +2342,21 @@ export class PostgresCatalogStore implements CatalogStore {
     return Boolean(result.rowCount)
   }
 
-  async deactivateTenant(tenantId: string): Promise<boolean> {
-    const result = await this.pool.query(
-      'UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
-      [tenantId],
-    )
+  async deactivateTenant(tenantId: string, cascade: 'soft' | 'hard' = 'soft'): Promise<boolean> {
+    const result = cascade === 'hard'
+      ? await this.pool.query(
+          `UPDATE fuzequality.tenants
+           SET slug=$2,name='Deleted organization',owner_id=NULL,active=false,
+               deleted_at=COALESCE(deleted_at,now()),updated_at=now()
+           WHERE id=$1 AND (
+             active=true OR slug IS DISTINCT FROM $2 OR name IS DISTINCT FROM 'Deleted organization' OR owner_id IS NOT NULL
+           ) RETURNING id`,
+          [tenantId, `deleted-${tenantId}`],
+        )
+      : await this.pool.query(
+          'UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+          [tenantId],
+        )
     return Boolean(result.rowCount)
   }
 
@@ -2389,12 +2413,12 @@ export class PostgresCatalogStore implements CatalogStore {
         case 'organization.upsert': {
           const tenant = projection.tenant
           result = await client.query(
-            `INSERT INTO fuzequality.tenants (id,slug,name,type,owner_id,active,deleted_at,updated_at)
+            `INSERT INTO fuzequality.tenants (id,slug,name,tenant_type,owner_id,active,deleted_at,updated_at)
              VALUES ($1,$2,$3,$4,$5,$6,CASE WHEN $6 THEN NULL ELSE now() END,now())
-             ON CONFLICT (id) DO UPDATE SET slug=EXCLUDED.slug,name=EXCLUDED.name,type=EXCLUDED.type,
+             ON CONFLICT (id) DO UPDATE SET slug=EXCLUDED.slug,name=EXCLUDED.name,tenant_type=EXCLUDED.tenant_type,
                owner_id=EXCLUDED.owner_id,active=EXCLUDED.active,deleted_at=CASE WHEN EXCLUDED.active THEN NULL ELSE now() END,updated_at=now()
-             WHERE (fuzequality.tenants.slug,fuzequality.tenants.name,fuzequality.tenants.type,fuzequality.tenants.owner_id,fuzequality.tenants.active)
-               IS DISTINCT FROM (EXCLUDED.slug,EXCLUDED.name,EXCLUDED.type,EXCLUDED.owner_id,EXCLUDED.active)
+             WHERE (fuzequality.tenants.slug,fuzequality.tenants.name,fuzequality.tenants.tenant_type,fuzequality.tenants.owner_id,fuzequality.tenants.active)
+               IS DISTINCT FROM (EXCLUDED.slug,EXCLUDED.name,EXCLUDED.tenant_type,EXCLUDED.owner_id,EXCLUDED.active)
              RETURNING id`,
             [tenant.id, tenant.slug, tenant.name, tenant.type, tenant.ownerId ?? null, tenant.active],
           )
@@ -2403,15 +2427,23 @@ export class PostgresCatalogStore implements CatalogStore {
         case 'organization.deleted':
           result = await client.query(
             `WITH deactivated_tenant AS (
-               UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now()
-               WHERE id=$1 AND active=true RETURNING id
+               UPDATE fuzequality.tenants
+               SET slug=CASE WHEN $2='hard' THEN $3 ELSE slug END,
+                   name=CASE WHEN $2='hard' THEN 'Deleted organization' ELSE name END,
+                   owner_id=CASE WHEN $2='hard' THEN NULL ELSE owner_id END,
+                   active=false, deleted_at=COALESCE(deleted_at,now()), updated_at=now()
+               WHERE id=$1 AND (
+                 active=true OR ($2='hard' AND (
+                   slug IS DISTINCT FROM $3 OR name IS DISTINCT FROM 'Deleted organization' OR owner_id IS NOT NULL
+                 ))
+               ) RETURNING id
              ), deactivated_memberships AS (
                UPDATE fuzequality.organization_memberships SET active=false, updated_at=now()
                WHERE tenant_id=$1 AND active=true RETURNING tenant_id
              )
              SELECT EXISTS (SELECT 1 FROM deactivated_tenant)
                  OR EXISTS (SELECT 1 FROM deactivated_memberships) AS changed`,
-            [projection.tenantId],
+            [projection.tenantId, projection.cascade ?? 'soft', `deleted-${projection.tenantId}`],
           )
           break
         case 'user.upsert': {
