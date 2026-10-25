@@ -107,9 +107,11 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("kind IN ('load','stress')")
     expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
     expect(String(sql)).toContain('branch=$4')
-    expect(String(sql)).toContain("provider<>'github-actions' OR lower(head_repository)=lower($5)")
-    expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
-    expect(String(sql)).toContain('COALESCE(completed_at,started_at,created_at) DESC')
+    expect(String(sql)).toContain("execution.provider<>'github-actions' OR lower(execution.head_repository)=lower($5)")
+    expect(String(sql)).toContain('DISTINCT ON (execution.workflow_path)')
+    expect(String(sql)).toContain("dispatch.status='accepted'")
+    expect(String(sql)).toContain('dispatch.source_ref=execution.branch')
+    expect(String(sql)).toContain('COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC')
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/load.yml'], 'main', 'acme/app'])
   })
 
@@ -134,8 +136,10 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("kind='post-production'")
     expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
     expect(String(sql)).toContain('branch=$4')
-    expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
-    expect(String(sql)).toContain('COALESCE(completed_at,started_at,created_at) DESC')
+    expect(String(sql)).toContain('DISTINCT ON (execution.workflow_path)')
+    expect(String(sql)).toContain("dispatch.status='accepted'")
+    expect(String(sql)).toContain('dispatch.source_ref=execution.branch')
+    expect(String(sql)).toContain('COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC')
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/post-prod.yml'], 'main', 'acme/app'])
   })
 
@@ -160,9 +164,72 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("kind='integration'")
     expect(String(sql)).toContain('workflow_path=ANY($3::text[])')
     expect(String(sql)).toContain('branch=$4')
-    expect(String(sql)).toContain('DISTINCT ON (workflow_path)')
-    expect(String(sql)).toContain('COALESCE(completed_at,started_at,created_at) DESC')
+    expect(String(sql)).toContain('DISTINCT ON (execution.workflow_path)')
+    expect(String(sql)).toContain('fuzequality.test_suite_dispatches AS dispatch')
+    expect(String(sql)).toContain("dispatch.status='accepted'")
+    expect(String(sql)).toContain('dispatch.source_ref=execution.branch')
+    expect(String(sql)).toContain('lower(dispatch.source_revision)=lower(execution.revision)')
+    expect(String(sql)).toContain('COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC')
     expect(parameters).toEqual(['repo-1', 'org-1', ['.github/workflows/integration.yml'], 'main', 'acme/app'])
+  })
+
+  it('selects a pinned-tag execution only when it has an accepted matching dispatch', async () => {
+    const store = new MemoryCatalogStore()
+    const revision = 'b'.repeat(40)
+    const ref = `fuzequality-revision-${revision}`
+    const base = {
+      repositoryId: '11111111-1111-4111-8111-111111111111',
+      tenantId: 'org-1',
+      provider: 'github-actions' as const,
+      attempt: 1,
+      revision,
+      branch: ref,
+      headRepository: 'acme/app',
+      kind: 'integration' as const,
+      status: 'passed' as const,
+      name: 'Pinned integration',
+      workflowPath: '.github/workflows/integration.yml',
+      policyArtifactIds: [],
+      gateArtifactIds: [],
+      gateEvaluations: [],
+      thresholds: [],
+      evidenceLinks: [],
+      completedAt: '2026-10-25T07:00:00.000Z',
+    }
+    await store.saveTestExecution({ id: 'pinned-run', externalRunId: 'pinned-run', ...base })
+
+    await expect(store.latestIntegrationExecutions(
+      base.repositoryId,
+      base.tenantId,
+      [base.workflowPath],
+      'main',
+      base.headRepository,
+    )).resolves.toEqual([])
+
+    await store.saveTestSuiteDispatch({
+      id: '77777777-7777-4777-8777-777777777777',
+      repositoryId: base.repositoryId,
+      tenantId: base.tenantId,
+      artifactId: 'integration-artifact',
+      artifactLogicalId: `workflow:${base.workflowPath}`,
+      artifactKind: 'integration-test',
+      workflowPath: base.workflowPath,
+      ref,
+      sourceRevision: revision,
+      requestedBy: 'user-1',
+      inputNames: [],
+      status: 'accepted',
+      requestedAt: '2026-10-25T06:59:00.000Z',
+      completedAt: '2026-10-25T06:59:01.000Z',
+    })
+
+    await expect(store.latestIntegrationExecutions(
+      base.repositoryId,
+      base.tenantId,
+      [base.workflowPath],
+      'main',
+      base.headRepository,
+    )).resolves.toEqual([expect.objectContaining({ id: 'pinned-run', branch: ref })])
   })
 
   it('uses ingestion time to select newly recorded running executions without provider timestamps', async () => {

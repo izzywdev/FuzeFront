@@ -1,4 +1,4 @@
-import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
+import type { QualityArtifact, TestExecution, TestSuiteDispatch } from '@fuzequality/contracts'
 import { artifactWorkflowExecutionKind } from '@fuzequality/contracts/workflow-execution'
 import { ExternalLink } from 'lucide-react'
 import { QualityAction } from './primitives'
@@ -17,6 +17,24 @@ export function canonicalWorkflowPath(path: string) {
 
 function sameWorkflowPath(left?: string, right?: string) {
   return Boolean(left && right && canonicalWorkflowPath(left) === canonicalWorkflowPath(right))
+}
+
+function currentExecutionScope(
+  artifact: QualityArtifact,
+  execution: TestExecution,
+  branch?: string,
+  dispatches: TestSuiteDispatch[] = [],
+) {
+  if (!branch || execution.branch === branch) return true
+  if (execution.provider !== 'github-actions' || !execution.branch) return false
+  return dispatches.some(dispatch =>
+    dispatch.repositoryId === artifact.repositoryId &&
+    dispatch.artifactLogicalId === (artifact.logicalId ?? artifact.id) &&
+    dispatch.status === 'accepted' &&
+    dispatch.ref === execution.branch &&
+    dispatch.sourceRevision.toLowerCase() === execution.revision.toLowerCase() &&
+    sameWorkflowPath(dispatch.workflowPath, execution.workflowPath)
+  )
 }
 
 /** Defensive boundary for legacy rows written before the HTTPS ingestion contract. */
@@ -54,13 +72,14 @@ export function latestPerformanceExecution(
   executions: TestExecution[],
   branch?: string,
   headRepository?: string,
+  dispatches: TestSuiteDispatch[] = [],
 ): TestExecution | undefined {
   const executionKind = artifactWorkflowExecutionKind(artifact)
   if (executionKind !== 'load' && executionKind !== 'stress') return undefined
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
-      (!branch || execution.branch === branch) &&
+      currentExecutionScope(artifact, execution, branch, dispatches) &&
       (!headRepository || execution.provider !== 'github-actions' || execution.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
       execution.kind === executionKind &&
       sameWorkflowPath(execution.workflowPath, artifact.sourcePath)
@@ -80,12 +99,13 @@ export function latestPostProductionExecution(
   executions: TestExecution[],
   branch?: string,
   headRepository?: string,
+  dispatches: TestSuiteDispatch[] = [],
 ): TestExecution | undefined {
   if (artifact.kind !== 'post-production-test') return undefined
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
-      (!branch || execution.branch === branch) &&
+      currentExecutionScope(artifact, execution, branch, dispatches) &&
       (!headRepository || execution.provider !== 'github-actions' || execution.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
       execution.kind === 'post-production' &&
       sameWorkflowPath(execution.workflowPath, artifact.sourcePath)
@@ -105,12 +125,13 @@ export function latestIntegrationExecution(
   executions: TestExecution[],
   branch?: string,
   headRepository?: string,
+  dispatches: TestSuiteDispatch[] = [],
 ): TestExecution | undefined {
   if (artifact.kind !== 'integration-test') return undefined
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
-      (!branch || execution.branch === branch) &&
+      currentExecutionScope(artifact, execution, branch, dispatches) &&
       (!headRepository || execution.provider !== 'github-actions' || execution.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
       execution.kind === 'integration' &&
       sameWorkflowPath(execution.workflowPath, artifact.sourcePath)

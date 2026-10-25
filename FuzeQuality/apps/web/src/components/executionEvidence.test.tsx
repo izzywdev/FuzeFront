@@ -3,7 +3,7 @@
 import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
+import type { QualityArtifact, TestExecution, TestSuiteDispatch } from '@fuzequality/contracts'
 import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionSourceLink, ExecutionThresholdEvidence, latestIntegrationExecution, latestPerformanceExecution, latestPostProductionExecution } from './executionEvidence'
 
 const execution: TestExecution = {
@@ -330,6 +330,57 @@ describe('ExecutionThresholdEvidence', () => {
     }
 
     expect(latestIntegrationExecution(artifact, [feature, main], 'main')).toBe(main)
+  })
+
+  it('shows a pinned-tag run only when an accepted dispatch proves its inventory identity', () => {
+    const revision = 'b'.repeat(40)
+    const ref = `fuzequality-revision-${revision}`
+    const artifact: QualityArtifact = {
+      id: 'integration-workflow-revision',
+      logicalId: 'workflow:.github/workflows/integration.yml',
+      repositoryId: execution.repositoryId,
+      kind: 'integration-test',
+      title: 'Integration',
+      sourcePath: '.github/workflows/integration.yml',
+      summary: 'Integration tests',
+      evidence: [],
+    }
+    const pinned = {
+      ...execution,
+      provider: 'github-actions' as const,
+      id: 'pinned-run',
+      revision,
+      branch: ref,
+      headRepository: 'acme/app',
+      kind: 'integration' as const,
+      workflowPath: artifact.sourcePath,
+    }
+    const dispatch: TestSuiteDispatch = {
+      id: '77777777-7777-4777-8777-777777777777',
+      repositoryId: artifact.repositoryId,
+      tenantId: pinned.tenantId,
+      artifactId: artifact.id,
+      artifactLogicalId: artifact.logicalId!,
+      artifactKind: 'integration-test',
+      workflowPath: artifact.sourcePath,
+      ref,
+      sourceRevision: revision,
+      requestedBy: 'user-1',
+      inputNames: [],
+      status: 'accepted',
+      requestedAt: '2026-10-25T06:59:00.000Z',
+      completedAt: '2026-10-25T06:59:01.000Z',
+    }
+
+    expect(latestIntegrationExecution(artifact, [pinned], 'main', 'acme/app')).toBeUndefined()
+    expect(latestIntegrationExecution(artifact, [pinned], 'main', 'acme/app', [dispatch])).toBe(pinned)
+    expect(latestIntegrationExecution(
+      artifact,
+      [pinned],
+      'main',
+      'acme/app',
+      [{ ...dispatch, status: 'failed' }],
+    )).toBeUndefined()
   })
 
   it('keeps same-name fork branches out of reviewed repository evidence', () => {

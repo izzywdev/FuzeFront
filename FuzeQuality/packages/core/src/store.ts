@@ -158,6 +158,23 @@ function latestTestExecutionAtMillis(execution: TestExecution) {
   }
   return testExecutionCursorCreatedAtMillis(execution)
 }
+
+function matchesCurrentOrAcceptedDispatch(
+  execution: TestExecution,
+  branch: string,
+  dispatches: TestSuiteDispatch[],
+) {
+  if (execution.branch === branch) return true
+  if (execution.provider !== 'github-actions' || !execution.branch || !execution.workflowPath) return false
+  return dispatches.some(dispatch =>
+    dispatch.repositoryId === execution.repositoryId &&
+    dispatch.tenantId === execution.tenantId &&
+    dispatch.status === 'accepted' &&
+    dispatch.ref === execution.branch &&
+    dispatch.sourceRevision.toLowerCase() === execution.revision.toLowerCase() &&
+    normalizeWorkflowPath(dispatch.workflowPath) === normalizeWorkflowPath(execution.workflowPath)
+  )
+}
 export type IdentityLifecycleProjection =
   | { type: 'organization.upsert'; tenant: QualityTenant }
   | { type: 'organization.deleted'; tenantId: string }
@@ -593,7 +610,7 @@ export class MemoryCatalogStore implements CatalogStore {
     for (const execution of this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
-        item.branch === branch &&
+        matchesCurrentOrAcceptedDispatch(item, branch, this.testSuiteDispatches) &&
         (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
         (item.kind === 'load' || item.kind === 'stress') &&
         Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
@@ -611,7 +628,7 @@ export class MemoryCatalogStore implements CatalogStore {
     for (const execution of this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
-        item.branch === branch &&
+        matchesCurrentOrAcceptedDispatch(item, branch, this.testSuiteDispatches) &&
         (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
         item.kind === 'post-production' &&
         Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
@@ -629,7 +646,7 @@ export class MemoryCatalogStore implements CatalogStore {
     for (const execution of this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
-        item.branch === branch &&
+        matchesCurrentOrAcceptedDispatch(item, branch, this.testSuiteDispatches) &&
         (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
         item.kind === 'integration' &&
         Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
@@ -1641,14 +1658,27 @@ export class PostgresCatalogStore implements CatalogStore {
   async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
     if (!workflowPaths.length) return []
     const result = await this.pool.query(
-      `SELECT DISTINCT ON (workflow_path) *
-       FROM fuzequality.test_executions
-       WHERE repository_id=$1 AND tenant_id=$2
-         AND kind IN ('load','stress')
-         AND workflow_path=ANY($3::text[])
-         AND branch=$4
-         AND (provider<>'github-actions' OR lower(head_repository)=lower($5))
-       ORDER BY workflow_path,COALESCE(completed_at,started_at,created_at) DESC,id DESC`,
+      `SELECT DISTINCT ON (execution.workflow_path) execution.*
+       FROM fuzequality.test_executions AS execution
+       WHERE execution.repository_id=$1 AND execution.tenant_id=$2
+         AND execution.kind IN ('load','stress')
+         AND execution.workflow_path=ANY($3::text[])
+         AND (
+           execution.branch=$4 OR (
+             execution.provider='github-actions' AND EXISTS (
+               SELECT 1
+               FROM fuzequality.test_suite_dispatches AS dispatch
+               WHERE dispatch.repository_id=execution.repository_id
+                 AND dispatch.tenant_id=execution.tenant_id
+                 AND dispatch.status='accepted'
+                 AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
+                 AND lower(dispatch.source_revision)=lower(execution.revision)
+                 AND dispatch.source_ref=execution.branch
+             )
+           )
+         )
+         AND (execution.provider<>'github-actions' OR lower(execution.head_repository)=lower($5))
+       ORDER BY execution.workflow_path,COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC,execution.id DESC`,
       [repositoryId, tenantId, workflowPaths, branch, headRepository],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))
@@ -1657,14 +1687,27 @@ export class PostgresCatalogStore implements CatalogStore {
   async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
     if (!workflowPaths.length) return []
     const result = await this.pool.query(
-      `SELECT DISTINCT ON (workflow_path) *
-       FROM fuzequality.test_executions
-       WHERE repository_id=$1 AND tenant_id=$2
-         AND kind='post-production'
-         AND workflow_path=ANY($3::text[])
-         AND branch=$4
-         AND (provider<>'github-actions' OR lower(head_repository)=lower($5))
-       ORDER BY workflow_path,COALESCE(completed_at,started_at,created_at) DESC,id DESC`,
+      `SELECT DISTINCT ON (execution.workflow_path) execution.*
+       FROM fuzequality.test_executions AS execution
+       WHERE execution.repository_id=$1 AND execution.tenant_id=$2
+         AND execution.kind='post-production'
+         AND execution.workflow_path=ANY($3::text[])
+         AND (
+           execution.branch=$4 OR (
+             execution.provider='github-actions' AND EXISTS (
+               SELECT 1
+               FROM fuzequality.test_suite_dispatches AS dispatch
+               WHERE dispatch.repository_id=execution.repository_id
+                 AND dispatch.tenant_id=execution.tenant_id
+                 AND dispatch.status='accepted'
+                 AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
+                 AND lower(dispatch.source_revision)=lower(execution.revision)
+                 AND dispatch.source_ref=execution.branch
+             )
+           )
+         )
+         AND (execution.provider<>'github-actions' OR lower(execution.head_repository)=lower($5))
+       ORDER BY execution.workflow_path,COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC,execution.id DESC`,
       [repositoryId, tenantId, workflowPaths, branch, headRepository],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))
@@ -1673,14 +1716,27 @@ export class PostgresCatalogStore implements CatalogStore {
   async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
     if (!workflowPaths.length) return []
     const result = await this.pool.query(
-      `SELECT DISTINCT ON (workflow_path) *
-       FROM fuzequality.test_executions
-       WHERE repository_id=$1 AND tenant_id=$2
-         AND kind='integration'
-         AND workflow_path=ANY($3::text[])
-         AND branch=$4
-         AND (provider<>'github-actions' OR lower(head_repository)=lower($5))
-       ORDER BY workflow_path,COALESCE(completed_at,started_at,created_at) DESC,id DESC`,
+      `SELECT DISTINCT ON (execution.workflow_path) execution.*
+       FROM fuzequality.test_executions AS execution
+       WHERE execution.repository_id=$1 AND execution.tenant_id=$2
+         AND execution.kind='integration'
+         AND execution.workflow_path=ANY($3::text[])
+         AND (
+           execution.branch=$4 OR (
+             execution.provider='github-actions' AND EXISTS (
+               SELECT 1
+               FROM fuzequality.test_suite_dispatches AS dispatch
+               WHERE dispatch.repository_id=execution.repository_id
+                 AND dispatch.tenant_id=execution.tenant_id
+                 AND dispatch.status='accepted'
+                 AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
+                 AND lower(dispatch.source_revision)=lower(execution.revision)
+                 AND dispatch.source_ref=execution.branch
+             )
+           )
+         )
+         AND (execution.provider<>'github-actions' OR lower(execution.head_repository)=lower($5))
+       ORDER BY execution.workflow_path,COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC,execution.id DESC`,
       [repositoryId, tenantId, workflowPaths, branch, headRepository],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))
