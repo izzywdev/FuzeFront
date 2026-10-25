@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { Alert, Button, Input, Select, Textarea } from '@fuzefront/design-system'
 import { useAppContext, App } from '../lib/shared'
 import { useFlag } from '../platform/featureFlags'
+import { useAppRegistry } from '../platform/appRegistry'
+import type { AppManifest } from '@fuzefront/app-registry-client'
 import {
   createApp,
   updateApp,
@@ -22,6 +24,137 @@ interface AppFormData {
   description: string
 }
 
+type IntegrationType = AppFormData['integrationType']
+
+/**
+ * The ONE form <-> manifest mapping, driven by `integration.type` and matching
+ * `Integration` in services/app-registry-service/openapi.yaml and what
+ * FederatedAppLoader actually reads per type:
+ *   - module-federation: remoteEntry, scope, module (all required) -> form
+ *     remoteUrl / scope / module. url is optional.
+ *   - iframe | spa: url (required) -> form url.
+ *   - web-component: url = script URL (required), scope = custom-element tag
+ *     (required). The form shows the script URL as "Script URL" (remoteUrl);
+ *     url mirrors it.
+ */
+const URL_SHAPE = /^(https?:\/\/\S+|\/(?![/\\])[^\s?#\\]*)$/
+
+export function seedFormFromManifest(manifest: AppManifest): AppFormData {
+  const i = manifest.integration
+  const type = (i.type === 'spa' ? 'iframe' : i.type) as IntegrationType
+  const url = i.url ?? ''
+  return {
+    name: manifest.name,
+    url,
+    iconUrl: manifest.icon?.kind === 'url' ? manifest.icon.value : '',
+    integrationType: type,
+    remoteUrl:
+      i.type === 'module-federation'
+        ? (i.remoteEntry ?? '')
+        : i.type === 'web-component'
+          ? url
+          : '',
+    scope: i.scope ?? '',
+    module: i.module ?? '',
+    description: manifest.description ?? '',
+  }
+}
+
+export interface ManifestBuild {
+  manifest: AppManifest
+  errors: string[]
+}
+
+export function buildManifestFromForm(
+  base: AppManifest,
+  form: AppFormData
+): ManifestBuild {
+  const errors: string[] = []
+  const t = (v: string) => v.trim()
+  const check = (label: string, v: string, required: boolean) => {
+    if (!v) {
+      if (required) errors.push(`${label} is required`)
+    } else if (!URL_SHAPE.test(v)) {
+      errors.push(`${label} must be an http(s) URL or a same-origin path`)
+    }
+  }
+  // The form folds spa into iframe; keep an unchanged spa as spa.
+  const type: IntegrationType | 'spa' =
+    base.integration.type === 'spa' && form.integrationType === 'iframe'
+      ? 'spa'
+      : form.integrationType
+  const integration: Record<string, unknown> = { type }
+  const url = t(form.url)
+  const remote = t(form.remoteUrl)
+  const scope = t(form.scope)
+  const mod = t(form.module)
+
+  if (type === 'module-federation') {
+    check('Remote URL', remote, true)
+    check('App URL', url, false)
+    if (!scope) errors.push('Scope is required')
+    if (!mod) errors.push('Module is required')
+    integration.remoteEntry = remote
+    integration.scope = scope
+    integration.module = mod
+    if (url) integration.url = url
+  } else if (type === 'web-component') {
+    // Script URL (remoteUrl) wins; fall back to the App URL field.
+    const script = remote || url
+    check('Script URL', script, true)
+    if (!scope) errors.push('Component Name is required')
+    integration.url = script
+    integration.scope = scope
+  } else {
+    check('App URL', url, true)
+    integration.url = url
+  }
+
+  const manifest: AppManifest = {
+    ...base,
+    name: t(form.name),
+    integration: integration as AppManifest['integration'],
+  }
+  if (!manifest.name) errors.push('Name is required')
+  const description = t(form.description)
+  if (description) manifest.description = description
+  else delete manifest.description
+  const icon = t(form.iconUrl)
+  if (icon) manifest.icon = { kind: 'url', value: icon }
+  else if (base.icon?.kind === 'url') delete manifest.icon
+  return { manifest, errors }
+}
+
+/** Map an updateApp / getApp failure to a user-facing message by status. */
+function describeSaveError(err: unknown): string {
+  const e = err as {
+    response?: { status?: number; data?: { message?: string; fields?: { path: string; message: string }[] } }
+    message?: string
+  }
+  const status = e?.response?.status
+  const data = e?.response?.data
+  switch (status) {
+    case 400: {
+      const detail = data?.fields?.map(f => `${f.path}: ${f.message}`).join('; ')
+      return `Invalid app data${detail ? ` (${detail})` : data?.message ? ` (${data.message})` : ''}`
+    }
+    case 403:
+      return 'You do not have permission to edit this app'
+    case 404:
+      return 'App not found - it may have been removed'
+    case 503:
+      return 'App editing is not enabled yet'
+    default:
+      if (status && status >= 500) return 'Failed to save app (server error)'
+      return e?.message || 'Failed to save app'
+  }
+}
+
+// Contract (`Integration.url` / `remoteEntry`): an absolute http(s) URL OR a
+// same-origin absolute path such as /apps/clock/. `type="url"` would reject the
+// latter, making registry-managed same-origin apps impossible to save.
+const URL_OR_SAME_ORIGIN_PATH = '^(https?://\\S+|/(?![/\\\\])[^\\s?#\\\\]*)$'
+
 const initialFormData: AppFormData = {
   name: '',
   url: '',
@@ -40,6 +173,7 @@ export default function AdminPage() {
   const { state, dispatch } = useAppContext()
   const [showForm, setShowForm] = useState(false)
   const [editingApp, setEditingApp] = useState<App | null>(null)
+  const { client: registryClient, refresh: refreshRegistry } = useAppRegistry()
   const [formData, setFormData] = useState<AppFormData>(initialFormData)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -69,8 +203,27 @@ export default function AdminPage() {
 
     try {
       if (editingApp) {
-        // Persist the edited fields via PUT /api/apps/:id, then refresh.
-        await updateApp(editingApp.id, formData)
+        if (editingApp.slug) {
+          // Registry-managed app: the manifest is the source of truth, so edit
+          // it through the contracted updateApp (PUT /api/v1/app-registry/
+          // apps/{slug}) rather than the legacy flat-column route.
+          const current = await registryClient.getApp(editingApp.slug)
+          const { manifest, errors } = buildManifestFromForm(
+            current.manifest,
+            formData
+          )
+          if (errors.length > 0) {
+            setError(errors.join('; '))
+            return
+          }
+          await registryClient.updateApp(editingApp.slug, manifest)
+          // The provider caches manifests (menu/dashboard); re-fetch so they
+          // do not keep serving the pre-edit manifest.
+          await refreshRegistry()
+        } else {
+          // Legacy manifest-less row (created via POST /api/apps).
+          await updateApp(editingApp.id, formData)
+        }
         await loadApps()
       } else {
         // Create new app
@@ -83,15 +236,15 @@ export default function AdminPage() {
       setShowForm(false)
       setEditingApp(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save app')
+      setError(editingApp ? describeSaveError(err) : err instanceof Error ? err.message : 'Failed to save app')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleEdit = (app: App) => {
-    setEditingApp(app)
-    setFormData({
+  const handleEdit = async (app: App) => {
+    setError(null)
+    let seeded: AppFormData = {
       name: app.name,
       url: app.url,
       iconUrl: app.iconUrl || '',
@@ -100,7 +253,21 @@ export default function AdminPage() {
       scope: app.scope || '',
       module: app.module || '',
       description: app.description || '',
-    })
+    }
+    if (app.slug) {
+      // Registry-managed: seed from the manifest (source of truth), not the
+      // legacy flat columns, so the form round-trips losslessly.
+      try {
+        seeded = seedFormFromManifest(
+          (await registryClient.getApp(app.slug)).manifest
+        )
+      } catch (err) {
+        setError(describeSaveError(err))
+        return
+      }
+    }
+    setEditingApp(app)
+    setFormData(seeded)
     setShowForm(true)
   }
 
@@ -206,10 +373,11 @@ export default function AdminPage() {
 
               <Input
                 label="App URL *"
-                type="url"
+                type="text"
+                pattern={URL_OR_SAME_ORIGIN_PATH}
                 value={formData.url}
                 onChange={e => handleInputChange('url', e.target.value)}
-                required
+                required={!editingApp?.slug}
                 placeholder="https://myapp.example.com"
               />
 
@@ -225,7 +393,8 @@ export default function AdminPage() {
                 <>
                   <Input
                     label="Remote URL *"
-                    type="url"
+                    type="text"
+                    pattern={URL_OR_SAME_ORIGIN_PATH}
                     value={formData.remoteUrl}
                     onChange={e =>
                       handleInputChange('remoteUrl', e.target.value)
@@ -260,7 +429,8 @@ export default function AdminPage() {
                 <>
                   <Input
                     label="Script URL"
-                    type="url"
+                    type="text"
+                    pattern={URL_OR_SAME_ORIGIN_PATH}
                     value={formData.remoteUrl}
                     onChange={e =>
                       handleInputChange('remoteUrl', e.target.value)

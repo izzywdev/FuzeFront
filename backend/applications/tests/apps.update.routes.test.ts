@@ -125,4 +125,25 @@ describe('PUT /api/apps/:id — admin app update', () => {
       .send({ name: 'x' })
     expect(res.status).toBe(403)
   })
+
+  it('409s USE_APP_REGISTRY for a manifest-backed row and leaves it untouched', async () => {
+    appRows.push({
+      id: 'app-2',
+      name: 'Registry App',
+      slug: 'regapp',
+      manifest: { slug: 'regapp', name: 'Registry App' },
+      url: 'http://reg.example.com',
+      integration_type: 'iframe',
+      scope_level: 'both',
+      is_active: true,
+    })
+    const res = await request(app)
+      .put('/api/apps/app-2')
+      .set('x-test-user', ADMIN)
+      .send({ name: 'Renamed' })
+    expect(res.status).toBe(409)
+    expect(res.body.code).toBe('USE_APP_REGISTRY')
+    expect(res.body.slug).toBe('regapp')
+    expect(appRows[1].name).toBe('Registry App')
+  })
 })

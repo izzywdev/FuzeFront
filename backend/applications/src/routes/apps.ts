@@ -182,6 +182,10 @@ router.get('/', authenticateToken, async (req: any, res) => {
         )
         return {
           id: app.id,
+          // Registry slug; null for legacy manifest-less rows. The admin UI
+          // uses it to route edits of manifest-backed apps through the
+          // contracted PUT /api/v1/app-registry/apps/{slug}.
+          slug: (app as any).slug ?? null,
           name: app.name,
           url: app.url,
           iconUrl: app.icon_url,
@@ -542,12 +546,19 @@ router.put(
   }
 )
 
-// PUT /api/apps/:id - Update an app's editable fields (admin only).
-// This is what the /admin "Edit" form saves; before this route existed the
-// edit submit was a no-op stub, so editing any app did nothing. Only the
-// allow-listed presentation/integration fields are writable here — never id,
-// slug, owner, builtin, status or install records (identifier-standard BOPLA:
-// no client-supplied identity for the resource being updated).
+// PUT /api/apps/:id - LEGACY edit for manifest-less rows only (admin only).
+//
+// Apps registered through the app registry (slug + manifest) are edited via
+// the contracted PUT /api/v1/app-registry/apps/{slug} (operationId updateApp,
+// services/app-registry-service/openapi.yaml), which replaces the manifest
+// that registry readers and register.sh treat as the source of truth. This
+// route only updates flat columns, so applying it to a manifest-backed row
+// would silently desync the two: it answers 409 USE_APP_REGISTRY instead.
+// What remains are rows created by the legacy POST /api/apps (no slug, no
+// manifest, no owning org), which are platform-admin-managed by construction,
+// hence requireRole(['admin']) is the object-level bound for them. Only the
+// allow-listed presentation/integration fields are writable — never id, slug,
+// owner, builtin, status or install records (identifier-standard BOPLA).
 router.put(
   '/:id',
   authenticateToken,
@@ -560,6 +571,14 @@ router.put(
         return res
           .status(404)
           .json({ error: 'App not found', code: 'APP_NOT_FOUND' })
+      }
+      if ((existing as any).manifest || (existing as any).slug) {
+        return res.status(409).json({
+          error:
+            'This app is managed by the app registry; edit it via PUT /api/v1/app-registry/apps/{slug}',
+          code: 'USE_APP_REGISTRY',
+          slug: (existing as any).slug ?? null,
+        })
       }
 
       const body = req.body ?? {}

@@ -118,6 +118,8 @@ export interface User {
  */
 export interface App {
   id: string
+  /** Registry slug; null/absent for legacy manifest-less rows. */
+  slug?: string | null
   name: string
   url: string
   iconUrl?: string
