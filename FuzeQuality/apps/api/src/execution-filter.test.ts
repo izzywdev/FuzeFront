@@ -10,6 +10,7 @@ describe('execution evidence filter', () => {
       name: 'Post-production browser suite',
       evidenceKind: 'video',
       evidenceCollectionStatus: 'partial',
+      evidenceCollectionErrorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED',
       evidenceCheckedAfter: '2026-10-01T00:00:00.000Z',
       evidenceCheckedBefore: '2026-10-07T00:00:00.000Z',
       evidenceRequirement: 'post-production-video-missing',
@@ -59,6 +60,15 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.safeParse({ evidenceCollectionStatus: 'unknown' }).success).toBe(false)
   })
 
+  it('accepts only retained provider evidence failure codes', () => {
+    expect(executionFilterSchema.parse({ evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT' }).evidenceCollectionErrorCode)
+      .toBe('PROVIDER_TIMEOUT')
+    expect(executionPageFilterSchema.parse({ evidenceCollectionErrorCode: 'PROVIDER_RESPONSE_INVALID' }).evidenceCollectionErrorCode)
+      .toBe('PROVIDER_RESPONSE_INVALID')
+    expect(executionFilterSchema.safeParse({ evidenceCollectionErrorCode: 'UNKNOWN_PROVIDER_FAILURE' }).success)
+      .toBe(false)
+  })
+
   it('accepts only a chronological ISO-8601 provider evidence window', () => {
     expect(executionFilterSchema.parse({ evidenceCheckedAfter: '2026-10-01T00:00:00.000Z' }).evidenceCheckedAfter)
       .toBe('2026-10-01T00:00:00.000Z')
@@ -77,6 +87,10 @@ describe('execution evidence filter', () => {
   it('accepts only explicit required-evidence gaps', () => {
     expect(executionFilterSchema.parse({ evidenceRequirement: 'policy-gate-outcome-missing' }).evidenceRequirement)
       .toBe('policy-gate-outcome-missing')
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'evidence-url-invalid' }).evidenceRequirement)
+      .toBe('evidence-url-invalid')
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'github-run-provenance-missing' }).evidenceRequirement)
+      .toBe('github-run-provenance-missing')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'post-production-video-missing' }).evidenceRequirement)
       .toBe('post-production-video-missing')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'performance-threshold-missing' }).evidenceRequirement)

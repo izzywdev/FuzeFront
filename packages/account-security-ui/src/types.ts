@@ -153,6 +153,8 @@ export interface MfaFactorRef {
   factorId: string
   type: MfaFactorType
 }
+/** Recovery-code proof for `POST /mfa/verify` (contract `MfaRecoveryVerifyRequest`, a `MfaVerifyRequest` variant). */
+export type MfaRecoveryVerifyRequest = components['schemas']['MfaRecoveryVerifyRequest']
 /** Status of the current recovery-code set (contract `RecoveryCodesStatus`) — counts only, never codes. */
 export type RecoveryCodesStatusResult = components['schemas']['RecoveryCodesStatus']
 /** Ack of `POST /mfa/challenge` (contract `MfaChallengeAck`). */

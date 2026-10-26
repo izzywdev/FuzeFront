@@ -10,6 +10,7 @@ import type {
   MfaChallengeAck,
   MfaEnrollResult,
   MfaFactor,
+  MfaRecoveryVerifyRequest,
   MfaSession,
   RecoveryCodesStatusResult,
   SocialLinkStart,
@@ -104,7 +105,8 @@ export function createAccountSecurityClient(
     },
 
     verifyRecoveryCode(challengeId, recoveryCode) {
-      return http.post<MfaSession>(`${BASE}/mfa/verify`, { challengeId, recoveryCode })
+      const body: MfaRecoveryVerifyRequest = { challengeId, recoveryCode }
+      return http.post<MfaSession>(`${BASE}/mfa/verify`, body)
     },
 
     // ── Contact verification (FFRNT-362) ────────────────────────────────────

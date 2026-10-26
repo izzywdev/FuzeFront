@@ -10,13 +10,13 @@ const pressReleases = [
     date: 'September 2026',
     title: 'FuzeOne launches public website and unified pricing across all 10 products',
     excerpt:
-      'FuzeOne introduces a single entry point for its full product family — FuzeFront, FuzeAgent, FuzeSocial, FuzeFinance, and more — with transparent, unified pricing.',
+      'FuzeOne introduces a single entry point for its full product family — FuzeFront, FuzeSDLC, FuzeInfra, FuzeAgent, and more — with transparent, unified pricing.',
   },
   {
     date: 'General Availability',
-    title: 'FuzeFront Platform reaches general availability',
+    title: 'FuzeFront reaches general availability',
     excerpt:
-      'The Module Federation host shell behind the FuzeOne family is now generally available, bringing enterprise auth, billing, and AI to every product built on it.',
+      'The Module Federation host shell and portal behind the FuzeOne family is now generally available, bringing enterprise auth, governance, and AI to every product built on it.',
   },
 ]
 
@@ -75,7 +75,7 @@ export const PressPage: React.FC = () => {
                   <Calendar size={13} /> {release.date}
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">{release.title}</h3>
-                <p className="text-gray-600 text-sm leading-relaxed">{release.excerpt}</p>
+                <Text as="p" tone="secondary" size="sm" leading="relaxed">{release.excerpt}</Text>
               </div>
             ))}
           </div>
