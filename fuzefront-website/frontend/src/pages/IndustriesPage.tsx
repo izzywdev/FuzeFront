@@ -246,9 +246,9 @@ export const IndustriesPage: React.FC = () => {
           <h2 className="text-3xl font-heading font-bold text-gray-900 mb-4">
             Don't see your industry?
           </h2>
-          <p className="text-gray-600 mb-8">
+          <Text tone="secondary" spacing="xl">
             Every business has unique requirements. Talk to our team — we'll help you map FuzeOne to your specific needs.
-          </p>
+          </Text>
           <Wrap gap={4} justify="center">
             <Link
               to="/contact"

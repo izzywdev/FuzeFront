@@ -112,12 +112,19 @@ describe("<Text>", () => {
     const cases = [
       ["sm", "var(--space-2)"],
       ["md", "var(--space-4)"],
+      ["lg", "var(--space-6)"],
+      ["xl", "var(--space-8)"],
     ];
     cases.forEach(([spacing, expected]) => {
       const { unmount } = render(<Text spacing={spacing}>{spacing}</Text>);
       expect(screen.getByText(spacing).style.marginBlockEnd).toBe(expected);
       unmount();
     });
+  });
+
+  it("falls back to zero margin-block-end for an unknown spacing value", () => {
+    render(<Text spacing="not-a-real-spacing">Fallback spacing</Text>);
+    expect(screen.getByText("Fallback spacing").style.marginBlockEnd).toBe("0");
   });
 
   it("covers the recurring `text-sm text-gray-{500,600} mb-{2,4}` block-caption pattern via tone+size+spacing", () => {
@@ -206,6 +213,19 @@ describe("<Text>", () => {
     expect(node.tagName).toBe("H3");
     expect(node.style.color).toBe("var(--text-primary)");
     expect(node.style.fontWeight).toBe("var(--weight-medium)");
+  });
+
+
+  it("resolves `spacing` lg/xl to the DS space scale (mb-6/mb-8 pattern)", () => {
+    const cases = [
+      ["lg", "var(--space-6)"],
+      ["xl", "var(--space-8)"],
+    ];
+    cases.forEach(([spacing, expected]) => {
+      const { unmount } = render(<Text spacing={spacing}>{spacing}</Text>);
+      expect(screen.getByText(spacing).style.marginBlockEnd).toBe(expected);
+      unmount();
+    });
   });
 
 });
