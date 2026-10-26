@@ -182,6 +182,22 @@ export const infraSchema = z
   })
   .strict()
 
+const publicMobileUrlSchema = z
+  .string()
+  .url()
+  .refine(value => new URL(value).protocol === 'https:', {
+    message: 'must be an https URL',
+  })
+
+/** Public, product-declared native mobile installation destinations. */
+export const distributionSchema = z
+  .object({
+    appleAppStoreUrl: publicMobileUrlSchema.optional(),
+    googlePlayUrl: publicMobileUrlSchema.optional(),
+    apkUrl: publicMobileUrlSchema.optional(),
+  })
+  .strict()
+
 export const appManifestSchema = z
   .object({
     manifestVersion: z.literal('1'),
@@ -220,10 +236,12 @@ export const appManifestSchema = z
     nav: navSchema.optional(),
     routing: routingSchema.optional(),
     infra: infraSchema.optional(),
+    distribution: distributionSchema.optional(),
     visibility: visibilitySchema.optional(),
     scopeLevel: z.enum(['personal', 'organization', 'both']).optional(),
     requiresOrgContext: z.boolean().optional(),
     installMode: z.enum(['self', 'everyone', 'both']).optional(),
+    organizationInstallMode: z.enum(['self', 'everyone', 'both']).optional(),
     orgLevelOnly: z.boolean().optional(),
     roles: z.array(z.string()).optional(),
   })
@@ -235,14 +253,17 @@ export type AppStatus = z.infer<typeof appStatusSchema>
 export type Visibility = z.infer<typeof visibilitySchema>
 export type NavSection = (typeof NAV_SECTIONS)[number]
 export type Nav = z.infer<typeof navSchema>
+export type Distribution = z.infer<typeof distributionSchema>
 
 // FFRNT-185: accept TypeID wire format (org_<26-char suffix>) OR bare UUID (for
 // backward-compat during migration). The route normalizes to bare UUID before DB.
 const orgIdSchema = z
   .string()
   .refine(
-    v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ||
-         /^org_[0-9a-hj-km-np-tv-z]{26}$/.test(v),
+    v =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        v
+      ) || /^org_[0-9a-hj-km-np-tv-z]{26}$/.test(v),
     { message: 'must be a UUID or an organization TypeID (org_...)' }
   )
 
@@ -347,7 +368,9 @@ export const billingProfileSchema = z
       .max(100)
       .regex(/^[a-z0-9][a-z0-9-]*$/, 'must match ^[a-z0-9][a-z0-9-]*$'),
     currencies: z
-      .array(z.string().regex(/^[a-z]{3}$/, 'must be a lowercase ISO-4217 code'))
+      .array(
+        z.string().regex(/^[a-z]{3}$/, 'must be a lowercase ISO-4217 code')
+      )
       .optional(),
     maxTotalCents: z.number().int().min(1).optional(),
   })

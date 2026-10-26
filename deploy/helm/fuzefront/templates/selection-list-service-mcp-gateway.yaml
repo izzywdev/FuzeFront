@@ -72,7 +72,16 @@ spec:
             - name: MCP_PRODUCT
               value: fuzefront-selection-lists
             - name: MCP_UPSTREAM_BASE_URL
-              value: {{ printf "http://selection-list-service:%v/v1" .Values.selectionListService.port | quote }}
+              {{- /*
+              The Service is named `fuzefront-selection-list-service`
+              (selection-list-service-service.yaml). This chart has no fullname
+              helper: every Service name is a literal, and ingress.yaml,
+              selection-list-service-networkpolicy.yaml and mcp-gateway.yaml
+              reference them the same way. The previous host
+              `selection-list-service` matched no Service, so the gateway would
+              have resolved nothing the moment both flags were turned on.
+              */}}
+              value: {{ printf "http://fuzefront-selection-list-service:%v/v1" .Values.selectionListService.port | quote }}
             - name: MCP_OPENAPI_SPEC
               value: /spec/openapi.yaml
             - name: MCP_TOOL_OVERRIDES

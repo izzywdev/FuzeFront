@@ -39,7 +39,16 @@
       {
         "id": "install-scope",
         "orchestrator": "InstallAppDialog",
-        "route": "/apps"
+        "route": "/apps",
+        "implementation": {
+          "paths": [
+            "frontend/src/components/InstallAppDialog.tsx",
+            "frontend/src/components/installPolicy.ts"
+          ]
+        },
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-09T08:54:52.133Z"
       },
       {
         "id": "notifications",
@@ -115,18 +124,23 @@
       "label": "(c) Install scope & mode",
       "route": "/apps",
       "flow": "install-scope",
-      "summary": "The install dialog for each scopeLevel: 'both' asks personal vs organization then self vs everyone; 'organization' with a plain member disables install-for-everyone; 'personal' asks nothing; an already-installed app offers uninstall instead.",
-      "acceptanceNotes": "The mode group ([data-group='mode']) renders only when [data-scope='organization'] is selected; choosing the personal scope hides it. For a caller without owner/admin on the target org the everyone card is aria-disabled with [data-guard='requires-org-admin'] — the API also returns 403, so the UI guard is convenience, not the enforcement. A scope not permitted by the app's scopeLevel is a 422. An app the caller cannot see is a 404, never a 403. Re-opening an installed app shows [data-guard='already-installed'] and the uninstall action instead of a second install.",
+      "summary": "The install dialog separates destination from organization policy: personal remains available for scopeLevel 'both', while an app with organizationInstallMode 'everyone' fixes every organization install to all members, states that outcome without a self/everyone selector, and blocks non-admin callers. Apps whose organization policy is 'both' retain the mode choice; personal-only apps ask nothing; an already-installed app offers uninstall instead.",
+      "acceptanceNotes": "For scopeLevel 'both', [data-scope='personal'] remains available even when [data-organization-install-mode='everyone']. Selecting organization for that app shows [data-guard='organization-wide'] and MUST NOT render [data-group='mode']; the request is fixed to mode 'everyone'. A caller without owner/admin sees [data-guard='requires-org-admin'] and the install action is disabled while organization is selected; the API independently returns 403. The mode group renders only for an organization destination when data-organization-install-mode='both'. A self-mode organization request against organizationInstallMode 'everyone' is 422. A scope not permitted by scopeLevel is 422. An app the caller cannot see is 404, never 403. Re-opening an installed app shows [data-guard='already-installed'] and the uninstall action instead of a second install.",
       "testHooks": [
         "[data-frame='03-install-scope']",
         "[data-dialog='install-app']",
+        "[data-case='personal-or-organization-wide']",
+        "[data-case='organization-wide-requires-admin']",
         "[data-scope-level='both']",
         "[data-scope-level='personal']",
         "[data-scope-level='organization']",
+        "[data-organization-install-mode='everyone']",
+        "[data-organization-install-mode='both']",
         "[data-scope='personal']",
         "[data-scope='organization']",
         "[data-mode='self']",
         "[data-mode='everyone']",
+        "[data-guard='organization-wide']",
         "[data-guard='requires-org-admin']",
         "[data-guard='already-installed']",
         "[data-action='install']",
@@ -184,5 +198,5 @@
       ]
     }
   ],
-  "stamp": "3914792365c96edc802026e8a3d87a43ca3730eb3247328a89f44fbf950e6c82"
+  "stamp": "1f2e5da388153f92611407a828b04f112cc5af77f348618ed963b3f65b8f3841"
 }

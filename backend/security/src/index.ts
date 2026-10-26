@@ -30,6 +30,7 @@ import { tenantContext } from './middleware/tenant-context'
 import { startOutboxRelayIfConfigured } from './services/outboxRelay'
 import { initFeatureFlags } from './utils/feature-flags'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
+import type { EntityType } from '@izzywdev/fuzefront-identity'
 import type { OutboxRelayHandle } from '@fuzefront/core'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
@@ -53,19 +54,21 @@ const telemetry: TelemetryHandle = initTelemetry({
 let outboxRelay: OutboxRelayHandle | null = null
 
 const PORT = process.env.PORT || 3002
-const app = createExpressApp({ serviceName: 'security-service' })
+// tracingMiddleware() passed as preMiddleware, not app.use()'d after the
+// fact: createExpressApp() has already mounted helmet/cors/body-parsers/
+// request-logging by the time it returns, so appending afterward would run
+// it LAST — missing spans for anything those reject (e.g. oversized/
+// malformed JSON) and leaving the request logger's line un-correlated
+// (req.traceId doesn't exist yet when that logger runs). Deliberately
+// independent of `@fuzefront/core`'s own request-id assignment (inside
+// `createExpressApp`) — tracingMiddleware() never reads/writes
+// req.requestId/x-request-id, so the two correlation ids coexist rather than
+// compete; see tracingMiddleware's own doc comment.
+const app = createExpressApp({ serviceName: 'security-service', preMiddleware: [tracingMiddleware()] })
 // Behind the k8s ingress every request otherwise carries the ingress IP —
 // trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
 // the real client from X-Forwarded-For.
 app.set('trust proxy', 1)
-// Starts/continues a per-request span, exposing req.traceId/req.spanId for
-// `withReqId(reqId, req)` (see `lib/logger.ts`) to bind onto the request's
-// child logger alongside `reqId`. Deliberately mounted independently of
-// `@fuzefront/core`'s own request-id assignment above (inside
-// `createExpressApp`) — tracingMiddleware() never reads/writes
-// req.requestId/x-request-id, so the two correlation ids coexist rather than
-// compete; see tracingMiddleware's own doc comment.
-app.use(tracingMiddleware())
 const httpServer = createServer(app)
 const startTime = Date.now()
 
@@ -154,11 +157,22 @@ async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
 
-    // Step 5 (FFRNT-185): dual-accept windows closed.
-    // All entity types now use mintId() for creation and store bare UUIDs;
-    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
-    // need to be accepted at the request boundary.
-    configureIdentity({ legacyUuidTypes: new Set() })
+    // Dual-accept window for the platform spine types (FFRNT-185 / §8).
+    // The input boundary must track the OUTPUT wire form, governed by the
+    // `fuzefront.identity.prefixed-ids` release flag. That flag defaults OFF
+    // and is NOT force-enabled in prod, so API responses still emit BARE UUIDs.
+    // Closing this window to prefixed-only while output is bare rejects every
+    // id the frontend round-trips. parseId still accepts prefixed ids too, so
+    // listing these is purely additive; EMPTY this set only once prefixed-id
+    // OUTPUT is confirmed GA (governance/identifier-standard.md §8).
+    configureIdentity({
+      legacyUuidTypes: new Set<EntityType>([
+        'organization',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({

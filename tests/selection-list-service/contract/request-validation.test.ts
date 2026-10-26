@@ -18,14 +18,19 @@
  *       `missing`; the spec says 400 VALIDATION_ERROR. It also accepted duplicate ids (`uniqueItems`),
  *       an unsupported `locale`, and an empty `ids` (`minItems: 1`) with 200.
  *   D3  `limit=0` on the paginated GETs (spec `minimum: 1`) was silently treated as the default.
+ *   D4  (OPEN, `it.failing` at the bottom) `GET .../items?status=all` answers 400 although the spec's items
+ *       `status` enum is [active, archived, all].
+ *   D5  (OPEN, `it.failing` at the bottom) `POST /v1/resolve` sends an ETag but no `Cache-Control`, which the
+ *       spec documents.
  */
 import { mintTestToken } from '../helpers/auth';
-import { rawFetch } from '../helpers/client';
+import { rawFetch, SERVICE_BASE_URL } from '../helpers/client';
 import { assertSchema, requestBodyErrors } from '../helpers/openapi';
 import { closeDb } from '../helpers/db';
+import { testOrg, testUser } from '../helpers/ids';
 
-const ORG = 'org_01test0000000reqval000000000';
-const USER = 'usr_01test0000000reqvaluser00000';
+const ORG = testOrg('reqval');
+const USER = testUser('reqvaluser');
 const tok = () => mintTestToken({ userId: USER, organizationId: ORG });
 const call = (method: string, path: string, body?: unknown) =>
   rawFetch(path, { method, token: tok(), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -141,5 +146,42 @@ describe('what the service already enforces (regression pins)', () => {
     const res = await call('POST', '/v1/resolve', { ids: [itemId], locale: 'en' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ results: { [itemId]: { label: 'One', status: 'active' } }, missing: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D4 - KNOWN, TICKETED DEVIATION (found by the SL9 suites; pre-existing on master, unrelated to SL9).
+// openapi.yaml declares the items `status` filter as `enum: [active, archived, all]`;
+// `GET /v1/selection-lists/{listId}/items?status=all` answers 400 "status must be active or archived."
+// (src/routes/items.ts). Pinned `it.failing`: when the service is fixed this goes red ("expected to fail
+// but passed") and the `.failing` must be removed in the same PR. Never weaken the assertion.
+// The SL9 suites avoid the parameter (helpers/shared-lists.ts walkItems composes active + archived).
+// ---------------------------------------------------------------------------
+// D5 - KNOWN, TICKETED DEVIATION (same provenance as D4): `POST /v1/resolve` is documented as "cacheable ...
+// Responses carry `Cache-Control` and an `ETag`", but the service sends only Express's default weak ETag, no
+// `Cache-Control`. Same `.failing` rules as D4.
+describe('D5: resolve responses carry Cache-Control (documented)', () => {
+  it.failing('POST /v1/resolve answers with a Cache-Control header as well as an ETag', async () => {
+    const res = await fetch(`${SERVICE_BASE_URL}/v1/resolve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok()}` },
+      body: JSON.stringify({ ids: [itemId] }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('etag')).toBeTruthy();
+    expect(res.headers.get('cache-control')).toBeTruthy();
+  });
+});
+
+describe('D4: items status=all (a documented filter value)', () => {
+  it.failing('GET .../items?status=all returns active AND archived items (spec enum [active, archived, all])', async () => {
+    const second = await call('POST', `${L()}/items`, { code: 'V2', label: 'Two' });
+    expect(second.status).toBe(201);
+    const id = (second.body as { id: string }).id;
+    expect((await call('POST', `${L()}/items/${id}/archive`)).status).toBe(200);
+    const all = await call('GET', `${L()}/items?status=all&limit=200`);
+    expect(all.status).toBe(200);
+    const codes = (all.body as { items: Array<{ code: string }> }).items.map((i) => i.code).sort();
+    expect(codes).toEqual(['V1', 'V2']);
   });
 });

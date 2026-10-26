@@ -24,7 +24,7 @@
  */
 import type { components } from './generated';
 
-export const SECURITY_CONTRACT_VERSION = '0.9.1' as const;
+export const SECURITY_CONTRACT_VERSION = '1.3.1' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -61,7 +61,10 @@ export interface Identity {
  */
 export type AuthMode = 'legacy-hs256' | 'federated-jwks';
 
-/** Stable, provider-neutral error codes. Fail-closed. */
+/**
+ * Stable, provider-neutral error codes. Fail-closed. Mirrors the full
+ * `ErrorBody.code` enum in openapi.yaml — keep the two in lockstep.
+ */
 export type SecurityErrorCode =
   | 'NO_TOKEN'
   | 'MALFORMED'
@@ -75,10 +78,18 @@ export type SecurityErrorCode =
   | 'VERIFIER_UNAVAILABLE'
   | 'INVALID_CREDENTIALS'
   | 'INVALID_CODE'
+  | 'REDIRECT_URI_NOT_ALLOWED'
   | 'CONFLICT'
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'PROVIDER_UNAVAILABLE'
+  | 'TOKEN_EXPIRED'
+  | 'TOKEN_INVALID'
+  | 'PASSWORD_POLICY'
+  | 'CAPTCHA_FAILED'
+  | 'LAST_FACTOR'
+  | 'NO_PASSWORD'
+  | 'RATE_LIMITED'
   | 'UNKNOWN';
 
 /** Supported social provider slugs. Extensible; `google` is first. */
@@ -101,6 +112,26 @@ export type BrokerHandoffRequest = components['schemas']['BrokerHandoffRequest']
 export type BrokerHandoffResult = components['schemas']['BrokerHandoffResult'];
 export type BrokerTokenExchangeRequest = components['schemas']['BrokerTokenExchangeRequest'];
 
+/** Captcha capability for pre-auth forms (mirrors API `AuthMethods.captcha`). */
+export interface CaptchaMethod {
+  /** `turnstile` = Cloudflare Turnstile. Deliberate approved vendor-name exception (browser widget). */
+  provider: 'turnstile';
+  /** Public site key for the captcha widget (safe to expose to the browser). */
+  siteKey: string;
+}
+
+/**
+ * Authoritative password policy (mirrors API `AuthMethods.passwordPolicy`) so
+ * the client renders the real strength-meter rules rather than a hard-coded copy.
+ */
+export interface PasswordPolicy {
+  minLength: number;
+  requireUpper: boolean;
+  requireLower: boolean;
+  requireDigit: boolean;
+  requireSymbol: boolean;
+}
+
 /** Neutral auth capability descriptor (replaces `oidcConfigured`). */
 export interface AuthMethods {
   password: boolean;
@@ -113,6 +144,10 @@ export interface AuthMethods {
     email: boolean;
     sms: boolean;
   };
+  /** Present only when captcha is enabled; absent when disabled. */
+  captcha?: CaptchaMethod;
+  /** Authoritative password policy for client-side strength rendering. */
+  passwordPolicy?: PasswordPolicy;
 }
 
 /**
@@ -164,6 +199,8 @@ export interface GrantRequest {
   role: string;
   permission?: string;
   resource?: ResourceRef;
+  /** Required for exact fuzekeys_Connector owner tuples; no additional authority. */
+  connectorProvider?: string;
 }
 
 /** A created, revocable grant. */
@@ -175,6 +212,8 @@ export interface Grant {
   permission?: string;
   resource?: ResourceRef;
   createdAt?: number;
+  /** Acknowledged provider metadata for a validated Connector owner grant. */
+  connectorProvider?: string;
 }
 
 /**

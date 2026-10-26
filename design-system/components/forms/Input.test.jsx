@@ -71,3 +71,34 @@ describe("<Input> label", () => {
     expect(screen.getByText("(auto-derived)", { exact: false })).toBeInTheDocument();
   });
 });
+
+describe("<Input> adornment + validity rings", () => {
+  it("renders a decorative end adornment and reserves room for it", () => {
+    render(<Input label="Email" adornment={<i data-testid="ad" />} />);
+    expect(screen.getByTestId("ad").parentElement).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByLabelText("Email").style.paddingInlineEnd).toBe("var(--space-10)");
+  });
+
+  it("valid -> success border; invalid -> error border + aria-invalid with no message", () => {
+    const { rerender } = render(<Input label="Email" valid />);
+    expect(screen.getByLabelText("Email").style.border).toContain("var(--success-color)");
+    expect(screen.getByLabelText("Email")).not.toHaveAttribute("aria-invalid");
+    rerender(<Input label="Email" invalid />);
+    expect(screen.getByLabelText("Email").style.border).toContain("var(--error-color)");
+    expect(screen.getByLabelText("Email")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("lets a caller localize the reveal toggle's accessible name", () => {
+    render(
+      <Input
+        label="Password"
+        type="password"
+        showPasswordLabel="إظهار كلمة المرور"
+        hidePasswordLabel="إخفاء كلمة المرور"
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "إظهار كلمة المرور" }));
+    expect(screen.getByRole("button", { name: "إخفاء كلمة المرور" })).toBeInTheDocument();
+  });
+});

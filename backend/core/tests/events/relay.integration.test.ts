@@ -34,6 +34,7 @@ const BROKERS = (process.env.KAFKA_BROKERS || '')
   .map(b => b.trim())
   .filter(Boolean)
 const describeKafka = PG_URL && BROKERS.length ? describe : describe.skip
+const TEST_SCHEMA = `relay_it_${process.pid}_${Date.now()}`
 
 // Unique per run so a consumer reading a shared topic from the beginning can
 // isolate exactly the messages this run produced.
@@ -75,8 +76,10 @@ describeKafka('outbox → Kafka relay against a real broker (FFRNT-175)', () => 
   let db: Knex
 
   beforeAll(async () => {
-    db = knex({ client: 'pg', connection: PG_URL, pool: { min: 0, max: 5 } })
-    await db.raw('DROP TABLE IF EXISTS event_outbox')
+    // Use a private schema while the outbox suite runs in another Jest worker.
+    // Shared event_outbox fixtures otherwise race through DROP and DELETE.
+    db = knex({ client: 'pg', connection: PG_URL, searchPath: [TEST_SCHEMA], pool: { min: 0, max: 5 } })
+    await db.raw('CREATE SCHEMA ??', [TEST_SCHEMA])
     await db.raw(`
       CREATE TABLE event_outbox (
         id uuid PRIMARY KEY,
@@ -94,7 +97,7 @@ describeKafka('outbox → Kafka relay against a real broker (FFRNT-175)', () => 
 
   afterAll(async () => {
     if (db) {
-      await db.raw('DROP TABLE IF EXISTS event_outbox')
+      await db.raw('DROP SCHEMA IF EXISTS ?? CASCADE', [TEST_SCHEMA])
       await db.destroy()
     }
   })

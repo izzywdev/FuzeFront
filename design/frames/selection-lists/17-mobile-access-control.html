@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — Access control at 375 px, LTR and RTL (he)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<link rel="stylesheet" href="mobile.css" />
+</head>
+<body>
+<div class="content" data-frame="17-mobile-access-control" style="padding-top: var(--space-12);">
+
+  <h1 class="page-title">Access control — 375 px, English · עברית</h1>
+  <p class="page-sub">Frames 3a–3b at a phone width. One card per grant with the role select full-width, the 409 last-owner refusal
+    <b>inline on that card</b>, the role matrix as a per-role list, and “Add person” as a BottomSheet.</p>
+
+  <div class="sl-devices">
+
+    <!-- ===== 1 · EN · grants ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · access panel</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen" data-panel="access-mobile" data-state="ready">
+          <div class="sl-crumb"><a href="01-list-index.html">Selection Lists</a> · <a href="03-list-detail.html">Countries</a></div>
+          <h2 class="page-title">Access</h2>
+          <div class="sl-tabs" role="tablist" data-tabs="list-detail">
+            <a class="sl-tab" role="tab" aria-selected="false" href="15-mobile-list-management.html" data-tab="values">Values</a>
+            <a class="sl-tab" role="tab" aria-selected="false" href="16-mobile-translation-workbench.html" data-tab="translations">Translations</a>
+            <a class="sl-tab" role="tab" aria-selected="true" href="10-access-panel.html" data-tab="access">Access</a>
+            <a class="sl-tab" role="tab" aria-selected="false" href="#" data-tab="audit">Audit log</a>
+          </div>
+          <a class="btn btn-primary sl-block" href="11-add-access-modal.html" data-action="add-access">+ Add person</a>
+          <div class="sl-mlist" role="list" style="margin-top: var(--space-3);">
+            <div class="sl-mrow" role="listitem" data-grant="usr_02h455vb4pex5vsknk084sn02q" data-role="list-editor">
+              <span class="sl-mrow__title">Marc Lindqvist</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="revoke-access" aria-label="Remove Marc Lindqvist">✕</button></span>
+              <span class="sl-mrow__meta"><span class="sl-uuid">marc@northwind.example</span> · by Dana Okafor, 5 Aug 2026</span>
+              <select class="sl-input sl-mrow__full" data-role-select aria-label="Role for Marc Lindqvist">
+                <option value="list-owner">list-owner</option><option value="list-editor" selected>list-editor</option><option value="list-contributor">list-contributor</option><option value="list-translator">list-translator</option><option value="list-viewer">list-viewer</option>
+              </select>
+            </div>
+            <div class="sl-mrow" role="listitem" data-grant="usr_03h455vb4pex5vsknk084sn02q" data-role="list-translator">
+              <span class="sl-mrow__title">Camille Roy</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="revoke-access" aria-label="Remove Camille Roy">✕</button></span>
+              <span class="sl-mrow__meta"><span class="sl-uuid">camille@northwind.example</span> · by Dana Okafor, 6 Aug 2026</span>
+              <select class="sl-input sl-mrow__full" data-role-select aria-label="Role for Camille Roy">
+                <option value="list-owner">list-owner</option><option value="list-editor">list-editor</option><option value="list-contributor">list-contributor</option><option value="list-translator" selected>list-translator</option><option value="list-viewer">list-viewer</option>
+              </select>
+            </div>
+            <div class="sl-mrow" role="listitem" data-grant="usr_04h455vb4pex5vsknk084sn02q" data-role="list-viewer">
+              <span class="sl-mrow__title">Priya Raman</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="revoke-access" aria-label="Remove Priya Raman">✕</button></span>
+              <span class="sl-mrow__meta"><span class="sl-uuid">priya@northwind.example</span> · by Marc Lindqvist, 7 Aug 2026</span>
+              <select class="sl-input sl-mrow__full" data-role-select aria-label="Role for Priya Raman">
+                <option value="list-owner">list-owner</option><option value="list-editor">list-editor</option><option value="list-contributor">list-contributor</option><option value="list-translator">list-translator</option><option value="list-viewer" selected>list-viewer</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 2 · EN · 409 last owner inline ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · 409 last owner</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen" data-panel="access-mobile">
+          <h2 class="page-title">Access</h2>
+          <div class="sl-mlist" role="list">
+            <div class="sl-mrow sl-mrow--error" role="listitem" data-grant="usr_01h455vb4pex5vsknk084sn02q" data-role="list-owner" data-sole-owner="true">
+              <span class="sl-mrow__title">Dana Okafor <span class="sl-pill">only owner</span></span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="revoke-access" aria-label="Remove Dana Okafor">✕</button></span>
+              <span class="sl-mrow__meta"><span class="sl-uuid">dana@northwind.example</span> · creator</span>
+              <select class="sl-input sl-mrow__full" data-role-select aria-label="Role for Dana Okafor" aria-describedby="m2-409" aria-invalid="true">
+                <option value="list-owner" selected>list-owner</option><option value="list-editor">list-editor</option><option value="list-contributor">list-contributor</option><option value="list-translator">list-translator</option><option value="list-viewer">list-viewer</option>
+              </select>
+              <div class="sl-field__err sl-mrow__full" id="m2-409" role="alert" data-state="error" data-error="CONFLICT" data-case="last-owner" style="align-items: flex-start;">
+                <span aria-hidden="true">⛔</span>
+                <span><b>Can't remove the last owner</b> (<code class="sl-code">409</code>). Promote another person to list-owner first. The role was put back.</span>
+              </div>
+            </div>
+            <div class="sl-mrow" role="listitem" data-grant="usr_02h455vb4pex5vsknk084sn02q" data-role="list-editor">
+              <span class="sl-mrow__title">Marc Lindqvist</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="revoke-access" aria-label="Remove Marc Lindqvist">✕</button></span>
+              <span class="sl-mrow__meta"><span class="sl-uuid">marc@northwind.example</span></span>
+              <select class="sl-input sl-mrow__full" data-role-select aria-label="Role for Marc Lindqvist">
+                <option value="list-owner">list-owner</option><option value="list-editor" selected>list-editor</option><option value="list-contributor">list-contributor</option><option value="list-translator">list-translator</option><option value="list-viewer">list-viewer</option>
+              </select>
+            </div>
+          </div>
+          <p class="sl-mcase">What each role can do</p>
+          <div class="sl-mlist" data-panel="role-matrix">
+            <div class="sl-mrow" data-role="list-owner"><span class="sl-mrow__title">list-owner</span><span class="sl-mrow__meta">read · values · translate · list · manage access</span></div>
+            <div class="sl-mrow" data-role="list-editor"><span class="sl-mrow__title">list-editor</span><span class="sl-mrow__meta">read · values · translate · list</span></div>
+            <div class="sl-mrow" data-role="list-contributor"><span class="sl-mrow__title">list-contributor</span><span class="sl-mrow__meta">read · values</span></div>
+            <div class="sl-mrow" data-role="list-translator"><span class="sl-mrow__title">list-translator</span><span class="sl-mrow__meta">read · translate</span></div>
+            <div class="sl-mrow" data-role="list-viewer"><span class="sl-mrow__title">list-viewer</span><span class="sl-mrow__meta">read</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 3 · HE · RTL ===== -->
+    <div>
+      <p class="sl-device__label">he · rtl · 375 · access panel</p>
+      <div class="sl-device" dir="rtl" lang="he" data-device="375" data-locale="he" data-dir="rtl">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="פתיחת ניווט" data-action="open-drawer">☰</button><div class="wordmark" dir="ltr"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen" data-panel="access-mobile" data-state="ready">
+          <div class="sl-crumb"><a href="01-list-index.html">רשימות בחירה</a> · מדינות</div>
+          <h2 class="page-title">הרשאות</h2>
+          <a class="btn btn-primary sl-block" href="11-add-access-modal.html" data-action="add-access">+ הוספת אדם</a>
+          <div class="sl-mlist" role="list" style="margin-top: var(--space-3);">
+            <div class="sl-mrow" role="listitem" data-grant="usr_01h455vb4pex5vsknk084sn02q" data-role="list-owner" data-sole-owner="true">
+              <span class="sl-mrow__title">Dana Okafor</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="revoke-access" aria-label="הסרת Dana Okafor">✕</button></span>
+              <span class="sl-mrow__meta"><span class="sl-uuid sl-ltr" dir="ltr">dana@northwind.example</span></span>
+              <select class="sl-input sl-mrow__full" data-role-select aria-label="תפקיד עבור Dana Okafor">
+                <option value="list-owner" selected>בעלים (list-owner)</option><option value="list-editor">עורך (list-editor)</option><option value="list-contributor">תורם (list-contributor)</option><option value="list-translator">מתרגם (list-translator)</option><option value="list-viewer">צופה (list-viewer)</option>
+              </select>
+            </div>
+            <div class="sl-mrow" role="listitem" data-grant="usr_03h455vb4pex5vsknk084sn02q" data-role="list-translator">
+              <span class="sl-mrow__title">Camille Roy</span>
+              <span class="sl-mrow__end"><button class="sl-iconbtn" data-action="revoke-access" aria-label="הסרת Camille Roy">✕</button></span>
+              <span class="sl-mrow__meta"><span class="sl-uuid sl-ltr" dir="ltr">camille@northwind.example</span></span>
+              <select class="sl-input sl-mrow__full" data-role-select aria-label="תפקיד עבור Camille Roy">
+                <option value="list-owner">בעלים (list-owner)</option><option value="list-editor">עורך (list-editor)</option><option value="list-contributor">תורם (list-contributor)</option><option value="list-translator" selected>מתרגם (list-translator)</option><option value="list-viewer">צופה (list-viewer)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 4 · EN · add person sheet ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · add person</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">DO</div></div>
+        <div class="sl-device__screen sl-device__screen--sheet">
+          <div class="sl-device__behind" aria-hidden="true"><h2 class="page-title">Access</h2></div>
+          <div class="sl-sheet" role="dialog" aria-modal="true" aria-labelledby="m4-t" data-dialog="add-access" data-presentation="bottom-sheet" data-state="idle">
+            <div class="sl-sheet__grab" aria-hidden="true"></div>
+            <div class="sl-modal__head"><h3 class="sl-modal__title" id="m4-t">Add person to Countries</h3>
+              <p class="sl-modal__sub">Members of Northwind only.</p></div>
+            <div class="sl-modal__body">
+              <input class="sl-input" type="search" value="ca" aria-label="Search members" data-member-search />
+              <div class="sl-mlist" role="listbox" aria-label="Members" style="margin-top: var(--space-2);">
+                <div class="sl-mrow" role="option" aria-selected="true" data-member="usr_05h455vb4pex5vsknk084sn02q"><span class="sl-mrow__title">Carlos Mendes</span><span class="sl-mrow__end"><span class="sl-opt__check" aria-hidden="true">✓</span></span><span class="sl-mrow__meta">carlos@northwind.example</span></div>
+                <div class="sl-mrow sl-mrow--archived" role="option" aria-disabled="true" aria-selected="false" data-member="usr_03h455vb4pex5vsknk084sn02q" data-already-granted="true"><span class="sl-mrow__title">Camille Roy</span><span class="sl-mrow__end"></span><span class="sl-mrow__meta">already list-translator</span></div>
+              </div>
+              <p class="sl-mcase" id="m4-role">Role — roles don't stack</p>
+              <div class="sl-mchoice" role="radiogroup" aria-labelledby="m4-role" data-control="role">
+                <div class="sl-mchoice__opt" role="radio" aria-checked="false" tabindex="-1" data-role-option="list-editor"><span class="sl-mchoice__radio" aria-hidden="true"></span><div><div class="sl-mchoice__title">list-editor</div><p class="sl-mchoice__desc">Change values, translations and the list itself.</p></div></div>
+                <div class="sl-mchoice__opt" role="radio" aria-checked="true" tabindex="0" data-role-option="list-translator"><span class="sl-mchoice__radio" aria-hidden="true"></span><div><div class="sl-mchoice__title">list-translator</div><p class="sl-mchoice__desc">Translate labels; can't add or remove values.</p></div></div>
+                <div class="sl-mchoice__opt" role="radio" aria-checked="false" tabindex="-1" data-role-option="list-viewer"><span class="sl-mchoice__radio" aria-hidden="true"></span><div><div class="sl-mchoice__title">list-viewer</div><p class="sl-mchoice__desc">Read only.</p></div></div>
+              </div>
+              <p class="sl-field__hint">Owner and contributor are further down the list.</p>
+            </div>
+            <div class="sl-modal__foot">
+              <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+              <button class="btn btn-primary" data-action="confirm-add-access">Give Carlos list-translator</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section" style="margin-top: var(--space-10);">
+    <h2>States at 375 px</h2>
+    <p class="sl-caption">Same states as frames 3a–3b.</p>
+    <div class="sl-devices">
+      <div>
+        <p class="sl-device__label">loading</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="access-mobile" data-state="loading" aria-busy="true">
+          <div class="sl-mlist"><div class="sl-mrow"><span class="sl-skel" style="width: 50%;"></span></div><div class="sl-mrow"><span class="sl-skel" style="width: 66%;"></span></div></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">empty</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="access-mobile" data-state="empty">
+          <div class="sl-state"><div class="sl-state__ico" aria-hidden="true">☺</div><h3 class="sl-state__title">Only you have explicit access</h3>
+            <p class="sl-state__body">Everyone in the organization can already read this list.</p>
+            <a class="btn btn-primary sl-block" href="11-add-access-modal.html" data-action="add-access">+ Add person</a></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">error</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="access-mobile" data-state="error">
+          <div class="sl-state"><div class="sl-state__ico" aria-hidden="true">⚠</div><h3 class="sl-state__title">Couldn't load access</h3>
+            <p class="sl-state__body">No grants have been changed.</p>
+            <button class="btn btn-ghost sl-block" data-action="retry">Retry</button></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">403 — read-only</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="access-mobile" data-state="error" data-error="FORBIDDEN">
+          <button class="btn btn-primary sl-block" data-action="add-access" disabled aria-disabled="true" aria-describedby="m403">+ Add person</button>
+          <p class="sl-reason" id="m403"><span aria-hidden="true">🔒</span><span>Changing access needs <code class="sl-code">manage_access</code> (list-owner or org admin).</span></p>
+          <div class="sl-mrow" style="margin-top: var(--space-3);"><span class="sl-mrow__title">Marc Lindqvist</span><span class="sl-mrow__end"></span><span class="sl-mrow__meta">list-editor</span>
+            <select class="sl-input sl-mrow__full" disabled aria-label="Role for Marc Lindqvist (read-only)"><option selected>list-editor</option></select></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section">
+    <h2>Rules the implementation must keep</h2>
+    <ul class="sl-mrules" data-rules="mobile-access-control">
+      <li><b>At ≤ 40em</b> each grant is a card: name, email (an LTR island in RTL), granted-by/when, a full-width role select and a
+        ≥ 44 px Remove button with an accessible name that includes the person.</li>
+      <li><b>The 409 last-owner refusal lands on that card</b> — select snapped back to <code class="sl-code">list-owner</code>, the reason
+        linked with <code class="sl-code">aria-describedby</code> and announced (<code class="sl-code">role="alert"</code>). Never a toast that
+        scrolls away; never pre-emptively hidden controls (the server decides who the last owner is).</li>
+      <li><b>The role matrix becomes one row per role</b> listing what it can do — no sideways-scrolling table.</li>
+      <li><b>Add person is a BottomSheet</b>: org-scoped search, already-granted members shown but not selectable, roles as a radio list with
+        their plain-language descriptions, and the confirm label names the person and role.</li>
+      <li><b>RTL</b>: role names are localized with the role id kept as an LTR island; names and emails are bidi-isolated.</li>
+    </ul>
+  </div>
+
+  <p class="sl-notes">
+    <b>Test hooks:</b> <code>[data-frame='17-mobile-access-control']</code> · <code>[data-device='375']</code> · <code>[data-panel='access-mobile']</code> · <code>[data-locale='he'][data-dir='rtl']</code> · <code>[data-grant='usr_01h455vb4pex5vsknk084sn02q']</code> · <code>[data-sole-owner='true']</code> · <code>[data-role-select]</code> · <code>[data-action='revoke-access']</code> · <code>[data-action='add-access']</code> · <code>[data-case='last-owner']</code> · <code>[data-error='CONFLICT']</code> · <code>[data-panel='role-matrix']</code> · <code>[data-dialog='add-access'][data-presentation='bottom-sheet']</code> · <code>[data-already-granted='true']</code> · <code>[data-control='role']</code> · <code>[data-state='loading']</code> · <code>[data-state='empty']</code> · <code>[data-state='error']</code> · <code>[data-error='FORBIDDEN']</code> · <code>[data-rules='mobile-access-control']</code><br />
+    Playwright drives the real panel at <code>{ viewport: 375×812, locale: en | he-IL }</code>: no horizontal scroll, demoting the sole owner shows the 409 inside
+    that grant's card with the select reverted, and every Remove button is ≥ 44 px.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code> / <code>mobile.css</code>.
+  </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="16-mobile-translation-workbench.html" data-nav="prev">← Translations — 375 px</a>
+  <span class="caption"><b>(3c) Access control — 375 px</b> · Flow 3 · Access control · frame 17 of 18</span>
+  <a class="btn btn-primary" href="18-mobile-picker.html" data-nav="next">Picker — 375 px →</a>
+</nav>
+</body>
+</html>

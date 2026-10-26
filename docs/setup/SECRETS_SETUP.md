@@ -210,7 +210,7 @@ Create all essential secrets at once:
 #!/bin/bash
 # quick-secrets-setup.sh
 
-echo "Setting up FrontFuse GitHub Secrets..."
+echo "Setting up FuzeFront GitHub Secrets..."
 
 # Generate JWT secret
 JWT_SECRET=$(openssl rand -base64 32)

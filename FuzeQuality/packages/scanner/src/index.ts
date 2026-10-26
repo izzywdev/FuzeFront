@@ -2,12 +2,14 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
 import fg from 'fast-glob'
+import { parse as parseYaml } from 'yaml'
 import type {
   ApiOperation,
   FrontendSurface,
   StorybookStory,
   Repository,
   RepositoryScanCandidate,
+  QualityArtifact,
   ScanDiagnostic,
   ScanResult,
   TestCase,
@@ -22,6 +24,19 @@ import { parseOpenApiDocument, referencedOpenApiPaths } from './openapi'
 
 const digest = (...parts: string[]) =>
   createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 24)
+
+const qualityArtifactId = (
+  repositoryId: string,
+  revision: string,
+  kind: QualityArtifact['kind'],
+  ...identity: string[]
+) => `artifact:${repositoryId}:${digest(revision, kind, ...identity)}`
+
+const qualityArtifactLogicalId = (
+  repositoryId: string,
+  kind: QualityArtifact['kind'],
+  ...identity: string[]
+) => `artifact:${repositoryId}:${digest(kind, ...identity)}`
 
 const fingerprint = (content: string) => createHash('sha256').update(content).digest('hex')
 
@@ -50,7 +65,105 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.2.0'
+export const SCANNER_VERSION = '1.12.0'
+export const MAX_SCAN_RESULT_BYTES = 4_500_000
+export const MAX_QUALITY_EVIDENCE_SOURCE_BYTES = 16 * 1024 * 1024
+export const MAX_QUALITY_EVIDENCE_SOURCE_FILES = 500
+const TRANSPORT_DIAGNOSTIC_RESERVE_BYTES = 2_048
+const QUALITY_EVIDENCE_FILE_LIMIT = 100
+const PARTIAL_SCAN_DIAGNOSTIC_CODES = new Set([
+  'quality-evidence-file-limit',
+  'documentation-evidence-file-limit',
+  'quality-evidence-source-budget',
+])
+
+const serializedBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8')
+
+const transportArtifactPriority: Record<QualityArtifact['kind'], number> = {
+  policy: 0,
+  gate: 0,
+  documentation: 0,
+  'integration-test': 0,
+  'post-production-test': 0,
+  'load-test': 0,
+  'stress-test': 0,
+  route: 1,
+  story: 1,
+  'test-plan': 2,
+}
+
+export class ScanTransportLimitError extends Error {
+  readonly code = 'SCAN_TRANSPORT_LIMIT_EXCEEDED' as const
+
+  constructor(readonly observedBytes: number, readonly maxBytes: number) {
+    super(`Repository inventory is ${observedBytes} bytes and exceeds the ${maxBytes}-byte scan transport limit`)
+    this.name = 'ScanTransportLimitError'
+  }
+}
+
+export function boundQualityArtifactsForTransport(
+  result: Omit<ScanResult, 'qualityArtifacts'>,
+  artifacts: QualityArtifact[],
+): ScanResult {
+  const unbounded = { ...result, qualityArtifacts: artifacts }
+  if (serializedBytes(unbounded) <= MAX_SCAN_RESULT_BYTES) return unbounded
+
+  const emptyPayloadBytes = serializedBytes({ ...result, qualityArtifacts: [] })
+  if (emptyPayloadBytes + TRANSPORT_DIAGNOSTIC_RESERVE_BYTES > MAX_SCAN_RESULT_BYTES) {
+    throw new ScanTransportLimitError(emptyPayloadBytes, MAX_SCAN_RESULT_BYTES)
+  }
+  let remainingBytes = Math.max(
+    0,
+    MAX_SCAN_RESULT_BYTES - emptyPayloadBytes - TRANSPORT_DIAGNOSTIC_RESERVE_BYTES,
+  )
+  const retainedIds = new Set<string>()
+  // Preserve source-derived governance and executable-suite evidence before
+  // regenerable route/story projections and the generated test-plan mirror.
+  // Canonical operations, surfaces, and tests remain available elsewhere in
+  // the scan result even when their navigational artifacts are omitted.
+  const ordered = artifacts
+    .map((artifact, index) => ({ artifact, index }))
+    .sort((left, right) =>
+      transportArtifactPriority[left.artifact.kind] - transportArtifactPriority[right.artifact.kind] ||
+      left.index - right.index
+    )
+    .map(item => item.artifact)
+  for (const artifact of ordered) {
+    const bytes = serializedBytes(artifact) + 1
+    if (bytes > remainingBytes) continue
+    retainedIds.add(artifact.id)
+    remainingBytes -= bytes
+  }
+  const qualityArtifacts = artifacts.filter(item => retainedIds.has(item.id))
+  const omitted = artifacts.length - qualityArtifacts.length
+  const bounded: ScanResult = {
+    ...result,
+    diagnostics: [
+      ...result.diagnostics,
+      {
+        sourcePath: '.',
+        category: 'repository',
+        severity: 'warning',
+        code: 'quality-artifact-transport-bound',
+        message: `Omitted ${omitted} generated quality artifacts to keep the scan result within the API transport limit; canonical tests remain in the test inventory.`,
+      },
+    ],
+    qualityArtifacts,
+    scanDetails: {
+      ...result.scanDetails,
+      partial: result.scanDetails.partial || omitted > 0,
+      counts: {
+        ...result.scanDetails.counts,
+        diagnostics: result.scanDetails.counts.diagnostics + 1,
+      },
+    },
+  }
+  const boundedBytes = serializedBytes(bounded)
+  if (boundedBytes > MAX_SCAN_RESULT_BYTES) {
+    throw new ScanTransportLimitError(boundedBytes, MAX_SCAN_RESULT_BYTES)
+  }
+  return bounded
+}
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -59,6 +172,275 @@ const TEST_GLOBS = [
   '**/tests/**/*.{ts,tsx,js,jsx,mjs,cjs,py}',
   '**/e2e/**/*.{ts,tsx,js,jsx,mjs,cjs,py}',
 ]
+
+const QUALITY_ARTIFACT_GLOBS: Array<{ kind: QualityArtifact['kind']; glob: string }> = [
+  { kind: 'policy', glob: '**/{policy,governance,compliance,security}*.{md,json,yaml,yml}' },
+  { kind: 'gate', glob: '**/{gate,required-check,branch-protection}*.{ts,js,mjs,py,json,yaml,yml}' },
+  // Workflow names are unconstrained (ci.yml, verify.yml, post-prod.yml, ...).
+  // Treat every checked-in workflow as gate evidence and let the reviewed
+  // policy/gate analysis decide whether it actually guards a policy.
+  { kind: 'gate', glob: '**/.github/workflows/*.{yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,load-test,load-tests,performance,performance-test,performance-tests,k6,artillery}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,performance,k6,artillery}.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,load-test,performance,performance-test,k6,artillery}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
+  { kind: 'load-test', glob: '**/.github/workflows/{load,load-test,load_test,performance,performance-test,performance_test,k6,artillery}.{yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,stress-test,stress-tests,soak,soak-test,soak-tests}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,soak}.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,stress-test,soak,soak-test}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
+  { kind: 'stress-test', glob: '**/.github/workflows/{stress,stress-test,stress_test,soak,soak-test,soak_test}.{yaml,yml}' },
+]
+
+function workflowDispatchMetadata(
+  sourcePath: string,
+  source: string,
+): NonNullable<QualityArtifact['execution']> | undefined {
+  if (!sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(sourcePath)) return undefined
+  try {
+    const document = parseYaml(source) as { on?: unknown } | undefined
+    const triggers = document?.on
+    const dispatchable = triggers === 'workflow_dispatch' ||
+      (Array.isArray(triggers) && triggers.includes('workflow_dispatch')) ||
+      (typeof triggers === 'object' && triggers !== null && 'workflow_dispatch' in triggers)
+    if (!dispatchable) return undefined
+    const dispatchConfiguration = typeof triggers === 'object' && triggers !== null && !Array.isArray(triggers)
+      ? (triggers as Record<string, unknown>).workflow_dispatch
+      : undefined
+    const dispatchInputs = typeof dispatchConfiguration === 'object' && dispatchConfiguration !== null && !Array.isArray(dispatchConfiguration)
+      ? (dispatchConfiguration as Record<string, unknown>).inputs
+      : undefined
+    const requiredInputs = typeof dispatchInputs === 'object' && dispatchInputs !== null && !Array.isArray(dispatchInputs)
+      ? Object.entries(dispatchInputs as Record<string, unknown>)
+          .filter(([, value]) => {
+            if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+            const input = value as Record<string, unknown>
+            return input.required === true && !Object.hasOwn(input, 'default')
+          })
+          .map(([name]) => name)
+          .sort()
+      : []
+    return {
+      provider: 'github-actions',
+      workflowPath: sourcePath,
+      trigger: 'workflow_dispatch',
+      ...(requiredInputs.length ? { requiredInputs } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function performanceWorkflowMetadata(
+  sourcePath: string,
+  source: string,
+): { kind: 'load-test' | 'stress-test'; execution?: NonNullable<QualityArtifact['execution']> } | undefined {
+  if (!sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(sourcePath)) return undefined
+  try {
+    const document = parseYaml(source) as { env?: Record<string, unknown> } | undefined
+    const reviewedKind = document?.env?.FUZEQUALITY_PERFORMANCE
+    if (reviewedKind !== 'load' && reviewedKind !== 'stress') return undefined
+    const execution = workflowDispatchMetadata(sourcePath, source)
+    return {
+      kind: reviewedKind === 'load' ? 'load-test' : 'stress-test',
+      ...(execution ? { execution } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function reviewedStageWorkflowMetadata(
+  sourcePath: string,
+  source: string,
+  stage: 'integration' | 'post-production',
+) {
+  try {
+    const document = parseYaml(source) as { env?: Record<string, unknown> } | undefined
+    if (
+      document?.env?.FUZEQUALITY_STAGE !== stage ||
+      document.env.FUZEQUALITY_EXECUTION !== 'dispatch'
+    ) return undefined
+    return workflowDispatchMetadata(sourcePath, source)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Production validation is inventory evidence, never permission to execute a
+ * deployment or production test. Prefer an explicit repository marker, while
+ * retaining conventional post-prod workflow names already used by Fuze apps.
+ */
+function isPostProductionWorkflow(sourcePath: string, source: string): boolean {
+  if (!sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(sourcePath)) return false
+  try {
+    const document = parseYaml(source) as { name?: unknown; env?: Record<string, unknown> } | undefined
+    if (document?.env?.FUZEQUALITY_STAGE === 'post-production') return true
+    const identity = `${sourcePath} ${typeof document?.name === 'string' ? document.name : ''}`
+    // A deployment is not test evidence merely because its conventional name
+    // contains "post-production". Repositories can opt an actual validation
+    // workflow in explicitly with FUZEQUALITY_STAGE above.
+    if (/\bdeploy(?:ment|ing|ed)?\b/i.test(identity)) return false
+    return /\bpost[-_ ]?prod(?:uction)?\b/i.test(identity)
+  } catch {
+    return false
+  }
+}
+
+/** Detects integration suites without double-counting post-production workflows. */
+function isIntegrationWorkflow(sourcePath: string, source: string): boolean {
+  if (!sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(sourcePath)) return false
+  if (isPostProductionWorkflow(sourcePath, source)) return false
+  try {
+    const document = parseYaml(source) as { name?: unknown; env?: Record<string, unknown> } | undefined
+    if (document?.env?.FUZEQUALITY_STAGE === 'integration') return true
+    const identity = `${sourcePath} ${typeof document?.name === 'string' ? document.name : ''}`
+      .replace(/[_./-]+/g, ' ')
+    return /\bintegration\b/i.test(identity)
+  } catch {
+    return false
+  }
+}
+
+async function discoverQualityArtifacts(root: string, repository: Repository, ignore: string[]): Promise<{ artifacts: QualityArtifact[]; fingerprints: string[]; diagnostics: ScanDiagnostic[] }> {
+  const artifacts = new Map<string, QualityArtifact>()
+  const fingerprints = new Map<string, string>()
+  const diagnostics = new Map<string, ScanDiagnostic>()
+  const admittedSources = new Set<string>()
+  const rejectedSources = new Set<string>()
+  const budgetOmissions = new Set<string>()
+  let admittedSourceBytes = 0
+  const recordBudgetOmission = (sourcePath: string) => {
+    rejectedSources.add(sourcePath)
+    budgetOmissions.add(sourcePath)
+    diagnostics.set('limit:aggregate-quality-evidence', {
+      sourcePath: '.',
+      category: 'repository',
+      severity: 'warning',
+      code: 'quality-evidence-source-budget',
+      message: `Omitted ${budgetOmissions.size} quality evidence source files after retaining ${admittedSources.size} files (${admittedSourceBytes} bytes); the aggregate scan budget is ${MAX_QUALITY_EVIDENCE_SOURCE_FILES} files and ${MAX_QUALITY_EVIDENCE_SOURCE_BYTES} bytes. Narrow the repository scan scope and rescan for complete reviewed analysis.`,
+    })
+  }
+  const qualitySource = async (file: string) => {
+    const sourcePath = normalize(file)
+    if (rejectedSources.has(sourcePath)) return undefined
+    const previouslyAdmitted = admittedSources.has(sourcePath)
+    if (!previouslyAdmitted && admittedSources.size >= MAX_QUALITY_EVIDENCE_SOURCE_FILES) {
+      recordBudgetOmission(sourcePath)
+      return undefined
+    }
+    try {
+      const source = await readText(root, file)
+      if (!previouslyAdmitted) {
+        const sourceBytes = Buffer.byteLength(source, 'utf8')
+        if (admittedSourceBytes + sourceBytes > MAX_QUALITY_EVIDENCE_SOURCE_BYTES) {
+          recordBudgetOmission(sourcePath)
+          return undefined
+        }
+        admittedSources.add(sourcePath)
+        admittedSourceBytes += sourceBytes
+        fingerprints.set(sourcePath, `${sourcePath}:${fingerprint(source)}`)
+      }
+      return source
+    } catch (error) {
+      rejectedSources.add(sourcePath)
+      diagnostics.set(sourcePath, {
+        sourcePath,
+        category: 'repository',
+        severity: 'error',
+        code: 'unreadable-quality-evidence',
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+    }
+  }
+  for (const candidate of QUALITY_ARTIFACT_GLOBS) {
+    // Repository evidence must be physically contained by the checkout. Following
+    // a matching symlink can read worker-host files outside `root` and then retain
+    // their contents in catalog evidence and the reviewed LiteLLM prompt.
+    const files = await fg(candidate.glob, {
+      cwd: root,
+      ignore,
+      onlyFiles: true,
+      dot: true,
+      followSymbolicLinks: false,
+    })
+    if (files.length > QUALITY_EVIDENCE_FILE_LIMIT) {
+      diagnostics.set(`limit:${candidate.kind}:${candidate.glob}`, {
+        sourcePath: candidate.glob,
+        category: 'repository',
+        severity: 'warning',
+        code: 'quality-evidence-file-limit',
+        message: `Matched ${files.length} ${candidate.kind} evidence files but retained only ${QUALITY_EVIDENCE_FILE_LIMIT}; narrow the repository scan scope and rescan for complete reviewed analysis.`,
+      })
+    }
+    for (const file of files.slice(0, QUALITY_EVIDENCE_FILE_LIMIT)) {
+      const sourcePath = normalize(file)
+      const source = await qualitySource(file)
+      if (source === undefined) continue
+      const evidence = source.split(/\r?\n/).filter(line => /policy|gate|threshold|load|stress|required|needs:|playwright|production|deploy|test/i.test(line)).slice(0, 8).map(line => line.trim()).filter(Boolean)
+      const performance = performanceWorkflowMetadata(sourcePath, source)
+      const record = (kind: QualityArtifact['kind'], execution?: QualityArtifact['execution']) => {
+        const key = `${kind}:${sourcePath}`
+        artifacts.set(key, {
+          id: `artifact:${repository.id}:${digest(kind, sourcePath)}`,
+          repositoryId: repository.id,
+          kind,
+          title: sourcePath.split('/').at(-1) ?? sourcePath,
+          sourcePath,
+          summary: `${kind.replace('-', ' ')} evidence discovered during repository analysis`,
+          evidence,
+          execution,
+        })
+      }
+      if (candidate.kind === 'gate') {
+        record('gate')
+        if (isPostProductionWorkflow(sourcePath, source)) record('post-production-test', reviewedStageWorkflowMetadata(sourcePath, source, 'post-production'))
+        if (isIntegrationWorkflow(sourcePath, source)) record('integration-test', reviewedStageWorkflowMetadata(sourcePath, source, 'integration'))
+        if (performance) record(performance.kind, performance.execution)
+      } else if (performance) {
+        record(performance.kind, performance.execution)
+      } else {
+        record(candidate.kind)
+      }
+    }
+  }
+  const documentationFiles = await fg('**/*.{md,mdx}', { cwd: root, ignore, onlyFiles: true, dot: true, followSymbolicLinks: false })
+  if (documentationFiles.length > QUALITY_EVIDENCE_FILE_LIMIT) {
+    diagnostics.set('limit:documentation', {
+      sourcePath: '**/*.{md,mdx}',
+      category: 'repository',
+      severity: 'warning',
+      code: 'documentation-evidence-file-limit',
+      message: `Matched ${documentationFiles.length} documentation evidence files but retained only ${QUALITY_EVIDENCE_FILE_LIMIT}; narrow the repository scan scope and rescan for complete reviewed analysis.`,
+    })
+  }
+  for (const file of documentationFiles.slice(0, QUALITY_EVIDENCE_FILE_LIMIT)) {
+    const sourcePath = normalize(file)
+    const source = await qualitySource(file)
+    if (source === undefined) continue
+    const heading = source.match(/^#{1,3}\s+(.+)$/m)?.[1]?.trim()
+    const evidence = source
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => /user|journey|flow|screen|route|step|test|policy|gate|release|production/i.test(line))
+      .slice(0, 8)
+    const key = `documentation:${sourcePath}`
+    artifacts.set(key, {
+      id: `artifact:${repository.id}:${digest('documentation', sourcePath)}`,
+      repositoryId: repository.id,
+      kind: 'documentation',
+      title: heading || sourcePath.split('/').at(-1) || sourcePath,
+      sourcePath,
+      summary: heading ? `Repository documentation: ${heading}` : 'Repository documentation discovered during analysis',
+      evidence,
+    })
+  }
+  return {
+    artifacts: [...artifacts.values()].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind)),
+    fingerprints: [...fingerprints.values()],
+    diagnostics: [...diagnostics.values()].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath)),
+  }
+}
 
 function safeRoot(root: string) {
   return resolve(root)
@@ -100,6 +482,11 @@ function extractTests(repository: Repository, file: string, source: string): Tes
         index: match.index ?? 0,
         title: match[2].trim(),
       }))
+  const titleCounts = new Map<string, number>()
+  for (const match of titleMatches) {
+    titleCounts.set(match.title, (titleCounts.get(match.title) ?? 0) + 1)
+  }
+  const titleOccurrences = new Map<string, number>()
   const metadata = (segment: string) => {
     const routeMatches = [
       ...segment.matchAll(/\b(get|post|put|patch|delete)\s*\(\s*(['"`])([^'"`]+)\2/gi),
@@ -124,8 +511,13 @@ function extractTests(repository: Repository, file: string, source: string): Tes
     const start = match.index
     const end = titleMatches[index + 1]?.index ?? source.length
     const evidence = metadata(source.slice(start, end))
+    const occurrence = titleOccurrences.get(title) ?? 0
+    titleOccurrences.set(title, occurrence + 1)
+    const identity = titleCounts.get(title) === 1
+      ? digest(file, title)
+      : digest(file, title, String(occurrence))
     cases.push({
-      id: `test:${repository.name}:${digest(file, title)}`,
+      id: `test:${repository.name}:${identity}`,
       repositoryId: repository.id,
       framework: frameworkFor(file, source),
       level: levelFor(file, source),
@@ -336,7 +728,11 @@ async function scanFrontend(
 export async function scanRepository(
   repository: Repository,
   rootPath: string,
-  options: { onProgress?: () => Promise<void>; sourceRevision?: string } = {}
+  options: {
+    onProgress?: () => Promise<void>
+    sourceRevision?: string
+    trigger?: ScanResult['trigger']
+  } = {}
 ): Promise<ScanResult> {
   const root = safeRoot(rootPath)
   const onProgress = options.onProgress ?? (async () => {})
@@ -445,6 +841,67 @@ export async function scanRepository(
   }
   const owner = repository.ownership?.team
   const findings = buildFindings(repository.id, operations, surfaces, expectations, owner)
+  const discoveredQuality = await discoverQualityArtifacts(root, repository, ignore)
+  contentFingerprints.push(...discoveredQuality.fingerprints)
+  diagnostics.push(...discoveredQuality.diagnostics)
+  const configVersion = digest(JSON.stringify({
+    includeGlobs: repository.includeGlobs,
+    excludeGlobs: repository.excludeGlobs,
+    kind: repository.kind,
+  }))
+  const revision = digest(
+    repository.name,
+    SCANNER_VERSION,
+    configVersion,
+    ...contentFingerprints.sort()
+  )
+  const qualityArtifacts = [
+    ...surfaces.filter(surface => surface.routePath).map(surface => ({
+      id: qualityArtifactId(repository.id, revision, 'route', surface.sourcePath, surface.routePath!),
+      logicalId: qualityArtifactLogicalId(repository.id, 'route', surface.sourcePath, surface.routePath!),
+      repositoryId: repository.id,
+      kind: 'route' as const,
+      title: surface.name,
+      sourcePath: surface.sourcePath,
+      summary: `Frontend route ${surface.routePath}`,
+      evidence: [surface.routePath!],
+    })),
+    ...operations.map(operation => ({
+      id: qualityArtifactId(repository.id, revision, 'route', operation.documentPath, operation.method, operation.path),
+      logicalId: qualityArtifactLogicalId(repository.id, 'route', operation.documentPath, operation.method, operation.path),
+      repositoryId: repository.id,
+      kind: 'route' as const,
+      title: `${operation.method.toUpperCase()} ${operation.path}`,
+      sourcePath: operation.documentPath,
+      summary: operation.summary,
+      evidence: [operation.operationId ?? operation.path],
+    })),
+    ...stories.map(story => ({
+      id: qualityArtifactId(repository.id, revision, 'story', story.sourcePath, story.id),
+      logicalId: qualityArtifactLogicalId(repository.id, 'story', story.sourcePath, story.id),
+      repositoryId: repository.id,
+      kind: 'story' as const,
+      title: `${story.title} / ${story.name}`,
+      sourcePath: story.sourcePath,
+      summary: `Storybook interaction surface ${story.previewPath}`,
+      evidence: [story.previewPath, ...(story.hasPlay ? ['play-function'] : [])],
+    })),
+    ...tests.map(test => ({
+      id: qualityArtifactId(repository.id, revision, 'test-plan', test.sourcePath, test.id),
+      logicalId: qualityArtifactLogicalId(repository.id, 'test-plan', test.sourcePath, test.id),
+      repositoryId: repository.id,
+      kind: 'test-plan' as const,
+      title: test.title,
+      sourcePath: test.sourcePath,
+      summary: `${test.level} ${test.framework} test discovered during repository analysis`,
+      evidence: [...new Set([test.id, ...test.targets])].slice(0, 20),
+    })),
+    ...discoveredQuality.artifacts.map(item => ({
+      ...item,
+      id: qualityArtifactId(repository.id, revision, item.kind, item.sourcePath),
+      logicalId: qualityArtifactLogicalId(repository.id, item.kind, item.sourcePath),
+    })),
+  ]
   for (const diagnostic of diagnostics.filter(item => item.category === 'openapi')) {
     findings.push({
       id: `finding:${repository.name}:${digest(diagnostic.sourcePath, diagnostic.code)}`,
@@ -460,10 +917,6 @@ export async function scanRepository(
       status: 'open',
     })
   }
-  const revision = digest(
-    repository.name,
-    ...contentFingerprints.sort()
-  )
   const candidate = (
     sourcePath: string,
     kind: RepositoryScanCandidate['kind']
@@ -485,15 +938,10 @@ export async function scanRepository(
     ...[...storyFiles].map(file => candidate(file, 'storybook')),
     ...frontend.packageFiles.map(file => candidate(file, 'package')),
   ].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind))
-  const configVersion = digest(JSON.stringify({
-    includeGlobs: repository.includeGlobs,
-    excludeGlobs: repository.excludeGlobs,
-    kind: repository.kind,
-  }))
-
-  return {
+  const result: Omit<ScanResult, 'qualityArtifacts'> = {
     repository,
     revision,
+    trigger: options.trigger ?? 'manual',
     operations,
     surfaces,
     tests,
@@ -505,7 +953,9 @@ export async function scanRepository(
       catalogRevision: revision,
       scannerVersion: SCANNER_VERSION,
       configVersion,
-      partial: diagnostics.some(item => item.severity === 'error'),
+      partial: diagnostics.some(item =>
+        item.severity === 'error' || PARTIAL_SCAN_DIAGNOSTIC_CODES.has(item.code)
+      ),
       candidates,
       counts: {
         candidates: candidates.length,
@@ -517,6 +967,7 @@ export async function scanRepository(
     },
     scannedAt: new Date().toISOString(),
   }
+  return boundQualityArtifactsForTransport(result, qualityArtifacts)
 }
 
 export function isCredentialFreeRepositoryUrl(value: string) {

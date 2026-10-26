@@ -19,6 +19,19 @@ export interface InputProps
    * Defaults to `true`; set `false` to opt out. No effect on non-password inputs.
    */
   revealToggle?: boolean;
+  /** Accessible name of the reveal toggle while the value is hidden (localizable). Default "Show password". */
+  showPasswordLabel?: string;
+  /** Accessible name of the reveal toggle while the value is shown (localizable). Default "Hide password". */
+  hidePasswordLabel?: string;
+  /**
+   * Decorative node pinned to the logical END edge of the field (mirrors under
+   * RTL). Ignored on a revealable password field, which owns that slot.
+   */
+  adornment?: React.ReactNode;
+  /** Success ring (e.g. an availability check passed). */
+  valid?: boolean;
+  /** Error ring + `aria-invalid` without a message — the explanation is rendered elsewhere. */
+  invalid?: boolean;
 }
 
 export function Input(props: InputProps): React.JSX.Element;

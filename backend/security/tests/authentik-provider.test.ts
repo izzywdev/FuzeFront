@@ -44,6 +44,12 @@ function makeFakeDb() {
       andWhere(cond: any, val?: any) {
         return api.where(cond, val)
       },
+      whereRaw(_sql: string, bindings: any[]) {
+        const prev = filter
+        const want = String(bindings[0]).toLowerCase()
+        filter = (r: any) => prev(r) && String(r.email || '').toLowerCase() === want
+        return api
+      },
       async first() {
         return tables[table].find(filter)
       },
@@ -221,11 +227,11 @@ describe('signup', () => {
     const db = makeFakeDb()
     const signupFn = jest.fn().mockImplementation(async (input: any) => {
       // Simulate the synced projection the OIDC callback would create.
-      await db('users').insert({ id: 'ak-1', email: input.email, first_name: input.firstName, roles: JSON.stringify(['user']) })
-      return { id: 'ak-1', email: input.email, firstName: input.firstName, roles: ['user'] }
+      await db('users').insert({ id: 'ak-1', email: input.email, first_name: input.name, roles: JSON.stringify(['user']) })
+      return { id: 'ak-1', email: input.email, firstName: input.name, roles: ['user'] }
     })
     const p = newProvider(db, { signupFn })
-    const s = await p.signup({ email: 'new@e.com', password: 'pw', firstName: 'N' })
+    const s = await p.signup({ email: 'new@e.com', password: 'pw', name: 'N' })
     expect(s.token).toBeTruthy()
     expect(s.user.id).toBe('ak-1')
     expect(signupFn).toHaveBeenCalledWith(expect.objectContaining({ email: 'new@e.com', password: 'pw' }))
@@ -278,6 +284,87 @@ describe('session inspection', () => {
   })
 })
 
+describe('isSessionActive (validateSession backing check)', () => {
+  const USER_A = '11111111-1111-4111-8111-111111111111'
+  const USER_B = '22222222-2222-4222-8222-222222222222'
+  const SESS = '33333333-3333-4333-8333-333333333333'
+  const seed = (db: any, over: Record<string, unknown> = {}) =>
+    db.__tables.sessions.push({ id: SESS, user_id: USER_A, expires_at: new Date(Date.now() + 3_600_000), ...over })
+
+  it('is true for a live session that belongs to the user', async () => {
+    // @fuzequality api validateSession
+    const db = makeFakeDb()
+    seed(db)
+    expect(await newProvider(db).isSessionActive(USER_A, SESS)).toBe(true)
+  })
+
+  it('follows the real lifecycle: active after login, inactive after logout', async () => {
+    // @fuzequality api validateSession
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: USER_A, email: 'u@e.com', roles: JSON.stringify(['user']) })
+    const p = newProvider(db, {
+      passwordLoginFn: jest.fn().mockResolvedValue({ id: USER_A, email: 'u@e.com', roles: ['user'] }),
+    })
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    // The id the provider mints is the one a downstream service reads from the
+    // token's `sessionId` claim, so this is exactly what the endpoint is asked.
+    expect(await p.isSessionActive(USER_A, session.sessionId)).toBe(true)
+    await p.logout(session.token)
+    expect(await p.isSessionActive(USER_A, session.sessionId)).toBe(false)
+  })
+
+  it('is false for an unknown session', async () => {
+    // @fuzequality api validateSession
+    expect(await newProvider().isSessionActive(USER_A, SESS)).toBe(false)
+  })
+
+  it('is false for an expired session even though the row still exists', async () => {
+    // @fuzequality api validateSession
+    const db = makeFakeDb()
+    seed(db, { expires_at: new Date(Date.now() - 1_000) })
+    expect(await newProvider(db).isSessionActive(USER_A, SESS)).toBe(false)
+  })
+
+  it('is false when the session belongs to a different user (binding check)', async () => {
+    // @fuzequality api validateSession
+    const db = makeFakeDb()
+    seed(db)
+    expect(await newProvider(db).isSessionActive(USER_B, SESS)).toBe(false)
+  })
+
+  it('is false, without touching the store, for ids that are not uuids', async () => {
+    // @fuzequality api validateSession
+    // Postgres raises a syntax ERROR comparing a uuid column to a non-uuid, which
+    // would read as an outage. A malformed id simply cannot be a live session.
+    const db: any = jest.fn(() => {
+      throw new Error('store must not be queried for a malformed id')
+    })
+    const p = newProvider(db)
+    for (const [u, s] of [
+      ['not-a-uuid', SESS],
+      [USER_A, 'not-a-uuid'],
+      [USER_A, ''],
+      ['', SESS],
+      [USER_A, `${SESS}; DROP TABLE sessions`],
+    ]) {
+      expect(await p.isSessionActive(u, s)).toBe(false)
+    }
+    expect(db).not.toHaveBeenCalled()
+  })
+
+  it('rejects, rather than answering, when the session store cannot be read', async () => {
+    // @fuzequality api validateSession
+    const db: any = () => ({
+      where: () => ({
+        first: async () => {
+          throw new Error('connection refused')
+        },
+      }),
+    })
+    await expect(newProvider(db).isSessionActive(USER_A, SESS)).rejects.toThrow('connection refused')
+  })
+})
+
 describe('MFA TOTP enroll + activate', () => {
   it('enrolls a pending TOTP factor and activates it with a valid code', async () => {
     const db = makeFakeDb()
@@ -307,6 +394,8 @@ describe('MFA TOTP enroll + activate', () => {
 
 describe('contact verification', () => {
   it('email start + confirm marks the user verified', async () => {
+    process.env.REQUIRE_EMAIL_VERIFICATION = 'true'
+    process.env.EMAIL_SERVICE_URL = 'http://email-service:3000'
     const db = makeFakeDb()
     db.__tables.users.push({ id: 'u1', email: 'u@e.com', roles: '["user"]' })
     const p = newProvider(db)
@@ -316,16 +405,65 @@ describe('contact verification', () => {
     const row = db.__tables.email_verifications[0]
     // recover the plaintext token by calling confirm with the code the impl hashed:
     // we cannot read the plaintext, so assert confirm rejects a bad token fail-closed
-    await expect(p.confirmEmailVerification({ token: 'wrong' })).rejects.toBeInstanceOf(UnauthorizedError)
+    await expect(p.confirmEmailVerification({ token: 'wrong' })).rejects.toMatchObject({ code: 'TOKEN_INVALID' })
     expect(row.email).toBe('u@e.com')
+    delete process.env.REQUIRE_EMAIL_VERIFICATION
+    delete process.env.EMAIL_SERVICE_URL
   })
 
   it('phone confirm marks verified when the OTP checks out', async () => {
     const db = makeFakeDb()
     db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15551234567', roles: '["user"]' })
     const p = newProvider(db)
-    const status = await p.confirmPhoneVerification('+15551234567', '123456')
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    const status = await p.confirmPhoneVerification(session.token, '+15551234567', '123456')
     expect(status.phoneVerified).toBe(true)
     expect(db.__tables.users[0].phone_verified).toBe(true)
+  })
+
+  it('phone confirm verifies ONLY the caller, not another account holding the same number', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15551234567', roles: '["user"]' })
+    db.__tables.users.push({ id: 'u2', email: 'victim@e.com', phone: '+15551234567', roles: '["user"]' })
+    const p = newProvider(db)
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    await p.confirmPhoneVerification(session.token, '+15551234567', '123456')
+    expect(db.__tables.users.find((u: any) => u.id === 'u1').phone_verified).toBe(true)
+    expect(db.__tables.users.find((u: any) => u.id === 'u2').phone_verified).toBeFalsy()
+  })
+
+  it('phone confirm rejects a number that is not the caller\'s current number', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15550000000', roles: '["user"]' })
+    db.__tables.users.push({ id: 'u2', email: 'victim@e.com', phone: '+15551234567', roles: '["user"]' })
+    const p = newProvider(db)
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    await expect(p.confirmPhoneVerification(session.token, '+15551234567', '123456')).rejects.toBeInstanceOf(UnauthorizedError)
+    expect(db.__tables.users.find((u: any) => u.id === 'u2').phone_verified).toBeFalsy()
+    expect(db.__tables.users.find((u: any) => u.id === 'u1').phone_verified).toBeFalsy()
+  })
+
+  it('phone confirm does not verify a number swapped in while the OTP check was in flight', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15550000000', roles: '["user"]' })
+    const p = newProvider(db)
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    ;(notifications.checkSmsOtp as jest.Mock).mockImplementationOnce(async () => {
+      // A concurrent /start for a new number lands mid-check.
+      Object.assign(db.__tables.users[0], { phone: '+15559999999', phone_verified: false })
+      return true
+    })
+    await expect(p.confirmPhoneVerification(session.token, '+15550000000', '123456')).rejects.toBeInstanceOf(UnauthorizedError)
+    expect(db.__tables.users[0].phone_verified).toBe(false)
+  })
+
+  it('changing the phone via start resets phone_verified', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'u@e.com', phone: '+15550000000', phone_verified: true, roles: '["user"]' })
+    const p = newProvider(db)
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    await p.startPhoneVerification(session.token, '+15559999999')
+    expect(db.__tables.users[0].phone).toBe('+15559999999')
+    expect(db.__tables.users[0].phone_verified).toBe(false)
   })
 })

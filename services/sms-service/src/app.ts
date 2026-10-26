@@ -1,5 +1,6 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import { timingSafeEqual } from 'crypto';
+import { tracingMiddleware } from '@fuzefront/telemetry';
 import type { TwilioVerifyClient } from './twilio-client';
 import type { RateLimiter } from './rate-limiter';
 import { makeSendHandler } from './routes/send';
@@ -18,6 +19,11 @@ export function createApp(deps: AppDeps): Application {
   // from the ingress-written X-Forwarded-For entry rather than from the raw
   // header, which a client could forge arbitrarily.
   app.set('trust proxy', 1);
+  // Starts/continues a per-request span, exposing req.traceId/req.spanId for
+  // log correlation. Mounted before any other middleware so the span wraps
+  // the whole request lifecycle (OTLP export to FuzeInfra's Collector, never
+  // Tempo/Loki directly — see @fuzefront/telemetry's docs/TRACE_CONTRACT.md).
+  app.use(tracingMiddleware());
   app.use(express.json());
 
   // Health — no auth required

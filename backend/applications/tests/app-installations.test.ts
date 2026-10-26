@@ -85,13 +85,25 @@ function buildApp(): express.Application {
 // --- fixtures ---------------------------------------------------------------
 const suffix = uuidv4().slice(0, 8)
 
-const OWNER = { id: uuidv4(), email: `owner-${suffix}@test.local`, roles: ['user'] }
-const MEMBER = { id: uuidv4(), email: `member-${suffix}@test.local`, roles: ['user'] }
-const OUTSIDER = { id: uuidv4(), email: `outsider-${suffix}@test.local`, roles: ['user'] }
+const OWNER = {
+  id: uuidv4(),
+  email: `owner-${suffix}@test.local`,
+  roles: ['user'],
+}
+const MEMBER = {
+  id: uuidv4(),
+  email: `member-${suffix}@test.local`,
+  roles: ['user'],
+}
+const OUTSIDER = {
+  id: uuidv4(),
+  email: `outsider-${suffix}@test.local`,
+  roles: ['user'],
+}
 
 const _orgTypeId = mintId('organization')
-const ORG_ID = toUuid(_orgTypeId)         // bare UUID — DB inserts and response checks
-const ORG_ID_WIRE = _orgTypeId            // TypeID — HTTP request bodies
+const ORG_ID = toUuid(_orgTypeId) // bare UUID — DB inserts and response checks
+const ORG_ID_WIRE = _orgTypeId // TypeID — HTTP request bodies
 
 const _otherOrgTypeId = mintId('organization')
 const OTHER_ORG_ID = toUuid(_otherOrgTypeId)
@@ -102,6 +114,7 @@ const OTHER_ORG_ID_WIRE = _otherOrgTypeId
 const BOTH_APP_ID = uuidv4()
 const PERSONAL_APP_ID = uuidv4()
 const ORG_APP_ID = uuidv4()
+const CONDITIONAL_ORG_WIDE_APP_ID = uuidv4()
 const HIDDEN_APP_ID = uuidv4()
 
 async function insertUser(u: { id: string; email: string }) {
@@ -120,8 +133,25 @@ async function insertApp(
   name: string,
   scopeLevel: 'personal' | 'organization' | 'both',
   organizationId: string | null,
-  visibility: 'private' | 'organization' | 'public' | 'marketplace' = 'private'
+  visibility: 'private' | 'organization' | 'public' | 'marketplace' = 'private',
+  manifest: Record<string, unknown> = {},
+  extraCols: Record<string, unknown> = {}
 ) {
+  // Governance org-install-mode is now a first-class column (not manifest-
+  // derived at request time). Mirror migration 019's backfill so a fixture that
+  // declares its intent via the manifest gets the matching column value: an
+  // org-scoped / everyone-declaring app is 'everyone', an explicit self is
+  // 'self', otherwise 'both'.
+  const m = manifest as Record<string, unknown>
+  const orgInstallMode =
+    scopeLevel === 'organization' ||
+    m.orgLevelOnly === true ||
+    m.installMode === 'everyone' ||
+    m.organizationInstallMode === 'everyone'
+      ? 'everyone'
+      : m.organizationInstallMode === 'self'
+        ? 'self'
+        : 'both'
   await db('apps').insert({
     id,
     name,
@@ -130,6 +160,9 @@ async function insertApp(
     organization_id: organizationId,
     visibility,
     scope_level: scopeLevel,
+    org_install_mode: orgInstallMode,
+    manifest: JSON.stringify(manifest),
+    ...extraCols,
   })
 }
 
@@ -170,21 +203,55 @@ describe('app installations', () => {
     ])
 
     await db('organization_memberships').insert([
-      { user_id: OWNER.id, organization_id: ORG_ID, role: 'owner', status: 'active' },
-      { user_id: MEMBER.id, organization_id: ORG_ID, role: 'member', status: 'active' },
-      { user_id: OUTSIDER.id, organization_id: OTHER_ORG_ID, role: 'owner', status: 'active' },
+      {
+        user_id: OWNER.id,
+        organization_id: ORG_ID,
+        role: 'owner',
+        status: 'active',
+      },
+      {
+        user_id: MEMBER.id,
+        organization_id: ORG_ID,
+        role: 'member',
+        status: 'active',
+      },
+      {
+        user_id: OUTSIDER.id,
+        organization_id: OTHER_ORG_ID,
+        role: 'owner',
+        status: 'active',
+      },
     ])
 
     await insertApp(BOTH_APP_ID, `Both App ${suffix}`, 'both', ORG_ID)
-    await insertApp(PERSONAL_APP_ID, `Personal App ${suffix}`, 'personal', ORG_ID)
+    await insertApp(
+      PERSONAL_APP_ID,
+      `Personal App ${suffix}`,
+      'personal',
+      ORG_ID
+    )
     await insertApp(ORG_APP_ID, `Org App ${suffix}`, 'organization', ORG_ID)
+    await insertApp(
+      CONDITIONAL_ORG_WIDE_APP_ID,
+      `Conditional Org-wide App ${suffix}`,
+      'both',
+      ORG_ID,
+      'private',
+      { installMode: 'both', organizationInstallMode: 'everyone' }
+    )
     await insertApp(HIDDEN_APP_ID, `Hidden App ${suffix}`, 'both', OTHER_ORG_ID)
 
     currentUser = OWNER
   })
 
   afterAll(async () => {
-    const appIds = [BOTH_APP_ID, PERSONAL_APP_ID, ORG_APP_ID, HIDDEN_APP_ID]
+    const appIds = [
+      BOTH_APP_ID,
+      PERSONAL_APP_ID,
+      ORG_APP_ID,
+      CONDITIONAL_ORG_WIDE_APP_ID,
+      HIDDEN_APP_ID,
+    ]
     await db('app_installations').whereIn('app_id', appIds).del()
     await db('apps').whereIn('id', appIds).del()
     await db('organization_memberships')
@@ -202,7 +269,13 @@ describe('app installations', () => {
 
   beforeEach(async () => {
     await db('app_installations')
-      .whereIn('app_id', [BOTH_APP_ID, PERSONAL_APP_ID, ORG_APP_ID, HIDDEN_APP_ID])
+      .whereIn('app_id', [
+        BOTH_APP_ID,
+        PERSONAL_APP_ID,
+        ORG_APP_ID,
+        CONDITIONAL_ORG_WIDE_APP_ID,
+        HIDDEN_APP_ID,
+      ])
       .del()
     currentUser = OWNER
   })
@@ -280,10 +353,64 @@ describe('app installations', () => {
 
   // --- organization installs ------------------------------------------------
   describe('POST /:id/install — organization scope', () => {
+    it('allows personal installation but enforces org-wide mode in organization context', async () => {
+      const personal = await request(app)
+        .post(`/api/apps/${CONDITIONAL_ORG_WIDE_APP_ID}/install`)
+        .send({ scope: 'personal' })
+
+      expect(personal.status).toBe(201)
+      expect(personal.body.installation).toMatchObject({
+        scope: 'personal',
+        mode: 'self',
+        userId: OWNER.id,
+      })
+
+      const selfOnly = await request(app)
+        .post(`/api/apps/${CONDITIONAL_ORG_WIDE_APP_ID}/install`)
+        .send({
+          scope: 'organization',
+          organizationId: ORG_ID_WIRE,
+          mode: 'self',
+        })
+
+      expect(selfOnly.status).toBe(422)
+      expect(selfOnly.body.code).toBe('ORGANIZATION_INSTALL_MODE_NOT_PERMITTED')
+
+      const organization = await request(app)
+        .post(`/api/apps/${CONDITIONAL_ORG_WIDE_APP_ID}/install`)
+        .send({ scope: 'organization', organizationId: ORG_ID_WIRE })
+
+      expect(organization.status).toBe(201)
+      expect(organization.body.installation).toMatchObject({
+        scope: 'organization',
+        mode: 'everyone',
+        userId: null,
+        organizationId: ORG_ID,
+      })
+    })
+
+    it('exposes the conditional organization install contract to clients', async () => {
+      const res = await request(app).get(
+        `/api/apps/${CONDITIONAL_ORG_WIDE_APP_ID}/installations`
+      )
+
+      expect(res.status).toBe(200)
+      expect(res.body).toMatchObject({
+        scopeLevel: 'both',
+        installMode: 'both',
+        organizationInstallMode: 'everyone',
+        orgLevelOnly: false,
+      })
+    })
+
     it('installs for the caller only with mode=self', async () => {
       const res = await request(app)
         .post(`/api/apps/${BOTH_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'self' })
+        .send({
+          scope: 'organization',
+          organizationId: ORG_ID_WIRE,
+          mode: 'self',
+        })
 
       expect(res.status).toBe(201)
       expect(res.body.installation).toMatchObject({
@@ -297,7 +424,11 @@ describe('app installations', () => {
     it('installs for everyone when the caller is an org owner', async () => {
       const res = await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
+        .send({
+          scope: 'organization',
+          organizationId: ORG_ID_WIRE,
+          mode: 'everyone',
+        })
 
       expect(res.status).toBe(201)
       // An `everyone` install has no user anchor — it belongs to the org.
@@ -309,21 +440,24 @@ describe('app installations', () => {
       currentUser = MEMBER
       const res = await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
+        .send({
+          scope: 'organization',
+          organizationId: ORG_ID_WIRE,
+          mode: 'everyone',
+        })
 
       expect(res.status).toBe(403)
       expect(res.body.code).toBe('REQUIRES_ORG_ADMIN')
     })
 
-    it('lets a plain member install for themselves', async () => {
+    it('requires an org admin for an organization-scoped app', async () => {
       currentUser = MEMBER
       const res = await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
         .send({ scope: 'organization', organizationId: ORG_ID_WIRE })
 
-      expect(res.status).toBe(201)
-      expect(res.body.installation.mode).toBe('self')
-      expect(res.body.installation.userId).toBe(MEMBER.id)
+      expect(res.status).toBe(403)
+      expect(res.body.code).toBe('REQUIRES_ORG_ADMIN')
     })
 
     it('404s on an organization the caller does not belong to', async () => {
@@ -377,7 +511,7 @@ describe('app installations', () => {
 
   // --- non-disclosure -------------------------------------------------------
   describe('visibility', () => {
-    it("404s an app in an org the caller cannot see — never 403 (no id probing)", async () => {
+    it('404s an app in an org the caller cannot see — never 403 (no id probing)', async () => {
       const res = await request(app)
         .post(`/api/apps/${HIDDEN_APP_ID}/install`)
         .send({ scope: 'personal' })
@@ -405,7 +539,11 @@ describe('app installations', () => {
         .send({ scope: 'personal' })
       await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
+        .send({
+          scope: 'organization',
+          organizationId: ORG_ID_WIRE,
+          mode: 'everyone',
+        })
 
       // The member sees the org-wide one plus nothing of the owner's personal.
       currentUser = MEMBER
@@ -422,7 +560,11 @@ describe('app installations', () => {
     it("does not leak another org's installs when the caller is not a member", async () => {
       await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
+        .send({
+          scope: 'organization',
+          organizationId: ORG_ID_WIRE,
+          mode: 'everyone',
+        })
 
       currentUser = OUTSIDER
       const res = await request(app).get(
@@ -436,6 +578,40 @@ describe('app installations', () => {
 
   // --- uninstall ------------------------------------------------------------
   describe('DELETE /:id/install/:installationId', () => {
+    it('refuses to uninstall a core app from personal (personal_removable=false)', async () => {
+      const coreId = uuidv4()
+      await insertApp(
+        coreId,
+        `Core App ${suffix}`,
+        'both',
+        ORG_ID,
+        'public',
+        {},
+        { personal_removable: false, system_app: true }
+      )
+      try {
+        const install = await request(app)
+          .post(`/api/apps/${coreId}/install`)
+          .send({ scope: 'personal' })
+        expect(install.status).toBe(201)
+        const installationId = install.body.installation.id
+
+        const del = await request(app).delete(
+          `/api/apps/${coreId}/install/${installationId}`
+        )
+        expect(del.status).toBe(403)
+        expect(del.body.code).toBe('APP_NOT_REMOVABLE')
+
+        const row = await db('app_installations')
+          .where('id', installationId)
+          .first()
+        expect(row.status).toBe('active') // still installed
+      } finally {
+        await db('app_installations').where('app_id', coreId).del()
+        await db('apps').where('id', coreId).del()
+      }
+    })
+
     it('soft-revokes a personal install and allows reinstall afterwards', async () => {
       const install = await request(app)
         .post(`/api/apps/${BOTH_APP_ID}/install`)
@@ -447,7 +623,9 @@ describe('app installations', () => {
       )
       expect(del.status).toBe(200)
 
-      const row = await db('app_installations').where('id', installationId).first()
+      const row = await db('app_installations')
+        .where('id', installationId)
+        .first()
       expect(row.status).toBe('revoked')
       expect(row.revoked_at).not.toBeNull()
 
@@ -462,7 +640,11 @@ describe('app installations', () => {
     it('refuses to remove an everyone-install from a plain member', async () => {
       const install = await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
+        .send({
+          scope: 'organization',
+          organizationId: ORG_ID_WIRE,
+          mode: 'everyone',
+        })
       const installationId = install.body.installation.id
 
       currentUser = MEMBER

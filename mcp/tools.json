@@ -129,6 +129,16 @@
                   },
                   "auth": {"type": "object", "description": "Identity the app needs the platform to provision."},
                   "infra": {"type": "object", "description": "Platform infrastructure the app opts into."},
+                  "distribution": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Public installation destinations for the product's native mobile build. Omit a field until that store listing or APK is publicly available; clients must never synthesize download URLs.",
+                    "properties": {
+                      "appleAppStoreUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Apple App Store product URL."},
+                      "googlePlayUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Google Play Store product URL."},
+                      "apkUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Direct public Android APK URL, normally the product's latest GitHub Release asset."}
+                    }
+                  },
                   "visibility": {"type": "string", "enum": ["private", "organization", "public", "marketplace"]},
                   "roles": {"type": "array", "items": {"type": "string"}, "description": "Roles permitted to see/activate the app. Empty = all members."}
                 }
@@ -194,6 +204,16 @@
               "routing": {"type": "object"},
               "auth": {"type": "object"},
               "infra": {"type": "object"},
+              "distribution": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Public installation destinations for the product's native mobile build. Omit a field until that store listing or APK is publicly available; clients must never synthesize download URLs.",
+                "properties": {
+                  "appleAppStoreUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Apple App Store product URL."},
+                  "googlePlayUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Google Play Store product URL."},
+                  "apkUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Direct public Android APK URL, normally the product's latest GitHub Release asset."}
+                }
+              },
               "visibility": {"type": "string", "enum": ["private", "organization", "public", "marketplace"]},
               "roles": {"type": "array", "items": {"type": "string"}}
             }
@@ -399,6 +419,289 @@
       "inputSchema": {
         "type": "object",
         "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "createBuildSession",
+      "description": "[WRITE] Start a build-with-FuzeAgent session (POST /build-sessions). Launches a FuzeAgent session that builds and deploys an app into a personal or org context. Feature flag: fuzefront.apps.build-with-agent (default OFF).",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["context", "name", "brief"],
+            "properties": {
+              "context": {
+                "type": "string",
+                "enum": ["personal", "organization"],
+                "description": "personal = caller's personal account; organization = the named organizationId."
+              },
+              "organizationId": {
+                "type": "string",
+                "description": "Organization TypeID (org_…). Required when context=organization; rejected when context=personal."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "description": "Human name for the app to build."
+              },
+              "brief": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000,
+                "description": "What the app should do — handed to FuzeAgent verbatim."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "listBuildSessions",
+      "description": "[READ-ONLY] List build sessions (GET /build-sessions). The caller's own sessions, newest first. Pass organizationId to list an org's sessions (requires org-manager rights). Feature flag: fuzefront.apps.build-with-agent (default OFF).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "description": "Restrict to one organization (TypeID org_… or uuid)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque pagination cursor from page.nextCursor."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getBuildSession",
+      "description": "[READ-ONLY] Get a build session (GET /build-sessions/{id}). Visible to the requester, the owning org's managers, and platform admins; all others get 404. Feature flag: fuzefront.apps.build-with-agent (default OFF).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^front_abs_[0-9a-z]+$",
+            "description": "Build session TypeID (front_abs_…)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancelBuildSession",
+      "description": "[WRITE] Cancel a build session (POST /build-sessions/{id}/cancel). Only cancels from non-terminal states; a terminal session returns 409. Feature flag: fuzefront.apps.build-with-agent (default OFF).",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^front_abs_[0-9a-z]+$",
+            "description": "Build session TypeID (front_abs_…)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reportBuildSessionStatus",
+      "description": "[WRITE] FuzeAgent status callback (POST /build-sessions/{id}/status). Platform service account / platform admin only. Advances the build session state machine. Feature flag: fuzefront.apps.build-with-agent (default OFF).",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "body"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^front_abs_[0-9a-z]+$",
+            "description": "Build session TypeID (front_abs_…)."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["status"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["building", "deploying", "deployed", "failed"],
+                "description": "New state. deployed requires appSlug; failed accepts errorCode/errorMessage."
+              },
+              "appSlug": {
+                "type": "string",
+                "description": "REQUIRED when status=deployed; the app must exist and belong to the session's org."
+              },
+              "errorCode": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                "description": "Only valid when status=failed."
+              },
+              "errorMessage": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": "Only valid when status=failed."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getAppPublication",
+      "description": "[READ-ONLY] Get an app's publication state (GET /apps/{slug}/publication). Current marketplace tier and review state. Visible to app managers and platform admins. Feature flag: fuzefront.apps.marketplace-publishing (default OFF).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "requestAppPublication",
+      "description": "[WRITE] Submit an app to the marketplace (POST /apps/{slug}/publication-requests). Sets marketplace_submitted_at; 409 if a request is already pending or the app is already published. Feature flag: fuzefront.apps.marketplace-publishing (default OFF).",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug", "body"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["target"],
+            "properties": {
+              "target": {
+                "type": "string",
+                "enum": ["marketplace"],
+                "description": "Submission target."
+              },
+              "notes": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": "Optional reviewer notes."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "approveAppPublication",
+      "description": "[WRITE] Approve a marketplace publication request (POST /apps/{slug}/publication-requests/approve). Platform admins only. Sets visibility=marketplace. 409 NOT_PENDING when no request is pending. Feature flag: fuzefront.apps.marketplace-publishing (default OFF).",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug."
+          },
+          "body": {
+            "type": "object",
+            "description": "Optional request body.",
+            "additionalProperties": false,
+            "properties": {
+              "notes": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": "Optional notes to record with the approval."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "rejectAppPublication",
+      "description": "[WRITE] Reject a marketplace publication request (POST /apps/{slug}/publication-requests/reject). Platform admins only. Clears marketplace_submitted_at; the app may be resubmitted. 409 NOT_PENDING when no request is pending. Feature flag: fuzefront.apps.marketplace-publishing (default OFF).",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug", "body"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["reason"],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "Reason for rejection, surfaced to the submitter."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "listPublicationRequests",
+      "description": "[READ-ONLY] List marketplace publication requests — admin review queue (GET /publication-requests). Platform admins/reviewers only (403 otherwise). Returns one row per app whose publication matches the requested status (default `pending`), oldest first (by the status-appropriate instant: submittedAt for pending, rejectedAt for rejected, approvedAt for approved). Each row carries the app's publication state plus minimal display context (name, icon, organizationId, creator). Feature flag: fuzefront.apps.marketplace-publishing (default OFF).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["pending", "approved", "rejected"],
+            "default": "pending",
+            "description": "Which publication requests to list. Defaults to `pending` (the review queue). `none` is not a valid value."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque pagination cursor from page.nextCursor."
+          }
+        },
         "additionalProperties": false
       }
     }
