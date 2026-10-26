@@ -1,0 +1,64 @@
+name: gate-claims
+
+# CLAUDE.md is the first thing every agent reads, so a stale line in it is a defect
+# multiplied across every session that follows.
+#
+# WHAT THIS CLOSES. CLAUDE.md has drifted in BOTH directions, repeatedly:
+#   - It announced gaps that were already closed — `gate-frames-schema` "still does
+#     not exist" (it exists, with a workflow and a script); the Node 24 / React 19
+#     floor "survives on review alone" (gate-toolchain enforces it and is in the
+#     required set); the FuzeBI/FuzeX carve-out as "a known code/policy gap" (the
+#     validator encodes it).
+#   - It quoted counts that had moved on, which the document itself admits of the
+#     frames-first numbers: "it drifts as manifests gain coverage".
+# A reader cannot tell a true claim from a stale one. Worse, the document is read as
+# authoritative, so a stale line sends an agent to re-fix something already fixed, or
+# to trust an enforcement that is not there.
+#
+# The claims that a command can settle are therefore settled by CI, not by whoever
+# happens to notice. This is the same reasoning as every other gate here: governance
+# nobody can skip beats a step someone is supposed to remember.
+#
+# SCOPE, deliberately narrow. Only MECHANICALLY checkable claims — a path exists, a
+# symbol is present, a quoted number matches a script's live output. Prose, rationale
+# and policy are out of scope and must stay so: the point is to catch drift, not to
+# freeze the document or to make editing it adversarial.
+#
+# NO `paths:` FILTER, for the same load-bearing reason as gate-frames-schema: a
+# required context that is path-filtered never reports on a PR that misses the filter,
+# leaving it permanently "waiting on an expected check". It also must run on PRs that
+# do NOT touch CLAUDE.md — most drift happens when the CODE moves and the document
+# does not, which is precisely a PR that never opens CLAUDE.md. The gate is
+# dependency-free (bare `node`) and runs in well under a second.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-claims-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  claims:
+    # Job display name == the required-check context, so requiring `gate-claims`
+    # matches this check.
+    name: gate-claims
+    runs-on: ubuntu-latest
+    # The gate is dependency-free and finishes in under a second; a minute is already
+    # generous. Bounded so a hung job cannot pin a runner slot (gate-workflow-policy
+    # [missing-timeout] — fixed here rather than added to its backlog).
+    timeout-minutes: 5
+    steps:
+      # Actions pinned to immutable commit SHAs (repo hardening standard).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      - name: Check CLAUDE.md's falsifiable claims against the repo
+        run: node scripts/check-claude-md-claims.mjs

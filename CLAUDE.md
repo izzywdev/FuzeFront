@@ -42,7 +42,7 @@ These are **minimums every manifest, image, workflow and remote must meet.** Fuz
 - **Raising the floor is fine; lowering it is a breaking change to the family.** Node 18/20/22 and React 18 no longer satisfy these manifests. Bumping the React major means bumping the host, both in-repo remotes, every published peer range and every out-of-repo consumer together — it is never a single-package decision.
 - **Host and remote `requiredVersion` must be identical.** If they differ, the remote silently loads its own React copy and dies on "Invalid hook call" at runtime, in the browser, with nothing in CI to catch it.
 - **Out-of-repo remotes are bound by this too.** React 18 consumers fail peer resolution against the published packages; see `docs/guides/BUILDING_ON_FUZEFRONT.md`.
-- **Nothing enforces this yet.** No CI job reads `engines`, `.nvmrc`, the peer ranges or the MF `requiredVersion` — `gate-version` only checks SemVer bump discipline. Until a `gate-toolchain` exists, this table is the source of truth and the rule survives on review alone. Frozen point-in-time records under `docs/superpowers/plans/`, `sdd/` and `docs/chats/` deliberately still quote the versions current when they were written; they are history, not governance.
+- **This IS enforced — `gate-toolchain` reads the table.** `scripts/gate-toolchain.mjs` checks `.nvmrc`, `engines.node`/`engines.npm`, `@types/node`, the react/react-dom app ranges, the published peer ranges and the Module-Federation `shared.react` `requiredVersion` (host vs every in-repo remote), and it runs as part of `harden-gate.yml` and is listed in `governance/required-checks.json`. It passes vacuously on a repo with no Node/React surface. This bullet read "Nothing enforces this yet … the rule survives on review alone" long after the gate landed; verified enforced 2026-10-26. The table remains the source of truth for what the gate asserts. Frozen point-in-time records under `docs/superpowers/plans/`, `sdd/` and `docs/chats/` deliberately still quote the versions current when they were written; they are history, not governance.
 
 ## Design system — FuzeFront IS the base
 
@@ -119,9 +119,9 @@ Frames must show loading, empty, error, and the real fail-closed cases (reveal-o
 > **This section described the gate as existing for months while no workflow implemented it** — `grep -rl gate-frames-first .github/workflows/` returned nothing. The un-skippable rule was the only part of the pipeline that could actually be skipped. It is wired now, but read the two mechanics below rather than assuming the one-line summary is the whole contract; the same "a check is green so it must be working" mistake is documented under the branch-lifecycle section.
 
 - **Coverage is declared, never inferred.** `frontend/src/**` and `packages/*-ui/**` carry no feature slug, and slugs do not map to directories (`devices-sessions` and `mfa-management` both build into `packages/account-security-ui`). So a manifest states what it covers — `implementation.paths` at feature level, `build.flows[].implementation.paths` per flow — and the gate matches against that. A path no manifest claims is **uncovered**, not silently fine.
-- **The ramp is real and has an owner.** `governance/frames-first-policy.json` holds the strength. Covered-but-unapproved **always** fails. Uncovered is `mode: "warn"` today — coverage moved from 0 to 19 manifests (44 flows) declaring `implementation.paths` in the 2026-08-18 passes, dropping uncovered feature-UI files 290 → 116 → 58, but the gate does not grandfather pre-existing uncovered files, so flipping today would still fail the next PR touching any of the 58 (`chat-ui`, `identity-ui/{invites,common,page}`, and the `frontend/src` app shell — see `ratchet.knownUncovered`). Flip to `fail` once that worklist is claimed — owner `@izzywdev`. Mirrors the `gate-ds-conformance` changed-lines ratchet. **Run `node scripts/check-frames-first.mjs --report-uncovered` before trusting either number in this paragraph — it drifts as manifests gain coverage** (confirmed stale here 2026-08-27: this line previously read "0 of 18 manifests declare `implementation.paths`" while 19 already did; see #251 design-review).
+- **The ramp is real and has an owner.** `governance/frames-first-policy.json` holds the strength. Covered-but-unapproved **always** fails. Uncovered is `mode: "warn"` today. Measured 2026-10-26: **25 of 29** manifests declare `implementation.paths` across **22 flows**, giving **184 covered / 30 blocked** feature-UI paths (plus 259 structural-skip), with **11** entries in `ratchet.knownUncovered` (`chat-ui`, `identity-ui/{invites,common,page}`, and six named `frontend/src/pages/*` files plus `frontend/src/components/**`). The gate does not grandfather pre-existing uncovered files, so flipping today would still fail the next PR touching any of those 30. Flip to `fail` once that worklist is claimed — owner `@izzywdev`. Mirrors the `gate-ds-conformance` changed-lines ratchet. **Run `node scripts/check-frames-first.mjs --report-uncovered` before trusting either number in this paragraph — it drifts as manifests gain coverage** (confirmed stale here 2026-08-27: this line previously read "0 of 18 manifests declare `implementation.paths`" while 19 already did; see #251 design-review).
 
-`gate-frames-schema`, also named above, **still does not exist** — nothing validates a manifest against `design/frames/_template/manifest.schema.json`.
+`gate-frames-schema`, also named above, **does exist and is wired** — `.github/workflows/gate-frames-schema.yml` runs `scripts/check-frames-schema.mjs` against `design/frames/_template/manifest.schema.json`. This paragraph asserted the opposite for months after it shipped; verified present 2026-10-26.
 
 ## UI runtime validation — the console-clean gate
 
@@ -205,12 +205,13 @@ do not identify a product. This is guidance for the menu string only; it says
 nothing about the slug, which follows rule 1 above regardless.
 
 This is enforced in code by `validateSlugConvention()` in
-`packages/onboarding-kit/bin/validate-registration.mjs` — but **that check has no
-FuzeBI/FuzeX carve-out today**; it flags any `Fuze`-prefixed `name`/`menuLabel`
-unconditionally, with no exception list. Until the validator is updated, treat the
-FuzeBI/FuzeX exception as owner guidance the automated gate does not yet encode —
-a known code/policy gap, not license to strip the prefix from those two products'
-display strings, and not a reason to add a prefix back to any other product's.
+`packages/onboarding-kit/bin/validate-registration.mjs`, and **the FuzeBI/FuzeX
+carve-out IS encoded there**: `FUZE_PREFIX_EXEMPT_DISPLAY_NAMES = new Set(['FuzeBI',
+'FuzeX'])`, applied to either field. This paragraph previously described the carve-out
+as "a known code/policy gap" the validator "does not yet encode" — that was stale, and
+the risk of leaving it was someone "fixing" code that was already correct. Verified
+encoded 2026-10-26. The rule is unchanged: those two keep the prefix, no other product
+gets one added back.
 
 `slug` is never gated by this check in either direction — only `name`/`menuLabel`
 are, and both are ordinary mutable fields `register.sh` re-`PUT`s on every pod
@@ -330,11 +331,39 @@ Every agent-created branch must reach one of these terminal states — never lef
 
 **GitHub Actions may now create and approve PRs on this repo.** `can_approve_pull_request_reviews` is `true` (`gh api repos/izzywdev/FuzeFront/actions/permissions/workflow`). Workflows that use `GITHUB_TOKEN` can open PRs via `gh pr create` and supply the required review via `gh pr review --approve`. The safety net is the gate set (`gate-ds-conformance`, `gate-frames-first`, `gate-authz`, `gate-identifier`, and the full CI matrix) — those are the production guard, not the human review step. A bot-authored, bot-approved PR that clears every gate ships to prod. This is deliberate.
 
+**The ruleset, measured, because this section is easy to misread as CODEOWNERS-gated.** `master` has no classic branch protection (that API 404s); it is governed by a ruleset whose `pull_request` rule reads `required_approving_review_count: 0` and `require_code_owner_review: false` (`gh api repos/izzywdev/FuzeFront/rules/branches/master`). So no approval is required here at all — `.github/CODEOWNERS`' catch-all does not gate merges on this repo, and a PR can merge with only CI green. **FuzeSDLC is different** (`count: 1`, `require_code_owner_review: true`), so do not carry an assumption from one repo to the other. What actually withholds a merge here is `fuze-code-review` declining to auto-approve PRs that touch CI/governance paths — that is an absent approval, not a rejected one.
+
 `claude-auto-pr.yml` (workflow name: *Stranded-branch detector*) detects a branch that has commits but no PR and **fails loudly** so the work gets salvaged rather than silently reaped by `governance-nightly` a week later.
 
 > **Historical note**: until 2026-08-23 `can_approve_pull_request_reviews` was `false` to prevent self-approval. That constraint is lifted; the gate set is now the enforcement layer.
 
 Draft PRs are only legitimate when a session explicitly labels them `wip`, `hold`, or `blocked`.
+
+## This file is checked by CI — `gate-claims`
+
+CLAUDE.md is the first thing every agent reads, so a stale line here is a defect
+multiplied across every session that follows. It has drifted in **both** directions and
+more than once: announcing gaps that were already closed (`gate-frames-schema` "still
+does not exist"; the toolchain floor "survives on review alone"; the FuzeBI/FuzeX
+carve-out as "a known code/policy gap" — all three were wired or encoded while this file
+said otherwise), and quoting counts that had moved on, which the frames-first paragraph
+openly admits of itself.
+
+A reader cannot tell a true claim from a stale one. So the claims a command can settle
+are settled by CI: `gate-claims` (`.github/workflows/gate-claims.yml` →
+`scripts/check-claude-md-claims.mjs`) asserts that every path this file cites exists,
+that gates it describes as *wired* really are wired (not merely present as a script —
+that distinction is this repo's recurring failure mode), and that quoted numbers match
+the owning script's live output.
+
+- **Scope is deliberately narrow, and must stay so.** Only mechanically checkable claims:
+  a path exists, a symbol is present, a number matches. Prose, rationale and policy are
+  out of scope — the point is to catch drift, not to freeze the document or make editing
+  it adversarial.
+- **Add a claim when you add an assertion.** If you write something here that a command
+  could confirm, add the check. The gate is a few lines per claim.
+- **A failure means the document and the repo disagree** — fix whichever is wrong. It is
+  as legitimate to correct the code as the prose.
 
 ## FIX is the rule — reporting a defect is not addressing it
 
