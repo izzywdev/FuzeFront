@@ -86,7 +86,17 @@ jobs:
           if tenant != 'FuzeFront':
               print(f'::error title=agent-card::wrong tenant: expected FuzeFront, got {tenant!r}')
               sys.exit(1)
-          print(f'Card OK — {len(card["skills"])} skill(s), tenant={tenant!r}')
+          # The baked card carries a placeholder JWS signature (sign=True in
+          # generate-card.py).  The fuze-a2a runtime re-signs at pod startup via
+          # well_known_card() before serving /.well-known/agent-card.json — see
+          # FuzeAgent PR #2088.  Assert the field exists and is non-empty so the
+          # schema contract is met; cryptographic validity is the server's job.
+          sigs = card.get('signatures', [])
+          if not sigs:
+              print('::error title=agent-card::signatures[] is empty — placeholder required')
+              sys.exit(1)
+          print(f'Card OK — {len(card["skills"])} skill(s), tenant={tenant!r}, '
+                f'{len(sigs)} placeholder signature(s)')
           EOF
 
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0

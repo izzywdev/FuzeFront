@@ -44,12 +44,19 @@ def main() -> None:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     roles = {"app-shell-platform": json.loads(role_path.read_text(encoding="utf-8"))}
 
+    # sign=True emits a placeholder JWS so the card passes schema validation
+    # (the 'signatures' field is required).  The fuze-a2a runtime re-signs the
+    # card at pod startup with the pod's actual key when AGENT_CARD_FILE is set:
+    #   izzywdev/FuzeAgent server.py → well_known_card() → re-sign path
+    #   (introduced in FuzeAgent PR #2088, "static-card topology").
+    # The placeholder value is never served — the server overwrites it in memory
+    # before the /.well-known/agent-card.json endpoint goes live.
     card = project_product_card(
         manifest,
         roles,
         tenant=TENANT,
         in_cluster_url=IN_CLUSTER_URL,
-        sign=True,  # placeholder signature; prod pod signs with the real key
+        sign=True,
     )
 
     OUT.write_text(json.dumps(card, indent=2) + "\n", encoding="utf-8")
