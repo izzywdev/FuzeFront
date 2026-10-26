@@ -51,6 +51,9 @@ jobs:
           cd /tmp/fuzeagent-gen
           git sparse-checkout set agent-templates/a2a agent-templates/contracts/a2a/v1
 
+      - name: Install card-generator dependencies
+        run: pip install pydantic jsonschema
+
       - name: Regenerate agent-card.json
         run: python3 build/a2a/generate-card.py --fuzeagent-src /tmp/fuzeagent-gen
 
