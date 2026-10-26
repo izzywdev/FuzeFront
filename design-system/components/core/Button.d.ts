@@ -9,12 +9,13 @@ import * as React from "react";
  */
 type ButtonSharedProps = {
   /**
-   * Visual style. `primary` = accent fill with the fuse glow; `secondary` =
-   * neutral raised + border; `outline` = accent-colored border/text on a
-   * light surface (the "compare plans" / tertiary CTA look); `danger` =
-   * error fill.
+   * Visual style. `primary` = accent fill; `secondary` = neutral raised +
+   * border; `outline` = accent border/text on a light surface; `ghost` =
+   * text-only; `ghost-inverse` = ghost for a dark/brand surface not driven
+   * by `data-theme` (white outline/text, filled-white on hover, legible in
+   * any theme); `danger` = error fill.
    */
-  variant?: "primary" | "secondary" | "outline" | "ghost" | "danger";
+  variant?: "primary" | "secondary" | "outline" | "ghost" | "ghost-inverse" | "danger";
   size?: "sm" | "md" | "lg";
   /** Append a trailing arrow glyph (used on "Launch app", "Continue"). */
   withArrow?: boolean;

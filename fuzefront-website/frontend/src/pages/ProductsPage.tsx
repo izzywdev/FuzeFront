@@ -188,12 +188,9 @@ export const ProductsPage: React.FC = () => {
               >
                 Start free <ArrowRight size={16} />
               </a>
-              <Link
-                to="/pricing"
-                className="btn-ghost flex items-center justify-center gap-2"
-              >
+              <Button as={Link} to="/pricing" variant="ghost-inverse">
                 View pricing
-              </Link>
+              </Button>
             </Wrap>
           </motion.div>
         </Container>
