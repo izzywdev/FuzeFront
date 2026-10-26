@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 1.3.1
+  version: 1.5.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -577,6 +577,17 @@ paths:
         given, so the endpoint cannot be used to learn which of the two
         identifiers was wrong. This operation does NOT verify any token
         signature; the caller must already have done that.
+
+
+        **Tenant.** Every tenant's sessions are signed with the same secret, so
+        a signature alone cannot tell two tenants' tokens apart; the token's
+        `tid` claim plus the tenant serving the request is what separates them.
+        Send the token's `tid` as `tenantId`. When multi-tenant identity is
+        enabled a session is active only for the tenant that minted it: the
+        answer is `{ active: false }` unless `tenantId` equals the tenant that
+        serves this request (selected by the request `Host`, so call the host of
+        the tenant your service belongs to). A token with no `tid` is active
+        only in single-tenant mode, where `tenantId` may be omitted.
 
 
         **Fail-closed.** A store outage is `503`, never `{ active: true }` and
@@ -2018,13 +2029,39 @@ paths:
       x-pagination: exempt
       x-pagination-reason: Singleton mutation.
   /v1/security/mfa/recovery-codes:
+    get:
+      tags: [mfa]
+      summary: Get the current user's recovery-code status
+      operationId: getRecoveryCodesStatus
+      description: >-
+        Returns how many of the caller's current recovery codes are still
+        unused, and the size of the set they came from. Never returns the codes
+        themselves (they are stored hashed and shown once, at generation). A user
+        who has never generated codes gets `{ remaining: 0, total: 0 }`. A code
+        redeemed at sign-in (`POST /mfa/verify` with `recoveryCode`) decrements
+        `remaining`; regenerating replaces the set and resets both counts.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The caller's recovery-code status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryCodesStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton per-user status object; no collection.
     post:
       tags: [mfa]
       summary: (Re)generate one-time recovery codes
       operationId: regenerateRecoveryCodes
       description: >-
         Generates a fresh set of single-use recovery codes, invalidating any
-        prior set. The codes are returned ONCE and never retrievable again.
+        prior set. The codes are returned ONCE and never retrievable again. Each
+        code is redeemable exactly once at sign-in step-up via
+        `POST /mfa/verify` with `{ challengeId, recoveryCode }`.
       security:
         - bearerAuth: []
       responses:
@@ -2073,8 +2110,32 @@ paths:
       summary: Verify an MFA challenge and complete login
       operationId: verifyMfa
       description: >-
-        Verifies the one-time `code` for a `challengeId`/`factorId`. On success
-        returns the authenticated `LoginResponse`. Fail-closed on bad/expired code.
+        Completes login step-up for a `challengeId` (from an `mfa_required`
+        `SessionResult`) by ONE of two proofs, selected by body shape
+        (`MfaVerifyRequest` is a `oneOf`):
+
+
+        - **Factor code** — `{ challengeId, factorId, code }`: the one-time code
+        for an enrolled factor (after `POST /mfa/challenge` for SMS/email).
+
+        - **Recovery code** — `{ challengeId, recoveryCode }`: one of the user's
+        single-use recovery codes (`POST /mfa/recovery-codes`). No
+        `POST /mfa/challenge` call is needed first. Only offer this when the
+        challenge advertised `recoveryAvailable: true`. The code is consumed
+        atomically with the successful verification: a code can satisfy at most
+        one challenge, ever, even under concurrent submissions; a failed attempt
+        consumes nothing. On success `GET /mfa/recovery-codes` reports one fewer
+        `remaining`.
+
+
+        On success either proof returns the same authenticated `LoginResponse`
+        and the challenge is consumed. Fail-closed: an unknown/expired challenge
+        is `401 NOT_ACTIVE` (unchanged); a wrong factor code is `401`; a wrong,
+        already-used, or superseded (regenerated) recovery code is
+        `401 RECOVERY_CODE_INVALID` — the three recovery failure causes are
+        deliberately indistinguishable. Both proofs share ONE failed-attempt
+        limiter (per IP and per challenge), so alternating between them does not
+        buy extra guesses; exceeding it is `429 RATE_LIMITED`.
       requestBody:
         required: true
         content:
@@ -2083,15 +2144,52 @@ paths:
               $ref: '#/components/schemas/MfaVerifyRequest'
       responses:
         '200':
-          description: MFA satisfied; authenticated session returned.
+          description: MFA satisfied (factor code or recovery code); authenticated session returned.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >-
+            `MALFORMED` — the body matches neither `MfaVerifyRequest` variant
+            (e.g. `recoveryCode` sent together with `factorId`/`code`, or a
+            required field missing).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          description: >-
+            Step-up not satisfied; no session issued. `NOT_ACTIVE` — the
+            `challengeId` is unknown, expired, or already completed (start a new
+            login). For a factor-code attempt, the factor/code is invalid. For a
+            recovery-code attempt, `RECOVERY_CODE_INVALID` — the code is wrong,
+            already used, or from a superseded set (indistinguishable by design);
+            the challenge stays live so the user can retry, subject to the
+            limiter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: >-
+            `RATE_LIMITED` — too many failed step-up attempts for this IP or
+            challenge. One limiter covers both factor-code and recovery-code
+            attempts. `Retry-After` gives the wait; clients show it and must not
+            retry sooner.
+          headers:
+            Retry-After:
+              description: >-
+                Whole seconds until the exhausted limiter counter resets
+                (rounded up, never less than 1). Always sent with this 429.
+              required: true
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton verification action.
   # ──────────────────────── Contact verification: email ─────────────────────
@@ -3101,7 +3199,8 @@ components:
       description: >-
         MFA-required variant of `SessionResult`. The client picks a factor and
         completes step-up via `/mfa/challenge` + `/mfa/verify`, referencing
-        `challengeId`.
+        `challengeId` — or, when `recoveryAvailable` is true, redeems a recovery
+        code via `/mfa/verify` directly.
       properties:
         status:
           type: string
@@ -3112,6 +3211,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MfaFactorRef'
+        recoveryAvailable:
+          type: boolean
+          description: >-
+            True when the user holds at least one unused recovery code, so
+            `POST /mfa/verify` with `recoveryCode` can succeed. Offer the
+            "use a recovery code" choice ONLY when this is `true`; treat `false`
+            or ABSENT (a server predating contract 1.4.0) as not available
+            (fail-closed). A snapshot at challenge time: a code used or
+            regenerated elsewhere afterwards is still rejected with
+            `401 RECOVERY_CODE_INVALID`. Carries no count, so the pre-auth
+            response leaks nothing beyond "has codes".
       required: [status, challengeId, factors]
     SignupRequest:
       type: object
@@ -4192,6 +4302,21 @@ components:
           items:
             type: string
       required: [codes]
+    RecoveryCodesStatus:
+      type: object
+      additionalProperties: false
+      description: >-
+        Counts for the caller's current recovery-code set. Never contains codes.
+      properties:
+        remaining:
+          type: integer
+          minimum: 0
+          description: Unused codes left in the current set. `0` means recovery is unavailable at sign-in.
+        total:
+          type: integer
+          minimum: 0
+          description: Codes issued in the current set (`0` if none was ever generated).
+      required: [remaining, total]
     MfaChallengeRequest:
       type: object
       properties:
@@ -4213,6 +4338,25 @@ components:
       required: [challengeId, factorId]
     MfaVerifyRequest:
       type: object
+      description: >-
+        Step-up proof for `POST /mfa/verify`: EITHER a factor code
+        (`MfaFactorVerifyRequest`) OR a recovery code
+        (`MfaRecoveryVerifyRequest`). Exactly one must match: the variants are
+        distinguished by their required keys (`factorId` + `code` vs
+        `recoveryCode`), the factor variant may not carry `recoveryCode`, and
+        the recovery variant forbids any other key, so no body matches both.
+      oneOf:
+        - $ref: '#/components/schemas/MfaFactorVerifyRequest'
+        - $ref: '#/components/schemas/MfaRecoveryVerifyRequest'
+    MfaFactorVerifyRequest:
+      type: object
+      description: >-
+        Factor-code proof — the pre-1.4.0 `MfaVerifyRequest` shape. Unchanged
+        except that it may not also carry `recoveryCode` (a key with no meaning
+        before 1.4.0), so a mixed body is rejected rather than silently ignoring
+        the recovery code. Deliberately NOT closed with
+        `additionalProperties: false`, which would reject other extra keys a
+        1.3.1 server accepted.
       properties:
         challengeId:
           type: string
@@ -4221,6 +4365,27 @@ components:
         code:
           type: string
       required: [challengeId, factorId, code]
+      not:
+        required: [recoveryCode]
+    MfaRecoveryVerifyRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Recovery-code proof. Single-use: consumed atomically with the successful
+        verification. The server normalizes before comparison (trims, strips
+        spaces and hyphens, case-folds), so the user may type the code as
+        displayed. The code is opaque — clients must not validate its format
+        beyond non-empty.
+      properties:
+        challengeId:
+          type: string
+          description: From the `mfa_required` `SessionResult`. Server-minted.
+        recoveryCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: One of the user's unused recovery codes.
+      required: [challengeId, recoveryCode]
     # ── Contact verification shapes ──
     EmailVerifyStartRequest:
       type: object
@@ -4367,6 +4532,16 @@ components:
           minLength: 1
           maxLength: 128
           description: The `sessionId` claim of the session token.
+        tenantId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >-
+            The `tid` claim of the session token, if it has one. Required for a
+            session to count as active when multi-tenant identity is enabled
+            (it must equal the tenant serving the request). Omit it only for a
+            token that carries no `tid`, which is valid only in single-tenant
+            mode.
       required: [userId, sessionId]
     SessionValidation:
       type: object
@@ -4820,7 +4995,10 @@ components:
         failure from a generic MALFORMED body. A rejected captcha is a 400
         (client-correctable: fetch a fresh token and retry); Cloudflare being
         unreachable is instead 503 PROVIDER_UNAVAILABLE (fail-closed), never
-        CAPTCHA_FAILED.
+        CAPTCHA_FAILED. RECOVERY_CODE_INVALID (401) is returned by
+        `POST /v1/security/mfa/verify` when a submitted recovery code is wrong,
+        already used, or from a superseded set (the causes are deliberately
+        indistinguishable); the challenge stays live.
       properties:
         error:
           type: string
@@ -4851,5 +5029,6 @@ components:
             - LAST_FACTOR
             - NO_PASSWORD
             - RATE_LIMITED
+            - RECOVERY_CODE_INVALID
             - UNKNOWN
       required: [error, code]
