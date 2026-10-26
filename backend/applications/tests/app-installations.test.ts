@@ -450,15 +450,14 @@ describe('app installations', () => {
       expect(res.body.code).toBe('REQUIRES_ORG_ADMIN')
     })
 
-    it('lets a plain member install for themselves', async () => {
+    it('requires an org admin for an organization-scoped app', async () => {
       currentUser = MEMBER
       const res = await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
         .send({ scope: 'organization', organizationId: ORG_ID_WIRE })
 
-      expect(res.status).toBe(201)
-      expect(res.body.installation.mode).toBe('self')
-      expect(res.body.installation.userId).toBe(MEMBER.id)
+      expect(res.status).toBe(403)
+      expect(res.body.code).toBe('REQUIRES_ORG_ADMIN')
     })
 
     it('404s on an organization the caller does not belong to', async () => {
