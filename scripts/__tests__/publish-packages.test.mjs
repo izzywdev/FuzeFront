@@ -28,7 +28,10 @@ test('aliasFor maps the canonical scope onto the owner scope', () => {
 test('aliasFor leaves an already-owner-scoped name alone', () => {
   // packages/identity is already published under the owner scope; renaming it
   // again would produce @izzywdev/fuzefront-izzywdev-…
-  assert.equal(aliasFor('@izzywdev/fuzefront-identity'), '@izzywdev/fuzefront-identity')
+  assert.equal(
+    aliasFor('@izzywdev/fuzefront-identity'),
+    '@izzywdev/fuzefront-identity'
+  )
 })
 
 test('aliasFor maps every canonical scope, not just @fuzefront', () => {
@@ -41,7 +44,10 @@ test('aliasFor maps every canonical scope, not just @fuzefront', () => {
   //
   // 24 of 25 matrix legs went green and the RUN still concluded `failure`, so a
   // green packages-publish stopped being evidence that anything shipped.
-  assert.equal(aliasFor('@fuzeone/selection-lists-ui'), '@izzywdev/fuzeone-selection-lists-ui')
+  assert.equal(
+    aliasFor('@fuzeone/selection-lists-ui'),
+    '@izzywdev/fuzeone-selection-lists-ui'
+  )
 })
 
 test('aliasFor leaves third-party names alone', () => {
@@ -66,11 +72,17 @@ test('assertAliasable fails the run before anything publishes', () => {
   // Loud and early beats one red leg among two dozen green ones — that reads
   // as flakiness and is exactly how the @fuzeone 403 survived every run.
   assert.throws(
-    () => assertAliasable([{ dir: 'packages/thing', pkg: { name: '@fuzenext/thing' } }]),
+    () =>
+      assertAliasable([
+        { dir: 'packages/thing', pkg: { name: '@fuzenext/thing' } },
+      ]),
     /403 permission_denied/
   )
   assert.throws(
-    () => assertAliasable([{ dir: 'packages/thing', pkg: { name: '@fuzenext/thing' } }]),
+    () =>
+      assertAliasable([
+        { dir: 'packages/thing', pkg: { name: '@fuzenext/thing' } },
+      ]),
     /SCOPE_ALIASES/
   )
 })
@@ -82,10 +94,16 @@ test('assertAliasable passes the real workspace set', () => {
   // master. A per-package unit assertion could not have caught @fuzeone;
   // nothing in the tree enumerated the scopes.
   const root = fileURLToPath(new URL('../../', import.meta.url))
-  const ws = JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).workspaces ?? []
+  const ws =
+    JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).workspaces ?? []
   const targets = ws
-    .filter((dir) => !dir.includes('*') && existsSync(`${root}/${dir}/package.json`))
-    .map((dir) => ({ dir, pkg: JSON.parse(readFileSync(`${root}/${dir}/package.json`, 'utf8')) }))
+    .filter(
+      dir => !dir.includes('*') && existsSync(`${root}/${dir}/package.json`)
+    )
+    .map(dir => ({
+      dir,
+      pkg: JSON.parse(readFileSync(`${root}/${dir}/package.json`, 'utf8')),
+    }))
     .filter(({ pkg }) => !pkg.private && pkg.name)
 
   assert.ok(targets.length > 0, 'expected at least one publishable workspace')
@@ -103,7 +121,9 @@ test('assertLocalDepsResolvable rejects a local dep on a non-publishable workspa
           dir: 'services/thing',
           pkg: {
             name: '@fuzefront/thing',
-            dependencies: { '@fuzefront/thing-types': 'file:../../packages/thing-types' },
+            dependencies: {
+              '@fuzefront/thing-types': 'file:../../packages/thing-types',
+            },
           },
         },
       ]),
@@ -118,7 +138,9 @@ test('assertLocalDepsResolvable rejects a local dep on a non-publishable workspa
           dir: 'services/thing',
           pkg: {
             name: '@fuzefront/thing',
-            dependencies: { '@fuzefront/thing-types': 'file:../../packages/thing-types' },
+            dependencies: {
+              '@fuzefront/thing-types': 'file:../../packages/thing-types',
+            },
           },
         },
       ]),
@@ -138,7 +160,10 @@ test('assertLocalDepsResolvable allows a local dep between two publishable works
           dependencies: { '@fuzefront/tokens': 'file:../tokens' },
         },
       },
-      { dir: 'packages/tokens', pkg: { name: '@fuzefront/tokens', version: '1.0.0' } },
+      {
+        dir: 'packages/tokens',
+        pkg: { name: '@fuzefront/tokens', version: '1.0.0' },
+      },
     ])
   )
 })
@@ -150,7 +175,10 @@ test('assertLocalDepsResolvable ignores registry specifiers on non-publishable n
     assertLocalDepsResolvable([
       {
         dir: 'packages/ui',
-        pkg: { name: '@fuzefront/ui', dependencies: { react: '^19.2.0', pg: '^8' } },
+        pkg: {
+          name: '@fuzefront/ui',
+          dependencies: { react: '^19.2.0', pg: '^8' },
+        },
       },
     ])
   )
@@ -181,7 +209,10 @@ test('assertLocalDepsResolvable rejects a local dep on a versionless publishable
       assertLocalDepsResolvable([
         {
           dir: 'packages/ui',
-          pkg: { name: '@fuzefront/ui', dependencies: { '@fuzefront/tokens': 'file:../tokens' } },
+          pkg: {
+            name: '@fuzefront/ui',
+            dependencies: { '@fuzefront/tokens': 'file:../tokens' },
+          },
         },
         { dir: 'packages/tokens', pkg: { name: '@fuzefront/tokens' } },
       ]),
@@ -194,10 +225,16 @@ test('assertLocalDepsResolvable passes the real workspace set', () => {
   // above: reads the ACTUAL tree, so re-introducing the billing-service defect
   // fails here rather than in one matrix leg on master.
   const root = fileURLToPath(new URL('../../', import.meta.url))
-  const ws = JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).workspaces ?? []
+  const ws =
+    JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).workspaces ?? []
   const targets = ws
-    .filter((dir) => !dir.includes('*') && existsSync(`${root}/${dir}/package.json`))
-    .map((dir) => ({ dir, pkg: JSON.parse(readFileSync(`${root}/${dir}/package.json`, 'utf8')) }))
+    .filter(
+      dir => !dir.includes('*') && existsSync(`${root}/${dir}/package.json`)
+    )
+    .map(dir => ({
+      dir,
+      pkg: JSON.parse(readFileSync(`${root}/${dir}/package.json`, 'utf8')),
+    }))
     .filter(({ pkg }) => !pkg.private && pkg.name)
 
   assert.ok(targets.length > 0, 'expected at least one publishable workspace')
@@ -229,11 +266,15 @@ test('turns local specifiers into a real version range', () => {
     {
       name: '@fuzefront/billing-ui',
       version: '1.0.0',
-      dependencies: { '@izzywdev/fuzefront-identity': 'file:../../packages/identity' },
+      dependencies: {
+        '@izzywdev/fuzefront-identity': 'file:../../packages/identity',
+      },
     },
     { '@izzywdev/fuzefront-identity': '1.0.0' }
   )
-  assert.deepEqual(out.dependencies, { '@izzywdev/fuzefront-identity': '^1.0.0' })
+  assert.deepEqual(out.dependencies, {
+    '@izzywdev/fuzefront-identity': '^1.0.0',
+  })
 })
 
 test('rewrites peerDependencies too', () => {
@@ -241,7 +282,10 @@ test('rewrites peerDependencies too', () => {
     {
       name: '@fuzefront/auth-ui',
       version: '0.1.0',
-      peerDependencies: { '@fuzefront/design-system': '^1.0.0', react: '^19.0.0' },
+      peerDependencies: {
+        '@fuzefront/design-system': '^1.0.0',
+        react: '^19.0.0',
+      },
     },
     { '@fuzefront/design-system': '1.0.0' }
   )
@@ -273,19 +317,31 @@ test('fails loudly when a local dependency is not publishable', () => {
 // either publishes nothing or (worse) silently falls back to publishing
 // everything it can see.
 test('filterTargets with no --only returns every target unchanged', () => {
-  const targets = [{ dir: 'a', pkg: { name: '@fuzefront/a' } }, { dir: 'b', pkg: { name: '@fuzefront/b' } }]
+  const targets = [
+    { dir: 'a', pkg: { name: '@fuzefront/a' } },
+    { dir: 'b', pkg: { name: '@fuzefront/b' } },
+  ]
   assert.equal(filterTargets(targets, null), targets)
 })
 
 test('filterTargets narrows to the exact package name', () => {
-  const targets = [{ dir: 'a', pkg: { name: '@fuzefront/a' } }, { dir: 'b', pkg: { name: '@fuzefront/b' } }]
+  const targets = [
+    { dir: 'a', pkg: { name: '@fuzefront/a' } },
+    { dir: 'b', pkg: { name: '@fuzefront/b' } },
+  ]
   const out = filterTargets(targets, '@fuzefront/b')
-  assert.deepEqual(out.map((t) => t.pkg.name), ['@fuzefront/b'])
+  assert.deepEqual(
+    out.map(t => t.pkg.name),
+    ['@fuzefront/b']
+  )
 })
 
 test('filterTargets throws on an unknown name instead of publishing everything', () => {
   const targets = [{ dir: 'a', pkg: { name: '@fuzefront/a' } }]
-  assert.throws(() => filterTargets(targets, '@fuzefront/typo'), /no publishable workspace has that name/)
+  assert.throws(
+    () => filterTargets(targets, '@fuzefront/typo'),
+    /no publishable workspace has that name/
+  )
 })
 
 test('does not mutate the input manifest', () => {

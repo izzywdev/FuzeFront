@@ -27,6 +27,10 @@ FROM dependencies AS source
 # cannot — so /openapi.yaml and /openapi.json can never describe a different
 # build than the one answering them.
 COPY FuzeQuality ./
+# Registration contract tests verify the Android release workflow as part of
+# every production image build. Keep that reviewed workflow in the source
+# stage so Docker verification has the same contract inputs as a checkout.
+COPY .github/workflows/fuzequality-android-apk.yml /workspace/.github/workflows/fuzequality-android-apk.yml
 
 FROM source AS verify
 # A supplied value is used for a standalone deployment. The federated remote

@@ -196,6 +196,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/sessions/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate that a session is still active (service-to-service)
+         * @description Answers one question for a downstream service: *has this session been revoked or expired?* A FuzeFront session token stays cryptographically valid until its `exp` (24h) even after the user logs out or revokes the device, and only the session store knows. A service that has already verified a session token's signature calls this with the token's `userId` and `sessionId` claims to close that gap.
+         *
+         *     **Caller.** A machine (service-to-service) caller only: the `Authorization` bearer MUST be a `fuze-workload` token carrying the `sessions:validate` scope (see `@izzywdev/fuzefront-service-auth`). A user session token is not accepted here, so a browser can never use this endpoint to probe sessions.
+         *
+         *     **Answer.** `{ active: true }` only when the session exists, has not expired, AND belongs to the supplied `userId`. Every other case, an unknown id, a revoked or expired session, or a session owned by a different user, is the same `200 { active: false }`, with no reason given, so the endpoint cannot be used to learn which of the two identifiers was wrong. This operation does NOT verify any token signature; the caller must already have done that.
+         *
+         *     **Fail-closed.** A store outage is `503`, never `{ active: true }` and never `{ active: false }`. A consumer MUST treat `503` as a retryable service condition, not as a revoked session: refusing every user because the store blinked is an outage, not a revocation. A consumer MUST treat anything other than a well-formed `{ active: true }` as inactive.
+         */
+        post: operations["validateSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/social/{provider}/link": {
         parameters: {
             query?: never;
@@ -1935,6 +1961,18 @@ export interface components {
             /** @description True for the session making this request. */
             current: boolean;
         };
+        /** @description The session to check, taken verbatim from the `userId` and `sessionId` claims of an already-verified FuzeFront session token. Both identify EXISTING entities (references, not identity being created), and both are required: the session only counts as active for the user it belongs to. */
+        SessionValidateRequest: {
+            /** @description The `userId` claim of the session token. */
+            userId: string;
+            /** @description The `sessionId` claim of the session token. */
+            sessionId: string;
+        };
+        /** @description Whether the session is still active. A consumer MUST treat anything other than a well-formed `{ "active": true }` as inactive. */
+        SessionValidation: {
+            /** @description True only if the session exists, has not expired, and belongs to the supplied `userId`. False in every other case, with no reason given. */
+            active: boolean;
+        };
         /** @description Result of beginning a social-link handshake. The SPA navigates the browser to `redirectUrl` (the same-host authorize path); the browser never sees an internal identity host. */
         SocialLinkStart: {
             /** @description Same-origin/consent-host URL to navigate to in order to continue linking. */
@@ -2591,6 +2629,34 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    validateSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description The session's state. `active` is `false` for an unknown, revoked or expired session and for a user mismatch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionValidation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     linkSocial: {

@@ -99,6 +99,7 @@ const repositoryFlowCandidateSchema = z.object({
     const groundedIds = new Set([
       ...candidate.evidence,
       ...candidate.steps.flatMap(step => step.targetIds),
+      ...candidate.wireframe.nodes.flatMap(node => node.targetIds),
     ])
     if (candidate.analysis.grounding.groundedArtifactCount !== groundedIds.size) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['analysis', 'grounding', 'groundedArtifactCount'], message: 'Grounded artifact count must match persisted candidate references' })

@@ -284,6 +284,87 @@ describe('session inspection', () => {
   })
 })
 
+describe('isSessionActive (validateSession backing check)', () => {
+  const USER_A = '11111111-1111-4111-8111-111111111111'
+  const USER_B = '22222222-2222-4222-8222-222222222222'
+  const SESS = '33333333-3333-4333-8333-333333333333'
+  const seed = (db: any, over: Record<string, unknown> = {}) =>
+    db.__tables.sessions.push({ id: SESS, user_id: USER_A, expires_at: new Date(Date.now() + 3_600_000), ...over })
+
+  it('is true for a live session that belongs to the user', async () => {
+    // @fuzequality api validateSession
+    const db = makeFakeDb()
+    seed(db)
+    expect(await newProvider(db).isSessionActive(USER_A, SESS)).toBe(true)
+  })
+
+  it('follows the real lifecycle: active after login, inactive after logout', async () => {
+    // @fuzequality api validateSession
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: USER_A, email: 'u@e.com', roles: JSON.stringify(['user']) })
+    const p = newProvider(db, {
+      passwordLoginFn: jest.fn().mockResolvedValue({ id: USER_A, email: 'u@e.com', roles: ['user'] }),
+    })
+    const session = await p.passwordLogin({ email: 'u@e.com', password: 'pw' })
+    // The id the provider mints is the one a downstream service reads from the
+    // token's `sessionId` claim, so this is exactly what the endpoint is asked.
+    expect(await p.isSessionActive(USER_A, session.sessionId)).toBe(true)
+    await p.logout(session.token)
+    expect(await p.isSessionActive(USER_A, session.sessionId)).toBe(false)
+  })
+
+  it('is false for an unknown session', async () => {
+    // @fuzequality api validateSession
+    expect(await newProvider().isSessionActive(USER_A, SESS)).toBe(false)
+  })
+
+  it('is false for an expired session even though the row still exists', async () => {
+    // @fuzequality api validateSession
+    const db = makeFakeDb()
+    seed(db, { expires_at: new Date(Date.now() - 1_000) })
+    expect(await newProvider(db).isSessionActive(USER_A, SESS)).toBe(false)
+  })
+
+  it('is false when the session belongs to a different user (binding check)', async () => {
+    // @fuzequality api validateSession
+    const db = makeFakeDb()
+    seed(db)
+    expect(await newProvider(db).isSessionActive(USER_B, SESS)).toBe(false)
+  })
+
+  it('is false, without touching the store, for ids that are not uuids', async () => {
+    // @fuzequality api validateSession
+    // Postgres raises a syntax ERROR comparing a uuid column to a non-uuid, which
+    // would read as an outage. A malformed id simply cannot be a live session.
+    const db: any = jest.fn(() => {
+      throw new Error('store must not be queried for a malformed id')
+    })
+    const p = newProvider(db)
+    for (const [u, s] of [
+      ['not-a-uuid', SESS],
+      [USER_A, 'not-a-uuid'],
+      [USER_A, ''],
+      ['', SESS],
+      [USER_A, `${SESS}; DROP TABLE sessions`],
+    ]) {
+      expect(await p.isSessionActive(u, s)).toBe(false)
+    }
+    expect(db).not.toHaveBeenCalled()
+  })
+
+  it('rejects, rather than answering, when the session store cannot be read', async () => {
+    // @fuzequality api validateSession
+    const db: any = () => ({
+      where: () => ({
+        first: async () => {
+          throw new Error('connection refused')
+        },
+      }),
+    })
+    await expect(newProvider(db).isSessionActive(USER_A, SESS)).rejects.toThrow('connection refused')
+  })
+})
+
 describe('MFA TOTP enroll + activate', () => {
   it('enrolls a pending TOTP factor and activates it with a valid code', async () => {
     const db = makeFakeDb()

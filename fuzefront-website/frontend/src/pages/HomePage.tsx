@@ -6,18 +6,17 @@ import {
   ArrowRight,
   Shield,
   Zap,
-  CreditCard,
+  Server,
   Bot,
-  BarChart3,
+  Rocket,
   Layers,
-  Key,
+  Palette,
   CheckCircle2,
   Users,
-  Globe,
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap } from '@fuzefront/design-system'
+import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap, Text, Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -27,9 +26,9 @@ const products = [
   {
     slug: 'fuzefront',
     icon: Layers,
-    name: 'FuzeFront Platform',
-    tagline: 'Module Federation host shell',
-    description: 'Enterprise auth, RBAC, billing, plugin system, and AI assistant. The core platform everything runs on.',
+    name: 'FuzeFront',
+    tagline: 'The portal for your software factory',
+    description: 'The Module-Federation host shell and portal for the whole family — auth, RBAC, and governance built in.',
     color: 'from-blue-500 to-cyan-500',
     bg: 'bg-blue-50',
   },
@@ -37,45 +36,45 @@ const products = [
     slug: 'fuzeagent',
     icon: Bot,
     name: 'FuzeAgent',
-    tagline: 'AI team orchestration',
-    description: 'Autonomous agent workflows, multi-agent pipelines, and human-in-the-loop approval.',
+    tagline: 'Agent orchestration',
+    description: 'Orchestrates the fleet of specialized AI agents that build, test, and ship every product.',
     color: 'from-violet-500 to-purple-600',
     bg: 'bg-violet-50',
   },
   {
-    slug: 'fuzesocial',
-    icon: Globe,
-    name: 'FuzeSocial',
-    tagline: 'Social media automation',
-    description: 'Schedule and publish to Facebook, Instagram, TikTok, YouTube, X, and more from one dashboard.',
-    color: 'from-pink-500 to-rose-500',
+    slug: 'fuzeinfra',
+    icon: Server,
+    name: 'FuzeInfra',
+    tagline: 'The infrastructure layer',
+    description: 'Shared data stores, event streaming, and observability, deployed the same way everywhere.',
+    color: 'from-cyan-600 to-blue-700',
+    bg: 'bg-cyan-50',
+  },
+  {
+    slug: 'fuzex',
+    icon: Palette,
+    name: 'FuzeX',
+    tagline: 'UX/UI design & flow approvals',
+    description: 'Navigable design frames and per-flow approval — nothing ships without a signed-off design.',
+    color: 'from-fuchsia-500 to-pink-600',
     bg: 'bg-pink-50',
   },
   {
-    slug: 'fuzefinance',
-    icon: CreditCard,
-    name: 'FuzeFinance',
-    tagline: 'Enterprise finance & accounting',
-    description: 'Invoices, GL, payouts, multi-entity, multi-currency — full financial operations.',
-    color: 'from-green-500 to-emerald-600',
+    slug: 'fuzequality',
+    icon: CheckCircle2,
+    name: 'FuzeQuality',
+    tagline: 'Automated UI/UX test coverage',
+    description: 'Playwright-driven visual regression, accessibility, and console-clean runtime validation.',
+    color: 'from-lime-500 to-green-600',
     bg: 'bg-green-50',
   },
   {
-    slug: 'fuzekeys',
-    icon: Key,
-    name: 'FuzeKeys',
-    tagline: 'AI-powered credential management',
-    description: 'Secrets vault, PII tokenization, API key rotation, and complete audit trail.',
-    color: 'from-orange-500 to-amber-500',
-    bg: 'bg-orange-50',
-  },
-  {
-    slug: 'fuzebi',
-    icon: BarChart3,
-    name: 'FuzeBI',
-    tagline: 'Business intelligence',
-    description: 'Real-time dashboards, custom reports, data connectors, and embedded analytics.',
-    color: 'from-indigo-500 to-blue-600',
+    slug: 'fuzedeploy',
+    icon: Rocket,
+    name: 'FuzeDeploy',
+    tagline: 'Multi-cloud CI/CD automation',
+    description: 'Signed, gated release pipelines that deploy the same way across every cloud.',
+    color: 'from-indigo-500 to-purple-700',
     bg: 'bg-indigo-50',
   },
 ]
@@ -274,7 +273,7 @@ export const HomePage: React.FC = () => {
                       <Icon size={22} className="text-white" />
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">{prop.title}</h3>
-                    <p className="text-gray-600 text-sm leading-relaxed">{prop.description}</p>
+                    <Text as="p" tone="secondary" size="sm" leading="relaxed">{prop.description}</Text>
                   </motion.div>
                 )
               })}
@@ -413,13 +412,14 @@ export const HomePage: React.FC = () => {
                 >
                   See all plans <ArrowRight size={16} />
                 </Link>
-                <Link
+                <Button
+                  as={Link}
                   to="/contact"
-                  className="btn-ghost flex items-center justify-center gap-2"
+                  variant="ghost-inverse"
                   onClick={() => trackEvent('cta_click', { button: 'talk_sales', location: 'pricing_teaser' })}
                 >
                   Talk to sales
-                </Link>
+                </Button>
               </Wrap>
             </motion.div>
           </SectionWrapper>
@@ -435,9 +435,9 @@ export const HomePage: React.FC = () => {
               <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-3">
                 Stay in the loop
               </h2>
-              <p className="text-gray-600 mb-8">
+              <Text tone="secondary" spacing="xl">
                 Product updates, engineering deep-dives, and launch announcements. No spam.
-              </p>
+              </Text>
 
               {newsletterSuccess ? (
                 <div className="flex items-center justify-center gap-2 text-success-600 font-medium">

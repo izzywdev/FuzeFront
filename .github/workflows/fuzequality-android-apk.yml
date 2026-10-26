@@ -205,8 +205,14 @@ jobs:
             --out "$SIGNED" "$UNSIGNED"
           "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --verbose "$SIGNED"
           EXPECTED_FINGERPRINT=$(node -p "require('./twa-manifest.json').fingerprints[0].value.replace(/:/g, '').toLowerCase()")
-          ACTUAL_FINGERPRINT=$("$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --print-certs "$SIGNED" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
+          # Recent Android build-tools releases may emit certificate details on
+          # stderr even though verification succeeds. Capture both streams and
+          # keep the parser independent of the optional "Signer #1" prefix.
+          CERTIFICATE_OUTPUT=$("$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --print-certs "$SIGNED" 2>&1)
+          printf '%s\n' "$CERTIFICATE_OUTPUT"
+          ACTUAL_FINGERPRINT=$(printf '%s\n' "$CERTIFICATE_OUTPUT" \
+            | sed -nE 's/^.*certificate SHA-256 digest:[[:space:]]*//p' \
+            | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
           test -n "$ACTUAL_FINGERPRINT" || { echo "Unable to read signed APK certificate fingerprint" >&2; exit 1; }
           test "$ACTUAL_FINGERPRINT" = "$EXPECTED_FINGERPRINT" || {
             echo "Signed APK certificate does not match the fingerprint published in twa-manifest.json and assetlinks.json" >&2

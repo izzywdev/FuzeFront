@@ -13,7 +13,10 @@ const deletedSchema = z.object({
   userId: z.string().uuid(),
   cascade: z.enum(['soft', 'hard']).default('soft'),
 })
-const organizationDeletedSchema = z.object({ organizationId: z.string().uuid() })
+const organizationDeletedSchema = z.object({
+  organizationId: z.string().uuid(),
+  cascade: z.enum(['soft', 'hard']).default('soft'),
+})
 const membershipSchema = z.object({ organizationId: z.string().uuid(), userId: z.string().uuid(), role: z.string().min(1) })
 
 /**
@@ -38,7 +41,10 @@ await runConsumer(
       return
     }
     if (topic === 'identity.org.deleted') {
-      await apiRequest('/api/v1/internal/identity-lifecycle', { method: 'POST', body: JSON.stringify({ type: 'organization.deleted', organizationId: organizationDeletedSchema.parse(payload).organizationId }) })
+      const event = organizationDeletedSchema.parse(payload)
+      await apiRequest('/api/v1/internal/identity-lifecycle', { method: 'POST', body: JSON.stringify({
+        type: 'organization.deleted', organizationId: event.organizationId, cascade: event.cascade,
+      }) })
       return
     }
     if (topic === 'identity.user.created' || topic === 'identity.user.updated') {
