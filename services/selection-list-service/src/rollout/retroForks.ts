@@ -39,7 +39,9 @@ import {
   finish,
   isEventRefusal,
   newRunId,
+  REASON_EVENT_CONTRACT,
   RolloutPreconditionError,
+  snapshotRefusal,
   type RolloutChange,
   type RolloutMode,
   type RolloutReport,
@@ -49,6 +51,9 @@ import {
 const log = logger.child({ component: 'selection-list-rollout', job: 'retro-forks' });
 
 const NO_CLAIM = '';
+
+/** One wording for dry run AND apply (the report must promise only what apply does). */
+const REASON_TOO_LARGE = `more than ${SELECTION_LIST_MAX_FORK_ITEMS} items to map (the list.forked bound): left alone`;
 
 interface CommonRow {
   id: string;
@@ -233,7 +238,7 @@ async function applyOne(db: Knex, p: PlannedFork, correlationId: string): Promis
       [src.id, copy.id],
     );
     if ((mappable as { rows: Array<{ n: number }> }).rows[0].n > SELECTION_LIST_MAX_FORK_ITEMS) {
-      return { kind: 'skip', reason: `more than ${SELECTION_LIST_MAX_FORK_ITEMS} items to map (the list.forked bound): left alone` };
+      return { kind: 'skip', reason: REASON_TOO_LARGE };
     }
     const sourceOrg = wireOrgId(src.organization_id);
     const revision = Number(src.revision);
@@ -273,10 +278,35 @@ export async function runRetroForks(db: Knex, mode: RolloutMode = 'dry-run'): Pr
   const snapshot = await withReadOnly(db, async (trx) => {
     const p = await plan(trx);
     const lists = await loadAllLists(trx);
-    return { p, duplicates: findKeyGroups(lists).length + findForkGroups(lists).length, mappable: await countMappable(trx, p.planned) };
+    const mappable = await countMappable(trx, p.planned);
+    // Everything apply would refuse is decided HERE, for both modes, so the dry run promises only what apply does:
+    // an oversized copy is left alone; a copy whose list.forked event the contract would refuse is blocked.
+    const eligible: PlannedFork[] = [];
+    const tooLarge: PlannedFork[] = [];
+    const refusedCopies = new Map<string, string>();
+    for (const f of p.planned) {
+      if ((mappable.get(f.copy.id) ?? 0) > SELECTION_LIST_MAX_FORK_ITEMS) {
+        tooLarge.push(f);
+        continue;
+      }
+      const why = await snapshotRefusal(trx, f.copy.id, {
+        forked_from_list_id: f.common.id,
+        forked_from_org_id: wireOrgId(f.common.organization_id),
+        forked_from_revision: Number(f.common.revision),
+        forked_at: new Date(),
+      });
+      if (why) refusedCopies.set(f.copy.id, why);
+      else eligible.push(f);
+    }
+    return { p, eligible, tooLarge, refusedCopies, duplicates: findKeyGroups(lists).length + findForkGroups(lists).length, mappable };
   });
   report.warnings.push(...snapshot.p.warnings);
   report.skipped.push(...snapshot.p.skipped);
+  for (const f of snapshot.tooLarge) report.skipped.push({ listId: f.copy.id, organizationId: f.copy.organization_id, reason: REASON_TOO_LARGE });
+  for (const f of snapshot.p.planned) {
+    const why = snapshot.refusedCopies.get(f.copy.id);
+    if (why) report.blocked.push({ listId: f.copy.id, organizationId: f.copy.organization_id, reason: REASON_EVENT_CONTRACT, detail: { key: f.copy.key, error: why } });
+  }
 
   if (snapshot.duplicates > 0) {
     const msg = `${snapshot.duplicates} duplicate group(s) exist (the audit is not clean): run reconcile-duplicates first`;
@@ -285,11 +315,11 @@ export async function runRetroForks(db: Knex, mode: RolloutMode = 'dry-run'): Pr
   }
 
   if (mode === 'dry-run') {
-    for (const p of snapshot.p.planned) {
+    for (const p of snapshot.eligible) {
       report.changes.push(changeOf(p, snapshot.mappable.get(p.copy.id) ?? 0));
     }
   } else {
-    for (const p of snapshot.p.planned) {
+    for (const p of snapshot.eligible) {
       let out: Outcome;
       try {
         out = await applyOne(db, p, correlationId);
@@ -299,7 +329,7 @@ export async function runRetroForks(db: Knex, mode: RolloutMode = 'dry-run'): Pr
         report.blocked.push({
           listId: p.copy.id,
           organizationId: p.copy.organization_id,
-          reason: 'its event violates the event contract (legacy data, e.g. an invalid key): left a plain list, decide by hand',
+          reason: REASON_EVENT_CONTRACT,
           detail: { key: p.copy.key, error: (err as Error).message.slice(0, 300) },
         });
         continue;

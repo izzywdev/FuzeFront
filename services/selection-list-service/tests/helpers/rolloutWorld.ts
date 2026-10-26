@@ -12,6 +12,7 @@ import path from 'path';
 import type { Knex } from 'knex';
 import { fromUuid, mintId, toUuid } from '@izzywdev/fuzefront-identity';
 import { createTestDb, TestDb } from './testDb';
+import type { RolloutReport } from '../../src/rollout/common';
 
 export interface OrgPair {
   uuid: string;
@@ -119,7 +120,24 @@ export async function dump(db: Knex): Promise<string> {
   });
 }
 
-export const uuidOf = (wire: string): string => toUuid(wire as never);
+/**
+ * THE dry-run promise: what a dry run reports is what the apply that follows does, on the same data. Same changed
+ * lists, same left-alone and blocked entries WITH THE SAME REASONS, same counters (`would...` = the applied counter).
+ */
+export function expectDryRunAgreesWithApply(dry: RolloutReport, applied: RolloutReport): void {
+  expect(dry.mode).toBe('dry-run');
+  expect(applied.mode).toBe('apply');
+  const ids = (r: RolloutReport) => r.changes.map((c) => c.listId).sort();
+  expect(ids(dry)).toEqual(ids(applied));
+  const entries = (xs: RolloutReport['skipped']) => xs.map((s) => `${s.listId ?? s.organizationId}|${s.reason}`).sort();
+  expect(entries(dry.skipped)).toEqual(entries(applied.skipped));
+  expect(entries(dry.blocked)).toEqual(entries(applied.blocked));
+  const asApplied: Record<string, string> = { wouldRenameAndArchive: 'renamedAndArchived', wouldChange: 'changed', wouldFork: 'forked' };
+  const normalised = Object.fromEntries(Object.entries(dry.summary).map(([k, v]) => [asApplied[k] ?? k, v]));
+  expect(normalised).toEqual(applied.summary);
+}
+
+export const uuidOf =(wire: string): string => toUuid(wire as never);
 
 /** The ```sql block of the rollout runbook that contains `marker` (so the docs' own statements are the ones under test). */
 export function runbookSql(marker: string): string {

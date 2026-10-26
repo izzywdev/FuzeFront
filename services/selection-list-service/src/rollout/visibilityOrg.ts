@@ -21,11 +21,11 @@
 // updates, in chunks so a lock is never held for long.
 
 import type { Knex } from 'knex';
-import { slListKeyV1, TOPICS } from '@fuzefront/shared/kafka';
+import { TOPICS } from '@fuzefront/shared/kafka';
 import { emitVisibilityChanged, systemEventContext } from '../events/emitters';
 import { lockOrgOutbox, wireOrgId } from '../events/outbox';
 import { logger } from '../lib/logger';
-import { correlationFor, emptyReport, finish, isEventRefusal, newRunId, type RolloutMode, type RolloutReport, withReadOnly } from './common';
+import { correlationFor, emptyReport, finish, isEventRefusal, newRunId, REASON_EVENT_CONTRACT, type RolloutMode, type RolloutReport, snapshotRefusal, withReadOnly } from './common';
 
 const log = logger.child({ component: 'selection-list-rollout', job: 'visibility-org' });
 
@@ -59,12 +59,19 @@ export async function runVisibilityOrg(db: Knex, mode: RolloutMode = 'dry-run'):
   const correlationId = correlationFor('visibility-org', runId);
 
   // The census and the candidates, from one consistent read-only snapshot (also what a dry run reports).
-  const { census, candidates, chosen } = await withReadOnly(db, async (trx) => {
+  const { census, candidates, chosen, refused } = await withReadOnly(db, async (trx) => {
     const c: Array<{ visibility: string; n: string }> = (
       await trx.raw(`SELECT visibility, count(*)::text AS n FROM selection_lists WHERE seed_source IS NOT NULL GROUP BY visibility`)
     ).rows;
     const cand = await CANDIDATES(trx).orderBy([{ column: 'organization_id' }, { column: 'id' }]);
-    return { census: c, candidates: cand, chosen: await humanChosen(trx, cand.map((x) => x.id)) };
+    // Would the visibility.changed event of each candidate be refused by the contract? Asked HERE, in both modes, so the
+    // dry run reports exactly what apply will do (apply would otherwise find out by a rolled-back transaction).
+    const refusals = new Map<string, string>();
+    for (const x of cand) {
+      const why = await snapshotRefusal(trx, x.id, { visibility: 'org' });
+      if (why) refusals.set(x.id, why);
+    }
+    return { census: c, candidates: cand, chosen: await humanChosen(trx, cand.map((x) => x.id)), refused: refusals };
   });
 
   const byOrg = new Map<string, Candidate[]>();
@@ -79,14 +86,8 @@ export async function runVisibilityOrg(db: Knex, mode: RolloutMode = 'dry-run'):
       report.skipped.push({ listId: c.id, organizationId: c.organization_id, reason: 'unsupported-org-id (no org_ TypeID form: its events cannot be written): left alone' });
       continue;
     }
-    if (mode === 'dry-run' && !slListKeyV1.safeParse(c.key).success) {
-      // an apply would be refused by the event contract: say so now rather than listing it as a change
-      report.blocked.push({
-        listId: c.id,
-        organizationId: c.organization_id,
-        reason: 'its event would violate the event contract (legacy data, e.g. an invalid key): --apply would leave it private, decide by hand',
-        detail: { key: c.key },
-      });
+    if (refused.has(c.id)) {
+      report.blocked.push({ listId: c.id, organizationId: c.organization_id, reason: REASON_EVENT_CONTRACT, detail: { key: c.key, error: refused.get(c.id) } });
       continue;
     }
     const arr = byOrg.get(c.organization_id);
@@ -136,7 +137,7 @@ export async function runVisibilityOrg(db: Knex, mode: RolloutMode = 'dry-run'):
         report.blocked.push({
           listId: chunk[0].id,
           organizationId: chunk[0].organization_id,
-          reason: 'its event violates the event contract (legacy data, e.g. an invalid key): left private, decide by hand',
+          reason: REASON_EVENT_CONTRACT,
           detail: { key: chunk[0].key, error: (err as Error).message.slice(0, 300) },
         });
         return [];

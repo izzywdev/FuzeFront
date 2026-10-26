@@ -12,6 +12,9 @@
 // Nothing here is reachable over HTTP; the only entry point is the CLI (rollout/cli.ts).
 
 import type { Knex } from 'knex';
+import type { SafeParseError } from 'zod';
+import { slListSnapshotV1 } from '@fuzefront/shared/kafka';
+import { listSnapshot, readList, type ListRow } from '../events/emitters';
 import { mintEventId, OutboxPayloadInvalidError, WireIdError } from '../events/outbox';
 
 /**
@@ -21,7 +24,21 @@ import { mintEventId, OutboxPayloadInvalidError, WireIdError } from '../events/o
  */
 export const isEventRefusal = (err: unknown): boolean => err instanceof OutboxPayloadInvalidError || err instanceof WireIdError;
 
-export type RolloutMode = 'dry-run' | 'apply';
+/** One wording, used by dry run AND apply, for a row whose event the contract would refuse. */
+export const REASON_EVENT_CONTRACT = 'its event would violate the event contract (legacy data, e.g. an invalid key or an empty name): left as it was, decide by hand';
+
+/**
+ * Would the event for this list, as it WILL be after the job's change (`over` = the changed columns), be refused by the
+ * event contract? Reads only, so a dry run can ask exactly what apply will find out the hard way (a thrown
+ * `OutboxPayloadInvalidError` that rolls the transaction back). Returns the first issues, or null when the snapshot is fine.
+ */
+export async function snapshotRefusal(ex: Knex | Knex.Transaction, listId: string, over: Partial<ListRow> = {}): Promise<string | null> {
+  const parsed = slListSnapshotV1.safeParse(listSnapshot({ ...(await readList(ex, listId)), ...over }));
+  if (parsed.success) return null;
+  return (parsed as SafeParseError<unknown>).error.issues.slice(0, 3).map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
+}
+
+export type RolloutMode ='dry-run' | 'apply';
 
 export type RolloutJobName = 'audit' | 'reconcile-duplicates' | 'visibility-org' | 'retro-forks';
 export const ROLLOUT_JOBS: readonly RolloutJobName[] = ['audit', 'reconcile-duplicates', 'visibility-org', 'retro-forks'];

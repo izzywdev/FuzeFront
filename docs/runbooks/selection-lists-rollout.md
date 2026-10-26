@@ -309,7 +309,10 @@ node dist/rollout/cli.js <audit|reconcile-duplicates|visibility-org|retro-forks>
 ```
 
 - **No mode flag = `--dry-run`.** A dry run executes in a `READ ONLY` transaction: Postgres refuses any write, it takes no
-  lock and enqueues no event. `--apply` is explicit. `audit` is always read-only and has no `--apply`.
+  lock and enqueues no event. `--apply` is explicit. `audit` is always read-only and has no `--apply`. **A dry run asks every
+  question apply asks** (including whether each row's event would be refused by the event contract), so `WOULD CHANGE` is what the
+  apply that follows does on the same data, and `LEFT ALONE` / `BLOCKED` carry the same reasons in both; tests run every job both
+  ways on the same messy fixture and compare them.
 - `--json` prints the report as one JSON object on one line — the **last** line of stdout, after the structured log lines
   (`rollout job start` / `rollout job end` with `elapsedMs`); the text report is the default. Set `LOG_LEVEL=warn` to drop the log lines.
 - Local / any shell with the service's environment: `npm run rollout -- <job> [--apply]` in `services/selection-list-service`.
@@ -471,7 +474,8 @@ organization outbox lock, the group's rows re-read under it (so a writer that go
 archive, and `selection-lists.list.updated` (`previousKey`) and, for a loser that was active, `selection-lists.list.archived`
 through the outbox. **Re-run = no-op** (`renamedAndArchived: 0`, no event). Then re-run `audit`: it must report 0 groups.
 `BLOCKED` entries (a common list; a rename target key that is already taken; legacy data whose event the contract
-refuses) leave the group untouched, are listed with a reason, and make the apply exit 2.
+refuses) are decided per row, in the dry run as well: that row is left untouched, the rest of its group still reconciles, each is
+listed with a reason, and the apply exits 2.
 
 **Rollback:** there is no automatic one — nothing was deleted and the report is the undo log (`from` → `to`, `winner`,
 `wasActive`). To give a loser its key back it must be free: first rename or archive the winner, then
@@ -640,7 +644,8 @@ re-read under it (a list a writer already changed meanwhile is skipped), the upd
 `selection-lists.visibility.changed` (previous `private`, now `org`, the service as actor) per list through the outbox in the same
 transaction. **Re-run = no-op** (`seededPrivateAtStart: 0`, `changed: 0`, no event). `LEFT ALONE` lists a user's deliberate
 choice and an organization id with no `org_` TypeID form (its event cannot be written). A list whose event the contract refuses
-(legacy data, for example a one-character key) is `BLOCKED` and left `private`; the rest convert and the apply exits 2.
+(legacy data, for example a one-character key or an empty name) is `BLOCKED` and left `private` — in the dry run too, so it is
+never listed under `WOULD CHANGE`; the rest convert and the apply exits 2.
 
 **Rollback** of one run (nothing else changes; the run id is in the report's first line). It bypasses the outbox, so
 projections keep reading `org` for those lists until their next change; prefer `PATCH /v1/selection-lists/{id}`
@@ -700,7 +705,8 @@ re-read under it (the common list `FOR SHARE`, like the fork endpoint), the upda
 `selection-lists.list.forked` (the service as actor; `source`, and the `itemMap` of matched items) through the outbox in the
 same transaction. **Re-run = no-op** (`candidateCopies: 0`, no event). `LEFT ALONE` (with its reason): a renamed copy; a loser of
 `reconcile-duplicates`; an org that already holds a fork of that common list (any rendering); a copy held under two
-renderings (only the winner converts); an org id with no `org_` form; a different seed pack; more than 5000 items to map.
+renderings (only the winner converts); an org id with no `org_` form; a different seed pack; more than 5000 items to map (the dry run reports it here too, never under `wouldFork`). A copy whose
+`list.forked` event the contract would refuse (for example an empty name) is `BLOCKED`, in the dry run as well.
 
 **Rollback** of one run. It bypasses the outbox, so projections keep `forkedFrom` for those lists until their next change:
 

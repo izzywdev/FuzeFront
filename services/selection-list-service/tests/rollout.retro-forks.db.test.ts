@@ -11,7 +11,7 @@ import { _resetPlatformOrgCacheForTesting } from '../src/lib/sharedLists';
 import { runReconcileDuplicates } from '../src/rollout/duplicates';
 import { runRetroForks } from '../src/rollout/retroForks';
 import { RolloutPreconditionError, exitCodeFor } from '../src/rollout/common';
-import { createRolloutWorld, dump, orgPair, PLATFORM, RolloutWorld, runbookSql } from './helpers/rolloutWorld';
+import { createRolloutWorld, dump, expectDryRunAgreesWithApply, orgPair, PLATFORM, RolloutWorld, runbookSql } from './helpers/rolloutWorld';
 import { dbDescribe } from './helpers/testDb';
 
 const state: { db: Knex | undefined } = { db: undefined };
@@ -229,6 +229,43 @@ dbDescribe('rollout: retro-forks (design record 9.6) on real Postgres', () => {
       expect(report.changes.map((c) => c.listId).sort()).toEqual([x.copyA, x.copyB].sort());
       expect(report.skipped.find((s) => s.listId === bigCopy)!.reason).toContain('5000');
       expect((await get(bigCopy)).forked_from_list_id).toBeNull();
+    });
+
+    /** An oversized copy (5001 mappable items), a renamed copy, and a legacy list whose event the contract would refuse. */
+    async function messy() {
+      const x = await world();
+      const bigCommon = await w.insertList({ key: 'big', org: PLATFORM.wire, visibility: 'platform', seed: seeded('big') });
+      const big = await w.insertList({ key: 'big', org: newOrg().wire, seed: seeded('big') });
+      for (const list of [bigCommon, big]) {
+        await w.db.raw(
+          `INSERT INTO selection_list_items (id, list_id, code, sort_order, status, created_by)
+           SELECT 'front_sli_' || md5(? || g::text), ?, 'C' || g::text, g, 'active', 'x' FROM generate_series(1, 5001) g`,
+          [list, list],
+        );
+      }
+      const renamed = await w.insertList({ key: 'yes-no-custom', org: newOrg().wire, seed: seeded('yes-no') });
+      const noName = await w.insertList({ key: 'yes-no', org: newOrg().wire, seed: seeded('yes-no') });
+      await w.db('selection_list_translations').where({ list_id: noName }).update({ name: '' }); // the event contract wants a non-empty name
+      return { ...x, big, renamed, noName };
+    }
+
+    it('DRY RUN: an oversized copy is LEFT ALONE (not wouldFork), with the very reason apply gives', async () => {
+      const x = await messy();
+      const dry = await runRetroForks(w.db, 'dry-run');
+      expect(dry.changes.map((c) => c.listId)).not.toContain(x.big);
+      expect(dry.summary.wouldFork).toBe(dry.changes.length);
+      expect(dry.summary.wouldFork).toBe(2); // copyA, copyB only
+      expect(dry.skipped.find((s) => s.listId === x.big)!.reason).toBe('more than 5000 items to map (the list.forked bound): left alone');
+    });
+
+    it('DRY RUN AGREES WITH APPLY on the same data: changes, left-alone, blocked (same reasons) and counters', async () => {
+      const x = await messy();
+      const dry = await runRetroForks(w.db, 'dry-run');
+      const applied = await runRetroForks(w.db, 'apply');
+      expectDryRunAgreesWithApply(dry, applied);
+      // and the legacy list the contract would refuse is BLOCKED by both, not promised by the dry run
+      expect(dry.blocked.map((b) => b.listId)).toEqual([x.noName]);
+      expect(applied.changes.map((c) => c.listId).sort()).toEqual([x.copyA, x.copyB].sort());
     });
   });
 

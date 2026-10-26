@@ -13,7 +13,7 @@ import path from 'path';
 import type { Knex } from 'knex';
 import { TOPICS } from '@fuzefront/shared/kafka';
 import { fromUuid } from '@izzywdev/fuzefront-identity';
-import { createRolloutWorld, dump, orgPair, RolloutWorld, uuidOf } from './helpers/rolloutWorld';
+import { createRolloutWorld, dump, expectDryRunAgreesWithApply, orgPair, RolloutWorld, uuidOf } from './helpers/rolloutWorld';
 import { lockOrgOutbox } from '../src/events/outbox';
 import { pickWinner, renderingWinnerOrder } from '../src/lib/renderingWinner';
 import { dupKey, loadAllLists, runAudit, runReconcileDuplicates } from '../src/rollout/duplicates';
@@ -312,6 +312,31 @@ dbDescribe('rollout: duplicate audit + reconcile (real Postgres)', () => {
       expect((await rowsOf([bad.loser]))[0]).toMatchObject({ key: 'taken', status: 'active' });
       expect((await eventsOf(bad.loser))).toEqual([]);
       expect((await rowsOf([good.loser]))[0].status).toBe('archived');
+    });
+
+    it('DRY RUN AGREES WITH APPLY on messy data (common loser, squatted target, invalid key, empty name, two losers in one group)', async () => {
+      const good = await duplicate('good', true);
+      const taken = await duplicate('taken', true);
+      await w.insertList({ key: dupKey('taken', taken.loser), org: taken.org.wire }); // squats the target name
+      const org1 = newOrg();
+      await w.insertList({ key: 'common', org: org1.uuid, ageMin: 100 });
+      const common = await w.insertList({ key: 'common', org: org1.wire, ageMin: 5, visibility: 'platform' });
+      const org2 = newOrg();
+      await w.insertList({ key: 'k', org: org2.uuid, ageMin: 100 }); // a 1-char key: its list.updated event would be refused
+      const badKey = await w.insertList({ key: 'k', org: org2.wire, ageMin: 5 });
+      const org3 = newOrg();
+      await w.insertList({ key: 'nm', org: org3.uuid, ageMin: 100 });
+      const noName = await w.insertList({ key: 'nm', org: org3.wire, ageMin: 5 });
+      await w.db('selection_list_translations').where({ list_id: noName }).update({ name: '' });
+      const org4 = newOrg();
+      await w.insertList({ key: 'tri', org: org4.uuid, ageMin: 100 });
+      const t2 = await w.insertList({ key: 'tri', org: org4.wire, ageMin: 50 });
+      const t3 = await w.insertList({ key: 'tri', org: org4.uuid.toUpperCase(), ageMin: 5 });
+      const dry = await runReconcileDuplicates(w.db, 'dry-run');
+      expect(dry.changes.map((c) => c.listId).sort()).toEqual([good.loser, t2, t3].sort());
+      expect(dry.blocked.map((b) => b.listId).sort()).toEqual([taken.loser, common, badKey, noName].sort());
+      const applied = await runReconcileDuplicates(w.db, 'apply');
+      expectDryRunAgreesWithApply(dry, applied);
     });
 
     it('a 64-character key still yields a legal key, and the runbook fallback UPDATE produces the identical name', async () => {

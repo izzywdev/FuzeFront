@@ -37,7 +37,8 @@
 import type { Knex } from 'knex';
 import { emitListChanged, readList, systemEventContext } from '../events/emitters';
 import { lockOrgOutbox } from '../events/outbox';
-import { canonicalOrgId, orgRenderings } from '../lib/sharedLists';
+import { slListKeyV1 } from '@fuzefront/shared/kafka';
+import { canonicalOrgId, orgRenderings, sameOrg } from '../lib/sharedLists';
 import { rankRows } from '../lib/renderingWinner';
 import { logger } from '../lib/logger';
 import { refreshListUserModified } from '../seed/content';
@@ -47,9 +48,11 @@ import {
   finish,
   isEventRefusal,
   newRunId,
+  REASON_EVENT_CONTRACT,
   type RolloutMode,
   type RolloutReport,
   type RolloutSkip,
+  snapshotRefusal,
   withReadOnly,
 } from './common';
 
@@ -200,8 +203,49 @@ export interface PlannedLoser {
   fromKey: string;
   toKey: string;
   wasActive: boolean;
-  /** Set when the job must not touch it (a common list): reported BLOCKED. */
-  blockedReason?: 'platform-list';
+  /** Set when the job must not touch it: reported BLOCKED (the same wording in the dry run and in apply). */
+  blockedReason?: BlockedReason;
+  /** The detail of the reason (the contract issues). */
+  blockedDetail?: string;
+}
+
+export type BlockedReason = 'platform-list' | 'target-taken' | 'event-contract';
+
+const BLOCKED_TEXT: Record<BlockedReason, string> = {
+  'platform-list': 'would archive a common (platform) list: decide by hand (its key lookup serves every tenant)',
+  'target-taken': 'rename target key already taken: decide by hand',
+  'event-contract': REASON_EVENT_CONTRACT,
+};
+
+const blockedEntry = (p: PlannedLoser): RolloutSkip => ({
+  listId: p.loser.id,
+  organizationId: p.loser.organization_id,
+  reason: BLOCKED_TEXT[p.blockedReason as BlockedReason],
+  detail: { org: p.group.org, key: p.fromKey, toKey: p.toKey, winner: p.group.winner.id, ...(p.blockedDetail ? { error: p.blockedDetail } : {}) },
+});
+
+/**
+ * Decide, with reads only, which planned losers the job could NOT carry out: a rename target that is taken, a row whose
+ * `list.updated` event (after the rename + archive) the contract would refuse. The dry run and apply both ask this, so the
+ * dry run never promises a change apply cannot make. (A common list is blocked by `planGroup`.)
+ */
+async function classify(ex: Knex | Knex.Transaction, ps: PlannedLoser[], isTaken: (p: PlannedLoser) => Promise<boolean>): Promise<PlannedLoser[]> {
+  const out: PlannedLoser[] = [];
+  for (const p of ps) {
+    if (p.blockedReason) {
+      out.push(p);
+      continue;
+    }
+    if (await isTaken(p)) {
+      out.push({ ...p, blockedReason: 'target-taken' });
+      continue;
+    }
+    const why =
+      (slListKeyV1.safeParse(p.fromKey).success ? null : 'previousKey: not a legal list key') ??
+      (await snapshotRefusal(ex, p.loser.id, { key: p.toKey, status: 'archived' }));
+    out.push(why ? { ...p, blockedReason: 'event-contract', blockedDetail: why } : p);
+  }
+  return out;
 }
 
 function planGroup(g: DuplicateGroup): PlannedLoser[] {
@@ -228,6 +272,16 @@ function simulate(rows: ListRef[], planned: PlannedLoser[]): ListRef[] {
 export function planReconcile(rows: ListRef[]): { keyPhase: PlannedLoser[]; forkPhase: PlannedLoser[] } {
   const keyPhase = findKeyGroups(rows).flatMap(planGroup);
   const forkPhase = findForkGroups(simulate(rows, keyPhase)).flatMap(planGroup);
+  return { keyPhase, forkPhase };
+}
+
+/** `planReconcile` plus the read-only feasibility checks (`classify`), phase by phase: what the dry run reports. */
+export async function planReconcileChecked(ex: Knex | Knex.Transaction, rows: ListRef[]): Promise<{ keyPhase: PlannedLoser[]; forkPhase: PlannedLoser[] }> {
+  const takenIn = (known: ListRef[]) => async (p: PlannedLoser) =>
+    known.some((r) => r.id !== p.loser.id && r.key === p.toKey && sameOrg(r.organization_id, p.loser.organization_id));
+  const keyPhase = await classify(ex, findKeyGroups(rows).flatMap(planGroup), takenIn(rows));
+  const state = simulate(rows, keyPhase);
+  const forkPhase = await classify(ex, findForkGroups(state).flatMap(planGroup), takenIn(state));
   return { keyPhase, forkPhase };
 }
 
@@ -273,19 +327,13 @@ export async function runAudit(db: Knex, mode: RolloutMode = 'dry-run'): Promise
 // The reconciliation
 // ---------------------------------------------------------------------------
 
-class RenameTargetTaken extends Error {
-  constructor(readonly toKey: string) {
-    super(`the rename target key ${toKey} is already taken`);
-  }
-}
-
 type FreshScope = { kind: 'key'; key: string } | { kind: 'fork'; forkedFrom: string };
 
 /**
  * Apply ONE duplicate group: under the organization outbox lock, re-read its rows, re-decide, rename + archive the
  * losers and enqueue their events. Returns what it did (empty when another writer already cleaned the group).
  */
-async function applyGroup(db: Knex, g: DuplicateGroup, correlationId: string): Promise<PlannedLoser[]> {
+async function applyGroup(db: Knex, g: DuplicateGroup, correlationId: string): Promise<{ done: PlannedLoser[]; blocked: PlannedLoser[] }> {
   const stored = [...new Set([...g.members.map((m) => m.organization_id), ...orgRenderings(g.org)])];
   const scope: FreshScope = g.kind === 'key' ? { kind: 'key', key: g.key as string } : { kind: 'fork', forkedFrom: g.forkedFrom as string };
   return db.transaction(async (trx) => {
@@ -295,12 +343,14 @@ async function applyGroup(db: Knex, g: DuplicateGroup, correlationId: string): P
     else q.andWhere('forked_from_list_id', scope.forkedFrom);
     const fresh: ListRef[] = await q.forNoKeyUpdate().select(...LEAN); // FOR NO KEY UPDATE keeps the rows still while we decide
     const again = (scope.kind === 'key' ? findKeyGroups(fresh) : findForkGroups(fresh))[0];
-    if (!again) return [];
+    if (!again) return { done: [], blocked: [] };
     const done: PlannedLoser[] = [];
-    for (const p of planGroup(again)) {
-      if (p.blockedReason) continue; // reported by the caller from the plan; never written
-      const taken = await trx('selection_lists').whereIn('organization_id', stored).andWhere('key', p.toKey).whereNot('id', p.loser.id).first('id');
-      if (taken) throw new RenameTargetTaken(p.toKey);
+    // the same feasibility checks as the dry run, on the rows as they are NOW (under the lock)
+    const decided = await classify(trx, planGroup(again), async (p) =>
+      Boolean(await trx('selection_lists').whereIn('organization_id', stored).andWhere('key', p.toKey).whereNot('id', p.loser.id).first('id')),
+    );
+    for (const p of decided) {
+      if (p.blockedReason) continue; // reported below; never written
       const before = await readList(trx, p.loser.id);
       await trx('selection_lists').where({ id: p.loser.id }).update({ key: p.toKey, status: 'archived', updated_at: trx.fn.now() });
       // exactly what a PATCH does for any edit: persist whether a seeded list still hashes to its seed
@@ -308,7 +358,7 @@ async function applyGroup(db: Knex, g: DuplicateGroup, correlationId: string): P
       await emitListChanged(trx, systemEventContext(p.loser.organization_id, null, correlationId), p.loser.id, before);
       done.push(p);
     }
-    return done;
+    return { done, blocked: decided.filter((p) => p.blockedReason) };
   });
 }
 
@@ -329,21 +379,14 @@ export async function runReconcileDuplicates(db: Knex, mode: RolloutMode = 'dry-
   const correlationId = correlationFor('reconcile-duplicates', runId);
 
   const snapshot = await withReadOnly(db, (trx) => loadAllLists(trx));
-  const plan = planReconcile(snapshot);
   const blocked = new Map<string, RolloutSkip>(); // by list id: a list can be a blocked loser in both phases
   const block = (ps: PlannedLoser[]) => {
-    for (const p of ps.filter((x) => x.blockedReason)) {
-      blocked.set(p.loser.id, {
-        listId: p.loser.id,
-        organizationId: p.loser.organization_id,
-        reason: 'would archive a common (platform) list: decide by hand (its key lookup serves every tenant)',
-        detail: { org: p.group.org, key: p.fromKey, winner: p.group.winner.id },
-      });
-    }
+    for (const p of ps.filter((x) => x.blockedReason)) blocked.set(p.loser.id, blockedEntry(p));
   };
   let forkGroups = 0;
 
   if (mode === 'dry-run') {
+    const plan = await withReadOnly(db, (trx) => planReconcileChecked(trx, snapshot));
     for (const p of [...plan.keyPhase, ...plan.forkPhase]) if (!p.blockedReason) report.changes.push(changeOf(p));
     block(plan.keyPhase);
     block(plan.forkPhase);
@@ -353,33 +396,28 @@ export async function runReconcileDuplicates(db: Knex, mode: RolloutMode = 'dry-
     const applyPhase = async (groups: DuplicateGroup[]) => {
       for (const g of groups) {
         try {
-          const done = await applyGroup(db, g, correlationId);
+          const { done, blocked: skippedHere } = await applyGroup(db, g, correlationId);
+          block(skippedHere);
           for (const p of done) {
             report.changes.push(changeOf(p));
             log.info({ listId: p.loser.id, org: g.org, from: p.fromKey, to: p.toKey, runId }, 'duplicate list renamed and archived');
           }
         } catch (err) {
-          if (err instanceof RenameTargetTaken) {
-            report.blocked.push({ organizationId: g.org, reason: 'rename target key already taken: decide by hand', detail: { key: g.key, toKey: err.toKey } });
-          } else if (isEventRefusal(err)) {
-            // the group's transaction rolled back whole: nothing of it was written
-            report.blocked.push({
-              organizationId: g.org,
-              reason: 'its event violates the event contract (legacy data, e.g. an invalid key): group left as it was, decide by hand',
-              detail: { key: g.key, forkedFrom: g.forkedFrom, error: (err as Error).message.slice(0, 300) },
-            });
-          } else throw err;
+          if (!isEventRefusal(err)) throw err;
+          // not foreseen by the checks: the group's transaction rolled back whole, nothing of it was written
+          report.blocked.push({
+            organizationId: g.org,
+            reason: REASON_EVENT_CONTRACT,
+            detail: { key: g.key, forkedFrom: g.forkedFrom, error: (err as Error).message.slice(0, 300) },
+          });
         }
       }
     };
     await applyPhase(findKeyGroups(snapshot));
-    block(plan.keyPhase);
     // The fork phase starts from the state the key phase left behind (a fresh snapshot).
     const after = await withReadOnly(db, (trx) => loadAllLists(trx));
-    const forkPhase = planReconcile(after).forkPhase;
-    forkGroups = new Set(forkPhase.map((p) => `${p.group.org}|${p.group.forkedFrom}`)).size;
+    forkGroups = findForkGroups(after).length;
     await applyPhase(findForkGroups(after));
-    block(forkPhase);
   }
 
   report.blocked.push(...blocked.values());

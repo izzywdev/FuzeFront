@@ -6,7 +6,7 @@
 import type { Knex } from 'knex';
 import { TOPICS } from '@fuzefront/shared/kafka';
 import { mintEventId, lockOrgOutbox } from '../src/events/outbox';
-import { createRolloutWorld, dump, orgPair, RolloutWorld, runbookSql } from './helpers/rolloutWorld';
+import { createRolloutWorld, dump, expectDryRunAgreesWithApply, orgPair, RolloutWorld, runbookSql } from './helpers/rolloutWorld';
 import { dbDescribe } from './helpers/testDb';
 import { runVisibilityOrg, VISIBILITY_CHUNK } from '../src/rollout/visibilityOrg';
 import { exitCodeFor } from '../src/rollout/common';
@@ -232,6 +232,25 @@ dbDescribe('rollout: visibility-org (design record 9.4) on real Postgres', () =>
     const [r1, r2] = await Promise.all([runVisibilityOrg(w.db, 'apply'), runVisibilityOrg(w.db, 'apply')]);
     expect(r1.changes.length + r2.changes.length).toBe(6);
     for (const id of ids) expect(await events(id)).toHaveLength(1);
+  });
+
+  it('DRY RUN AGREES WITH APPLY on messy data (invalid key, empty name, legacy org, a deliberate choice): same changes, skips, blocked reasons, counters', async () => {
+    const x = await world();
+    const o = newOrg();
+    const badKey = await w.insertList({ key: 'k', org: o.wire, seed: seeded('k') });
+    const noName = await w.insertList({ key: 'no-name', org: o.wire, seed: seeded('no-name') });
+    await w.db('selection_list_translations').where({ list_id: noName }).update({ name: '' }); // the event contract wants a non-empty name
+    await w.insertList({ key: 'legacy', org: 'legacy-org-1', seed: seeded('legacy') });
+    const chosen = await w.insertList({ key: 'chosen', org: o.wire, seed: seeded('chosen') });
+    await w.db('event_outbox').insert({
+      id: mintEventId(), organization_id: o.wire, topic: TOPICS.SELECTION_LISTS_VISIBILITY_CHANGED,
+      payload: JSON.stringify({ listId: chosen, actor: { type: 'user', userId: 'usr_x' } }), correlation_id: 'x', status: 'sent', sent_at: new Date(),
+    });
+    const dry = await runVisibilityOrg(w.db, 'dry-run');
+    expect(dry.blocked.map((b) => b.listId).sort()).toEqual([badKey, noName].sort());
+    const applied = await runVisibilityOrg(w.db, 'apply');
+    expectDryRunAgreesWithApply(dry, applied);
+    expect(applied.changes.map((c) => c.listId).sort()).toEqual([x.ids.platformPack, x.ids.appPack, x.ids.archivedSeeded].sort());
   });
 
   it('the runbook ROLLBACK statement puts exactly one run\'s lists back to private and touches nothing else', async () => {
