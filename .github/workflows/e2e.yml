@@ -231,3 +231,74 @@ jobs:
       - name: Tear down E2E stack
         if: always()
         run: docker compose -f docker-compose.e2e.yml down -v
+
+  # ── Auth experience: SIGNUP flow (self-contained) ─────────────────────────────
+  # `fuzefront.auth.experience` ships dark (default OFF), so nothing on the full-stack
+  # `signin` job exercises the redesigned signup. These specs need NO backing stack: they
+  # drive the REAL built host UI in a real Chromium and intercept only the same-origin
+  # /api/v1/security/* calls and the Cloudflare Turnstile script (see
+  # frontend/tests/support/auth-signup.ts), so they run on a bare `vite preview`.
+  # They gate the a11y/metrics/hook-parity contract against the approved frames
+  # (design/frames/auth-experience/{01-signup,06-states}.html).
+  signup-experience:
+    name: Playwright signup experience (mocked)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      BASE_URL: http://127.0.0.1:4173
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci   # root workspace (design-system, auth-ui, security-client, ...)
+          cd frontend && npm ci
+
+      # Same pre-bundle builds as the `build` job in ci.yml: the host bundles these from
+      # source aliases or dist, and `vite build` fails without them.
+      - name: Build workspace packages the host bundle needs
+        run: |
+          npm run -w @fuzefront/design-system build
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/telemetry build
+          npm run -w @fuzefront/chat-client build
+          npm run -w @fuzefront/chat-ui build
+          npm run -w @fuzeone/selection-lists-ui build
+
+      - name: Build and serve the host UI
+        working-directory: frontend
+        run: |
+          CI=true npx vite build
+          nohup npx vite preview --port 4173 --host 127.0.0.1 > /tmp/preview.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null "$BASE_URL/" && exit 0
+            sleep 1
+          done
+          echo '::error::vite preview did not come up'; cat /tmp/preview.log; exit 1
+
+      - name: Run Playwright signup experience specs
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test \
+            tests/auth-experience-signup.spec.ts \
+            tests/auth-experience-signup-frames.spec.ts \
+            --project=chromium --reporter=list
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report-signup-experience
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: warn
+          retention-days: 7

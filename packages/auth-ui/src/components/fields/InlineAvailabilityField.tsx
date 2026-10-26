@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { InlineValidatedInput, Spinner } from '@fuzefront/design-system'
 import type { SignupEmailAvailability } from '../../types'
+import { AUTH_INPUT_STYLE } from '../controlStyles'
 import { DEFAULT_SIGNUP_LABELS, type SignUpLabels } from '../signup/labels'
 
 export type AvailabilityState = 'idle' | 'checking' | 'available' | 'taken' | 'error'
@@ -159,6 +160,7 @@ export function InlineAvailabilityField({
         value={value}
         disabled={disabled}
         aria-required="true"
+        style={AUTH_INPUT_STYLE}
         accessory={accessory}
         help={help}
         state={state === 'available' ? 'valid' : state === 'taken' ? 'invalid' : state === 'checking' ? 'checking' : 'idle'}

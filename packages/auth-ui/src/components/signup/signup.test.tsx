@@ -266,7 +266,9 @@ describe('SignUpFlow — submit + request shape', () => {
     expect(submitBtn()).toBeDisabled()
     expect(submitBtn()).toHaveAttribute('aria-busy', 'true')
     expect(submitBtn()).toHaveTextContent('Creating account…')
-    expect($('[data-frame="01-signup"]')).toHaveAttribute('data-state', 'submit-inflight')
+    // ONE element carries submit-inflight (the button); the root stays 'editing'.
+    expect(document.querySelectorAll('[data-state="submit-inflight"]')).toHaveLength(1)
+    expect($('[data-frame="01-signup"]')).toHaveAttribute('data-state', 'editing')
     await act(async () => resolve(SESSION))
   })
 
@@ -626,5 +628,57 @@ describe('i18n + RTL', () => {
       .map(el => el.getAttribute('style') ?? '')
       .filter(style => physical.test(style))
     expect(offenders).toEqual([])
+  })
+})
+
+describe('SignUpFlow — a11y + frame-fidelity polish (QA follow-ups)', () => {
+  it('the card title is the single <h1>', () => {
+    setup()
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent(DEFAULT_SIGNUP_LABELS.heading)
+    expect(screen.queryAllByRole('heading', { level: 2 })).toHaveLength(0)
+  })
+
+  it('email, password and confirm all expose aria-required; the optional name does not', () => {
+    setup()
+    expect(screen.getByLabelText('Work email')).toHaveAttribute('aria-required', 'true')
+    expect(screen.getByLabelText('Password')).toHaveAttribute('aria-required', 'true')
+    expect(screen.getByLabelText('Confirm password')).toHaveAttribute('aria-required', 'true')
+    expect(document.querySelector('[data-field="full-name"]')).not.toHaveAttribute('aria-required')
+  })
+
+  it('controls use the frame sizing tokens (--text-md text, 44px inputs, 46px submit)', () => {
+    setup()
+    for (const el of [
+      document.querySelector('[data-field="full-name"]'),
+      screen.getByLabelText('Work email'),
+      screen.getByLabelText('Password'),
+      screen.getByLabelText('Confirm password'),
+    ] as HTMLElement[]) {
+      expect(el.style.fontSize).toBe('var(--text-md)')
+      expect(el.style.minHeight).toBe('var(--touch-target)')
+    }
+    expect(submitBtn().style.fontSize).toBe('var(--text-md)')
+    expect(submitBtn().style.minHeight).toBe('calc(var(--touch-target) + var(--space-1) / 2)')
+  })
+
+  it.each([
+    ['409 conflict', httpErr(409, 'CONFLICT'), 'signup-conflict'],
+    ['422 weak password', httpErr(422, 'PASSWORD_POLICY'), 'signup-pw-weak-submit'],
+    ['generic error', new Error('kaput'), 'form-error'],
+    ['503 unavailable', httpErr(503, 'PROVIDER_UNAVAILABLE'), 'signup-service-unavailable'],
+  ])('%s: the state hook addresses exactly ONE element', async (_n, err, state) => {
+    setup({}, makeTransport({ signup: vi.fn().mockRejectedValue(err) }))
+    fillValid()
+    fireEvent.click(submitBtn())
+    await waitFor(() => expect(document.querySelectorAll(`[data-state="${state}"]`)).toHaveLength(1))
+  })
+
+  it('submit-inflight is carried by exactly one element', async () => {
+    setup({}, makeTransport({ signup: vi.fn(() => new Promise<AuthenticatedSession>(() => {})) }))
+    fillValid()
+    fireEvent.click(submitBtn())
+    await waitFor(() => expect(document.querySelectorAll('[data-state="submit-inflight"]')).toHaveLength(1))
   })
 })
