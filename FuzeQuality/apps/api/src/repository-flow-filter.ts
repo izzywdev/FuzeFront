@@ -9,6 +9,7 @@ export const repositoryFlowFilterSchema = z.object({
   model: z.string().trim().min(1).max(200).optional(),
   promptVersion: z.string().trim().min(1).max(100).optional(),
   schemaVersion: z.string().trim().min(1).max(100).optional(),
+  analysisRisk: z.enum(['grounding-gaps', 'prompt-truncated', 'provenance-missing']).optional(),
   minConfidence: z.coerce.number().min(0).max(1).optional(),
   maxConfidence: z.coerce.number().min(0).max(1).optional(),
   ...historyPageQueryFields,
@@ -29,6 +30,16 @@ export function filterRepositoryFlowCandidates(
     (!filter.model || candidate.analysis?.model === filter.model) &&
     (!filter.promptVersion || candidate.analysis?.promptVersion === filter.promptVersion) &&
     (!filter.schemaVersion || candidate.analysis?.schemaVersion === filter.schemaVersion) &&
+    (!filter.analysisRisk || (
+      filter.analysisRisk === 'grounding-gaps'
+        ? candidate.source === 'litellm' && Boolean(candidate.analysis?.grounding && (
+            candidate.analysis.grounding.rejectedArtifactCount > 0 ||
+            candidate.analysis.grounding.ungroundedStepCount > 0
+          ))
+        : filter.analysisRisk === 'prompt-truncated'
+          ? candidate.source === 'litellm' && candidate.analysis?.promptTruncated === true
+          : candidate.source === 'litellm' && !candidate.analysis
+    )) &&
     (filter.minConfidence === undefined || candidate.confidence >= filter.minConfidence) &&
     (filter.maxConfidence === undefined || candidate.confidence <= filter.maxConfidence)
   )

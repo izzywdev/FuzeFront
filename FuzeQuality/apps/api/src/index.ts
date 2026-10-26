@@ -53,7 +53,7 @@ import { decodePerformanceCursor, performancePage } from './execution-performanc
 import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, reconcileExecutionEvidenceForScan, refreshExecutionArtifactEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateArtifactReferenceError, candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
-import { repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
+import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateArtifactReferenceConflict, policyGateArtifactReferenceError, policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
@@ -158,7 +158,11 @@ const identityLifecycleEventSchema = z.discriminatedUnion('type', [
     organizationId: z.string().uuid(), slug: z.string().min(1), name: z.string().min(1),
     organizationType: z.enum(['platform', 'organization', 'personal']), ownerId: z.string().uuid().nullable(), isActive: z.boolean(),
   }).strict(),
-  z.object({ type: z.literal('organization.deleted'), organizationId: z.string().uuid() }).strict(),
+  z.object({
+    type: z.literal('organization.deleted'),
+    organizationId: z.string().uuid(),
+    cascade: z.enum(['soft', 'hard']).default('soft'),
+  }).strict(),
   z.object({
     type: z.literal('user.upsert'), userId: z.string().uuid(), email: z.string().email(),
     firstName: z.string().optional(), lastName: z.string().optional(),
@@ -465,6 +469,8 @@ app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (requ
     reviewStatus: filter.data.reviewStatus,
     revision: filter.data.revision,
     subject: filter.data.subject,
+    policyArtifactId: filter.data.policyArtifactId,
+    gateArtifactId: filter.data.gateArtifactId,
     minConfidence: filter.data.minConfidence,
     maxConfidence: filter.data.maxConfidence,
     after: cursor.data,
@@ -518,8 +524,8 @@ app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {
       break
     case 'organization.deleted':
       changed = await store.projectIdentityLifecycle(
-        { type: event.type, tenantId: event.organizationId },
-        { topic: TOPICS.TENANT_DELETED, payload: { tenantId: event.organizationId }, key: event.organizationId },
+        { type: event.type, tenantId: event.organizationId, cascade: event.cascade },
+        { topic: TOPICS.TENANT_DELETED, payload: { tenantId: event.organizationId, cascade: event.cascade }, key: event.organizationId },
       )
       break
     case 'user.upsert':
@@ -680,8 +686,12 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
   if (!existingCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
   const conflict = repositoryFlowReviewConflict(repository, existingCandidate)
   if (conflict) return response.status(409).json(conflict)
+  const provenanceConflict = repositoryFlowAnalysisProvenanceConflict(existingCandidate, parsed.data.status)
+  if (provenanceConflict) return response.status(422).json(provenanceConflict)
   const groundingConflict = repositoryFlowGroundingRationaleConflict(existingCandidate, parsed.data.status, parsed.data.reason)
   if (groundingConflict) return response.status(422).json(groundingConflict)
+  const wireframeConflict = repositoryFlowWireframeConflict(existingCandidate, parsed.data.status)
+  if (wireframeConflict) return response.status(422).json(wireframeConflict)
   const artifactConflict = repositoryFlowArtifactReferenceConflict(
     existingCandidate,
     parsed.data.status === 'confirmed'

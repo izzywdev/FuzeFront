@@ -334,6 +334,11 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           trivyignores: '.trivyignore'
+        env:
+          # Keep every Trivy gate on Aqua's canonical database. The default
+          # mirror has returned stale manifests whose OCI layers resolve 404.
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:1
       # Upload with upload-sarif's OWN ref/sha detection — do not hand-roll it.
       # This previously passed an explicit ref/sha pair computed by a bespoke
       # "detect open PR" step, which on a pull_request event pinned the analysis

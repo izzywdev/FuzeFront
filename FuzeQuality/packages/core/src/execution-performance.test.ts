@@ -146,6 +146,8 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'unavailable' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'partial' })).toEqual([])
   expect(filterTestExecutions(executions, { evidenceCollectionStatus: 'not-collected' })).toEqual([executions[0]])
+  expect(filterTestExecutions(executions, { evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT' })).toEqual([executions[1]])
+  expect(filterTestExecutions(executions, { evidenceCollectionErrorCode: 'PROVIDER_UNAVAILABLE' })).toEqual([])
   expect(filterTestExecutions(executions, { evidenceCheckedAfter: '2026-10-08T00:00:00.000Z' })).toEqual([executions[1]])
   expect(filterTestExecutions(executions, { evidenceCheckedAfter: '2026-10-09T00:00:00.000Z' })).toEqual([])
   expect(filterTestExecutions(executions, { evidenceCheckedBefore: '2026-10-08T00:00:00.000Z' })).toEqual([executions[2]])
@@ -161,6 +163,48 @@ it('filters and trends only timestamped execution evidence', () => {
     [...executions, postProductionWithoutVideo],
     { evidenceRequirement: 'post-production-video-missing' },
   )).toEqual([postProductionWithoutVideo])
+  const postProductionWithUnsafeLegacyVideo = {
+    ...postProductionWithoutVideo,
+    id: 'post-production-with-unsafe-video',
+    externalRunId: 'post-production-with-unsafe-video',
+    evidenceLinks: [{ kind: 'video' as const, name: 'Legacy unsafe video', url: 'javascript:alert(1)' }],
+  }
+  expect(filterTestExecutions(
+    [...executions, postProductionWithUnsafeLegacyVideo],
+    { evidenceRequirement: 'post-production-video-missing' },
+  )).toEqual([postProductionWithUnsafeLegacyVideo])
+  expect(filterTestExecutions(
+    [postProductionWithUnsafeLegacyVideo],
+    { evidenceKind: 'video' },
+  )).toEqual([])
+  expect(filterTestExecutions(
+    [...executions, postProductionWithUnsafeLegacyVideo],
+    { evidenceRequirement: 'evidence-url-invalid' },
+  )).toEqual([postProductionWithUnsafeLegacyVideo])
+  const githubRunWithoutProvenance = {
+    ...executions[0],
+    id: 'github-run-without-provenance',
+    provider: 'github-actions' as const,
+    externalRunId: 'github-run-without-provenance',
+  }
+  const githubRunWithProvenance = {
+    ...githubRunWithoutProvenance,
+    id: 'github-run-with-provenance',
+    externalRunId: 'github-run-with-provenance',
+    headRepository: 'acme/app',
+    workflowPath: '.github/workflows/ci.yml',
+    sourceUrl: 'https://github.com/acme/app/actions/runs/42',
+  }
+  const githubForkWithoutProvenance = {
+    ...githubRunWithoutProvenance,
+    id: 'github-fork-without-provenance',
+    externalRunId: 'github-fork-without-provenance',
+    headRepository: 'contributor/app',
+  }
+  expect(filterTestExecutions(
+    [githubRunWithoutProvenance, githubRunWithProvenance, githubForkWithoutProvenance, executions[0]],
+    { evidenceRequirement: 'github-run-provenance-missing', headRepository: 'acme/app' },
+  )).toEqual([githubRunWithoutProvenance])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'performance-threshold-missing' })).toEqual([executions[1]])
   const explicitPolicyGateOutcome = {
     ...executions[0],
@@ -206,18 +250,85 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { minimumDurationMs: 45_001 })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { maximumDurationMs: 30_000 })).toEqual([executions[0]])
   expect(executionOutcomeTrend(executions)).toEqual([
-    { date: '2026-10-07', total: 2, passed: 1, failed: 1, cancelled: 0, running: 0, passRate: 0.5, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1 },
-    { date: '2026-10-08', total: 1, passed: 0, failed: 1, cancelled: 0, running: 0, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0 },
+    { date: '2026-10-07', total: 2, passed: 1, failed: 1, cancelled: 0, running: 0, passRate: 0.5, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1, evidenceCompleteCount: 1, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2, thresholdEvaluationCount: 1, thresholdPassedCount: 0, thresholdFailedCount: 1, performanceExecutionWithoutThresholdCount: 0 },
+    { date: '2026-10-08', total: 1, passed: 0, failed: 1, cancelled: 0, running: 0, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 1, evidenceNotCollectedCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 1 },
   ])
 })
 
 it('does not infer recovery from a passed retry without retained prior failure evidence', () => {
   const passedRetry = { id: 'retry', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'run', attempt: 2, revision: 'a', kind: 'ci' as const, status: 'passed' as const, name: 'CI', completedAt: '2026-10-09T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
   expect(executionOutcomeTrend([passedRetry])).toEqual([
-    { date: '2026-10-09', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 0 },
+    { date: '2026-10-09', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
   ])
   const failedInitial = { ...passedRetry, id: 'initial', attempt: 1, status: 'failed' as const, completedAt: '2026-10-09T11:00:00.000Z' }
   expect(executionOutcomeTrend([passedRetry], [failedInitial, passedRetry])[0].recoveredRunCount).toBe(1)
+})
+
+it('trends actionable evidence gaps without treating running executions as missing timing', () => {
+  const base = {
+    repositoryId: 'repo', tenantId: 'org', provider: 'github-actions' as const,
+    attempt: 1, revision: 'a', branch: 'main', headRepository: 'acme/app',
+    kind: 'post-production' as const, status: 'failed' as const, name: 'Post-production',
+    completedAt: '2026-10-09T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [],
+    gateEvaluations: [], thresholds: [],
+  }
+  const [trend] = executionOutcomeTrend([
+    {
+      ...base, id: 'missing', externalRunId: 'missing', workflowPath: undefined, sourceUrl: undefined,
+      evidenceLinks: [{ kind: 'video' as const, name: 'Unsafe video', url: 'javascript:alert(1)' }],
+    },
+    {
+      ...base, id: 'complete', externalRunId: 'complete', status: 'passed' as const,
+      workflowPath: '.github/workflows/post-prod.yml', sourceUrl: 'https://github.com/acme/app/actions/runs/42',
+      startedAt: '2026-10-09T11:59:00.000Z',
+      evidenceLinks: [{ kind: 'video' as const, name: 'Recording', url: 'https://evidence.example/post-prod.webm' }],
+    },
+    {
+      ...base, id: 'running', externalRunId: 'running', provider: 'external' as const,
+      kind: 'ci' as const, status: 'running' as const, completedAt: undefined, startedAt: '2026-10-09T12:00:00.000Z',
+      evidenceLinks: [],
+    },
+  ])
+  expect(trend).toMatchObject({
+    invalidEvidenceUrlCount: 1,
+    githubRunProvenanceMissingCount: 1,
+    postProductionVideoMissingCount: 1,
+    terminalTimingMissingCount: 1,
+  })
+})
+
+it('trends explicit and unambiguous legacy policy-gate outcomes without inventing ambiguous pairs', () => {
+  const base = {
+    repositoryId: 'repo', tenantId: 'org', provider: 'external' as const,
+    attempt: 1, revision: 'a', kind: 'ci' as const, name: 'CI',
+    completedAt: '2026-10-10T12:00:00.000Z', thresholds: [], evidenceLinks: [],
+  }
+  const [trend] = executionOutcomeTrend([
+    {
+      ...base, id: 'explicit', externalRunId: 'explicit', status: 'failed' as const,
+      policyArtifactIds: ['policy-a', 'policy-b'], gateArtifactIds: ['gate-a', 'gate-b'],
+      gateEvaluations: [
+        { policyArtifactId: 'policy-a', gateArtifactId: 'gate-a', status: 'passed' as const },
+        { policyArtifactId: 'policy-b', gateArtifactId: 'gate-b', status: 'failed' as const },
+      ],
+    },
+    {
+      ...base, id: 'legacy', externalRunId: 'legacy', status: 'cancelled' as const,
+      policyArtifactIds: ['policy-c'], gateArtifactIds: ['gate-c'], gateEvaluations: [],
+    },
+    {
+      ...base, id: 'ambiguous', externalRunId: 'ambiguous', status: 'passed' as const,
+      policyArtifactIds: ['policy-d', 'policy-e'], gateArtifactIds: ['gate-d'], gateEvaluations: [],
+    },
+  ])
+  expect(trend).toMatchObject({
+    gateEvaluationCount: 3,
+    gatePassedCount: 1,
+    gateFailedCount: 1,
+    gateCancelledCount: 1,
+    gateRunningCount: 0,
+    gateUnevaluatedExecutionCount: 1,
+  })
 })
 
 it('reports total samples while excluding running attempts from the terminal pass rate', () => {

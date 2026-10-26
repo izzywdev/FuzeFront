@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.0
+  version: 0.84.18
   license:
     name: UNLICENSED
 servers:
@@ -147,7 +147,7 @@ paths:
     post:
       operationId: ingestRepositoryFlowCandidates
       summary: Persist repository UX-flow candidates produced by an analysis worker
-      description: LiteLLM evidence IDs plus candidate step and wireframe target IDs must resolve to artifacts in the candidate's exact tenant-scoped repository revision; stale or invented references are rejected while deterministic evidence passages remain valid text.
+      description: LiteLLM evidence IDs plus candidate step and wireframe target IDs must resolve to artifacts in the candidate's exact tenant-scoped repository revision and every persisted reference must be represented by the grounding counts; stale or invented references are rejected while deterministic evidence passages remain valid text.
       tags: [worker-intelligence]
       security: [{ serviceToken: [] }]
       requestBody:
@@ -372,6 +372,10 @@ paths:
           in: query
           description: Exact structured-output schema version.
           schema: { type: string, minLength: 1, maxLength: 100 }
+        - name: analysisRisk
+          in: query
+          description: Isolate FuzeInfra LiteLLM proposals requiring additional review because grounding was rejected or absent, the repository prompt was bounded, or legacy model provenance is missing.
+          schema: { type: string, enum: [grounding-gaps, prompt-truncated, provenance-missing] }
         - name: minConfidence
           in: query
           description: Inclusive lower detector-confidence bound.
@@ -471,9 +475,10 @@ paths:
                   - { $ref: '#/components/schemas/StaleFlowReviewError' }
         '422':
           description: >-
-            Confirmation requires reviewer rationale for LiteLLM grounding gaps and
-            every LiteLLM evidence, step, or wireframe artifact reference must resolve
-            in the candidate's exact repository revision.
+            Confirmation requires complete FuzeInfra LiteLLM model, prompt, and schema
+            provenance, reviewer rationale for grounding gaps, and a reviewable wireframe;
+            every LiteLLM evidence, step, or wireframe artifact reference must resolve in
+            the candidate's exact repository revision.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -598,6 +603,14 @@ paths:
           in: query
           description: Exact case-insensitive policy or gate subject retained with the finding.
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: policyArtifactId
+          in: query
+          description: Exact policy artifact or logical identifier participating in the relationship.
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: gateArtifactId
+          in: query
+          description: Exact gate artifact or logical identifier participating in the relationship.
+          schema: { type: string, minLength: 1, maxLength: 500 }
         - name: minConfidence
           in: query
           description: Inclusive lower detector-confidence bound.
@@ -638,7 +651,8 @@ paths:
       summary: Persist policy/gate evaluations produced by an analysis worker
       description: >-
         Persists tenant-owned findings only after every policy, gate, and quoted
-        source path resolves in the exact repository analysis revision.
+        source path resolves in the exact repository analysis revision and each
+        decisive passage signal matches the referenced policy or gate kind.
       tags: [worker-intelligence]
       security: [{ serviceToken: [] }]
       requestBody:
@@ -690,6 +704,14 @@ paths:
           in: query
           description: Exact case-insensitive policy or gate subject retained with the finding.
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: policyArtifactId
+          in: query
+          description: Exact policy artifact or logical identifier participating in the relationship.
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: gateArtifactId
+          in: query
+          description: Exact gate artifact or logical identifier participating in the relationship.
+          schema: { type: string, minLength: 1, maxLength: 500 }
         - name: minConfidence
           in: query
           description: Inclusive lower detector-confidence bound.
@@ -786,7 +808,8 @@ paths:
         '422':
           description: >-
             Accepting an anomaly remediation requires reviewer rationale and every
-            policy, gate, and quoted source path must resolve in the finding's exact
+            policy, gate, quoted source path, and decisive passage signal must resolve
+            consistently in the finding's exact
             repository revision.
           content:
             application/json:
@@ -914,6 +937,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceCollectionErrorCode'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedAfter'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedBefore'
         - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
@@ -1164,6 +1188,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceCollectionErrorCode'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedAfter'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedBefore'
         - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
@@ -1223,6 +1248,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionName'
         - $ref: '#/components/parameters/ExecutionEvidenceKind'
         - $ref: '#/components/parameters/ExecutionEvidenceCollectionStatus'
+        - $ref: '#/components/parameters/ExecutionEvidenceCollectionErrorCode'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedAfter'
         - $ref: '#/components/parameters/ExecutionEvidenceCheckedBefore'
         - $ref: '#/components/parameters/ExecutionEvidenceRequirement'
@@ -1275,7 +1301,9 @@ paths:
       description: >-
         Returns tenant-scoped dispatch lifecycle records. Workflow input names are retained for
         auditability; input values are never persisted or returned. Continue every page before
-        enabling another dispatch so a large repository cannot skip duplicate-run evidence.
+        enabling another dispatch so a large repository cannot skip duplicate-run evidence. An
+        accepted receipt includes the newest retained GitHub Actions outcome only when repository,
+        tenant, suite kind, workflow path, source revision, and dispatched ref all match exactly.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:
@@ -1358,7 +1386,8 @@ paths:
         identity in its latest receipt after a later repository scan removes the workflow. Stable
         logical identities avoid revision-sized catalog scans; legacy observation identities are
         resolved through a bounded tenant-scoped dispatch lookup. Input values are never persisted
-        or returned.
+        or returned. Accepted receipts include the newest retained execution only when its tenant,
+        repository, suite kind, workflow, source revision, and dispatched ref all match exactly.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:
@@ -1483,6 +1512,11 @@ components:
       in: query
       description: Require a provider artifact-discovery outcome, or `not-collected` for executions with no retained collection attempt.
       schema: { type: string, enum: [complete, partial, unavailable, not-collected] }
+    ExecutionEvidenceCollectionErrorCode:
+      name: evidenceCollectionErrorCode
+      in: query
+      description: Require an exact retained provider artifact-discovery failure or truncation code.
+      schema: { type: string, enum: [PROVIDER_TIMEOUT, PROVIDER_UNAVAILABLE, PROVIDER_RESPONSE_INVALID, PROVIDER_RESULT_LIMIT_EXCEEDED] }
     ExecutionEvidenceCheckedAfter:
       name: evidenceCheckedAfter
       in: query
@@ -1496,8 +1530,8 @@ components:
     ExecutionEvidenceRequirement:
       name: evidenceRequirement
       in: query
-      description: Select executions missing evidence required for a reviewed quality claim. Policy–gate outcome requires an explicit retained pair or an unambiguous legacy one-policy/one-gate association. Performance thresholds apply only to load and stress executions. Terminal timing requires both start and completion timestamps for a non-running execution.
-      schema: { type: string, enum: [policy-gate-outcome-missing, post-production-video-missing, performance-threshold-missing, terminal-timing-missing] }
+      description: Select executions missing evidence required for a reviewed quality claim. Invalid URL finds retained artifact links that are malformed or do not use HTTPS. GitHub run provenance requires the head repository, normalized workflow path, and HTTPS provider run URL. Policy–gate outcome requires an explicit retained pair or an unambiguous legacy one-policy/one-gate association. Performance thresholds apply only to load and stress executions. Terminal timing requires both start and completion timestamps for a non-running execution.
+      schema: { type: string, enum: [evidence-url-invalid, github-run-provenance-missing, policy-gate-outcome-missing, post-production-video-missing, performance-threshold-missing, terminal-timing-missing] }
     ExecutionThresholdOutcome:
       name: thresholdOutcome
       in: query
@@ -1738,6 +1772,7 @@ components:
         kind: { type: string, enum: [sequence] }
         nodes:
           type: array
+          minItems: 1
           items:
             type: object
             required: [label, targetIds]
@@ -1761,6 +1796,7 @@ components:
           items: { type: string }
         steps:
           type: array
+          minItems: 1
           items: { $ref: '#/components/schemas/FlowStep' }
         wireframe: { $ref: '#/components/schemas/FlowWireframe' }
         status: { type: string, enum: [proposed, confirmed, rejected] }
@@ -1797,7 +1833,10 @@ components:
           required: [referencedArtifactCount, groundedArtifactCount, rejectedArtifactCount, ungroundedStepCount]
           properties:
             referencedArtifactCount: { type: integer, minimum: 0 }
-            groundedArtifactCount: { type: integer, minimum: 0 }
+            groundedArtifactCount:
+              type: integer
+              minimum: 0
+              description: Unique persisted evidence, step-target, and wireframe-target artifact references.
             rejectedArtifactCount: { type: integer, minimum: 0 }
             ungroundedStepCount: { type: integer, minimum: 0 }
     RepositoryFlowReviewHistoryEntry:
@@ -2272,7 +2311,7 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount]
+      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, invalidEvidenceUrlCount, githubRunProvenanceMissingCount, postProductionVideoMissingCount, terminalTimingMissingCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
       properties:
         date: { type: string, format: date }
         total:
@@ -2301,6 +2340,60 @@ components:
           type: integer
           minimum: 0
           description: Passed retry attempts backed by a retained failed earlier attempt for the same provider run.
+        evidenceCompleteCount:
+          type: integer
+          minimum: 0
+          description: Provider evidence collections completed without a retained collection error.
+        evidencePartialCount:
+          type: integer
+          minimum: 0
+          description: Provider evidence collections completed with bounded or incomplete results.
+        evidenceUnavailableCount:
+          type: integer
+          minimum: 0
+          description: Provider evidence collections that failed before usable results were retained.
+        evidenceNotCollectedCount:
+          type: integer
+          minimum: 0
+          description: Executions with no retained provider evidence collection attempt.
+        invalidEvidenceUrlCount:
+          type: integer
+          minimum: 0
+          description: Executions retaining at least one evidence link that is not a safe HTTPS URL.
+        githubRunProvenanceMissingCount:
+          type: integer
+          minimum: 0
+          description: GitHub Actions executions missing repository, workflow, or safe run URL provenance.
+        postProductionVideoMissingCount:
+          type: integer
+          minimum: 0
+          description: Post-production executions without a safe video evidence link.
+        terminalTimingMissingCount:
+          type: integer
+          minimum: 0
+          description: Terminal executions without a complete, valid timing interval.
+        gateEvaluationCount:
+          type: integer
+          minimum: 0
+          description: Explicit policy/gate outcomes, including unambiguous legacy single-pair evidence.
+        gatePassedCount: { type: integer, minimum: 0 }
+        gateFailedCount: { type: integer, minimum: 0 }
+        gateCancelledCount: { type: integer, minimum: 0 }
+        gateRunningCount: { type: integer, minimum: 0 }
+        gateUnevaluatedExecutionCount:
+          type: integer
+          minimum: 0
+          description: Executions that cannot be attributed to a policy/gate outcome without inference.
+        thresholdEvaluationCount:
+          type: integer
+          minimum: 0
+          description: Retained threshold observations in the UTC-day bucket.
+        thresholdPassedCount: { type: integer, minimum: 0 }
+        thresholdFailedCount: { type: integer, minimum: 0 }
+        performanceExecutionWithoutThresholdCount:
+          type: integer
+          minimum: 0
+          description: Load or stress executions that retained no measurable threshold outcome.
     PerformanceDispatch:
       type: object
       required: [status, artifactId, workflowPath, ref, sourceRevision, auditPersistence, dispatch]
@@ -2375,6 +2468,26 @@ components:
         status: { type: string, enum: [dispatching, accepted, failed] }
         error: { type: string, minLength: 1, maxLength: 2000 }
         requestedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        executionResult: { $ref: '#/components/schemas/TestSuiteDispatchExecutionResult' }
+    TestSuiteDispatchExecutionResult:
+      type: object
+      additionalProperties: false
+      required: [id, provider, externalRunId, attempt, status]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 500 }
+        provider: { type: string, enum: [github-actions, external] }
+        externalRunId: { type: string, minLength: 1, maxLength: 500 }
+        attempt: { type: integer, minimum: 1 }
+        status: { type: string, enum: [passed, failed, cancelled, running] }
+        sourceUrl: { type: string, format: uri, pattern: '^https://' }
+        evidenceLinks:
+          type: array
+          maxItems: 100
+          description: Safe exact-attempt evidence retained for the execution matched to this dispatch.
+          items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
+        evidenceCollection: { $ref: '#/components/schemas/TestExecutionEvidenceCollection' }
+        startedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
     TestSuiteDispatchAuditPage:
       type: object

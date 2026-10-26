@@ -1,5 +1,5 @@
 import { normalizeWorkflowPath, type QualityArtifact, type Repository, type TestExecution } from '@fuzequality/contracts'
-import { executableWorkflowTarget } from '@fuzequality/contracts/workflow-execution'
+import { executableWorkflowTarget, safeExecutionEvidenceUrl } from '@fuzequality/contracts/workflow-execution'
 
 export { executableWorkflowTarget, isPreferredWorkflowExecutionArtifact, validateWorkflowDispatchInputs } from '@fuzequality/contracts/workflow-execution'
 
@@ -49,6 +49,8 @@ export type PolicyGatePerformancePage = {
 }
 
 export type ExecutionEvidenceRequirement =
+  | 'evidence-url-invalid'
+  | 'github-run-provenance-missing'
   | 'policy-gate-outcome-missing'
   | 'post-production-video-missing'
   | 'performance-threshold-missing'
@@ -59,6 +61,7 @@ export type ExecutionFilter = Partial<Pick<TestExecution, 'id' | 'kind' | 'statu
   headRepository?: string
   evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
   evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
+  evidenceCollectionErrorCode?: NonNullable<TestExecution['evidenceCollection']>['errorCode']
   evidenceCheckedAfter?: string
   evidenceCheckedBefore?: string
   evidenceRequirement?: ExecutionEvidenceRequirement
@@ -212,11 +215,15 @@ export function filterTestExecutions(
     if (
       filter.headRepository &&
       execution.provider === 'github-actions' &&
-      execution.headRepository?.toLowerCase() !== filter.headRepository.toLowerCase()
+      execution.headRepository?.toLowerCase() !== filter.headRepository.toLowerCase() &&
+      !(filter.evidenceRequirement === 'github-run-provenance-missing' && execution.headRepository === undefined)
     ) return false
-    if (filter.evidenceKind && !execution.evidenceLinks.some(link => link.kind === filter.evidenceKind)) return false
+    if (filter.evidenceKind && !execution.evidenceLinks.some(link =>
+      link.kind === filter.evidenceKind && safeExecutionEvidenceUrl(link.url)
+    )) return false
     if (filter.evidenceCollectionStatus === 'not-collected' && execution.evidenceCollection) return false
     if (filter.evidenceCollectionStatus && filter.evidenceCollectionStatus !== 'not-collected' && execution.evidenceCollection?.status !== filter.evidenceCollectionStatus) return false
+    if (filter.evidenceCollectionErrorCode && execution.evidenceCollection?.errorCode !== filter.evidenceCollectionErrorCode) return false
     if (evidenceCheckedAfter !== undefined) {
       const checkedAt = Date.parse(execution.evidenceCollection?.checkedAt ?? '')
       if (!Number.isFinite(checkedAt) || checkedAt < evidenceCheckedAfter) return false
@@ -226,8 +233,22 @@ export function filterTestExecutions(
       if (!Number.isFinite(checkedAt) || checkedAt > evidenceCheckedBefore) return false
     }
     if (
+      filter.evidenceRequirement === 'evidence-url-invalid' &&
+      !execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'github-run-provenance-missing' &&
+      (execution.provider !== 'github-actions' ||
+        (execution.headRepository !== undefined &&
+          execution.workflowPath !== undefined &&
+          execution.sourceUrl !== undefined &&
+          safeExecutionEvidenceUrl(execution.sourceUrl)))
+    ) return false
+    if (
       filter.evidenceRequirement === 'post-production-video-missing' &&
-      (execution.kind !== 'post-production' || execution.evidenceLinks.some(link => link.kind === 'video'))
+      (execution.kind !== 'post-production' || execution.evidenceLinks.some(link =>
+        link.kind === 'video' && safeExecutionEvidenceUrl(link.url)
+      ))
     ) return false
     if (
       filter.evidenceRequirement === 'performance-threshold-missing' &&
@@ -295,6 +316,36 @@ export type ExecutionOutcomeTrend = {
   successfulRetryCount: number
   /** Passed retry attempts with an explicitly retained failed earlier attempt for the same provider run. */
   recoveredRunCount: number
+  /** Provider evidence collections that completed without a retained collection error. */
+  evidenceCompleteCount?: number
+  /** Provider evidence collections that completed with bounded or incomplete results. */
+  evidencePartialCount?: number
+  /** Provider evidence collections that failed before usable results were retained. */
+  evidenceUnavailableCount?: number
+  /** Executions with no retained provider evidence collection attempt. */
+  evidenceNotCollectedCount?: number
+  /** Executions retaining at least one evidence link that is not a safe HTTPS URL. */
+  invalidEvidenceUrlCount?: number
+  /** GitHub Actions executions missing repository, workflow, or safe run URL provenance. */
+  githubRunProvenanceMissingCount?: number
+  /** Post-production executions without a safe video evidence link. */
+  postProductionVideoMissingCount?: number
+  /** Terminal executions without a complete, valid timing interval. */
+  terminalTimingMissingCount?: number
+  /** Explicit policy/gate outcomes, including unambiguous legacy single-pair evidence. */
+  gateEvaluationCount?: number
+  gatePassedCount?: number
+  gateFailedCount?: number
+  gateCancelledCount?: number
+  gateRunningCount?: number
+  /** Executions that cannot be attributed to a policy/gate outcome without inference. */
+  gateUnevaluatedExecutionCount?: number
+  /** Retained threshold observations in this UTC-day bucket. */
+  thresholdEvaluationCount?: number
+  thresholdPassedCount?: number
+  thresholdFailedCount?: number
+  /** Load or stress executions that retained no measurable threshold outcome. */
+  performanceExecutionWithoutThresholdCount?: number
 }
 
 /** Produces an evidence-only daily outcome series; missing days are not invented. */
@@ -326,10 +377,67 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       retryAttemptCount: 0,
       successfulRetryCount: 0,
       recoveredRunCount: 0,
+      evidenceCompleteCount: 0,
+      evidencePartialCount: 0,
+      evidenceUnavailableCount: 0,
+      evidenceNotCollectedCount: 0,
+      invalidEvidenceUrlCount: 0,
+      githubRunProvenanceMissingCount: 0,
+      postProductionVideoMissingCount: 0,
+      terminalTimingMissingCount: 0,
+      gateEvaluationCount: 0,
+      gatePassedCount: 0,
+      gateFailedCount: 0,
+      gateCancelledCount: 0,
+      gateRunningCount: 0,
+      gateUnevaluatedExecutionCount: 0,
+      thresholdEvaluationCount: 0,
+      thresholdPassedCount: 0,
+      thresholdFailedCount: 0,
+      performanceExecutionWithoutThresholdCount: 0,
       totalDurationMs: 0,
     }
     current.total++
     current[execution.status]++
+    if (execution.evidenceCollection) {
+      if (execution.evidenceCollection.status === 'complete') current.evidenceCompleteCount = (current.evidenceCompleteCount ?? 0) + 1
+      if (execution.evidenceCollection.status === 'partial') current.evidencePartialCount = (current.evidencePartialCount ?? 0) + 1
+      if (execution.evidenceCollection.status === 'unavailable') current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + 1
+    } else {
+      current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + 1
+    }
+    if (execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))) {
+      current.invalidEvidenceUrlCount = (current.invalidEvidenceUrlCount ?? 0) + 1
+    }
+    if (
+      execution.provider === 'github-actions' &&
+      (!execution.headRepository || !execution.workflowPath || !safeExecutionEvidenceUrl(execution.sourceUrl))
+    ) {
+      current.githubRunProvenanceMissingCount = (current.githubRunProvenanceMissingCount ?? 0) + 1
+    }
+    if (
+      execution.kind === 'post-production' &&
+      !execution.evidenceLinks.some(link => link.kind === 'video' && safeExecutionEvidenceUrl(link.url))
+    ) {
+      current.postProductionVideoMissingCount = (current.postProductionVideoMissingCount ?? 0) + 1
+    }
+    const gateEvaluations = retainedGateEvaluations(execution)
+    current.gateEvaluationCount = (current.gateEvaluationCount ?? 0) + gateEvaluations.length
+    if (!gateEvaluations.length) {
+      current.gateUnevaluatedExecutionCount = (current.gateUnevaluatedExecutionCount ?? 0) + 1
+    }
+    for (const evaluation of gateEvaluations) {
+      if (evaluation.status === 'passed') current.gatePassedCount = (current.gatePassedCount ?? 0) + 1
+      if (evaluation.status === 'failed') current.gateFailedCount = (current.gateFailedCount ?? 0) + 1
+      if (evaluation.status === 'cancelled') current.gateCancelledCount = (current.gateCancelledCount ?? 0) + 1
+      if (evaluation.status === 'running') current.gateRunningCount = (current.gateRunningCount ?? 0) + 1
+    }
+    current.thresholdEvaluationCount = (current.thresholdEvaluationCount ?? 0) + execution.thresholds.length
+    current.thresholdPassedCount = (current.thresholdPassedCount ?? 0) + execution.thresholds.filter(threshold => threshold.passed).length
+    current.thresholdFailedCount = (current.thresholdFailedCount ?? 0) + execution.thresholds.filter(threshold => !threshold.passed).length
+    if (['load', 'stress'].includes(execution.kind) && !execution.thresholds.length) {
+      current.performanceExecutionWithoutThresholdCount = (current.performanceExecutionWithoutThresholdCount ?? 0) + 1
+    }
     if (execution.attempt > 1) {
       current.retryAttemptCount++
       if (execution.status === 'passed') {
@@ -342,6 +450,9 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
     }
     const startedAt = Date.parse(execution.startedAt ?? '')
     const completedAt = Date.parse(execution.completedAt ?? '')
+    if (execution.status !== 'running' && (!Number.isFinite(startedAt) || !Number.isFinite(completedAt) || completedAt < startedAt)) {
+      current.terminalTimingMissingCount = (current.terminalTimingMissingCount ?? 0) + 1
+    }
     if (Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt) {
       current.durationSampleCount++
       const durationMs = completedAt - startedAt

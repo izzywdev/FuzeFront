@@ -371,6 +371,7 @@ describe('test execution evidence', () => {
       name: 'Post-production browser suite',
       evidenceKind: 'video',
       evidenceCollectionStatus: 'unavailable',
+      evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT',
       evidenceCheckedAfter: '2026-01-10T00:00:00.000Z',
       evidenceCheckedBefore: '2026-01-20T00:00:00.000Z',
       evidenceRequirement: 'post-production-video-missing',
@@ -408,6 +409,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')")
     expect(String(sql)).toContain('quality_artifact_logical_id(executions.repository_id,$18)')
     expect(String(sql)).toContain("evidence.value->>'kind'=$19")
+    expect(String(sql)).toContain("evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'")
     expect(String(sql)).toContain("threshold.value->>'passed'=CASE $20")
     expect(String(sql)).toContain('executions.name=$21')
     expect(String(sql)).toContain("gate_evaluation.value->>'status',executions.status)=$22")
@@ -417,7 +419,15 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("$24='not-collected' AND executions.evidence_collection IS NULL")
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")
     expect(String(sql)).toContain("$25='post-production-video-missing'")
+    expect(String(sql)).toContain("$25='evidence-url-invalid'")
+    expect(String(sql)).toContain("$25='github-run-provenance-missing'")
+    expect(String(sql)).toContain("executions.provider='github-actions'")
+    expect(String(sql)).toContain('executions.head_repository IS NULL')
+    expect(String(sql)).toContain('executions.workflow_path IS NULL')
+    expect(String(sql)).toContain('executions.source_url IS NULL')
+    expect(String(sql)).toContain("COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'")
     expect(String(sql)).toContain("required_evidence.value->>'kind'='video'")
+    expect(String(sql)).toContain("required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'")
     expect(String(sql)).toContain("$25='terminal-timing-missing'")
     expect(String(sql)).toContain("executions.status<>'running'")
     expect(String(sql)).toContain('executions.started_at IS NULL OR executions.completed_at IS NULL')
@@ -430,23 +440,25 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $27")
     expect(String(sql)).toContain('executions.id=$28')
     expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($29)")
+    expect(String(sql)).toContain("executions.evidence_collection->>'errorCode'=$30")
+    expect(String(sql)).toContain("$25='github-run-provenance-missing' AND executions.head_repository IS NULL")
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', 'failed', 'github-actions', 'abc',
       '.github/workflows/post-prod.yml', 'recovered', 60_000, 180_000, '2026-01-01T00:00:00.000Z',
       '2026-01-31T00:00:00.000Z', '2026-01-15T00:00:00.000Z', 'run-2', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'unavailable',
-      'post-production-video-missing', '2026-01-20T00:00:00.000Z', '2026-01-10T00:00:00.000Z', 'execution-detail-1', 'acme/app',
+      'post-production-video-missing', '2026-01-20T00:00:00.000Z', '2026-01-10T00:00:00.000Z', 'execution-detail-1', 'acme/app', 'PROVIDER_TIMEOUT',
     ])
   })
 
   it('aggregates complete tenant-scoped outcome history by UTC day in Postgres', async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, pass_rate: 2 / 3, duration_sample_count: 2, average_duration_ms: '2592000000', maximum_duration_ms: '2678400000', retry_attempt_count: 3, successful_retry_count: 2, recovered_run_count: 1 }] })
+    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, pass_rate: 2 / 3, duration_sample_count: 2, average_duration_ms: '2592000000', maximum_duration_ms: '2678400000', retry_attempt_count: 3, successful_retry_count: 2, recovered_run_count: 1, evidence_complete_count: 1, evidence_partial_count: 1, evidence_unavailable_count: 1, evidence_not_collected_count: 0, invalid_evidence_url_count: 1, github_run_provenance_missing_count: 2, post_production_video_missing_count: 1, terminal_timing_missing_count: 1, gate_evaluation_count: 4, gate_passed_count: 2, gate_failed_count: 1, gate_cancelled_count: 0, gate_running_count: 1, gate_unevaluated_execution_count: 1, threshold_evaluation_count: 5, threshold_passed_count: 3, threshold_failed_count: 2, performance_execution_without_threshold_count: 1 }] })
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
-      kind: 'integration', name: 'Integration suite', externalRunId: 'provider-run-42', branch: 'feature/checkout', headRepository: 'acme/app', evidenceKind: 'report', evidenceCollectionStatus: 'complete', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'passed', gateOutcome: 'passed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
+      kind: 'integration', name: 'Integration suite', externalRunId: 'provider-run-42', branch: 'feature/checkout', headRepository: 'acme/app', evidenceKind: 'report', evidenceCollectionStatus: 'complete', evidenceCollectionErrorCode: 'PROVIDER_RESPONSE_INVALID', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'passed', gateOutcome: 'passed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', minimumDurationMs: 60_000, maximumDurationMs: 180_000, beforeDate: '2026-10-11', limit: 51,
     })).resolves.toEqual([
-      { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 2_592_000_000, maximumDurationMs: 2_678_400_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
+      { date: '2026-10-10', total: 3, passed: 2, failed: 1, cancelled: 0, running: 0, passRate: 2 / 3, durationSampleCount: 2, averageDurationMs: 2_592_000_000, maximumDurationMs: 2_678_400_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1, evidenceCompleteCount: 1, evidencePartialCount: 1, evidenceUnavailableCount: 1, evidenceNotCollectedCount: 0, invalidEvidenceUrlCount: 1, githubRunProvenanceMissingCount: 2, postProductionVideoMissingCount: 1, terminalTimingMissingCount: 1, gateEvaluationCount: 4, gatePassedCount: 2, gateFailedCount: 1, gateCancelledCount: 0, gateRunningCount: 1, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 5, thresholdPassedCount: 3, thresholdFailedCount: 2, performanceExecutionWithoutThresholdCount: 1 },
     ])
 
     const [sql, parameters] = query.mock.calls[0]
@@ -470,6 +482,19 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain('retry_attempt_count')
     expect(String(sql)).toContain('successful_retry_count')
     expect(String(sql)).toContain('recovered_run_count')
+    expect(String(sql)).toContain('evidence_complete_count')
+    expect(String(sql)).toContain('invalid_evidence_url_count')
+    expect(String(sql)).toContain('github_run_provenance_missing_count')
+    expect(String(sql)).toContain('post_production_video_missing_count')
+    expect(String(sql)).toContain('terminal_timing_missing_count')
+    expect(String(sql)).toContain('effective_gate_evaluations')
+    expect(String(sql)).toContain('gate_evaluation_count')
+    expect(String(sql)).toContain('gate_unevaluated_execution_count')
+    expect(String(sql)).toContain('threshold_evaluation_count')
+    expect(String(sql)).toContain('performance_execution_without_threshold_count')
+    expect(String(sql)).toContain('evidence_partial_count')
+    expect(String(sql)).toContain('evidence_unavailable_count')
+    expect(String(sql)).toContain('evidence_not_collected_count')
     expect(String(sql)).toContain('previous.external_run_id=executions.external_run_id')
     expect(String(sql)).toContain("previous.status='failed'")
     expect(String(sql)).toContain('executions.external_run_id=$16')
@@ -485,6 +510,8 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("$24='not-collected' AND executions.evidence_collection IS NULL")
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$24")
     expect(String(sql)).toContain("$25='post-production-video-missing'")
+    expect(String(sql)).toContain("$25='evidence-url-invalid'")
+    expect(String(sql)).toContain("$25='github-run-provenance-missing'")
     expect(String(sql)).toContain("$25='terminal-timing-missing'")
     expect(String(sql)).toContain("$25='performance-threshold-missing'")
     expect(String(sql)).toContain("$25='policy-gate-outcome-missing'")
@@ -492,7 +519,9 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $27")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
     expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($28)")
-    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42', 'policy-1', 'gate-1', 'report', 'passed', 'Integration suite', 'passed', 'feature/checkout', 'complete', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app'])
+    expect(String(sql)).toContain("executions.evidence_collection->>'errorCode'=$29")
+    expect(String(sql)).toContain("$25='github-run-provenance-missing' AND executions.head_repository IS NULL")
+    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, 60_000, 180_000, null, null, '2026-10-11', null, 51, 'provider-run-42', 'policy-1', 'gate-1', 'report', 'passed', 'Integration suite', 'passed', 'feature/checkout', 'complete', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app', 'PROVIDER_RESPONSE_INVALID'])
   })
 
   it('pushes filtered policy-gate aggregation and its stable cursor into Postgres', async () => {
@@ -506,7 +535,7 @@ describe('test execution evidence', () => {
     ;(store as unknown as { pool: unknown }).pool = { query }
 
     await expect(store.policyGatePerformance('repo-1', 'org-1', {
-      kind: 'post-production', name: 'Post-production browser suite', provider: 'github-actions', externalRunId: 'provider-run-42', branch: 'release/quality', headRepository: 'acme/app', evidenceKind: 'video', evidenceCollectionStatus: 'partial', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'failed', gateOutcome: 'failed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', attemptScope: 'recovered', minimumDurationMs: 90_000, maximumDurationMs: 300_000,
+      kind: 'post-production', name: 'Post-production browser suite', provider: 'github-actions', externalRunId: 'provider-run-42', branch: 'release/quality', headRepository: 'acme/app', evidenceKind: 'video', evidenceCollectionStatus: 'partial', evidenceCollectionErrorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED', evidenceCheckedAfter: '2026-10-01T00:00:00.000Z', evidenceCheckedBefore: '2026-10-09T00:00:00.000Z', evidenceRequirement: 'post-production-video-missing', thresholdOutcome: 'failed', gateOutcome: 'failed', policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', attemptScope: 'recovered', minimumDurationMs: 90_000, maximumDurationMs: 300_000,
       after: { failed: 3, passed: 5, gateArtifactId: 'gate-0', policyArtifactId: 'policy-0' },
       limit: 51,
     })).resolves.toEqual([{
@@ -531,6 +560,7 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("execution.repository_id,pair.value->>'gateArtifactId'")
     expect(String(sql)).toContain('quality_artifact_logical_id(execution.repository_id,$21)')
     expect(String(sql)).toContain("evidence.value->>'kind'=$22")
+    expect(String(sql)).toContain("evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'")
     expect(String(sql)).toContain("threshold.value->>'passed'=CASE $23")
     expect(String(sql)).toContain('executions.name=$24')
     expect(String(sql)).toContain("pair.value->>'status',execution.status)=$25")
@@ -538,6 +568,9 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("$27='not-collected' AND executions.evidence_collection IS NULL")
     expect(String(sql)).toContain("executions.evidence_collection->>'status'=$27")
     expect(String(sql)).toContain("$28='post-production-video-missing'")
+    expect(String(sql)).toContain("$28='evidence-url-invalid'")
+    expect(String(sql)).toContain("$28='github-run-provenance-missing'")
+    expect(String(sql)).toContain("required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'")
     expect(String(sql)).toContain("$28='terminal-timing-missing'")
     expect(String(sql)).toContain("$28='performance-threshold-missing'")
     expect(String(sql)).toContain("$28='policy-gate-outcome-missing'")
@@ -545,12 +578,14 @@ describe('test execution evidence', () => {
     expect(String(sql)).toContain("executions.evidence_collection->>'checkedAt')::timestamptz >= $30")
     expect(String(sql)).toContain('evidence_links,evidence_collection,thresholds')
     expect(String(sql)).toContain("executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($31)")
+    expect(String(sql)).toContain("executions.evidence_collection->>'errorCode'=$32")
+    expect(String(sql)).toContain("$28='github-run-provenance-missing' AND executions.head_repository IS NULL")
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
     expect(String(sql)).toContain('AS pass_rate')
     expect(String(sql)).toContain('ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id')
     expect(parameters).toEqual([
       'repo-1', 'org-1', 'post-production', null, 'github-actions', null, null, 'recovered', 90_000, 300_000, null, null, null,
-      3, 5, 'gate-0', 'policy-0', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'partial', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app',
+      3, 5, 'gate-0', 'policy-0', 51, 'provider-run-42', 'policy-1', 'gate-1', 'video', 'failed', 'Post-production browser suite', 'failed', 'release/quality', 'partial', 'post-production-video-missing', '2026-10-09T00:00:00.000Z', '2026-10-01T00:00:00.000Z', 'acme/app', 'PROVIDER_RESULT_LIMIT_EXCEEDED',
     ])
   })
 
@@ -614,10 +649,10 @@ describe('test execution evidence', () => {
       })
 
       await expect(store.executionOutcomeTrend('repo-1', 'org-1', { snapshotAt })).resolves.toEqual([
-        { date: '2026-10-10', total: 1, passed: 0, failed: 0, cancelled: 0, running: 1, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 },
+        { date: '2026-10-10', total: 1, passed: 0, failed: 0, cancelled: 0, running: 1, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 1, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
       ])
       await expect(store.executionOutcomeTrend('repo-1', 'org-1')).resolves.toEqual([
-        { date: '2026-10-11', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 1, averageDurationMs: 420_000, maximumDurationMs: 420_000, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0 },
+        { date: '2026-10-11', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 1, averageDurationMs: 420_000, maximumDurationMs: 420_000, retryAttemptCount: 0, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 1, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
       ])
     } finally {
       vi.useRealTimers()
