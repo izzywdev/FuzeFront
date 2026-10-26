@@ -70,7 +70,18 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # SECURITY: pin to the default branch, never the dispatched ref. This job
+      # mints the fuze-agent App token and runs scripts/merge_when_green.py with
+      # it in GH_TOKEN. A scheduled run already uses the default branch, but
+      # workflow_dispatch runs against whatever ref the caller selects — so
+      # without this pin, anyone who can push a branch and dispatch could run a
+      # modified script with the privileged token and exfiltrate it, bypassing
+      # CODEOWNERS. Pinning means the privileged job always executes trusted
+      # default-branch code regardless of how it was triggered.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.12'
