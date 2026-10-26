@@ -349,6 +349,14 @@ def test_session_issuer_must_be_url():
             validate_identity_session_issued({**base, "issuer": bad})
 
 
+def test_lone_surrogate_does_not_crash():
+    # json.loads preserves an escaped lone surrogate and Node z.string() accepts
+    # it; _utf16_len must count it (1 unit) rather than raise UnicodeEncodeError.
+    ok = copy.deepcopy(VALID["chat.response.chunk"])
+    ok["messageId"] = "m\ud83d"
+    assert schema_for_topic("chat.response.chunk")(ok)
+
+
 def test_string_length_counts_utf16_units():
     # 101 non-BMP chars = 202 UTF-16 units > NAME_MAX(200); 100 = 200 = OK.
     good = {**_sl_base(), "list": {**_sl_list_snapshot(), "name": "😀" * 100}}

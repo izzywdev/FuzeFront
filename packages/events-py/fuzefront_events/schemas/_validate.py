@@ -34,8 +34,10 @@ _EMAIL_RE = re.compile(
 def _utf16_len(s: str) -> int:
     """Length in UTF-16 code units — what JS ``string.length`` (and therefore
     Zod ``.min()``/``.max()``) counts. A non-BMP char (emoji, …) is 2 units,
-    whereas Python ``len()`` counts it as 1 code point."""
-    return len(s.encode("utf-16-le")) // 2
+    whereas Python ``len()`` counts it as 1 code point. ``surrogatepass`` so a
+    lone surrogate (which ``json.loads`` preserves and Node's ``z.string()``
+    accepts) counts as 1 unit instead of raising ``UnicodeEncodeError``."""
+    return len(s.encode("utf-16-le", "surrogatepass")) // 2
 
 
 def _is_url(s: str) -> bool:
