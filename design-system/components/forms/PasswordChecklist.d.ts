@@ -30,6 +30,14 @@ export interface PasswordChecklistProps
   rules?: PasswordRule[];
   /** Heading shown above the list; pass "" to hide. */
   title?: string;
+  /** Lay the rules out in this many grid columns (default 1). */
+  columns?: number;
+  /** Tint still-unmet rules with the error colour (e.g. after a rejected submit). Default false. */
+  highlightUnmet?: boolean;
+  /** Visually-hidden suffix announced for a met rule (default " — met"). Localize it. */
+  metLabel?: string;
+  /** Visually-hidden suffix announced for an unmet rule (default " — not met"). Localize it. */
+  unmetLabel?: string;
 }
 
 export function PasswordChecklist(props: PasswordChecklistProps): React.JSX.Element;

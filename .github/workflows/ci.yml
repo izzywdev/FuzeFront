@@ -5,6 +5,12 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # This workflow produces the REQUIRED "Security Scan" context, which must also report
+  # for a merge-queue entry; a queue build emits `merge_group`, not `pull_request`.
+  # Note the `concurrency` block below keys on `github.ref` and only sets
+  # `cancel-in-progress` for `pull_request`, so queue runs are never cancelled by a
+  # sibling — cancelling one would strand the entry on an unreported required context.
+  merge_group:
   workflow_dispatch:
   release:
     types: [published]
@@ -132,6 +138,11 @@ jobs:
         # both fail with "Cannot find module '@fuzeone/selection-lists-ui'".
         run: npm run -w @fuzeone/selection-lists-ui build
 
+      - name: Build @fuzefront/billing-types (d.ts for backend type-check)
+        # backend/src/services/billingProjection.ts imports @fuzefront/billing-types;
+        # without a built dist/ the backend tsc --noEmit fails with TS2307.
+        run: npm run -w @fuzefront/billing-types build
+
       - name: Type checking
         run: |
           cd backend && npm run type-check
@@ -155,6 +166,15 @@ jobs:
 
       - name: Run SDK tests
         run: cd sdk && npm test
+
+      # @fuzefront/feature-flags carries the flag catalog (fail-safe defaults per
+      # type) and the degradation contract every service relies on, but no job
+      # ran its tests, so two suites rotted to non-compiling unnoticed. ts-jest
+      # runs from src, so no build step is needed; no network/infra required.
+      - name: feature-flags — type-check + unit tests
+        run: |
+          npm run -w @fuzefront/feature-flags type-check
+          npm run -w @fuzefront/feature-flags test
 
   identity-ui-and-security:
     name: Identity UI + Security (unit)
@@ -225,6 +245,16 @@ jobs:
           cd backend/security
           npx jest tests/api-token.test.ts tests/api-token-auth.test.ts tests/api-tokens.routes.test.ts
 
+      # The org-scoped token exchange (POST /api/organizations/:id/session-token)
+      # and the kind boundary that keeps that token out of account routes. Both
+      # suites mock the DB; until this step existed neither ran anywhere in CI.
+      - name: security — org-session token exchange + kind boundary (DB mocked, no Postgres)
+        env:
+          PERMIT_API_KEY: ci-no-real-permit-calls
+        run: |
+          cd backend/security
+          npx jest tests/org-session-token.test.ts tests/org-session-token.kind-boundary.test.ts tests/session-tenant.test.ts
+
       - name: security — OIDC unit tests (openid-client mocked, no Authentik required)
         run: |
           cd backend/security
@@ -283,6 +313,21 @@ jobs:
           npm run -w @fuzefront/shared build
           npm run -w @fuzefront/service-auth build
 
+      - name: Build @fuzefront/telemetry (for backend build + frontend bundle)
+        # backend/src/index.ts now mounts tracingMiddleware()/initTelemetry()
+        # (@fuzefront/telemetry), and frontend imports
+        # @fuzefront/telemetry/browser at its bootstrap (main.tsx); both
+        # resolve through its uncommitted dist/. Must precede the backend
+        # build below — moved here from just before "Build frontend", where
+        # it ran AFTER backend and left backend's own build failing with
+        # TS2307 "Cannot find module '@fuzefront/telemetry'".
+        run: npm run -w @fuzefront/telemetry build
+
+      - name: Build @fuzefront/billing-types (for backend build)
+        # backend/src/services/billingProjection.ts imports @fuzefront/billing-types;
+        # without a built dist/ the backend tsc fails with TS2307.
+        run: npm run -w @fuzefront/billing-types build
+
       - name: Build backend
         run: cd backend && npm run build
 
@@ -297,11 +342,6 @@ jobs:
       # resolve the package entry until it has been built.
       - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
         run: npm run -w @fuzeone/selection-lists-ui build
-
-      - name: Build @fuzefront/telemetry (for frontend bundle)
-        # frontend imports @fuzefront/telemetry/browser at its bootstrap
-        # (main.tsx); its `exports` map points at dist/, unbuilt by default.
-        run: npm run -w @fuzefront/telemetry build
 
       - name: Build frontend
         run: cd frontend && npm run build
@@ -380,6 +420,14 @@ jobs:
           npm run -w @fuzefront/security-client build
           npm run -w @fuzefront/service-auth build
 
+      - name: Build @fuzefront/telemetry (d.ts for chat-service type-check)
+        # chat-service now mounts tracingMiddleware() from @fuzefront/telemetry
+        # (src/app.ts, src/index.ts). Its `types` points at dist/index.d.ts
+        # (not committed; built via tsup), so tsc/ts-jest fail with TS2307
+        # "Cannot find module '@fuzefront/telemetry'" until this runs — same
+        # pattern as the sibling-package builds above.
+        run: npm run -w @fuzefront/telemetry build
+
       - name: Type-check chat-service
         run: npm run -w @fuzefront/chat-service build
 
@@ -409,9 +457,16 @@ jobs:
           cache: 'npm'
 
       # notification-service is a root workspace, so `npm ci` installs its deps.
-      # It depends on no other workspace package, so nothing needs building first.
       - name: Install workspace
         run: npm ci
+
+      - name: Build @fuzefront/telemetry (d.ts for notification-service type-check)
+        # notification-service now mounts tracingMiddleware() from
+        # @fuzefront/telemetry (src/app.ts, src/index.ts). Its `types` points
+        # at dist/index.d.ts (not committed; built via tsup), so tsc fails
+        # with TS2307 "Cannot find module '@fuzefront/telemetry'" until this
+        # runs.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Type-check notification-service
         run: npm run -w @fuzefront/notification-service build
@@ -488,6 +543,14 @@ jobs:
         run: |
           npm run -w @fuzefront/security-client build
           npm run -w @fuzefront/service-auth build
+
+      - name: Build @fuzefront/telemetry (d.ts for selection-list-service type-check)
+        # selection-list-service now mounts tracingMiddleware() and binds
+        # withTraceContext() in lib/logger.ts. @fuzefront/telemetry's `types`
+        # points at dist/index.d.ts (not committed; built via tsup), so tsc
+        # fails with TS2307 "Cannot find module '@fuzefront/telemetry'" until
+        # this runs.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Type-check selection-list-service
         run: npm run -w selection-list-service build
@@ -627,6 +690,17 @@ jobs:
     # A REAL gate: this suite was TDD-red (continue-on-error) until the service
     # met the frozen contract; it is green now, so a regression must fail the
     # build and `notify` below treats it as a required result.
+    strategy:
+      fail-fast: false
+      matrix:
+        # BOTH flag states are exercised, per the feature-flags skill.
+        #  on  — the offline OpenFeature provider forces the release flag ON
+        #        (FUZE_FLAGS_PROVIDER=offline); the full suite runs through the
+        #        same OpenFeature client path production uses.
+        #  off — no flag provider at all (the fail-safe default an Unleash outage
+        #        produces); only dark.spec.ts runs, proving the service answers
+        #        404. Omitting the vars is how the OFF leg is selected.
+        flag: [on, off]
     services:
       postgres:
         image: postgres:15
@@ -658,16 +732,30 @@ jobs:
         run: |
           npm run -w @fuzefront/security-client build
           npm run -w @fuzefront/service-auth build
+      - name: Build @fuzefront/feature-flags (runtime dist the service require()s)
+        # The service resolves the release flag through @fuzefront/feature-flags
+        # at runtime (lib/featureFlags.ts initFeatureFlags() + flags.ts), so its
+        # dist/index.cjs must exist or require() throws and the flag stays OFF
+        # (every route 404s). The old FLAGS_FORCE_ON short-circuited before the
+        # require, so this build was not needed then; the offline provider runs
+        # the real client path and needs it. (Prod images already build it for
+        # the Unleash path.)
+        run: npm run -w @fuzefront/feature-flags build
+      - name: Build @fuzefront/telemetry (d.ts for selection-list-service type-check)
+        # Same reason as the unit-test job above: tracingMiddleware() +
+        # withTraceContext() resolve through @fuzefront/telemetry's
+        # uncommitted dist/.
+        run: npm run -w @fuzefront/telemetry build
       - name: Build selection-list-service
         run: npm run -w selection-list-service build
       - name: Run DB migrations
         env:
           # 'test', not 'production': src/db/index.ts picks the knex env from
           # NODE_ENV, and the service below must run non-production so the
-          # FLAGS_FORCE_ON escape hatch can enable the release flag. Both steps
-          # must agree or migrations land in a different config than the
-          # service reads. The knexfile's `test` env loads the same compiled
-          # dist migrations as `production`.
+          # offline OpenFeature provider can install and enable the release flag
+          # (it is refused in production). Both steps must agree or migrations
+          # land in a different config than the service reads. The knexfile's
+          # `test` env loads the same compiled dist migrations as `production`.
           NODE_ENV: test
           DB_SSL: 'false'
           DB_HOST: localhost
@@ -704,14 +792,13 @@ jobs:
         env:
           # NOT 'production'. Every route in this service is gated behind the
           # `fuzefront.selection-lists.service` release flag, whose default is
-          # OFF and whose only source of truth is Unleash. CI has no Unleash,
-          # so the flag client degrades to the default and every route answers
-          # 404 "Service not enabled." — correct behaviour that made this suite
-          # unpassable by construction (134 of 148 tests failed against a
-          # service working exactly as designed). FLAGS_FORCE_ON below is the
-          # repo's existing escape hatch (backend/src/routes/flags.ts), and it
-          # is hard-gated to non-production so it can never light up a dark
-          # feature in prod — hence NODE_ENV=test here.
+          # OFF and whose only source of truth is Unleash. CI has no Unleash, so
+          # on the `on` leg we install the ONE explicit offline OpenFeature
+          # provider (FUZE_FLAGS_PROVIDER=offline) to force the flag ON through
+          # the SAME client path production uses — it is refused in production,
+          # hence NODE_ENV=test here. On the `off` leg both vars are omitted, so
+          # the service runs dark (the fail-safe Unleash-outage default) and
+          # dark.spec.ts asserts the 404.
           #
           # Two deliberate side effects, both wanted in CI:
           #  - src/index.ts:55 only starts the Kafka lifecycle consumers when
@@ -725,15 +812,22 @@ jobs:
           #    stand-in Security API started above — the role-denial and
           #    mirror-not-authority tests are only meaningful against that.
           NODE_ENV: test
-          FLAGS_FORCE_ON: fuzefront.selection-lists.service
+          # on leg: offline provider forces the release flags ON. off leg: empty,
+          # so no provider installs and the service stays dark.
+          #
+          # SL9 (shared/common lists + fork, docs/planning/selection-lists-shared-and-fork.md §7): on the `on` leg
+          # the main instance also runs the shared-lists feature (its own release flag) and is configured with
+          # the platform organization. SELECTION_LIST_PLATFORM_ORG_ID is the ONLY source of the platform org; the
+          # service honours it once the org projection shows an active, is_active, platform-typed row for it, which
+          # tests/selection-list-service/helpers/global-setup.ts writes before the tests run.
+          FUZE_FLAGS_PROVIDER: ${{ matrix.flag == 'on' && 'offline' || '' }}
+          FUZE_FLAGS_OFFLINE_ON: ${{ matrix.flag == 'on' && 'fuzefront.selection-lists.service,fuzefront.selection-lists.shared-lists' || '' }}
+          SELECTION_LIST_PLATFORM_ORG_ID: org_01jpmf4z1yf88rpb9z9sd6pz00
           SECURITY_SERVICE_URL: http://localhost:3002
           FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED: 'true'
-          # Machine identity for Security API grant/revoke (lib/machineIdentity.ts).
-          # CI-only FIXTURE values the stand-in Security API recognises
-          # (helpers/fake-security-api.mjs); not credentials for anything real. The
-          # stand-in answers 403 to any grant written with a user token.
-          SELECTION_LIST_SERVICE_CLIENT_ID: selection-list-service-ci
-          SELECTION_LIST_SERVICE_CLIENT_SECRET: ci-only-fixture-client-secret
+          # CI-only projected token fixture exchanges for owner-bootstrap scope.
+          # Human mutations still require exact-instance manager policy.
+          SELECTION_LIST_SERVICE_TOKEN_FILE: /tmp/selection-list-ci-workload-token
           DB_SSL: 'false'
           DB_HOST: localhost
           DB_PORT: '5432'
@@ -745,21 +839,47 @@ jobs:
           TEST_QUOTA_ORG_LISTS: '3'
           TEST_QUOTA_LIST_ITEMS: '5'
         run: |
+          echo "selection-list-service-ci-projected-token" > /tmp/selection-list-ci-workload-token
           node services/selection-list-service/dist/index.js >/tmp/sls.log 2>&1 &
           echo "SLS_PID=$!" >> "$GITHUB_ENV"
+          # SL9 (`on` leg only): a release flag is process-wide, so the suite's other states are other processes
+          # on the SAME database, differing only in the settings named below (PORT aside). The offline provider
+          # (FUZE_FLAGS_PROVIDER, inherited from this step's env) is what turns each flag on; nothing else does.
+          #   3012  shared-lists flag OFF (4.0.0 behaviour with 4.1.0 shapes)
+          #   3013  flags ON, SELECTION_LIST_PLATFORM_ORG_ID unset        => platform features disabled
+          #   3014  flags ON, platform org with NO projection row         => disabled until confirmed
+          #   3015  flags ON, platform org projected with is_active=false => disabled
+          # The 3014 / 3015 ids are codec-valid TypeIDs (the service refuses any other value) and MUST equal
+          # UNCONFIRMED_PLATFORM_ORG_ID / DEACTIVATED_PLATFORM_ORG_ID in tests/selection-list-service/helpers/sl9-constants.ts
+          # (contract/harness-ids.test.ts pins that).
+          if [ "${{ matrix.flag }}" = "on" ]; then
+            PORT=3012 FUZE_FLAGS_OFFLINE_ON=fuzefront.selection-lists.service node services/selection-list-service/dist/index.js >/tmp/sls-flag-off.log 2>&1 &
+            EXTRA_PIDS="$!"
+            PORT=3013 env -u SELECTION_LIST_PLATFORM_ORG_ID node services/selection-list-service/dist/index.js >/tmp/sls-platform-unset.log 2>&1 &
+            EXTRA_PIDS="$EXTRA_PIDS $!"
+            PORT=3014 SELECTION_LIST_PLATFORM_ORG_ID=org_4afgrzs1p0fatveghvwhw04m8g node services/selection-list-service/dist/index.js >/tmp/sls-platform-unconfirmed.log 2>&1 &
+            EXTRA_PIDS="$EXTRA_PIDS $!"
+            PORT=3015 SELECTION_LIST_PLATFORM_ORG_ID=org_4tp7m0q21hfjctg01axh1gx6gw node services/selection-list-service/dist/index.js >/tmp/sls-platform-deactivated.log 2>&1 &
+            EXTRA_PIDS="$EXTRA_PIDS $!"
+            echo "SLS_EXTRA_PIDS=$EXTRA_PIDS" >> "$GITHUB_ENV"
+          fi
       - name: Wait for selection-list-service health
         run: |
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:3011/health >/dev/null 2>&1; then
-              echo "selection-list-service is up"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then
-              echo "ERROR: selection-list-service did not become healthy after 60s" >&2
-              cat /tmp/sls.log
-              exit 1
-            fi
-            sleep 2
+          PORTS="3011"
+          if [ "${{ matrix.flag }}" = "on" ]; then PORTS="3011 3012 3013 3014 3015"; fi
+          for port in $PORTS; do
+            for i in $(seq 1 30); do
+              if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then
+                echo "selection-list-service on :$port is up"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "ERROR: selection-list-service on :$port did not become healthy after 60s" >&2
+                cat /tmp/sls.log /tmp/sls-*.log
+                exit 1
+              fi
+              sleep 2
+            done
           done
       - name: Install integration test suite
         env:
@@ -767,7 +887,8 @@ jobs:
         run: cd tests/selection-list-service && npm ci
       - name: Type-check integration tests
         run: cd tests/selection-list-service && npm run type-check
-      - name: Run integration/acceptance tests
+      - name: Run integration/acceptance tests (flag ON)
+        if: matrix.flag == 'on'
         env:
           SERVICE_BASE_URL: http://localhost:3011
           JWT_SECRET: test-jwt-secret-for-selection-list-service
@@ -776,16 +897,37 @@ jobs:
           DB_NAME: selection_list_service_test
           DB_USER: postgres
           DB_PASSWORD: postgres
+          # SL9 suites: the flag-OFF instance and the three platform-disabled instances started above.
+          # (The platform org's id is TEST_PLATFORM_ORG_ID, default org_01jpmf4z1yf88rpb9z9sd6pz00, as configured above.)
+          SHARED_LISTS_FLAG_OFF_URL: http://localhost:3012
+          SHARED_LISTS_PLATFORM_DISABLED_URLS: unset=http://localhost:3013,unconfirmed=http://localhost:3014,deactivated=http://localhost:3015
         run: cd tests/selection-list-service && npm test
+      - name: Run dark spec (flag OFF)
+        if: matrix.flag == 'off'
+        # The service was started with NO flag provider (vars omitted above), so
+        # the release flag is OFF. Only dark.spec.ts runs; it asserts POST
+        # /v1/selection-lists => 404 NOT_FOUND and GET /health => 200.
+        env:
+          SERVICE_BASE_URL: http://localhost:3011
+          JWT_SECRET: test-jwt-secret-for-selection-list-service
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: selection_list_service_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: cd tests/selection-list-service && npm run test:dark
       - name: Dump service logs on failure
         if: failure()
-        run: cat /tmp/sls.log
+        run: cat /tmp/sls.log /tmp/sls-*.log
       - name: Stop selection-list-service
         if: always()
         run: |
           if [ -n "$SLS_PID" ]; then
             kill "$SLS_PID" 2>/dev/null || true
           fi
+          for pid in $SLS_EXTRA_PIDS; do
+            kill "$pid" 2>/dev/null || true
+          done
           if [ -n "$FAKE_SEC_PID" ]; then
             kill "$FAKE_SEC_PID" 2>/dev/null || true
           fi
@@ -834,6 +976,13 @@ jobs:
       # applications-service imports @fuzefront/core from its build output.
       - name: Build @fuzefront/core
         run: npm run -w @fuzefront/core build
+
+      - name: Build @fuzefront/telemetry (d.ts for applications-service type-check)
+        # applications-service now mounts tracingMiddleware() from
+        # @fuzefront/telemetry (src/index.ts). Its `types` points at
+        # dist/index.d.ts (not committed; built via tsup), so tsc fails with
+        # TS2307 "Cannot find module '@fuzefront/telemetry'" until this runs.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Type-check applications-service
         run: npm run -w @fuzefront/applications-service build
@@ -896,6 +1045,12 @@ jobs:
         # '@fuzefront/auth'" — 9 of the 21 suites fail to compile. Verified by
         # reproducing exactly that failure before adding this step.
         run: npm run -w @fuzefront/auth build
+
+      - name: Build @fuzefront/telemetry (d.ts for config-service type-check)
+        # config-service now mounts tracingMiddleware() from
+        # @fuzefront/telemetry (src/app.ts, src/index.ts). Same dist/index.d.ts
+        # pattern as @fuzefront/auth above.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Install config-service
         working-directory: services/config-service
@@ -1001,6 +1156,14 @@ jobs:
           mkdir -p services/email-service/node_modules/@fuzefront
           ln -sf "$(pwd)/shared" services/email-service/node_modules/@fuzefront/shared
           cd services/email-service && npm install --ignore-scripts
+
+      - name: Build @fuzefront/telemetry (d.ts for email-service type-check)
+        # email-service now mounts tracingMiddleware() from
+        # @fuzefront/telemetry (src/app.ts, src/index.ts). Its `types` points
+        # at dist/index.d.ts (not committed; built via tsup), so tsc fails
+        # with TS2307 "Cannot find module '@fuzefront/telemetry'" until this
+        # runs — must precede the build below.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Build email-service
         run: cd services/email-service && npm run build
@@ -1239,6 +1402,11 @@ jobs:
           ignore-unfixed: true
           exit-code: '0'
           trivyignores: '.trivyignore'
+        env:
+          # Use Aqua's canonical database rather than Trivy's mutable default
+          # mirror, which can expose an index whose referenced layer is absent.
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:1
 
       # This scan is a byte-for-byte duplicate of harden-gate.yml's
       # gate-dependency-scan (same scan-type: fs, scan-ref: ., ignore-unfixed,

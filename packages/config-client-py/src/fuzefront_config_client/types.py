@@ -347,6 +347,63 @@ class ConfigWriteResult:
 
 
 # ---------------------------------------------------------------------------
+# History + secret reveal
+# ---------------------------------------------------------------------------
+
+
+class ConfigHistoryAction(str, enum.Enum):
+    """What a history entry recorded. ``reveal`` is read-time and never changes the value."""
+
+    SET = "set"
+    UNSET = "unset"
+    LOCK = "lock"
+    UNLOCK = "unlock"
+    REVEAL = "reveal"
+
+
+@dataclass
+class Actor:
+    """Who performed one recorded change or reveal."""
+
+    actor_type: str
+    actor_redacted: bool
+    actor_id: str | None = None
+    """``None`` for ``system`` actors, or when the user was erased (``actor_redacted``)."""
+
+
+@dataclass
+class ConfigHistoryEntry:
+    """One append-only row in a key's change trail at one exact scope."""
+
+    id: str
+    namespace: str
+    key: str
+    scope: Scope
+    action: ConfigHistoryAction
+    redacted: bool
+    actor: Actor
+    occurred_at: str
+    old_value: Any = None
+    """Always ``None`` when ``redacted`` (an ``isSecret`` key)."""
+    new_value: Any = None
+    """Always ``None`` when ``redacted`` (an ``isSecret`` key)."""
+    reason: str | None = None
+    revert_of: str | None = None
+
+
+@dataclass
+class RevealSecretResult:
+    """The plaintext, returned exactly once. Never cache or log ``value``."""
+
+    namespace: str
+    scope: Scope
+    key: str
+    value: str
+    revealed_at: str
+    history_entry_id: str
+
+
+# ---------------------------------------------------------------------------
 # Pagination envelope
 # ---------------------------------------------------------------------------
 

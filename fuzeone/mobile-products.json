@@ -15,7 +15,14 @@
     { "repo": "FuzeSales", "frontendUrl": "https://fuzesales.fuzefront.com/" },
     { "repo": "FuzeService", "frontendUrl": "https://fuzeservice.fuzefront.com/" },
     { "repo": "FuzeSocial", "frontendUrl": "https://fuzesocial.fuzefront.com/" },
-    { "repo": "FuzeFront", "frontendUrl": "https://app.fuzefront.com/" },
+    { "repo": "FuzeFront", "frontendUrl": "https://app.fuzefront.com/", "apkAssetPrefix": "com-fuzefront-app-android-" },
+    {
+      "product": "FuzeQuality",
+      "repo": "FuzeFront",
+      "frontendUrl": "https://fuzequality.fuzefront.com/",
+      "workflowPath": ".github/workflows/fuzequality-android-apk.yml",
+      "apkAssetPrefix": "fuzequality-android-"
+    },
     { "repo": "MendysRobotics", "frontendUrl": "https://live.mendysrobotics.com/", "manifestPath": "/manifest.json" }
   ]
 }

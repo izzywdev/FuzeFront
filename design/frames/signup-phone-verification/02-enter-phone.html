@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Enter phone — signup phone verification frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="phone-verify.css" />
+</head>
+<body>
+<main class="pv-page" data-frame="02-enter-phone" data-flow="signup-phone">
+  <div class="pv-crumb"><a href="index.html">← All frames</a> · Frame 02 · Enter phone</div>
+  <h1 class="pv-h1">Enter your phone number</h1>
+  <p class="pv-lead">PhoneNumberField = country calling-code select + national number, normalised client-side to <b>E.164</b> (<code>^\+[1-9]\d{7,14}$</code> plus per-country length rules via <code>libphonenumber-js</code>). The UI always shows the exact E.164 string it will send. <b>Send code</b> stays disabled until the number is valid. The server re-validates (Δ <code>PHONE_INVALID</code>). The country defaults to the browser locale.</p>
+  <div class="pv-pair">
+  <div data-viewport="desktop">
+    <p class="pv-viewport-label">Desktop · AuthCard 420px · /signup/phone</p>
+    <div class="pv-stage">
+      <div class="pv-card"><div class="pv-card__seam"></div><div class="pv-card__body">
+    <div class="pv-brand"><span class="pv-brand__mark" aria-hidden="true">F</span><span class="pv-brand__word">FuzeFront</span></div>
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-validation="valid">
+<div class="pv-center">
+      <div class="pv-hero" aria-hidden="true">📱</div>
+      <h2 class="pv-title">Add your phone number</h2>
+      <p class="pv-sub">We'll text you a 6-digit code to confirm this number is yours. It's saved to your account as a verified contact number.</p>
+    </div>
+
+    <form class="pv-form" data-form="phone" novalidate>
+      <div class="pv-field">
+        <label class="pv-label" for="pv-phone-1">Mobile number</label>
+        <div class="pv-phone" data-component="phone-number-field">
+        <select class="pv-select" id="pv-cc-1" aria-label="Country calling code" data-field="country">
+          <option value="GB" selected>🇬🇧 +44</option><option value="US">🇺🇸 +1</option><option value="IL">🇮🇱 +972</option><option value="DE">🇩🇪 +49</option>
+        </select>
+          <input class="pv-input pv-input--valid" id="pv-phone-1" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" value="7700 900123" />
+        </div>
+        <div class="pv-e164" data-e164 data-valid="true"><span aria-hidden="true">✓</span> Sent as <code>+447700900123</code></div>
+      </div>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="send-code">Send code</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <p class="pv-help pv-center">Message and data rates may apply.</p>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div></div>
+    </div>
+  </div>
+  <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px · idle (empty)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+        <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-validation="idle">
+<div class="pv-center">
+      <div class="pv-hero" aria-hidden="true">📱</div>
+      <h2 class="pv-title">Add your phone number</h2>
+      <p class="pv-sub">We'll text you a 6-digit code to confirm this number is yours. It's saved to your account as a verified contact number.</p>
+    </div>
+
+    <form class="pv-form" data-form="phone" novalidate>
+      <div class="pv-field">
+        <label class="pv-label" for="pv-phone-2">Mobile number</label>
+        <div class="pv-phone" data-component="phone-number-field">
+        <select class="pv-select" id="pv-cc-2" aria-label="Country calling code" data-field="country">
+          <option value="GB" selected>🇬🇧 +44</option><option value="US">🇺🇸 +1</option><option value="IL">🇮🇱 +972</option><option value="DE">🇩🇪 +49</option>
+        </select>
+          <input class="pv-input" id="pv-phone-2" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" />
+        </div>
+        <div class="pv-e164" data-e164 data-valid="unknown">Sent as <code>+44 …</code></div>
+      </div>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="send-code" disabled>Send code</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <p class="pv-help pv-center">Message and data rates may apply.</p>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+  </div>
+  <div class="pv-states">
+    <div class="pv-state">
+      <p class="pv-state__label"><b>enter-phone</b> · invalid (client E.164 check)</p>
+      <p class="pv-state__note">Shown on blur or submit, not on every keystroke. Field gets <code>aria-invalid</code>, the message is <code>role=alert</code>, and Send stays disabled.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+        <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-validation="invalid">
+<div class="pv-center">
+      <div class="pv-hero" aria-hidden="true">📱</div>
+      <h2 class="pv-title">Add your phone number</h2>
+      <p class="pv-sub">We'll text you a 6-digit code to confirm this number is yours. It's saved to your account as a verified contact number.</p>
+    </div>
+
+    <form class="pv-form" data-form="phone" novalidate>
+      <div class="pv-field">
+        <label class="pv-label" for="pv-phone-3">Mobile number</label>
+        <div class="pv-phone" data-component="phone-number-field">
+        <select class="pv-select" id="pv-cc-3" aria-label="Country calling code" data-field="country">
+          <option value="GB" selected>🇬🇧 +44</option><option value="US">🇺🇸 +1</option><option value="IL">🇮🇱 +972</option><option value="DE">🇩🇪 +49</option>
+        </select>
+          <input class="pv-input" id="pv-phone-3" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" value="7700 9001" aria-invalid="true" aria-describedby="pv-phone-err-3" />
+        </div>
+        <div class="pv-error" id="pv-phone-err-3" data-error="phone-format" role="alert"><span aria-hidden="true">⚠</span>That doesn't look like a complete UK number — UK mobiles have 10 digits after +44, e.g. 7700 900123.</div>
+      </div>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="send-code" disabled>Send code</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <p class="pv-help pv-center">Message and data rates may apply.</p>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>enter-phone</b> · rail with no email pending</p>
+      <p class="pv-state__note">The rail is built from data, not hard-coded. The Email step appears only when <code>verification.email === true</code> and <code>emailVerified === false</code>. Here email verification is off (or was already confirmed), so the rail shows Account → Phone only (<code>data-email-step="omitted"</code>).</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+        <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="omitted" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-validation="idle">
+<div class="pv-center">
+      <div class="pv-hero" aria-hidden="true">📱</div>
+      <h2 class="pv-title">Add your phone number</h2>
+      <p class="pv-sub">We'll text you a 6-digit code to confirm this number is yours. It's saved to your account as a verified contact number.</p>
+    </div>
+
+    <form class="pv-form" data-form="phone" novalidate>
+      <div class="pv-field">
+        <label class="pv-label" for="pv-phone-4">Mobile number</label>
+        <div class="pv-phone" data-component="phone-number-field">
+        <select class="pv-select" id="pv-cc-4" aria-label="Country calling code" data-field="country">
+          <option value="GB" selected>🇬🇧 +44</option><option value="US">🇺🇸 +1</option><option value="IL">🇮🇱 +972</option><option value="DE">🇩🇪 +49</option>
+        </select>
+          <input class="pv-input" id="pv-phone-4" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" />
+        </div>
+        <div class="pv-e164" data-e164 data-valid="unknown">Sent as <code>+44 …</code></div>
+      </div>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="send-code" disabled>Send code</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <p class="pv-help pv-center">Message and data rates may apply.</p>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>enter-phone</b> · valid</p>
+      <p class="pv-state__note">The E.164 preview shows the exact value sent to <code>POST /verify/phone/start { phone }</code>.</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+        <span class="pv-device__right"><button type="button" class="pv-btn pv-btn--link" data-action="skip" style="width:auto">Skip for now</button></span>
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="enter-phone" data-validation="valid">
+<div class="pv-center">
+      <div class="pv-hero" aria-hidden="true">📱</div>
+      <h2 class="pv-title">Add your phone number</h2>
+      <p class="pv-sub">We'll text you a 6-digit code to confirm this number is yours. It's saved to your account as a verified contact number.</p>
+    </div>
+
+    <form class="pv-form" data-form="phone" novalidate>
+      <div class="pv-field">
+        <label class="pv-label" for="pv-phone-5">Mobile number</label>
+        <div class="pv-phone" data-component="phone-number-field">
+        <select class="pv-select" id="pv-cc-5" aria-label="Country calling code" data-field="country">
+          <option value="GB" selected>🇬🇧 +44</option><option value="US">🇺🇸 +1</option><option value="IL">🇮🇱 +972</option><option value="DE">🇩🇪 +49</option>
+        </select>
+          <input class="pv-input pv-input--valid" id="pv-phone-5" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" value="7700 900123" />
+        </div>
+        <div class="pv-e164" data-e164 data-valid="true"><span aria-hidden="true">✓</span> Sent as <code>+447700900123</code></div>
+      </div>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="send-code">Send code</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <p class="pv-help pv-center">Message and data rates may apply.</p>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+    <div class="pv-state">
+      <p class="pv-state__label"><b>sending</b> · start in flight</p>
+      <p class="pv-state__note">Fields and button are disabled with a spinner, so a slow network can't double-submit (each extra send costs an SMS and counts against the rate limit).</p>
+      <div data-viewport="375">
+    <p class="pv-viewport-label">Mobile · 375px (Android TWA)</p>
+    <div class="pv-device">
+      <header class="pv-device__bar">
+        <span class="pv-device__title">Verify your phone</span>
+
+      </header>
+      <div class="pv-device__body">
+    <ol class="pv-progress" data-component="signup-progress" data-email-step="shown" aria-label="Sign-up progress">
+      <li class="pv-progress__step" data-step="account" data-step-state="done"><span class="pv-progress__dot" aria-hidden="true"></span>Account<span class="pv-sr" data-step-sr> (completed)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="phone" data-step-state="current" aria-current="step"><span class="pv-progress__dot" aria-hidden="true"></span>Phone<span class="pv-sr" data-step-sr> (current step)</span></li>
+      <li class="pv-progress__sep" aria-hidden="true" role="presentation"></li>
+      <li class="pv-progress__step" data-step="email" data-step-state="pending"><span class="pv-progress__dot" aria-hidden="true"></span>Email<span class="pv-sr" data-step-sr> (not started)</span></li>
+    </ol>
+    <section class="pv-panel" data-panel="confirm-contact" data-context="signup" data-channel="phone" data-state="sending">
+<div class="pv-center">
+      <div class="pv-hero" aria-hidden="true">📱</div>
+      <h2 class="pv-title">Add your phone number</h2>
+      <p class="pv-sub">We'll text you a 6-digit code to confirm this number is yours. It's saved to your account as a verified contact number.</p>
+    </div>
+
+    <form class="pv-form" data-form="phone" novalidate>
+      <div class="pv-field">
+        <label class="pv-label" for="pv-phone-6">Mobile number</label>
+        <div class="pv-phone" data-component="phone-number-field">
+        <select class="pv-select" id="pv-cc-6" aria-label="Country calling code" data-field="country" disabled>
+          <option value="GB" selected>🇬🇧 +44</option><option value="US">🇺🇸 +1</option><option value="IL">🇮🇱 +972</option><option value="DE">🇩🇪 +49</option>
+        </select>
+          <input class="pv-input pv-input--valid" id="pv-phone-6" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123" data-field="national-number" value="7700 900123" disabled />
+        </div>
+        <div class="pv-e164" data-e164 data-valid="true"><span aria-hidden="true">✓</span> Sent as <code>+447700900123</code></div>
+      </div>
+      <div class="pv-actions">
+        <button type="submit" class="pv-btn pv-btn--primary" data-action="send-code" disabled aria-busy="true"><span class="pv-spinner" aria-hidden="true"></span>Sending code…</button>
+        <button type="button" class="pv-btn pv-btn--link" data-action="skip">Skip for now</button>
+      </div>
+      <p class="pv-help pv-center">Message and data rates may apply.</p>
+    </form>
+    <p class="pv-sr" data-announcer role="status" aria-live="polite"></p>
+  </section>
+      </div>
+    </div>
+  </div>
+    </div>
+  </div>
+
+<nav class="pv-nav" aria-label="Frame navigation">
+  <span class="pv-nav__caption"><b>02 / 08 · Enter phone</b> — POST /v1/security/verify/phone/start { phone: E.164 } → 202</span>
+  <span class="pv-nav__links">
+    <a class="pv-btn pv-btn--secondary" href="index.html" data-nav="index">Index</a>
+    <a class="pv-btn pv-btn--secondary" href="01-placement.html" data-nav="01-placement">← Where the step sits</a>
+    <a class="pv-btn pv-btn--primary" href="03-enter-code.html" data-nav="03-enter-code">Next: Enter code →</a>
+  </span>
+</nav>
+</body>
+</html>

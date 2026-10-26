@@ -71,3 +71,5 @@ If that compounding effect can be demonstrated in production, the platform becom
 - [FuzeAgent](https://github.com/izzywdev/FuzeAgent) — AI team orchestration
 
 Some additional factory components are currently private or experimental and are described publicly only at the architectural level.
+
+See [`docs/NON_GOALS.md`](NON_GOALS.md) for what FuzeFront is deliberately **not** trying to be, and how its responsibilities are bounded against FuzeInfra, FuzeSDLC, FuzeAgent, and the products it hosts.

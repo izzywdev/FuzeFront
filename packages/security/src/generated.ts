@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Current identity ("me")
-         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode.
+         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode. An explicit tenant requires active SQL membership and an active organization and returns its canonical UUID.
          */
         get: operations["getSession"];
         put?: never;
@@ -43,9 +43,29 @@ export interface paths {
         put?: never;
         /**
          * Exchange an opaque broker code for a session
-         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session. The code is single-use and short-lived. Returns a `SessionResult`: an authenticated session, or an `mfa_required` challenge when the account requires step-up. Fail-closed on an unknown/expired code.
+         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session. The code is single-use and short-lived. Returns a `SessionResult`: an authenticated session, or an `mfa_required` challenge when the account has an active MFA factor. Social sign-in never bypasses MFA: no session is minted until the challenge is completed via `POST /mfa/verify`, and the challenge is bound to the user who signed in. Fail-closed on an unknown/expired or already-redeemed code.
          */
         post: operations["exchangeSessionCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/session/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active workspaces available to the current session
+         * @description Returns canonical personal and organization workspace choices backed by the caller's direct active memberships. Discovery is available before a tenant is selected; callers must still prove the chosen workspace with GET /session?tenant= before using tenant-scoped APIs.
+         */
+        get: operations["listSessionWorkspaces"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -83,7 +103,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm a password reset with a token (unauthenticated)
-         * @description Completes password reset by presenting the single-use `token` from the reset message together with a `newPassword`. Fail-closed on an unknown/expired/consumed token or a password that fails policy.
+         * @description Completes password reset by presenting the single-use `token` from the reset message together with a `newPassword`. Fail-closed: an expired/already-used token is `400 TOKEN_EXPIRED`, an unknown token is `400 TOKEN_INVALID`, and a password rejected by the identity provider is `422 PASSWORD_POLICY` (the token is NOT consumed, so the caller may retry with a compliant password).
          */
         post: operations["confirmPasswordReset"];
         delete?: never;
@@ -106,6 +126,26 @@ export interface paths {
          * @description Adds a password sign-in method to the authenticated account (e.g. an account created via social login that has no password yet). Returns 409 if a password already exists — use the reset flow to change an existing one. Fail-closed on a password that fails policy.
          */
         post: operations["setPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/password/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change the password of an account that already has one
+         * @description Verifies `currentPassword`, applies the password policy to `newPassword`, sets it, and revokes every OTHER session of the account (the calling session survives), matching the reset-confirm posture. Accounts with no password get `409 NO_PASSWORD` — send the user to `POST /v1/security/password` (set-first). Failed attempts are rate-limited (`429 RATE_LIMITED`).
+         */
+        post: operations["changePassword"];
         delete?: never;
         options?: never;
         head?: never;
@@ -151,6 +191,32 @@ export interface paths {
          * @description Revokes a single active session belonging to the authenticated user. Idempotent — revoking an absent/already-revoked session still returns 204. A user may revoke their current session (equivalent to logout).
          */
         delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/sessions/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate that a session is still active (service-to-service)
+         * @description Answers one question for a downstream service: *has this session been revoked or expired?* A FuzeFront session token stays cryptographically valid until its `exp` (24h) even after the user logs out or revokes the device, and only the session store knows. A service that has already verified a session token's signature calls this with the token's `userId` and `sessionId` claims to close that gap.
+         *
+         *     **Caller.** A machine (service-to-service) caller only: the `Authorization` bearer MUST be a `fuze-workload` token carrying the `sessions:validate` scope (see `@izzywdev/fuzefront-service-auth`). A user session token is not accepted here, so a browser can never use this endpoint to probe sessions.
+         *
+         *     **Answer.** `{ active: true }` only when the session exists, has not expired, AND belongs to the supplied `userId`. Every other case, an unknown id, a revoked or expired session, or a session owned by a different user, is the same `200 { active: false }`, with no reason given, so the endpoint cannot be used to learn which of the two identifiers was wrong. This operation does NOT verify any token signature; the caller must already have done that.
+         *
+         *     **Fail-closed.** A store outage is `503`, never `{ active: true }` and never `{ active: false }`. A consumer MUST treat `503` as a retryable service condition, not as a revoked session: refusing every user because the store blinked is an outage, not a revocation. A consumer MUST treat anything other than a well-formed `{ active: true }` as inactive.
+         */
+        post: operations["validateSession"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -280,6 +346,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/signup/email-available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inline signup email-availability check
+         * @description Public, unauthenticated inline check for the signup form: is this email free to register? Backs the debounced "available / already registered" adornment on the create-account field. Consults the SAME source of truth `POST /v1/security/signup` uses to reject a duplicate, so the answer cannot disagree with signup. The email is normalized (trimmed + lowercased) server-side before checking.
+         *
+         *     **Fail-open (client contract).** This endpoint is a UX convenience, never a gate: the client MUST treat any error (timeout, 4xx, 5xx, network) as "unknown/available" and NEVER block submit on it. Authoritative duplicate-rejection happens at `POST /v1/security/signup` (`409`).
+         *
+         *     **Enumeration posture.** It intentionally reveals whether an address is registered (the product requires inline feedback), so the enumeration control is PER-IP RATE-LIMITING so it cannot be used as a bulk account-enumeration oracle beyond the signup UX. The backend enforces the limit; this contract specifies the requirement. Exceeding it returns `429`. It is NOT captcha-gated: the check fires per keystroke on a debounce and Turnstile tokens are single-use, so a captcha cannot gate a repeated, interactive check. Captcha applies only to the authoritative `POST /v1/security/signup` action.
+         */
+        get: operations["getSignupEmailAvailable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/methods": {
         parameters: {
             query?: never;
@@ -311,7 +401,7 @@ export interface paths {
          * Check whether an email is available to register
          * @description Public, unauthenticated inline check for the signup form: is this email free to register? Consults the SAME source of truth `signup` uses to reject a duplicate, so the answer cannot disagree with signup. The email is normalized (trimmed + lowercased) before checking and echoed back.
          *
-         *     This endpoint intentionally reveals whether an address is registered (product requires inline "available / already registered" feedback), so it is per-IP rate-limited (20/min/IP) as the deliberate mitigation for the resulting enumeration exposure. Exceeding the limit returns 429.
+         *     This endpoint intentionally reveals whether an address is registered (product requires inline "available / already registered" feedback), so the enumeration control is per-IP rate-limiting (20/min/IP) as the deliberate mitigation for the resulting enumeration exposure. Exceeding the limit returns 429. It is NOT captcha-gated: the check fires per keystroke on a debounce and Turnstile tokens are single-use, so a captcha cannot gate it; captcha applies only to the authoritative `signup` action.
          */
         get: operations["getEmailAvailable"];
         put?: never;
@@ -442,6 +532,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/authz/membership-proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify current active SQL tenant membership for ownership provisioning
+         * @description Requires an authz:admin machine or a human authorized to manage the target Organization. Reads active SQL membership and active organization; organization ownership alone is insufficient. Returns canonical typed IDs and Cache-Control no-store. Grant creation independently repeats the check.
+         */
+        get: operations["getMembershipProof"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/authz/grants": {
         parameters: {
             query?: never;
@@ -514,12 +624,16 @@ export interface paths {
         /**
          * List tenants visible to the caller
          * @description Unbounded collection — cursor-paginated per the family pagination standard.
+         *
+         *     **Visibility.** A platform administrator (`Organization:manage` on the platform root tenant) or a machine caller holding `authz:admin` sees every tenant; any other authenticated caller sees only the tenants in which they hold a role. This is a filter, never a `403`. A provider outage while deciding which view applies fails closed (`502`) — the caller is never silently widened or downgraded.
          */
         get: operations["listTenants"];
         put?: never;
         /**
          * Create a tenant
          * @description Creates a new tenant/organization scope.
+         *
+         *     **Authorization — platform act.** Creating a tenant mints a new authorization scope that every later grant is made inside, so it is a platform act, not an act inside any one tenant. A human (session) caller must be a platform administrator (`Organization:manage` on the platform root tenant — FuzeFront platform staff); an administrator of an ordinary customer tenant has no standing here. A machine caller must hold the `authz:admin` scope. Anyone else is `403 FORBIDDEN`, decided BEFORE the body is validated (so an unauthorized caller gets `403`, not `400`). A provider outage while deciding fails closed (`502`), never allow. Customer organizations are created through the organization APIs, which provision their tenant themselves.
          */
         post: operations["createTenant"];
         delete?: never;
@@ -765,7 +879,7 @@ export interface paths {
         post?: never;
         /**
          * Remove an MFA factor
-         * @description Removes an enrolled factor. Idempotent.
+         * @description Removes an enrolled factor. Idempotent. Refused with `409 LAST_FACTOR` when it is the user's last active factor.
          */
         delete: operations["removeMfaFactor"];
         options?: never;
@@ -844,7 +958,7 @@ export interface paths {
         put?: never;
         /**
          * Send an email verification link/code
-         * @description Sends a verification link/code. Targets the current user's email when authenticated, or a signup-scoped address supplied in the body.
+         * @description Sends a verification link/code. When authenticated, the target is ALWAYS the current user's own email; a body `email` is ignored. When unauthenticated, the account is resolved server-side from the body `email`; an unknown address is a silent no-op. Always 202 for an unauthenticated caller (no account enumeration).
          */
         post: operations["startEmailVerification"];
         delete?: never;
@@ -864,7 +978,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm email ownership
-         * @description Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed on invalid/expired.
+         * @description Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed: an expired/already-used challenge is `400 TOKEN_EXPIRED`; an unknown challenge (or one that no longer matches the account's email) is `400 TOKEN_INVALID`. Never reports `emailVerified: true` unless a user was actually updated.
          */
         post: operations["confirmEmailVerification"];
         delete?: never;
@@ -904,7 +1018,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm phone ownership
-         * @description Confirms `{ phone, code }`. Fail-closed on invalid/expired code.
+         * @description Confirms `{ phone, code }` for the **calling session's own account only**. Requires a bearer session; the number is marked verified solely for the account resolved from the token, and only when `phone` is that account's current number (set by `startPhoneVerification`). Other accounts holding the same number are never affected. Fail-closed on invalid/expired code or a number that is not the caller's.
          */
         post: operations["confirmPhoneVerification"];
         delete?: never;
@@ -947,6 +1061,132 @@ export interface paths {
         get: operations["listOrganizationDirectory"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{id}/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an organization's invitations
+         * @description Unbounded collection — cursor-paginated per the family pagination standard (`limit` + opaque `cursor`, `{ items, page }` envelope). Optional `status` filter. Org owner/admin capability; a non-privileged caller gets `403 FORBIDDEN` rendered in place (only 401 re-authenticates). An id is never a capability.
+         */
+        get: operations["listOrganizationInvitations"];
+        put?: never;
+        /**
+         * Create an invitation
+         * @description Invites one person to the organization. The `invitee` is a typed, discriminated reference — an existing `account` (by server-minted userId) or an `external` identity reached over a `channel` (email OR WhatsApp e164 phone). `memberType` (employee|customer) is orthogonal to the access `role`. `owner` can never be invited. The service mints the invitation id and the `bindToken`; the body never carries an id (`additionalProperties: false`). A pending invitation to the same identity returns `409`.
+         */
+        post: operations["createOrganizationInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{id}/invitations/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create invitations in bulk
+         * @description Creates up to 50 invitations in one call, all sharing one `role` and `memberType`. Each `invitee` is a typed, discriminated reference (as in the single create). Per-invitee outcomes are returned individually so a partial batch (some already pending) still reports precisely. The service mints every id and bindToken; the body carries none (`additionalProperties: false`).
+         */
+        post: operations["createOrganizationInvitationsBulk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{id}/invitations/{invitationId}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend a pending invitation
+         * @description Re-dispatches the invitation over its original `channel` (email or WhatsApp) and extends its expiry. Only a `pending` invitation can be resent. Org owner/admin capability.
+         */
+        post: operations["resendOrganizationInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{id}/invitations/{invitationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an invitation
+         * @description Revokes a pending invitation (transitions it to `revoked`). Idempotent from the caller's view. Org owner/admin capability.
+         */
+        delete: operations["revokeOrganizationInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invitations/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve an invitation by token (public)
+         * @description Public, unauthenticated resolve of an invitation by its opaque token. The invitee's contact identity is MASKED (first char + domain / last digits) — the token is a lookup key, never a data leak and never a capability. Returns `410` when the invitation is expired or revoked.
+         */
+        get: operations["resolveInvitation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invitations/{token}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept an invitation (auth-optional; carries the external-signup bind)
+         * @description Redeems an invitation. Two outcomes, distinguished by status code:
+         *     • **Unauthenticated / no account yet (202)** — returns `{ action: 'enroll', enrollUrl, bindToken }`. The `bindToken` is the single-use, short-lived, server-minted carrier of this invite THROUGH signup/enrollment: the client sends it as `SignupRequest.bindToken`, the server verifies the signup identity matches the invited `channel` identity, provisions the account, and auto-binds the membership — so the handler never has to trust that the caller "knew the token".
+         *     • **Authenticated & identity matches (200)** — the membership is bound immediately (CAS pending→accepted, idempotent) and the result carries the `memberType` and `role`. An identity mismatch is `403`; an expired/revoked invite is `410`; a lost accept race is `409`.
+         */
+        post: operations["acceptInvitation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1123,10 +1363,14 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
-            firstName?: string;
-            lastName?: string;
+            /** @description Optional display name. Maps 1:1 to the identity store's single `name` field (i18n-safe), REPLACING the former `firstName`/`lastName` split — many names do not decompose into given/family parts. A client that still sends `firstName`/`lastName` is rejected (`additionalProperties: false`): this is the breaking change behind the 1.0.0 major bump. */
+            name?: string;
+            /** @description Cloudflare Turnstile token for server-side (anti-abuse) captcha verification. REQUIRED when `GET /v1/security/methods` reports `AuthMethods.captcha` (captcha enabled); omitted when captcha is disabled. The condition depends on SERVER configuration (`AuthMethods.captcha`), not on another field of this request body, so it cannot be expressed as a static JSON-Schema constraint here and is enforced server-side (fail-closed: a missing/invalid token when captcha is enabled rejects the signup). `turnstile`/`turnstileToken` is a DELIBERATE, approved exception to the vendor-name rule: a captcha is a browser widget the client must load with the vendor's own script + `siteKey`, so — unlike the hidden IDENTITY provider — the captcha vendor is necessarily consumer-visible. */
+            turnstileToken?: string;
             /** @description Optional tenant/organization name to provision on signup. */
             tenantName?: string;
+            /** @description Optional single-use invitation bind token (from the `202` accept response, `InvitationEnrollResponse.bindToken`). When present, the server verifies the signup identity matches the invited channel identity, then auto-binds the invited membership (with its `memberType`/`role`) as part of signup — redeeming the invite without a second round-trip. Mismatch or an expired token fails signup-bind closed (the account may still be created; the bind is rejected). */
+            bindToken?: string;
         };
         ExchangeRequest: {
             /** @description The single-use opaque code from the social callback redirect. */
@@ -1167,6 +1411,17 @@ export interface components {
             identity: components["schemas"]["Identity"];
             user: components["schemas"]["User"];
         };
+        /** @description A canonical active workspace the session identity may select. */
+        SessionWorkspace: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            type: "personal" | "organization";
+        };
+        SessionWorkspaceList: {
+            workspaces: components["schemas"]["SessionWorkspace"][];
+        };
         /** @description Result of the public inline email-availability check. `available` is the negation of "an account already exists"; `email` is the normalized (trimmed + lowercased) address that was actually checked. */
         EmailAvailability: {
             /** @description True when no account exists for the email and it is free to register. */
@@ -1176,6 +1431,11 @@ export interface components {
              * @description The normalized address that was checked (echoed back).
              */
             email: string;
+        };
+        /** @description Result of the inline signup email-availability check (`GET /v1/security/signup/email-available`). `available` is false when an account already exists for the normalized email. The client treats any error as "available" and never blocks submit on this (fail-open). */
+        SignupEmailAvailability: {
+            /** @description True when no account exists for the email and it is free to register. */
+            available: boolean;
         };
         /** @description Neutral auth capability descriptor. Replaces `oidcConfigured`. Lets the UI render affordances (password form, social buttons, MFA, contact verification) without knowing any provider. */
         AuthMethods: {
@@ -1192,6 +1452,29 @@ export interface components {
             verification: {
                 email: boolean;
                 sms: boolean;
+            };
+            /** @description Captcha capability for pre-auth forms (signup / sign-in). PRESENT only when captcha is enabled; ABSENT when disabled. When present, `SignupRequest.turnstileToken` is required and the client renders the captcha widget. `provider`/`siteKey` is a DELIBERATE, approved exception to the vendor-name rule: the captcha is a browser widget the client must load with the vendor's own script + public `siteKey`, so the captcha vendor is necessarily consumer-visible (unlike the hidden identity provider). */
+            captcha?: {
+                /**
+                 * @description Captcha widget provider. `turnstile` = Cloudflare Turnstile.
+                 * @enum {string}
+                 */
+                provider: "turnstile";
+                /** @description Public site key for the captcha widget. Safe to expose to the browser (it is designed to be public); the secret key lives only server-side for verification. */
+                siteKey: string;
+            };
+            /** @description Authoritative password policy so the client renders the REAL rules (strength meter + per-rule checklist) instead of a hard-coded, drift-prone client copy. Advisory for UX; the server independently enforces the same policy and is the source of truth (`422 PASSWORD_POLICY`). */
+            passwordPolicy?: {
+                /** @description Minimum password length (currently 12). */
+                minLength: number;
+                /** @description Requires at least one uppercase letter. */
+                requireUpper: boolean;
+                /** @description Requires at least one lowercase letter. */
+                requireLower: boolean;
+                /** @description Requires at least one digit. */
+                requireDigit: boolean;
+                /** @description Requires at least one symbol. */
+                requireSymbol: boolean;
             };
         };
         /**
@@ -1266,6 +1549,8 @@ export interface components {
             /** @description Optional explicit `resource:action` permission to grant alongside the role. */
             permission?: string;
             resource?: components["schemas"]["ResourceRef"];
+            /** @description Required for fuzekeys_Connector owner grants. Canonical provider from the reviewed ownership inventory; the exact resource key must equal connector: plus lowercase SHA256 of UTF-8 JSON [tenant, subject, connectorProvider]. This metadata confers no grant authority. Operator authorization and fresh SQL membership are independently required; no email or directory tenant inference. */
+            connectorProvider?: string;
         };
         /** @description A created, revocable grant wrapping the provider's assignment. */
         Grant: {
@@ -1276,6 +1561,8 @@ export interface components {
             permission?: string;
             resource?: components["schemas"]["ResourceRef"];
             createdAt?: number;
+            /** @description Canonical provider acknowledged by a validated fuzekeys_Connector owner grant. */
+            connectorProvider?: string;
         };
         /** @description Revoke a grant by `grantId` OR by its identity tuple `{ subject, tenant, role, resource? }`. Supply exactly one form. */
         GrantRevokeRequest: {
@@ -1331,11 +1618,15 @@ export interface components {
             userId: string;
             email?: string;
             roles: string[];
+            /** @description How this member relates to the org (employee|customer), orthogonal to `roles`. Optional for backward compatibility: memberships created before FFRNT-305 may not carry one. */
+            memberType?: components["schemas"]["MemberType"];
         };
         MemberCreate: {
             userId?: string;
             email?: string;
             roles?: string[];
+            /** @description How the member relates to the org (employee|customer), orthogonal to roles. */
+            memberType?: components["schemas"]["MemberType"];
         };
         Role: {
             key: string;
@@ -1343,6 +1634,155 @@ export interface components {
         };
         RoleAssignment: {
             roles: string[];
+        };
+        /**
+         * @description How a member relates to the organization — ORTHOGONAL to the access role. `employee` = internal staff of the org; `customer` = an external customer member (the root-org owner invites external users as `customer`). A membership and an invitation each carry exactly one.
+         * @enum {string}
+         */
+        MemberType: "employee" | "customer";
+        /**
+         * @description The delivery/identity channel for an external invitee. `email` = an email address; `whatsapp` = an E.164 phone reachable over WhatsApp. An invitation to an existing account-holder carries the channel of the contact the invite was dispatched to (defaults to `email`).
+         * @enum {string}
+         */
+        InvitationChannel: "email" | "whatsapp";
+        /**
+         * @description The access role an invitee is granted on accept. `owner` can NEVER be invited (ownership is transferred, not invited), so it is absent here.
+         * @enum {string}
+         */
+        InvitationRole: "admin" | "member" | "viewer";
+        /**
+         * @description Invitation lifecycle status.
+         * @enum {string}
+         */
+        InvitationStatus: "pending" | "accepted" | "revoked" | "expired";
+        /** @description An invitee who ALREADY has a FuzeFront account. `userId` REFERENCES an existing, server-minted user — it names an entity that already exists, so it is a reference (not identity being created) and carries its referent type via `kind: account`. */
+        AccountInvitee: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "account";
+            /** @description Server-minted, typed user id (e.g. `usr_…`) of the existing account-holder. */
+            userId: string;
+        };
+        /** @description An invitee with NO account yet, reached over a `channel`. Exactly one contact field is required, selected by `channel`: `email` (RFC 5322) for `channel: email`, `phone` (E.164) for `channel: whatsapp`. The external user must sign up first; the invite then auto-binds via the `bindToken`. */
+        ExternalInvitee: {
+            /** @constant */
+            kind: "external";
+            channel: components["schemas"]["InvitationChannel"];
+            /**
+             * Format: email
+             * @description Required when `channel` is `email`.
+             */
+            email?: string;
+            /** @description E.164 phone (e.g. `+14155552671`). Required when `channel` is `whatsapp`. */
+            phone?: string;
+        } & (unknown & unknown & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "external";
+        });
+        /** @description A typed, discriminated invitee reference — an existing `account` or an `external` identity. The `kind` discriminator means no bare id is ever resolved without its referent type (governance/identifier-standard.md 2). */
+        InviteeRef: components["schemas"]["AccountInvitee"] | components["schemas"]["ExternalInvitee"];
+        /** @description Create one invitation. */
+        InvitationCreate: {
+            invitee: components["schemas"]["InviteeRef"];
+            role?: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
+        };
+        /** @description Create up to 50 invitations sharing one `role` and `memberType`. The service mints every id and bindToken; none may be supplied. */
+        BulkInvitationCreate: {
+            invitees: components["schemas"]["InviteeRef"][];
+            role?: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
+        };
+        /** @description An invitation as seen by an org owner/admin (list + create + resend responses). The invitee identity is UNMASKED here because the caller administers the org; the public token resolve (`InvitationPublic`) masks it. `bindToken` is NOT included in this admin projection — it is handed only to the invitee via the accept flow. */
+        Invitation: {
+            /** @description Server-minted, typed invitation id (e.g. `inv_…`). Opaque past the prefix. */
+            id: string;
+            /** @description Typed id of the organization the invite is into. */
+            organizationId: string;
+            invitee: components["schemas"]["InviteeRef"];
+            channel: components["schemas"]["InvitationChannel"];
+            role: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
+            status: components["schemas"]["InvitationStatus"];
+            /** @description Typed user id of the inviter (a reference to an existing user). */
+            invitedByUserId?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        /** @description Masked public projection of an invitation returned by the unauthenticated token resolve. The contact identity is reduced to a hint (`maskedContact`) — never the full address/number, since the caller is unauthenticated and the token is a lookup key, not a capability. */
+        InvitationPublic: {
+            id: string;
+            /** @description Masked identity hint, e.g. `u***@example.com` or `+1 *** *** 2671`. */
+            maskedContact: string;
+            channel: components["schemas"]["InvitationChannel"];
+            role: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
+            status: components["schemas"]["InvitationStatus"];
+            /** Format: date-time */
+            expiresAt?: string;
+        };
+        /** @description Minimal, public-safe org summary shown on the invite landing page. */
+        InvitationOrgRef: {
+            id: string;
+            name: string;
+            slug?: string;
+        };
+        /** @description The masked invitation plus the organization it is into. */
+        InvitationResolveResult: {
+            invitation: components["schemas"]["InvitationPublic"];
+            organization: components["schemas"]["InvitationOrgRef"];
+        };
+        InvitationPage: {
+            items: components["schemas"]["Invitation"][];
+            page: components["schemas"]["PageInfo"];
+        };
+        /** @description Outcome for one invitee in a bulk create. */
+        BulkInvitationItemResult: {
+            invitee: components["schemas"]["InviteeRef"];
+            /** @enum {string} */
+            status: "created" | "skipped" | "failed";
+            /** @description Present when `status` is `created`. */
+            invitationId?: string;
+            /** @description Why an invitee was skipped/failed (e.g. `already-pending`). */
+            reason?: string;
+        };
+        BulkInvitationResult: {
+            created: number;
+            skipped: number;
+            failed: number;
+            results: components["schemas"]["BulkInvitationItemResult"][];
+        };
+        /** @description Optional accept body. No fields are required: the token is in the path and, for an authenticated accept, the identity comes from the session. */
+        InvitationAcceptRequest: Record<string, never>;
+        /** @description Returned `202` when the invitee has no session/account yet. Directs them to sign up / sign in and carries the single-use `bindToken` that threads this invite through signup (sent back as `SignupRequest.bindToken`). */
+        InvitationEnrollResponse: {
+            /** @constant */
+            action: "enroll";
+            /**
+             * Format: uri
+             * @description Where to send the invitee to create an account or sign in.
+             */
+            enrollUrl: string;
+            /** @description Single-use, short-lived, server-minted carrier of this invitation through signup/enrollment. Redeemed server-side on signup (identity must match the invited channel identity) to auto-bind the membership. */
+            bindToken: string;
+            message?: string;
+        };
+        /** @description Returned `200` when the membership was bound. */
+        InvitationAcceptResult: {
+            /** @constant */
+            action: "bound";
+            organizationId: string;
+            /** @description Typed id of the now-bound member (a reference to the accepting user). */
+            userId: string;
+            role: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
         };
         TokenIssueRequest: {
             clientId: string;
@@ -1452,7 +1892,7 @@ export interface components {
         EmailVerifyStartRequest: {
             /**
              * Format: email
-             * @description Signup-scoped address to verify when unauthenticated.
+             * @description Address used to look up the account when unauthenticated. Ignored when a bearer token is present (the account's own email is used).
              */
             email?: string;
         };
@@ -1495,6 +1935,13 @@ export interface components {
             /** @description The password to set; must satisfy the account password policy. */
             newPassword: string;
         };
+        /** @description Change the password of an account that already has one. */
+        ChangePasswordRequest: {
+            /** @description The account's current password (verified before the change). */
+            currentPassword: string;
+            /** @description The new password; must satisfy the account password policy. */
+            newPassword: string;
+        };
         /** @description One active session for the current user, describing the device/agent it was established from. `current: true` marks the session making the request. */
         SessionDevice: {
             /** @description Session id; pass to `DELETE /v1/security/sessions/{id}` to revoke. */
@@ -1513,6 +1960,18 @@ export interface components {
             lastSeenAt?: number;
             /** @description True for the session making this request. */
             current: boolean;
+        };
+        /** @description The session to check, taken verbatim from the `userId` and `sessionId` claims of an already-verified FuzeFront session token. Both identify EXISTING entities (references, not identity being created), and both are required: the session only counts as active for the user it belongs to. */
+        SessionValidateRequest: {
+            /** @description The `userId` claim of the session token. */
+            userId: string;
+            /** @description The `sessionId` claim of the session token. */
+            sessionId: string;
+        };
+        /** @description Whether the session is still active. A consumer MUST treat anything other than a well-formed `{ "active": true }` as inactive. */
+        SessionValidation: {
+            /** @description True only if the session exists, has not expired, and belongs to the supplied `userId`. False in every other case, with no reason given. */
+            active: boolean;
         };
         /** @description Result of beginning a social-link handshake. The SPA navigates the browser to `redirectUrl` (the same-host authorize path); the browser never sees an internal identity host. */
         SocialLinkStart: {
@@ -1567,6 +2026,8 @@ export interface components {
             role: "owner" | "admin" | "member" | "viewer";
             /** @description True for the calling user's own row (rendered "You"; data-self). */
             isSelf?: boolean;
+            /** @description How this member relates to the org (employee|customer), orthogonal to `role`. Optional: pre-FFRNT-305 memberships may not carry one. */
+            memberType?: components["schemas"]["MemberType"];
         };
         /** @description Page-based envelope for the searchable user directory. Deliberately distinct from the cursor `PageInfo` envelope (MemberPage/TenantPage): the directory is search-first and page-navigable, so it echoes the 1-based `page`, the effective `pageSize`, and the true server `total` so the UI can render a page-of-pages pager and disable Prev/Next at the boundaries. Satisfies gate-pagination (`items` + `page`). */
         DirectoryPage: {
@@ -1710,11 +2171,11 @@ export interface components {
             items: components["schemas"]["Portal"][];
             page: components["schemas"]["PageInfo"];
         };
-        /** @description Stable error body. Fail-closed; provider-neutral codes. */
+        /** @description Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED (past TTL or already used) and TOKEN_INVALID (matches nothing) are returned as 400 by the email-verify and password-reset confirm operations; they are NOT session failures and clients must not treat them as 401 session expiry. PASSWORD_POLICY (422) is returned by reset-confirm when the identity provider rejects the new password (and by `POST /v1/security/signup` when the chosen password fails the policy); the reset token stays live so a compliant retry succeeds. CAPTCHA_FAILED (400) is returned by `POST /v1/security/signup` when the supplied Cloudflare Turnstile token is rejected, invalid, or missing — a distinct, explicit failure from a generic MALFORMED body. A rejected captcha is a 400 (client-correctable: fetch a fresh token and retry); Cloudflare being unreachable is instead 503 PROVIDER_UNAVAILABLE (fail-closed), never CAPTCHA_FAILED. */
         ErrorBody: {
             error: string;
             /** @enum {string} */
-            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "UNKNOWN";
+            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "TOKEN_EXPIRED" | "TOKEN_INVALID" | "PASSWORD_POLICY" | "CAPTCHA_FAILED" | "LAST_FACTOR" | "NO_PASSWORD" | "RATE_LIMITED" | "UNKNOWN";
         };
     };
     responses: {
@@ -1763,6 +2224,24 @@ export interface components {
                 "application/json": components["schemas"]["ErrorBody"];
             };
         };
+        /** @description The request conflicts with current state — e.g. a pending invitation to the same identity already exists, or an accept lost its CAS race. */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorBody"];
+            };
+        };
+        /** @description The invitation has expired or been revoked and can no longer be resolved or accepted. */
+        Gone: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorBody"];
+            };
+        };
         /** @description The identity provider is unreachable, too slow, or presented a flow this API cannot drive server-side (`code: PROVIDER_UNAVAILABLE`). This is a SERVICE condition and says nothing about the caller's credentials — clients MUST NOT surface it as an authentication failure. Retryable; `Retry-After` indicates how long to wait. */
         ServiceUnavailable: {
             headers: {
@@ -1790,6 +2269,10 @@ export interface components {
         /** @description Server-side search over the directory (name / email). Submitted by the UI search box; the client never fetches all users to filter locally. */
         DirectoryQuery: string;
         FactorId: string;
+        /** @description Server-minted, typed invitation id (e.g. `inv_…`). Opaque past its prefix; never a capability — standing comes from the token + Permit. */
+        InvitationId: string;
+        /** @description Opaque, single-use invitation token from the dispatched invite. A lookup key only — never a capability; accept still enforces identity + standing. */
+        InvitationToken: string;
     };
     requestBodies: never;
     headers: never;
@@ -1799,7 +2282,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     getSession: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional organization UUID or typed organization ID. When supplied, requires canonical active membership in an active organization and returns its canonical UUID as identity.tenantId. */
+                tenant?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1815,7 +2301,16 @@ export interface operations {
                     "application/json": components["schemas"]["SessionInfo"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description Active tenant membership is required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     createSession: {
@@ -1890,6 +2385,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    listSessionWorkspaces: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active workspace choices for the current identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionWorkspaceList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
     requestPasswordReset: {
         parameters: {
             query?: never;
@@ -1935,7 +2452,24 @@ export interface operations {
                     "application/json": components["schemas"]["PasswordResetResult"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Malformed body (`MALFORMED`), or the token is expired/already used (`TOKEN_EXPIRED`) or unknown (`TOKEN_INVALID`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The identity provider rejected the new password (`PASSWORD_POLICY`). The token remains live. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     setPassword: {
@@ -1964,6 +2498,65 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /** @description A password sign-in method already exists on this account. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed; other sessions revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed body (`MALFORMED`), or `currentPassword` is wrong (`INVALID_CREDENTIALS`). Sessions are untouched. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The account has no password (`NO_PASSWORD`); use set-first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description `PASSWORD_POLICY` — the new password fails the password policy. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many failed attempts (`RATE_LIMITED`). */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2036,6 +2629,34 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    validateSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description The session's state. `active` is `false` for an unknown, revoked or expired session and for a user mismatch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionValidation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     linkSocial: {
@@ -2225,7 +2846,15 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description The request is rejected before account creation. `code: MALFORMED` for a malformed/invalid body; `code: CAPTCHA_FAILED` when the supplied Cloudflare Turnstile token is rejected, invalid, or missing (distinct from MALFORMED so the client can prompt for a fresh captcha and retry rather than treating it as a generic bad request). Cloudflare being unreachable is NOT a 400 — it fails closed as `503 PROVIDER_UNAVAILABLE`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description An account with that email already exists. */
             409: {
                 headers: {
@@ -2235,7 +2864,57 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description The chosen password fails the authoritative password policy (`code: PASSWORD_POLICY`), distinct from 409 email-exists and 503 provider errors. The server independently enforces the same policy advertised by `AuthMethods.passwordPolicy`; the client may render the per-rule checklist and let the user retry with a compliant password. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getSignupEmailAvailable: {
+        parameters: {
+            query: {
+                /** @description The email address to check. Normalized (trim + lowercase) server-side. */
+                email: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignupEmailAvailability"];
+                };
+            };
+            /** @description The `email` query param is missing or malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Rate limit exceeded (per-IP enumeration guard). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     getAuthMethods: {
@@ -2468,6 +3147,70 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getMembershipProof: {
+        parameters: {
+            query: {
+                subject: string;
+                tenant: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active membership */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        subject: string;
+                        tenant: string;
+                        /** @enum {boolean} */
+                        active: true;
+                    };
+                };
+            };
+            /** @description Malformed subject or tenant */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller forbidden or membership inactive */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authorization provider unavailable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description SQL membership proof unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     listGrants: {
         parameters: {
             query: {
@@ -2612,7 +3355,9 @@ export interface operations {
                     "application/json": components["schemas"]["TenantPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            502: components["responses"]["ProviderError"];
         };
     };
     createTenant: {
@@ -2639,6 +3384,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description The caller is authenticated but is not a platform administrator (`Organization:manage` on the platform root tenant), or is a machine caller lacking the `authz:admin` scope (`code: FORBIDDEN`). Fail-closed; no tenant is created. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             502: components["responses"]["ProviderError"];
         };
     };
@@ -3016,6 +3770,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description `LAST_FACTOR` — this is the user's last ACTIVE factor, so removing it would silently disable two-factor for the account. The factor is NOT removed. Add another method first. The count-and-delete is atomic, so two concurrent removals cannot both succeed. Pending (unactivated) factors can always be removed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     regenerateRecoveryCodes: {
@@ -3136,7 +3899,15 @@ export interface operations {
                     "application/json": components["schemas"]["VerificationStatus"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description Malformed body (`MALFORMED`), or the challenge is expired/already used (`TOKEN_EXPIRED`) or unknown/mismatched (`TOKEN_INVALID`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     startPhoneVerification: {
@@ -3186,6 +3957,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     getVerificationStatus: {
@@ -3240,6 +4012,222 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listOrganizationInvitations: {
+        parameters: {
+            query?: {
+                /** @description Max items per page. Clamped server-side to the maximum. */
+                limit?: number;
+                /** @description Opaque, server-issued cursor for the next page. Omit for the first page. */
+                cursor?: string;
+                /** @description Optional filter by invitation lifecycle status. */
+                status?: components["schemas"]["InvitationStatus"];
+            };
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of invitations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createOrganizationInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description Invitation created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createOrganizationInvitationsBulk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkInvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description Per-invitee results for the batch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkInvitationResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    resendOrganizationInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+                /** @description Server-minted, typed invitation id (e.g. `inv_…`). Opaque past its prefix; never a capability — standing comes from the token + Permit. */
+                invitationId: components["parameters"]["InvitationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation re-dispatched (expiry extended). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitation"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    revokeOrganizationInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+                /** @description Server-minted, typed invitation id (e.g. `inv_…`). Opaque past its prefix; never a capability — standing comes from the token + Permit. */
+                invitationId: components["parameters"]["InvitationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    resolveInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque, single-use invitation token from the dispatched invite. A lookup key only — never a capability; accept still enforces identity + standing. */
+                token: components["parameters"]["InvitationToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The (masked) invitation and its organization. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResolveResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    acceptInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque, single-use invitation token from the dispatched invite. A lookup key only — never a capability; accept still enforces identity + standing. */
+                token: components["parameters"]["InvitationToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["InvitationAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Invitation accepted and membership bound. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationAcceptResult"];
+                };
+            };
+            /** @description The invitee must sign up / sign in first. Carries the `bindToken` to redeem the invite post-signup. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationEnrollResponse"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
         };
     };
     getEmployeeStatus: {

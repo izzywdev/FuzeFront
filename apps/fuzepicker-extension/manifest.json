@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "FuzePicker",
+  "description": "Mention collaborators on the exact web component they need to review.",
+  "version": "0.1.0",
+  "permissions": ["storage"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [{ "matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "run_at": "document_start" }],
+  "action": { "default_title": "FuzePicker" },
+  "options_page": "options.html",
+  "externally_connectable": { "matches": ["http://localhost/*", "https://*.fuzefront.com/*"] }
+}

@@ -16,7 +16,12 @@ import {
   identityUserUpdatedSchemaV1,
   IdentityUserDeletedPayloadV1,
   identityUserDeletedSchemaV1,
+  IdentityMembershipAddedPayloadV1,
+  identityMembershipAddedSchemaV1,
+  IdentityMembershipRemovedPayloadV1,
+  identityMembershipRemovedSchemaV1,
 } from '@fuzefront/shared/kafka';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { loadConfig } from './config';
 import {
   handleUserCreated,
@@ -25,9 +30,25 @@ import {
   handleOrgDeleted,
   handleUserUpdated,
   handleUserDeleted,
+  handleMembershipAdded,
+  handleMembershipRemoved,
   HandlerDeps,
 } from './handler';
 import { createApp } from './app';
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'provisioning-service',
+  serviceVersion: SERVICE_VERSION,
+});
 
 async function main() {
   const config = loadConfig();
@@ -149,22 +170,68 @@ async function main() {
     dlqProducer
   );
 
+  // identity.membership.added -> assign the member's Permit role.
+  const membershipAddedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-membership-added`);
+  await membershipAddedConsumer.connect();
+  await membershipAddedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_ADDED);
+  await membershipAddedConsumer.run(
+    withDlq<IdentityMembershipAddedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_ADDED, event =>
+      handleMembershipAdded(event, handlerDeps)
+    ),
+    identityMembershipAddedSchemaV1,
+    dlqProducer
+  );
+
+  // identity.membership.removed -> revoke the member's Permit role.
+  const membershipRemovedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-membership-removed`);
+  await membershipRemovedConsumer.connect();
+  await membershipRemovedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED);
+  await membershipRemovedConsumer.run(
+    withDlq<IdentityMembershipRemovedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_REMOVED, event =>
+      handleMembershipRemoved(event, handlerDeps)
+    ),
+    identityMembershipRemovedSchemaV1,
+    dlqProducer
+  );
+
   // --- HTTP health probe ---
   const app = createApp();
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     console.log(`[provisioning-service] Listening on port ${config.port}`);
   });
 
   // --- Graceful shutdown ---
   const shutdown = async () => {
     console.log('[provisioning-service] Shutting down...');
-    await userConsumer.disconnect();
-    await orgConsumer.disconnect();
-    await orgUpdatedConsumer.disconnect();
-    await orgDeletedConsumer.disconnect();
-    await userUpdatedConsumer.disconnect();
-    await userDeletedConsumer.disconnect();
-    await dlqProducer.disconnect();
+    // Close the listener (letting in-flight requests finish) BEFORE flushing
+    // telemetry — otherwise a request still in flight when SIGTERM arrives
+    // either finishes after the SDK has shut down (its span lost) or is cut
+    // off by process.exit(0) below.
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    // Each disconnect is isolated: if the broker is unavailable during
+    // SIGTERM and one of these rejects, an unguarded `await` chain would
+    // abort right there, skipping every consumer/producer after it AND the
+    // telemetry flush below — leaving buffered spans dropped and the
+    // process hung for Kubernetes to kill. Caught by a Codex review on
+    // PR #1489 (email-service had the identical ordering, fixed alongside).
+    for (const client of [
+      userConsumer,
+      orgConsumer,
+      orgUpdatedConsumer,
+      orgDeletedConsumer,
+      userUpdatedConsumer,
+      userDeletedConsumer,
+      membershipAddedConsumer,
+      membershipRemovedConsumer,
+      dlqProducer,
+    ]) {
+      await client.disconnect().catch((error) => {
+        console.error('[provisioning-service] Error disconnecting a Kafka client during shutdown:', error);
+      });
+    }
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => {});
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

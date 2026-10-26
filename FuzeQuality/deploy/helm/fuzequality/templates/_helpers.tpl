@@ -24,6 +24,8 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
   value: {{ .Values.config.litellmUrl | quote }}
 - name: FUZEQUALITY_LLM_MODEL
   value: {{ .Values.config.llmModel | quote }}
+- name: FUZEQUALITY_REPOSITORY_ANALYSIS_TIMEOUT_MS
+  value: {{ .Values.config.repositoryAnalysisTimeoutMs | quote }}
 - name: LITELLM_MASTER_KEY
   valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: LITELLM_MASTER_KEY, optional: true } }
 - name: GITHUB_APP_ID

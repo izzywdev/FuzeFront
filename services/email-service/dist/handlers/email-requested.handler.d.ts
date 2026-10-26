@@ -1,4 +1,4 @@
-import { FuzeEvent, NotifyEmailRequestedPayloadV1, TypedProducer } from '@fuzefront/shared';
+import { FuzeEvent, NotifyEmailRequestedPayloadV1, TypedProducer } from '@fuzefront/shared/kafka';
 import { EmailProvider } from '../providers';
 export interface HandlerDeps {
     provider: EmailProvider;

@@ -136,9 +136,17 @@ host — no internal identity host.
 await fetch('/api/v1/security/signup', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ email, password, firstName, lastName, tenantName }),
-}) // 201 → LoginResponse (session established); 409 if the email exists
+  body: JSON.stringify({ email, password, name, turnstileToken, tenantName }),
+}) // 201 → LoginResponse (session established); 409 if the email exists;
+   // 422 PASSWORD_POLICY; 400 CAPTCHA_FAILED. `name` and `turnstileToken` are optional.
 ```
+
+`name` (one optional display name) replaced `firstName`/`lastName` in
+`@fuzefront/security-client` 1.0.0; send `turnstileToken` only when
+`GET /api/v1/security/methods` includes `captcha`. See
+[`docs/guides/AUTH_EXPERIENCE_SIGNUP.md`](../guides/AUTH_EXPERIENCE_SIGNUP.md)
+for the full 1.1.0 migration and the `fuzefront.auth.experience` flag that gates
+the stricter server behaviour.
 
 > A valid token **authenticates**; it does **not** authorize. Always re-check
 > permissions at your API (Step 4).
@@ -315,6 +323,17 @@ Assign roles and manage org membership through the same live API used in Step 4.
 > readable. A service that grants on behalf of an end user (e.g. creator
 > becomes owner) must use a machine identity with `authz:admin`, not the
 > end user's token.
+>
+> **Dedicated workload scopes (not `authz:admin`).** `SelectionList` instance
+> grants have two narrower machine paths for the `service:selection-list-service`
+> workload identity (a Kubernetes-projected ServiceAccount token exchanged at
+> `POST /tokens/workload`; scopes come from the chart's workload ConfigMap):
+> `selection-list:owner-grant` may `POST` a `list-owner` grant to an active member,
+> and `selection-list:grant-cleanup` may `DELETE` (revoke) a `SelectionList`
+> instance role, only for a principal that SQL shows is gone (user row missing or
+> deactivated, or no active membership of that tenant; otherwise `403`). Neither
+> can do anything else, and neither is a way around `authz:admin` for other
+> resources.
 
 ```ts
 // make a user a seller in a tenant (tenant-wide RBAC grant)
@@ -336,6 +355,9 @@ await fetch('/api/v1/security/authz/grants', {
 ```
 
 - Tenants: `GET`/`POST /api/v1/security/tenants`, `GET /tenants/{tenantId}`.
+  `GET` lists only the tenants you belong to; `POST` (create a tenant) is a
+  platform act — it needs `Organization:manage` on the platform root tenant or
+  an `authz:admin` machine token, otherwise `403`.
 - Members: `GET`/`POST /tenants/{tenantId}/members`,
   `DELETE /tenants/{tenantId}/members/{userId}`,
   `PUT /tenants/{tenantId}/members/{userId}/roles`.

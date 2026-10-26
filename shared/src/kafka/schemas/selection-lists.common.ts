@@ -75,6 +75,17 @@ export const SELECTION_LIST_ROLES = [
   'list-viewer',
 ] as const;
 
+/**
+ * List visibility (HTTP contract 4.1.0, `SelectionListVisibility`): who may READ a
+ * list without an instance grant. `private` (default) — instance-role holders only;
+ * `org` — every member of the owning org; `platform` — a common list owned by the
+ * platform organization, readable by every org. Never confers a mutation.
+ */
+export const SELECTION_LIST_VISIBILITIES = ['private', 'org', 'platform'] as const;
+
+/** Upper bound of one fork's source→fork item map (mirrors the HTTP reorder/autofill item cap). */
+export const SELECTION_LIST_MAX_FORK_ITEMS = 5000;
+
 /** Reserved seed source for the service's own platform default packs. Never allowlistable. */
 export const PLATFORM_SEED_SOURCE = 'platform';
 
@@ -96,6 +107,7 @@ export const slSlugV1 = z.string().min(2).max(64).regex(SELECTION_LIST_SLUG_PATT
 export const slLocaleV1 = z.enum(SELECTION_LIST_LOCALES);
 export const slRoleV1 = z.enum(SELECTION_LIST_ROLES);
 export const slLifecycleStatusV1 = z.enum(['active', 'archived']);
+export const slVisibilityV1 = z.enum(SELECTION_LIST_VISIBILITIES);
 export const slNameV1 = z.string().min(1).max(SELECTION_LIST_LIMITS.NAME_MAX);
 export const slDescriptionV1 = z.string().max(SELECTION_LIST_LIMITS.DESCRIPTION_MAX);
 /** Monotonic per-list revision; bumps on every change to the list or anything inside it. */
@@ -135,6 +147,19 @@ export const slSeedProvenanceV1 = z.object({
 });
 export type SelectionListSeedProvenanceV1 = z.infer<typeof slSeedProvenanceV1>;
 
+/**
+ * Where a forked list was copied from (HTTP `SelectionListForkProvenance`, 4.1.0).
+ * Records the moment of copying; never updated. The source may since be purged.
+ */
+export const slForkProvenanceV1 = z.object({
+  listId: slListIdV1,
+  organizationId: slOrganizationIdV1,
+  /** The source's `listRevision` when copied. */
+  listRevision: slListRevisionV1,
+  forkedAt: slTimestampV1,
+});
+export type SelectionListForkProvenanceV1 = z.infer<typeof slForkProvenanceV1>;
+
 /** A list as of the event. `name`/`description` are in `sourceLocale`. */
 export const slListSnapshotV1 = z.object({
   listId: slListIdV1,
@@ -144,6 +169,13 @@ export const slListSnapshotV1 = z.object({
   name: slNameV1,
   description: slDescriptionV1.nullable(),
   seed: slSeedProvenanceV1.nullable(),
+  /**
+   * Additive (shared 1.3.0 / HTTP 4.1.0). Always set by a 4.1.0 producer; absent
+   * from events produced before it, which means `private`.
+   */
+  visibility: slVisibilityV1.optional(),
+  /** Additive (1.3.0). Fork provenance; null (or absent, pre-1.3.0) when not a fork. */
+  forkedFrom: slForkProvenanceV1.nullable().optional(),
   createdAt: slTimestampV1,
   updatedAt: slTimestampV1,
 });
@@ -158,6 +190,8 @@ export const slItemSnapshotV1 = z.object({
   sortOrder: z.number().int().nonnegative(),
   status: slLifecycleStatusV1,
   seed: slSeedProvenanceV1.nullable(),
+  /** Additive (1.3.0). On a forked item, the source item it was copied from; null/absent otherwise. */
+  originItemId: slItemIdV1.nullable().optional(),
   createdAt: slTimestampV1,
   updatedAt: slTimestampV1,
 });
@@ -210,6 +244,15 @@ export const slSeedListSpecV1 = z
     description: slDescriptionV1.optional(),
     translations: z.array(slSeedListTranslationV1).max(SELECTION_LIST_LOCALES.length - 1).optional(),
     items: z.array(slSeedItemSpecV1).max(SELECTION_LIST_LIMITS.MAX_ITEMS_PER_LIST),
+    /**
+     * Additive (1.3.0, HTTP 4.1.0). Visibility of the seeded list; absent =
+     * `private` (the pre-1.3.0 behaviour). `org` makes the seeded list readable
+     * (pickable) by every member of the target org without a grant — the
+     * recommended value for app reference data. `platform` is only valid in a
+     * platform seed pack (one common instance, seeded into the platform
+     * organization, not per org); `seed.requested` refuses it.
+     */
+    visibility: slVisibilityV1.optional(),
   })
   .strict();
 export type SelectionListSeedListSpecV1 = z.infer<typeof slSeedListSpecV1>;

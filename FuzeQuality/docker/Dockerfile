@@ -1,14 +1,23 @@
 # syntax=docker/dockerfile:1.7
 FROM node:24-alpine AS dependencies
-RUN apk add --no-cache git
 WORKDIR /workspace/FuzeQuality
 COPY FuzeQuality/package.json FuzeQuality/.npmrc ./
-# @fuzefront/security-client is a private published contract package. BuildKit
-# mounts its read-only registry token only for installation; it is never copied
-# into an image layer.
-RUN --mount=type=secret,id=GITHUB_TOKEN \
-    export GITHUB_TOKEN="$(cat /run/secrets/GITHUB_TOKEN)" && \
-    npm install --ignore-scripts --no-audit --no-fund
+# FuzeQuality lives inside FuzeFront and consumes the same checked-in Design
+# System and Security contracts. Installing the local packages avoids an
+# otherwise unnecessary GitHub Packages credential during test and image
+# builds while keeping the production bundle on the published package APIs.
+COPY design-system /workspace/design-system
+COPY packages/security /workspace/packages/security
+COPY packages/identity /workspace/packages/identity
+COPY packages/onboarding-kit /workspace/packages/onboarding-kit
+RUN npm install --ignore-scripts --no-audit --no-fund
+# The checked-in design system is intentionally consumed from its repository
+# path so the image verifies the exact source being shipped. Its React peer
+# dependencies resolve by walking up from /workspace/design-system, while this
+# package's dependencies live under /workspace/FuzeQuality. Expose that one
+# dependency tree at the monorepo root so root-local packages use the same
+# React singleton as FuzeQuality during Vitest and Vite builds.
+RUN ln -s /workspace/FuzeQuality/node_modules /workspace/node_modules
 
 FROM dependencies AS source
 # This COPY is what bakes contracts/openapi.yaml INTO the image, alongside the
@@ -18,6 +27,10 @@ FROM dependencies AS source
 # cannot — so /openapi.yaml and /openapi.json can never describe a different
 # build than the one answering them.
 COPY FuzeQuality ./
+# Registration contract tests verify the Android release workflow as part of
+# every production image build. Keep that reviewed workflow in the source
+# stage so Docker verification has the same contract inputs as a checkout.
+COPY .github/workflows/fuzequality-android-apk.yml /workspace/.github/workflows/fuzequality-android-apk.yml
 
 FROM source AS verify
 # A supplied value is used for a standalone deployment. The federated remote
@@ -44,7 +57,11 @@ USER node
 CMD ["npm", "run", "start:api"]
 
 FROM nginx:1.27-alpine AS web
-COPY --from=verify /workspace/FuzeQuality/dist/web /usr/share/nginx/html
+COPY --from=verify /workspace/FuzeQuality/dist /usr/share/nginx/html
+# Reuse the FuzeFront Design System's maintained PWA icon family. FuzeQuality
+# owns its manifest and Android identity, while the shared artwork stays sourced
+# from the platform package instead of becoming an untracked binary fork.
+COPY frontend/public/icons /usr/share/nginx/html/icons
 COPY FuzeQuality/docker/nginx.conf /etc/nginx/conf.d/default.conf
 RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /var/run
 USER nginx
