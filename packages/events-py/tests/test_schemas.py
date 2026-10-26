@@ -325,6 +325,30 @@ def test_email_matches_zod_default():
             schema_for_topic("identity.user.created")({**base, "email": bad})
 
 
+def test_session_issuer_must_be_url():
+    # identity.session.issued is unregistered (publishes raw), so exercise the
+    # exported validator directly. Node: issuer is z.string().url().nullable().optional().
+    from fuzefront_events.schemas.lifecycle import validate_identity_session_issued
+
+    base = {
+        "userId": U,
+        "sessionId": "sess-1",
+        "tenantId": None,
+        "authMode": "oidc-jwks",
+        "issuer": "https://authentik.example.com/application/o/app/",
+        "expiresAt": 1,
+        "issuedAt": TS,
+    }
+    assert validate_identity_session_issued(base)
+    assert validate_identity_session_issued({**base, "issuer": None})  # nullable
+    no_issuer = dict(base)
+    del no_issuer["issuer"]
+    assert validate_identity_session_issued(no_issuer)  # optional
+    for bad in ("not a URL", ""):
+        with pytest.raises(SchemaValidationError):
+            validate_identity_session_issued({**base, "issuer": bad})
+
+
 def test_string_length_counts_utf16_units():
     # 101 non-BMP chars = 202 UTF-16 units > NAME_MAX(200); 100 = 200 = OK.
     good = {**_sl_base(), "list": {**_sl_list_snapshot(), "name": "😀" * 100}}

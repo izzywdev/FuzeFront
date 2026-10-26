@@ -285,7 +285,7 @@ def validate_identity_session_issued(p: Any) -> dict:
     v.string("sessionId")
     v.uuid("tenantId", nullable=True)
     v.enum("authMode", ("legacy-hs256", "oidc-jwks"))
-    v.string("issuer", required=False, nullable=True)
+    v.url("issuer", required=False, nullable=True)  # Node: z.string().url().nullable().optional()
     v.integer("expiresAt", gt=0)  # epoch seconds
     v.datetime("issuedAt")
     return v.done()

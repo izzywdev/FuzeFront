@@ -38,6 +38,19 @@ def _utf16_len(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
 
 
+def _is_url(s: str) -> bool:
+    """Approximate Zod ``.url()`` (``new URL(s)``): require a scheme and a
+    non-empty authority/path, so plain text like ``"not a URL"`` or ``""`` is
+    rejected while ``https://authentik.example.com/...`` is accepted."""
+    try:
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(s)
+    except ValueError:
+        return False
+    return bool(parts.scheme) and bool(parts.netloc or parts.path)
+
+
 _E164_RE = re.compile(r"^\+[1-9]\d{1,14}$")
 # ISO-8601 UTC, mirroring Zod z.string().datetime() with its defaults EXACTLY:
 # a trailing 'Z' is REQUIRED (no tz-less value, no numeric offset — those need
@@ -136,6 +149,23 @@ class _V:
 
     def datetime(self, field: str, *, required: bool = True, nullable: bool = False) -> None:
         self.string(field, required=required, nullable=nullable, pattern=_DATETIME_RE)
+
+    def url(self, field: str, *, required: bool = True, nullable: bool = False) -> None:
+        """Mirror of Zod ``z.string().url()`` (``new URL(s)`` under the hood):
+        a non-null value must be a string that parses as an absolute URL."""
+        v = self._raw(field, required)
+        if v is _MISSING:
+            return
+        if v is None:
+            if nullable:
+                self.out[field] = None
+                return
+            raise self.fail(f"field '{field}' must not be null")
+        if not isinstance(v, str):
+            raise self.fail(f"field '{field}' must be a string")
+        if not _is_url(v):
+            raise self.fail(f"field '{field}' must be a URL")
+        self.out[field] = v
 
     def boolean(self, field: str, *, required: bool = True) -> None:
         v = self._raw(field, required)
