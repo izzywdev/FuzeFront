@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:28aa760e265c4a24f9fd4d50855efaeb0ac4c86e4a8be001a051ebbc86a39968
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:668f63e9c8ee774995826888a11afd8456a76f8d05326a96e549eb80071e2ae7
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -204,17 +204,81 @@ jobs:
           git checkout "$HEAD_SHA"
           echo "Checked out PR branch: $HEAD_REF @ $HEAD_SHA"
 
-      # SECURITY — restore the TRUSTED action code over whatever the just-checked-out PR head
-      # (possibly a fork) put at these paths. Same `if:` as the checkout above: a no-op copy
+      # SECURITY, step 1 of 2 — FAIL CLOSED when the PR head redefines the very action this
+      # job is about to execute.
+      #
+      # The restore below used to run unconditionally, which executed trusted code (correct)
+      # but left the working tree holding a REVERSE DIFF of the PR's own `.github/actions`
+      # changes: `git status` was dirty with the PR's edits undone, the agent read action
+      # code that was not the PR's, and a broad `git add -A` could have committed the
+      # revert. No amount of copying fixes that, because the trusted code must sit at
+      # `./.github/actions/` for `uses:` to resolve it — the PR's version and the executed
+      # version cannot both live at that path. Relocating the action is not available
+      # either: `fuze-code-action/action.yml` resolves its own nested
+      # `uses: ./.github/actions/llm-endpoint` against GITHUB_WORKSPACE (not against the
+      # action's directory, which Actions offers no syntax for), and ~10 other templates
+      # call it at `./.github/actions/fuze-code-action`.
+      #
+      # So the state is removed rather than managed: a PR that rewrites the agent's own
+      # action is not serviced automatically at all. That is strictly safer than today —
+      # today such a PR *is* serviced, merely with the trusted code — and it guarantees
+      # the restore below can never revert PR work, because there is none at those paths.
+      #
+      # The check asks the API which files the PR touches rather than diffing the trees:
+      # the preserved copy comes from the DEFAULT BRANCH, so a PR that is merely BEHIND it
+      # differs under `.github/actions` without having changed anything, and a tree diff
+      # would false-positive on every stale PR.
+      - name: Refuse to service a PR that redefines the local actions
+        if: |
+          (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
+          github.event_name == 'pull_request_review_comment' ||
+          github.event_name == 'pull_request_review'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "issue_comment" ]; then N="$ISSUE_NUM"; else N="$PR_NUMBER"; fi
+          changed=$(gh api "repos/${REPO}/pulls/${N}/files" --paginate --jq '.[].filename' \
+                    | grep '^\.github/actions/' || true)
+          if [ -z "$changed" ]; then
+            echo "PR #${N} does not touch .github/actions — restoring the trusted copy cannot revert any PR work."
+            exit 0
+          fi
+          echo "::error title=pr-redefines-local-actions::PR #${N} changes .github/actions, which defines the code this job executes with FUZEONEAGENT_TOKEN and (via claude.yml) the LLM credentials in scope. @fuze does not service a PR that rewrites its own action: get the action change reviewed and merged on its own, then invoke @fuze again. Files below."
+          printf '%s\n' "$changed"
+          exit 1
+
+      # SECURITY, step 2 of 2 — restore the TRUSTED action code over whatever the
+      # just-checked-out PR head put at these paths, so `uses: ./.github/actions/...` below
+      # executes what the DEFAULT BRANCH shipped. Same `if:` as the checkout above: a no-op
       # when that step didn't run. See "Preserve trusted local actions" for the threat.
+      #
+      # The step above has already established that the PR does not change these paths, so
+      # this copy can only replace an identical or an OLDER-UPSTREAM version — never the
+      # PR's work. (Replacing a stale upstream version matters: basing a PR on a commit
+      # whose action had a known flaw would otherwise execute that flaw.)
+      #
+      # Any residual difference is therefore CI scaffolding, not content under review, so
+      # git is told to disregard it and the tree stays clean: `git status` shows nothing and
+      # no `git add -A` / `git commit -a` can pick it up. This is safe only because of the
+      # guard above — with it, the agent has no legitimate edits here to hide.
       - name: Restore trusted local actions (never execute PR-head-controlled action code)
         if: |
           (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
           github.event_name == 'pull_request_review_comment' ||
           github.event_name == 'pull_request_review'
         run: |
+          set -euo pipefail
           rm -rf .github/actions
           cp -a "${RUNNER_TEMP}/trusted-fuze-actions" .github/actions
+          git ls-files -z .github/actions | xargs -0 -r git update-index --skip-worktree --
+          printf '/.github/actions/\n' >> .git/info/exclude
+          echo "Trusted .github/actions restored; git set to disregard the difference."
+          git status --porcelain .github/actions
 
       # CODER IDENTITY (docs/identity-and-roles.md). The coder is the org-wide `fuze-agent`
       # GitHub App — a durable App identity, NOT the retired `fuzeoneagent` user account
