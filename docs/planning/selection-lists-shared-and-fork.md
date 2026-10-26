@@ -661,6 +661,7 @@ record this as `contractGaps[SelectionList.revision]` / the flow's
 | `@fuzeone/selection-list-client` 2.1.1 → **2.2.0** | `SelectionList.revision?: number`; `compareForkToSource(fork, source)` → `ForkSourceComparison` (`'behind' \| 'up-to-date' \| 'unknown'`) |
 | `fuzefront-selection-list-client` 2.1.0 → **2.2.0** | `SelectionList.revision: int \| None` (absent / non-positive / non-integer → `None`); `compare_fork_to_source` + `ForkSourceComparison` |
 | Events | **none** — `listRevision` already rides every revisioned `selection-lists.*` event, and `list.forked.source.listRevision` already records the copy-time revision |
+| Pagination wording (doc only, no wire change) | `listSelectionLists` + `Page`: a page may be shorter than `limit` — even empty — while `hasMore` is `true` (the per-row readability filter runs after SQL cuts the page). Both 2.2.0 clients' `getEffectiveList` / `get_effective_list` follow the same query's cursor through empty non-terminal pages, bounded to 10 (`EffectiveLookupIncompleteError`, never "no list"); mirrors `@fuzeone/selection-lists-ui` (#1702) |
 
 ### 13.3 Decisions
 

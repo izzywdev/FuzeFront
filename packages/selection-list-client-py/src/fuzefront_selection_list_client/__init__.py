@@ -16,7 +16,11 @@ Quick start::
 
 from ._paginator import paginate
 from .client import SelectionListClient, TokenProvider
-from .errors import SelectionListApiError
+from .errors import (
+    MAX_EFFECTIVE_LOOKUP_PAGES,
+    EffectiveLookupIncompleteError,
+    SelectionListApiError,
+)
 from .seed import (
     SEED_COMPLETED_TOPIC,
     SEED_FAILED_TOPIC,
@@ -80,6 +84,7 @@ from .types import (
 
 __all__ = [
     "DELETED_USER_SENTINEL",
+    "MAX_EFFECTIVE_LOOKUP_PAGES",
     # Seed requests (Kafka contract: selection-lists.seed.requested)
     "SEED_COMPLETED_TOPIC",
     "SEED_FAILED_TOPIC",
@@ -94,6 +99,7 @@ __all__ = [
     "AutofillResult",
     "CreateItemRequest",
     "CreateListRequest",
+    "EffectiveLookupIncompleteError",
     "ForkProvenance",
     "ForkSourceComparison",
     "ItemTranslationLocaleStatus",

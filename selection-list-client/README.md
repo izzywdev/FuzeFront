@@ -79,6 +79,15 @@ try {
 }
 ```
 
+`getEffectiveList` follows the cursor of its own query (2.2.0): the service cuts
+a page before it drops rows the caller cannot read, so a key lookup can get an
+**empty page that still has a `nextCursor`**. It walks on until a row for the
+key or the last page (`null`), at most `MAX_EFFECTIVE_LOOKUP_PAGES` (10) pages;
+exhausting the bound throws `EffectiveLookupIncompleteError` (never `null`), a
+failed page throws, and an aborted `signal` stops the walk. The same applies to
+any listing you walk by hand: a short or empty page is not the end — only
+`hasMore === false` is (`paginate` already does this).
+
 `getLists({ include_shared: true })` adds lists readable through visibility
 (the default is unchanged). `resolveIds` resolves common-list ids in every org
 and, where the org holds an `org`-visible fork, answers from the fork item with

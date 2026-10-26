@@ -14,7 +14,10 @@ export type {
 } from './client'
 
 export {
+  EffectiveLookupIncompleteError,
+  MAX_EFFECTIVE_LOOKUP_PAGES,
   SelectionListApiError,
+  isEffectiveLookupIncompleteError,
   isSelectionListApiError,
 } from './errors'
 export type { SelectionListApiErrorCode } from './errors'

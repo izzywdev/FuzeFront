@@ -88,6 +88,15 @@ except SelectionListApiError as exc:
         raise
 ```
 
+`get_effective_list` follows the cursor of its own query (2.2.0): the service
+cuts a page before it drops rows the caller cannot read, so a key lookup can
+get an **empty page that still has a next cursor**. It walks on until a row for
+the key or the last page (`None`), at most `MAX_EFFECTIVE_LOOKUP_PAGES` (10)
+pages; exhausting the bound raises `EffectiveLookupIncompleteError` (never
+`None`) and a failed page raises `SelectionListApiError`. The same holds for
+any listing walked by hand: a short or empty page is not the end — only
+`has_more` false is (`paginate` already does this).
+
 `get_lists(include_shared=True)` also returns lists readable through
 visibility; the default is unchanged. `resolve_ids` resolves common-list item
 ids everywhere and, inside an org holding an `org`-visible fork, returns the

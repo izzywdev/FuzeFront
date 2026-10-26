@@ -1,4 +1,8 @@
-import { SelectionListApiError } from './errors'
+import {
+  EffectiveLookupIncompleteError,
+  MAX_EFFECTIVE_LOOKUP_PAGES,
+  SelectionListApiError,
+} from './errors'
 import type {
   ItemTranslationLocaleStatus,
   ListSelectionListItemsParams,
@@ -136,20 +140,41 @@ export class SelectionListClient {
   /**
    * The **effective** list for `key` (contract 4.1.0): the caller org's own
    * readable active list with that key (e.g. its fork) if any, else the active
-   * `platform` common list with that key; `null` when neither exists. One
-   * `GET /v1/selection-lists?key=…&include_shared=true` call — what a picker
-   * should use to turn a list key into a list.
+   * `platform` common list with that key; `null` when neither exists. The
+   * service makes the choice through ONE endpoint,
+   * `GET /v1/selection-lists?key=…&include_shared=true&limit=1` — what a picker
+   * should use to turn a list key into a list; never fetch both and merge.
+   *
+   * Usually that is one call, but not always (2.2.0). The service applies
+   * pagination BEFORE it drops rows the caller cannot read (a newer unreadable
+   * private list with the same key can sit ahead of an older readable common
+   * list), so a page may be EMPTY and still carry a next cursor. An empty page
+   * is therefore only "no list" when it is TERMINAL; otherwise this follows the
+   * cursor through the same query until a row for `key` is found or a page has
+   * no next cursor. The walk is bounded by `MAX_EFFECTIVE_LOOKUP_PAGES`;
+   * exhausting it rejects with `EffectiveLookupIncompleteError` and never
+   * resolves `null`. A failed page rejects (no fallback to another list), and an
+   * aborted `signal` stops the walk with an `AbortError`.
    */
   async getEffectiveList(
     key: string,
     locale?: Locale,
     signal?: AbortSignal
   ): Promise<SelectionList | null> {
-    const page = await this.getLists(
-      { key, include_shared: true, locale, limit: 1 },
-      signal
-    )
-    return page.items[0] ?? null
+    let cursor: string | undefined
+    for (let walked = 0; walked < MAX_EFFECTIVE_LOOKUP_PAGES; walked++) {
+      if (signal?.aborted) throw abortError(signal)
+      const page = await this.getLists(
+        { key, include_shared: true, locale, limit: 1, ...(cursor ? { cursor } : {}) },
+        signal
+      )
+      // Only a row for THIS key counts — never a differently-keyed row.
+      const hit = page.items.find((list) => list.key === key)
+      if (hit) return hit
+      if (!page.page.hasMore || !page.page.nextCursor) return null
+      cursor = page.page.nextCursor
+    }
+    throw new EffectiveLookupIncompleteError(MAX_EFFECTIVE_LOOKUP_PAGES)
   }
 
   /**
@@ -760,4 +785,10 @@ function isErrorBody(value: unknown): value is SelectionListErrorBody {
     typeof (value as { code?: unknown }).code === 'string' &&
     typeof (value as { message?: unknown }).message === 'string'
   )
+}
+
+/** The error an aborted walk rejects with: the signal's own reason when it has one, else an `AbortError`. */
+function abortError(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) return signal.reason
+  return new DOMException('This operation was aborted', 'AbortError')
 }

@@ -26,7 +26,12 @@ import urllib.request
 from collections.abc import Callable, Generator
 
 from ._paginator import paginate as _paginate
-from .errors import SelectionListApiError, _code_from_status
+from .errors import (
+    MAX_EFFECTIVE_LOOKUP_PAGES,
+    EffectiveLookupIncompleteError,
+    SelectionListApiError,
+    _code_from_status,
+)
 from .types import (
     AccessEntry,
     AutofillResult,
@@ -448,10 +453,31 @@ class SelectionListClient:
         The **effective** list for ``key`` (4.1.0): the caller org's own readable
         active list with that key (e.g. its fork) if any, else the active
         ``platform`` common list with that key; ``None`` when neither exists.
-        One ``GET /v1/selection-lists?key=...&include_shared=true`` call.
+        The service makes the choice through ONE endpoint,
+        ``GET /v1/selection-lists?key=...&include_shared=true&limit=1``.
+
+        Usually that is one call, but not always (2.2.0). The service applies
+        pagination BEFORE it drops rows the caller cannot read, so a page may be
+        EMPTY and still carry a next cursor. An empty page is only "no list"
+        when it is terminal; otherwise this follows the cursor with the same
+        query until a row for ``key`` is found or a page has no next cursor.
+        Bounded by ``MAX_EFFECTIVE_LOOKUP_PAGES``: exhausting it raises
+        ``EffectiveLookupIncompleteError`` -- never returns ``None``. A failed
+        page raises ``SelectionListApiError`` (no fallback to another list).
         """
-        page = self.get_lists(key=key, include_shared=True, locale=locale, limit=1)
-        return page.items[0] if page.items else None
+        cursor: str | None = None
+        for _ in range(MAX_EFFECTIVE_LOOKUP_PAGES):
+            page = self.get_lists(
+                key=key, include_shared=True, locale=locale, limit=1, cursor=cursor
+            )
+            # Only a row for THIS key counts -- never a differently-keyed row.
+            hit = next((sl for sl in page.items if sl.key == key), None)
+            if hit is not None:
+                return hit
+            if not page.page.has_more or not page.page.next_cursor:
+                return None
+            cursor = page.page.next_cursor
+        raise EffectiveLookupIncompleteError(MAX_EFFECTIVE_LOOKUP_PAGES)
 
     def fork_list(
         self,

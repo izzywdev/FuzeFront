@@ -504,6 +504,13 @@ const page = await client.getItems(list.id, { limit: 20, cursor: savedCursor })
 // page.page.hasMore     — false when done
 ```
 
+> **A page can be short — or empty — and still have more.** The service cuts a page from the
+> organization's rows and *then* drops the rows the caller may not read (per-row
+> `SelectionList:read`, plus the shared read with `include_shared`). So `items.length < limit`,
+> even `items.length === 0`, says nothing about the end: only `hasMore === false` (or
+> `nextCursor === null`) does. `paginate` already handles this; a hand-rolled loop must keep
+> following `nextCursor` through empty pages and must never stop on the first empty one.
+
 ---
 
 ## Translations
@@ -727,7 +734,7 @@ without an instance grant. It never confers a change.
 
 ```ts
 // The picker's key lookup: own org's readable list (e.g. its fork) first, else the common list.
-const list = await client.getEffectiveList('priority')   // GET ?key=priority&include_shared=true
+const list = await client.getEffectiveList('priority')   // GET ?key=priority&include_shared=true&limit=1 (+ cursor, see below)
 if (list && list.editable === false) {
   // read-only for this caller; for list.visibility === 'platform' offer "fork to edit"
 }
@@ -764,6 +771,16 @@ try {
 }
 ```
 
+- **`getEffectiveList` may take more than one call (clients 2.2.0).** The key lookup is paged
+  like any listing, and rows the caller cannot read are dropped from a page after it is cut: a
+  newer list with the same key that the caller cannot read (another member's `private` draft)
+  makes the first `limit=1` page **empty with a `nextCursor`**, and the effective list is on a
+  later page of the same query. The client follows that cursor until it finds a row for the key
+  or reaches the last page (then `null`), at most `MAX_EFFECTIVE_LOOKUP_PAGES` (10) pages.
+  Exhausting the bound throws `EffectiveLookupIncompleteError` (Python:
+  `EffectiveLookupIncompleteError`) — an *unknown* answer, never "no list"; a failed page throws
+  the API error with no fallback; an aborted `signal` stops the walk (`AbortError`). 2.1.x read
+  only the first page and could wrongly report that no list exists.
 - The fork keeps the **same `key`**, so it shadows the common list for the forking org
   (`getEffectiveList` returns the fork); **archiving the fork reverts** to the common list.
 - `visibility` of a fork is `org` (default — the org's version for every member) or `private` (a

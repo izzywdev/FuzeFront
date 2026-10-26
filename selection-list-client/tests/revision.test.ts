@@ -86,7 +86,8 @@ describe('compareForkToSource', () => {
 
   it("compares the fork's provenance, never the fork's own revision", () => {
     // The fork's own counter (12) is unrelated to its source's (9).
-    expect(compareForkToSource({ ...FORK, revision: 1 }, SOURCE)).toBe('behind')
+    const ownRevisionOne: SelectionList = { ...FORK, revision: 1 }
+    expect(compareForkToSource(ownRevisionOne, SOURCE)).toBe('behind')
   })
 
   it.each([
