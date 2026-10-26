@@ -1,8 +1,10 @@
 {
   "_comment": "Desired required status checks for master. Data, not automation: applying it needs admin rights this repo's CI does not hold. See docs/runbooks/widen-required-checks.md.",
-  "ruleset": "Protect Master (id 17974934)",
+  "ruleset": "Protect default branch (id 17974934; live-verified name 2026-10-26 — earlier 'Protect Master' label in this file and in docs was stale; apply matches by target+condition, not name, so this is not blocking)",
   "strict_required_status_checks_policy": true,
   "measured_on": "2026-08-27",
+  "live_required_verified_on": "2026-10-26",
+  "live_required_contexts_count": 11,
   "contexts": [
     "Applications service (unit + integration)",
     "Backend tests (Node 24.x)",
