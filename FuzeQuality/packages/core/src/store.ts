@@ -1812,6 +1812,22 @@ export class PostgresCatalogStore implements CatalogStore {
            AND ($14::timestamptz IS NULL OR versioned_at <= $14)
          ORDER BY repository_id,provider,external_run_id,attempt,versioned_at DESC,version_id DESC
        )
+       , normalized_executions AS (
+         SELECT snapshot_executions.*,
+                CASE
+                  WHEN jsonb_array_length(COALESCE(gate_evaluations,'[]'::jsonb))>0
+                    THEN gate_evaluations
+                  WHEN jsonb_array_length(COALESCE(policy_artifact_ids,'[]'::jsonb))=1
+                    AND jsonb_array_length(COALESCE(gate_artifact_ids,'[]'::jsonb))=1
+                    THEN jsonb_build_array(jsonb_build_object(
+                      'policyArtifactId',policy_artifact_ids->>0,
+                      'gateArtifactId',gate_artifact_ids->>0,
+                      'status',status
+                    ))
+                  ELSE '[]'::jsonb
+                END AS effective_gate_evaluations
+         FROM snapshot_executions
+       )
        SELECT to_char((COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS date,
               count(*)::integer AS total,
               count(*) FILTER (WHERE status='passed')::integer AS passed,
@@ -1846,8 +1862,26 @@ export class PostgresCatalogStore implements CatalogStore {
               count(*) FILTER (WHERE evidence_collection->>'status'='complete')::integer AS evidence_complete_count,
               count(*) FILTER (WHERE evidence_collection->>'status'='partial')::integer AS evidence_partial_count,
               count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_unavailable_count,
-              count(*) FILTER (WHERE evidence_collection IS NULL)::integer AS evidence_not_collected_count
-       FROM snapshot_executions executions
+              count(*) FILTER (WHERE evidence_collection IS NULL)::integer AS evidence_not_collected_count,
+              COALESCE(sum(jsonb_array_length(effective_gate_evaluations)),0)::integer AS gate_evaluation_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
+                WHERE gate.value->>'status'='passed'
+              )),0)::integer AS gate_passed_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
+                WHERE gate.value->>'status'='failed'
+              )),0)::integer AS gate_failed_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
+                WHERE gate.value->>'status'='cancelled'
+              )),0)::integer AS gate_cancelled_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
+                WHERE gate.value->>'status'='running'
+              )),0)::integer AS gate_running_count,
+              count(*) FILTER (WHERE jsonb_array_length(effective_gate_evaluations)=0)::integer AS gate_unevaluated_execution_count
+       FROM normalized_executions executions
        WHERE COALESCE(executions.completed_at,executions.started_at) IS NOT NULL
          AND ($3::text IS NULL OR executions.kind=$3)
          AND ($4::text IS NULL OR executions.status=$4)
@@ -2006,6 +2040,12 @@ export class PostgresCatalogStore implements CatalogStore {
       evidencePartialCount: row.evidence_partial_count,
       evidenceUnavailableCount: row.evidence_unavailable_count,
       evidenceNotCollectedCount: row.evidence_not_collected_count,
+      gateEvaluationCount: row.gate_evaluation_count,
+      gatePassedCount: row.gate_passed_count,
+      gateFailedCount: row.gate_failed_count,
+      gateCancelledCount: row.gate_cancelled_count,
+      gateRunningCount: row.gate_running_count,
+      gateUnevaluatedExecutionCount: row.gate_unevaluated_execution_count,
     }))
   }
 

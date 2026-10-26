@@ -324,6 +324,14 @@ export type ExecutionOutcomeTrend = {
   evidenceUnavailableCount?: number
   /** Executions with no retained provider evidence collection attempt. */
   evidenceNotCollectedCount?: number
+  /** Explicit policy/gate outcomes, including unambiguous legacy single-pair evidence. */
+  gateEvaluationCount?: number
+  gatePassedCount?: number
+  gateFailedCount?: number
+  gateCancelledCount?: number
+  gateRunningCount?: number
+  /** Executions that cannot be attributed to a policy/gate outcome without inference. */
+  gateUnevaluatedExecutionCount?: number
 }
 
 /** Produces an evidence-only daily outcome series; missing days are not invented. */
@@ -359,6 +367,12 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       evidencePartialCount: 0,
       evidenceUnavailableCount: 0,
       evidenceNotCollectedCount: 0,
+      gateEvaluationCount: 0,
+      gatePassedCount: 0,
+      gateFailedCount: 0,
+      gateCancelledCount: 0,
+      gateRunningCount: 0,
+      gateUnevaluatedExecutionCount: 0,
       totalDurationMs: 0,
     }
     current.total++
@@ -369,6 +383,17 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       if (execution.evidenceCollection.status === 'unavailable') current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + 1
     } else {
       current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + 1
+    }
+    const gateEvaluations = retainedGateEvaluations(execution)
+    current.gateEvaluationCount = (current.gateEvaluationCount ?? 0) + gateEvaluations.length
+    if (!gateEvaluations.length) {
+      current.gateUnevaluatedExecutionCount = (current.gateUnevaluatedExecutionCount ?? 0) + 1
+    }
+    for (const evaluation of gateEvaluations) {
+      if (evaluation.status === 'passed') current.gatePassedCount = (current.gatePassedCount ?? 0) + 1
+      if (evaluation.status === 'failed') current.gateFailedCount = (current.gateFailedCount ?? 0) + 1
+      if (evaluation.status === 'cancelled') current.gateCancelledCount = (current.gateCancelledCount ?? 0) + 1
+      if (evaluation.status === 'running') current.gateRunningCount = (current.gateRunningCount ?? 0) + 1
     }
     if (execution.attempt > 1) {
       current.retryAttemptCount++

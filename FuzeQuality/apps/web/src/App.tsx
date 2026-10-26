@@ -212,6 +212,12 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       evidencePartialCount: 0,
       evidenceUnavailableCount: 0,
       evidenceNotCollectedCount: 0,
+      gateEvaluationCount: 0,
+      gatePassedCount: 0,
+      gateFailedCount: 0,
+      gateCancelledCount: 0,
+      gateRunningCount: 0,
+      gateUnevaluatedExecutionCount: 0,
     }
     const itemDurationSampleCount = item.durationSampleCount ?? 0
     const itemAverageDurationMs = item.averageDurationMs ?? 0
@@ -237,6 +243,12 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.evidencePartialCount = (current.evidencePartialCount ?? 0) + (item.evidencePartialCount ?? 0)
     current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + (item.evidenceUnavailableCount ?? 0)
     current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + (item.evidenceNotCollectedCount ?? 0)
+    current.gateEvaluationCount = (current.gateEvaluationCount ?? 0) + (item.gateEvaluationCount ?? 0)
+    current.gatePassedCount = (current.gatePassedCount ?? 0) + (item.gatePassedCount ?? 0)
+    current.gateFailedCount = (current.gateFailedCount ?? 0) + (item.gateFailedCount ?? 0)
+    current.gateCancelledCount = (current.gateCancelledCount ?? 0) + (item.gateCancelledCount ?? 0)
+    current.gateRunningCount = (current.gateRunningCount ?? 0) + (item.gateRunningCount ?? 0)
+    current.gateUnevaluatedExecutionCount = (current.gateUnevaluatedExecutionCount ?? 0) + (item.gateUnevaluatedExecutionCount ?? 0)
     merged.set(item.date, current)
   }
   return [...merged.values()].sort((left, right) => left.date.localeCompare(right.date))
@@ -6635,6 +6647,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 </span>
                 <span>
                   Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected
+                </span>
+                <span>
+                  Policy gates: {day.gatePassedCount ?? 0} passed · {day.gateFailedCount ?? 0} failed · {day.gateCancelledCount ?? 0} cancelled · {day.gateRunningCount ?? 0} running · {day.gateEvaluationCount ?? 0} evaluated · {day.gateUnevaluatedExecutionCount ?? 0} executions without an attributable gate outcome
                 </span>
               </div>
             ))}

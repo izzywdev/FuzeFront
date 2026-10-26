@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.11
+  version: 0.84.12
   license:
     name: UNLICENSED
 servers:
@@ -2308,7 +2308,7 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount]
+      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount]
       properties:
         date: { type: string, format: date }
         total:
@@ -2353,6 +2353,18 @@ components:
           type: integer
           minimum: 0
           description: Executions with no retained provider evidence collection attempt.
+        gateEvaluationCount:
+          type: integer
+          minimum: 0
+          description: Explicit policy/gate outcomes, including unambiguous legacy single-pair evidence.
+        gatePassedCount: { type: integer, minimum: 0 }
+        gateFailedCount: { type: integer, minimum: 0 }
+        gateCancelledCount: { type: integer, minimum: 0 }
+        gateRunningCount: { type: integer, minimum: 0 }
+        gateUnevaluatedExecutionCount:
+          type: integer
+          minimum: 0
+          description: Executions that cannot be attributed to a policy/gate outcome without inference.
     PerformanceDispatch:
       type: object
       required: [status, artifactId, workflowPath, ref, sourceRevision, auditPersistence, dispatch]
