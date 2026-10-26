@@ -785,7 +785,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
-    await page.getByLabel('Evidence collection').selectOption('unavailable')
+    await page.getByRole('combobox', { name: 'Evidence collection state', exact: true }).selectOption('unavailable')
     const executionRow = page.getByText('Provider evidence is unavailable.').locator('..')
     await expect(executionRow).toBeVisible()
     await expect(page.getByLabel('Execution outcome trend')).toContainText('2026-10-18')

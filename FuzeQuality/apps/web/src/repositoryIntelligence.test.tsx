@@ -56,7 +56,7 @@ const candidate: RepositoryFlowCandidate = {
   revision: 'revision-1',
   title: 'Checkout flow',
   confidence: 0.9,
-  evidence: ['src/checkout.ts:10'],
+  evidence: [],
   steps: [
     {
       actor: 'Customer',
@@ -71,6 +71,12 @@ const candidate: RepositoryFlowCandidate = {
   },
   status: 'proposed',
   source: 'litellm',
+  analysis: {
+    provider: 'fuzeinfra-litellm',
+    model: 'quality-analysis',
+    promptVersion: 'flow-v2',
+    schemaVersion: '2.0',
+  },
   createdAt: '2026-10-09T00:00:00.000Z',
 }
 
@@ -247,8 +253,16 @@ const integrationExecution: TestExecution = {
 
 function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifacts').mockResolvedValue([])
-  vi.spyOn(api, 'qualityArtifactsByIds').mockResolvedValue({ items: [] })
-  vi.spyOn(api, 'qualityArtifactsByIdsBatched').mockResolvedValue({ items: [] })
+  vi.spyOn(api, 'qualityArtifactsByIds').mockImplementation(async (_repositoryId, ids) => ({
+    items: [policyArtifact, gateArtifact].filter(artifact =>
+      ids.includes(artifact.id) || Boolean(artifact.logicalId && ids.includes(artifact.logicalId))
+    ),
+  }))
+  vi.spyOn(api, 'qualityArtifactsByIdsBatched').mockImplementation(async (_repositoryId, ids) => ({
+    items: [policyArtifact, gateArtifact].filter(artifact =>
+      ids.includes(artifact.id) || Boolean(artifact.logicalId && ids.includes(artifact.logicalId))
+    ),
+  }))
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
   vi.spyOn(api, 'testExecution').mockResolvedValue(loadExecution)
@@ -574,12 +588,13 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(history).not.toBeNull()
     fireEvent.click(within(history!).getByText('Review history'))
     expect(await within(history!).findByText('previous-governance-reviewer')).toBeVisible()
+    const historyRequestsBeforeReview = vi.mocked(api.policyGateReviewHistory).mock.calls.length
     fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
       target: { value: 'Confirmed the remediation against repository evidence.' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Accept recommendation' }))
     expect(await within(history!).findByText('current-governance-reviewer')).toBeVisible()
-    expect(api.policyGateReviewHistory).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(api.policyGateReviewHistory).mock.calls.length).toBeGreaterThan(historyRequestsBeforeReview)
   })
 
   it('does not restore obsolete UX-flow review history after a newer decision reloads it', async () => {
@@ -1163,7 +1178,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       page: { nextCursor: 'older-executions', hasMore: true },
     })
     vi.mocked(api.executionTrend).mockResolvedValue([
-      { date: '2026-10-01', total: 10, passed: 7, failed: 2, cancelled: 1, running: 0, passRate: 0.7, durationSampleCount: 9, averageDurationMs: 95_000, maximumDurationMs: 180_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1 },
+      { date: '2026-10-01', total: 10, passed: 7, failed: 2, cancelled: 1, running: 0, passRate: 0.7, durationSampleCount: 9, averageDurationMs: 95_000, maximumDurationMs: 180_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1, evidenceCompleteCount: 6, evidencePartialCount: 1, evidenceUnavailableCount: 2, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 1, githubRunProvenanceMissingCount: 2, postProductionVideoMissingCount: 3, terminalTimingMissingCount: 1, gateEvaluationCount: 9, gatePassedCount: 6, gateFailedCount: 2, gateCancelledCount: 1, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2, thresholdEvaluationCount: 8, thresholdPassedCount: 6, thresholdFailedCount: 2, performanceExecutionWithoutThresholdCount: 1 },
     ])
 
     render(<RepositoryIntelligence data={portfolio} />)
@@ -1178,6 +1193,10 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(trend).toHaveTextContent('1m 35s average · 3m 0s slowest · 9 timed')
     expect(trend).toHaveTextContent('3 retries · 2 passed retries')
     expect(trend).toHaveTextContent('1 recovered after failure')
+    expect(trend).toHaveTextContent('Provider evidence: 6 complete · 1 partial · 2 unavailable · 1 not collected')
+    expect(trend).toHaveTextContent('Evidence gaps: 1 invalid URLs · 2 GitHub runs missing provenance · 3 post-production runs missing video · 1 terminal runs missing timing')
+    expect(trend).toHaveTextContent('Policy gates: 6 passed · 2 failed · 1 cancelled · 0 running · 9 evaluated · 2 executions without an attributable gate outcome')
+    expect(trend).toHaveTextContent('Performance thresholds: 6 passed · 2 failed · 8 evaluated · 1 load/stress executions without threshold evidence')
     expect(api.executionTrend).toHaveBeenCalledWith(repository.id, {})
   })
 
@@ -1570,6 +1589,79 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
   })
 
+  it('blocks confirmation while exact-revision flow evidence is loading', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <FlowReviewControls
+        flow={candidate}
+        currentRevision={candidate.revision}
+        evidenceVerification="loading"
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('Verifying UX-flow evidence')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
+  it('blocks confirmation when exact-revision flow evidence verification is unavailable', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <FlowReviewControls
+        flow={candidate}
+        currentRevision={candidate.revision}
+        evidenceVerification="unavailable"
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('could not be verified')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
+  it('blocks confirmation for a legacy flow without a wireframe while keeping rejection available', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const invalid = {
+      ...candidate,
+      wireframe: { kind: 'sequence' as const, nodes: [] },
+    }
+
+    render(
+      <FlowReviewControls
+        flow={invalid}
+        currentRevision={candidate.revision}
+        knownArtifactIds={candidate.evidence}
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('no reviewable wireframe')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
+  it('blocks confirmation for a legacy LiteLLM flow without analysis provenance while keeping rejection available', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    const invalid = { ...candidate, analysis: undefined }
+
+    render(
+      <FlowReviewControls
+        flow={invalid}
+        currentRevision={candidate.revision}
+        knownArtifactIds={candidate.evidence}
+        onReview={onReview}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('no stored model, prompt, and schema provenance')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled()
+  })
+
   it('blocks confirmation for unavailable LiteLLM evidence while keeping rejection available', () => {
     const onReview = vi.fn().mockResolvedValue(undefined)
     const invalid = {
@@ -1741,6 +1833,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         model: '',
         promptVersion: '',
         schemaVersion: '',
+        analysisRisk: '',
         minimumConfidencePercent: '',
         maximumConfidencePercent: '',
       })
@@ -1757,6 +1850,7 @@ describe('RepositoryIntelligence flow inventory', () => {
           model: '',
           promptVersion: '',
           schemaVersion: '',
+          analysisRisk: '',
           minimumConfidencePercent: '',
           maximumConfidencePercent: '',
         }
@@ -1771,6 +1865,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         model: '',
         promptVersion: '',
         schemaVersion: '',
+        analysisRisk: '',
         minimumConfidencePercent: '91',
         maximumConfidencePercent: '100',
       })
@@ -1820,6 +1915,21 @@ describe('RepositoryIntelligence flow inventory', () => {
         maxConfidence: '0.9',
       })
     )
+  })
+
+  it('queries UX flows by retained LiteLLM review risk', async () => {
+    mockEvidenceApis()
+    const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    fireEvent.change(screen.getByLabelText('Analysis review risk'), {
+      target: { value: 'grounding-gaps' },
+    })
+
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      analysisRisk: 'grounding-gaps',
+    }))
   })
 
   it('shows reviewers how much repository evidence the LiteLLM prompt omitted', async () => {
@@ -2114,9 +2224,12 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
 
-    expect(await screen.findByRole('alert', {
-      name: '',
-    })).toHaveTextContent('Some exact UX flow evidence could not be loaded')
+    expect(await screen.findByText(
+      'Some exact UX flow evidence could not be loaded',
+      { exact: false },
+    )).toBeVisible()
+    expect(screen.getByText(/exact-revision UX-flow evidence could not be verified/i)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
     vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [historicalArtifact] })
     fireEvent.click(screen.getByRole('button', { name: 'Retry exact UX flow evidence' }))
 
@@ -2393,12 +2506,30 @@ describe('RepositoryIntelligence flow inventory', () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
-    const latest = acceptedDispatch(loadArtifact)
+    const latest = {
+      ...acceptedDispatch(loadArtifact),
+      executionResult: {
+        id: 'execution-result',
+        provider: 'github-actions' as const,
+        externalRunId: 'provider-run-42',
+        attempt: 2,
+        status: 'failed' as const,
+        sourceUrl: 'https://github.com/acme/app/actions/runs/42',
+        evidenceLinks: [{
+          kind: 'video' as const,
+          name: 'Playwright video',
+          url: 'https://evidence.example/run-42/video.webm',
+        }],
+        startedAt: '2026-10-22T20:01:00.000Z',
+        completedAt: '2026-10-22T20:02:00.000Z',
+      },
+    }
     const failed = {
       ...latest,
       id: '55555555-5555-4555-8555-555555555555',
       status: 'failed' as const,
       error: 'Provider unavailable',
+      executionResult: undefined,
       requestedAt: '2026-10-22T19:00:00.000Z',
       completedAt: '2026-10-22T19:00:01.000Z',
     }
@@ -2406,6 +2537,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       ...latest,
       id: '66666666-6666-4666-8666-666666666666',
       requestedBy: 'older-reviewer',
+      executionResult: undefined,
       requestedAt: '2026-10-22T18:00:00.000Z',
       completedAt: '2026-10-22T18:00:01.000Z',
     }
@@ -2422,9 +2554,21 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
 
+    expect(await screen.findByText(/Observed execution · failed · attempt 2/)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open CI run' })).toHaveAttribute(
+      'href',
+      'https://github.com/acme/app/actions/runs/42',
+    )
+    expect(screen.getByRole('link', { name: 'Open recorded video' })).toHaveAttribute(
+      'href',
+      'https://evidence.example/run-42/video.webm',
+    )
     fireEvent.click(await screen.findByText('Controlled dispatch history'))
     await waitFor(() => expect(historyRequest).toHaveBeenCalled())
     expect(await screen.findByText(/Provider unavailable/)).toBeVisible()
+    expect(screen.getAllByText(/Observed execution · failed · attempt 2/)).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Open CI run' })).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Open recorded video' })).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: 'Load more controlled dispatches' }))
     expect(await screen.findByText(/Requested by older-reviewer/)).toBeVisible()
     expect(historyRequest).toHaveBeenNthCalledWith(1, repository.id, loadArtifact.logicalId ?? loadArtifact.id, undefined)
@@ -2472,7 +2616,17 @@ describe('RepositoryIntelligence flow inventory', () => {
       logicalId: 'workflow:.github/workflows/retired-load.yml',
       sourcePath: '.github/workflows/retired-load.yml',
     }
-    const retiredDispatch = acceptedDispatch(retiredArtifact)
+    const retiredDispatch = {
+      ...acceptedDispatch(retiredArtifact),
+      executionResult: {
+        id: 'retired-execution-result',
+        provider: 'github-actions' as const,
+        externalRunId: 'provider-run-retired',
+        attempt: 1,
+        status: 'passed' as const,
+        sourceUrl: 'https://github.com/acme/app/actions/runs/retired',
+      },
+    }
     vi.mocked(api.latestTestSuiteDispatches).mockResolvedValue({ items: [retiredDispatch] })
     vi.mocked(api.testSuiteDispatchHistory).mockResolvedValue({
       items: [retiredDispatch],
@@ -2484,6 +2638,11 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(await screen.findByRole('heading', { name: 'Retired controlled workflows' })).toBeVisible()
     expect(screen.getByText('.github/workflows/retired-load.yml')).toBeVisible()
     expect(screen.getByText(/load-test · retired from current analysis/)).toBeVisible()
+    expect(screen.getByText(/Observed execution · passed · attempt 1/)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open CI run' })).toHaveAttribute(
+      'href',
+      'https://github.com/acme/app/actions/runs/retired',
+    )
     fireEvent.click(screen.getByText('Controlled dispatch history'))
     await waitFor(() => expect(api.testSuiteDispatchHistory).toHaveBeenCalledWith(
       repository.id,
@@ -2827,6 +2986,22 @@ describe('RepositoryIntelligence flow inventory', () => {
     vi.mocked(api.latestPerformanceExecutions).mockImplementation(async () => ({
       items: [evidenceRefreshed ? refreshed : incomplete],
     }))
+    const dispatch = acceptedDispatch(loadArtifact)
+    vi.mocked(api.latestTestSuiteDispatches).mockImplementation(async () => ({
+      items: [{
+        ...dispatch,
+        executionResult: {
+          id: refreshed.id,
+          provider: refreshed.provider,
+          externalRunId: refreshed.externalRunId,
+          attempt: refreshed.attempt,
+          status: refreshed.status,
+          sourceUrl: refreshed.sourceUrl,
+          evidenceLinks: evidenceRefreshed ? refreshed.evidenceLinks : [],
+          evidenceCollection: evidenceRefreshed ? refreshed.evidenceCollection : incomplete.evidenceCollection,
+        },
+      }],
+    }))
     vi.mocked(api.refreshTestExecutionEvidence).mockImplementation(async () => {
       evidenceRefreshed = true
       return refreshed
@@ -2836,6 +3011,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     const outcome = await screen.findByLabelText(`Latest execution for ${loadArtifact.title}`)
+    expect(await screen.findByText(/Evidence collection unavailable · PROVIDER_TIMEOUT/)).toBeVisible()
     fireEvent.click(within(outcome).getByRole('button', { name: 'Refresh provider evidence' }))
 
     await waitFor(() => expect(api.refreshTestExecutionEvidence).toHaveBeenCalledWith(repository.id, {
@@ -2846,6 +3022,11 @@ describe('RepositoryIntelligence flow inventory', () => {
       'https://github.com/fuze/front/actions/runs/12345/artifacts/99',
     )
     expect(within(outcome).queryByRole('button', { name: 'Refresh provider evidence' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Open recorded video' })).toHaveAttribute(
+      'href',
+      'https://github.com/fuze/front/actions/runs/12345/artifacts/99',
+    )
+    expect(api.latestTestSuiteDispatches).toHaveBeenCalledTimes(2)
   })
 
   it('reapplies active evidence filters and aggregates after provider reconciliation', async () => {
@@ -2884,7 +3065,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)
-    fireEvent.change(await screen.findByLabelText('Evidence collection'), {
+    fireEvent.change(await screen.findByLabelText('Evidence collection state'), {
       target: { value: 'unavailable' },
     })
 
@@ -3306,7 +3487,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
-    fireEvent.change(screen.getByLabelText('Evidence collection'), {
+    fireEvent.change(screen.getByLabelText('Evidence collection state'), {
       target: { value: 'not-collected' },
     })
 
@@ -3319,6 +3500,29 @@ describe('RepositoryIntelligence flow inventory', () => {
       })
       expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
         evidenceCollectionStatus: 'not-collected',
+      })
+    })
+  })
+
+  it('isolates execution history, trends, and policy-gate outcomes by provider failure code', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Evidence collection failure'), {
+      target: { value: 'PROVIDER_TIMEOUT' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT',
       })
     })
   })
@@ -3371,6 +3575,52 @@ describe('RepositoryIntelligence flow inventory', () => {
       })
       expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
         evidenceRequirement: 'post-production-video-missing',
+      })
+    })
+  })
+
+  it('isolates executions with invalid retained artifact URLs', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Required evidence'), {
+      target: { value: 'evidence-url-invalid' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'evidence-url-invalid',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'evidence-url-invalid',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'evidence-url-invalid',
+      })
+    })
+  })
+
+  it('isolates GitHub Actions executions missing auditable run provenance', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Required evidence'), {
+      target: { value: 'github-run-provenance-missing' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'github-run-provenance-missing',
+      })
+      expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'github-run-provenance-missing',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        evidenceRequirement: 'github-run-provenance-missing',
       })
     })
   })
@@ -3818,6 +4068,26 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
   })
 
+  it('blocks governance acceptance while exact-revision evidence verification is unavailable', () => {
+    const onReview = vi.fn().mockResolvedValue(undefined)
+    render(
+      <PolicyGateReviewControls
+        evaluation={governanceEvaluation}
+        currentRevision={repository.lastScanRevision}
+        evidenceArtifacts={[]}
+        evidenceVerification="unavailable"
+        onReview={onReview}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
+      target: { value: 'Verified remediation ownership.' },
+    })
+    expect(screen.getByRole('alert')).toHaveTextContent('could not be verified')
+    expect(screen.getByRole('button', { name: 'Accept recommendation' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+  })
+
   it('removes a reviewed governance finding that no longer matches the active filter', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([
@@ -3845,9 +4115,11 @@ describe('RepositoryIntelligence flow inventory', () => {
     fireEvent.change(screen.getByLabelText('Governance rationale required to accept anomaly'), {
       target: { value: 'Confirmed the proposed remediation and audit scope.' },
     })
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Accept recommendation' })
-    )
+    const acceptRecommendation = screen.getByRole('button', {
+      name: 'Accept recommendation',
+    })
+    await waitFor(() => expect(acceptRecommendation).toBeEnabled())
+    fireEvent.click(acceptRecommendation)
 
     await waitFor(() =>
       expect(screen.queryByText(governanceEvaluation.title)).not.toBeInTheDocument()
@@ -3863,6 +4135,8 @@ describe('RepositoryIntelligence flow inventory', () => {
           reviewStatus: 'proposed',
           revisionScope: 'current',
           subject: '',
+          policyArtifactId: '',
+          gateArtifactId: '',
           minimumConfidencePercent: '',
           maximumConfidencePercent: '',
         }
@@ -3876,6 +4150,8 @@ describe('RepositoryIntelligence flow inventory', () => {
         reviewStatus: '',
         revisionScope: 'current',
         subject: '',
+        policyArtifactId: '',
+        gateArtifactId: '',
         minimumConfidencePercent: '91',
         maximumConfidencePercent: '100',
       })
@@ -3888,6 +4164,8 @@ describe('RepositoryIntelligence flow inventory', () => {
         reviewStatus: '',
         revisionScope: 'current',
         subject: 'deployment',
+        policyArtifactId: '',
+        gateArtifactId: '',
         minimumConfidencePercent: '',
         maximumConfidencePercent: '',
       })
@@ -3944,6 +4222,38 @@ describe('RepositoryIntelligence flow inventory', () => {
     await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
       revision: repository.lastScanRevision,
       subject: 'authentication',
+      cursor: 'policy-page-2',
+    }))
+  })
+
+  it('traces an exact policy-gate relationship across continuation pages', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+
+    fireEvent.change(screen.getByLabelText('Policy artifact'), {
+      target: { value: ' policy-1 ' },
+    })
+    fireEvent.change(screen.getByLabelText('Gate artifact'), {
+      target: { value: ' gate-1 ' },
+    })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      policyArtifactId: 'policy-1',
+      gateArtifactId: 'gate-1',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      policyArtifactId: 'policy-1',
+      gateArtifactId: 'gate-1',
       cursor: 'policy-page-2',
     }))
   })

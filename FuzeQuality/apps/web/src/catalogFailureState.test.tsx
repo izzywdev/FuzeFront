@@ -48,6 +48,21 @@ describe('catalog failure recovery', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
 
+  it('offers standalone users a workspace reselection after access is revoked', async () => {
+    const signOut = vi.fn()
+    vi.spyOn(api, 'portfolio').mockRejectedValue(new CatalogApiError(
+      'Active tenant membership required',
+      'TENANT_FORBIDDEN',
+      403,
+    ))
+
+    render(<App onSignOut={signOut} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Workspace access unavailable')
+    fireEvent.click(screen.getByRole('button', { name: 'Choose another workspace' }))
+    expect(signOut).toHaveBeenCalledOnce()
+  })
+
   it('does not render a stale response after the portal switches tenants', async () => {
     let publishContext: ((context: { user: { id: string }; tenantId: string }) => void) | undefined
     ;(window as Window & { __FUZEFRONT__?: unknown }).__FUZEFRONT__ = {

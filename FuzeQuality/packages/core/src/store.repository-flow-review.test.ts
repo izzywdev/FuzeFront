@@ -86,6 +86,27 @@ describe('repository flow review lifecycle', () => {
     expect(matches.map(item => item.id).sort()).toEqual(['maximum', 'minimum'])
   })
 
+  it('isolates tenant-scoped LiteLLM review risks', async () => {
+    const store = new MemoryCatalogStore()
+    const analysis = {
+      provider: 'fuzeinfra-litellm' as const,
+      model: 'quality-analysis', promptVersion: 'flow-v3', schemaVersion: '1.0',
+    }
+    await store.saveRepositoryFlowCandidates([
+      { ...candidate, id: 'missing-provenance', analysis: undefined },
+      { ...candidate, id: 'bounded-prompt', analysis: { ...analysis, inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true } },
+      { ...candidate, id: 'grounding-gap', analysis: { ...analysis, grounding: { referencedArtifactCount: 2, groundedArtifactCount: 1, rejectedArtifactCount: 1, ungroundedStepCount: 1 } } },
+      { ...candidate, id: 'other-tenant-risk', tenantId: 'tenant-2', analysis: undefined },
+    ])
+
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'provenance-missing' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'missing-provenance' })])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'prompt-truncated' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'bounded-prompt' })])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { analysisRisk: 'grounding-gaps' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'grounding-gap' })])
+  })
+
   it('binds confidence filters before the stable Postgres continuation cursor', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
@@ -94,6 +115,7 @@ describe('repository flow review lifecycle', () => {
     await store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, {
       minConfidence: 0.7,
       maxConfidence: 0.9,
+      analysisRisk: 'grounding-gaps',
       after: { createdAt: candidate.createdAt, id: candidate.id },
       limit: 25,
     })
@@ -101,7 +123,11 @@ describe('repository flow review lifecycle', () => {
     const [statement, parameters] = query.mock.calls[0]
     expect(String(statement)).toContain('confidence >= $10')
     expect(String(statement)).toContain('confidence <= $11')
-    expect(String(statement)).toContain('(created_at,id) < ($12::timestamptz,$13::text)')
+    expect(String(statement)).toContain("$12='grounding-gaps'")
+    expect(String(statement)).toContain("analysis_provenance->'grounding'->>'rejectedArtifactCount'")
+    expect(String(statement)).toContain("$12='prompt-truncated'")
+    expect(String(statement)).toContain("$12='provenance-missing'")
+    expect(String(statement)).toContain('(created_at,id) < ($13::timestamptz,$14::text)')
     expect(parameters).toEqual([
       candidate.repositoryId,
       candidate.tenantId,
@@ -114,6 +140,7 @@ describe('repository flow review lifecycle', () => {
       null,
       0.7,
       0.9,
+      'grounding-gaps',
       candidate.createdAt,
       candidate.id,
       25,

@@ -587,6 +587,8 @@ SPINE_PREFIXES = {
     "cns": "FuzeFront",
     "ckd": "FuzeFront",
     "cvh": "FuzeFront",
+    # event envelope v2 eventId (data-consistency standard §3) — see registry.ts.
+    "evt": "FuzeFront",
 }
 
 TS_PREFIX_RE = re.compile(r"^\s*(\w+):\s*'([a-z][a-z_]*)',", re.MULTILINE)

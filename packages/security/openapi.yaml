@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 1.3.0
+  version: 1.4.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -49,11 +49,14 @@ info:
     the product's BACKEND server-to-server (`POST
     /v1/security/broker/token-exchange`), exactly mirroring the existing
     `social/callback` → `session/exchange` code shape. The redirect-URI
-    allowlist enforcement, and the `BrokerClient` registration surface itself,
-    are contract-frozen here but implemented as a follow-up (#238) — see the
-    `broker` tag description. This is a SEPARATE allowlist from the social
-    broker's own `redirectTo` return-origin allowlist (#352), which governs
-    FuzeFront's first-party social handshake, not this third-party handoff.
+    allowlist enforcement is implemented (`backend/security/src/routes/
+    security.ts` + `services/brokerClients.ts`, registry sourced from
+    `BROKER_CLIENTS_JSON`); the `BrokerClient` registration surface itself
+    (a public write/registration endpoint) remains OUT of this contract
+    slice by design — see the `broker` tag description. This is a SEPARATE
+    allowlist from the social broker's own `redirectTo` return-origin
+    allowlist (#352), which governs FuzeFront's first-party social handshake,
+    not this third-party handoff.
 
 
     ## Fail-closed
@@ -546,6 +549,68 @@ paths:
           $ref: '#/components/responses/NotFound'
       x-pagination: exempt
       x-pagination-reason: Singleton mutation; no collection.
+  /v1/security/sessions/validate:
+    post:
+      tags: [sessions]
+      summary: Validate that a session is still active (service-to-service)
+      operationId: validateSession
+      description: >-
+        Answers one question for a downstream service: *has this session been
+        revoked or expired?* A FuzeFront session token stays cryptographically
+        valid until its `exp` (24h) even after the user logs out or revokes the
+        device, and only the session store knows. A service that has already
+        verified a session token's signature calls this with the token's
+        `userId` and `sessionId` claims to close that gap.
+
+
+        **Caller.** A machine (service-to-service) caller only: the
+        `Authorization` bearer MUST be a `fuze-workload` token carrying the
+        `sessions:validate` scope (see `@izzywdev/fuzefront-service-auth`). A
+        user session token is not accepted here, so a browser can never use this
+        endpoint to probe sessions.
+
+
+        **Answer.** `{ active: true }` only when the session exists, has not
+        expired, AND belongs to the supplied `userId`. Every other case, an
+        unknown id, a revoked or expired session, or a session owned by a
+        different user, is the same `200 { active: false }`, with no reason
+        given, so the endpoint cannot be used to learn which of the two
+        identifiers was wrong. This operation does NOT verify any token
+        signature; the caller must already have done that.
+
+
+        **Fail-closed.** A store outage is `503`, never `{ active: true }` and
+        never `{ active: false }`. A consumer MUST treat `503` as a retryable
+        service condition, not as a revoked session: refusing every user because
+        the store blinked is an outage, not a revocation. A consumer MUST treat
+        anything other than a well-formed `{ active: true }` as inactive.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionValidateRequest'
+      responses:
+        '200':
+          description: >-
+            The session's state. `active` is `false` for an unknown, revoked or
+            expired session and for a user mismatch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionValidation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+      x-pagination: exempt
+      x-pagination-reason: Singleton lookup; returns one boolean, no collection.
   # ─────────────────────── Account: social linking ──────────────────────────
   /v1/security/social/{provider}/link:
     post:
@@ -3141,7 +3206,7 @@ components:
             True when the user holds at least one unused recovery code, so
             `POST /mfa/verify` with `recoveryCode` can succeed. Offer the
             "use a recovery code" choice ONLY when this is `true`; treat `false`
-            or ABSENT (a server predating contract 1.3.0) as not available
+            or ABSENT (a server predating contract 1.4.0) as not available
             (fail-closed). A snapshot at challenge time: a code used or
             regenerated elsewhere afterwards is still rejected with
             `401 RECOVERY_CODE_INVALID`. Carries no count, so the pre-auth
@@ -4275,12 +4340,12 @@ components:
     MfaFactorVerifyRequest:
       type: object
       description: >-
-        Factor-code proof — the pre-1.3.0 `MfaVerifyRequest` shape. Unchanged
+        Factor-code proof — the pre-1.4.0 `MfaVerifyRequest` shape. Unchanged
         except that it may not also carry `recoveryCode` (a key with no meaning
-        before 1.3.0), so a mixed body is rejected rather than silently ignoring
+        before 1.4.0), so a mixed body is rejected rather than silently ignoring
         the recovery code. Deliberately NOT closed with
         `additionalProperties: false`, which would reject other extra keys a
-        1.2.0 server accepted.
+        1.3.1 server accepted.
       properties:
         challengeId:
           type: string
@@ -4437,6 +4502,39 @@ components:
           type: boolean
           description: True for the session making this request.
       required: [id, current]
+    SessionValidateRequest:
+      type: object
+      description: >-
+        The session to check, taken verbatim from the `userId` and `sessionId`
+        claims of an already-verified FuzeFront session token. Both identify
+        EXISTING entities (references, not identity being created), and both are
+        required: the session only counts as active for the user it belongs to.
+      additionalProperties: false
+      properties:
+        userId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The `userId` claim of the session token.
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The `sessionId` claim of the session token.
+      required: [userId, sessionId]
+    SessionValidation:
+      type: object
+      description: >-
+        Whether the session is still active. A consumer MUST treat anything
+        other than a well-formed `{ "active": true }` as inactive.
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+          description: >-
+            True only if the session exists, has not expired, and belongs to the
+            supplied `userId`. False in every other case, with no reason given.
+      required: [active]
     # ── Account: social linking / connections shapes ──
     SocialLinkStart:
       type: object

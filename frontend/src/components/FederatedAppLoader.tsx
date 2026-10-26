@@ -3,7 +3,7 @@ import type { App } from '@fuzefront/app-registry-client'
 import { useCurrentUser, useOrganizations } from '../lib/shared'
 import { getActiveAuthToken } from '../lib/accounts'
 import { useAppRegistry } from '../platform/appRegistry'
-import { resolveFederatedTenantId } from '../platform/tenantContext'
+import { createFederatedTenantResolver, resolveFederatedTenantId } from '../platform/tenantContext'
 import { Button } from '@fuzefront/design-system'
 import {
   loadFederatedAppFromManifest,
@@ -14,6 +14,18 @@ import { FederatedAppErrorBoundary } from './FederatedAppErrorBoundary'
 interface FederatedAppLoaderProps {
   /** App slug (the manifest's immutable id, used in /app/:slug). */
   appId: string
+}
+
+/**
+ * Host-owned identity resolvers passed to every federated React remote.
+ *
+ * The tenant resolver is intentionally separate from the bearer token: a
+ * token identifies the account, while the selected Personal/organization
+ * workspace determines the tenant-scoped authorization boundary.
+ */
+export interface FederatedAppSecurityProps {
+  getToken?: () => string | null
+  getTenantId?: () => string | null
 }
 
 const LoadingSpinner = () => (
@@ -61,7 +73,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   const { organizations, activeOrganizationId, personalTenantId } = useOrganizations()
   const tenantId = resolveFederatedTenantId({ activeOrganizationId, organizations, personalTenantId })
   const [FederatedComponent, setFederatedComponent] =
-    useState<React.ComponentType<{ getToken?: () => string | null }> | null>(null)
+    useState<React.ComponentType<FederatedAppSecurityProps> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
@@ -242,7 +254,10 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   return (
     <FederatedAppErrorBoundary appName={app?.manifest.name} onRetry={handleRetry}>
       <Suspense fallback={<LoadingSpinner />}>
-        <FederatedComponent getToken={getActiveAuthToken} />
+        <FederatedComponent
+          getToken={getActiveAuthToken}
+          getTenantId={createFederatedTenantResolver(tenantId)}
+        />
       </Suspense>
     </FederatedAppErrorBoundary>
   )

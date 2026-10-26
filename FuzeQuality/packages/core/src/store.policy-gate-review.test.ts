@@ -129,6 +129,22 @@ describe('policy-gate review lifecycle', () => {
     expect(matches.map(item => item.id).sort()).toEqual(['maximum', 'minimum'])
   })
 
+  it('filters exact policy and gate relationships without crossing tenants', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'guarded-policy' as const, severity: 'low' as const, detail: 'A gate matches.', confidence: 0.9, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, remediationAction: 'align-policy-gate' as const, recommendation: 'Keep aligned.', reviewStatus: 'proposed' as const, createdAt: '2026-10-09T00:00:00.000Z' }
+    await store.savePolicyGateEvaluations([
+      { ...base, id: 'target', title: 'Target pair', policyArtifactIds: ['policy-target'], gateArtifactIds: ['gate-target'] },
+      { ...base, id: 'other-policy', title: 'Other policy', policyArtifactIds: ['policy-other'], gateArtifactIds: ['gate-target'] },
+      { ...base, id: 'other-gate', title: 'Other gate', policyArtifactIds: ['policy-target'], gateArtifactIds: ['gate-other'] },
+      { ...base, id: 'other-tenant', tenantId: 'tenant-2', title: 'Other tenant', policyArtifactIds: ['policy-target'], gateArtifactIds: ['gate-target'] },
+    ])
+
+    await expect(store.policyGateEvaluations('repo-1', 'tenant-1', {
+      policyArtifactId: 'policy-target',
+      gateArtifactId: 'gate-target',
+    })).resolves.toEqual([expect.objectContaining({ id: 'target' })])
+  })
+
   it('binds policy confidence before the stable Postgres continuation cursor', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const store = new PostgresCatalogStore('postgres://unused')
@@ -139,6 +155,8 @@ describe('policy-gate review lifecycle', () => {
       minConfidence: 0.7,
       maxConfidence: 0.9,
       subject: 'Deployment',
+      policyArtifactId: 'policy-1',
+      gateArtifactId: 'gate-1',
       after: { createdAt: '2026-10-09T00:00:00.000Z', id: 'evaluation-1' },
       limit: 25,
     })
@@ -150,9 +168,13 @@ describe('policy-gate review lifecycle', () => {
     expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(scope->'subjects', '[]'::jsonb))")
     expect(String(statement)).toContain('lower(scoped_subject.value)=lower($13)')
     expect(String(statement)).toContain('remediation_action=$14')
+    expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(policy_artifact_ids, '[]'::jsonb))")
+    expect(String(statement)).toContain('policy_artifact.value=$15')
+    expect(String(statement)).toContain("jsonb_array_elements_text(COALESCE(gate_artifact_ids, '[]'::jsonb))")
+    expect(String(statement)).toContain('gate_artifact.value=$16')
     expect(parameters).toEqual([
       'repo-1', 'tenant-1', null, null, null, null, null,
-      0.7, 0.9, '2026-10-09T00:00:00.000Z', 'evaluation-1', 25, 'Deployment', 'build-gate',
+      0.7, 0.9, '2026-10-09T00:00:00.000Z', 'evaluation-1', 25, 'Deployment', 'build-gate', 'policy-1', 'gate-1',
     ])
   })
 

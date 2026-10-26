@@ -25,10 +25,31 @@ describe('repository flow inventory filter', () => {
     expect(filterRepositoryFlowCandidates([candidate()], filter)).toEqual([])
   })
 
+  it('isolates review risks retained with LiteLLM analysis provenance', () => {
+    const groundingGap = candidate({
+      id: 'grounding-gap', source: 'litellm', analysis: {
+        provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v3', schemaVersion: '1.0',
+        grounding: { referencedArtifactCount: 2, groundedArtifactCount: 1, rejectedArtifactCount: 1, ungroundedStepCount: 1 },
+      },
+    })
+    const boundedPrompt = candidate({
+      id: 'bounded-prompt', source: 'litellm', analysis: {
+        provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v3', schemaVersion: '1.0',
+        inputArtifactCount: 140, promptArtifactCount: 100, promptTruncated: true,
+      },
+    })
+    const missingProvenance = candidate({ id: 'missing-provenance', source: 'litellm', analysis: undefined })
+    const candidates = [candidate(), groundingGap, boundedPrompt, missingProvenance]
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'grounding-gaps' }))).toEqual([groundingGap])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'prompt-truncated' }))).toEqual([boundedPrompt])
+    expect(filterRepositoryFlowCandidates(candidates, repositoryFlowFilterSchema.parse({ analysisRisk: 'provenance-missing' }))).toEqual([missingProvenance])
+  })
+
   it('rejects unknown query keys and invalid filter values', () => {
     expect(repositoryFlowFilterSchema.safeParse({ source: 'direct-llm' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ status: 'published' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ model: '' }).success).toBe(false)
+    expect(repositoryFlowFilterSchema.safeParse({ analysisRisk: 'low-confidence' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ unexpected: 'value' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ minConfidence: -0.01 }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ maxConfidence: 1.01 }).success).toBe(false)

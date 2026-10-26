@@ -19,6 +19,7 @@ describe('FlowInventoryFilters', () => {
     const onModelChange = vi.fn()
     const onPromptVersionChange = vi.fn()
     const onSchemaVersionChange = vi.fn()
+    const onAnalysisRiskChange = vi.fn()
     const onMinimumConfidencePercentChange = vi.fn()
     const onMaximumConfidencePercentChange = vi.fn()
     render(<FlowInventoryFilters
@@ -30,6 +31,7 @@ describe('FlowInventoryFilters', () => {
       model=""
       promptVersion=""
       schemaVersion=""
+      analysisRisk=""
       minimumConfidencePercent=""
       maximumConfidencePercent=""
       invalidConfidenceRange={false}
@@ -40,6 +42,7 @@ describe('FlowInventoryFilters', () => {
       onModelChange={onModelChange}
       onPromptVersionChange={onPromptVersionChange}
       onSchemaVersionChange={onSchemaVersionChange}
+      onAnalysisRiskChange={onAnalysisRiskChange}
       onMinimumConfidencePercentChange={onMinimumConfidencePercentChange}
       onMaximumConfidencePercentChange={onMaximumConfidencePercentChange}
     />)
@@ -51,6 +54,7 @@ describe('FlowInventoryFilters', () => {
     fireEvent.change(screen.getByLabelText('Analysis model'), { target: { value: 'quality-analysis' } })
     fireEvent.change(screen.getByLabelText('Prompt version'), { target: { value: 'flow-v2' } })
     fireEvent.change(screen.getByLabelText('Schema version'), { target: { value: '2.0' } })
+    fireEvent.change(screen.getByLabelText('Analysis review risk'), { target: { value: 'grounding-gaps' } })
     fireEvent.change(screen.getByLabelText('Minimum confidence (%)'), { target: { value: '70' } })
     fireEvent.change(screen.getByLabelText('Maximum confidence (%)'), { target: { value: '90' } })
 
@@ -61,6 +65,7 @@ describe('FlowInventoryFilters', () => {
     expect(onModelChange).toHaveBeenCalledWith('quality-analysis')
     expect(onPromptVersionChange).toHaveBeenCalledWith('flow-v2')
     expect(onSchemaVersionChange).toHaveBeenCalledWith('2.0')
+    expect(onAnalysisRiskChange).toHaveBeenCalledWith('grounding-gaps')
     expect(onMinimumConfidencePercentChange).toHaveBeenCalledWith('70')
     expect(onMaximumConfidencePercentChange).toHaveBeenCalledWith('90')
   })

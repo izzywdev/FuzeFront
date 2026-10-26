@@ -453,6 +453,11 @@ export class MockIdentityProvider implements IdentityProvider {
     }
   }
 
+  async isSessionActive(userId: string, sessionId: string): Promise<boolean> {
+    // Mirrors the real provider: active only for the user the session belongs to.
+    return this.sessions.get(sessionId) === userId
+  }
+
   // ── Sign-in connections ──
   private links = new Map<string, Set<string>>() // userId -> providers
 

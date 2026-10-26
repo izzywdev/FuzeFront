@@ -43,6 +43,9 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(dockerfile).toContain(
       'ln -s /workspace/FuzeQuality/node_modules /workspace/node_modules'
     )
+    expect(dockerfile).toContain(
+      'COPY .github/workflows/fuzequality-android-apk.yml /workspace/.github/workflows/fuzequality-android-apk.yml'
+    )
   })
 
   it('renders the prerequisite ConfigMaps even while the registration Job is disabled', () => {
@@ -191,7 +194,8 @@ describe('FuzeQuality Helm registration assets', () => {
     )
     expect(workflow).not.toContain("|| github.event_name == 'workflow_dispatch' }}")
     expect(workflow).toContain('EXPECTED_FINGERPRINT=$(node -p')
-    expect(workflow).toContain('apksigner" verify --print-certs "$SIGNED"')
+    expect(workflow).toContain('apksigner" verify --print-certs "$SIGNED" 2>&1')
+    expect(workflow).toContain("sed -nE 's/^.*certificate SHA-256 digest:[[:space:]]*//p'")
     expect(workflow).toContain('test "$ACTUAL_FINGERPRINT" = "$EXPECTED_FINGERPRINT"')
     expect(workflow).toMatch(/permissions:\n  contents: read/)
     expect(workflow).toMatch(/build-apk:[\s\S]*?permissions:\n      contents: read/)

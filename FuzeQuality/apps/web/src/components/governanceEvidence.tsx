@@ -38,7 +38,12 @@ export function policyGateArtifactReferenceProblems(
   }
   for (const passage of evaluation.evidencePassages ?? []) {
     const artifact = artifactsById.get(passage.artifactId)
-    if (!artifact || artifact.sourcePath !== passage.sourcePath) problems.push(passage.artifactId)
+    const expectedKind = passage.signal === 'gate' ? 'gate' : 'policy'
+    if (
+      !artifact ||
+      artifact.sourcePath !== passage.sourcePath ||
+      artifact.kind !== expectedKind
+    ) problems.push(passage.artifactId)
   }
   return [...new Set(problems)]
 }
