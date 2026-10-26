@@ -85,10 +85,26 @@ claim(
 claim(
   'frames-first covered/blocked counts in CLAUDE.md match the live gate',
   () => {
-    const out = execFileSync('node', ['scripts/check-frames-first.mjs', '--report-uncovered'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    // --report-uncovered is documented and implemented as "never fails": that branch
+    // returns 0 before any gating logic runs, so covered-but-unapproved flows cannot
+    // make it exit non-zero. A throw therefore means the gate itself broke, not that
+    // this PR is unapproved — so keep the numbers if they were still printed, and
+    // surface stderr rather than failing with a bare "Command failed".
+    let out
+    try {
+      out = execFileSync('node', ['scripts/check-frames-first.mjs', '--report-uncovered'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    } catch (e) {
+      out = e.stdout || ''
+      if (!/covered \d+, blocked \d+/.test(out)) {
+        const why = String(e.stderr || '').trim() || e.message
+        throw new Error(
+          `scripts/check-frames-first.mjs --report-uncovered failed (exit ${e.status}): ${why}`,
+        )
+      }
+    }
     const m = out.replace(/\x1b\[[0-9;]*m/g, '').match(/covered (\d+), blocked (\d+)/)
     if (!m) throw new Error('could not parse "covered N, blocked N" from the gate output')
     const [, covered, blocked] = m
