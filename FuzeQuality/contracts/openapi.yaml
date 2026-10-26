@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.18
+  version: 0.84.19
   license:
     name: UNLICENSED
 servers:
@@ -603,6 +603,10 @@ paths:
           in: query
           description: Exact case-insensitive policy or gate subject retained with the finding.
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: sourcePath
+          in: query
+          description: Exact repository-relative policy or gate source path retained with the finding.
+          schema: { type: string, minLength: 1, maxLength: 1000 }
         - name: policyArtifactId
           in: query
           description: Exact policy artifact or logical identifier participating in the relationship.
@@ -704,6 +708,10 @@ paths:
           in: query
           description: Exact case-insensitive policy or gate subject retained with the finding.
           schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: sourcePath
+          in: query
+          description: Exact repository-relative policy or gate source path retained with the finding.
+          schema: { type: string, minLength: 1, maxLength: 1000 }
         - name: policyArtifactId
           in: query
           description: Exact policy artifact or logical identifier participating in the relationship.

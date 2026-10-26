@@ -83,6 +83,7 @@ export type PolicyGateEvaluationQuery = {
   reviewStatus?: PolicyGateEvaluation['reviewStatus']
   revision?: string
   subject?: string
+  sourcePath?: string
   policyArtifactId?: string
   gateArtifactId?: string
   minConfidence?: number
@@ -618,6 +619,7 @@ export class MemoryCatalogStore implements CatalogStore {
         (!query.reviewStatus || item.reviewStatus === query.reviewStatus) &&
         (!query.revision || item.revision === query.revision) &&
         (!normalizedSubject || item.scope.subjects.some(subject => subject.toLowerCase() === normalizedSubject)) &&
+        (!query.sourcePath || item.scope.sourcePaths.includes(query.sourcePath)) &&
         (!query.policyArtifactId || item.policyArtifactIds.includes(query.policyArtifactId)) &&
         (!query.gateArtifactId || item.gateArtifactIds.includes(query.gateArtifactId)) &&
         (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
@@ -1560,9 +1562,13 @@ export class PostgresCatalogStore implements CatalogStore {
            SELECT 1 FROM jsonb_array_elements_text(COALESCE(gate_artifact_ids, '[]'::jsonb)) AS gate_artifact(value)
            WHERE gate_artifact.value=$16
          ))
+         AND ($17::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(scope->'sourcePaths', '[]'::jsonb)) AS source_path(value)
+           WHERE source_path.value=$17
+         ))
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($12::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null],
+      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.sourcePath ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], remediationAction: row.remediation_action, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }

@@ -4135,6 +4135,7 @@ describe('RepositoryIntelligence flow inventory', () => {
           reviewStatus: 'proposed',
           revisionScope: 'current',
           subject: '',
+          sourcePath: '',
           policyArtifactId: '',
           gateArtifactId: '',
           minimumConfidencePercent: '',
@@ -4150,6 +4151,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         reviewStatus: '',
         revisionScope: 'current',
         subject: '',
+        sourcePath: '',
         policyArtifactId: '',
         gateArtifactId: '',
         minimumConfidencePercent: '91',
@@ -4164,6 +4166,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         reviewStatus: '',
         revisionScope: 'current',
         subject: 'deployment',
+        sourcePath: '',
         policyArtifactId: '',
         gateArtifactId: '',
         minimumConfidencePercent: '',
@@ -4224,6 +4227,59 @@ describe('RepositoryIntelligence flow inventory', () => {
       subject: 'authentication',
       cursor: 'policy-page-2',
     }))
+  })
+
+  it('filters governance by exact repository source path and retains it during continuation', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+
+    fireEvent.change(screen.getByLabelText('Governance source path'), {
+      target: { value: ' governance/auth.md ' },
+    })
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      sourcePath: 'governance/auth.md',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    await waitFor(() => expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(repository.id, {
+      revision: repository.lastScanRevision,
+      sourcePath: 'governance/auth.md',
+      cursor: 'policy-page-2',
+    }))
+    expect(policyGateEvaluationMatchesInventory(governanceEvaluation, [repository], {
+      kind: '',
+      remediationAction: '',
+      severity: '',
+      reviewStatus: '',
+      revisionScope: 'current',
+      subject: '',
+      sourcePath: 'governance/auth.md',
+      policyArtifactId: '',
+      gateArtifactId: '',
+      minimumConfidencePercent: '',
+      maximumConfidencePercent: '',
+    })).toBe(true)
+    expect(policyGateEvaluationMatchesInventory(governanceEvaluation, [repository], {
+      kind: '',
+      remediationAction: '',
+      severity: '',
+      reviewStatus: '',
+      revisionScope: 'current',
+      subject: '',
+      sourcePath: 'governance/release.md',
+      policyArtifactId: '',
+      gateArtifactId: '',
+      minimumConfidencePercent: '',
+      maximumConfidencePercent: '',
+    })).toBe(false)
   })
 
   it('traces an exact policy-gate relationship across continuation pages', async () => {

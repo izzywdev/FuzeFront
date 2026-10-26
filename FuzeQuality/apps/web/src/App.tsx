@@ -3550,6 +3550,7 @@ type PolicyGateInventorySelection = {
   reviewStatus: PolicyGateEvaluation['reviewStatus'] | ''
   revisionScope: FlowRevisionScope
   subject: string
+  sourcePath: string
   policyArtifactId: string
   gateArtifactId: string
   minimumConfidencePercent: string
@@ -3737,6 +3738,7 @@ export function policyGateEvaluationMatchesInventory(
     )
   )
     return false
+  if (selection.sourcePath && !evaluation.scope.sourcePaths.includes(selection.sourcePath)) return false
   if (selection.policyArtifactId && !evaluation.policyArtifactIds.includes(selection.policyArtifactId)) return false
   if (selection.gateArtifactId && !evaluation.gateArtifactIds.includes(selection.gateArtifactId)) return false
   if (selection.minimumConfidencePercent !== '' && evaluation.confidence < Number(selection.minimumConfidencePercent) / 100) return false
@@ -3979,6 +3981,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateRevisionScope, setPolicyGateRevisionScope] =
     useState<FlowRevisionScope>('current')
   const [policyGateSubject, setPolicyGateSubject] = useState('')
+  const [policyGateSourcePath, setPolicyGateSourcePath] = useState('')
   const [policyGatePolicyArtifactId, setPolicyGatePolicyArtifactId] = useState('')
   const [policyGateGateArtifactId, setPolicyGateGateArtifactId] = useState('')
   const [policyGateMinimumConfidencePercent, setPolicyGateMinimumConfidencePercent] = useState('')
@@ -3995,6 +3998,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     reviewStatus: policyGateReviewStatus,
     revisionScope: policyGateRevisionScope,
     subject: policyGateSubject.trim(),
+    sourcePath: policyGateSourcePath.trim(),
     policyArtifactId: policyGatePolicyArtifactId.trim(),
     gateArtifactId: policyGateGateArtifactId.trim(),
     minimumConfidencePercent: policyGateMinimumConfidencePercent,
@@ -4427,6 +4431,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         ? repository.lastScanRevision ?? ''
                         : '',
                     subject: policyGateSubject.trim(),
+                    sourcePath: policyGateSourcePath.trim(),
                     policyArtifactId: policyGatePolicyArtifactId.trim(),
                     gateArtifactId: policyGateGateArtifactId.trim(),
                     minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
@@ -4492,6 +4497,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     policyGateReviewStatus,
     policyGateSeverity,
     policyGateSubject,
+    policyGateSourcePath,
     policyGatePolicyArtifactId,
     policyGateGateArtifactId,
     policyGateMinimumConfidencePercent,
@@ -5142,6 +5148,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             reviewStatus: policyGateReviewStatus,
             revision: policyGateRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
             subject: policyGateSubject.trim(),
+            sourcePath: policyGateSourcePath.trim(),
             policyArtifactId: policyGatePolicyArtifactId.trim(),
             gateArtifactId: policyGateGateArtifactId.trim(),
             minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
@@ -5238,6 +5245,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       policyGateReviewStatus,
       policyGateRevisionScope,
       policyGateSubject,
+      policyGateSourcePath,
       policyGatePolicyArtifactId,
       policyGateGateArtifactId,
       policyGateMinimumConfidencePercent,
@@ -5586,6 +5594,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 maxLength={200}
                 placeholder="authentication"
                 onChange={event => setPolicyGateSubject(event.target.value)}
+              />
+            </label>
+            <label>
+              Governance source path
+              <input
+                value={policyGateSourcePath}
+                maxLength={1000}
+                placeholder="governance/deployment.md"
+                onChange={event => setPolicyGateSourcePath(event.target.value)}
               />
             </label>
             <label>

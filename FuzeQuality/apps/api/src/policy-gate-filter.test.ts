@@ -31,7 +31,7 @@ const evaluation = (
 })
 
 describe('policy-gate inventory filter', () => {
-  it('filters anomaly, remediation, severity, review status, exact revision, subject, and confidence together', () => {
+  it('filters anomaly, remediation, severity, review status, exact revision, subject, source path, and confidence together', () => {
     const evaluations = [
       evaluation(),
       evaluation({
@@ -61,6 +61,7 @@ describe('policy-gate inventory filter', () => {
       reviewStatus: 'accepted',
       revision: 'def',
       subject: 'DEPLOYMENT',
+      sourcePath: 'governance/deployment.md',
       policyArtifactId: 'policy-2',
       gateArtifactId: 'gate-2',
       minConfidence: '0.8',
@@ -95,6 +96,8 @@ describe('policy-gate inventory filter', () => {
     expect(policyGateFilterSchema.safeParse({ minConfidence: -0.01 }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ maxConfidence: 1.01 }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ subject: '' }).success).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ sourcePath: '' }).success).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ sourcePath: 'x'.repeat(1001) }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ policyArtifactId: '' }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ gateArtifactId: 'x'.repeat(501) }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ subject: 'x'.repeat(201) }).success).toBe(false)
@@ -110,6 +113,12 @@ describe('policy-gate inventory filter', () => {
   it('requires an exact case-insensitive subject match', () => {
     expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ subject: 'DEPLOYMENT' }))).toHaveLength(1)
     expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ subject: 'deploy' }))).toEqual([])
+  })
+
+  it('requires an exact repository-relative source path match', () => {
+    expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ sourcePath: 'governance/deployment.md' }))).toHaveLength(1)
+    expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ sourcePath: 'deployment.md' }))).toEqual([])
+    expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ sourcePath: 'Governance/deployment.md' }))).toEqual([])
   })
 
   it('defaults bounded pagination and accepts an opaque continuation cursor', () => {

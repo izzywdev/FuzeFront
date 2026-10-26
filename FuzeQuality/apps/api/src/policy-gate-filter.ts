@@ -18,6 +18,7 @@ export const policyGateFilterSchema = z
     remediationAction: z.enum(['build-gate', 'build-policy', 'disambiguate-policy', 'align-policy-gate']).optional(),
     revision: z.string().trim().min(1).max(500).optional(),
     subject: z.string().trim().min(1).max(200).optional(),
+    sourcePath: z.string().trim().min(1).max(1000).optional(),
     policyArtifactId: z.string().trim().min(1).max(500).optional(),
     gateArtifactId: z.string().trim().min(1).max(500).optional(),
     minConfidence: z.coerce.number().min(0).max(1).optional(),
@@ -45,6 +46,7 @@ export function filterPolicyGateEvaluations(
         evaluation.reviewStatus === filter.reviewStatus) &&
       (!filter.revision || evaluation.revision === filter.revision) &&
       (!normalizedSubject || evaluation.scope.subjects.some(subject => subject.toLowerCase() === normalizedSubject)) &&
+      (!filter.sourcePath || evaluation.scope.sourcePaths.includes(filter.sourcePath)) &&
       (!filter.policyArtifactId || evaluation.policyArtifactIds.includes(filter.policyArtifactId)) &&
       (!filter.gateArtifactId || evaluation.gateArtifactIds.includes(filter.gateArtifactId)) &&
       (filter.minConfidence === undefined || evaluation.confidence >= filter.minConfidence) &&
