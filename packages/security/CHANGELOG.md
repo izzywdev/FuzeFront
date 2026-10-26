@@ -1,5 +1,35 @@
 # Changelog — @fuzefront/security-client
 
+## 1.3.0 — Session validity check for downstream services (additive, unreleased)
+
+`info.version` 1.2.0 -> 1.3.0, `SECURITY_CONTRACT_VERSION` 1.2.0 -> 1.3.0,
+package `version` 1.2.0 -> 1.3.0. MINOR — adds one operation and two schemas.
+Existing operations and response shapes are unchanged.
+
+### Added
+
+- `POST /v1/security/sessions/validate` (`validateSession`), service-to-service
+  only: the bearer must be a `fuze-workload` token with the `sessions:validate`
+  scope. Body `SessionValidateRequest { userId, sessionId }` (both required,
+  `additionalProperties: false`); response `SessionValidation { active }`.
+- `active` is `true` only when the session exists, is unexpired, and belongs to
+  the supplied `userId`. Unknown, revoked, expired and user-mismatch are all the
+  same `200 { active: false }` with no reason, so the endpoint is not an oracle
+  for which identifier was wrong. A store outage is `503`, never a boolean.
+
+### Why
+
+A FuzeFront session token stays cryptographically valid until `exp` (24h) after
+the user logs out or revokes the device. `@izzywdev/fuzefront-auth` 0.4.0 (Node)
+and `fuzefront-auth` 0.2.0 (Python) now refuse a `legacy-hs256` token that names
+a session unless the consumer supplies a `sessionValidator`. This is the
+endpoint such a validator calls. Contract + generated client only; the backend
+handler and the consumer wiring fan out after this freeze.
+
+### Migration
+
+None. Additive. A consumer that does not call the new operation is unaffected.
+
 ## 1.2.0 — Tenant workspace discovery (additive, unreleased)
 
 `info.version` 1.1.0 -> 1.2.0, `SECURITY_CONTRACT_VERSION` 1.1.0 -> 1.2.0,

@@ -1190,6 +1190,85 @@ router.delete('/sessions/:id', async (req: Request, res: Response) => {
   }
 })
 
+/** Scope a service's workload token must carry to ask whether a session is live. */
+const SESSION_VALIDATE_SCOPE = 'sessions:validate'
+const SESSION_VALIDATE_FIELDS = ['userId', 'sessionId'] as const
+const SESSION_VALIDATE_MAX_LEN = 128
+
+/**
+ * POST /v1/security/sessions/validate — is this session still active?
+ * (service-to-service; operationId `validateSession`)
+ *
+ * For a service that has ALREADY verified a session token's signature and needs
+ * the one thing a signature cannot say: has the session been revoked or expired
+ * since. Machine callers only: the bearer must be a `fuze-workload` token with
+ * the `sessions:validate` scope, so a browser cannot use this to probe sessions.
+ *
+ * `200 { active }` is the whole answer. Unknown, revoked, expired, malformed and
+ * wrong-user are all the same `{ active: false }` with no reason given. A failure
+ * to read the session store is 503, never a boolean: an outage is neither
+ * "active" nor "revoked", and the caller must be able to tell them apart.
+ */
+router.post('/sessions/validate', async (req: Request, res: Response) => {
+  const serviceToken = bearer(req)
+  if (!serviceToken) {
+    return void res.status(401).json({ error: 'Service bearer token is required', code: 'NO_TOKEN' })
+  }
+
+  // Authenticate the CALLER. Any failure here, including the provider fallback
+  // inside introspectAnyToken throwing, is a credential problem (a real workload
+  // token is verified locally and never reaches the provider), so it is a 401.
+  let caller: Awaited<ReturnType<typeof introspectAnyToken>>
+  try {
+    caller = await introspectAnyToken(serviceToken)
+  } catch {
+    return void res.status(401).json({ error: 'A Fuze workload token is required', code: 'NOT_ACTIVE' })
+  }
+  if (!caller.active || !caller.subject || (caller as any).tokenKind !== 'fuze-workload') {
+    return void res.status(401).json({ error: 'A Fuze workload token is required', code: 'NOT_ACTIVE' })
+  }
+  if (!isSubset([SESSION_VALIDATE_SCOPE], caller.scope)) {
+    return void res
+      .status(403)
+      .json({ error: `Missing required scope: ${SESSION_VALIDATE_SCOPE}`, code: 'FORBIDDEN' })
+  }
+
+  try {
+    // Strict body, matching the contract's `additionalProperties: false`.
+    const body = req.body
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new InvalidInputError('userId and sessionId are required')
+    }
+    for (const key of Object.keys(body)) {
+      if (!(SESSION_VALIDATE_FIELDS as readonly string[]).includes(key)) {
+        throw new InvalidInputError(`unexpected property: ${key}`)
+      }
+    }
+    for (const key of SESSION_VALIDATE_FIELDS) {
+      const v = body[key]
+      if (typeof v !== 'string' || v.length === 0 || v.length > SESSION_VALIDATE_MAX_LEN) {
+        throw new InvalidInputError(`${key} is required (1-${SESSION_VALIDATE_MAX_LEN} characters)`)
+      }
+    }
+  } catch (err) {
+    return void sendError(res, err)
+  }
+
+  try {
+    const active = await getIdentityProvider().isSessionActive(req.body.userId, req.body.sessionId)
+    res.status(200).json({ active: active === true })
+  } catch (err) {
+    // Fail closed AND distinguishable: never `{ active: true }`, never a quiet
+    // `{ active: false }` that would read as "revoked" and sign everyone out.
+    withReqId((req as any).requestId, req as any).error(
+      { op: 'validateSession', errName: (err as Error)?.name, err: (err as Error)?.message },
+      'session validity lookup failed'
+    )
+    res.setHeader('Retry-After', '5')
+    res.status(503).json({ error: 'Session store unavailable', code: 'PROVIDER_UNAVAILABLE' })
+  }
+})
+
 // ── Account sign-in connections ───────────────────────────────────────────
 // GET /v1/security/identity/connections — linked providers + password state
 router.get('/identity/connections', async (req: Request, res: Response) => {
