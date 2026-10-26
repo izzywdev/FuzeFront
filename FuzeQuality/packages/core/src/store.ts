@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 52022)
+Total output lines: 3442
+
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import type {
@@ -26,7 +29,7 @@ import type {
   QualityPrincipal,
   QualityMembership,
 } from '@fuzequality/contracts'
-import { normalizeWorkflowPath, TOPICS } from '@fuzequality/contracts'
+import { normalizeWorkflowPath, testExecutionEvidenceLinkSchema, TOPICS } from '@fuzequality/contracts'
 import { safeExecutionEvidenceUrl } from '@fuzequality/contracts/workflow-execution'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
@@ -188,6 +191,16 @@ const executionKindForDispatch: Record<TestSuiteDispatch['artifactKind'], TestEx
   'stress-test': 'stress',
 }
 
+function safeDispatchEvidenceLinks(value: unknown): TestExecution['evidenceLinks'] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap(candidate => {
+    const parsed = testExecutionEvidenceLinkSchema.safeParse(candidate)
+    if (!parsed.success) return []
+    const url = safeExecutionEvidenceUrl(parsed.data.url)
+    return url ? [{ ...parsed.data, url }] : []
+  }).slice(0, 100)
+}
+
 /** Links only an accepted receipt to the newest exact revision/ref/workflow execution. */
 export function withDispatchExecutionResult(
   dispatch: TestSuiteDispatch,
@@ -215,6 +228,7 @@ export function withDispatchExecutionResult(
       attempt: execution.attempt,
       status: execution.status,
       ...(safeExecutionEvidenceUrl(execution.sourceUrl) ? { sourceUrl: execution.sourceUrl } : {}),
+      evidenceLinks: safeDispatchEvidenceLinks(execution.evidenceLinks),
       ...(execution.startedAt ? { startedAt: execution.startedAt } : {}),
       ...(execution.completedAt ? { completedAt: execution.completedAt } : {}),
     },
@@ -1693,106 +1707,7 @@ export class PostgresCatalogStore implements CatalogStore {
                WHEN jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
                  AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
                  THEN jsonb_build_array(jsonb_build_object(
-                   'policyArtifactId',executions.policy_artifact_ids->>0,
-                   'gateArtifactId',executions.gate_artifact_ids->>0,
-                   'status',executions.status
-                 ))
-               ELSE '[]'::jsonb
-             END
-           ) AS gate_evaluation(value)
-           WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
-             AND ($17::text IS NULL OR fuzequality.quality_artifact_logical_id(
-               executions.repository_id,gate_evaluation.value->>'policyArtifactId'
-             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$17))
-             AND ($18::text IS NULL OR fuzequality.quality_artifact_logical_id(
-               executions.repository_id,gate_evaluation.value->>'gateArtifactId'
-             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$18))
-         ))
-         AND ($23::text IS NULL OR executions.branch=$23)
-         AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
-         AND ($25::text IS NULL
-           OR ($25='evidence-url-invalid'
-             AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
-               WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
-             ))
-           OR ($25='github-run-provenance-missing'
-             AND executions.provider='github-actions'
-             AND (executions.head_repository IS NULL
-               OR executions.workflow_path IS NULL
-               OR executions.source_url IS NULL
-               OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
-           OR ($25='post-production-video-missing'
-             AND executions.kind='post-production'
-             AND NOT EXISTS (
-               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
-               WHERE required_evidence.value->>'kind'='video'
-                 AND required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
-             ))
-           OR ($25='terminal-timing-missing'
-             AND executions.status<>'running'
-             AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
-           OR ($25='performance-threshold-missing'
-             AND executions.kind IN ('load','stress')
-             AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
-           OR ($25='policy-gate-outcome-missing'
-             AND jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
-             AND NOT (
-               jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
-               AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1)))
-         AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
-         AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
-         AND ($28::text IS NULL OR executions.id=$28)
-         AND ($29::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($29)
-           OR ($25='github-run-provenance-missing' AND executions.head_repository IS NULL))
-         AND ($30::text IS NULL OR executions.evidence_collection->>'errorCode'=$30)
-       ORDER BY executions.created_at DESC,executions.id DESC
-       LIMIT COALESCE($15::integer, 2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.id ?? null, query.headRepository ?? null, query.evidenceCollectionErrorCode ?? null],
-    )
-    return result.rows.map(row => withTestExecutionCreatedAt(
-      { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined },
-      row.created_at.toISOString(),
-    ))
-  }
-
-  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
-    if (!workflowPaths.length) return []
-    const result = await this.pool.query(
-      `SELECT DISTINCT ON (execution.workflow_path) execution.*
-       FROM fuzequality.test_executions AS execution
-       WHERE execution.repository_id=$1 AND execution.tenant_id=$2
-         AND execution.kind IN ('load','stress')
-         AND execution.workflow_path=ANY($3::text[])
-         AND (
-           execution.branch=$4 OR (
-             execution.provider='github-actions' AND EXISTS (
-               SELECT 1
-               FROM fuzequality.test_suite_dispatches AS dispatch
-               WHERE dispatch.repository_id=execution.repository_id
-                 AND dispatch.tenant_id=execution.tenant_id
-                 AND dispatch.status='accepted'
-                 AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
-                 AND lower(dispatch.source_revision)=lower(execution.revision)
-                 AND dispatch.source_ref=execution.branch
-             )
-           )
-         )
-         AND (execution.provider<>'github-actions' OR lower(execution.head_repository)=lower($5))
-       ORDER BY execution.workflow_path,COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC,execution.id DESC`,
-      [repositoryId, tenantId, workflowPaths, branch, headRepository],
-    )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))
-  }
-
-  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
-    if (!workflowPaths.length) return []
-    const result = await this.pool.query(
-      `SELECT DISTINCT ON (execution.workflow_path) execution.*
-       FROM fuzequality.test_executions AS execution
-       WHERE execution.repository_id=$1 AND execution.tenant_id=$2
-         AND execution.kind='post-production'
-         AND execution.workflow_path=ANY($3::text[])
+                   'policyArtifactId',executions.policy_artifact_ids->>0,…2022 tokens truncated…($3::text[])
          AND (
            execution.branch=$4 OR (
              execution.provider='github-actions' AND EXISTS (
@@ -2399,11 +2314,12 @@ export class PostgresCatalogStore implements CatalogStore {
               latest.input_names,latest.status,latest.error,latest.requested_at,latest.completed_at,
               execution.id AS result_id,execution.provider AS result_provider,execution.external_run_id AS result_external_run_id,
               execution.attempt AS result_attempt,execution.status AS result_status,execution.source_url AS result_source_url,
+              execution.evidence_links AS result_evidence_links,
               execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
        FROM latest
        LEFT JOIN LATERAL (
          SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
-                candidate.source_url,candidate.started_at,candidate.completed_at
+                candidate.source_url,candidate.evidence_links,candidate.started_at,candidate.completed_at
          FROM fuzequality.test_executions AS candidate
          WHERE latest.status='accepted'
            AND candidate.repository_id=latest.repository_id
@@ -2450,6 +2366,7 @@ export class PostgresCatalogStore implements CatalogStore {
           attempt: row.result_attempt,
           status: row.result_status,
           ...(safeExecutionEvidenceUrl(row.result_source_url) ? { sourceUrl: row.result_source_url } : {}),
+          evidenceLinks: safeDispatchEvidenceLinks(row.result_evidence_links),
           ...(row.result_started_at ? { startedAt: row.result_started_at.toISOString() } : {}),
           ...(row.result_completed_at ? { completedAt: row.result_completed_at.toISOString() } : {}),
         },
@@ -2476,11 +2393,12 @@ export class PostgresCatalogStore implements CatalogStore {
          dispatch.input_names,dispatch.status,dispatch.error,dispatch.requested_at,dispatch.completed_at,
          execution.id AS result_id,execution.provider AS result_provider,execution.external_run_id AS result_external_run_id,
          execution.attempt AS result_attempt,execution.status AS result_status,execution.source_url AS result_source_url,
+         execution.evidence_links AS result_evidence_links,
          execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
        FROM fuzequality.test_suite_dispatches AS dispatch
        LEFT JOIN LATERAL (
          SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
-                candidate.source_url,candidate.started_at,candidate.completed_at
+                candidate.source_url,candidate.evidence_links,candidate.started_at,candidate.completed_at
          FROM fuzequality.test_executions AS candidate
          WHERE dispatch.status='accepted'
            AND candidate.repository_id=dispatch.repository_id
@@ -2527,6 +2445,7 @@ export class PostgresCatalogStore implements CatalogStore {
           attempt: row.result_attempt,
           status: row.result_status,
           ...(safeExecutionEvidenceUrl(row.result_source_url) ? { sourceUrl: row.result_source_url } : {}),
+          evidenceLinks: safeDispatchEvidenceLinks(row.result_evidence_links),
           ...(row.result_started_at ? { startedAt: row.result_started_at.toISOString() } : {}),
           ...(row.result_completed_at ? { completedAt: row.result_completed_at.toISOString() } : {}),
         },

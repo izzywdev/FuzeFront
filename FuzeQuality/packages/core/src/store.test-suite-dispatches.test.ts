@@ -187,7 +187,9 @@ describe('test-suite dispatch audit', () => {
       workflowPath: `${accepted.workflowPath}@refs/tags/${accepted.ref}`,
       sourceUrl: 'https://github.com/acme/app/actions/runs/42',
       startedAt: '2026-10-22T20:01:00.000Z', completedAt: '2026-10-22T20:02:00.000Z',
-      policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+      policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [{
+        kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
+      }],
     })
     await store.saveTestExecution({
       id: 'wrong-revision', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
@@ -212,6 +214,9 @@ describe('test-suite dispatch audit', () => {
       executionResult: {
         id: 'execution-result', provider: 'github-actions', externalRunId: 'provider-run-42',
         attempt: 2, status: 'failed', sourceUrl: 'https://github.com/acme/app/actions/runs/42',
+        evidenceLinks: [{
+          kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
+        }],
         startedAt: '2026-10-22T20:01:00.000Z', completedAt: '2026-10-22T20:02:00.000Z',
       },
     })])
@@ -237,6 +242,10 @@ describe('test-suite dispatch audit', () => {
       result_id: 'execution-result', result_provider: 'github-actions',
       result_external_run_id: 'provider-run-42', result_attempt: 1, result_status: 'passed',
       result_source_url: 'https://github.com/acme/app/actions/runs/42',
+      result_evidence_links: [
+        { kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm' },
+        { kind: 'video', name: 'Unsafe legacy video', url: 'javascript:alert(1)' },
+      ],
       result_started_at: new Date('2026-10-22T20:01:00.000Z'),
       result_completed_at: new Date('2026-10-22T20:02:00.000Z'),
     }] })
@@ -248,6 +257,9 @@ describe('test-suite dispatch audit', () => {
     )
     expect(result.executionResult).toMatchObject({
       id: 'execution-result', externalRunId: 'provider-run-42', status: 'passed',
+      evidenceLinks: [{
+        kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
+      }],
     })
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain('LEFT JOIN LATERAL')
@@ -271,6 +283,9 @@ describe('test-suite dispatch audit', () => {
       result_id: 'execution-result', result_provider: 'github-actions',
       result_external_run_id: 'provider-run-42', result_attempt: 2, result_status: 'failed',
       result_source_url: 'https://github.com/acme/app/actions/runs/42',
+      result_evidence_links: [{
+        kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
+      }],
       result_started_at: new Date('2026-10-22T20:01:00.000Z'),
       result_completed_at: new Date('2026-10-22T20:02:00.000Z'),
     }] })
@@ -280,6 +295,9 @@ describe('test-suite dispatch audit', () => {
     const [result] = await store.latestTestSuiteDispatches(accepted.repositoryId, accepted.tenantId)
     expect(result.executionResult).toMatchObject({
       id: 'execution-result', externalRunId: 'provider-run-42', status: 'failed',
+      evidenceLinks: [{
+        kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
+      }],
     })
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain('LEFT JOIN LATERAL')

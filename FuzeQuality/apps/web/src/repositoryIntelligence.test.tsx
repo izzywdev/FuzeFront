@@ -2515,6 +2515,11 @@ describe('RepositoryIntelligence flow inventory', () => {
         attempt: 2,
         status: 'failed' as const,
         sourceUrl: 'https://github.com/acme/app/actions/runs/42',
+        evidenceLinks: [{
+          kind: 'video' as const,
+          name: 'Playwright video',
+          url: 'https://evidence.example/run-42/video.webm',
+        }],
         startedAt: '2026-10-22T20:01:00.000Z',
         completedAt: '2026-10-22T20:02:00.000Z',
       },
@@ -2554,11 +2559,16 @@ describe('RepositoryIntelligence flow inventory', () => {
       'href',
       'https://github.com/acme/app/actions/runs/42',
     )
+    expect(screen.getByRole('link', { name: 'Open recorded video' })).toHaveAttribute(
+      'href',
+      'https://evidence.example/run-42/video.webm',
+    )
     fireEvent.click(await screen.findByText('Controlled dispatch history'))
     await waitFor(() => expect(historyRequest).toHaveBeenCalled())
     expect(await screen.findByText(/Provider unavailable/)).toBeVisible()
     expect(screen.getAllByText(/Observed execution · failed · attempt 2/)).toHaveLength(2)
     expect(screen.getAllByRole('link', { name: 'Open CI run' })).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Open recorded video' })).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: 'Load more controlled dispatches' }))
     expect(await screen.findByText(/Requested by older-reviewer/)).toBeVisible()
     expect(historyRequest).toHaveBeenNthCalledWith(1, repository.id, loadArtifact.logicalId ?? loadArtifact.id, undefined)

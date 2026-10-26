@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.16
+  version: 0.84.17
   license:
     name: UNLICENSED
 servers:
@@ -2481,6 +2481,11 @@ components:
         attempt: { type: integer, minimum: 1 }
         status: { type: string, enum: [passed, failed, cancelled, running] }
         sourceUrl: { type: string, format: uri, pattern: '^https://' }
+        evidenceLinks:
+          type: array
+          maxItems: 100
+          description: Safe exact-attempt evidence retained for the execution matched to this dispatch.
+          items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
         startedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
     TestSuiteDispatchAuditPage:
