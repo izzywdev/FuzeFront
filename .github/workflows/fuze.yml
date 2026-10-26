@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:28aa760e265c4a24f9fd4d50855efaeb0ac4c86e4a8be001a051ebbc86a39968
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:00e8e8ada61cd22225b32a99f14a97e3aadc92dda04583772b14de244a2556bb
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -77,6 +77,20 @@ name: Fuze
 # untrusted commenter must never be able to drive that. The gate is kept here even though
 # this variant holds no cluster credential, because "no cluster credential" is not the same
 # as "harmless".
+#
+# CREDENTIAL BOUNDARY. Gate 2 authenticates the COMMENTER; it says nothing about who AUTHORED
+# the PR or what its head contains, and the job below runs an agent (Bash, permission-mode
+# bypass) against that head. Anything in that job's environment, git config or on its disk is
+# therefore reachable by whoever wrote the PR (a prompt-injected CLAUDE.md, a
+# `.claude/settings.json` hook, a `package.json` script the agent runs). Masking
+# (`add-mask`) only redacts logs. So the job must never reference the fleet-shared coder PAT
+# (FUZEONEAGENT_TOKEN) or the bot PAT (GH_RELEASE_PAT): it gets a short-lived, repo-scoped
+# fuze-agent App installation token (see "CODER IDENTITY" below), else GITHUB_TOKEN.
+# `scripts/gate_credential_exposure.py` fails hub CI if a PAT is ever referenced in a job that
+# also checks out or fetches a PR head. The App PRIVATE KEY is still referenced by this job
+# (it has to mint the token), which is recorded as grandfathered debt in
+# governance/credential-exposure-baseline.json with the stricter alternative; see
+# governance/hardening-convention.md section 8.1.
 on:
   issue_comment:
     types: [created]
@@ -152,7 +166,7 @@ jobs:
           # On the two review triggers the default checkout therefore ALREADY contains the PR
           # author's `.github/actions`, so the preserve/restore pair below would archive the
           # attacker's tree out and restore it right back — a no-op mitigation on exactly the
-          # paths it was written for, with FUZEONEAGENT_TOKEN and the LLM credentials in scope.
+          # paths it was written for, with the job's credentials in scope.
           # Pinning the ref makes the preserved tree trusted on every trigger; the PR-head
           # checkout below still fetches $HEAD_SHA explicitly, so only the action DEFINITIONS
           # are pinned and the agent still works against the real PR content.
@@ -163,9 +177,9 @@ jobs:
       # ./.github/actions/...` below resolves against whatever is on disk at that point, not
       # against any ref or pin in this file — so without this step, a fork PR that edits
       # fuze-code-action/llm-endpoint/fuze-push-identity executes its OWN version the moment a
-      # trusted collaborator comments `@fuze` on it, with this job's FUZEONEAGENT_TOKEN (and,
-      # via claude.yml, LITELLM_FUZE_KEY/ANTHROPIC_API_KEY/CLAUDE_CODE_OAUTH_TOKEN/OPENAI_API_KEY/
-      # GEMINI_API_KEY too) in scope. That is a credential-exfiltration path a comment alone
+      # trusted collaborator comments `@fuze` on it, with this job's secrets
+      # (LITELLM_FUZE_KEY/ANTHROPIC_API_KEY/CLAUDE_CODE_OAUTH_TOKEN/OPENAI_API_KEY/
+      # GEMINI_API_KEY) in scope. That is a credential-exfiltration path a comment alone
       # can trigger — Gate 2 above authenticates the COMMENTER, never the PR HEAD's content.
       # Copying the whole `.github/actions/` tree out of the repo now, then restoring it
       # verbatim after the PR-head checkout below, means the step that runs `uses: ./...`
@@ -204,32 +218,128 @@ jobs:
           git checkout "$HEAD_SHA"
           echo "Checked out PR branch: $HEAD_REF @ $HEAD_SHA"
 
-      # SECURITY — restore the TRUSTED action code over whatever the just-checked-out PR head
-      # (possibly a fork) put at these paths. Same `if:` as the checkout above: a no-op copy
+      # SECURITY, step 1 of 2 — FAIL CLOSED when the PR head redefines the very action this
+      # job is about to execute.
+      #
+      # The restore below used to run unconditionally, which executed trusted code (correct)
+      # but left the working tree holding a REVERSE DIFF of the PR's own `.github/actions`
+      # changes: `git status` was dirty with the PR's edits undone, the agent read action
+      # code that was not the PR's, and a broad `git add -A` could have committed the
+      # revert. No amount of copying fixes that, because the trusted code must sit at
+      # `./.github/actions/` for `uses:` to resolve it — the PR's version and the executed
+      # version cannot both live at that path. Relocating the action is not available
+      # either: `fuze-code-action/action.yml` resolves its own nested
+      # `uses: ./.github/actions/llm-endpoint` against GITHUB_WORKSPACE (not against the
+      # action's directory, which Actions offers no syntax for), and ~10 other templates
+      # call it at `./.github/actions/fuze-code-action`.
+      #
+      # So the state is removed rather than managed: a PR that rewrites the agent's own
+      # action is not serviced automatically at all. That is strictly safer than today —
+      # today such a PR *is* serviced, merely with the trusted code — and it guarantees
+      # the restore below can never revert PR work, because there is none at those paths.
+      #
+      # The check asks the API which files the PR touches rather than diffing the trees:
+      # the preserved copy comes from the DEFAULT BRANCH, so a PR that is merely BEHIND it
+      # differs under `.github/actions` without having changed anything, and a tree diff
+      # would false-positive on every stale PR.
+      - name: Refuse to service a PR that redefines the local actions
+        if: |
+          (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
+          github.event_name == 'pull_request_review_comment' ||
+          github.event_name == 'pull_request_review'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "issue_comment" ]; then N="$ISSUE_NUM"; else N="$PR_NUMBER"; fi
+          # FAIL CLOSED: capture the PR's changed files in their OWN command so a
+          # gh API error (auth, rate-limit, 5xx, truncated pagination) aborts this
+          # step under `set -e` — i.e. @fuze REFUSES — instead of a pipeline `|| true`
+          # swallowing the failure into an empty list that reads as "nothing changed,
+          # safe to proceed". A security guard must not treat an API outage as a pass.
+          # Include `previous_filename` so a RENAME out of `.github/actions/` (old path
+          # under it, new path elsewhere) is still caught: the files API reports the
+          # destination in `.filename` and the source only in `.previous_filename`.
+          files=$(gh api "repos/${REPO}/pulls/${N}/files" --paginate \
+                    --jq '.[] | .filename, (.previous_filename // empty)')
+          changed=$(printf '%s\n' "$files" | grep '^\.github/actions/' || true)
+          if [ -z "$changed" ]; then
+            echo "PR #${N} does not touch .github/actions — restoring the trusted copy cannot revert any PR work."
+            exit 0
+          fi
+          echo "::error title=pr-redefines-local-actions::PR #${N} changes .github/actions, which defines the code this job executes with the coding-identity token and the LLM credentials in scope. @fuze does not service a PR that rewrites its own action: get the action change reviewed and merged on its own, then invoke @fuze again. Files below."
+          printf '%s\n' "$changed"
+          # NOTIFY the requester. This step exits non-zero, which SKIPS "Run Fuze",
+          # so the Detect/Alert steps (keyed on steps.fuze.outcome) never fire — the
+          # refusal would otherwise be a bare failed run with no explanation on the
+          # thread. Post the reason here. The fuze-loop-guard sentinel stops this
+          # comment from re-triggering @fuze (Gate 3). Best-effort: a comment failure
+          # must not convert the refusal into a pass, so it never flips the exit 1.
+          {
+            printf '<!-- fuze-loop-guard: automated refusal notice — this comment must NOT re-trigger the Fuze workflow -->\n'
+            printf '### @fuze did not service this request\n\n'
+            printf 'This PR changes files under .github/actions/, which defines the code @fuze executes (with the coding-identity token and, via claude.yml, the LLM credentials in scope). To avoid running PR-head-controlled action code, @fuze does not service a PR that rewrites its own actions.\n\n'
+            printf 'What to do: get the .github/actions change reviewed and merged on its own, then mention @fuze again. Changed action files:\n\n'
+            printf '%s\n' "$changed" | sed 's/^/- /'
+          } > "${RUNNER_TEMP}/fuze-refuse.md"
+          gh issue comment "$N" --repo "$REPO" --body-file "${RUNNER_TEMP}/fuze-refuse.md" \
+            && echo "posted refusal notice to #$N" || echo "::warning::could not comment on #$N"
+          exit 1
+
+      # SECURITY, step 2 of 2 — restore the TRUSTED action code over whatever the
+      # just-checked-out PR head put at these paths, so `uses: ./.github/actions/...` below
+      # executes what the DEFAULT BRANCH shipped. Same `if:` as the checkout above: a no-op
       # when that step didn't run. See "Preserve trusted local actions" for the threat.
+      #
+      # The step above has already established that the PR does not change these paths, so
+      # this copy can only replace an identical or an OLDER-UPSTREAM version — never the
+      # PR's work. (Replacing a stale upstream version matters: basing a PR on a commit
+      # whose action had a known flaw would otherwise execute that flaw.)
+      #
+      # Any residual difference is therefore CI scaffolding, not content under review, so
+      # git is told to disregard it and the tree stays clean: `git status` shows nothing and
+      # no `git add -A` / `git commit -a` can pick it up. This is safe only because of the
+      # guard above — with it, the agent has no legitimate edits here to hide.
       - name: Restore trusted local actions (never execute PR-head-controlled action code)
         if: |
           (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
           github.event_name == 'pull_request_review_comment' ||
           github.event_name == 'pull_request_review'
         run: |
+          set -euo pipefail
           rm -rf .github/actions
           cp -a "${RUNNER_TEMP}/trusted-fuze-actions" .github/actions
+          git ls-files -z .github/actions | xargs -0 -r git update-index --skip-worktree --
+          printf '/.github/actions/\n' >> .git/info/exclude
+          echo "Trusted .github/actions restored; git set to disregard the difference."
+          git status --porcelain .github/actions
 
       # CODER IDENTITY (docs/identity-and-roles.md). The coder is the org-wide `fuze-agent`
       # GitHub App — a durable App identity, NOT the retired `fuzeoneagent` user account
-      # (suspended by GitHub 2026-10-14). Mint a short-lived App installation token and use it
-      # as the coding/commit/push credential, stamping the git author as the App's bot — the
-      # repo-local `git config` here persists into the fuze-code-action composite steps in this
-      # same job — so commits this run pushes are attributed to `fuze-agent[bot]`, not the admin
-      # `izzywdev`; author ≠ reviewer is preserved (the App bot authors, izzywdev/FuzeApprover
-      # reviews). When the App secrets are absent the resolve step falls back to GITHUB_TOKEN
-      # with a ::warning::, byte-for-byte default-safe so an un-provisioned repo degrades rather
-      # than breaks. Signing note: an App-token `git push` is NOT signed — `required_signatures`
-      # on the default branch is satisfied by the server-signed squash-merge, exactly as before.
+      # (suspended by GitHub 2026-10-14). Mint a short-lived, repo-scoped App installation token
+      # and use it as the coding/commit/push credential, stamping the git author as the App's
+      # bot — the repo-local `git config` here persists into the fuze-code-action composite
+      # steps in this same job — so commits this run pushes are attributed to `fuze-agent[bot]`,
+      # not the admin `izzywdev`; author != reviewer is preserved (the App bot authors,
+      # izzywdev/FuzeApprover reviews). When the App secrets are absent the resolve step falls
+      # back to GITHUB_TOKEN with a ::warning::, so an un-provisioned repo degrades rather than
+      # breaks. Signing note: an App-token `git push` is NOT signed — `required_signatures` on
+      # the default branch is satisfied by the server-signed squash-merge, exactly as before.
+      #
+      # NO PAT RUNG HERE, DELIBERATELY. This job runs an agent over attacker-controlled text and
+      # a PR head the commenter did not write, and claude-code-action exports its `github_token`
+      # input as GH_TOKEN in the model process and writes it into git credential config. The
+      # fleet-shared PAT (FUZEONEAGENT_TOKEN, `repo`+`workflow`) must therefore never be
+      # referenced by this job, not even as a probed fallback: a secret referenced anywhere in a
+      # job is in the runner process every step of that job shares. The PAT is used only by
+      # fuze-auto-pr.yml, whose credential-bearing job executes nothing from a PR or branch.
+      # scripts/gate_credential_exposure.py fails hub CI if a PAT reappears here.
       # fuze:secret-sourcing FUZE_AGENT_APP_ID=fleet — provision-secrets.yml (FLEET_SOURCED); durable coder identity
       # fuze:secret-sourcing FUZE_AGENT_APP_PRIVATE_KEY=fleet — provision-secrets.yml (FLEET_SOURCED); durable coder identity
-      # fuze:secret-sourcing FUZEONEAGENT_TOKEN=fleet — provision-secrets.yml (FLEET_SOURCED); least-privilege coder (probed fallback)
       - name: Mint fuze-agent App token (coder identity)
         id: coder_app
         continue-on-error: true
@@ -241,14 +351,9 @@ jobs:
         id: coder
         env:
           APP_TOKEN: ${{ steps.coder_app.outputs.token }}
-          CODER_TOKEN: ${{ secrets.FUZEONEAGENT_TOKEN }}
           GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
-          # Coder ladder: fuze-agent App (durable primary coder) -> fuzeoneagent (probed:
-          # used only if GitHub accepts the token right now) -> GITHUB_TOKEN (default). A token
-          # that is SET is not a token that WORKS — a suspended/revoked account still leaves the
-          # secret populated — so the fuzeoneagent rung is probed before use.
           if [ -n "${APP_TOKEN:-}" ]; then
             tok="$APP_TOKEN"
             who="fuze-agent[bot] (fuze-agent App installation token — durable coder)"
@@ -256,30 +361,10 @@ jobs:
             git config user.email "fuze-agent[bot]@users.noreply.github.com"
             bot_name="fuze-agent[bot]"; bot_id="321521006"
           else
-            coder_ok=false
-            if [ -n "${CODER_TOKEN:-}" ]; then
-              probe=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
-                -H "Authorization: Bearer ${CODER_TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/user" 2>/dev/null || true)
-              if [ "${probe:-}" = "200" ]; then
-                coder_ok=true
-              else
-                echo "::warning title=coder-identity::FUZEONEAGENT_TOKEN is set but GitHub rejected it (HTTP ${probe:-none}; the account may be suspended or the token revoked). Falling back to the default GITHUB_TOKEN identity. Replace or remove the secret to clear this warning."
-              fi
-            fi
-            if [ "$coder_ok" = "true" ]; then
-              tok="$CODER_TOKEN"
-              who="fuzeoneagent (FUZEONEAGENT_TOKEN — least-privilege coder, probed fallback)"
-              git config user.name "fuzeoneagent"
-              git config user.email "330369996+fuzeoneagent@users.noreply.github.com"
-              bot_name="fuzeoneagent"; bot_id="330369996"
-            else
-              bot_name="claude[bot]"; bot_id="41898282"   # claude-code-action's own defaults
-              tok="$GH_DEFAULT"
-              who="GITHUB_TOKEN (default — fuze-agent App secrets unset; FUZEONEAGENT_TOKEN unset or rejected)"
-              echo "::warning title=coder-identity::Neither the fuze-agent App secrets (FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY) nor a working FUZEONEAGENT_TOKEN resolved — @fuze codes/commits/pushes under the default GITHUB_TOKEN identity, exactly as before. Set the fuze-agent App secrets to author as the durable coder identity (docs/identity-and-roles.md)."
-            fi
+            bot_name="claude[bot]"; bot_id="41898282"   # claude-code-action's own defaults
+            tok="$GH_DEFAULT"
+            who="GITHUB_TOKEN (default — fuze-agent App secrets unset)"
+            echo "::warning title=coder-identity::FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY are unset on this repo — @fuze codes/commits/pushes under the default GITHUB_TOKEN identity, exactly as before. Set the fuze-agent App secrets to author as the durable coder identity (docs/identity-and-roles.md)."
           fi
           echo "::add-mask::$tok"
           {

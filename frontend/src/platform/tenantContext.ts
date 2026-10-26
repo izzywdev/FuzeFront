@@ -16,3 +16,13 @@ export function resolveFederatedTenantId(input: {
     ?? input.organizations.find(organization => organization.type === 'personal')?.id
     ?? null
 }
+
+/**
+ * Expose the selected tenant through the same resolver-style contract as the
+ * account-vault token. Remotes call the resolver when issuing a request, so a
+ * host re-render can replace it after a Personal/organization switch without
+ * exposing host storage.
+ */
+export function createFederatedTenantResolver(tenantId: string | null) {
+  return () => tenantId
+}

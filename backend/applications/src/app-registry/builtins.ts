@@ -74,7 +74,16 @@ const BUILTIN_MANIFESTS: unknown[] = [
     chrome: { menu: 'host', topbar: 'host' },
     nav: { section: 'build', order: 10 },
     routing: { path: '/app/fuzeagent' },
-    visibility: 'organization',
+    // PUBLIC, not organization: FuzeAgent is governed as scopeLevel:'both',
+    // default-installed and CORE on personal (see APP_GOVERNANCE in
+    // app-governance.ts) — i.e. every user, including a solo developer in their
+    // personal space, is meant to have it. visibility:'organization' contradicted
+    // that: the registry read filter (service.ts isVisibleTo / list) hides an
+    // 'organization' app from anyone who is not a member of the owning (root)
+    // org, so individual users never saw it. 'public' matches the governance
+    // intent; the app still enforces its own authz (Permit) for real operations.
+    // FuzeSocial stays 'organization' — it is genuinely an org-scoped product.
+    visibility: 'public',
     roles: [],
   },
   {

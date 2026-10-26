@@ -35,6 +35,22 @@ there, but multi-tenant is staged for the Mendys tenant.
 None. Additive and optional. A multi-tenant consumer should send its token's `tid`
 as `tenantId` and call the host of its own tenant.
 
+## 1.3.1 — Broker (#238): named client types for the consumer-product sign-in handoff (additive, unreleased)
+
+`info.version` 1.3.0 -> 1.3.1, `SECURITY_CONTRACT_VERSION` 1.3.0 -> 1.3.1, package
+`version` 1.3.0 -> 1.3.1 (the entry was authored as 0.9.2 before master moved the
+line to 1.3.0; renumbered on merge so the published version stays strictly
+greater than master's).
+
+**Additive, no shape change.** The `broker` tag's endpoints
+(`GET /broker/clients/{client}`, `POST /broker/handoff`,
+`POST /broker/token-exchange`) and their schemas were already frozen in
+`openapi.yaml`; this release implements the routes server-side and exposes
+convenience named type aliases — `BrokerClient`, `BrokerHandoffRequest`,
+`BrokerHandoffResult`, `BrokerTokenExchangeRequest` — re-exported from
+`components['schemas']`, matching the pattern already used for `SessionResult`
+etc. No existing export changed shape.
+
 ## 1.3.0 — Session validity check for downstream services (additive, unreleased)
 
 `info.version` 1.2.0 -> 1.3.0, `SECURITY_CONTRACT_VERSION` 1.2.0 -> 1.3.0,
