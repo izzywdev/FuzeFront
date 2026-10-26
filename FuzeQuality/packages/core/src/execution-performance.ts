@@ -324,6 +324,14 @@ export type ExecutionOutcomeTrend = {
   evidenceUnavailableCount?: number
   /** Executions with no retained provider evidence collection attempt. */
   evidenceNotCollectedCount?: number
+  /** Executions retaining at least one evidence link that is not a safe HTTPS URL. */
+  invalidEvidenceUrlCount?: number
+  /** GitHub Actions executions missing repository, workflow, or safe run URL provenance. */
+  githubRunProvenanceMissingCount?: number
+  /** Post-production executions without a safe video evidence link. */
+  postProductionVideoMissingCount?: number
+  /** Terminal executions without a complete, valid timing interval. */
+  terminalTimingMissingCount?: number
   /** Explicit policy/gate outcomes, including unambiguous legacy single-pair evidence. */
   gateEvaluationCount?: number
   gatePassedCount?: number
@@ -373,6 +381,10 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       evidencePartialCount: 0,
       evidenceUnavailableCount: 0,
       evidenceNotCollectedCount: 0,
+      invalidEvidenceUrlCount: 0,
+      githubRunProvenanceMissingCount: 0,
+      postProductionVideoMissingCount: 0,
+      terminalTimingMissingCount: 0,
       gateEvaluationCount: 0,
       gatePassedCount: 0,
       gateFailedCount: 0,
@@ -393,6 +405,21 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       if (execution.evidenceCollection.status === 'unavailable') current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + 1
     } else {
       current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + 1
+    }
+    if (execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))) {
+      current.invalidEvidenceUrlCount = (current.invalidEvidenceUrlCount ?? 0) + 1
+    }
+    if (
+      execution.provider === 'github-actions' &&
+      (!execution.headRepository || !execution.workflowPath || !safeExecutionEvidenceUrl(execution.sourceUrl))
+    ) {
+      current.githubRunProvenanceMissingCount = (current.githubRunProvenanceMissingCount ?? 0) + 1
+    }
+    if (
+      execution.kind === 'post-production' &&
+      !execution.evidenceLinks.some(link => link.kind === 'video' && safeExecutionEvidenceUrl(link.url))
+    ) {
+      current.postProductionVideoMissingCount = (current.postProductionVideoMissingCount ?? 0) + 1
     }
     const gateEvaluations = retainedGateEvaluations(execution)
     current.gateEvaluationCount = (current.gateEvaluationCount ?? 0) + gateEvaluations.length
@@ -423,6 +450,9 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
     }
     const startedAt = Date.parse(execution.startedAt ?? '')
     const completedAt = Date.parse(execution.completedAt ?? '')
+    if (execution.status !== 'running' && (!Number.isFinite(startedAt) || !Number.isFinite(completedAt) || completedAt < startedAt)) {
+      current.terminalTimingMissingCount = (current.terminalTimingMissingCount ?? 0) + 1
+    }
     if (Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt) {
       current.durationSampleCount++
       const durationMs = completedAt - startedAt

@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.13
+  version: 0.84.14
   license:
     name: UNLICENSED
 servers:
@@ -2308,7 +2308,7 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
+      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, invalidEvidenceUrlCount, githubRunProvenanceMissingCount, postProductionVideoMissingCount, terminalTimingMissingCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
       properties:
         date: { type: string, format: date }
         total:
@@ -2353,6 +2353,22 @@ components:
           type: integer
           minimum: 0
           description: Executions with no retained provider evidence collection attempt.
+        invalidEvidenceUrlCount:
+          type: integer
+          minimum: 0
+          description: Executions retaining at least one evidence link that is not a safe HTTPS URL.
+        githubRunProvenanceMissingCount:
+          type: integer
+          minimum: 0
+          description: GitHub Actions executions missing repository, workflow, or safe run URL provenance.
+        postProductionVideoMissingCount:
+          type: integer
+          minimum: 0
+          description: Post-production executions without a safe video evidence link.
+        terminalTimingMissingCount:
+          type: integer
+          minimum: 0
+          description: Terminal executions without a complete, valid timing interval.
         gateEvaluationCount:
           type: integer
           minimum: 0

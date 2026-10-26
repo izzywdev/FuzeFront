@@ -1805,7 +1805,7 @@ export class PostgresCatalogStore implements CatalogStore {
     const result = await this.pool.query(
       `WITH snapshot_executions AS (
          SELECT DISTINCT ON (repository_id,provider,external_run_id,attempt)
-                repository_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,started_at,completed_at,
+                repository_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,source_url,started_at,completed_at,
                 policy_artifact_ids,gate_artifact_ids,gate_evaluations,evidence_links,evidence_collection,thresholds
          FROM fuzequality.test_execution_versions
          WHERE repository_id=$1 AND tenant_id=$2
@@ -1863,6 +1863,26 @@ export class PostgresCatalogStore implements CatalogStore {
               count(*) FILTER (WHERE evidence_collection->>'status'='partial')::integer AS evidence_partial_count,
               count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_unavailable_count,
               count(*) FILTER (WHERE evidence_collection IS NULL)::integer AS evidence_not_collected_count,
+              count(*) FILTER (WHERE EXISTS (
+                SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
+                WHERE COALESCE(evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
+              ))::integer AS invalid_evidence_url_count,
+              count(*) FILTER (
+                WHERE provider='github-actions'
+                  AND (head_repository IS NULL OR workflow_path IS NULL OR source_url IS NULL
+                    OR source_url !~* '^https://[^/?#[:space:]]+')
+              )::integer AS github_run_provenance_missing_count,
+              count(*) FILTER (
+                WHERE kind='post-production' AND NOT EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
+                  WHERE evidence.value->>'kind'='video'
+                    AND evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
+                )
+              )::integer AS post_production_video_missing_count,
+              count(*) FILTER (
+                WHERE status<>'running'
+                  AND (started_at IS NULL OR completed_at IS NULL OR completed_at < started_at)
+              )::integer AS terminal_timing_missing_count,
               COALESCE(sum(jsonb_array_length(effective_gate_evaluations)),0)::integer AS gate_evaluation_count,
               COALESCE(sum((
                 SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
@@ -2053,6 +2073,10 @@ export class PostgresCatalogStore implements CatalogStore {
       evidencePartialCount: row.evidence_partial_count,
       evidenceUnavailableCount: row.evidence_unavailable_count,
       evidenceNotCollectedCount: row.evidence_not_collected_count,
+      invalidEvidenceUrlCount: row.invalid_evidence_url_count,
+      githubRunProvenanceMissingCount: row.github_run_provenance_missing_count,
+      postProductionVideoMissingCount: row.post_production_video_missing_count,
+      terminalTimingMissingCount: row.terminal_timing_missing_count,
       gateEvaluationCount: row.gate_evaluation_count,
       gatePassedCount: row.gate_passed_count,
       gateFailedCount: row.gate_failed_count,
