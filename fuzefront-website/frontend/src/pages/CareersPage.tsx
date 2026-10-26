@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container, HeroPatternOverlay, Stack, Text, AmbientGlow, GradientText } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroPatternOverlay, Stack, Text, AmbientGlow, GradientText, InlineLink } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack, GroupLabel } from '@fuzefront/design-system'
 
@@ -149,9 +149,9 @@ export const CareersPage: React.FC = () => {
             </h2>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
               Don't see a fit? Email us anyway at{' '}
-              <a href="mailto:hr@fuzefront.com" className="text-primary-700 hover:underline">
+              <InlineLink href="mailto:hr@fuzefront.com">
                 hr@fuzefront.com
-              </a>
+              </InlineLink>
               — we're always looking for great people.
             </p>
           </div>
@@ -226,9 +226,9 @@ export const CareersPage: React.FC = () => {
 
                   <div className="mt-5 pt-5 border-t border-gray-100 text-sm text-gray-600">
                     To apply, send your resume to{' '}
-                    <a href="mailto:hr@fuzefront.com" className="text-primary-700 hover:underline font-medium">
+                    <InlineLink href="mailto:hr@fuzefront.com" emphasis>
                       hr@fuzefront.com
-                    </a>{' '}
+                    </InlineLink>{' '}
                     referencing position code <span className="font-mono font-semibold text-gray-700">{position.code}</span>.
                   </div>
                 </motion.div>
