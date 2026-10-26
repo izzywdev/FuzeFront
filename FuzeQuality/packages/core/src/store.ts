@@ -818,9 +818,10 @@ export class MemoryCatalogStore implements CatalogStore {
     const result = [...latest.values()]
       .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
       .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
-    return query.limit === undefined
+    const page = query.limit === undefined
       ? result
       : result.slice(0, Math.min(Math.max(query.limit, 1), 101))
+    return page.map(item => withDispatchExecutionResult(item, this.executions))
   }
 
   async testSuiteDispatchHistory(
@@ -2381,7 +2382,7 @@ export class PostgresCatalogStore implements CatalogStore {
     const clauses: string[] = []
     if (query.after) {
       values.push(query.after.createdAt, query.after.id)
-      clauses.push(`(requested_at,id) < ($${values.length - 1}::timestamptz,$${values.length}::uuid)`)
+      clauses.push(`(latest.requested_at,latest.id) < ($${values.length - 1}::timestamptz,$${values.length}::uuid)`)
     }
     if (query.limit !== undefined) values.push(Math.min(Math.max(query.limit, 1), 101))
     const result = await this.pool.query(
@@ -2393,11 +2394,35 @@ export class PostgresCatalogStore implements CatalogStore {
          WHERE repository_id=$1 AND tenant_id=$2
          ORDER BY artifact_logical_id,requested_at DESC,id DESC
        )
-       SELECT id,repository_id,tenant_id,artifact_id,artifact_logical_id,artifact_kind,workflow_path,source_ref,
-              source_revision,requested_by,input_names,status,error,requested_at,completed_at
+       SELECT latest.id,latest.repository_id,latest.tenant_id,latest.artifact_id,latest.artifact_logical_id,
+              latest.artifact_kind,latest.workflow_path,latest.source_ref,latest.source_revision,latest.requested_by,
+              latest.input_names,latest.status,latest.error,latest.requested_at,latest.completed_at,
+              execution.id AS result_id,execution.provider AS result_provider,execution.external_run_id AS result_external_run_id,
+              execution.attempt AS result_attempt,execution.status AS result_status,execution.source_url AS result_source_url,
+              execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
        FROM latest
+       LEFT JOIN LATERAL (
+         SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
+                candidate.source_url,candidate.started_at,candidate.completed_at
+         FROM fuzequality.test_executions AS candidate
+         WHERE latest.status='accepted'
+           AND candidate.repository_id=latest.repository_id
+           AND candidate.tenant_id=latest.tenant_id
+           AND candidate.provider='github-actions'
+           AND candidate.kind=CASE latest.artifact_kind
+             WHEN 'integration-test' THEN 'integration'
+             WHEN 'post-production-test' THEN 'post-production'
+             WHEN 'load-test' THEN 'load'
+             WHEN 'stress-test' THEN 'stress'
+           END
+           AND candidate.branch=latest.source_ref
+           AND lower(candidate.revision)=lower(latest.source_revision)
+           AND split_part(candidate.workflow_path,'@',1)=latest.workflow_path
+         ORDER BY COALESCE(candidate.completed_at,candidate.started_at,candidate.created_at) DESC,candidate.id DESC
+         LIMIT 1
+       ) AS execution ON true
        ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-       ORDER BY requested_at DESC,id DESC
+       ORDER BY latest.requested_at DESC,latest.id DESC
        ${query.limit === undefined ? '' : `LIMIT $${values.length}`}`,
       values,
     )
@@ -2417,6 +2442,18 @@ export class PostgresCatalogStore implements CatalogStore {
       error: row.error ?? undefined,
       requestedAt: row.requested_at.toISOString(),
       completedAt: row.completed_at?.toISOString(),
+      ...(row.result_id ? {
+        executionResult: {
+          id: row.result_id,
+          provider: row.result_provider,
+          externalRunId: row.result_external_run_id,
+          attempt: row.result_attempt,
+          status: row.result_status,
+          ...(safeExecutionEvidenceUrl(row.result_source_url) ? { sourceUrl: row.result_source_url } : {}),
+          ...(row.result_started_at ? { startedAt: row.result_started_at.toISOString() } : {}),
+          ...(row.result_completed_at ? { completedAt: row.result_completed_at.toISOString() } : {}),
+        },
+      } : {}),
     }))
   }
 

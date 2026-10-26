@@ -2549,14 +2549,16 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
 
-    fireEvent.click(await screen.findByText('Controlled dispatch history'))
-    await waitFor(() => expect(historyRequest).toHaveBeenCalled())
-    expect(await screen.findByText(/Provider unavailable/)).toBeVisible()
-    expect(screen.getByText(/Observed execution · failed · attempt 2/)).toBeVisible()
+    expect(await screen.findByText(/Observed execution · failed · attempt 2/)).toBeVisible()
     expect(screen.getByRole('link', { name: 'Open CI run' })).toHaveAttribute(
       'href',
       'https://github.com/acme/app/actions/runs/42',
     )
+    fireEvent.click(await screen.findByText('Controlled dispatch history'))
+    await waitFor(() => expect(historyRequest).toHaveBeenCalled())
+    expect(await screen.findByText(/Provider unavailable/)).toBeVisible()
+    expect(screen.getAllByText(/Observed execution · failed · attempt 2/)).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Open CI run' })).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: 'Load more controlled dispatches' }))
     expect(await screen.findByText(/Requested by older-reviewer/)).toBeVisible()
     expect(historyRequest).toHaveBeenNthCalledWith(1, repository.id, loadArtifact.logicalId ?? loadArtifact.id, undefined)
@@ -2604,7 +2606,17 @@ describe('RepositoryIntelligence flow inventory', () => {
       logicalId: 'workflow:.github/workflows/retired-load.yml',
       sourcePath: '.github/workflows/retired-load.yml',
     }
-    const retiredDispatch = acceptedDispatch(retiredArtifact)
+    const retiredDispatch = {
+      ...acceptedDispatch(retiredArtifact),
+      executionResult: {
+        id: 'retired-execution-result',
+        provider: 'github-actions' as const,
+        externalRunId: 'provider-run-retired',
+        attempt: 1,
+        status: 'passed' as const,
+        sourceUrl: 'https://github.com/acme/app/actions/runs/retired',
+      },
+    }
     vi.mocked(api.latestTestSuiteDispatches).mockResolvedValue({ items: [retiredDispatch] })
     vi.mocked(api.testSuiteDispatchHistory).mockResolvedValue({
       items: [retiredDispatch],
@@ -2616,6 +2628,11 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(await screen.findByRole('heading', { name: 'Retired controlled workflows' })).toBeVisible()
     expect(screen.getByText('.github/workflows/retired-load.yml')).toBeVisible()
     expect(screen.getByText(/load-test · retired from current analysis/)).toBeVisible()
+    expect(screen.getByText(/Observed execution · passed · attempt 1/)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open CI run' })).toHaveAttribute(
+      'href',
+      'https://github.com/acme/app/actions/runs/retired',
+    )
     fireEvent.click(screen.getByText('Controlled dispatch history'))
     await waitFor(() => expect(api.testSuiteDispatchHistory).toHaveBeenCalledWith(
       repository.id,

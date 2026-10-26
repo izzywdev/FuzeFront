@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.15
+  version: 0.84.16
   license:
     name: UNLICENSED
 servers:
@@ -1301,7 +1301,9 @@ paths:
       description: >-
         Returns tenant-scoped dispatch lifecycle records. Workflow input names are retained for
         auditability; input values are never persisted or returned. Continue every page before
-        enabling another dispatch so a large repository cannot skip duplicate-run evidence.
+        enabling another dispatch so a large repository cannot skip duplicate-run evidence. An
+        accepted receipt includes the newest retained GitHub Actions outcome only when repository,
+        tenant, suite kind, workflow path, source revision, and dispatched ref all match exactly.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:

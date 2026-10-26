@@ -215,6 +215,14 @@ describe('test-suite dispatch audit', () => {
         startedAt: '2026-10-22T20:01:00.000Z', completedAt: '2026-10-22T20:02:00.000Z',
       },
     })])
+    await expect(store.latestTestSuiteDispatches(
+      accepted.repositoryId, accepted.tenantId,
+    )).resolves.toEqual([expect.objectContaining({
+      id: accepted.id,
+      executionResult: expect.objectContaining({
+        id: 'execution-result', externalRunId: 'provider-run-42', status: 'failed',
+      }),
+    })])
   })
 
   it('joins exact dispatch outcomes in the PostgreSQL history query', async () => {
@@ -249,6 +257,38 @@ describe('test-suite dispatch audit', () => {
     expect(String(sql)).toContain('lower(candidate.revision)=lower(dispatch.source_revision)')
     expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path")
     expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId, accepted.artifactLogicalId, 50])
+  })
+
+  it('joins exact dispatch outcomes in the PostgreSQL latest-receipt query', async () => {
+    const accepted = dispatch({ status: 'accepted' })
+    const query = vi.fn().mockResolvedValue({ rows: [{
+      id: accepted.id, repository_id: accepted.repositoryId, tenant_id: accepted.tenantId,
+      artifact_id: accepted.artifactId, artifact_logical_id: accepted.artifactLogicalId,
+      artifact_kind: accepted.artifactKind, workflow_path: accepted.workflowPath,
+      source_ref: accepted.ref, source_revision: accepted.sourceRevision,
+      requested_by: accepted.requestedBy, input_names: accepted.inputNames, status: accepted.status,
+      error: null, requested_at: new Date(accepted.requestedAt), completed_at: null,
+      result_id: 'execution-result', result_provider: 'github-actions',
+      result_external_run_id: 'provider-run-42', result_attempt: 2, result_status: 'failed',
+      result_source_url: 'https://github.com/acme/app/actions/runs/42',
+      result_started_at: new Date('2026-10-22T20:01:00.000Z'),
+      result_completed_at: new Date('2026-10-22T20:02:00.000Z'),
+    }] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+
+    const [result] = await store.latestTestSuiteDispatches(accepted.repositoryId, accepted.tenantId)
+    expect(result.executionResult).toMatchObject({
+      id: 'execution-result', externalRunId: 'provider-run-42', status: 'failed',
+    })
+    const [sql, parameters] = query.mock.calls[0]
+    expect(String(sql)).toContain('LEFT JOIN LATERAL')
+    expect(String(sql)).toContain("latest.status='accepted'")
+    expect(String(sql)).toContain('candidate.branch=latest.source_ref')
+    expect(String(sql)).toContain("candidate.provider='github-actions'")
+    expect(String(sql)).toContain('lower(candidate.revision)=lower(latest.source_revision)')
+    expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=latest.workflow_path")
+    expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId])
   })
 
   it('resolves stable and legacy suite references without crossing tenant boundaries', async () => {

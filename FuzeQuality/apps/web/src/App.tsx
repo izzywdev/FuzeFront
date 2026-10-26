@@ -2909,10 +2909,12 @@ function FlowReviewHistory({
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const detailsRef = useRef<HTMLDetailsElement>(null)
   const historyRequestInFlight = useRef(false)
+  const initialHistoryLoaded = useRef(false)
   const historyRequest = useRef(0)
 
   const loadHistory = useCallback(async (cursor?: string) => {
     if (historyRequestInFlight.current) return
+    if (!cursor) initialHistoryLoaded.current = true
     const request = ++historyRequest.current
     historyRequestInFlight.current = true
     setLoading(true)
@@ -2928,6 +2930,7 @@ function FlowReviewHistory({
       setNextCursor(page.page.nextCursor)
     } catch (cause) {
       if (request === historyRequest.current) {
+        if (!cursor) initialHistoryLoaded.current = false
         setError(
           cause instanceof Error ? cause.message : 'Unable to load review history'
         )
@@ -2943,6 +2946,7 @@ function FlowReviewHistory({
   useEffect(() => {
     historyRequest.current++
     historyRequestInFlight.current = false
+    initialHistoryLoaded.current = false
     setHistory([])
     setNextCursor(null)
     setError(undefined)
@@ -2954,7 +2958,7 @@ function FlowReviewHistory({
       ref={detailsRef}
       className="policy-review-history"
       onToggle={event => {
-        if (event.currentTarget.open && !history.length && !loading)
+        if (event.currentTarget.open && !initialHistoryLoaded.current && !loading)
           void loadHistory()
       }}
     >
@@ -2997,6 +3001,22 @@ function FlowReviewHistory({
       )}
     </details>
   )
+}
+
+function DispatchExecutionResult({ dispatch }: { dispatch: TestSuiteDispatch }) {
+  if (dispatch.executionResult) {
+    return (
+      <p className="performance-inventory-only">
+        Observed execution · {dispatch.executionResult.status} · attempt {dispatch.executionResult.attempt}
+        {dispatch.executionResult.sourceUrl ? (
+          <> · <a href={dispatch.executionResult.sourceUrl} target="_blank" rel="noreferrer">Open CI run</a></>
+        ) : null}
+      </p>
+    )
+  }
+  return dispatch.status === 'accepted' ? (
+    <p className="performance-inventory-only">Awaiting an execution for this exact revision and ref.</p>
+  ) : null
 }
 
 function TestSuiteDispatchHistory({
@@ -3089,16 +3109,7 @@ function TestSuiteDispatchHistory({
                     : ' · no workflow inputs'}
                   {dispatch.error ? ` · ${dispatch.error}` : ''}
                 </p>
-                {dispatch.executionResult ? (
-                  <p className="performance-inventory-only">
-                    Observed execution · {dispatch.executionResult.status} · attempt {dispatch.executionResult.attempt}
-                    {dispatch.executionResult.sourceUrl ? (
-                      <> · <a href={dispatch.executionResult.sourceUrl} target="_blank" rel="noreferrer">Open CI run</a></>
-                    ) : null}
-                  </p>
-                ) : dispatch.status === 'accepted' ? (
-                  <p className="performance-inventory-only">Awaiting an execution for this exact revision and ref.</p>
-                ) : null}
+                <DispatchExecutionResult dispatch={dispatch} />
               </li>
             ))}
           </ol>
@@ -5672,6 +5683,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             : ' · no workflow inputs'}
                           {dispatch.error ? ` · ${dispatch.error}` : ''}
                         </p>
+                        <DispatchExecutionResult dispatch={dispatch} />
                         <TestSuiteDispatchHistory
                           repositoryId={dispatch.repositoryId}
                           artifactReference={dispatch.artifactLogicalId}
@@ -6123,6 +6135,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   : ' · no workflow inputs'}
                                 {latestDispatch.error ? ` · ${latestDispatch.error}` : ''}
                               </small>
+                              <DispatchExecutionResult dispatch={latestDispatch} />
                               <TestSuiteDispatchHistory
                                 repositoryId={item.repositoryId}
                                 artifactReference={item.logicalId ?? item.id}

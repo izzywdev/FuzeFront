@@ -649,6 +649,9 @@ describe('contract discovery', () => {
           .map((parameter: { name: string }) => parameter.name)
       ).toEqual(['limit', 'cursor'])
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.description
+      ).toContain('source revision, and dispatched ref all match exactly')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.responses['200'].content[
           'application/json'
         ].schema.$ref
