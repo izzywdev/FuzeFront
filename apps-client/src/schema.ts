@@ -121,6 +121,8 @@ export interface paths {
          * @description Declares the product's OWN Permit resources/actions/roles using BARE keys (`Listing`, `seller`). The platform namespaces them by the app's slug (`fuzemarket_Listing`) and merges them into the base platform schema before syncing to the policy provider, so two products may both define a `Listing` or an `admin` without colliding.
          *
          *     This is the declarative replacement for hand-editing a product policy into the platform source tree and adding it to a hardcoded sync list — a step that was invisible to the product team and silently skipped the provider when forgotten. Idempotent (full replace). Requires `apps:write`.
+         *
+         *     ACCEPTANCE IS NOT PROPAGATION. A 200 means the policy was validated and STORED. It is pushed to the policy provider by the platform's schema sync, which runs on FuzeFront backend boot and as a post-install/post-upgrade Helm job — so a policy submitted between those events is live in the registry but not yet in the provider, and its roles deny until the next sync. Check `GET /health` on the platform backend (the `permit` block) to see which registered policies the last sync actually applied, and which it rejected.
          */
         put: operations["putAppPolicy"];
         post?: never;
@@ -170,6 +172,230 @@ export interface paths {
          * @description Called by a running app (or its SDK) to report liveness. Authenticated by a per-app heartbeat token, not a user session. Updates `lastSeenAt` and emits `app.heartbeat`. Mirrors the legacy `POST /api/apps/:id/heartbeat`.
          */
         post: operations["heartbeatApp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/build-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List build sessions
+         * @description The caller's own build sessions, newest first. When `organizationId` is given **and** the caller manages that organization (owner/admin, or platform admin) every session of that organization is returned.
+         *
+         *     Cursor-paginated (`limit` default 50, max 200 — larger values are clamped; `cursor` is opaque; a malformed cursor is a 400). Feature flag: `fuzefront.apps.build-with-agent` (release, default OFF).
+         */
+        get: operations["listBuildSessions"];
+        put?: never;
+        /**
+         * Start a build-with-FuzeAgent session
+         * @description Starts a FuzeAgent session that develops an app and deploys it into the caller's **personal account** (`context=personal` — the caller's personal organization) or an **organization** (`context=organization` — the caller needs an active membership and the `apps:register` scope on that org). The owner of record of the resulting app is that organization.
+         *
+         *     The session id is **server-minted** (`front_abs_…`); the body never carries an id. If the builder is not configured on this server the call answers `503 builder_unavailable` and persists nothing. If the agent launch fails the session is recorded as `failed` (`errorCode: launch_failed`) and the call answers `502`.
+         *
+         *     Feature flag: `fuzefront.apps.build-with-agent` (release, default OFF) — `503 feature_disabled` while OFF. Rate limited.
+         */
+        post: operations["createBuildSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/build-sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Build session TypeID (`front_abs_…`). */
+                id: components["parameters"]["BuildSessionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a build session
+         * @description Visible to the requester, the owning organization's managers (owner/admin) and platform admins. Anyone else — and any unknown or wrongly-typed id — gets **404, never 403**. Feature flag: `fuzefront.apps.build-with-agent` (release, default OFF).
+         */
+        get: operations["getBuildSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/build-sessions/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Build session TypeID (`front_abs_…`). */
+                id: components["parameters"]["BuildSessionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a build session
+         * @description Requester or organization manager. Only from `requested`, `launching`, `building` or `deploying` -> `cancelled`; a terminal session answers 409. Cancels the platform-side session only (the agent is not signalled) — a late agent status callback is then rejected 409. Feature flag: `fuzefront.apps.build-with-agent` (release, default OFF).
+         */
+        post: operations["cancelBuildSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/build-sessions/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Build session TypeID (`front_abs_…`). */
+                id: components["parameters"]["BuildSessionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * FuzeAgent status callback
+         * @description Called by the FuzeAgent builder (platform service account / platform admin ONLY — the session's own requester is rejected 403, otherwise they could mark an arbitrary app "deployed"). Transitions are **forward-only** (`launching -> building -> deploying -> deployed`; `failed` from any non-terminal state); `deployed`, `failed` and `cancelled` are terminal and immutable (409).
+         *
+         *     On `deployed`: `appSlug` is required; the app must exist (422) and must belong to the **same organization** as the session (409 `ORG_MISMATCH` — an agent can never deploy into a different tenant). The app is linked to the session and, when `fuzefront.apps.creator-ownership` is ON and the app has no creator yet, the session's requester becomes the creator of record (immutable) and receives the initial `creator` Permit role.
+         *
+         *     Feature flag: `fuzefront.apps.build-with-agent` (release, default OFF).
+         */
+        post: operations["reportBuildSessionStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{slug}/publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get an app's publication state
+         * @description Current tier and marketplace review state. Visible to the app's managers and platform admins; anyone who can merely read the app gets 404. Feature flag: `fuzefront.apps.marketplace-publishing` (release, default OFF).
+         */
+        get: operations["getAppPublication"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{slug}/publication-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit an app to the marketplace
+         * @description Requires permission to mutate the app (`apps:write`). Sets `marketplace_submitted_at`, leaves `is_marketplace_approved=false` and records `notes`/`requestedBy` in `marketplace_metadata.publication`. 409 if a request is already pending (`ALREADY_PENDING`) or the app is already published (`ALREADY_PUBLISHED`). Feature flag: `fuzefront.apps.marketplace-publishing` (release, default OFF).
+         */
+        post: operations["requestAppPublication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{slug}/publication-requests/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a marketplace publication request
+         * @description **Platform admins only** (403 otherwise). Sets `visibility=marketplace`, `is_marketplace_approved=true`, `marketplace_approved_at` and `approved_by`. 409 `NOT_PENDING` when there is no pending request. Feature flag: `fuzefront.apps.marketplace-publishing` (release, default OFF).
+         */
+        post: operations["approveAppPublication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{slug}/publication-requests/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject a marketplace publication request
+         * @description **Platform admins only** (403 otherwise). Clears `marketplace_submitted_at` and records `{reason, rejectedAt, rejectedBy}` in `marketplace_metadata.publication.rejection`; the app may be resubmitted. 409 `NOT_PENDING` when there is no pending request. Feature flag: `fuzefront.apps.marketplace-publishing` (release, default OFF).
+         */
+        post: operations["rejectAppPublication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/publication-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List marketplace publication requests (admin review queue)
+         * @description The cross-app review queue that backs frame (g). Returns one row per app whose publication is in the requested `status` (default `pending`), **oldest first** so the longest-waiting item leads. "Oldest" is measured by the instant that defines the requested status, because a rejected request clears `marketplace_submitted_at`:
+         *       * `status=pending` — ascending by `submittedAt`;
+         *       * `status=rejected` — ascending by `rejection.rejectedAt`;
+         *       * `status=approved` — ascending by `approvedAt`, falling back to the
+         *         app's creation time when an approved app has no recorded
+         *         `approvedAt` (legacy/pre-attribution rows).
+         *     Each row carries the app's publication state plus the minimal display context a reviewer needs — app display name, icon, owning `organizationId`, and the creator contact (subject to the same former-member rule as `App.creator`).
+         *     **Platform admins / reviewers only (403 otherwise).** As everywhere in this contract, the authorization decision is Permit's, not this flag's and not the knowledge of any id — admin/reviewer is enforced server-side via Permit.
+         *     All data returned is owned by the app-registry service itself (apps, their publication state, and the in-org creator contact), so this is a single-service collection, **not** a client-side or cross-service join — the frames deliberately do not scan `GET /apps`.
+         *     Cursor-paginated (`limit` default 50, max 200 — larger values are clamped; `cursor` is opaque; a malformed cursor is a 400). Feature flag: `fuzefront.apps.marketplace-publishing` (release, default OFF).
+         */
+        get: operations["listPublicationRequests"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -233,22 +459,29 @@ export interface components {
             /**
              * Format: uri-reference
              * @description FULL Module-Federation remote entry — the complete entry, NOT a base (this freezes the legacy base-vs-entry ambiguity). Required when `type = module-federation`.
-             *
              *     Two accepted shapes:
-             *
-             *     * **Same-origin absolute path** (PREFERRED for apps deployed in the same cluster as the host), e.g. `/apps/fuzequality/assets/remoteEntry.js`. The browser resolves it against the host shell's origin and the host ingress proxies `/apps/<slug>/*` to the app's in-cluster Service, so the asset is served without a second public/CDN round-trip. Host-agnostic: the same manifest works on the prod host, a tenant wildcard host, and localhost.
-             *     * **Absolute `http(s)` URL**, e.g. `https://clock.example.com/remoteEntry.js`, for remotes hosted outside the cluster.
+             *     * **Same-origin absolute path** (PREFERRED for apps deployed in the
+             *       same cluster as the host), e.g.
+             *       `/apps/fuzequality/assets/remoteEntry.js`. The browser resolves it
+             *       against the host shell's origin and the host ingress proxies
+             *       `/apps/<slug>/*` to the app's in-cluster Service, so the asset is
+             *       served without a second public/CDN round-trip. Host-agnostic: the
+             *       same manifest works on the prod host, a tenant wildcard host, and
+             *       localhost.
+             *     * **Absolute `http(s)` URL**, e.g.
+             *       `https://clock.example.com/remoteEntry.js`, for remotes hosted
+             *       outside the cluster.
              *
              *     Protocol-relative values (`//host/x.js`) are REJECTED: a browser treats them as cross-origin, defeating the purpose of the same-origin shape.
              */
             remoteEntry?: string;
-            /** @description MF remote scope/name. Required for module-federation. */
+            /** @description MF remote scope/name (required for module-federation), OR, for `web-component`, the custom-element tag name the shell instantiates (e.g. `my-widget`). See docs/guides/WEB_COMPONENT_INTEGRATION.md for the latter. */
             scope?: string;
             /** @description Exposed module path, e.g. `./ClockApp`. Required for module-federation. */
             module?: string;
             /**
              * Format: uri-reference
-             * @description Navigable URL for `iframe` and `standalone`/`spa` integrations. Accepts the same two shapes as `remoteEntry`: a same-origin absolute path such as `/apps/fuzesocial/` (preferred for in-cluster apps — the host ingress proxies it, so the iframe does not re-enter the public edge) or an absolute `http(s)` URL for externally hosted apps.
+             * @description Navigable URL for `iframe` and `standalone`/`spa` integrations, OR, for `web-component`, the script URL the shell injects to define the custom element named by `scope` (see docs/guides/WEB_COMPONENT_INTEGRATION.md). Accepts the same two shapes as `remoteEntry`: a same-origin absolute path such as `/apps/fuzesocial/` (preferred for in-cluster apps — the host ingress proxies it, so the iframe/script does not re-enter the public edge) or an absolute `http(s)` URL for externally hosted apps.
              */
             url?: string;
         };
@@ -375,6 +608,24 @@ export interface components {
              */
             deployOnFuzeInfra: boolean;
         };
+        /** @description Public installation destinations for a product's native mobile build. Omit a field until that exact store listing or APK is publicly available; clients must never synthesize download URLs from a product name. */
+        Distribution: {
+            /**
+             * Format: uri
+             * @description Public Apple App Store product URL.
+             */
+            appleAppStoreUrl?: string;
+            /**
+             * Format: uri
+             * @description Public Google Play Store product URL.
+             */
+            googlePlayUrl?: string;
+            /**
+             * Format: uri
+             * @description Direct public Android APK URL, normally the product's latest GitHub Release asset.
+             */
+            apkUrl?: string;
+        };
         /** @description The declarative document describing how the host mounts and chromes an app. Stored on the app row, served back on read, and the single shared type across UI / backend / tests. */
         AppManifest: {
             /** @enum {string} */
@@ -403,7 +654,27 @@ export interface components {
             auth?: components["schemas"]["Auth"];
             routing?: components["schemas"]["Routing"];
             infra?: components["schemas"]["Infra"];
+            distribution?: components["schemas"]["Distribution"];
             visibility?: components["schemas"]["Visibility"];
+            /**
+             * @description Where the app may be installed (personal, organization, or either).
+             * @enum {string}
+             */
+            scopeLevel?: "personal" | "organization" | "both";
+            /** @description Whether the app strictly requires an active organization context to run. */
+            requiresOrgContext?: boolean;
+            /**
+             * @description Allowed installation modes (self, everyone, or both). 'everyone' enforces whole-organization only installs.
+             * @enum {string}
+             */
+            installMode?: "self" | "everyone" | "both";
+            /**
+             * @description Optional organization-specific installation mode. Use 'everyone' with scopeLevel 'both' to allow personal installs while requiring organization installs to cover the whole organization.
+             * @enum {string}
+             */
+            organizationInstallMode?: "self" | "everyone" | "both";
+            /** @description Whether installation is restricted to the whole organization only (cannot be installed to a single user in an org). */
+            orgLevelOnly?: boolean;
             /** @description Roles permitted to see/activate the app. Empty = all members. */
             roles?: string[];
         };
@@ -427,6 +698,22 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /** @description Creator/publisher of record (`usr_…`), or null. **Present only when the release flag `fuzefront.apps.creator-ownership` is ON.** Server-set from the authenticated principal, informational and immutable — never accepted in a request body, and never a source of authority (authority is Permit + org role; the owner of record is `organizationId`). */
+            createdBy?: string | null;
+            /** @description The creator as an in-org contact, or null. **Present only when `fuzefront.apps.creator-ownership` is ON.** */
+            creator?: components["schemas"]["AppCreator"] | null;
+        };
+        /** @description The app's creator. `displayName` and `contactEmail` are returned ONLY while the creator is still an active member of the owning organization; a former member is reduced to `isCurrentMember: false` (no name/contact) — the app stays with the organization. */
+        AppCreator: {
+            /** @description Creator user TypeID (`usr_…`). */
+            userId: string;
+            isCurrentMember: boolean;
+            displayName?: string;
+            /**
+             * Format: email
+             * @description The creator's contact address, backing frame (e1)'s "Contact creator" row. Optional and informational — returned under the same rule as `displayName` (only while `isCurrentMember` is true; absent for a former member). A reference/read, never an identity or a capability; authority is Permit + org role. The UI renders the Contact row only when this is present, never a guessed address.
+             */
+            contactEmail?: string;
         };
         RegisterAppRequest: {
             manifest: components["schemas"]["AppManifest"];
@@ -441,11 +728,31 @@ export interface components {
             /** @description Bare resource key, e.g. `Listing`. Namespaced to `<slug>_Listing`. May NOT contain `_` — that is the namespace separator and the key must split cleanly at the first one. */
             key: string;
             name: string;
+            /** @description Map of bare relation names to bare resources in this same product. */
+            relations?: {
+                [key: string]: string;
+            };
+            /** @description Instance-scoped roles; these do not create tenant-wide grants. */
+            roles?: {
+                [key: string]: components["schemas"]["ProductInstanceRoleDecl"];
+            };
             /** @description Map of action key -> { name }, e.g. { create: { name: Create } }. */
             actions: {
                 [key: string]: {
                     name: string;
                 };
+            };
+        };
+        ProductInstanceRoleDecl: {
+            name: string;
+            /** @description Bare actions of the containing resource; grants apply to one instance only. */
+            permissions: string[];
+            granted_to?: {
+                users_with_role: {
+                    role: string;
+                    on_resource: string;
+                    linked_by_relation: string;
+                }[];
             };
         };
         /** @description A role the product owns, declared with a BARE key. */
@@ -494,6 +801,8 @@ export interface components {
             error: string;
             /** @description Human-readable detail */
             message?: string;
+            /** @description Optional finer-grained code (e.g. `ORG_MISMATCH`, `NOT_PENDING`). */
+            code?: string;
         };
         ValidationErrorBody: {
             /** @enum {string} */
@@ -504,8 +813,123 @@ export interface components {
                 message: string;
             }[];
         };
+        /** @enum {string} */
+        BuildContext: "personal" | "organization";
+        /**
+         * @description `requested`, `launching`, `building`, `deploying` are in-flight; `deployed`, `failed`, `cancelled` are terminal and immutable.
+         * @enum {string}
+         */
+        BuildStatus: "requested" | "launching" | "building" | "deploying" | "deployed" | "failed" | "cancelled";
+        /** @description No `id` is accepted — the session id is server-minted. `organizationId` is REQUIRED when `context=organization` and REJECTED when `context=personal` (the personal account is resolved from the caller). */
+        CreateBuildSessionRequest: {
+            context: components["schemas"]["BuildContext"];
+            /** @description Organization TypeID (`org_…`) or uuid. */
+            organizationId?: string;
+            name: string;
+            /** @description What the app should do — the brief handed to FuzeAgent. */
+            brief: string;
+        };
+        BuildSession: {
+            /** @description Build session TypeID (`front_abs_…`). */
+            id: string;
+            /** @description Owning organization (`org_…`) — the personal org for personal builds. */
+            organizationId: string;
+            /** @description Requesting user (`usr_…`); null if the user was since deleted. */
+            requestedBy?: string | null;
+            context: components["schemas"]["BuildContext"];
+            name: string;
+            brief: string;
+            status: components["schemas"]["BuildStatus"];
+            /** @description The deployed app (`app_…`) once `status=deployed`. */
+            appId?: string | null;
+            /** @description The deployed app's slug once `status=deployed`. */
+            appSlug?: string | null;
+            /** @description Link to follow the FuzeAgent session, when the agent provides one. */
+            agentSessionUrl?: string | null;
+            errorCode?: string | null;
+            errorMessage?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        BuildSessionStatusReport: {
+            /** @enum {string} */
+            status: "building" | "deploying" | "deployed" | "failed";
+            /** @description REQUIRED when `status=deployed`; invalid otherwise. */
+            appSlug?: string;
+            /** @description Only valid when `status=failed`. */
+            errorCode?: string;
+            /** @description Only valid when `status=failed`. */
+            errorMessage?: string;
+        };
+        PublicationRequest: {
+            /** @enum {string} */
+            target: "marketplace";
+            notes?: string;
+        };
+        PublicationApproval: {
+            notes?: string;
+        };
+        PublicationRejection: {
+            reason: string;
+        };
+        AppPublication: {
+            slug: components["schemas"]["Slug"];
+            tier: components["schemas"]["Visibility"];
+            /** @enum {string} */
+            status: "none" | "pending" | "approved" | "rejected";
+            /** @enum {string} */
+            target: "marketplace";
+            /** Format: date-time */
+            submittedAt?: string | null;
+            /** Format: date-time */
+            approvedAt?: string | null;
+            /** @description Approving platform admin (`usr_…`). */
+            approvedBy?: string | null;
+            /** @description Requesting user (`usr_…`). */
+            requestedBy?: string | null;
+            notes?: string | null;
+            rejection?: {
+                reason: string;
+                /** Format: date-time */
+                rejectedAt: string;
+                rejectedBy?: string | null;
+            } | null;
+        };
+        /** @description One row of the marketplace review queue (`GET /publication-requests`): an app's publication state together with the minimal app display context a reviewer needs to triage it without a second call. Every field is owned by the app-registry service — this is not a cross-service join. `icon` is REQUIRED here even though `AppManifest.icon` is optional: the queue row always renders an icon cell, so the server substitutes a placeholder (`{ kind: emoji, value: "📦" }`) when the app's manifest has none. Consumers can therefore rely on `icon` being present and non-null. */
+        PublicationQueueItem: {
+            slug: components["schemas"]["Slug"];
+            /** @description App display name (`manifest.name`), for the "App" column. */
+            name: string;
+            /** @description Always present — the app's manifest icon, or a server-provided placeholder (`📦` emoji) when the manifest declares none. */
+            icon: components["schemas"]["Icon"];
+            /** @description Owning org (the publisher) as a wire-typed reference — a TypeID (`org_…`, the value prefixed-ids returns in prod) or a bare UUID (legacy/unprefixed). NOT `format: uuid`: a prefixed TypeID is not a syntactic UUID and would fail that constraint. A personal app is owned by the caller's personal org and still carries that org's id; `null` is reserved for a genuinely platform-global app with no owning org. The org's display name is resolved by the caller, not embedded. */
+            organizationId?: string | null;
+            /** @description The creator as an in-org contact, or null — rendered in the publisher/contact column. Subject to the SAME former-member rule as `App.creator` (a former member is reduced to `isCurrentMember:false` with no name/contact, per frame (e)). Present only when `fuzefront.apps.creator-ownership` is ON. */
+            creator?: components["schemas"]["AppCreator"] | null;
+            publication: components["schemas"]["AppPublication"];
+        };
     };
     responses: {
+        /** @description Rate limit exceeded. */
+        TooManyRequests: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The operation's release flag is OFF (`feature_disabled`), or — for `createBuildSession` — the builder is not configured (`builder_unavailable`). */
+        ServiceUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Missing or invalid session / token. */
         Unauthorized: {
             headers: {
@@ -555,6 +979,8 @@ export interface components {
     parameters: {
         /** @description The app's immutable url-safe slug (e.g. `clock`). */
         Slug: components["schemas"]["Slug"];
+        /** @description Build session TypeID (`front_abs_…`). */
+        BuildSessionId: string;
     };
     requestBodies: never;
     headers: never;
@@ -794,7 +1220,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Policy accepted and synced. */
+            /** @description Policy validated and stored. NOT yet pushed to the policy provider — see the propagation note above. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -802,9 +1228,9 @@ export interface operations {
                 content: {
                     "application/json": {
                         slug: components["schemas"]["Slug"];
-                        /** @description Count of namespaced resources synced. */
+                        /** @description Count of resources accepted in the submitted policy. */
                         resources: number;
-                        /** @description Count of namespaced roles synced. */
+                        /** @description Count of roles accepted in the submitted policy. */
                         roles: number;
                     };
                 };
@@ -880,6 +1306,413 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
+        };
+    };
+    listBuildSessions: {
+        parameters: {
+            query?: {
+                /** @description Restrict to one organization (TypeID `org_…` or uuid). */
+                organizationId?: string;
+                limit?: number;
+                /** @description Opaque cursor from `page.nextCursor`. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of build sessions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BuildSession"][];
+                        page: {
+                            nextCursor: string | null;
+                            hasMore: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createBuildSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBuildSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Session created and launched (status = building). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildSession"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description The named organization does not exist (platform-admin callers only). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `context=personal` but the caller has no personal account (`no_personal_org`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            /** @description The FuzeAgent launch failed; the session is recorded as `failed` (`launch_failed`). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getBuildSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Build session TypeID (`front_abs_…`). */
+                id: components["parameters"]["BuildSessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The build session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildSession"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    cancelBuildSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Build session TypeID (`front_abs_…`). */
+                id: components["parameters"]["BuildSessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cancelled session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildSession"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The session is already in a terminal state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    reportBuildSessionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Build session TypeID (`front_abs_…`). */
+                id: components["parameters"]["BuildSessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildSessionStatusReport"];
+            };
+        };
+        responses: {
+            /** @description The updated session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildSession"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Illegal transition (backwards/repeat/terminal) or cross-tenant deploy (`ORG_MISMATCH`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `deployed` named an `appSlug` that is not registered (`APP_NOT_FOUND`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getAppPublication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The publication state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPublication"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    requestAppPublication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicationRequest"];
+            };
+        };
+        responses: {
+            /** @description Request recorded (status = pending). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPublication"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description A request is already pending, or the app is already published. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    approveAppPublication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PublicationApproval"];
+            };
+        };
+        responses: {
+            /** @description Approved; the app is now in the marketplace tier. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPublication"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description No pending publication request (`NOT_PENDING`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    rejectAppPublication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicationRejection"];
+            };
+        };
+        responses: {
+            /** @description Rejected. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPublication"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description No pending publication request (`NOT_PENDING`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listPublicationRequests: {
+        parameters: {
+            query?: {
+                /** @description Which publication requests to list. Defaults to `pending` (the review queue). `none` is not a request state and is rejected 400. */
+                status?: "pending" | "approved" | "rejected";
+                limit?: number;
+                /** @description Opaque cursor from `page.nextCursor`. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of publication requests, oldest first (per-status instant; see operation description). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PublicationQueueItem"][];
+                        page: {
+                            nextCursor: string | null;
+                            hasMore: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getHealth: {

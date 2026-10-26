@@ -28,18 +28,19 @@ import { makeClient, rawFetch } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
 import { createTestList, createTestListWithItems, purgeList } from '../helpers/factories';
 import type { SelectionListId, SelectionListItemId } from '../helpers/factories';
+import { testOrg, testUser } from '../helpers/ids';
 
 // ---------------------------------------------------------------------------
 // Test org — one org, one list, multiple actors
 // ---------------------------------------------------------------------------
 
-const ORG_ID = 'org_01test00000000authz0000000';
-const USER_OWNER = 'usr_01test00000000authzowner00';
-const USER_EDITOR = 'usr_01test00000000authzeditor0';
-const USER_CONTRIBUTOR = 'usr_01test00000000authzcontrib';
-const USER_TRANSLATOR = 'usr_01test00000000authztransl0';
-const USER_VIEWER = 'usr_01test00000000authzviewer0';
-const USER_ORG_ADMIN = 'usr_01test00000000authzadmin00';
+const ORG_ID = testOrg('authz');
+const USER_OWNER = testUser('authzowner');
+const USER_EDITOR = testUser('authzeditor');
+const USER_CONTRIBUTOR = testUser('authzcontrib');
+const USER_TRANSLATOR = testUser('authztransl');
+const USER_VIEWER = testUser('authzviewer');
+const USER_ORG_ADMIN = testUser('authzadmin');
 
 function tokenFor(userId: string, roles: string[] = []): string {
   return mintTestToken({ userId, organizationId: ORG_ID, roles });
@@ -435,7 +436,7 @@ describe('list-owner role', () => {
 // TENANT role `admin`; ReBAC `org-admin` is FuzeOne staff), `org-admin` is the legacy claim the
 // stand-in Security API aliases to `admin`. The original block only exercised the alias.
 describe.each([
-  ['admin', 'usr_01test00000000authztenadmin0'],
+  ['admin', testUser('authztenadmin')],
   ['org-admin', USER_ORG_ADMIN],
 ])('tenant role %s has no implicit list-owner (3.0.0)', (tenantRole, adminUser) => {
   const adminToken = () => tokenFor(adminUser, [tenantRole]);
@@ -585,7 +586,7 @@ describe('id is not a capability', () => {
     });
 
     const noGrantToken = mintTestToken({
-      userId: 'usr_01test00000000authznogrant',
+      userId: testUser('authznogrant'),
       organizationId: ORG_ID,
     });
 

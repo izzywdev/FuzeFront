@@ -120,7 +120,7 @@ suite('seed/events migrations on real Postgres', () => {
   it('applies from scratch and creates every new table/column', async () => {
     const db = await fresh();
     const [, applied] = await db.migrate.latest();
-    expect(applied.length).toBe(10);
+    expect(applied.length).toBe(13);
 
     const lists = await columns(db, 'selection_lists');
     const items = await columns(db, 'selection_list_items');
@@ -158,7 +158,7 @@ suite('seed/events migrations on real Postgres', () => {
     });
 
     const [, applied] = await db.migrate.latest();
-    expect(applied.length).toBe(5);
+    expect(applied.length).toBe(8);
 
     const lists = await db('selection_lists').orderBy('id');
     expect(lists).toHaveLength(2);
@@ -204,14 +204,15 @@ suite('seed/events migrations on real Postgres', () => {
       `SELECT conname FROM pg_constraint WHERE conrelid = 'selection_lists'::regclass AND conname LIKE 'ck_sl_%'`
     );
     expect(cons.rows.map((r: any) => r.conname).sort()).toEqual([
-      'ck_sl_revision_positive', 'ck_sl_seed_all_or_none', 'ck_sl_seed_modified_needs_seed',
+      'ck_sl_fork_complete', 'ck_sl_fork_not_platform', 'ck_sl_revision_positive', 'ck_sl_seed_all_or_none',
+      'ck_sl_seed_modified_needs_seed', 'ck_sl_visibility',
     ]);
   });
 
   it('down() then up() round-trips cleanly (and leaves migrations 1-5 intact)', async () => {
     const db = await fresh();
     await db.migrate.latest();
-    for (let i = 0; i < 5; i++) await db.migrate.down();
+    for (let i = 0; i < 8; i++) await db.migrate.down();
     const t = await tables(db);
     for (const name of ['selection_list_seed_ledger', 'selection_list_seed_sources', 'event_outbox', 'selection_list_ref_index']) {
       expect(t).not.toContain(name);
@@ -219,7 +220,7 @@ suite('seed/events migrations on real Postgres', () => {
     expect(await columns(db, 'selection_lists')).not.toContain('seed_source');
     expect(await columns(db, 'selection_lists')).toContain('key');
     const [, applied] = await db.migrate.latest();
-    expect(applied.length).toBe(5);
+    expect(applied.length).toBe(8);
   });
 
   describe('constraints and semantics', () => {

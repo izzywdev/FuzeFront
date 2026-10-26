@@ -1,5 +1,263 @@
 # Changelog — @fuzefront/security-client
 
+## 1.3.0 — Session validity check for downstream services (additive, unreleased)
+
+`info.version` 1.2.0 -> 1.3.0, `SECURITY_CONTRACT_VERSION` 1.2.0 -> 1.3.0,
+package `version` 1.2.0 -> 1.3.0. MINOR — adds one operation and two schemas.
+Existing operations and response shapes are unchanged.
+
+### Added
+
+- `POST /v1/security/sessions/validate` (`validateSession`), service-to-service
+  only: the bearer must be a `fuze-workload` token with the `sessions:validate`
+  scope. Body `SessionValidateRequest { userId, sessionId }` (both required,
+  `additionalProperties: false`); response `SessionValidation { active }`.
+- `active` is `true` only when the session exists, is unexpired, and belongs to
+  the supplied `userId`. Unknown, revoked, expired and user-mismatch are all the
+  same `200 { active: false }` with no reason, so the endpoint is not an oracle
+  for which identifier was wrong. A store outage is `503`, never a boolean.
+
+### Why
+
+A FuzeFront session token stays cryptographically valid until `exp` (24h) after
+the user logs out or revokes the device. `@izzywdev/fuzefront-auth` 0.4.0 (Node)
+and `fuzefront-auth` 0.2.0 (Python) now refuse a `legacy-hs256` token that names
+a session unless the consumer supplies a `sessionValidator`. This is the
+endpoint such a validator calls. Contract + generated client only; the backend
+handler and the consumer wiring fan out after this freeze.
+
+### Migration
+
+None. Additive. A consumer that does not call the new operation is unaffected.
+
+## 1.2.0 — Tenant workspace discovery (additive, unreleased)
+
+`info.version` 1.1.0 -> 1.2.0, `SECURITY_CONTRACT_VERSION` 1.1.0 -> 1.2.0,
+package `version` 1.1.0 -> 1.2.0. MINOR — adds the authenticated,
+provider-agnostic `GET /v1/security/session/workspaces` discovery contract used
+by portal and standalone clients before proving a personal or organization
+tenant. Existing operations and response shapes are unchanged.
+
+## 1.1.0 — Auth-experience signup contract reconciliation (additive, unreleased)
+
+`info.version` 1.0.0 -> 1.1.0, `SECURITY_CONTRACT_VERSION` 1.0.0 -> 1.1.0,
+package `version` 1.0.0 -> 1.1.0. MINOR — additive error codes, a newly
+documented (already-implemented) response, and description corrections. No
+existing request/response shape is narrowed; oasdiff reports non-breaking.
+
+Reconciles three contract/implementation gaps surfaced while building the three
+auth-experience signup slices against 1.0.0. Contract + generated client only —
+backend/UI/test fan out after this freeze.
+
+### Added
+
+- `ErrorBody.code` enum: `CAPTCHA_FAILED`. A rejected/invalid/missing Cloudflare
+  Turnstile token on `POST /v1/security/signup` now returns **400 with code
+  `CAPTCHA_FAILED`** — distinct from a generic `MALFORMED` (previously the
+  backend returned `400 MALFORMED` and the frontend guessed `403`, so they
+  disagreed). Cloudflare being unreachable stays **503 `PROVIDER_UNAVAILABLE`**
+  (fail-closed), never `CAPTCHA_FAILED`. `ErrorBody.description` documents this.
+- `POST /v1/security/signup`: **422** response (body `ErrorBody`, `code:
+  PASSWORD_POLICY`) for a password that fails the authoritative policy — distinct
+  from 409 email-exists and 503 provider errors. `AuthMethods.passwordPolicy`
+  already referenced `422 PASSWORD_POLICY`; the operation now declares it. The
+  `PASSWORD_POLICY` code already existed in the enum.
+- Hand-authored `SecurityErrorCode` union in `src/types.ts` brought into full
+  lockstep with the `ErrorBody.code` enum — adds the two codes above plus
+  previously-drifted values (`REDIRECT_URI_NOT_ALLOWED`, `TOKEN_EXPIRED`,
+  `TOKEN_INVALID`, `PASSWORD_POLICY`, `LAST_FACTOR`, `NO_PASSWORD`,
+  `RATE_LIMITED`). Pure additive widening of a string-literal union.
+
+### Changed (documentation only)
+
+- `POST /v1/security/signup` `400` response: was a generic `BadRequest` ref; now
+  an inline description documenting both `MALFORMED` and `CAPTCHA_FAILED` and the
+  503-on-unreachable distinction. Same `ErrorBody` schema — non-breaking.
+- `GET /v1/security/signup/email-available` and the sibling
+  `GET /v1/security/email-available`: enumeration-posture text CORRECTED. The real
+  control is **per-IP rate-limiting** (the check fires per keystroke on a debounce
+  and Turnstile tokens are single-use, so a captcha cannot gate it); the prior
+  "per-IP rate-limited AND captcha-gated" claim was wrong. Now states explicitly
+  it is NOT captcha-gated. No captcha parameter added; the documented `429`
+  remains.
+
+## 1.0.0 — Auth-experience signup redesign (BREAKING, unreleased)
+
+`info.version` 0.12.0 -> 1.0.0, `SECURITY_CONTRACT_VERSION` 0.12.0 -> 1.0.0,
+package `version` 0.12.0 -> 1.0.0. MAJOR because `SignupRequest` drops
+`firstName`/`lastName` under `additionalProperties: false` — a request valid
+against 0.12.0 (sending `firstName`/`lastName`) is rejected by 1.0.0.
+
+Implements the frozen `design/frames/auth-experience/manifest.json`
+`contract.deltas` (all four build flows owner-approved). Contract + generated
+client only — no backend/UI/test implementation (fanned out after freeze).
+
+### BREAKING
+
+- `SignupRequest`: `firstName` + `lastName` REMOVED; replaced by a single
+  OPTIONAL `name` (display name; maps 1:1 to the identity store's single `name`,
+  i18n-safe). `additionalProperties: false` retained, so a client still sending
+  `firstName`/`lastName` now fails validation. Only in-repo consumer is the host
+  frontend via `@fuzefront/security-client`; `packages/auth-ui` re-derives its
+  `SignupRequest` from the regenerated client in a later (frontend-engineer)
+  phase — NOT edited here.
+
+### Added
+
+- `GET /v1/security/signup/email-available?email=` (`getSignupEmailAvailable`),
+  public/unauthenticated → `200 SignupEmailAvailability { available: boolean }`;
+  `400` malformed/missing email; `429` rate-limited. Debounced inline signup
+  check; client contract is FAIL-OPEN (never blocks submit on error);
+  documented MUST be per-IP rate-limited + captcha-gated so it is not an
+  enumeration oracle (backend enforces). NOTE — overlaps the pre-existing,
+  already-implemented `GET /v1/security/email-available` (`getEmailAvailable`,
+  `EmailAvailability { available, email }`); see the delivery note / flagged
+  item — consolidation of the two paths is an owner/orchestrator decision, not
+  resolved by this contract PR.
+- `SignupRequest.turnstileToken` (string, optional in-schema): Cloudflare
+  Turnstile token, REQUIRED server-side when `AuthMethods.captcha` is present.
+  The conditional depends on server config, not another request field, so it is
+  documented + enforced server-side rather than expressed as a static schema
+  constraint.
+- `AuthMethods.captcha` `{ provider: 'turnstile', siteKey }` (optional; absent
+  when captcha disabled) and `AuthMethods.passwordPolicy`
+  `{ minLength, requireUpper, requireLower, requireDigit, requireSymbol }`
+  (optional) so the client renders the authoritative policy. Both ADDITIVE /
+  non-breaking. Hand-authored `AuthMethods` in `src/types.ts` extended in
+  lockstep (`CaptchaMethod`, `PasswordPolicy`).
+
+## 0.12.0 — Account: change password; MFA last-factor guard (unreleased)
+
+`info.version` 0.11.0 -> 0.12.0, `SECURITY_CONTRACT_VERSION` 0.11.0 -> 0.12.0.
+Builds on 0.11.0 (#1552); `PASSWORD_POLICY` already exists there.
+
+### Added
+
+- `POST /v1/security/password/change` (`changePassword`), body
+  `ChangePasswordRequest { currentPassword, newPassword }`
+  (`additionalProperties: false`), bearer required. `204` on success and every
+  OTHER session is revoked; `400 INVALID_CREDENTIALS` wrong current password
+  (sessions untouched); `400 MALFORMED`; `401`; `409 NO_PASSWORD` (use set-first);
+  `422 PASSWORD_POLICY`; `429 RATE_LIMITED` (failed attempts).
+- `ErrorBody.code`: `LAST_FACTOR`, `NO_PASSWORD`, `RATE_LIMITED`.
+
+### Changed
+
+- `DELETE /v1/security/mfa/factors/{factorId}` documents `409 LAST_FACTOR`:
+  removing the user's last ACTIVE factor is refused (atomically) and the factor
+  survives. Pending factors can always be removed.
+
+## 0.11.0 — Auth: distinct token/password error codes for email verification and password reset (minor, unreleased)
+
+`info.version` 0.10.1 -> 0.11.0, `SECURITY_CONTRACT_VERSION` 0.10.1 -> 0.11.0.
+Additive: new `ErrorBody.code` values and a new `422` response. Existing
+success shapes are unchanged. (PR #1543 separately bumps to 0.10.2 on another
+branch; this release is minor because it adds codes and a status, so it takes
+0.11.0 and supersedes that patch number on merge.)
+
+### Added
+
+- `ErrorBody.code`: `TOKEN_EXPIRED`, `TOKEN_INVALID`, `PASSWORD_POLICY`.
+- `POST /v1/security/session/password/reset-confirm`: `422 PASSWORD_POLICY`
+  when the identity provider rejects the new password (the token stays live).
+
+### Changed (behaviour behind an unchanged shape)
+
+- `POST /v1/security/verify/email/confirm` and `.../reset-confirm`: an
+  expired or already-used token is now `400 TOKEN_EXPIRED` and an unknown token
+  `400 TOKEN_INVALID`. Previously verify-confirm answered `401 NOT_ACTIVE`,
+  which clients read as session expiry; reset-confirm answered `400 MALFORMED`.
+- `POST /v1/security/verify/email/start`: when authenticated, the target is
+  always the account's own email (a body `email` is ignored); unauthenticated
+  start resolves the account server-side and is always `202`.
+- `confirmEmailVerification` never returns `emailVerified: true` unless a user
+  row was actually updated (and the challenge email still matches the account).
+
+### Consumers
+
+UI packages still pin 0.10.x of this client and are deliberately not touched
+here; they should bump and branch on `TOKEN_EXPIRED` / `TOKEN_INVALID` /
+`PASSWORD_POLICY` instead of the HTTP status alone.
+
+## 0.10.3 — Security: `POST /v1/security/verify/phone/confirm` now requires a session (security fix, unreleased)
+
+`info.version` 0.10.2 -> 0.10.3, `SECURITY_CONTRACT_VERSION` 0.10.2 -> 0.10.3.
+Request/response schemas are unchanged.
+
+### Fixed (security)
+
+- `confirmPhoneVerification` declared no auth and the implementation marked
+  EVERY account holding the number as phone-verified from an unauthenticated
+  request. It now declares `bearerAuth`, documents `401`, and is bound to the
+  caller's own account: verified only when `phone` is that account's current
+  number. Callers must send `Authorization: Bearer <token>` (the same session
+  that called `startPhoneVerification`).
+
+## 0.10.2 — Org invitations v2: memberType, external (email/WhatsApp) invitees, and the signup bind-token flow (FFRNT-305 / FFRNT-304, unreleased)
+
+**Additive surface.** `info.version` 0.10.1 -> 0.10.2, `SECURITY_CONTRACT_VERSION`
+0.10.1 -> 0.10.2. First time the invitation surface is described in the contract
+at all (it previously existed only in `backend/security/src/routes/{organizations,invitations}.ts`,
+undocumented). Patch/minor-additive bump: new paths + schemas + two optional fields
+on existing schemas; no existing required field changed.
+
+### Added — invitation HTTP surface (tag `organizations`, base `/api`)
+
+- `GET /organizations/{id}/invitations` — list, **cursor-paginated** (`limit` +
+  opaque `cursor`, `{ items, page }` envelope) with an optional `status` filter.
+  The deployed route returned an unbounded `{ invitations: [] }`; the frozen
+  contract paginates it per the family pagination standard (backend conforms).
+- `POST /organizations/{id}/invitations` — create one (`201 Invitation`).
+- `POST /organizations/{id}/invitations/bulk` — up to 50, per-invitee results.
+- `POST /organizations/{id}/invitations/{invitationId}/resend` — re-dispatch + extend expiry.
+- `DELETE /organizations/{id}/invitations/{invitationId}` — revoke (`204`).
+- `GET /invitations/{token}` — **public** masked resolve (`200` / `410 Gone`).
+- `POST /invitations/{token}/accept` — auth-optional accept: `200` bound, or
+  `202` enroll carrying the `bindToken`; `403` identity mismatch, `409` race,
+  `410` expired/revoked.
+
+### Added — the two orthogonal dimensions
+
+- `MemberType` (`employee | customer`) — orthogonal to the access role. Added to
+  `InvitationCreate`/`BulkInvitationCreate` (required) and `Invitation`, and as
+  an **optional** field on `Member`, `MemberCreate`, and `DirectoryMember` (old
+  memberships may lack one). The root-org owner invites external users as `customer`.
+- `InviteeRef` — a `oneOf` discriminated on `kind`: `AccountInvitee` (existing
+  account-holder, by typed `userId` reference) or `ExternalInvitee` (`channel`
+  `email` → `email` (RFC 5322) OR `whatsapp` → `phone` (E.164 `^\+[1-9]\d{1,14}$`),
+  enforced by `if/then`). Satisfies identifier-standard 2 (every polymorphic
+  reference carries its type).
+
+### Added — external-signup bind-token flow
+
+- `202` accept returns `InvitationEnrollResponse { action:'enroll', enrollUrl,
+  bindToken }`. The `bindToken` is the single-use, short-lived, server-minted
+  carrier of the invite through signup/enrollment.
+- `SignupRequest.bindToken` (optional) threads it in: on signup the server
+  verifies the signup identity matches the invited channel identity and
+  auto-binds the membership (its `memberType`/`role`) — no second round-trip.
+
+### Added — Kafka event schemas (`@fuzefront/shared`, Zod)
+
+- `identity.invitation.created` — carries `organizationId`, `invitationId`,
+  `invitedByUserId`, `role`, `memberType`, `channel`, and the channel-appropriate
+  contact (email OR E.164 phone) so a notification worker dispatches over the
+  right channel (email + WhatsApp).
+- `identity.invitation.accepted` — carries `organizationId`, `invitationId`,
+  `userId`, `role`, `memberType`.
+
+### Identifier-standard conformance
+
+- Every create body (`InvitationCreate`, `BulkInvitationCreate`,
+  `InvitationAcceptRequest`) sets `additionalProperties: false` and accepts no
+  client-chosen `id`/`token` — the service mints the invitation id and the
+  bindToken (identifier-standard 1).
+
+### Consumers
+
+- New typed `paths`/`components` (`Invitation`, `InviteeRef`, `MemberType`, …).
+  No breaking rename. `Member`/`DirectoryMember` gain an optional `memberType`.
+
 ## 0.10.1 — AuthZ: document the platform-admin gate on tenant creation and the caller-scoped tenant list (documentation fix, unreleased)
 
 **Documentation only, no shape change.** `info.version` 0.10.0 -> 0.10.1,
@@ -33,7 +291,6 @@ disable it for non-platform-admins and render the `403` in place.
 - Adds operator membership proof and explicit session tenant verification.
 - Requires active SQL membership and active organization for scoped FuzeKeys owner grants.
 - Adds verified Security workload callers without weakening existing caller gates.
-
 
 ## 0.9.1 — AuthZ: human callers are authorized per tenant on grant/revoke, member/role management and cross-subject reads (security fix, unreleased)
 

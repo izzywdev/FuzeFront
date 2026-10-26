@@ -16,13 +16,26 @@ FROM node:24-alpine AS pkgbuild
 WORKDIR /pkg
 COPY packages/security/package.json packages/security/package.json
 COPY packages/service-auth/package.json packages/service-auth/package.json
-RUN printf '{"name":"pkgbuild","private":true,"workspaces":["packages/security","packages/service-auth"]}' > package.json
+# @fuzefront/telemetry (index.ts's initTelemetry(), app.ts's
+# tracingMiddleware()) joins the same throwaway workspace so it builds the
+# same way as service-auth above.
+COPY packages/telemetry/package.json packages/telemetry/package.json
+RUN printf '{"name":"pkgbuild","private":true,"workspaces":["packages/security","packages/service-auth","packages/telemetry"]}' > package.json
 RUN npm install --ignore-scripts --no-audit --no-fund
 COPY packages/security/ packages/security/
 COPY packages/service-auth/ packages/service-auth/
+COPY packages/telemetry/ packages/telemetry/
 # security-client first — service-auth's type-only import resolves against its dist .d.ts.
 RUN npm run build -w @fuzefront/security-client
 RUN npm run build -w @fuzefront/service-auth
+RUN npm run build -w @fuzefront/telemetry
+# Unlike service-auth (no runtime deps), @fuzefront/telemetry declares RUNTIME
+# dependencies (the @opentelemetry/* SDK packages) that must reach the
+# production image. The workspace install above hoists them to /pkg/node_modules,
+# which nothing downstream copies — re-install STANDALONE (--workspaces=false)
+# so they land directly in packages/telemetry/node_modules instead (same
+# `jose`-style fix services/billing-service/Dockerfile documents).
+RUN cd packages/telemetry && npm install --workspaces=false --omit=dev --ignore-scripts
 
 # ---------- base: payment-service production deps only ----------
 FROM node:24-alpine AS base
@@ -35,6 +48,11 @@ COPY services/payment-service/package.json services/payment-service/package.json
 # billing-service does for @izzywdev/fuzefront-identity.
 COPY --from=pkgbuild /pkg/packages/service-auth/package.json packages/service-auth/package.json
 COPY --from=pkgbuild /pkg/packages/service-auth/dist packages/service-auth/dist
+# Same file:-link dance for @fuzefront/telemetry, including its node_modules
+# (service-auth has no runtime deps and needs none; telemetry does).
+COPY --from=pkgbuild /pkg/packages/telemetry/package.json packages/telemetry/package.json
+COPY --from=pkgbuild /pkg/packages/telemetry/dist packages/telemetry/dist
+COPY --from=pkgbuild /pkg/packages/telemetry/node_modules packages/telemetry/node_modules
 RUN cd services/payment-service && npm install --omit=dev --ignore-scripts --no-audit --no-fund
 
 # ---------- build: compile payment-service ----------
@@ -43,6 +61,9 @@ WORKDIR /app
 COPY services/payment-service/package.json services/payment-service/package.json
 COPY --from=pkgbuild /pkg/packages/service-auth/package.json packages/service-auth/package.json
 COPY --from=pkgbuild /pkg/packages/service-auth/dist packages/service-auth/dist
+COPY --from=pkgbuild /pkg/packages/telemetry/package.json packages/telemetry/package.json
+COPY --from=pkgbuild /pkg/packages/telemetry/dist packages/telemetry/dist
+COPY --from=pkgbuild /pkg/packages/telemetry/node_modules packages/telemetry/node_modules
 RUN cd services/payment-service && npm install --ignore-scripts --no-audit --no-fund
 COPY services/payment-service/tsconfig.json services/payment-service/tsconfig.json
 COPY services/payment-service/src services/payment-service/src
@@ -60,6 +81,13 @@ RUN apk add --no-cache dumb-init && \
 COPY --from=base /app/services/payment-service/node_modules ./services/payment-service/node_modules
 COPY --from=pkgbuild /pkg/packages/service-auth/package.json ./packages/service-auth/package.json
 COPY --from=pkgbuild /pkg/packages/service-auth/dist ./packages/service-auth/dist
+# node_modules/@fuzefront/telemetry is the same kind of relative symlink into
+# /app/packages/telemetry; package.json + dist populate the symlink target,
+# and node_modules carries its RUNTIME deps (the @opentelemetry/* SDK
+# packages, which — unlike service-auth above — it actually has).
+COPY --from=pkgbuild /pkg/packages/telemetry/package.json ./packages/telemetry/package.json
+COPY --from=pkgbuild /pkg/packages/telemetry/dist ./packages/telemetry/dist
+COPY --from=pkgbuild /pkg/packages/telemetry/node_modules ./packages/telemetry/node_modules
 COPY --from=build /app/services/payment-service/dist ./services/payment-service/dist
 COPY services/payment-service/package.json ./services/payment-service/package.json
 

@@ -245,9 +245,17 @@ async function ensureS2SApplication(
   const slug = `s2s-${toSlug(service)}`
   const appName = `${service} (s2s)`
 
+  // superuser_full_list: Authentik's application LIST endpoint filters its
+  // results by the requesting user's per-object view permission — EVEN for a
+  // superuser admin token — unless this flag is set. The creator of an
+  // application is not auto-granted the object permission the list then filters
+  // on, so a later re-run does NOT see the application it created earlier, falls
+  // through to the POST below, and Authentik 400s on the duplicate slug. With
+  // the billing-s2s-register Job's backoffLimit: 0 that aborted the ENTIRE
+  // fuzefront prod Argo sync on every retry for 7+ days (incident 2026-10-25).
   const found = await findAcrossPages<{ slug: string; name: string }>(
     `${baseUrl}/api/v3/core/applications/`,
-    { slug },
+    { slug, superuser_full_list: 'true' },
     headers,
     a => a.slug === slug
   )
@@ -256,18 +264,44 @@ async function ensureS2SApplication(
     return found.slug
   }
 
-  await axios.post(
-    `${baseUrl}/api/v3/core/applications/`,
-    {
-      name: appName,
-      slug,
-      provider: providerPk,
-      meta_description: `S2S machine identity for ${service} (client_credentials; emits service+scopes claims)`,
-      policy_engine_mode: 'any',
-    },
-    { headers, timeout: AUTHENTIK_TIMEOUT_MS }
-  )
-  console.log(`[provision-s2s] Created application "${appName}" (slug=${slug})`)
+  // Idempotent create. If the list still did not surface it, or a concurrent run
+  // created it first, Authentik returns 400 with a slug-collision field error.
+  // Treat that as success instead of a fatal error, and surface the response
+  // body for any OTHER 400 so the real cause is diagnosable (the bare
+  // "Request failed with status code 400" said nothing).
+  try {
+    await axios.post(
+      `${baseUrl}/api/v3/core/applications/`,
+      {
+        name: appName,
+        slug,
+        provider: providerPk,
+        meta_description: `S2S machine identity for ${service} (client_credentials; emits service+scopes claims)`,
+        policy_engine_mode: 'any',
+      },
+      { headers, timeout: AUTHENTIK_TIMEOUT_MS }
+    )
+    console.log(`[provision-s2s] Created application "${appName}" (slug=${slug})`)
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 400) {
+      const body = JSON.stringify(error.response.data)
+      // Treat as idempotent ONLY for a slug UNIQUENESS error (the app already
+      // exists, so this create is a safe no-op). A different slug 400 — e.g. the
+      // generated `s2s-<slug>` exceeds Authentik's 50-char SlugField limit for a
+      // long service name — means NO application was created; rethrowing it (not
+      // returning the slug) stops the caller writing credentials for a resource
+      // that does not exist.
+      if (body.toLowerCase().includes('already exists')) {
+        console.log(
+          `[provision-s2s] Application "${appName}" already exists (create returned 400 on ` +
+            `slug uniqueness; treating as idempotent).`
+        )
+        return slug
+      }
+      console.error(`[provision-s2s] Application create rejected (HTTP 400): ${body}`)
+    }
+    throw error
+  }
   return slug
 }
 

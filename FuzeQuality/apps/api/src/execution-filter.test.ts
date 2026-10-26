@@ -1,14 +1,177 @@
 import { describe, expect, it } from 'vitest'
-import { executionFilterSchema } from './execution-filter'
+import { executionAttemptHistoryFilterSchema, executionFilterSchema, executionPageFilterSchema } from './execution-filter'
 
 describe('execution evidence filter', () => {
   it('accepts a chronological ISO-8601 range', () => {
     expect(executionFilterSchema.safeParse({
       kind: 'post-production',
       status: 'failed',
+      provider: 'github-actions',
+      name: 'Post-production browser suite',
+      evidenceKind: 'video',
+      evidenceCollectionStatus: 'partial',
+      evidenceCollectionErrorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED',
+      evidenceCheckedAfter: '2026-10-01T00:00:00.000Z',
+      evidenceCheckedBefore: '2026-10-07T00:00:00.000Z',
+      evidenceRequirement: 'post-production-video-missing',
+      thresholdOutcome: 'failed',
+      gateOutcome: 'failed',
+      externalRunId: '123456789',
+      policyArtifactId: 'policy-auth',
+      gateArtifactId: 'gate-auth',
+      branch: 'feature/checkout',
+      revision: 'abcdef123456',
+      workflowPath: '.github/workflows/load.yml',
+      attemptScope: 'retry',
+      minimumDurationMs: '60000',
+      maximumDurationMs: '120000',
       from: '2026-10-01T00:00:00.000Z',
       until: '2026-10-08T00:00:00.000Z',
     }).success).toBe(true)
+  })
+
+  it('bounds exact policy and gate artifact identifiers', () => {
+    expect(executionFilterSchema.parse({ policyArtifactId: ' policy-auth ', gateArtifactId: ' gate-auth ' }))
+      .toMatchObject({ policyArtifactId: 'policy-auth', gateArtifactId: 'gate-auth' })
+    expect(executionFilterSchema.safeParse({ policyArtifactId: '' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ gateArtifactId: 'x'.repeat(501) }).success).toBe(false)
+  })
+
+  it('rejects an unknown execution provider', () => {
+    expect(executionFilterSchema.safeParse({ provider: 'jenkins' }).success).toBe(false)
+  })
+
+  it('bounds and normalizes an exact suite name', () => {
+    expect(executionFilterSchema.parse({ name: ' Integration suite ' }).name).toBe('Integration suite')
+    expect(executionPageFilterSchema.safeParse({ name: ' ' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ name: 'a'.repeat(501) }).success).toBe(false)
+  })
+
+  it('accepts only retained execution evidence kinds', () => {
+    expect(executionFilterSchema.parse({ evidenceKind: 'video' }).evidenceKind).toBe('video')
+    expect(executionPageFilterSchema.parse({ evidenceKind: 'trace' }).evidenceKind).toBe('trace')
+    expect(executionFilterSchema.safeParse({ evidenceKind: 'artifact' }).success).toBe(false)
+  })
+
+  it('accepts only explicit provider evidence collection states', () => {
+    expect(executionFilterSchema.parse({ evidenceCollectionStatus: 'complete' }).evidenceCollectionStatus).toBe('complete')
+    expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'unavailable' }).evidenceCollectionStatus).toBe('unavailable')
+    expect(executionPageFilterSchema.parse({ evidenceCollectionStatus: 'not-collected' }).evidenceCollectionStatus).toBe('not-collected')
+    expect(executionFilterSchema.safeParse({ evidenceCollectionStatus: 'unknown' }).success).toBe(false)
+  })
+
+  it('accepts only retained provider evidence failure codes', () => {
+    expect(executionFilterSchema.parse({ evidenceCollectionErrorCode: 'PROVIDER_TIMEOUT' }).evidenceCollectionErrorCode)
+      .toBe('PROVIDER_TIMEOUT')
+    expect(executionPageFilterSchema.parse({ evidenceCollectionErrorCode: 'PROVIDER_RESPONSE_INVALID' }).evidenceCollectionErrorCode)
+      .toBe('PROVIDER_RESPONSE_INVALID')
+    expect(executionFilterSchema.safeParse({ evidenceCollectionErrorCode: 'UNKNOWN_PROVIDER_FAILURE' }).success)
+      .toBe(false)
+  })
+
+  it('accepts only a chronological ISO-8601 provider evidence window', () => {
+    expect(executionFilterSchema.parse({ evidenceCheckedAfter: '2026-10-01T00:00:00.000Z' }).evidenceCheckedAfter)
+      .toBe('2026-10-01T00:00:00.000Z')
+    expect(executionFilterSchema.parse({ evidenceCheckedBefore: '2026-10-07T00:00:00.000Z' }).evidenceCheckedBefore)
+      .toBe('2026-10-07T00:00:00.000Z')
+    expect(executionPageFilterSchema.safeParse({ evidenceCheckedAfter: 'last week' }).success).toBe(false)
+    expect(executionPageFilterSchema.safeParse({ evidenceCheckedBefore: 'last week' }).success).toBe(false)
+    const inverted = executionFilterSchema.safeParse({
+      evidenceCheckedAfter: '2026-10-08T00:00:00.000Z',
+      evidenceCheckedBefore: '2026-10-07T00:00:00.000Z',
+    })
+    expect(inverted.success).toBe(false)
+    if (!inverted.success) expect(inverted.error.issues[0]?.path).toEqual(['evidenceCheckedBefore'])
+  })
+
+  it('accepts only explicit required-evidence gaps', () => {
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'policy-gate-outcome-missing' }).evidenceRequirement)
+      .toBe('policy-gate-outcome-missing')
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'evidence-url-invalid' }).evidenceRequirement)
+      .toBe('evidence-url-invalid')
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'github-run-provenance-missing' }).evidenceRequirement)
+      .toBe('github-run-provenance-missing')
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'post-production-video-missing' }).evidenceRequirement)
+      .toBe('post-production-video-missing')
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'performance-threshold-missing' }).evidenceRequirement)
+      .toBe('performance-threshold-missing')
+    expect(executionPageFilterSchema.parse({ evidenceRequirement: 'terminal-timing-missing' }).evidenceRequirement)
+      .toBe('terminal-timing-missing')
+    expect(executionPageFilterSchema.safeParse({ evidenceRequirement: 'video-missing' }).success).toBe(false)
+  })
+
+  it('accepts only evaluated threshold outcomes', () => {
+    expect(executionFilterSchema.parse({ thresholdOutcome: 'failed' }).thresholdOutcome).toBe('failed')
+    expect(executionPageFilterSchema.parse({ thresholdOutcome: 'passed' }).thresholdOutcome).toBe('passed')
+    expect(executionFilterSchema.safeParse({ thresholdOutcome: 'running' }).success).toBe(false)
+  })
+
+  it('accepts only retained policy-gate outcomes', () => {
+    expect(executionFilterSchema.parse({ gateOutcome: 'cancelled' }).gateOutcome).toBe('cancelled')
+    expect(executionPageFilterSchema.parse({ gateOutcome: 'running' }).gateOutcome).toBe('running')
+    expect(executionFilterSchema.safeParse({ gateOutcome: 'skipped' }).success).toBe(false)
+  })
+
+  it('bounds an exact provider run identifier', () => {
+    expect(executionFilterSchema.parse({ externalRunId: ' 123456789 ' }).externalRunId).toBe('123456789')
+    expect(executionFilterSchema.safeParse({ externalRunId: ' ' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ externalRunId: 'a'.repeat(501) }).success).toBe(false)
+  })
+
+  it('bounds and normalizes an exact source branch', () => {
+    expect(executionFilterSchema.parse({ branch: ' feature/checkout ' }).branch).toBe('feature/checkout')
+    expect(executionPageFilterSchema.safeParse({ branch: ' ' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ branch: 'a'.repeat(501) }).success).toBe(false)
+  })
+
+  it('rejects an unknown attempt scope', () => {
+    expect(executionFilterSchema.safeParse({ attemptScope: 'all' }).success).toBe(false)
+  })
+
+  it('accepts verified recovery evidence as an attempt scope', () => {
+    expect(executionFilterSchema.safeParse({ attemptScope: 'recovered' }).success).toBe(true)
+  })
+
+  it('bounds the minimum execution duration to a non-negative integer', () => {
+    expect(executionFilterSchema.parse({ minimumDurationMs: '60000' }).minimumDurationMs).toBe(60_000)
+    expect(executionFilterSchema.safeParse({ minimumDurationMs: '-1' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ minimumDurationMs: '1.5' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ minimumDurationMs: '2147483648' }).success).toBe(false)
+  })
+
+  it('bounds maximum duration and rejects an inverted duration range', () => {
+    expect(executionFilterSchema.parse({ maximumDurationMs: '120000' }).maximumDurationMs).toBe(120_000)
+    expect(executionFilterSchema.safeParse({ maximumDurationMs: '-1' }).success).toBe(false)
+    const result = executionFilterSchema.safeParse({ minimumDurationMs: '120000', maximumDurationMs: '60000' })
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error.flatten().fieldErrors.maximumDurationMs).toContain('maximumDurationMs must be greater than or equal to minimumDurationMs')
+    expect(executionPageFilterSchema.safeParse({ minimumDurationMs: '120000', maximumDurationMs: '60000' }).success).toBe(false)
+  })
+
+  it('rejects an empty or oversized revision', () => {
+    expect(executionFilterSchema.safeParse({ revision: ' ' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ revision: 'a'.repeat(201) }).success).toBe(false)
+  })
+
+  it('rejects an empty or oversized workflow path', () => {
+    expect(executionFilterSchema.safeParse({ workflowPath: ' ' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ workflowPath: 'a'.repeat(1001) }).success).toBe(false)
+  })
+
+  it('canonicalizes provider-qualified workflow paths across evidence queries', () => {
+    const qualified = '.github/workflows/load.yml@refs/heads/main'
+    expect(executionFilterSchema.parse({ workflowPath: qualified }).workflowPath)
+      .toBe('.github/workflows/load.yml')
+    expect(executionPageFilterSchema.parse({ workflowPath: qualified }).workflowPath)
+      .toBe('.github/workflows/load.yml')
+  })
+
+  it('passes a plain non-qualified path through as a string without stripping it', () => {
+    const plain = '.github/workflows/load.yml'
+    const result = executionFilterSchema.parse({ workflowPath: plain })
+    expect(result.workflowPath).toBe(plain)
+    expect(typeof result.workflowPath).toBe('string')
+    expect(executionPageFilterSchema.parse({ workflowPath: plain }).workflowPath).toBe(plain)
   })
 
   it('rejects an inverted time range instead of returning misleading empty evidence', () => {
@@ -18,5 +181,24 @@ describe('execution evidence filter', () => {
     })
     expect(result.success).toBe(false)
     if (!result.success) expect(result.error.flatten().fieldErrors.until).toContain('until must be greater than or equal to from')
+  })
+
+  it('bounds immutable execution pages and accepts opaque continuation cursors', () => {
+    const result = executionPageFilterSchema.parse({ limit: '1000', cursor: 'opaque-page' })
+    expect(result).toMatchObject({ limit: 100, cursor: 'opaque-page' })
+  })
+
+  it('requires a bounded provider-owned identity for attempt history', () => {
+    expect(executionAttemptHistoryFilterSchema.parse({
+      provider: 'github-actions',
+      externalRunId: ' 123456789 ',
+      limit: '1000',
+    })).toMatchObject({
+      provider: 'github-actions',
+      externalRunId: '123456789',
+      limit: 100,
+    })
+    expect(executionAttemptHistoryFilterSchema.safeParse({ provider: 'github-actions' }).success).toBe(false)
+    expect(executionAttemptHistoryFilterSchema.safeParse({ provider: 'jenkins', externalRunId: '42' }).success).toBe(false)
   })
 })

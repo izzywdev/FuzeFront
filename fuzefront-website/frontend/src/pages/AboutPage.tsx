@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, TextLink, HeroPatternOverlay, Section, ResponsiveGrid, Wrap } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -76,10 +76,7 @@ export const AboutPage: React.FC = () => {
         ref={heroRef}
         className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
-        {/* Separate overlay div: `hero-pattern` and the gradient classes both
-            set `background-image`, so combining them on one element drops the
-            gradient entirely instead of layering. */}
-        <div className="absolute inset-0 hero-pattern pointer-events-none" />
+        <HeroPatternOverlay />
         <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
         <Container size="4xl" className="relative text-center">
@@ -141,7 +138,7 @@ export const AboutPage: React.FC = () => {
       </section>
 
       {/* Leadership */}
-      <section className="py-24 bg-white border-t border-secondary-100">
+      <Section padding="lg" divider>
         <Container size="4xl">
           <motion.div
             ref={leadershipRef}
@@ -175,15 +172,14 @@ export const AboutPage: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
                     <h3 className="text-lg font-semibold text-gray-900">{person.name}</h3>
-                    <a
+                    <TextLink
                       href={person.linkedin}
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={`${person.name} on LinkedIn`}
-                      className="text-primary-700 hover:text-primary-800"
                     >
                       <Linkedin size={18} />
-                    </a>
+                    </TextLink>
                   </div>
                   <p className="text-sm text-primary-700 font-medium mb-3">{person.title}</p>
                   <p className="text-gray-600 text-sm leading-relaxed">{person.bio}</p>
@@ -192,7 +188,7 @@ export const AboutPage: React.FC = () => {
             ))}
           </motion.div>
         </Container>
-      </section>
+      </Section>
 
       {/* What we offer */}
       <section className="py-24 bg-secondary-50">
@@ -212,33 +208,30 @@ export const AboutPage: React.FC = () => {
             </p>
           </motion.div>
 
-          <motion.div
-            variants={stagger}
-            initial="hidden"
-            animate={offerInView ? 'visible' : 'hidden'}
-            className="grid grid-cols-1 sm:grid-cols-2 gap-5"
-          >
-            {offerings.map((item) => {
-              const Icon = item.icon
-              return (
-                <motion.div
-                  key={item.text}
-                  variants={fadeUp}
-                  className="flex items-start gap-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-soft"
-                >
-                  <IconTile tone="accent" size="sm" style={{ flexShrink: 0 }}>
-                    <Icon size={18} />
-                  </IconTile>
-                  <p className="text-gray-700 text-sm leading-relaxed pt-1.5">{item.text}</p>
-                </motion.div>
-              )
-            })}
+          <motion.div variants={stagger} initial="hidden" animate={offerInView ? 'visible' : 'hidden'}>
+            <ResponsiveGrid columns={2} gap="md">
+              {offerings.map((item) => {
+                const Icon = item.icon
+                return (
+                  <motion.div
+                    key={item.text}
+                    variants={fadeUp}
+                    className="flex items-start gap-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-soft"
+                  >
+                    <IconTile tone="accent" size="sm" style={{ flexShrink: 0 }}>
+                      <Icon size={18} />
+                    </IconTile>
+                    <p className="text-gray-700 text-sm leading-relaxed pt-1.5">{item.text}</p>
+                  </motion.div>
+                )
+              })}
+            </ResponsiveGrid>
           </motion.div>
         </Container>
       </section>
 
       {/* CTA */}
-      <section className="py-20 bg-white border-t border-secondary-100">
+      <Section padding="md" divider>
         <div className="max-w-3xl mx-auto px-4 text-center">
           <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
             Want to build with us?
@@ -246,7 +239,7 @@ export const AboutPage: React.FC = () => {
           <p className="text-lg text-gray-600 mb-8">
             Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <Wrap gap={4} justify="center">
             <a
               href="https://app.fuzefront.com/signup"
               className="btn-primary flex items-center justify-center gap-2 text-base"
@@ -261,9 +254,9 @@ export const AboutPage: React.FC = () => {
             >
               View open roles
             </Link>
-          </div>
+          </Wrap>
         </div>
-      </section>
+      </Section>
     </div>
   )
 }

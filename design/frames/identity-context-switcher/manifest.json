@@ -50,7 +50,14 @@
         "route": "/",
         "approved": true,
         "approvedBy": "izzywdev",
-        "approvedAt": "2026-09-24T09:05:03.758Z"
+        "approvedAt": "2026-09-24T09:05:03.758Z",
+        "implementation": {
+          "paths": [
+            "frontend/src/components/UserMenu.tsx",
+            "frontend/src/components/WorkspaceProvisioningGate.tsx",
+            "frontend/src/lib/orgMembership.ts"
+          ]
+        }
       },
       {
         "id": "my-orgs",

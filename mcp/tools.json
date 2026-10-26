@@ -129,6 +129,16 @@
                   },
                   "auth": {"type": "object", "description": "Identity the app needs the platform to provision."},
                   "infra": {"type": "object", "description": "Platform infrastructure the app opts into."},
+                  "distribution": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Public installation destinations for the product's native mobile build. Omit a field until that store listing or APK is publicly available; clients must never synthesize download URLs.",
+                    "properties": {
+                      "appleAppStoreUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Apple App Store product URL."},
+                      "googlePlayUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Google Play Store product URL."},
+                      "apkUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Direct public Android APK URL, normally the product's latest GitHub Release asset."}
+                    }
+                  },
                   "visibility": {"type": "string", "enum": ["private", "organization", "public", "marketplace"]},
                   "roles": {"type": "array", "items": {"type": "string"}, "description": "Roles permitted to see/activate the app. Empty = all members."}
                 }
@@ -194,6 +204,16 @@
               "routing": {"type": "object"},
               "auth": {"type": "object"},
               "infra": {"type": "object"},
+              "distribution": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Public installation destinations for the product's native mobile build. Omit a field until that store listing or APK is publicly available; clients must never synthesize download URLs.",
+                "properties": {
+                  "appleAppStoreUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Apple App Store product URL."},
+                  "googlePlayUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Public Google Play Store product URL."},
+                  "apkUrl": {"type": "string", "format": "uri", "pattern": "^https://", "description": "Direct public Android APK URL, normally the product's latest GitHub Release asset."}
+                }
+              },
               "visibility": {"type": "string", "enum": ["private", "organization", "public", "marketplace"]},
               "roles": {"type": "array", "items": {"type": "string"}}
             }
@@ -653,6 +673,33 @@
                 "description": "Reason for rejection, surfaced to the submitter."
               }
             }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "listPublicationRequests",
+      "description": "[READ-ONLY] List marketplace publication requests — admin review queue (GET /publication-requests). Platform admins/reviewers only (403 otherwise). Returns one row per app whose publication matches the requested status (default `pending`), oldest first (by the status-appropriate instant: submittedAt for pending, rejectedAt for rejected, approvedAt for approved). Each row carries the app's publication state plus minimal display context (name, icon, organizationId, creator). Feature flag: fuzefront.apps.marketplace-publishing (default OFF).",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["pending", "approved", "rejected"],
+            "default": "pending",
+            "description": "Which publication requests to list. Defaults to `pending` (the review queue). `none` is not a valid value."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque pagination cursor from page.nextCursor."
           }
         },
         "additionalProperties": false

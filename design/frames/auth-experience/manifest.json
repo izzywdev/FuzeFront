@@ -1,6 +1,6 @@
 {
   "name": "Auth experience — approval frames",
-  "description": "Contract-freeze UX artifacts for FuzeFront's complete, professional sign-up & sign-in: inline email-availability, password strength + confirm-match against the real 12+ policy, Cloudflare Turnstile, the email-verification state machine, and the honest no-enumeration password reset. Approving these frames approves the flows, components, packages and contract deltas in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval — one approved flow unblocks that flow's implementation.",
+  "description": "Contract-freeze UX artifacts for FuzeFront's complete, professional sign-up & sign-in: a single OPTIONAL i18n-safe full-name field (replacing first/last), inline email-availability, a password strength meter + live requirements checklist and confirm-match against the authoritative policy, Cloudflare Turnstile, the email-verification state machine, and the honest no-enumeration password reset. Approving these frames approves the flows, components, packages and contract deltas in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval — one approved flow unblocks that flow's implementation. 2026-10-21: the signup flow was redesigned (full-name field + password-policy checklist + weak-password/service-unavailable states), so its prior approval is withdrawn and it awaits re-approval; signin, verify-email and password-reset are unchanged and keep their approvals.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
   "implementation": {
     "paths": [
@@ -39,6 +39,7 @@
     "component": "@fuzefront/auth-experience-ui → SignUpFlow / SignInFlow / EmailVerificationFlow / PasswordResetFlow",
     "featureFlag": "fuzefront.auth.experience",
     "deltas": [
+      "CHANGED SignupRequest name shape: a single OPTIONAL `name` string (autoComplete=name) replaces firstName/lastName. Maps 1:1 to the identity store's single `name` field and is i18n-safe (no given/family split → preserves mononyms and family-name-first ordering). The display label is a localizable i18n key, not server copy. Owned by contract-designer; flagged here as the contract delta this design requires.",
       "NEW endpoint GET /api/v1/security/signup/email-available?email= → { available: boolean } (debounced inline check; must fail-open on error so it never blocks submit; must NOT be an enumeration oracle beyond signup UX — rate-limit + captcha-gate it).",
       "NEW field SignupRequest.turnstileToken (string, required when AuthMethods.captcha present) — Cloudflare Turnstile server-side verification.",
       "NEW AuthMethods.captcha { provider: 'turnstile', siteKey } and AuthMethods.passwordPolicy { minLength: 12, requireUpper, requireLower, requireDigit, requireSymbol } so the strength meter reflects the authoritative policy rather than a hard-coded client copy."
@@ -52,7 +53,7 @@
         "route": "/signup",
         "approved": true,
         "approvedBy": "izzywdev",
-        "approvedAt": "2026-07-21T20:14:27Z"
+        "approvedAt": "2026-10-25T04:21:43.451Z"
       },
       {
         "id": "signin",
@@ -81,8 +82,10 @@
     ],
     "components": [
       "AuthCard",
+      "FullNameField",
       "InlineAvailabilityField",
       "PasswordStrengthMeter",
+      "PasswordPolicyChecklist",
       "PasswordConfirmField",
       "TurnstileField",
       "ResendCooldownButton",
@@ -110,6 +113,7 @@
       "label": "Index",
       "route": "/",
       "flow": "index",
+      "viewport": "responsive",
       "summary": "Flow walker + build inventory: 5 ordered flow cards, the components/packages/DS-primitive plan, and the three contract deltas.",
       "acceptanceNotes": "index links to every frame in order; the build inventory mirrors manifest.build 1:1; every named flow card resolves to its screen.",
       "testHooks": [
@@ -130,13 +134,16 @@
       "label": "Create account",
       "route": "/signup",
       "flow": "signup",
-      "summary": "Signup form: first/last name, email with inline availability ✓, password + strength meter (12+ policy) with per-rule checklist, confirm-password with live match, Cloudflare Turnstile (verified), Google, terms.",
-      "acceptanceNotes": "Availability adornment reflects data-avail; strength meter data-strength + per-rule data-met from the authoritative passwordPolicy; confirm shows match state; Turnstile token required before submit is enabled; Google gated on AuthMethods.social; no vendor identity-provider name in the DOM.",
+      "viewport": "responsive",
+      "summary": "Signup form: ONE optional full-name field (autoComplete=name, i18n-safe — replaces first/last), email with inline availability ✓, password + strength meter (12+ policy) with a live per-rule requirements checklist, confirm-password with live match, Cloudflare Turnstile (verified), Google, terms.",
+      "acceptanceNotes": "Full name is a single OPTIONAL input (data-field='full-name', autoComplete='name') — no given/family split, so mononyms and family-name-first names are preserved; it maps 1:1 to the identity store's single `name`. Label + help + checklist labels are localizable (data-i18n keys), and the layout mirrors correctly under dir='rtl' (ar/he) via logical-property positioning. Email + password stay required; full name optional. Availability adornment reflects data-avail; the requirements checklist (data-pwreq) ticks each rule live (data-met false→true) from the authoritative AuthMethods.passwordPolicy (rules shown are a placeholder set pending Authentik confirmation); confirm shows match state; Turnstile token required before submit is enabled; Google gated on AuthMethods.social; no vendor identity-provider name in the DOM.",
       "testHooks": [
         "[data-frame='01-signup']",
         "[data-form='signup']",
+        "[data-field='full-name']",
         "[data-avail='available']",
         "[data-pwmeter]",
+        "[data-pwreq]",
         "[data-req='length']",
         "[data-match='true']",
         "[data-turnstile]",
@@ -151,6 +158,7 @@
       "label": "Sign in",
       "route": "/login",
       "flow": "signin",
+      "viewport": "responsive",
       "summary": "Sign-in form: email, password with show/hide, forgot-password link, Turnstile, Google, link to signup.",
       "acceptanceNotes": "POST /session; mfa_required response hands off to the MFA challenge (see States); forgot-password routes to reset; Turnstile present; Google gated on AuthMethods.social.",
       "testHooks": [
@@ -169,6 +177,7 @@
       "label": "Check your inbox",
       "route": "/signup/verify",
       "flow": "verify-email",
+      "viewport": "responsive",
       "summary": "Post-signup 'we sent a link to <email>' screen with a resend button on a countdown cooldown and an edit-address path.",
       "acceptanceNotes": "Renders the target email (data-value='email'); resend disabled during cooldown with a live counter, then re-enables (POST /verify/email/start → 202); explains the verify-to-continue gate.",
       "testHooks": [
@@ -184,6 +193,7 @@
       "label": "Verify link landing",
       "route": "/verify/email",
       "flow": "verify-email",
+      "viewport": "responsive",
       "summary": "The verify-link landing state machine: verifying (spinner) → verified (continue) or expired/invalid (send a new link).",
       "acceptanceNotes": "POST /verify/email/confirm with the link token; 200 VerificationStatus → verified (idempotent for already-verified); EXPIRED/INVALID_CODE → expired with resend; verifying is the transient default.",
       "testHooks": [
@@ -201,6 +211,7 @@
       "label": "Password reset",
       "route": "/reset",
       "flow": "password-reset",
+      "viewport": "responsive",
       "summary": "Reset request (unconditional 202, identical copy whether or not the account exists) → sent → confirm new password (policy + strength + match) → expired-token.",
       "acceptanceNotes": "reset-request always 202 with the same 'check your email' copy (no enumeration); confirm enforces the 12+ policy and match; submit disabled while mismatched; invalid/expired token routes to request-a-new-link.",
       "testHooks": [
@@ -219,23 +230,27 @@
       "label": "States",
       "route": "/signup",
       "flow": "states",
-      "summary": "Every contract state: email availability idle/checking/available/taken/error, password weak/strong, confirm mismatch, Turnstile loading/verified/failed, submit-in-flight, form errors (invalid credentials, 409 conflict, provider unavailable), MFA-required handoff, verify-to-continue gate.",
-      "acceptanceNotes": "Each card is addressable by data-state; availability 'taken' offers 'sign in instead'; availability 'error' fails open; Turnstile 'failed' shows the 'please complete the challenge' message; in-flight button is disabled with a spinner.",
+      "viewport": "responsive",
+      "summary": "Every contract state: signup empty/initial (submit disabled until the checklist passes), email availability idle/checking/available/taken/error, password weak/strong with the requirements checklist, weak-password rejection both inline and post-submit, confirm mismatch, Turnstile loading/verified/failed, submit-in-flight, form errors (invalid credentials, 409 email-exists conflict, provider unavailable), signup service-unavailable with a browser-flow fallback, MFA-required handoff, verify-to-continue gate.",
+      "acceptanceNotes": "Each card is addressable by data-state. signup-initial: full name empty (no error — it's optional), checklist all data-met=false, submit disabled. Weak password is surfaced BOTH inline (pw-weak, checklist unmet) and as a post-submit rejection (signup-pw-weak-submit alert). email-exists conflict: availability 'taken' offers 'sign in instead' and the 409 card links to sign-in / reset. signup-service-unavailable (identity provider down / requires browser flow) fails closed with a 'Continue with Google' browser-flow fallback and a retry. availability 'error' fails open; Turnstile 'failed' shows the 'please complete the challenge' message; in-flight button is disabled with a spinner.",
       "testHooks": [
         "[data-frame='06-states']",
+        "[data-state='signup-initial']",
         "[data-state='email-checking']",
         "[data-state='email-taken']",
         "[data-state='email-check-error']",
         "[data-state='pw-weak']",
+        "[data-state='signup-pw-weak-submit']",
         "[data-state='confirm-mismatch']",
         "[data-state='turnstile-failed']",
         "[data-state='submit-inflight']",
         "[data-state='form-error']",
         "[data-state='signup-conflict']",
+        "[data-state='signup-service-unavailable']",
         "[data-state='mfa-required']",
         "[data-state='unverified-gate']"
       ]
     }
   ],
-  "stamp": "f37ab8e824256a9946d3c676f2a1e701f06189851b5d66aa621d93e363daeac3"
+  "stamp": "1bc0a7ab03474b744cea45da96283f4c4a73accef8b34619b73251f80d56d0de"
 }
