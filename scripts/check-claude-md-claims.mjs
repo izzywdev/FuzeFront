@@ -79,16 +79,37 @@ const requiredNow = () => {
 // Two separate facts, and conflating them is how the CLAUDE.md line went wrong twice:
 // the job FAILS (no `|| true`, exits 1) but it does NOT BLOCK (not a required context,
 // so auto-merge never waits on it). Assert both, in the direction CLAUDE.md now states.
+/**
+ * The YAML block of one job in a workflow: from its `  <name>:` header to the next
+ * job header at the same indentation.
+ *
+ * Written out rather than done with indexOf of the NEXT job's literal name, which was
+ * the first version here: `job.slice(0, job.indexOf('\n  gate-frontend-build:'))`
+ * yields `slice(0, -1)` — almost the whole file — the moment that job is renamed,
+ * removed or reordered above this one. The checks below would then read every other
+ * job's steps, and a `continue-on-error: true` anywhere later in the file would fail
+ * this claim for a reason that has nothing to do with it (fuze-code-review #1685).
+ * A boundary miss now throws instead of silently widening the window.
+ */
+const jobBlock = (wf, name) => {
+  const lines = wf.split('\n')
+  const start = lines.findIndex(l => l === `  ${name}:`)
+  if (start === -1) throw new Error(`job \`${name}\` not found`)
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^  \S.*:\s*$/.test(lines[i])) { end = i; break }
+  }
+  return lines.slice(start, end).join('\n')
+}
+
 claim(
   'gate-toolchain runs unsuppressed in harden-gate.yml',
   () => {
-    const wf = read('.github/workflows/harden-gate.yml') || ''
-    const job = wf.slice(wf.indexOf('\n  gate-toolchain:'))
-    const step = job.slice(0, job.indexOf('\n  gate-frontend-build:'))
+    const job = jobBlock(read('.github/workflows/harden-gate.yml') || '', 'gate-toolchain')
     return (
-      step.includes('node scripts/gate-toolchain.mjs') &&
-      !/gate-toolchain\.mjs[^\n]*(\|\| true|\|\|true)/.test(step) &&
-      !/continue-on-error:\s*true/.test(step)
+      job.includes('node scripts/gate-toolchain.mjs') &&
+      !/gate-toolchain\.mjs[^\n]*(\|\| true|\|\|true)/.test(job) &&
+      !/continue-on-error:\s*true/.test(job)
     )
   },
   'CLAUDE.md says gate-toolchain runs in harden-gate.yml and fails on a violation; the step is missing or suppressed',
@@ -103,12 +124,33 @@ claim(
 // The required set itself, because CLAUDE.md quotes it in full. Verified equal to the
 // live ruleset (`gh api repos/izzywdev/FuzeFront/rules/branches/master`) on 2026-10-26;
 // required-checks.json is the in-repo mirror a CI job can read without a token.
+// SET EQUALITY, BOTH DIRECTIONS, over the ONE sentence that enumerates the set.
+// The first version asked only "does CLAUDE.md contain this context's name anywhere",
+// which is two bugs at once: PROMOTING gate-authz passed because the document names it
+// in the paragraph saying it is NOT required, and REMOVING gate-test passed because the
+// document still listed it. Both reproduced (Codex #1685). So: parse the enumerating
+// sentence, and compare sets.
 claim(
-  'the required-check list quoted in CLAUDE.md matches required_now',
+  'the required-check list quoted in CLAUDE.md matches required_now exactly',
   () => {
+    const m = claude.match(/the required set is exactly (\d+) contexts \u2014 (.+?) \u2014/s)
+    if (!m) throw new Error('CLAUDE.md no longer has the "required set is exactly N contexts — ..." sentence')
+    const [, statedCount, list] = m
+    const documented = [...list.matchAll(/`([^`]+)`/g)].map(x => x[1])
     const live = requiredNow()
-    const missing = live.filter(c => !claude.includes(`\`${c}\``))
-    if (missing.length) throw new Error(`required contexts CLAUDE.md does not list: ${missing.join(', ')}`)
+    if (documented.length !== Number(statedCount)) {
+      throw new Error(`CLAUDE.md says "exactly ${statedCount} contexts" but enumerates ${documented.length}`)
+    }
+    const onlyLive = live.filter(c => !documented.includes(c))
+    const onlyDoc = documented.filter(c => !live.includes(c))
+    if (onlyLive.length || onlyDoc.length) {
+      throw new Error(
+        [
+          onlyLive.length ? `required but undocumented: ${onlyLive.join(', ')}` : '',
+          onlyDoc.length ? `documented but not required: ${onlyDoc.join(', ')}` : '',
+        ].filter(Boolean).join('; '),
+      )
+    }
     return true
   },
   'the live required set and the list in CLAUDE.md disagree',
