@@ -401,3 +401,83 @@ def test_seed_requested_rejects_bad_translation_locale():
     )
     with pytest.raises(SchemaValidationError):
         schema_for_topic("selection-lists.seed.requested")(bad)
+
+
+# -- seed.requested: strict nested objects + refineSeedLists cross-field rules --
+
+
+def test_seed_requested_strict_rejects_unknown_nested_key():
+    # Node marks every nested seed object .strict(); an unknown key must fail.
+    bad = _seed_requested(source={"app": "weather", "service": "svc", "extra": 1})
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(bad)
+
+
+def test_seed_requested_rejects_duplicate_list_keys():
+    lst = {"key": "countries", "sourceLocale": "en", "name": "C", "items": []}
+    bad = _seed_requested(lists=[dict(lst), dict(lst)])
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(bad)
+
+
+def test_seed_requested_rejects_duplicate_item_codes():
+    bad = _seed_requested(
+        lists=[
+            {
+                "key": "countries",
+                "sourceLocale": "en",
+                "name": "C",
+                "items": [{"code": "US", "label": "A"}, {"code": "US", "label": "B"}],
+            }
+        ]
+    )
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(bad)
+
+
+def test_seed_requested_rejects_source_locale_translation():
+    bad = _seed_requested(
+        lists=[
+            {
+                "key": "countries",
+                "sourceLocale": "en",
+                "name": "C",
+                "translations": [{"locale": "en", "name": "X"}],
+                "items": [],
+            }
+        ]
+    )
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(bad)
+
+
+def test_seed_requested_rejects_duplicate_translation_locale():
+    bad = _seed_requested(
+        lists=[
+            {
+                "key": "countries",
+                "sourceLocale": "en",
+                "name": "C",
+                "translations": [{"locale": "fr", "name": "X"}, {"locale": "fr", "name": "Y"}],
+                "items": [],
+            }
+        ]
+    )
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(bad)
+
+
+def test_seed_requested_rejects_over_total_item_ceiling():
+    # 5 lists x 500 items = 2500 > MAX_ITEMS_PER_SEED (2000); each within the
+    # per-list cap, keys and per-list codes unique.
+    lists = [
+        {
+            "key": f"list{li}",
+            "sourceLocale": "en",
+            "name": f"L{li}",
+            "items": [{"code": f"c{i}", "label": f"I{i}"} for i in range(500)],
+        }
+        for li in range(5)
+    ]
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(_seed_requested(lists=lists))

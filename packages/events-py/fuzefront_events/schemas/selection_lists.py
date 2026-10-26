@@ -2,8 +2,11 @@
 ``selectionLists*SchemaV1`` schemas in shared/src/kafka/schemas. Uses the shared
 building blocks in ``selection_lists_common``. Field names are camelCase.
 
-Deep seed-request content refinements are validated at shape level (see the note
-in selection_lists_common).
+The INBOUND ``seed.requested`` schema is mirrored fully, including its strict
+nested objects and the ``refineSeedLists`` cross-list rules (unique list keys,
+unique item codes per list, the per-seed item ceiling, and the translation
+source-locale / duplicate-locale rules), so a Python producer cannot emit a
+request the Node consumer would reject.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from .selection_lists_common import (
     LOCALES,
     MAX_FORK_ITEMS,
     MAX_ITEMS_PER_LIST,
+    MAX_ITEMS_PER_SEED,
     MAX_LISTS_PER_SEED,
     MESSAGE_MAX,
     NAME_MAX,
@@ -274,7 +278,16 @@ def validate_access_revoked(p: Any) -> dict:
 # ── seed.* (shape-level; see fidelity note) ────────────────────────────
 
 
-def _seed_source(value: Any, *, allow_platform: bool = True) -> dict:
+# seed.requested is INBOUND and its Node schema is fully strict with cross-list
+# refinements (selectionListsSeedRequestedSchemaV1 + refineSeedLists). These
+# validators mirror that faithfully — every nested object is strict and the
+# refineSeedLists rules are enforced — so a Python producer cannot emit a
+# request the Node consumer would reject + dead-letter. `_seed_source` /
+# `_seed_pack` are shared with the (non-strict) seed OUTCOME base, so their
+# strictness is caller-controlled.
+
+
+def _seed_source(value: Any, *, allow_platform: bool = True, strict: bool = False) -> dict:
     sv = _V("seed.source", value)
     sv.string("app", pattern=SLUG_RE)
     sv.string("service", min_len=1, max_len=128)
@@ -285,24 +298,22 @@ def _seed_source(value: Any, *, allow_platform: bool = True) -> dict:
     # slSeedSourceV1 with no such refinement, so rejecting it here diverged.
     if not allow_platform and sv.out["app"] == "platform":
         raise sv.fail("'platform' is reserved for the service's own packs (seed.requested only)")
-    return sv.done()
+    return sv.done(strict=strict)
 
 
-def _seed_pack(value: Any) -> dict:
+def _seed_pack(value: Any, *, strict: bool = False) -> dict:
     sv = _V("seed.pack", value)
     sv.string("key", pattern=SLUG_RE)
     sv.integer("version", gt=0)
-    return sv.done()
+    return sv.done(strict=strict)
 
 
 _SEED_TRIGGERS = ("org-created", "app-installed", "app-upgraded", "backfill", "manual")
 
 
-# Non-source-locale translations carried on a seed list/item. Mirror of
-# slSeedListTranslationV1 / slSeedItemTranslationV1: validated AND preserved
-# (dropping them would lose localized content a caller passed in). The deep
-# cross-locale refinements (no source-locale entry, no duplicate locale) stay
-# deferred to selection-list-service, as noted in the module docstring.
+# Non-source-locale translations carried on a seed list/item. Mirror of the
+# strict slSeedListTranslationV1 / slSeedItemTranslationV1: validated AND
+# preserved (dropping them would lose localized content a caller passed in).
 _MAX_SEED_TRANSLATIONS = len(LOCALES) - 1
 
 
@@ -311,7 +322,7 @@ def _seed_list_translation(value: Any) -> dict:
     tv.enum("locale", LOCALES)
     tv.string("name", min_len=1, max_len=NAME_MAX)
     tv.string("description", required=False, max_len=DESCRIPTION_MAX)
-    return tv.done()
+    return tv.done(strict=True)
 
 
 def _seed_item_translation(value: Any) -> dict:
@@ -319,27 +330,42 @@ def _seed_item_translation(value: Any) -> dict:
     tv.enum("locale", LOCALES)
     tv.string("label", min_len=1, max_len=NAME_MAX)
     tv.string("description", required=False, max_len=DESCRIPTION_MAX)
-    return tv.done()
+    return tv.done(strict=True)
+
+
+def _check_seed_translations(sv: _V, translations: list, source_locale: str) -> None:
+    """Mirror of checkTranslations (selection-lists.common.ts): no translation
+    for the source locale (that text belongs in name/label), and no duplicate
+    locale within one translations array."""
+    seen: set = set()
+    for t in translations:
+        loc = t["locale"]
+        if loc == source_locale:
+            raise sv.fail(
+                f"translation locale '{loc}' is the source locale; put that text in name/label instead"
+            )
+        if loc in seen:
+            raise sv.fail(f"duplicate translation locale '{loc}'")
+        seen.add(loc)
 
 
 def _seed_item_spec(value: Any) -> dict:
-    """Shape of one item to seed (mirror of slSeedItemSpecV1's required fields)."""
+    """One item to seed — mirror of the strict slSeedItemSpecV1."""
     sv = _V("seed.list.item", value)
     sv.string("code", pattern=ITEM_CODE_RE, min_len=1, max_len=63)
     sv.string("label", min_len=1, max_len=NAME_MAX)
     sv.string("description", required=False, max_len=DESCRIPTION_MAX)
     sv.array("translations", _seed_item_translation, required=False, max_len=_MAX_SEED_TRANSLATIONS)
-    return sv.done()
+    return sv.done(strict=True)
 
 
 def _seed_list_spec(value: Any) -> dict:
-    """Shape of one list to seed (mirror of slSeedListSpecV1's required fields +
-    types). The deep cross-list refinements (unique keys/codes across the seed,
-    the per-seed item ceiling, translation-locale rules) stay deferred — see the
-    module note — but a list must at least be a well-formed object carrying its
-    required scalars and an ``items`` array, so a malformed request (``lists:
-    [null]``, ``[{}]``, or a list missing ``items``) fails locally here instead
-    of being published and then dead-lettered by the Node consumer."""
+    """One list to seed — mirror of the strict slSeedListSpecV1 plus the per-list
+    refineSeedLists rules: unique item codes, and translations that are neither
+    the source locale nor duplicated. The cross-LIST rules (unique list keys, the
+    per-seed total-item ceiling) live in validate_seed_requested, which sees all
+    lists. A malformed list (``null``, ``{}``, missing ``items``, unknown key)
+    therefore fails locally rather than being dead-lettered by the Node consumer."""
     sv = _V("seed.list", value)
     sv.string("key", pattern=KEY_RE, min_len=2, max_len=64)
     sv.enum("sourceLocale", LOCALES)
@@ -348,7 +374,14 @@ def _seed_list_spec(value: Any) -> dict:
     sv.enum("visibility", VISIBILITIES, required=False)
     sv.array("translations", _seed_list_translation, required=False, max_len=_MAX_SEED_TRANSLATIONS)
     sv.array("items", _seed_item_spec, max_len=MAX_ITEMS_PER_LIST)
-    return sv.done()
+    out = sv.done(strict=True)
+    source_locale = out["sourceLocale"]
+    unique(sv.name, (it["code"] for it in out["items"]), "item code")
+    _check_seed_translations(sv, out.get("translations", []), source_locale)
+    for it in out["items"]:
+        # Node checks item translations against the LIST's source locale.
+        _check_seed_translations(sv, it.get("translations", []), source_locale)
+    return out
 
 
 def validate_seed_requested(p: Any) -> dict:
@@ -357,15 +390,15 @@ def validate_seed_requested(p: Any) -> dict:
     org_id(v, "organizationId")
     v.enum("scope", SEED_SCOPES)
     user_id(v, "userId", required=False)
-    v.nested("source", lambda x: _seed_source(x, allow_platform=False))
-    v.nested("pack", _seed_pack)
+    v.nested("source", lambda x: _seed_source(x, allow_platform=False, strict=True))
+    v.nested("pack", lambda x: _seed_pack(x, strict=True))
     v.enum("trigger", _SEED_TRIGGERS)
 
     def _attestation(value: Any) -> dict:
         sv = _V("seed.attestation", value)
         sv.enum("kind", ("service-token",))
         sv.string("token", min_len=1, max_len=4096)
-        return sv.done()
+        return sv.done(strict=True)
 
     v.nested("attestation", _attestation)
     v.array("lists", _seed_list_spec, min_len=1, max_len=MAX_LISTS_PER_SEED)
@@ -374,11 +407,16 @@ def validate_seed_requested(p: Any) -> dict:
         raise v.fail("userId is required when scope is 'user'")
     if out["scope"] == "org" and out.get("userId") is not None:
         raise v.fail("userId must be omitted when scope is 'org'")
-    # Mirrors selectionListsSeedRequestedSchemaV1's superRefine: an app seed
-    # request may not create a platform (common) list.
+    # refineSeedLists (selection-lists.common.ts) + the request superRefine: an
+    # app request may not create a platform list; list keys are unique across the
+    # seed; and the seed has a total-item ceiling.
     for lst in out["lists"]:
         if lst.get("visibility") == "platform":
             raise v.fail("an app seed request cannot create a platform (common) list; use 'org' or 'private'")
+    unique(v.name, (lst["key"] for lst in out["lists"]), "list key")
+    total_items = sum(len(lst.get("items", [])) for lst in out["lists"])
+    if total_items > MAX_ITEMS_PER_SEED:
+        raise v.fail(f"a seed may carry at most {MAX_ITEMS_PER_SEED} items in total (got {total_items})")
     return out
 
 
