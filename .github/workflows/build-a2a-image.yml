@@ -92,7 +92,7 @@ jobs:
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
@@ -129,7 +129,7 @@ jobs:
           context: build/a2a
           file: build/a2a/Dockerfile
           build-args: BASE_TAG=${{ steps.base.outputs.tag }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
           tags: |
             ghcr.io/izzywdev/fuzefront-a2a:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-a2a:latest
@@ -138,7 +138,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=fuzefront-a2a
 
       - name: Report
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
         run: |
           echo "::notice::Published ghcr.io/izzywdev/fuzefront-a2a:${{ steps.tag.outputs.sha }}"
           echo "## A2A image published" >> "$GITHUB_STEP_SUMMARY"
@@ -148,7 +148,7 @@ jobs:
       # Upload the generated card so tag-update can consume it without
       # re-running FuzeAgent code in a job that holds GH_RELEASE_PAT.
       - name: Upload agent-card artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: agent-card-${{ github.sha }}
@@ -162,7 +162,7 @@ jobs:
   tag-update:
     name: Bump helm image tag
     needs: image
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: write
