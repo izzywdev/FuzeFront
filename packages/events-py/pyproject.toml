@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzefront-events"
+version = "1.0.0"
+description = "Python mirror of the FuzeFront Kafka event contract (topics, schemas, envelope) plus a transactional-outbox writer and relay for Python services"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+dependencies = []
+
+[project.optional-dependencies]
+# Core (topics/schemas/envelope + outbox & relay LOGIC) is stdlib-only and
+# unit-testable with injected fakes. The concrete adapters import these.
+dev = ["pytest>=8.0"]
+postgres = ["psycopg[binary]>=3.1"]
+kafka = ["confluent-kafka>=2.3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["fuzefront_events*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
