@@ -54,7 +54,7 @@ dbDescribe('rollout: retro-forks (design record 9.6) on real Postgres', () => {
     await w.teardown();
   });
   beforeEach(async () => {
-    await w.db.raw('TRUNCATE selection_lists, selection_list_items, selection_list_translations, selection_list_item_translations, event_outbox, selection_list_ref_index, selection_list_access RESTART IDENTITY CASCADE');
+    await w.db.raw('TRUNCATE selection_lists, selection_list_items, selection_list_translations, selection_list_item_translations, event_outbox, selection_list_ref_index, selection_list_access, selection_list_rollout_marks RESTART IDENTITY CASCADE');
     process.env.SELECTION_LIST_PLATFORM_ORG_ID = PLATFORM.wire;
     await w.projectOrg(PLATFORM, 'platform');
     _resetPlatformOrgCacheForTesting();

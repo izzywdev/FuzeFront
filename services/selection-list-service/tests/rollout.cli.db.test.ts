@@ -28,7 +28,7 @@ dbDescribe('rollout CLI (real Postgres)', () => {
     await w.t.drop().catch(() => undefined);
   });
   beforeEach(async () => {
-    await w.db.raw('TRUNCATE selection_lists, selection_list_items, selection_list_translations, selection_list_item_translations, event_outbox, selection_list_ref_index, selection_list_access RESTART IDENTITY CASCADE');
+    await w.db.raw('TRUNCATE selection_lists, selection_list_items, selection_list_translations, selection_list_item_translations, event_outbox, selection_list_ref_index, selection_list_access, selection_list_rollout_marks RESTART IDENTITY CASCADE');
     delete process.env.SELECTION_LIST_PLATFORM_ORG_ID;
     _resetPlatformOrgCacheForTesting();
     out = '';

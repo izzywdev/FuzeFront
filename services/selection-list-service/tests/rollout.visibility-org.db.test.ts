@@ -47,7 +47,7 @@ dbDescribe('rollout: visibility-org (design record 9.4) on real Postgres', () =>
   });
   afterAll(() => w.teardown());
   beforeEach(async () => {
-    await w.db.raw('TRUNCATE selection_lists, selection_list_items, selection_list_translations, selection_list_item_translations, event_outbox, selection_list_ref_index, selection_list_access RESTART IDENTITY CASCADE');
+    await w.db.raw('TRUNCATE selection_lists, selection_list_items, selection_list_translations, selection_list_item_translations, event_outbox, selection_list_ref_index, selection_list_access, selection_list_rollout_marks RESTART IDENTITY CASCADE');
     flagReads.length = 0;
   });
   afterEach(() => expect(flagReads).toEqual([]));
@@ -186,10 +186,11 @@ dbDescribe('rollout: visibility-org (design record 9.4) on real Postgres', () =>
     expect((await get(bad)).visibility).toBe('private');
     expect(await events(bad)).toEqual([]);
     expect(exitCodeFor(report)).toBe(2);
-    // and a re-run keeps reporting it (it is not silently dropped), changing nothing else
+    // the org is marked done, so a re-run does not touch it again: the blocked list is reported as LEFT ALONE (org done)
+    // until an operator fixes the data and clears the marker on purpose (runbook 10.4)
     const again = await runVisibilityOrg(w.db, 'apply');
     expect(again.changes).toEqual([]);
-    expect(again.blocked.map((b) => b.listId)).toEqual([bad]);
+    expect(again.skipped.map((s) => s.listId)).toEqual([bad]);
   });
 
   it('crosses the chunk boundary: an organization with more lists than one transaction takes is converted completely, once each', async () => {
@@ -264,8 +265,9 @@ dbDescribe('rollout: visibility-org (design record 9.4) on real Postgres', () =>
     expect((await get(other)).visibility).toBe('org'); // not part of the run
     expect((await get(x.ids.alreadyOrg)).visibility).toBe('org');
     expect((await get(x.ids.common)).visibility).toBe('platform');
-    // and the job can be re-run to the same end state
-    expect((await runVisibilityOrg(w.db, 'apply')).changes).toHaveLength(3);
+    // the rollback leaves the marks, so the job does NOT redo it behind the operator's back
+    expect((await runVisibilityOrg(w.db, 'apply')).changes).toEqual([]);
+    for (const id of [x.ids.platformPack, x.ids.appPack, x.ids.archivedSeeded]) expect((await get(id)).visibility).toBe('private');
   });
 
   it('never reads a flag', async () => {

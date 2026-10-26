@@ -615,11 +615,49 @@ reading only). All seed sources (the platform pack and every app pack) and all s
 says. The pack content change that makes **new** orgs seed `org` (pack version 2 with identical content + `visibility`) is a
 separate, later change; this job only converts what already exists.
 
-**Run it once, before the shared-lists flag is ON for any organization.** While the flag is OFF every seeded list is `private`
-because nobody could choose otherwise (PATCH ignores `visibility`), so "seeded and private" means "never chosen". Once an owner
-can set a seeded list back to `private` on purpose, a later run would undo that choice. Two guards: the dry run names **every**
-list it would change (read it), and a list with a `selection-lists.visibility.changed` event by a **user** is left alone (best
-effort: delivered outbox rows are kept `OUTBOX_SENT_RETENTION_HOURS`, 168 h by default).
+**It is one-shot per organization, enforced by a durable marker — not by remembering to run it once.** While the flag is OFF
+every seeded list is `private` because nobody could choose otherwise (PATCH ignores `visibility`), so "seeded and private"
+means "never chosen". Once an owner can set a seeded list back to `private` on purpose, a re-run would re-publish it to every
+member of the org (everyone holding `SelectionListCatalog:read_shared`). So `--apply` writes one row per organization in
+`selection_list_rollout_marks` (`job = 'visibility-org'`, `organization_id` = the org's `org_…` TypeID, the run id, how many
+lists it changed) **in the same transaction as the flips**, under the organization outbox lock, and never touches a marked
+organization again — the dry run reports those lists as `LEFT ALONE` with the same reason (`this organization was already
+processed by visibility-org …`), so what it shows is what apply does. A marker does not age: it holds after the outbox has pruned
+the user's `visibility.changed` event (delivered rows are kept `OUTBOX_SENT_RETENTION_HOURS`, 168 h by default, which is why
+that event is only a second, best-effort guard: a list with such a user event is left alone too). An organization that has
+seeded lists but nothing to change is marked as well; an organization with no seeded list is not. The marker is deleted with the
+org by the **hard** `identity.org.deleted` purge and kept by the soft cascade (a restore must not re-flip).
+
+Consequences, deliberately fail-closed: a seeded list that appears in a marked org **later** (seeded private after the run) stays
+`private` — publish it with `PATCH /v1/selection-lists/{id} {"visibility": "org"}`; and a list left `BLOCKED` (below) is not
+retried by a re-run once its org is marked.
+
+**Operator procedure, including when the job may already have run without a marker.** The marker ships in the same release as the
+job, so no environment that runs this image has applied the job without it. If a build *without* the marker was ever applied
+somewhere (a branch or staging build), assume NOTHING is marked there and, before running this image's `--apply`: run the
+dry run, read `WOULD CHANGE`, and for every organization whose lists must not change (an owner chose `private`), **pre-mark it**:
+
+```sql
+-- PRE-MARK visibility-org: replace <org_…> with the organization's TypeID (idempotent)
+INSERT INTO selection_list_rollout_marks (job, organization_id, run_id, lists_changed)
+VALUES ('visibility-org', '<org_…>', 'manual', 0)
+ON CONFLICT (job, organization_id) DO NOTHING;
+```
+
+To run the job for one organization **on purpose** again (for example after fixing a `BLOCKED` list), clear its marker, then
+dry-run and apply. Do this only after checking in the dry run that no list there is an owner's choice:
+
+```sql
+-- CLEAR-MARK visibility-org: replace <org_…> with the organization's TypeID
+DELETE FROM selection_list_rollout_marks WHERE job = 'visibility-org' AND organization_id = '<org_…>';
+```
+
+The other jobs need no marker, by construction: `retro-forks` only acts on a copy with `forked_from_list_id IS NULL`, sets it
+(non-null) in the same transaction, and nothing a user can do clears it, so a re-run only finds copies that are still unconverted;
+`reconcile-duplicates` only acts on a key (or fork) held under more than one rendering of one org, renames the loser out of that
+key and archives it, and a rename back to the old key is refused while the winner holds it. The one way a re-run can undo
+something a user did is a loser **fork** an owner restored (two active forks of one common list under two renderings): the job
+archives the younger one again, which changes nothing a user can see, because the service already shows only the winner.
 
 **Job:** `visibility-org`. Dry run (`mode: "dry-run"`, exit 0, writes nothing):
 
@@ -630,6 +668,7 @@ DRY RUN: nothing was written. Re-run with --apply to make these changes.
   seededPrivateAtStart: 4
   seededOrgAtStart: 0
   seededPlatformAtStart: 1
+  orgsAlreadyMarked: 0
   wouldChange: 4
   leftAlone: 0
 WOULD CHANGE (4):
@@ -642,8 +681,9 @@ exit code: 0
 `CHANGED` (`changed: N`). Per organization, in chunks of 200 lists per transaction: the organization outbox lock, the candidates
 re-read under it (a list a writer already changed meanwhile is skipped), the update, and one
 `selection-lists.visibility.changed` (previous `private`, now `org`, the service as actor) per list through the outbox in the same
-transaction. **Re-run = no-op** (`seededPrivateAtStart: 0`, `changed: 0`, no event). `LEFT ALONE` lists a user's deliberate
-choice and an organization id with no `org_` TypeID form (its event cannot be written). A list whose event the contract refuses
+transaction, and the organization's marker in the last one. **Re-run = no-op**: every processed org is marked, so a re-run lists
+its private seeded lists under `LEFT ALONE` (`orgsAlreadyMarked` counts the marked orgs) and changes nothing. `LEFT ALONE` also
+lists a user's deliberate choice and an organization id with no `org_` TypeID form (its event cannot be written). A list whose event the contract refuses
 (legacy data, for example a one-character key or an empty name) is `BLOCKED` and left `private` — in the dry run too, so it is
 never listed under `WOULD CHANGE`; the rest convert and the apply exits 2.
 
@@ -662,7 +702,8 @@ UPDATE selection_lists SET visibility = 'private', updated_at = now()
 COMMIT;
 ```
 
-(The outbox keeps delivered rows 168 h by default; after that take the ids from the saved `--json` report.)
+(The outbox keeps delivered rows 168 h by default; after that take the ids from the saved `--json` report.) The rollback
+**leaves the markers**, on purpose: the job will not redo it behind your back. Clear a marker (above) only to run the job again.
 
 ### 10.5 Existing per-org copies become forks of the common lists: `retro-forks` (design record 9.6)
 

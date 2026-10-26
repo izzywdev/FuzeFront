@@ -27,6 +27,29 @@ export const isEventRefusal = (err: unknown): boolean => err instanceof OutboxPa
 /** One wording, used by dry run AND apply, for a row whose event the contract would refuse. */
 export const REASON_EVENT_CONTRACT = 'its event would violate the event contract (legacy data, e.g. an invalid key or an empty name): left as it was, decide by hand';
 
+/** One wording, used by dry run AND apply, for an organization `visibility-org` already finished (durable marker). */
+export const REASON_ORG_DONE =
+  'this organization was already processed by visibility-org (durable marker in selection_list_rollout_marks; see runbook 10.4): left alone. To run it on purpose, clear the marker first';
+
+/** The organizations (canonical `org_...` ids) a job has finished: read-only. */
+export async function markedOrgs(ex: Knex | Knex.Transaction, job: RolloutJobName): Promise<Set<string>> {
+  const rows: Array<{ organization_id: string }> = await ex('selection_list_rollout_marks').where({ job }).select('organization_id');
+  return new Set(rows.map((r) => r.organization_id));
+}
+
+/** Is this organization (canonical id) marked done for `job`? Call under the organization outbox lock. */
+export async function isOrgMarked(trx: Knex.Transaction, job: RolloutJobName, orgWire: string): Promise<boolean> {
+  return Boolean(await trx('selection_list_rollout_marks').where({ job, organization_id: orgWire }).first('job'));
+}
+
+/** Mark the organization done, in the CALLER's transaction (the same one as the changes). A second writer is harmless. */
+export async function markOrg(trx: Knex.Transaction, job: RolloutJobName, orgWire: string, runId: string, listsChanged: number): Promise<void> {
+  await trx('selection_list_rollout_marks')
+    .insert({ job, organization_id: orgWire, run_id: runId, lists_changed: listsChanged })
+    .onConflict(['job', 'organization_id'])
+    .ignore();
+}
+
 /**
  * Would the event for this list, as it WILL be after the job's change (`over` = the changed columns), be refused by the
  * event contract? Reads only, so a dry run can ask exactly what apply will find out the hard way (a thrown

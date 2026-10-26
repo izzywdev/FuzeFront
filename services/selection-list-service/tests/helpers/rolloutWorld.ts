@@ -115,6 +115,7 @@ export async function dump(db: Knex): Promise<string> {
     lists: await rows('selection_lists', 'id'),
     items: await rows('selection_list_items', 'id'),
     translations: await rows('selection_list_translations', 'list_id'),
+    marks: await rows('selection_list_rollout_marks', 'organization_id'),
     outbox: (await db('event_outbox').count<{ n: string }>('* as n').first())?.n,
     seq,
   });
