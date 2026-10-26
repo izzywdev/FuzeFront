@@ -154,7 +154,13 @@ export async function createOrganizationResourceInstance(
       organizationId,
     })
     return true
-  } catch (error) {
+  } catch (error: any) {
+    // Idempotent: re-creating an existing instance is a benign success, so this
+    // is safe to call on every boot / self-heal pass (mirrors setOrganizationParent).
+    const msg = String(error?.message ?? '').toLowerCase()
+    if (msg.includes('already exists') || msg.includes('409') || msg.includes('duplicate')) {
+      return true
+    }
     console.error(
       'Permit.io: error creating organization resource instance',
       { organizationId },
