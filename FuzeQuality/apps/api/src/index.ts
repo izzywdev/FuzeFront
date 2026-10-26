@@ -56,7 +56,7 @@ import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
 import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateArtifactReferenceConflict, policyGateArtifactReferenceError, policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
-import { policyGateFilterSchema } from './policy-gate-filter'
+import { policyGateFilterSchema, policyGateStoreQuery } from './policy-gate-filter'
 import { policyGateEvaluationForReview, policyGateReviewConflict, policyGateReviewRationaleConflict, policyGateReviewStateConflict } from './policy-gate-review'
 import { policyGateDetail } from './policy-gate-detail'
 import { decodeHistoryCursor, decodeUuidHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
@@ -462,20 +462,11 @@ app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (requ
   const cursor = decodeHistoryCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
   const limit = filter.data.limit
-  const evaluations = await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy', {
-    kind: filter.data.kind,
-    remediationAction: filter.data.remediationAction,
-    severity: filter.data.severity,
-    reviewStatus: filter.data.reviewStatus,
-    revision: filter.data.revision,
-    subject: filter.data.subject,
-    policyArtifactId: filter.data.policyArtifactId,
-    gateArtifactId: filter.data.gateArtifactId,
-    minConfidence: filter.data.minConfidence,
-    maxConfidence: filter.data.maxConfidence,
-    after: cursor.data,
-    limit: limit + 1,
-  })
+  const evaluations = await store.policyGateEvaluations(
+    repositoryId,
+    repository.tenantId ?? 'legacy',
+    policyGateStoreQuery(filter.data, cursor.data),
+  )
   response.json(historyPage(evaluations, limit))
 })
 app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) => {
@@ -737,12 +728,12 @@ app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, asyn
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   const cursor = decodeHistoryCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
-  const { limit, cursor: _cursor, ...query } = filter.data
-  const evaluations = await store.policyGateEvaluations(repositoryId, tenantId, {
-    ...query,
-    after: cursor.data,
-    limit: limit + 1,
-  })
+  const { limit } = filter.data
+  const evaluations = await store.policyGateEvaluations(
+    repositoryId,
+    tenantId,
+    policyGateStoreQuery(filter.data, cursor.data),
+  )
   response.json(historyPage(evaluations, limit))
 })
 app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId', mayReadCatalog, async (request, response) => {

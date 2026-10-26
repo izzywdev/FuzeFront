@@ -3,6 +3,7 @@ import type { PolicyGateEvaluation } from '@fuzequality/contracts'
 import {
   filterPolicyGateEvaluations,
   policyGateFilterSchema,
+  policyGateStoreQuery,
 } from './policy-gate-filter'
 
 const evaluation = (
@@ -125,6 +126,23 @@ describe('policy-gate inventory filter', () => {
     expect(policyGateFilterSchema.parse({ cursor: 'opaque' })).toMatchObject({
       cursor: 'opaque',
       limit: 50,
+    })
+  })
+
+  it('forwards every validated internal filter, including exact source path, with lookahead pagination', () => {
+    const filter = policyGateFilterSchema.parse({
+      sourcePath: 'governance/deployment.md',
+      subject: 'deployment',
+      cursor: 'opaque',
+      limit: 20,
+    })
+    const after = { createdAt: '2026-10-10T00:00:00.000Z', id: 'evaluation-1' }
+
+    expect(policyGateStoreQuery(filter, after)).toEqual({
+      sourcePath: 'governance/deployment.md',
+      subject: 'deployment',
+      after,
+      limit: 21,
     })
   })
 })
