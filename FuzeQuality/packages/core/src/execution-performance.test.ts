@@ -205,6 +205,21 @@ it('filters and trends only timestamped execution evidence', () => {
     [githubRunWithoutProvenance, githubRunWithProvenance, githubForkWithoutProvenance, executions[0]],
     { evidenceRequirement: 'github-run-provenance-missing', headRepository: 'acme/app' },
   )).toEqual([githubRunWithoutProvenance])
+  const githubRunWithUnverifiedAttemptArtifacts = {
+    ...githubRunWithProvenance,
+    id: 'github-run-with-unverified-attempt-artifacts',
+    externalRunId: 'github-run-with-unverified-attempt-artifacts',
+    evidenceCollection: {
+      status: 'partial' as const,
+      checkedAt: '2026-10-08T12:01:00.000Z',
+      issues: ['attempt-provenance-unverified' as const],
+      unverifiedLinks: [{ kind: 'video' as const, name: 'Run recording', url: 'https://github.com/acme/app/actions/runs/42/artifacts/7' }],
+    },
+  }
+  expect(filterTestExecutions(
+    [githubRunWithProvenance, githubRunWithUnverifiedAttemptArtifacts, executions[0]],
+    { evidenceRequirement: 'attempt-provenance-unverified' },
+  )).toEqual([githubRunWithUnverifiedAttemptArtifacts])
   expect(filterTestExecutions(executions, { evidenceRequirement: 'performance-threshold-missing' })).toEqual([executions[1]])
   const explicitPolicyGateOutcome = {
     ...executions[0],

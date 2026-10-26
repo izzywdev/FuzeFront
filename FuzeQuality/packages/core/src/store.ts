@@ -1766,6 +1766,8 @@ export class PostgresCatalogStore implements CatalogStore {
                OR executions.workflow_path IS NULL
                OR executions.source_url IS NULL
                OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
+           OR ($25='attempt-provenance-unverified'
+             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified')
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -2113,6 +2115,8 @@ export class PostgresCatalogStore implements CatalogStore {
                OR executions.workflow_path IS NULL
                OR executions.source_url IS NULL
                OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
+           OR ($25='attempt-provenance-unverified'
+             AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified')
            OR ($25='post-production-video-missing'
              AND executions.kind='post-production'
              AND NOT EXISTS (
@@ -2245,6 +2249,8 @@ export class PostgresCatalogStore implements CatalogStore {
                  OR executions.workflow_path IS NULL
                  OR executions.source_url IS NULL
                  OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
+             OR ($28='attempt-provenance-unverified'
+               AND COALESCE(executions.evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified')
              OR ($28='post-production-video-missing'
                AND executions.kind='post-production'
                AND NOT EXISTS (

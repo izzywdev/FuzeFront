@@ -51,6 +51,7 @@ export type PolicyGatePerformancePage = {
 export type ExecutionEvidenceRequirement =
   | 'evidence-url-invalid'
   | 'github-run-provenance-missing'
+  | 'attempt-provenance-unverified'
   | 'policy-gate-outcome-missing'
   | 'post-production-video-missing'
   | 'performance-threshold-missing'
@@ -243,6 +244,10 @@ export function filterTestExecutions(
           execution.workflowPath !== undefined &&
           execution.sourceUrl !== undefined &&
           safeExecutionEvidenceUrl(execution.sourceUrl)))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'attempt-provenance-unverified' &&
+      !execution.evidenceCollection?.issues?.includes('attempt-provenance-unverified')
     ) return false
     if (
       filter.evidenceRequirement === 'post-production-video-missing' &&
