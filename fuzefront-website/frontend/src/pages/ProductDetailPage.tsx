@@ -5,7 +5,7 @@ import {
   Layers, Shield, Server, ClipboardList, Palette, Bot,
   Key, MessageSquare, CheckCircle2, Rocket, ArrowRight, ArrowLeft
 } from 'lucide-react'
-import { ResponsiveGrid, Wrap, Text, Button, IconTile, PageSection } from '@fuzefront/design-system'
+import { ResponsiveGrid, Wrap, Text, Button, IconTile, PageSection, Stack } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -290,7 +290,7 @@ export const ProductDetailPage: React.FC = () => {
               <ArrowLeft size={14} /> All products
             </Link>
 
-            <div className="flex items-center gap-4 mb-6">
+            <Stack gap="md" mb="lg">
               <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center">
                 <IconTile tone="inverse" variant="plain"><Icon size={30} /></IconTile>
               </div>
@@ -300,7 +300,7 @@ export const ProductDetailPage: React.FC = () => {
                 </h1>
                 <p className="text-white/90 text-lg mt-1">{product.tagline}</p>
               </div>
-            </div>
+            </Stack>
 
             <p className="text-white text-lg leading-relaxed max-w-2xl mb-8">
               {product.heroDescription}
