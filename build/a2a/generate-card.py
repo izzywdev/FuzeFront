@@ -36,7 +36,7 @@ def main() -> None:
         sys.exit(1)
 
     sys.path.insert(0, str(fuzeagent / "agent-templates"))
-    from a2a.card_generator import project_product_card  # noqa: E402 (runtime import)
+    from a2a.card_generator import project_product_card
 
     manifest_path = REPO_ROOT / ".fuze" / "manifest.json"
     role_path = REPO_ROOT / "agent-templates" / "roles" / "app-shell-platform" / "role.json"
