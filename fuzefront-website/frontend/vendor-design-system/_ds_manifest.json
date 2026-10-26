@@ -238,6 +238,10 @@
       "sourcePath": "components/layout/ListStack.jsx"
     },
     {
+      "name": "PageSection",
+      "sourcePath": "components/layout/PageSection.jsx"
+    },
+    {
       "name": "Panel",
       "sourcePath": "components/layout/Panel.jsx"
     },
