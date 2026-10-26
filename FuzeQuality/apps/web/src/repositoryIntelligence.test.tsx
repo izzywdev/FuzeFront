@@ -1178,7 +1178,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       page: { nextCursor: 'older-executions', hasMore: true },
     })
     vi.mocked(api.executionTrend).mockResolvedValue([
-      { date: '2026-10-01', total: 10, passed: 7, failed: 2, cancelled: 1, running: 0, passRate: 0.7, durationSampleCount: 9, averageDurationMs: 95_000, maximumDurationMs: 180_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1, evidenceCompleteCount: 6, evidencePartialCount: 1, evidenceUnavailableCount: 2, evidenceNotCollectedCount: 1, gateEvaluationCount: 9, gatePassedCount: 6, gateFailedCount: 2, gateCancelledCount: 1, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2 },
+      { date: '2026-10-01', total: 10, passed: 7, failed: 2, cancelled: 1, running: 0, passRate: 0.7, durationSampleCount: 9, averageDurationMs: 95_000, maximumDurationMs: 180_000, retryAttemptCount: 3, successfulRetryCount: 2, recoveredRunCount: 1, evidenceCompleteCount: 6, evidencePartialCount: 1, evidenceUnavailableCount: 2, evidenceNotCollectedCount: 1, gateEvaluationCount: 9, gatePassedCount: 6, gateFailedCount: 2, gateCancelledCount: 1, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2, thresholdEvaluationCount: 8, thresholdPassedCount: 6, thresholdFailedCount: 2, performanceExecutionWithoutThresholdCount: 1 },
     ])
 
     render(<RepositoryIntelligence data={portfolio} />)
@@ -1195,6 +1195,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(trend).toHaveTextContent('1 recovered after failure')
     expect(trend).toHaveTextContent('Provider evidence: 6 complete · 1 partial · 2 unavailable · 1 not collected')
     expect(trend).toHaveTextContent('Policy gates: 6 passed · 2 failed · 1 cancelled · 0 running · 9 evaluated · 2 executions without an attributable gate outcome')
+    expect(trend).toHaveTextContent('Performance thresholds: 6 passed · 2 failed · 8 evaluated · 1 load/stress executions without threshold evidence')
     expect(api.executionTrend).toHaveBeenCalledWith(repository.id, {})
   })
 

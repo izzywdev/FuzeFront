@@ -332,6 +332,12 @@ export type ExecutionOutcomeTrend = {
   gateRunningCount?: number
   /** Executions that cannot be attributed to a policy/gate outcome without inference. */
   gateUnevaluatedExecutionCount?: number
+  /** Retained threshold observations in this UTC-day bucket. */
+  thresholdEvaluationCount?: number
+  thresholdPassedCount?: number
+  thresholdFailedCount?: number
+  /** Load or stress executions that retained no measurable threshold outcome. */
+  performanceExecutionWithoutThresholdCount?: number
 }
 
 /** Produces an evidence-only daily outcome series; missing days are not invented. */
@@ -373,6 +379,10 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       gateCancelledCount: 0,
       gateRunningCount: 0,
       gateUnevaluatedExecutionCount: 0,
+      thresholdEvaluationCount: 0,
+      thresholdPassedCount: 0,
+      thresholdFailedCount: 0,
+      performanceExecutionWithoutThresholdCount: 0,
       totalDurationMs: 0,
     }
     current.total++
@@ -394,6 +404,12 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       if (evaluation.status === 'failed') current.gateFailedCount = (current.gateFailedCount ?? 0) + 1
       if (evaluation.status === 'cancelled') current.gateCancelledCount = (current.gateCancelledCount ?? 0) + 1
       if (evaluation.status === 'running') current.gateRunningCount = (current.gateRunningCount ?? 0) + 1
+    }
+    current.thresholdEvaluationCount = (current.thresholdEvaluationCount ?? 0) + execution.thresholds.length
+    current.thresholdPassedCount = (current.thresholdPassedCount ?? 0) + execution.thresholds.filter(threshold => threshold.passed).length
+    current.thresholdFailedCount = (current.thresholdFailedCount ?? 0) + execution.thresholds.filter(threshold => !threshold.passed).length
+    if (['load', 'stress'].includes(execution.kind) && !execution.thresholds.length) {
+      current.performanceExecutionWithoutThresholdCount = (current.performanceExecutionWithoutThresholdCount ?? 0) + 1
     }
     if (execution.attempt > 1) {
       current.retryAttemptCount++

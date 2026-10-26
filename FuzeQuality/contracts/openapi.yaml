@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.12
+  version: 0.84.13
   license:
     name: UNLICENSED
 servers:
@@ -2308,7 +2308,7 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount]
+      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
       properties:
         date: { type: string, format: date }
         total:
@@ -2365,6 +2365,16 @@ components:
           type: integer
           minimum: 0
           description: Executions that cannot be attributed to a policy/gate outcome without inference.
+        thresholdEvaluationCount:
+          type: integer
+          minimum: 0
+          description: Retained threshold observations in the UTC-day bucket.
+        thresholdPassedCount: { type: integer, minimum: 0 }
+        thresholdFailedCount: { type: integer, minimum: 0 }
+        performanceExecutionWithoutThresholdCount:
+          type: integer
+          minimum: 0
+          description: Load or stress executions that retained no measurable threshold outcome.
     PerformanceDispatch:
       type: object
       required: [status, artifactId, workflowPath, ref, sourceRevision, auditPersistence, dispatch]

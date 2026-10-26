@@ -218,6 +218,10 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       gateCancelledCount: 0,
       gateRunningCount: 0,
       gateUnevaluatedExecutionCount: 0,
+      thresholdEvaluationCount: 0,
+      thresholdPassedCount: 0,
+      thresholdFailedCount: 0,
+      performanceExecutionWithoutThresholdCount: 0,
     }
     const itemDurationSampleCount = item.durationSampleCount ?? 0
     const itemAverageDurationMs = item.averageDurationMs ?? 0
@@ -249,6 +253,10 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.gateCancelledCount = (current.gateCancelledCount ?? 0) + (item.gateCancelledCount ?? 0)
     current.gateRunningCount = (current.gateRunningCount ?? 0) + (item.gateRunningCount ?? 0)
     current.gateUnevaluatedExecutionCount = (current.gateUnevaluatedExecutionCount ?? 0) + (item.gateUnevaluatedExecutionCount ?? 0)
+    current.thresholdEvaluationCount = (current.thresholdEvaluationCount ?? 0) + (item.thresholdEvaluationCount ?? 0)
+    current.thresholdPassedCount = (current.thresholdPassedCount ?? 0) + (item.thresholdPassedCount ?? 0)
+    current.thresholdFailedCount = (current.thresholdFailedCount ?? 0) + (item.thresholdFailedCount ?? 0)
+    current.performanceExecutionWithoutThresholdCount = (current.performanceExecutionWithoutThresholdCount ?? 0) + (item.performanceExecutionWithoutThresholdCount ?? 0)
     merged.set(item.date, current)
   }
   return [...merged.values()].sort((left, right) => left.date.localeCompare(right.date))
@@ -6650,6 +6658,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 </span>
                 <span>
                   Policy gates: {day.gatePassedCount ?? 0} passed · {day.gateFailedCount ?? 0} failed · {day.gateCancelledCount ?? 0} cancelled · {day.gateRunningCount ?? 0} running · {day.gateEvaluationCount ?? 0} evaluated · {day.gateUnevaluatedExecutionCount ?? 0} executions without an attributable gate outcome
+                </span>
+                <span>
+                  Performance thresholds: {day.thresholdPassedCount ?? 0} passed · {day.thresholdFailedCount ?? 0} failed · {day.thresholdEvaluationCount ?? 0} evaluated · {day.performanceExecutionWithoutThresholdCount ?? 0} load/stress executions without threshold evidence
                 </span>
               </div>
             ))}

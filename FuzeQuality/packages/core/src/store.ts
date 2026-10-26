@@ -1880,7 +1880,20 @@ export class PostgresCatalogStore implements CatalogStore {
                 SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
                 WHERE gate.value->>'status'='running'
               )),0)::integer AS gate_running_count,
-              count(*) FILTER (WHERE jsonb_array_length(effective_gate_evaluations)=0)::integer AS gate_unevaluated_execution_count
+              count(*) FILTER (WHERE jsonb_array_length(effective_gate_evaluations)=0)::integer AS gate_unevaluated_execution_count,
+              COALESCE(sum(jsonb_array_length(COALESCE(thresholds,'[]'::jsonb))),0)::integer AS threshold_evaluation_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(COALESCE(thresholds,'[]'::jsonb)) AS threshold(value)
+                WHERE threshold.value->>'passed'='true'
+              )),0)::integer AS threshold_passed_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(COALESCE(thresholds,'[]'::jsonb)) AS threshold(value)
+                WHERE threshold.value->>'passed'='false'
+              )),0)::integer AS threshold_failed_count,
+              count(*) FILTER (
+                WHERE kind IN ('load','stress')
+                  AND jsonb_array_length(COALESCE(thresholds,'[]'::jsonb))=0
+              )::integer AS performance_execution_without_threshold_count
        FROM normalized_executions executions
        WHERE COALESCE(executions.completed_at,executions.started_at) IS NOT NULL
          AND ($3::text IS NULL OR executions.kind=$3)
@@ -2046,6 +2059,10 @@ export class PostgresCatalogStore implements CatalogStore {
       gateCancelledCount: row.gate_cancelled_count,
       gateRunningCount: row.gate_running_count,
       gateUnevaluatedExecutionCount: row.gate_unevaluated_execution_count,
+      thresholdEvaluationCount: row.threshold_evaluation_count,
+      thresholdPassedCount: row.threshold_passed_count,
+      thresholdFailedCount: row.threshold_failed_count,
+      performanceExecutionWithoutThresholdCount: row.performance_execution_without_threshold_count,
     }))
   }
 
