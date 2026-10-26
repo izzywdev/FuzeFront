@@ -312,9 +312,9 @@ SELECT org_uuid, key,
 HAVING count(*) > 1 AND count(DISTINCT organization_id) > 1
  ORDER BY org_uuid, key;
 
--- B. forks of the same common list held by one org under two renderings (expect 0 rows)
+-- B. forks of the same common list held by one org under two renderings, MORE THAN ONE of them active (expect 0 rows)
 WITH rows AS (
-  SELECT l.id, l.organization_id, l.forked_from_list_id, l.created_at,
+  SELECT l.id, l.organization_id, l.forked_from_list_id, l.status, l.created_at,
          COALESCE(r.entity_id, l.organization_id) AS org_uuid
     FROM selection_lists l
     LEFT JOIN selection_list_ref_index r
@@ -322,10 +322,12 @@ WITH rows AS (
           AND (r.wire_id = l.organization_id OR r.entity_id = l.organization_id)
    WHERE l.forked_from_list_id IS NOT NULL
 )
-SELECT org_uuid, forked_from_list_id, array_agg(id ORDER BY created_at, id) AS fork_ids
+SELECT org_uuid, forked_from_list_id,
+       array_agg(id ORDER BY (status = 'active') DESC, created_at, id) AS fork_ids_winner_first
   FROM rows
  GROUP BY org_uuid, forked_from_list_id
-HAVING count(*) > 1 AND count(DISTINCT organization_id) > 1;
+HAVING count(*) > 1 AND count(DISTINCT organization_id) > 1
+   AND count(*) FILTER (WHERE status = 'active') > 1;
 
 -- C. organizations whose renderings this audit cannot pair (not in the org projection): expect 0 rows.
 --    A TypeID cannot be decoded in SQL; if rows appear, decode them with the identity package
@@ -358,7 +360,7 @@ new key only from the next change of that list:
 ```sql
 BEGIN;
 UPDATE selection_lists
-   SET key = key || '--dup-' || substr(id, length(id) - 7),
+   SET key = rtrim(left(key, 50), '-') || '--dup-' || right(id, 8),
        status = 'archived',
        updated_at = now()
  WHERE id IN ('<loser id>', '<loser id>');
