@@ -212,6 +212,7 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       evidencePartialCount: 0,
       evidenceUnavailableCount: 0,
       evidenceNotCollectedCount: 0,
+      evidenceCollectionFailureCount: 0,
       invalidEvidenceUrlCount: 0,
       githubRunProvenanceMissingCount: 0,
       attemptProvenanceUnverifiedCount: 0,
@@ -252,6 +253,7 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.evidencePartialCount = (current.evidencePartialCount ?? 0) + (item.evidencePartialCount ?? 0)
     current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + (item.evidenceUnavailableCount ?? 0)
     current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + (item.evidenceNotCollectedCount ?? 0)
+    current.evidenceCollectionFailureCount = (current.evidenceCollectionFailureCount ?? 0) + (item.evidenceCollectionFailureCount ?? 0)
     current.invalidEvidenceUrlCount = (current.invalidEvidenceUrlCount ?? 0) + (item.invalidEvidenceUrlCount ?? 0)
     current.githubRunProvenanceMissingCount = (current.githubRunProvenanceMissingCount ?? 0) + (item.githubRunProvenanceMissingCount ?? 0)
     current.attemptProvenanceUnverifiedCount = (current.attemptProvenanceUnverifiedCount ?? 0) + (item.attemptProvenanceUnverifiedCount ?? 0)
@@ -6741,7 +6743,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   {day.retryAttemptCount} retries · {day.successfulRetryCount} passed retries · {day.recoveredRunCount} recovered after failure
                 </span>
                 <span>
-                  Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected
+                  Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected · {day.evidenceCollectionFailureCount ?? 0} collection failures
                 </span>
                 <span>
                   Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.attemptProvenanceUnverifiedCount ?? 0} retry attempts with unverified provenance · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing timing

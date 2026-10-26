@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.23
+  version: 0.84.24
   license:
     name: UNLICENSED
 servers:
@@ -2323,7 +2323,7 @@ components:
     ExecutionOutcomeTrend:
       type: object
       additionalProperties: false
-      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, invalidEvidenceUrlCount, githubRunProvenanceMissingCount, attemptProvenanceUnverifiedCount, postProductionVideoMissingCount, terminalTimingMissingCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
+      required: [date, total, passed, failed, cancelled, running, passRate, durationSampleCount, averageDurationMs, maximumDurationMs, retryAttemptCount, successfulRetryCount, recoveredRunCount, evidenceCompleteCount, evidencePartialCount, evidenceUnavailableCount, evidenceNotCollectedCount, evidenceCollectionFailureCount, invalidEvidenceUrlCount, githubRunProvenanceMissingCount, attemptProvenanceUnverifiedCount, postProductionVideoMissingCount, terminalTimingMissingCount, gateEvaluationCount, gatePassedCount, gateFailedCount, gateCancelledCount, gateRunningCount, gateUnevaluatedExecutionCount, thresholdEvaluationCount, thresholdPassedCount, thresholdFailedCount, performanceExecutionWithoutThresholdCount]
       properties:
         date: { type: string, format: date }
         total:
@@ -2368,6 +2368,10 @@ components:
           type: integer
           minimum: 0
           description: Executions with no retained provider evidence collection attempt.
+        evidenceCollectionFailureCount:
+          type: integer
+          minimum: 0
+          description: Provider evidence collections that retained a normalized failure code.
         invalidEvidenceUrlCount:
           type: integer
           minimum: 0

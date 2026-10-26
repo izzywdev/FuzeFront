@@ -1951,6 +1951,7 @@ export class PostgresCatalogStore implements CatalogStore {
               count(*) FILTER (WHERE evidence_collection->>'status'='partial')::integer AS evidence_partial_count,
               count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_unavailable_count,
               count(*) FILTER (WHERE evidence_collection IS NULL)::integer AS evidence_not_collected_count,
+              count(*) FILTER (WHERE evidence_collection->>'errorCode' IS NOT NULL)::integer AS evidence_collection_failure_count,
               count(*) FILTER (WHERE EXISTS (
                 SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
                 WHERE COALESCE(evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
@@ -2166,6 +2167,7 @@ export class PostgresCatalogStore implements CatalogStore {
       evidencePartialCount: row.evidence_partial_count,
       evidenceUnavailableCount: row.evidence_unavailable_count,
       evidenceNotCollectedCount: row.evidence_not_collected_count,
+      evidenceCollectionFailureCount: row.evidence_collection_failure_count,
       invalidEvidenceUrlCount: row.invalid_evidence_url_count,
       githubRunProvenanceMissingCount: row.github_run_provenance_missing_count,
       attemptProvenanceUnverifiedCount: row.attempt_provenance_unverified_count,

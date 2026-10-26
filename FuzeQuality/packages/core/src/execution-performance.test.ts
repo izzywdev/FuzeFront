@@ -265,15 +265,15 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { minimumDurationMs: 45_001 })).toEqual([executions[2]])
   expect(filterTestExecutions(executions, { maximumDurationMs: 30_000 })).toEqual([executions[0]])
   expect(executionOutcomeTrend(executions)).toEqual([
-    { date: '2026-10-07', total: 2, passed: 1, failed: 1, cancelled: 0, running: 0, passRate: 0.5, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1, evidenceCompleteCount: 1, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2, thresholdEvaluationCount: 1, thresholdPassedCount: 0, thresholdFailedCount: 1, performanceExecutionWithoutThresholdCount: 0 },
-    { date: '2026-10-08', total: 1, passed: 0, failed: 1, cancelled: 0, running: 0, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 1, evidenceNotCollectedCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 1 },
+    { date: '2026-10-07', total: 2, passed: 1, failed: 1, cancelled: 0, running: 0, passRate: 0.5, durationSampleCount: 2, averageDurationMs: 45_000, maximumDurationMs: 60_000, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 1, evidenceCompleteCount: 1, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, evidenceCollectionFailureCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 0, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 2, thresholdEvaluationCount: 1, thresholdPassedCount: 0, thresholdFailedCount: 1, performanceExecutionWithoutThresholdCount: 0 },
+    { date: '2026-10-08', total: 1, passed: 0, failed: 1, cancelled: 0, running: 0, passRate: 0, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 0, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 1, evidenceNotCollectedCount: 0, evidenceCollectionFailureCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 1 },
   ])
 })
 
 it('does not infer recovery from a passed retry without retained prior failure evidence', () => {
   const passedRetry = { id: 'retry', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'run', attempt: 2, revision: 'a', kind: 'ci' as const, status: 'passed' as const, name: 'CI', completedAt: '2026-10-09T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] }
   expect(executionOutcomeTrend([passedRetry])).toEqual([
-    { date: '2026-10-09', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
+    { date: '2026-10-09', total: 1, passed: 1, failed: 0, cancelled: 0, running: 0, passRate: 1, durationSampleCount: 0, averageDurationMs: 0, maximumDurationMs: 0, retryAttemptCount: 1, successfulRetryCount: 1, recoveredRunCount: 0, evidenceCompleteCount: 0, evidencePartialCount: 0, evidenceUnavailableCount: 0, evidenceNotCollectedCount: 1, evidenceCollectionFailureCount: 0, invalidEvidenceUrlCount: 0, githubRunProvenanceMissingCount: 0, attemptProvenanceUnverifiedCount: 0, postProductionVideoMissingCount: 0, terminalTimingMissingCount: 1, gateEvaluationCount: 0, gatePassedCount: 0, gateFailedCount: 0, gateCancelledCount: 0, gateRunningCount: 0, gateUnevaluatedExecutionCount: 1, thresholdEvaluationCount: 0, thresholdPassedCount: 0, thresholdFailedCount: 0, performanceExecutionWithoutThresholdCount: 0 },
   ])
   const failedInitial = { ...passedRetry, id: 'initial', attempt: 1, status: 'failed' as const, completedAt: '2026-10-09T11:00:00.000Z' }
   expect(executionOutcomeTrend([passedRetry], [failedInitial, passedRetry])[0].recoveredRunCount).toBe(1)
@@ -294,6 +294,7 @@ it('trends actionable evidence gaps without treating running executions as missi
       evidenceCollection: {
         status: 'partial' as const,
         checkedAt: '2026-10-09T12:01:00.000Z',
+        errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' as const,
         issues: ['attempt-provenance-unverified' as const],
       },
     },
@@ -313,6 +314,7 @@ it('trends actionable evidence gaps without treating running executions as missi
     invalidEvidenceUrlCount: 1,
     githubRunProvenanceMissingCount: 1,
     attemptProvenanceUnverifiedCount: 1,
+    evidenceCollectionFailureCount: 1,
     postProductionVideoMissingCount: 1,
     terminalTimingMissingCount: 1,
   })

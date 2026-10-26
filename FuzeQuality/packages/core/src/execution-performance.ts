@@ -329,6 +329,8 @@ export type ExecutionOutcomeTrend = {
   evidenceUnavailableCount?: number
   /** Executions with no retained provider evidence collection attempt. */
   evidenceNotCollectedCount?: number
+  /** Provider evidence collections that retained a normalized failure code. */
+  evidenceCollectionFailureCount?: number
   /** Executions retaining at least one evidence link that is not a safe HTTPS URL. */
   invalidEvidenceUrlCount?: number
   /** GitHub Actions executions missing repository, workflow, or safe run URL provenance. */
@@ -388,6 +390,7 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       evidencePartialCount: 0,
       evidenceUnavailableCount: 0,
       evidenceNotCollectedCount: 0,
+      evidenceCollectionFailureCount: 0,
       invalidEvidenceUrlCount: 0,
       githubRunProvenanceMissingCount: 0,
       attemptProvenanceUnverifiedCount: 0,
@@ -413,6 +416,9 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       if (execution.evidenceCollection.status === 'unavailable') current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + 1
     } else {
       current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + 1
+    }
+    if (execution.evidenceCollection?.errorCode) {
+      current.evidenceCollectionFailureCount = (current.evidenceCollectionFailureCount ?? 0) + 1
     }
     if (execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))) {
       current.invalidEvidenceUrlCount = (current.invalidEvidenceUrlCount ?? 0) + 1
