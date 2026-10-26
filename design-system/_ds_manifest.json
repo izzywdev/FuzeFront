@@ -54,12 +54,20 @@
       "sourcePath": "components/core/GradientText.jsx"
     },
     {
+      "name": "GroupLabel",
+      "sourcePath": "components/core/GroupLabel.jsx"
+    },
+    {
       "name": "IconButton",
       "sourcePath": "components/core/IconButton.jsx"
     },
     {
       "name": "IconTile",
       "sourcePath": "components/core/IconTile.jsx"
+    },
+    {
+      "name": "InlineLink",
+      "sourcePath": "components/core/InlineLink.jsx"
     },
     {
       "name": "SectionIcon",
@@ -234,6 +242,10 @@
       "sourcePath": "components/layout/HeroPatternOverlay.jsx"
     },
     {
+      "name": "IconListItem",
+      "sourcePath": "components/layout/IconListItem.jsx"
+    },
+    {
       "name": "InfoRow",
       "sourcePath": "components/layout/InfoRow.jsx"
     },
@@ -244,6 +256,10 @@
     {
       "name": "PageSection",
       "sourcePath": "components/layout/PageSection.jsx"
+    },
+    {
+      "name": "PageShell",
+      "sourcePath": "components/layout/PageShell.jsx"
     },
     {
       "name": "Panel",
