@@ -19,4 +19,28 @@ describe('requirement sync cursors', () => {
       freshnessStatus: 'fresh',
     })
   })
+
+  it('retains a safe dependency failure code and clears it after a successful batch', async () => {
+    const store = new MemoryCatalogStore()
+
+    await store.markSyncFailed('jira', 'fq-product', 'INTELLIGENCE_UNAVAILABLE')
+    expect(await store.syncCursor('jira', 'fq-product')).toEqual({
+      sourceType: 'jira',
+      sourceKey: 'fq-product',
+      cursor: undefined,
+      lastSuccessAt: undefined,
+      freshnessStatus: 'failed',
+      failureCode: 'INTELLIGENCE_UNAVAILABLE',
+    })
+
+    await store.saveIntelligence([], {
+      sourceType: 'jira',
+      sourceKey: 'fq-product',
+      cursor: '2026-09-10T03:00:00.000Z',
+    })
+    expect(await store.syncCursor('jira', 'fq-product')).toMatchObject({
+      freshnessStatus: 'fresh',
+      failureCode: undefined,
+    })
+  })
 })

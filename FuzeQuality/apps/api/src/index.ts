@@ -1503,7 +1503,7 @@ app.post('/api/v1/internal/intelligence/results', async (request, response) => {
 })
 app.post('/api/v1/internal/intelligence/failure', async (request, response) => {
   const failure = intelligenceFailureSchema.parse(request.body)
-  await store.markSyncFailed(failure.sourceType, failure.sourceKey)
+  await store.markSyncFailed(failure.sourceType, failure.sourceKey, failure.code)
   console.error(JSON.stringify({ event: 'intelligence_sync_failed', sourceType: failure.sourceType, sourceKey: failure.sourceKey, code: failure.code, retryable: true }))
   response.status(202).json({ accepted: true })
 })

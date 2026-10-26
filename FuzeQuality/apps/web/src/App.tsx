@@ -89,6 +89,7 @@ import { ExecutionInspector } from './components/executionInspector'
 import { FlowInventoryFilters, type FlowAnalysisRisk, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector, flowArtifactTargetIds, unavailableFlowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
+import { RequirementFreshnessStatus } from './components/requirementFreshnessStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
 import { governanceEvidenceSelection } from './governanceEvidence'
 import { applyRepositoryProcessingStatus, repositoryNeedsProcessingPoll, repositoryProcessingTransitionCompleted } from './repositoryProcessing'
@@ -1831,14 +1832,16 @@ function ApiCatalogPage({ data }: { data: Portfolio }) {
 }
 
 function Requirements({ data }: { data: Portfolio }) {
-  const [freshness, setFreshness] = useState<
-    'unknown' | 'fresh' | 'stale' | 'failed'
-  >('unknown')
+  const [freshness, setFreshness] = useState<import('@fuzequality/contracts').SyncCursor>({
+    sourceType: 'jira',
+    sourceKey: 'default',
+    freshnessStatus: 'unknown',
+  })
   useEffect(() => {
     api
       .requirementFreshness()
-      .then(value => setFreshness(value.freshnessStatus))
-      .catch(() => setFreshness('failed'))
+      .then(setFreshness)
+      .catch(() => setFreshness({ sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'failed' }))
   }, [])
   return (
     <>
@@ -1847,9 +1850,7 @@ function Requirements({ data }: { data: Portfolio }) {
         title="Requirements & inferred flows"
         detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed."
         action={
-          <div className={`header-badge freshness-${freshness}`}>
-            <Database /> Jira {freshness}
-          </div>
+          <RequirementFreshnessStatus sync={freshness} />
         }
       />
       <div className="requirements-grid">

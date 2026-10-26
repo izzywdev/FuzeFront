@@ -157,7 +157,7 @@ async function qualityArtifactsByIdsBatched(id: string, artifactIds: string[], r
 
 export const api = {
   portfolio: () => request<Portfolio>('/api/v1/portfolio'),
-  requirementFreshness: () => request<{ freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'; lastSuccessAt?: string }>('/api/v1/requirements/freshness'),
+  requirementFreshness: () => request<import('@fuzequality/contracts').SyncCursor>('/api/v1/requirements/freshness'),
   addRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
   repositoryScanHistory: (id: string, cursor?: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryPage | import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),

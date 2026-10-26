@@ -360,6 +360,7 @@ export type SyncCursor = {
   cursor?: string
   lastSuccessAt?: string
   freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'
+  failureCode?: 'JIRA_UNAVAILABLE' | 'INTELLIGENCE_UNAVAILABLE' | 'SEMANTIC_INDEX_UNAVAILABLE'
 }
 
 export type RequirementSyncResult = {
