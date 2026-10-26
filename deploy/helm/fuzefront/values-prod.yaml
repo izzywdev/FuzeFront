@@ -348,11 +348,12 @@ a2a:
     # Tag is pinned to the last CI-built SHA; build-a2a-image.yml opens a
     # tag-bump PR automatically after each successful master build.
     repository: ghcr.io/izzywdev/fuzefront-a2a
-    # Pinned to the SHA of the first build triggered via workflow_dispatch on
-    # feat/a2a-static-card (2026-10-26). build-a2a-image.yml opens a tag-bump
-    # PR automatically after each subsequent master build.
-    tag: "70b8be08ff39"
-    pullPolicy: IfNotPresent
+    # Placeholder: no image exists until the first build-a2a-image.yml run on
+    # master (triggered by merging this PR). The tag-update job opens a tag-bump
+    # PR pinning the real :sha immediately after. Use :latest so the pod
+    # recovers automatically once the build completes (~10 min after merge).
+    tag: "latest"
+    pullPolicy: Always
   service:
     type: ClusterIP
     port: 8080
