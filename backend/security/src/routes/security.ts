@@ -1513,7 +1513,8 @@ router.delete('/sessions/:id', async (req: Request, res: Response) => {
 
 /** Scope a service's workload token must carry to ask whether a session is live. */
 const SESSION_VALIDATE_SCOPE = 'sessions:validate'
-const SESSION_VALIDATE_FIELDS = ['userId', 'sessionId'] as const
+const SESSION_VALIDATE_REQUIRED = ['userId', 'sessionId'] as const
+const SESSION_VALIDATE_OPTIONAL = ['tenantId'] as const // the token's `tid` claim
 const SESSION_VALIDATE_MAX_LEN = 128
 
 /**
@@ -1561,22 +1562,35 @@ router.post('/sessions/validate', async (req: Request, res: Response) => {
       throw new InvalidInputError('userId and sessionId are required')
     }
     for (const key of Object.keys(body)) {
-      if (!(SESSION_VALIDATE_FIELDS as readonly string[]).includes(key)) {
+      if (
+        !(SESSION_VALIDATE_REQUIRED as readonly string[]).includes(key) &&
+        !(SESSION_VALIDATE_OPTIONAL as readonly string[]).includes(key)
+      ) {
         throw new InvalidInputError(`unexpected property: ${key}`)
       }
     }
-    for (const key of SESSION_VALIDATE_FIELDS) {
-      const v = body[key]
-      if (typeof v !== 'string' || v.length === 0 || v.length > SESSION_VALIDATE_MAX_LEN) {
+    const isBounded = (v: unknown) =>
+      typeof v === 'string' && v.length > 0 && v.length <= SESSION_VALIDATE_MAX_LEN
+    for (const key of SESSION_VALIDATE_REQUIRED) {
+      if (!isBounded(body[key])) {
         throw new InvalidInputError(`${key} is required (1-${SESSION_VALIDATE_MAX_LEN} characters)`)
       }
+    }
+    // Optional, but when present it must be a well-formed string: a wrong-typed
+    // `tenantId` is a client bug, not a way to skip the tenant check.
+    if (body.tenantId !== undefined && !isBounded(body.tenantId)) {
+      throw new InvalidInputError(`tenantId must be 1-${SESSION_VALIDATE_MAX_LEN} characters when present`)
     }
   } catch (err) {
     return void sendError(res, err)
   }
 
   try {
-    const active = await getIdentityProvider().isSessionActive(req.body.userId, req.body.sessionId)
+    const active = await getIdentityProvider().isSessionActive(
+      req.body.userId,
+      req.body.sessionId,
+      req.body.tenantId
+    )
     res.status(200).json({ active: active === true })
   } catch (err) {
     // Fail closed AND distinguishable: never `{ active: true }`, never a quiet
