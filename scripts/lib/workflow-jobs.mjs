@@ -59,3 +59,29 @@ export const stripYamlComments = text =>
     .split('\n')
     .map(l => (/^\s*#/.test(l) ? '' : l.replace(/\s+#.*$/, '')))
     .join('\n')
+
+/**
+ * The YAML block of the ONE step containing line index `at`: from its `- ` item marker to
+ * the next item at the same indentation (or the end of the step list).
+ *
+ * `continue-on-error` is valid at BOTH job and step level, and conflating them made an
+ * unrelated step's `continue-on-error: true` report the gate invocation as suppressed —
+ * while the invocation itself could still fail the job. Job-level suppression is a line
+ * at job-key indentation; step-level belongs only to the step that holds the command.
+ */
+export const stepBlockAround = (lines, at) => {
+  let start = -1
+  let indent = ''
+  for (let i = at; i >= 0; i--) {
+    const m = lines[i].match(/^(\s*)-\s/)
+    if (m) { start = i; indent = m[1]; break }
+  }
+  if (start === -1) throw new Error('no step item found at or above that line')
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i++) {
+    if (lines[i].trim() === '') continue
+    const cur = lines[i].match(/^(\s*)/)[1]
+    if (cur.length <= indent.length) { end = i; break }
+  }
+  return lines.slice(start, end).join('\n')
+}

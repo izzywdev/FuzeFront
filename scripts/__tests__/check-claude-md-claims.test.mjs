@@ -11,7 +11,7 @@
 // carrying its own copy proves the copy works, which is the same defect in a new costume.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { jobBlock, jobBlockAround, stripYamlComments } from '../lib/workflow-jobs.mjs'
+import { jobBlock, jobBlockAround, stepBlockAround, stripYamlComments } from '../lib/workflow-jobs.mjs'
 
 const WF = [
   'name: example',
@@ -92,4 +92,57 @@ test('stripYamlComments: real configuration survives, and a commented-out suppre
 test('stripYamlComments: a # with no leading space is left alone', () => {
   // URL fragments and quoted values must not be truncated.
   assert.match(stripYamlComments('      - run: echo "a#b" || true'), /a#b/)
+})
+
+// --- step-level vs job-level suppression -----------------------------------------
+// `continue-on-error` is valid at both levels, and treating them as one made an
+// unrelated step's flag report the gate invocation as suppressed, while a commented-out
+// invocation still counted as wired. Both were reproduced by review on #1685.
+const JOB = [
+  '  frames-schema:',
+  '    runs-on: ubuntu-latest',
+  '    steps:',
+  '      - name: Unit-test the gate itself',
+  '        continue-on-error: true',
+  '        run: node --test scripts/__tests__/x.test.mjs',
+  '      - name: Validate',
+  '        run: |',
+  '          node scripts/real-gate.mjs --base main',
+  '',
+].join('\n')
+
+test('stepBlockAround isolates the invoking step from a suppressed sibling', () => {
+  const lines = JOB.split('\n')
+  const at = lines.findIndex(l => l.includes('node scripts/real-gate.mjs'))
+  const step = stepBlockAround(lines, at)
+  assert.match(step, /node scripts\/real-gate\.mjs/)
+  // The sibling's continue-on-error must NOT appear in this step …
+  assert.doesNotMatch(step, /continue-on-error/)
+  // … though it is plainly present in the job as a whole.
+  assert.match(jobBlockAround(lines, at), /continue-on-error:\s*true/)
+})
+
+test('stepBlockAround keeps a suppression that really is on the invoking step', () => {
+  const lines = JOB.replace('      - name: Validate\n', '      - name: Validate\n        continue-on-error: true\n').split('\n')
+  const at = lines.findIndex(l => l.includes('node scripts/real-gate.mjs'))
+  assert.match(stepBlockAround(lines, at), /continue-on-error:\s*true/)
+})
+
+test('job-level suppression is distinguishable by indentation', () => {
+  const jobLevel = JOB.replace('    runs-on: ubuntu-latest', '    runs-on: ubuntu-latest\n    continue-on-error: true')
+  assert.match(jobLevel, /^ {4}continue-on-error:\s*true/m)        // job key, 4 spaces
+  assert.doesNotMatch(JOB, /^ {4}continue-on-error:\s*true/m)      // only the step has it
+})
+
+test('a commented-out invocation is not an invocation', () => {
+  // The reported regression: locating the command on raw text accepted a `#`-disabled
+  // line, so one character disconnected a gate while the claim still reported it wired.
+  const disabled = JOB.replace('          node scripts/real-gate.mjs --base main',
+                               '#          node scripts/real-gate.mjs --base main')
+  const live = stripYamlComments(disabled)
+    .split('\n')
+    .findIndex(l => l.includes('node scripts/real-gate.mjs') && !l.includes('--test'))
+  assert.equal(live, -1)
+  // And the same search on the raw text is exactly what used to pass.
+  assert.notEqual(disabled.split('\n').findIndex(l => l.includes('node scripts/real-gate.mjs')), -1)
 })

@@ -16,7 +16,7 @@
 // Add a claim here whenever CLAUDE.md asserts something a command could confirm.
 import { existsSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { jobBlock, jobBlockAround, stripYamlComments } from './lib/workflow-jobs.mjs'
+import { jobBlockAround, stepBlockAround, stripYamlComments } from './lib/workflow-jobs.mjs'
 
 const read = p => (existsSync(p) ? readFileSync(p, 'utf8') : null)
 const claude = read('CLAUDE.md')
@@ -76,6 +76,38 @@ const requiredNow = () => {
   return arr
 }
 
+/**
+ * Throws unless `workflow` really runs `script` in a way that can fail the job.
+ *
+ * Three ways a wired-looking gate is not live, each of which this has been caught
+ * accepting at some point on #1685:
+ *   - the invocation is COMMENTED OUT — so comments are stripped BEFORE locating it, not
+ *     only before the suppression checks (which was the gap: a single `#` disconnected a
+ *     gate while the claim still reported it wired);
+ *   - the job carries `continue-on-error: true`;
+ *   - the invoking STEP carries it — checked only on that step, since the same key on an
+ *     unrelated step says nothing about this command.
+ * A `node --test` line is the gate's unit test, not the gate: a workflow that only tests
+ * a script it never runs must not satisfy this.
+ */
+const assertLiveInvocation = (workflow, script) => {
+  const raw = read(`.github/workflows/${workflow}`)
+  if (raw === null) throw new Error(`.github/workflows/${workflow} not found`)
+  const lines = stripYamlComments(raw).split('\n')
+  const at = lines.findIndex(l => l.includes(`node ${script}`) && !l.includes('--test'))
+  if (at === -1) {
+    throw new Error(`no live \`node ${script}\` invocation (absent, commented out, or only under --test)`)
+  }
+  if (/^ {4}continue-on-error:\s*true/m.test(jobBlockAround(lines, at))) {
+    throw new Error('the job sets continue-on-error: true')
+  }
+  if (/continue-on-error:\s*true/.test(stepBlockAround(lines, at))) {
+    throw new Error('the invoking step sets continue-on-error: true')
+  }
+  if (/\|\|\s*true/.test(lines[at])) throw new Error('the invocation is suppressed with `|| true`')
+  return true
+}
+
 // WIRED, not merely present — for every gate CLAUDE.md names with its workflow.
 //
 // This was the whole stated point of section 2, and it covered exactly one gate.
@@ -93,30 +125,7 @@ for (const [wf, script] of [
 ]) {
   claim(
     `${wf} actually invokes ${script}`,
-    () => {
-      const text = read(`.github/workflows/${wf}`)
-      if (text === null) throw new Error(`.github/workflows/${wf} not found`)
-      // `node --test scripts/__tests__/<name>.test.mjs` is the gate's unit test, not the
-      // gate: match an invocation that is NOT the test runner, or a workflow could satisfy
-      // this by only testing the script it never runs.
-      const lines = text.split('\n')
-      const at = lines.findIndex(l => l.includes(`node ${script}`) && !l.includes('--test'))
-      if (at === -1) throw new Error(`no \`node ${script}\` invocation outside the unit test`)
-      // Scope the suppression checks to the JOB that holds the invocation, not the whole
-      // file. Testing the raw text means any unrelated optional step elsewhere in the same
-      // workflow that legitimately carries `continue-on-error: true` fails this claim for
-      // a reason that has nothing to do with it — no false positive in these three files
-      // today, but architecturally the wrong question, and it would fire the first time
-      // someone adds an optional step (fuze-code-review #1685).
-      // Comments stripped first: a comment EXPLAINING continue-on-error is not
-      // continue-on-error. This gate failed on its own workflow over exactly that.
-      const job = stripYamlComments(jobBlockAround(lines, at))
-      if (/continue-on-error:\s*true/.test(job)) throw new Error('the job sets continue-on-error: true')
-      if (/\|\|\s*true/.test(stripYamlComments(lines[at]))) {
-        throw new Error('the invocation is suppressed with `|| true`')
-      }
-      return true
-    },
+    () => assertLiveInvocation(wf, script),
     `CLAUDE.md says ${wf} runs ${script}; it does not, or the run is suppressed`,
   )
 }
@@ -126,16 +135,7 @@ for (const [wf, script] of [
 // so auto-merge never waits on it). Assert both, in the direction CLAUDE.md now states.
 claim(
   'gate-toolchain runs unsuppressed in harden-gate.yml',
-  () => {
-    const job = stripYamlComments(
-      jobBlock(read('.github/workflows/harden-gate.yml') || '', 'gate-toolchain'),
-    )
-    return (
-      job.includes('node scripts/gate-toolchain.mjs') &&
-      !/gate-toolchain\.mjs[^\n]*(\|\| true|\|\|true)/.test(job) &&
-      !/continue-on-error:\s*true/.test(job)
-    )
-  },
+  () => assertLiveInvocation('harden-gate.yml', 'scripts/gate-toolchain.mjs'),
   'CLAUDE.md says gate-toolchain runs in harden-gate.yml and fails on a violation; the step is missing or suppressed',
 )
 
