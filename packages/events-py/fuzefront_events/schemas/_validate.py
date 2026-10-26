@@ -20,8 +20,24 @@ _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
-# Deliberately permissive, like Zod's z.string().email() (not RFC-complete).
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Mirror of the DEFAULT regex Zod 3.22.4 (the pinned version) uses for
+# z.string().email() — verified against the live Zod: no leading dot, no
+# consecutive dots, domain labels start alphanumeric (rejects `a@-example.com`),
+# and a 2+-letter TLD (rejects `x@y.z`). This is stricter than the old
+# `[^@\s]+@[^@\s]+\.[^@\s]+` approximation, which accepted `a..b@x.com` etc.
+_EMAIL_RE = re.compile(
+    r"^(?!\.)(?!.*\.\.)([A-Z0-9_'+\-\.]*)[A-Z0-9_+-]@([A-Z0-9][A-Z0-9\-]*\.)+[A-Z]{2,}$",
+    re.IGNORECASE,
+)
+
+
+def _utf16_len(s: str) -> int:
+    """Length in UTF-16 code units — what JS ``string.length`` (and therefore
+    Zod ``.min()``/``.max()``) counts. A non-BMP char (emoji, …) is 2 units,
+    whereas Python ``len()`` counts it as 1 code point."""
+    return len(s.encode("utf-16-le")) // 2
+
+
 _E164_RE = re.compile(r"^\+[1-9]\d{1,14}$")
 # ISO-8601 UTC, mirroring Zod z.string().datetime() with its defaults EXACTLY:
 # a trailing 'Z' is REQUIRED (no tz-less value, no numeric offset — those need
@@ -79,9 +95,11 @@ class _V:
             raise self.fail(f"field '{field}' must not be null")
         if not isinstance(v, str):
             raise self.fail(f"field '{field}' must be a string")
-        if min_len is not None and len(v) < min_len:
+        # UTF-16 code units, to match Zod's JS-length-based .min()/.max().
+        n = _utf16_len(v)
+        if min_len is not None and n < min_len:
             raise self.fail(f"field '{field}' shorter than {min_len}")
-        if max_len is not None and len(v) > max_len:
+        if max_len is not None and n > max_len:
             raise self.fail(f"field '{field}' longer than {max_len}")
         if pattern is not None and not pattern.match(v):
             raise self.fail(f"field '{field}' does not match required pattern")

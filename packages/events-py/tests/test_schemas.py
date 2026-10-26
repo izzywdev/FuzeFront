@@ -316,6 +316,24 @@ def test_integer_accepts_integral_float_rejects_fractional():
             schema_for_topic("chat.response.chunk")(bad)
 
 
+def test_email_matches_zod_default():
+    base = copy.deepcopy(VALID["identity.user.created"])
+    for good in ("a@b.co", "user+tag@mail.example.com", "John.Doe@Example.COM"):
+        assert schema_for_topic("identity.user.created")({**base, "email": good})
+    for bad in ("a..b@example.com", "a@-example.com", "x@y.z", "a@b", "a@example"):
+        with pytest.raises(SchemaValidationError):
+            schema_for_topic("identity.user.created")({**base, "email": bad})
+
+
+def test_string_length_counts_utf16_units():
+    # 101 non-BMP chars = 202 UTF-16 units > NAME_MAX(200); 100 = 200 = OK.
+    good = {**_sl_base(), "list": {**_sl_list_snapshot(), "name": "😀" * 100}}
+    assert schema_for_topic("selection-lists.list.created")(good)
+    bad = {**_sl_base(), "list": {**_sl_list_snapshot(), "name": "😀" * 101}}
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.list.created")(bad)
+
+
 def test_discriminator_non_string_type_rejected():
     # A non-string discriminator (actor.type == []) must raise
     # SchemaValidationError, not a bare TypeError from the `in` lookup.
