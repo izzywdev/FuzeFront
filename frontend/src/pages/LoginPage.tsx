@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
-import type { SessionResult } from '../services/api'
-import { Alert, AuthCard } from '@fuzefront/design-system'
+import type { SessionResult, BrokerClient } from '../services/api'
+import { Alert, AuthCard, BrandTokenScope } from '@fuzefront/design-system'
 import { useT } from '@fuzefront/i18n'
 import { AuthPanel, isAuthExperienceEnabled } from '@fuzefront/auth-ui'
 import type {
@@ -15,6 +15,21 @@ import type {
 } from '@fuzefront/auth-ui'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 import { authError, buildAuthLabels, buildSignupLabels, type TFn } from './authI18n'
+
+/**
+ * Consumer-product sign-in handoff (marketplace token handoff, #238). A
+ * registered broker client (e.g. the Mendys datasets marketplace) sends its
+ * user here with `?client=<key>&redirect_uri=<its callback>`. Read ONCE on
+ * module load (not inside the component) so it survives re-renders and is
+ * stable for the lifetime of the page the same way `mode` above is.
+ */
+function readBrokerParamsFromLocation(): { client: string; redirectUri: string } | null {
+  const params = new URLSearchParams(window.location.search)
+  const client = params.get('client')
+  const redirectUri = params.get('redirect_uri')
+  if (!client || !redirectUri) return null
+  return { client, redirectUri }
+}
 
 /**
  * LoginPage — a thin adapter around `@fuzefront/auth-ui`'s `AuthPanel`.
@@ -116,6 +131,27 @@ function LoginPage() {
   )
   const { setUser } = useCurrentUser()
 
+  // Broker handoff context (#238) — read once; `null` for the ordinary
+  // (non-broker) sign-in path, which is unaffected by anything below.
+  const [brokerParams] = useState(readBrokerParamsFromLocation)
+  const [brokerClient, setBrokerClient] = useState<BrokerClient | null>(null)
+  const [brokerError, setBrokerError] = useState('')
+
+  // Resolve the broker client's public branding (name/logo/accent/tagline) up
+  // front so the themed sign-in page can render it BEFORE the user
+  // authenticates. Fails open to default FuzeFront branding on any error
+  // (unknown client, network) — getBrokerClient() never throws.
+  useEffect(() => {
+    if (!brokerParams) return
+    let cancelled = false
+    authAPI.getBrokerClient(brokerParams.client).then(result => {
+      if (!cancelled) setBrokerClient(result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [brokerParams])
+
   // A FuzePicker email opens its protected mentions route first. Preserve only
   // that same-origin path across sign-in/sign-up so a new recipient lands on
   // the mention they were sent, rather than being dropped on the dashboard.
@@ -160,19 +196,45 @@ function LoginPage() {
     try {
       const user = await authAPI.getCurrentUser()
       setUser(user)
-      const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
-      window.sessionStorage.removeItem('fuzepicker:return-path')
-      const authReturn = window.sessionStorage.getItem('auth:return-path')
-      window.sessionStorage.removeItem('auth:return-path')
-      window.location.href = returnPath?.startsWith('/fuzepicker/mentions')
-        ? returnPath
-        : authReturn === '/signup/verify'
-          ? authReturn
-          : '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
       setCallbackError(authError(ti, 'profileLoad'))
+      return
     }
+
+    // Broker handoff (#238): a registered consumer product sent this user
+    // here with `?client=&redirect_uri=`. Instead of landing on THIS app's
+    // dashboard, mint a one-time code and send the browser back to the
+    // product's own callback — its BACKEND redeems the code
+    // server-to-server. A handoff failure (unknown client / redirectUri no
+    // longer allowlisted / dead session) is surfaced in place; it never
+    // silently falls through to the FuzeFront dashboard, which would strand
+    // the product's user mid-flow with no way back to where they started.
+    if (brokerParams) {
+      try {
+        const { redirectUri } = await authAPI.brokerHandoff(brokerParams)
+        window.location.href = redirectUri
+      } catch (err: any) {
+        console.error('Broker handoff failed:', err)
+        setBrokerError(
+          err?.response?.data?.error ||
+            'Signed in, but could not hand off to the requesting application. Please try again.'
+        )
+      }
+      return
+    }
+
+    // Ordinary (non-broker) sign-in: honour the allowlisted deep-link stashes
+    // (fuzepicker mention / signup-verify) set on page load, else the dashboard.
+    const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
+    window.sessionStorage.removeItem('fuzepicker:return-path')
+    const authReturn = window.sessionStorage.getItem('auth:return-path')
+    window.sessionStorage.removeItem('auth:return-path')
+    window.location.href = returnPath?.startsWith('/fuzepicker/mentions')
+      ? returnPath
+      : authReturn === '/signup/verify'
+        ? authReturn
+        : '/dashboard'
   }
 
   // Handle a social sign-in round-trip on page load. The provider callback
@@ -309,18 +371,39 @@ function LoginPage() {
     [tr]
   )
 
-  return (
+  const branding = brokerClient?.branding
+  const pageContent = (
     <AuthCard>
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          marginBottom: 'var(--space-6, 24px)',
+          marginBottom: branding?.tagline ? 'var(--space-2, 8px)' : 'var(--space-6, 24px)',
         }}
       >
-        <img src={FuzeFrontLogo} alt="FuzeFront" style={{ height: '48px', width: 'auto' }} />
+        {/* Per-product theming (FF-EPIC-13 PortalBranding semantics): a
+            registered broker client's logo, or the default FuzeFront
+            lockup — null/missing never renders a broken image. */}
+        {branding?.logo ? (
+          <img src={branding.logo} alt={branding.name} style={{ height: '48px', width: 'auto' }} />
+        ) : (
+          <img src={FuzeFrontLogo} alt="FuzeFront" style={{ height: '48px', width: 'auto' }} />
+        )}
       </div>
+
+      {branding?.tagline && (
+        <p
+          style={{
+            textAlign: 'center',
+            color: 'var(--text-secondary)',
+            fontSize: 'var(--text-sm)',
+            margin: '0 0 var(--space-6, 24px)',
+          }}
+        >
+          {branding.tagline}
+        </p>
+      )}
 
       {callbackError && (
         <Alert tone="error" title={labels.errorTitle} style={{ marginBottom: 'var(--space-4, 16px)' }}>
@@ -330,6 +413,11 @@ function LoginPage() {
       {callbackNotice && (
         <Alert tone="info" style={{ marginBottom: 'var(--space-4, 16px)' }}>
           {callbackNotice}
+        </Alert>
+      )}
+      {brokerError && (
+        <Alert tone="error" title="Could not complete sign-in" style={{ marginBottom: 'var(--space-4, 16px)' }}>
+          {brokerError}
         </Alert>
       )}
 
@@ -345,6 +433,20 @@ function LoginPage() {
         labels={labels}
       />
     </AuthCard>
+  )
+
+  // Scope the design-system `--accent-*` tokens to the broker client's
+  // validated brand color (AA-contrast-checked, fail-closed to the base DS
+  // accent on an invalid/missing color) — the SAME primitive the
+  // authenticated white-label portal shell uses (`@fuzefront/portal-branding-ui`'s
+  // `PortalThemeScope`), applied here directly since this pre-auth page has
+  // no portal context to resolve, only the broker client's own branding.
+  return branding?.accent ? (
+    <BrandTokenScope accent={branding.accent} data-broker-client={brokerClient?.client}>
+      {pageContent}
+    </BrandTokenScope>
+  ) : (
+    pageContent
   )
 }
 
