@@ -18,7 +18,7 @@ import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 import { defaultEventPublisher } from '../services/eventPublisher'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
-import { permitSchema } from '../permit/schema'
+import { permitSchema, MEMBERSHIP_ROLE_RANK } from '../permit/schema'
 import { EMPLOYEE_ROLE_CATALOG_ENTRY, resolveEmployeeStatus } from '../services/employeeRole'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 import { isMemberDirectoryEnabled } from '../utils/memberDirectoryFlag'
@@ -360,38 +360,52 @@ router.get('/', authenticateToken, async (req: any, res) => {
     const sortField = validSortFields.includes(sort) ? sort : 'name'
     const sortOrder = ['asc', 'desc'].includes(order) ? order : 'asc'
 
-    // Build query. Also project the caller's own membership role (via the
-    // left-join below) as `user_role` so the UI can show "your role" and
-    // distinguish a real member from someone merely seeing a platform org.
+    // Build query. Also project the caller's own membership role as
+    // `user_role` so the UI can show "your role" and distinguish a real member
+    // from someone merely seeing a platform org.
+    //
+    // FFRNT-378: a user may hold MORE THAN ONE active membership row for the
+    // same org (e.g. viewer + owner). A LEFT JOIN on organization_memberships
+    // fanned that out to one result row per membership, so the org appeared
+    // TWICE in the switcher (each row carrying a different user_role). Instead,
+    // keep the query one-row-per-org and derive `user_role` from a correlated
+    // subquery that returns the single HIGHEST-ranked active role
+    // (MEMBERSHIP_ROLE_RANK: owner > admin > member > viewer > developer), and
+    // gate visibility with EXISTS. Count, sort and pagination below then
+    // operate on orgs, not on membership rows, so none of them double-count.
+    const rankCase =
+      'CASE om.role ' +
+      Object.entries(MEMBERSHIP_ROLE_RANK)
+        .map(([, n]) => `WHEN ? THEN ${n}`)
+        .join(' ') +
+      ' ELSE 0 END'
+    const rankRoles = Object.keys(MEMBERSHIP_ROLE_RANK)
     let query = db('organizations')
-      .select('organizations.*', 'organization_memberships.role as user_role')
-      .leftJoin('organization_memberships', function () {
-        this.on(
-          'organizations.id',
-          '=',
-          'organization_memberships.organization_id'
+      .select(
+        'organizations.*',
+        db.raw(
+          `(SELECT om.role FROM organization_memberships om
+              WHERE om.organization_id = organizations.id
+                AND om.user_id = ?
+                AND om.status = 'active'
+              ORDER BY ${rankCase} DESC
+              LIMIT 1) as user_role`,
+          [req.user.id, ...rankRoles]
         )
-          .andOn(
-            'organization_memberships.user_id',
-            '=',
-            db.raw('?', [req.user.id])
-          )
-          .andOn(
-            'organization_memberships.status',
-            '=',
-            db.raw('?', ['active'])
-          )
-      })
+      )
       .where(function () {
         // A user sees orgs they are an active member of, plus the single
         // canonical platform root (every user has a baseline membership there,
         // but new users may not yet — so keep it visible by id). Scoping to
         // ROOT_ORG_ID, not type='platform', stops any other/legacy platform org
         // leaking into every user's switcher as a phantom "Guest" tile.
-        this.whereNotNull('organization_memberships.id').orWhere(
-          'organizations.id',
-          ROOT_ORG_ID
-        )
+        this.whereExists(function () {
+          this.select(db.raw('1'))
+            .from('organization_memberships as om2')
+            .whereRaw('om2.organization_id = organizations.id')
+            .andWhere('om2.user_id', req.user.id)
+            .andWhere('om2.status', 'active')
+        }).orWhere('organizations.id', ROOT_ORG_ID)
       })
 
     // Apply filters
