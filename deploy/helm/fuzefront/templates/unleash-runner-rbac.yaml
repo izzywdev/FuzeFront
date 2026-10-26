@@ -60,11 +60,19 @@ roleRef:
   name: unleash-runner-secret-reader
   apiGroup: rbac.authorization.k8s.io
 ---
-# Read-only diagnostic access so the in-cluster runner can explain why a workload
-# is unhealthy (sl-cluster-diag.yml inspects selection-list-service). get/list on
-# pods (+ logs), deployments/replicasets, jobs and events in THIS namespace only —
-# no secrets, no write verbs, no cluster scope. TEMPORARY: remove together with
-# sl-cluster-diag.yml once the selection-list deploy is confirmed healthy.
+# RETIREMENT of the temporary diagnostic RBAC added in #1635 (sl-cluster-diag).
+#
+# Simply deleting the templates does NOT revoke the grant: both objects were
+# applied as pre-install/pre-upgrade HOOKS with hook-delete-policy
+# before-hook-creation, and Argo's prune skips live hook resources — so with no
+# replacement hook they would linger and arc-runner-sa would keep its prod
+# pod/log read access (Codex P1 on #1688). Instead of removing them, we KEEP the
+# hooks but strip the Role to `rules: []`. before-hook-creation then deletes the
+# previously-applied (privileged) Role on the next PreSync and recreates it with
+# no rules, so the grant is actually revoked in-cluster via GitOps — no manual
+# kubectl needed. The now-empty Role/RoleBinding are harmless husks; FuzeInfra
+# can hard-delete them at leisure. Remove this whole block only once the live
+# objects are confirmed gone from the cluster.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -73,25 +81,12 @@ metadata:
   labels:
     {{- include "fuzefront.labels" . | nindent 4 }}
   annotations:
-    # Apply as a PreSync hook at weight -6 — BEFORE every service-db-bootstrap
-    # Job (weight -4/-5). If a bootstrap PreSync is the very failure this
-    # diagnostic exists to explain, a failed later-weight hook aborts the sync
-    # phase, but this -6 resource has already been applied, so the runner keeps
-    # its read access and the diagnostic can still run. before-hook-creation
-    # (no hook-succeeded) so the Role persists after the hook phase.
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-6"
     "helm.sh/hook-delete-policy": before-hook-creation
-rules:
-  - apiGroups: [""]
-    resources: ["pods", "pods/log", "events"]
-    verbs: ["get", "list"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets"]
-    verbs: ["get", "list"]
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list"]
+# Intentionally no permissions — this empties the formerly-granted diagnostic
+# access (pods, pods/log, events, deployments, replicasets, jobs).
+rules: []
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -101,8 +96,6 @@ metadata:
   labels:
     {{- include "fuzefront.labels" . | nindent 4 }}
   annotations:
-    # Same PreSync wave as its Role (weight -6) so the binding is in place before
-    # any bootstrap Job that could abort the sync phase.
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-6"
     "helm.sh/hook-delete-policy": before-hook-creation

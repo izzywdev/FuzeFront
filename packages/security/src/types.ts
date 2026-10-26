@@ -24,7 +24,7 @@
  */
 import type { components } from './generated';
 
-export const SECURITY_CONTRACT_VERSION = '1.2.0' as const;
+export const SECURITY_CONTRACT_VERSION = '1.3.1' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -97,6 +97,20 @@ export type SocialProvider = 'google';
 
 /** Neutral MFA factor type. `webauthn` reserved for later. */
 export type MfaFactorType = 'totp' | 'sms' | 'email' | 'webauthn';
+
+/**
+ * Consumer-product sign-in handoff (marketplace token handoff, #238). A
+ * registered "broker client" (e.g. the Mendys datasets marketplace) sends its
+ * user to this app's own themed sign-in UI with `?client=&redirect_uri=`;
+ * after the user authenticates, the SPA mints a one-time code
+ * (`POST /broker/handoff`) and the product's BACKEND redeems it
+ * server-to-server (`POST /broker/token-exchange`). See the `broker` tag in
+ * `openapi.yaml` for the full contract and boundary-guarantee rationale.
+ */
+export type BrokerClient = components['schemas']['BrokerClient'];
+export type BrokerHandoffRequest = components['schemas']['BrokerHandoffRequest'];
+export type BrokerHandoffResult = components['schemas']['BrokerHandoffResult'];
+export type BrokerTokenExchangeRequest = components['schemas']['BrokerTokenExchangeRequest'];
 
 /** Captcha capability for pre-auth forms (mirrors API `AuthMethods.captcha`). */
 export interface CaptchaMethod {

@@ -12,6 +12,15 @@ import {
   DEFAULT_NAV_SECTION,
   navSectionRank,
 } from './manifest.schema'
+import {
+  ScopeLevel,
+  OrgInstallMode,
+  GOVERNANCE_DEFAULTS,
+  enforceOrgInstallMode,
+  APP_GOVERNANCE,
+  deriveGovernanceFromManifest,
+  governanceColumns,
+} from './app-governance'
 
 // Owner ruling 2026-08-19/2026-08-25: "there should be no app without orgid.
 // at the minimum fuzefront itself the root org is the orgid for our own
@@ -61,6 +70,16 @@ export interface AppRecord {
    */
   createdByUserId?: string | null
   manifest: AppManifest
+  // Operator-governed, DB-authoritative fields (not from the manifest). These
+  // are managed via the API / admin UI and are never clobbered by an app's
+  // self-registration. See app-governance.ts.
+  scopeLevel: ScopeLevel
+  orgInstallMode: OrgInstallMode
+  personalRemovable: boolean
+  orgRemovable: boolean
+  systemApp: boolean
+  defaultInstallPersonal: boolean
+  defaultInstallOrg: boolean
   isHealthy: boolean | null
   lastSeenAt: string | null
   createdAt: string
@@ -104,6 +123,20 @@ function rowToApp(row: any): AppRecord {
     organizationId: row.organization_id ?? null,
     createdByUserId: row.created_by_user_id ?? null,
     manifest,
+    scopeLevel: (row.scope_level ?? GOVERNANCE_DEFAULTS.scopeLevel) as ScopeLevel,
+    orgInstallMode: (row.org_install_mode ??
+      GOVERNANCE_DEFAULTS.orgInstallMode) as OrgInstallMode,
+    personalRemovable:
+      row.personal_removable === undefined || row.personal_removable === null
+        ? GOVERNANCE_DEFAULTS.personalRemovable
+        : Boolean(row.personal_removable),
+    orgRemovable:
+      row.org_removable === undefined || row.org_removable === null
+        ? GOVERNANCE_DEFAULTS.orgRemovable
+        : Boolean(row.org_removable),
+    systemApp: Boolean(row.system_app),
+    defaultInstallPersonal: Boolean(row.default_install_personal),
+    defaultInstallOrg: Boolean(row.default_install_org),
     isHealthy: row.is_healthy === null || row.is_healthy === undefined ? null : Boolean(row.is_healthy),
     lastSeenAt: safeIso(row.last_seen_at),
     createdAt: safeIso(row.created_at) ?? new Date().toISOString(),
@@ -531,11 +564,29 @@ export class AppRegistryService {
       organization_id: organizationId,
       // Only present when creator-ownership is ON and a human registered it.
       ...(opts?.createdByUserId ? { created_by_user_id: opts.createdByUserId } : {}),
+      // Seeded from the manifest on FIRST create and never clobbered by a later
+      // re-registration (updateManifest no longer writes it). Must be set here,
+      // or a public/org app would be stuck at migration 002's 'private' default
+      // and stay invisible to non-owners forever.
+      visibility: (manifest.visibility ?? 'private') as Visibility,
       scope_level:
         manifest.scopeLevel ??
         (manifest.requiresOrgContext || manifest.visibility === 'organization'
           ? 'organization'
           : 'both'),
+      // Operator-governed; seeded from the manifest's intent on FIRST create and
+      // never clobbered afterwards (see updateManifest). Org-scoped ⇒ 'everyone'.
+      org_install_mode: enforceOrgInstallMode(
+        (manifest.scopeLevel ??
+          (manifest.requiresOrgContext ||
+          manifest.visibility === 'organization'
+            ? 'organization'
+            : 'both')) as ScopeLevel,
+        manifest.organizationInstallMode ??
+          (manifest.orgLevelOnly || manifest.installMode === 'everyone'
+            ? 'everyone'
+            : (manifest.installMode as OrgInstallMode | undefined))
+      ),
       is_active: false,
       heartbeat_token: heartbeatToken,
       created_at: now,
@@ -570,12 +621,12 @@ export class AppRegistryService {
         module: manifest.integration.module ?? null,
         manifest: JSON.stringify(manifest),
         mode: manifest.mode,
-        visibility: (manifest.visibility ?? existing.manifest.visibility ?? 'private') as Visibility,
-        ...(manifest.scopeLevel
-          ? { scope_level: manifest.scopeLevel }
-          : manifest.requiresOrgContext || manifest.visibility === 'organization'
-          ? { scope_level: 'organization' }
-          : {}),
+        // Operator-governed fields (visibility, scope_level, org_install_mode,
+        // removable/system/default-install) are DB-authoritative and are
+        // DELIBERATELY NOT written here: a product re-registering on every pod
+        // start must not clobber settings an operator changed via the admin UI.
+        // They are seeded once on first create (register) and edited through the
+        // API / admin UI thereafter.
         updated_at: new Date(),
         // Re-derive placement: a manifest update may move the app in the menu.
         ...navColumns(manifest),
@@ -850,11 +901,13 @@ export class AppRegistryService {
         // any other, owned by the platform root org rather than org-less.
         organization_id: ROOT_ORG_ID,
         visibility: (manifest.visibility ?? 'public') as Visibility,
-        scope_level:
-          manifest.scopeLevel ??
-          (manifest.requiresOrgContext || manifest.visibility === 'organization'
-            ? 'organization'
-            : 'both'),
+        // Seed operator governance for the built-in on first create: an explicit
+        // per-slug policy (fuzeagent is core on personal) or one derived from the
+        // manifest. Already-existing built-ins keep their DB state (early return
+        // above); existing rows are seeded instead by migration 020.
+        ...governanceColumns(
+          APP_GOVERNANCE[manifest.slug] ?? deriveGovernanceFromManifest(manifest)
+        ),
         is_active: status === 'activated',
         heartbeat_token: heartbeatToken,
         created_at: now,
