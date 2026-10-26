@@ -29,6 +29,7 @@ import { setFlagClient } from '../src/flags';
 import { _setAuthzClientForTesting, makeNoOpProxy } from '../src/middleware/authz';
 import { _setGrantTokenProviderForTesting } from '../src/lib/machineIdentity';
 import { grantCleanupFailedTotal } from '../src/lib/metrics';
+import { permitKey } from './helpers/ids';
 
 const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-purge-grants';
 const ORG = fromUuid('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7e91');
@@ -105,8 +106,8 @@ dbDescribe('purge revokes the instance grants (real Postgres)', () => {
       expect(call[1]).not.toBe(WORKLOAD);
     }
     const roles = revoke.mock.calls.map((c) => `${c[0].subject}:${c[0].role}`);
-    expect(roles.sort()).toEqual([`${USER}:list-owner`, `${USER2}:list-viewer`, `${USER3}:list-editor`].sort());
-    for (const call of revoke.mock.calls) expect(call[0]).toMatchObject({ tenant: ORG, resource: res(id) });
+    expect(roles.sort()).toEqual([`${permitKey(USER)}:list-owner`, `${permitKey(USER2)}:list-viewer`, `${permitKey(USER3)}:list-editor`].sort());
+    for (const call of revoke.mock.calls) expect(call[0]).toMatchObject({ tenant: permitKey(ORG), resource: res(id) });
     expect(workloadToken).not.toHaveBeenCalled(); // never needed when the human may revoke everything
   });
 
@@ -117,7 +118,7 @@ dbDescribe('purge revokes the instance grants (real Postgres)', () => {
 
     const subjects = revoke.mock.calls.map((c) => c[0].subject);
     expect(subjects).toHaveLength(3);
-    expect(subjects[2]).toBe(USER);
+    expect(subjects[2]).toBe(permitKey(USER));
   });
 
   it('does not re-revoke a grant that was already revoked (its mirror row is soft-deleted)', async () => {
@@ -128,13 +129,13 @@ dbDescribe('purge revokes the instance grants (real Postgres)', () => {
     expect((await purge(id)).status).toBe(204);
 
     const subjects = revoke.mock.calls.map((c) => c[0].subject).sort();
-    expect(subjects).toEqual([USER, USER3].sort());
+    expect(subjects).toEqual([permitKey(USER), permitKey(USER3)].sort());
   });
 
   it('is NON-FATAL: a revoke refused for BOTH credentials is counted and logged, the purge still answers 204, and the other grants are still revoked', async () => {
     const id = await listWithGrants();
     revoke.mockImplementation(async (r: any) => {
-      if (r.subject === USER2) throw new Error('security api 502');
+      if (r.subject === permitKey(USER2)) throw new Error('security api 502');
     });
     const before = await cleanupFailures();
 
@@ -149,7 +150,7 @@ dbDescribe('purge revokes the instance grants (real Postgres)', () => {
   it('a grant the human token is refused (grantee left the tenant) is retried ONCE with the workload token, and only that grant', async () => {
     const id = await listWithGrants();
     revoke.mockImplementation(async (r: any, token: string) => {
-      if (r.subject === USER2 && token !== WORKLOAD) throw new Error('403 forbidden: no active membership');
+      if (r.subject === permitKey(USER2) && token !== WORKLOAD) throw new Error('403 forbidden: no active membership');
     });
     const before = await cleanupFailures();
 
@@ -157,7 +158,7 @@ dbDescribe('purge revokes the instance grants (real Postgres)', () => {
 
     const viaWorkload = revoke.mock.calls.filter((c) => c[1] === WORKLOAD);
     expect(viaWorkload).toHaveLength(1);
-    expect(viaWorkload[0][0]).toEqual({ subject: USER2, tenant: ORG, role: 'list-viewer', resource: res(id) });
+    expect(viaWorkload[0][0]).toEqual({ subject: permitKey(USER2), tenant: permitKey(ORG), role: 'list-viewer', resource: res(id) });
     expect(workloadToken).toHaveBeenCalledTimes(1);
     expect(await cleanupFailures()).toBe(before); // fully cleaned up: nothing left for reconciliation
   });
@@ -166,7 +167,7 @@ dbDescribe('purge revokes the instance grants (real Postgres)', () => {
     const id = await listWithGrants();
     workloadToken.mockRejectedValue(new Error('no workload identity'));
     revoke.mockImplementation(async (r: any) => {
-      if (r.subject === USER2) throw new Error('403 forbidden: no active membership');
+      if (r.subject === permitKey(USER2)) throw new Error('403 forbidden: no active membership');
     });
     const before = await cleanupFailures();
 

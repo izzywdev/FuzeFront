@@ -16,6 +16,7 @@ const baseFiles = {
   },
   'android/twa-manifest.json': {
     packageId: 'com.example.mobile',
+    minSdkVersion: 24,
     host: 'mobile.fuzefront.com',
     startUrl: '/',
     fullScopeUrl: 'https://mobile.fuzefront.com/',
@@ -85,6 +86,27 @@ test('rejects malformed signing fingerprints', () => {
   })
   assert.equal(result.status, 1)
   assert.match(result.stderr, /invalid TWA signing fingerprint/)
+})
+
+test('rejects a TWA below Android API 24', () => {
+  const twa = structuredClone(baseFiles['android/twa-manifest.json'])
+  twa.minSdkVersion = 21
+  const result = runGate({ 'android/twa-manifest.json': twa })
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /minSdkVersion must be an integer of at least 24/)
+})
+
+test('supports a nested product using the Vite apps/web public directory', () => {
+  const files = {
+    '.fuze/manifest.json': null,
+    'frontend/public/manifest.webmanifest': null,
+    'frontend/public/.well-known/assetlinks.json': null,
+    'apps/web/public/manifest.webmanifest': {},
+    'apps/web/public/.well-known/assetlinks.json': baseFiles['frontend/public/.well-known/assetlinks.json'],
+  }
+  const result = runGate(files)
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /is consistent/)
 })
 
 test('rejects assetlinks without URL-handling delegation', () => {

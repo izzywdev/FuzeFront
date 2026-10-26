@@ -20,6 +20,7 @@ import {
   getActiveAccount,
   getActiveAccountId,
   getActiveAuthToken,
+  getActiveValue,
   isAddingAccount,
   listAccounts,
   markAccountExpired,
@@ -142,6 +143,18 @@ describe('account vault', () => {
       setActiveValue('activeOrganizationId', 'org-two')
       expect(getAccountValue('user-1', 'activeOrganizationId')).toBe('org-one')
       expect(getAccountValue('user-2', 'activeOrganizationId')).toBe('org-two')
+    })
+
+    it('does not let one account restore another account’s Personal tenant', () => {
+      addAccount(1)
+      setActiveValue('personalTenantId', 'personal-one')
+
+      addAccount(2)
+      expect(getActiveValue('personalTenantId')).toBeNull()
+
+      setActiveValue('personalTenantId', 'personal-two')
+      expect(getAccountValue('user-1', 'personalTenantId')).toBe('personal-one')
+      expect(getAccountValue('user-2', 'personalTenantId')).toBe('personal-two')
     })
 
     it('roster entries carry no credentials', () => {

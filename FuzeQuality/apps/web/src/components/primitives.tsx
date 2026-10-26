@@ -1,8 +1,12 @@
 import {
   Button,
   IconButton,
+  Input,
+  Modal,
   type ButtonAsButtonProps,
   type IconButtonProps,
+  type InputProps,
+  type ModalProps,
 } from '@fuzefront/design-system'
 
 /**
@@ -23,4 +27,14 @@ export function QualityAction({
 /** Product-local name for the shared accessible icon-only control. */
 export function QualityIconAction(props: IconButtonProps) {
   return <IconButton size="sm" {...props} />
+}
+
+/** Product-local text entry backed by the shared labeled field primitive. */
+export function QualityInput(props: InputProps) {
+  return <Input {...props} />
+}
+
+/** Product-local detail surface backed by the shared accessible modal shell. */
+export function QualityDetailModal(props: ModalProps) {
+  return <Modal size="lg" {...props} />
 }

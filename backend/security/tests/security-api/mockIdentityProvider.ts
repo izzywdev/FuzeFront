@@ -29,8 +29,12 @@ import {
   MfaEnrollResult,
   MfaChallengeAck,
   VerificationStatus,
+  SessionDevice,
+  IdentityConnections,
+  SocialLinkStart,
 } from '../../src/providers/IdentityProvider'
 import { randomUUID } from 'crypto'
+import { TokenError } from '../../src/providers/errors'
 
 /** Provider errors carry a neutral, fail-closed error code (see spec ErrorBody). */
 export class ProviderError extends Error {
@@ -183,7 +187,7 @@ export class MockIdentityProvider implements IdentityProvider {
     const url = new URL('https://app.fuzefront.com/api/auth/idp/authorize')
     url.searchParams.set('state', state)
     if (redirectTo) url.searchParams.set('redirectTo', redirectTo)
-    return { redirectUrl: url.toString(), state }
+    return { redirectUrl: url.toString(), state, codeVerifier: `cv_${randomUUID()}` }
   }
 
   async brokerCallback(input: SocialCallbackInput): Promise<SocialCallbackResult> {
@@ -224,8 +228,9 @@ export class MockIdentityProvider implements IdentityProvider {
     const u = this.seedUser({
       email: input.email,
       password: input.password,
-      firstName: input.firstName,
-      lastName: input.lastName,
+      // Contract 1.0.0: signup carries one `name`; the mock stores it as the
+      // display name (firstName slot) — it deliberately does not split it.
+      firstName: input.name,
       roles: ['user'],
       mfaEnabled: false,
     })
@@ -375,23 +380,107 @@ export class MockIdentityProvider implements IdentityProvider {
     code?: string
   }): Promise<VerificationStatus> {
     if (input.token !== 'valid-email-token' && input.code !== OTP) {
-      throw new ProviderError('INVALID_CODE', 'bad token/code', 400)
+      throw new TokenError('TOKEN_INVALID', 'bad token/code')
     }
     return { emailVerified: true, phoneVerified: false }
   }
 
   async startPhoneVerification(token: string, phone: string): Promise<void> {
-    this.userByToken(token)
+    const u = this.userByToken(token)
     if (!phone) throw new ProviderError('MALFORMED', 'phone required', 400)
+    if (u.phone !== phone) u.phoneVerified = false
+    u.phone = phone
   }
 
-  async confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus> {
+  async confirmPhoneVerification(token: string, phone: string, code: string): Promise<VerificationStatus> {
+    const u = this.userByToken(token)
+    if (u.phone !== phone) throw new ProviderError('INVALID_CODE', 'bad code', 400)
     if (code !== OTP) throw new ProviderError('INVALID_CODE', 'bad code', 400)
-    return { emailVerified: false, phoneVerified: true, phone }
+    u.phoneVerified = true
+    return { emailVerified: u.emailVerified, phoneVerified: true, phone }
   }
 
   async getVerificationStatus(token: string): Promise<VerificationStatus> {
     const u = this.userByToken(token)
     return { emailVerified: u.emailVerified, phoneVerified: u.phoneVerified, phone: u.phone }
+  }
+  // ── Self-service password reset (in-memory; single-use token) ──
+  private resetTokens = new Map<string, string>() // token -> user email
+
+  async requestPasswordReset(email: string): Promise<void> {
+    if (!email) throw new ProviderError('MALFORMED', 'email required', 400)
+    // Always resolves: an unknown address is indistinguishable from a known one.
+    if (this.users.has(email.toLowerCase())) this.resetTokens.set(`reset-${randomUUID()}`, email.toLowerCase())
+  }
+
+  async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+    const email = this.resetTokens.get(token)
+    if (!email) throw new TokenError('TOKEN_INVALID', 'invalid reset token')
+    this.resetTokens.delete(token)
+    const u = this.users.get(email)
+    if (u) u.password = newPassword
+  }
+
+  // ── Manage devices ──
+  async listSessions(token: string): Promise<SessionDevice[]> {
+    const u = this.userByToken(token)
+    return [...this.sessions.entries()]
+      .filter(([, userId]) => userId === u.id)
+      .map(([t]) => ({ id: t, current: t === token }))
+  }
+
+  async revokeSession(token: string, sessionId: string): Promise<void> {
+    const u = this.userByToken(token)
+    if (this.sessions.get(sessionId) === u.id) this.sessions.delete(sessionId)
+  }
+
+  async revokeOtherSessions(token: string): Promise<void> {
+    const u = this.userByToken(token)
+    for (const [t, userId] of [...this.sessions.entries()]) {
+      if (userId === u.id && t !== token) this.sessions.delete(t)
+    }
+  }
+
+  async isSessionActive(userId: string, sessionId: string): Promise<boolean> {
+    // Mirrors the real provider: active only for the user the session belongs to.
+    return this.sessions.get(sessionId) === userId
+  }
+
+  // ── Sign-in connections ──
+  private links = new Map<string, Set<string>>() // userId -> providers
+
+  async getIdentityConnections(token: string): Promise<IdentityConnections> {
+    const u = this.userByToken(token)
+    return {
+      providers: [...(this.links.get(u.id) ?? [])].map(provider => ({ provider })),
+      hasPassword: !!u.password,
+    }
+  }
+
+  async startSocialLink(token: string, provider: string): Promise<SocialLinkStart> {
+    this.userByToken(token)
+    if (provider !== 'google') throw new ProviderError('MALFORMED', 'unsupported provider', 400)
+    return { redirectUrl: `/v1/security/social/${provider}/link`, state: randomUUID(), codeVerifier: randomUUID() }
+  }
+
+  async unlinkSocial(token: string, provider: string): Promise<IdentityConnections> {
+    const u = this.userByToken(token)
+    this.links.get(u.id)?.delete(provider)
+    return this.getIdentityConnections(token)
+  }
+
+  async setPassword(token: string, newPassword: string): Promise<IdentityConnections> {
+    const u = this.userByToken(token)
+    u.password = newPassword
+    return this.getIdentityConnections(token)
+  }
+
+  async changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+    const u = this.userByToken(token)
+    if (u.password !== currentPassword) {
+      throw new ProviderError('INVALID_CREDENTIALS', 'current password is incorrect', 400)
+    }
+    u.password = newPassword
+    await this.revokeOtherSessions(token)
   }
 }

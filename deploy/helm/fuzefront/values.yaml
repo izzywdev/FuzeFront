@@ -179,6 +179,11 @@ secret:
   twilioApiKeySecret: "" # preferred: Twilio API Key secret
   twilioVerifyServiceSid: ""
   smsAuthSecret: "dev-sms-secret-change-me"
+  # Shared bearer between security-service (sends it as EMAIL_SERVICE_TOKEN) and
+  # email-service (requires it as EMAIL_AUTH_SECRET on POST /send). ONE Secret key
+  # (EMAIL_AUTH_SECRET) feeds both. Dev default only; in prod it lives in the
+  # existingSecret (SealedSecret) and this stays empty.
+  emailAuthSecret: "dev-email-secret-change-me"
   # Google OAuth2 source creds. Leave empty to disable the Google source
   # (inert — Authentik skips sources whose consumer_key resolves to "").
   # Override via --set or a gitignored values file. NEVER commit real creds.
@@ -231,6 +236,14 @@ backend:
   # http://fuzefront-backend:3001, and the backend Service is named accordingly.
   port: 3001
   replicas: 1
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # backend/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from the env;
+  # unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster. Point it at
+  # FuzeInfra's collector explicitly — never Tempo/Loki directly
+  # (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -323,6 +336,15 @@ securityService:
   replicas: 1
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # backend/security/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from the
+  # env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster, so every span
+  # export fails silently and nothing reaches Tempo. Point it at FuzeInfra's
+  # collector explicitly, the same way kafka.brokers/PERMIT_PDP_URL are wired
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # @fuzefront/feature-flags (OpenFeature + Unleash) client — gates
   # fuzefront.identity.root-membership (FF-EPIC-17) and future security-service
   # release/kill-switch flags (utils/feature-flags.ts / rootMembershipFlag.ts).
@@ -336,6 +358,34 @@ securityService:
     appName: "security-service"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
     tokenSecretName: ""
+  # Cloudflare Turnstile CAPTCHA for the signup redesign (backend/security/src/
+  # services/turnstile.ts; gated UI = fuzefront.auth.experience, default OFF).
+  # DEFAULT = ABSENT = captcha OFF: the service advertises AuthMethods.captcha
+  # only when BOTH TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY are non-empty, and
+  # runs normally without them. Every key is declared here with an explicit empty
+  # default (Helm values hygiene, CLAUDE.md) — the template renders the whole
+  # block only when siteKey is non-empty, so an unset overlay renders NOTHING new.
+  #
+  # TO ENABLE (separate, owner-gated change — do NOT do it in this PR):
+  #   1. owner supplies the Turnstile secret key; FuzeInfra seals it (see
+  #      deploy/contabo/sealed/turnstile-secrets.yaml.template for the exact
+  #      `@fuze` delegation) into Secret/turnstile-secrets, key TURNSTILE_SECRET_KEY
+  #   2. in values-prod.yaml set turnstile.siteKey (public) and
+  #      turnstile.secretName: "turnstile-secrets", in a deploy window
+  turnstile:
+    # PUBLIC widget key (safe in values / configmap). "" = captcha OFF.
+    siteKey: ""
+    # Name of the Secret holding the server-side secret key. "" = the chart's
+    # shared fuzefront-secrets Secret (same convention as featureFlags.
+    # tokenSecretName); set to "turnstile-secrets" to use the dedicated
+    # SealedSecret scaffolded under deploy/contabo/sealed/.
+    secretName: ""
+    # Key inside that Secret. The secretKeyRef is optional:true, so a missing
+    # key leaves captcha OFF (fail-safe) instead of wedging the pod.
+    secretKey: "TURNSTILE_SECRET_KEY"
+    # TURNSTILE_VERIFY_TIMEOUT_MS — siteverify round-trip bound, integer ms.
+    # "" = env var not set, so the code default (5000) applies.
+    verifyTimeoutMs: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -375,6 +425,14 @@ applicationsService:
   # Kafka, cross-namespace DNS).
   kafka:
     brokers: ""
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # backend/applications/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from
+  # the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Permit PDP for the app-registry authz checks (permit.ts). When permit.enabled
   # the in-cluster PDP runs at fuzefront-permit-pdp:7000; PERMIT_API_KEY comes
   # from the shared fuzefront-secrets SealedSecret.
@@ -740,6 +798,14 @@ emailService:
     provider: "smtp"  # "sendgrid" or "smtp"
     from: "noreply@fuzefront.com"
     smtp: ""
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/email-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from
+  # the env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster. Point it at
+  # FuzeInfra's collector explicitly — never Tempo/Loki directly
+  # (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
@@ -755,6 +821,14 @@ smsService:
   image:
     repository: fuzefront/sms-service
     tag: local
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/sms-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from
+  # the env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster. Point it at
+  # FuzeInfra's collector explicitly — never Tempo/Loki directly
+  # (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
@@ -794,6 +868,14 @@ chatService:
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
   dbName: "chat"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/chat-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT from
+  # the env; unset, it falls back to packages/telemetry's `otel-collector:4317`
+  # docker-compose default, which has no DNS entry in-cluster. Point it at
+  # FuzeInfra's collector explicitly — never Tempo/Loki directly
+  # (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Embedding model resolved at the LiteLLM gateway (used by the doc indexer).
   embeddingModel: "text-embedding-3-small"
   # Resource requests/limits. Local/dev single replica; prod overrides upward.
@@ -833,6 +915,14 @@ notificationService:
     max: 100
   migrate:
     enabled: false
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/notification-service/src/index.ts reads
+  # OTEL_EXPORTER_OTLP_ENDPOINT from the env; unset, it falls back to
+  # packages/telemetry's `otel-collector:4317` docker-compose default, which
+  # has no DNS entry in-cluster. Point it at FuzeInfra's collector explicitly
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests:
       cpu: 100m
@@ -864,6 +954,14 @@ selectionListService:
   # applicationsService, kafkaTopics.bootstrapServer, ...). This default
   # previously read `kafka.fuzeinfra...`, a name no other block uses.
   kafkaBrokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/selection-list-service/src/index.ts reads
+  # OTEL_EXPORTER_OTLP_ENDPOINT from the env; unset, it falls back to
+  # packages/telemetry's `otel-collector:4317` docker-compose default, which
+  # has no DNS entry in-cluster. Point it at FuzeInfra's collector explicitly
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Dedicated database on the shared FuzeInfra Postgres, owned by the service's
   # OWN role (db.role below) -- NOT the shared `database.user` role, which is
   # explicitly denied access. Created/reconciled by
@@ -883,11 +981,13 @@ selectionListService:
     secretName: "selection-list-secrets"
     passwordKey: "DB_PASSWORD"
     # DB_SSL for src/db/knexfile.ts (production default there is TLS ON, with
-    # certificate verification). UNVERIFIED: whether the shared FuzeInfra Postgres
-    # serves TLS with a certificate this client trusts. If the pod logs "server does
-    # not support SSL" or a certificate-verification error, set "false" here (a
-    # reviewable one-line change) -- do not edit the service code.
-    ssl: "true"
+    # certificate verification). VERIFIED 2026-10-25: the shared in-cluster
+    # FuzeInfra Postgres does NOT terminate TLS — with ssl "true" the pod logged
+    # `fatal: Migration failed — "The server does not support SSL connections"`
+    # and CrashLoopBackOff'd on first deploy. Same finding and fix as
+    # devportalService.dbSsl below. "false" is the reviewable one-line change the
+    # original comment prescribed; the service code is left untouched.
+    ssl: "false"
   # Authorization enforcement (env FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED, read by
   # services/selection-list-service/src/middleware/authz.flags.ts). The service
   # runs NODE_ENV=production in-cluster, where authz is ALWAYS enforced whatever
@@ -895,6 +995,33 @@ selectionListService:
   # at all). Declared true so the rendered manifest states the real posture; the
   # key only has an effect outside production (dev/test).
   authzEnabled: true
+  # The platform organization's wire id (`org_...` TypeID), env
+  # SELECTION_LIST_PLATFORM_ORG_ID (SL9 shared/common lists; docs/planning/
+  # selection-lists-shared-and-fork.md D2/D5). Common (`platform`) lists are
+  # owned by this organization and only an operator acting in it may publish
+  # one. OPTIONAL and EMPTY by default, declared here explicitly (never absorbed
+  # by a template default/cast): empty makes the service fail CLOSED on every
+  # platform feature (no common lists served or created), so shared lists stay
+  # dark. There is deliberately NO fallback to an org typed `platform` in the
+  # org projection: that type is client-suppliable on org creation. Shared lists
+  # are additionally gated by the release flag fuzefront.selection-lists.shared-lists
+  # (default OFF).
+  #
+  # CONFIGURABLE per environment, ENFORCED in production. Local and any other
+  # overlay may use any id. The PRODUCTION overlay (values-prod.yaml) may only
+  # ever be "" (service disabled, fail closed) or the immutable root platform
+  # organization. CI job `gate-platform-org-pin` (scripts/gate_platform_org_pin.py)
+  # DERIVES that id from the code (ROOT_ORG_ID in backend/security/src/
+  # migrations/014_seed_root_platform_organization.ts, currently
+  # 00000000-0000-0000-0000-000000000010, TypeID "org_0000000000000000000000000g")
+  # rather than from any typed-in value or repo variable, cross-checks every other
+  # ROOT_ORG_ID copy, and enforces it against values-prod.yaml, the Helm-merged
+  # values and the rendered Deployment env. It fails when
+  # selectionListService.enabled is true in production with any other value
+  # (including empty). Details: docs/runbooks/selection-lists-rollout.md 2.4.
+  # Never coerce or default this value in a template (CLAUDE.md "Helm values
+  # hygiene"): the comparison is strict string equality.
+  platformOrgId: ""
   # @fuzefront/feature-flags client wiring (UNLEASH_URL/APP_NAME/CLIENT_TOKEN).
   # Empty unleashUrl (base default) renders no UNLEASH_* env -> in-code fail-safe
   # OFF. The CLIENT token is a SECRET (sealed) -- referenced, never inline.
@@ -988,6 +1115,32 @@ selectionListsMcp:
   affinity: {}
   tolerations: []
 
+# MCP SSE gateway for the config-service (tools: namespaces, key definitions,
+# effective config, config writes, history; secret reveal is intentionally NOT
+# exposed). Both configService.enabled AND configMcp.enabled must be true.
+# Port 8083: 8081=app-registry, 8082=selection-lists gateways.
+# NOTE: port MUST be declared explicitly — no | int / | default / | toString
+# in the template (FuzeInfra#501 precedent).
+configMcp:
+  enabled: false
+  replicas: 1
+  port: 8083
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    # Same image as the app-registry gateway; keep in sync with mcp.image.tag.
+    tag: "1abe510f5981"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 # devportal-service — spec registry, Authentik OIDC exchange, and sandboxed
 # "Try it" playground proxy backing developers.fuzefront.com (docs/planning/
 # developers-portal.md). Ships dark by default; gate: fuzefront.devportal.enabled.
@@ -1027,6 +1180,14 @@ devportalService:
   # devportal redirect_uris entry exactly.
   oidcRedirectUri: "https://developers.fuzefront.com/api/auth/oidc/callback"
   frontendUrl: "https://developers.fuzefront.com"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/devportal-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT
+  # from the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests:
       cpu: 100m
@@ -1097,6 +1258,14 @@ configService:
   # Set to "" to disable the consumers (the service then serves reads/writes
   # normally and logs that they were not started).
   kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/config-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT
+  # from the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Least-privilege runtime role created by config-service-db-bootstrap-job.yaml
   # in the SHARED database (`database.name`), owning the `config` schema. Mirrors
   # billing-service's billing_svc — no separate database is provisioned.
@@ -1156,6 +1325,14 @@ provisioningService:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
     clientId: "provisioning-service"
     groupId: "provisioning-service-group"
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/provisioning-service/src/index.ts reads
+  # OTEL_EXPORTER_OTLP_ENDPOINT from the env; unset, it falls back to
+  # packages/telemetry's `otel-collector:4317` docker-compose default, which
+  # has no DNS entry in-cluster. Point it at FuzeInfra's collector explicitly
+  # — never Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
@@ -1197,6 +1374,14 @@ billingService:
   # fuzefront.billing.authz-enabled defaults OFF regardless).
   secretName: billing-secrets
   meterFlushIntervalSec: 60
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/billing-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT
+  # from the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   # Authorization-sync cutover (fuzefront.billing.authz-enabled).
   #
   # `enabled` gates billing's Permit ABAC attribute sync through FuzeFront's
@@ -1706,6 +1891,14 @@ paymentService:
     tag: local
   provider: ""
   secretName: ""
+  # @fuzefront/telemetry (OTel) OTLP exporter target. initTelemetry() in
+  # services/payment-service/src/index.ts reads OTEL_EXPORTER_OTLP_ENDPOINT
+  # from the env; unset, it falls back to packages/telemetry's
+  # `otel-collector:4317` docker-compose default, which has no DNS entry
+  # in-cluster. Point it at FuzeInfra's collector explicitly — never
+  # Tempo/Loki directly (packages/telemetry/src/types.ts's contract).
+  otel:
+    endpoint: "http://fuzeinfra-otel-collector.fuzeinfra:4317"
   resources:
     requests:
       cpu: 100m

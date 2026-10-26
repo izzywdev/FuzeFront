@@ -59,8 +59,11 @@ export interface PasswordLoginInput {
 export interface SignupInput {
   email: string;
   password: string;
-  firstName?: string;
-  lastName?: string;
+  /**
+   * Optional single display name (i18n-safe). Maps 1:1 to the identity store's
+   * `name`; replaces the former firstName/lastName split (contract 1.0.0).
+   */
+  name?: string;
   /** Optional tenant/organization name to provision on signup. */
   tenantName?: string;
 }
@@ -374,7 +377,11 @@ export interface IdentityProvider {
   /** Activate a pending factor with a one-time code. Rejects on bad/expired code. */
   activateFactor(token: string, factorId: string, code: string): Promise<MfaFactor>;
 
-  /** Remove an enrolled factor. Idempotent. */
+  /**
+   * Remove an enrolled factor. Idempotent. Rejects with LastFactorError when it
+   * is the user's last ACTIVE factor (atomic with the delete). Pending factors
+   * may always be removed.
+   */
   removeFactor(token: string, factorId: string): Promise<void>;
 
   /** (Re)generate one-time recovery codes; returns them once. */
@@ -419,8 +426,12 @@ export interface IdentityProvider {
   /** Send an SMS OTP to a phone number. */
   startPhoneVerification(token: string, phone: string): Promise<void>;
 
-  /** Confirm phone ownership via `{ phone, code }`. */
-  confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus>;
+  /**
+   * Confirm phone ownership via `{ phone, code }`. Session-bound: only the
+   * caller's own account (resolved from `token`) is marked verified, and only
+   * when `phone` is that account's pending/current number.
+   */
+  confirmPhoneVerification(token: string, phone: string, code: string): Promise<VerificationStatus>;
 
   /** Current contact-verification status for the user. */
   getVerificationStatus(token: string): Promise<VerificationStatus>;
@@ -440,6 +451,21 @@ export interface IdentityProvider {
 
   /** Revoke every session for the caller EXCEPT the one presenting `token`. Idempotent. */
   revokeOtherSessions(token: string): Promise<void>;
+
+  /**
+   * Is this session still live for this user? For a service that has ALREADY
+   * verified a session token's signature and needs the one thing a signature
+   * cannot say: whether the session was revoked or has expired since.
+   *
+   * Resolves `true` only when the session exists, has not expired, and belongs
+   * to `userId`. Every other case (unknown, revoked, expired, owned by someone
+   * else, or an id that is not even well-formed) resolves `false` with no reason,
+   * so the answer cannot tell a caller which identifier was wrong.
+   *
+   * It REJECTS only when the session store cannot be read. The caller must map
+   * that to a retryable 503: an outage is neither "active" nor "revoked".
+   */
+  isSessionActive(userId: string, sessionId: string): Promise<boolean>;
 
   // ── Account sign-in connections ──
 
@@ -466,4 +492,13 @@ export interface IdentityProvider {
    * identity store; FuzeFront never stores one.
    */
   setPassword(token: string, newPassword: string): Promise<IdentityConnections>;
+
+  /**
+   * Change the password of an account that already has one. Verifies
+   * `currentPassword` first, applies the new-password policy, and revokes every
+   * session EXCEPT the caller's. Rejects: InvalidInput (malformed), NoPassword
+   * (no password sign-in method), CurrentPasswordInvalid (wrong current
+   * password), PasswordPolicyRejected (new password fails policy).
+   */
+  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void>;
 }

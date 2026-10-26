@@ -16,6 +16,18 @@ Author and run **Playwright / real-browser e2e** against the feature's **accepta
 - **Post-production:** smoke / synthetic checks against the **live** app after deploy — a *subset of integration testing run against the live app*, confirming the real deployment actually works (sign-in, the critical user journeys, no mixed-content/CSP/federation-load regressions).
 Keep tests deterministic; a flaky or skipped test is a flagged gap with a reason, never a silent pass.
 
+### Shared post-production recipient
+
+For a workflow that must receive a real transactional email, use the generic
+`tests@fuzefront.com` recipient rather than creating a product-specific mailbox.
+Its FuzeFront password is the hub-only Actions secret
+`POST_PROD_TEST_RECIPIENT_PASSWORD`; tests may self-create that FuzeFront
+account when it is absent, but must never generate, log, or persist a password
+themselves. Inbox-delivery assertions use the separate hub-only
+`POST_PROD_TEST_RECIPIENT_ZOHO_APP_PASSWORD` through Zoho IMAP. Both secrets
+are available only to explicitly opt-in post-production workflows. Do not use
+this account for customer data, marketing, or broad destructive tests.
+
 **Console/network inspection is MANDATORY, not just Playwright pass/fail (`ui-runtime-validation`, baseline §7.1).** A Playwright assertion passing does NOT mean the page is clean — an uncaught exception, a **CSP/mixed-content** block under TLS (same-origin API base), a failed **Module-Federation** remote load, or a 4xx/5xx on an app request can all coexist with green specs. For every acceptance criterion, drive the rendered app via the **Chrome DevTools MCP** (`mcp__plugin_chrome-devtools-mcp_chrome-devtools__*`) and confirm a **clean console** (0 errors / 0 CSP-mixed-content / 0 failed requests) — pre-production (built app / approved frames) and post-production (live app), across your device/viewport matrix. Use the MCP's wider capabilities where they apply — `lighthouse_audit` / `performance_*` for Core Web Vitals regressions, `take_snapshot` for a11y. A runtime console error is a real UI bug: **REPORT and ticket it** (below) — never patch the product, never round up to a pass.
 
 ## File bugs in Jira when a test reveals a real defect

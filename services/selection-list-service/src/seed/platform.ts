@@ -20,6 +20,7 @@
 import type { Knex } from 'knex';
 import { PLATFORM_SEED_SOURCE, SELECTION_LIST_SERVICE_PRINCIPAL } from '@fuzefront/shared/kafka';
 import { logger } from '../lib/logger';
+import { isSharedListsEnabled } from '../flags';
 import { applySeedRequest } from './apply';
 import { readOrgProjection } from './org';
 import { ensureSeededListOwners, type EnsureSeededListOwnersOptions } from './ownerGrants';
@@ -54,6 +55,9 @@ export async function applyPlatformDefaults(
   const proj = await readOrgProjection(db, organizationId);
   const packs = currentPlatformPacks(options.packDir ?? DEFAULT_PLATFORM_PACK_DIR);
   const outcomes: PlatformSeedOutcome[] = [];
+  // Seed-list `visibility` is honoured only while the shared-lists release flag is ON for this org (read per
+  // call, here — the seed library reads no flags). OFF: every list is seeded private, the 4.0.0 behaviour.
+  const honorVisibility = await isSharedListsEnabled({ organizationId: organizationId });
   for (const pack of packs) {
     if (proj && proj.status === 'active' && proj.isActive === false) {
       logger.info({ organizationId, pack: pack.packKey }, 'seed: platform pack skipped, organization is inactive');
@@ -74,6 +78,7 @@ export async function applyPlatformDefaults(
       requestId: null,
       lists: pack.lists,
       translationProvenance: pack.translationProvenance,
+      honorVisibility,
       correlationId: options.correlationId,
       internalErrors: options.internalErrors,
     });

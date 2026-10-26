@@ -53,11 +53,23 @@ See `services/app-registry-service/openapi.yaml`. Key fields for an MF app:
 }
 ```
 
+`integration.type` is not limited to `module-federation` — `iframe`,
+`web-component`, and `spa` are also valid. For the smallest possible manifest
+and a runnable embedded app, see
+[`docs/examples/iframe-integration/`](examples/iframe-integration/README.md)
+and `docs/guides/BUILDING_ON_FUZEFRONT.md` §1c.
+
 Note `slug` keeps the `fuze` prefix above while `name`/`menuLabel` drop it — that
 is not an inconsistency. `slug` is free-form and immutable once registered;
 `name`/`menuLabel` are mutable and, by convention, prefix-free. See the canonical
 rule in the root `CLAUDE.md` § "`slug`, display name, and the federated serve path
 are THREE INDEPENDENT questions" before changing any of the three.
+
+The example above is for `integration.type: "module-federation"`. For
+`"web-component"`, `integration` drops `remoteEntry`/`module` and instead
+takes a `url` (the script to load) and `scope` (the custom-element tag name)
+— see [`docs/guides/WEB_COMPONENT_INTEGRATION.md`](guides/WEB_COMPONENT_INTEGRATION.md)
+for the full contract and a runnable example.
 
 ### `nav` — where the app lands in the side menu
 

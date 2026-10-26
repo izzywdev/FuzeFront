@@ -1,0 +1,27 @@
+{
+  "_comment": "The ramp for gate-frames-schema (scripts/check-frames-schema.mjs). Two checks, both enforced block-now on CHANGED features and reported-only for the pre-existing backlog below — the same changed-scope discipline as gate-ds-conformance's changed-lines ratchet and gate-frames-first's uncovered ramp. This file is the worklist + flip criterion, not automation; the gate reads nothing from it (the changed-feature scope is computed from git). It exists so the backlog has an owner and a finish line.",
+  "owner": "@izzywdev",
+  "measured_on": "2026-10-18",
+  "schema": {
+    "rule": "Every design/frames/<feature>/manifest.json must match the load-bearing shape in design/frames/_template/manifest.schema.json. Enforced for a feature this PR changes; backlog reported only.",
+    "backlog": {
+      "app-specific-menu": "Legacy manifest shape: uses `feature`/`title` and omits name/description/designSystem/entry and frame label/summary/testHooks. It is approved:true with a stamp, so bringing it into conformance is a product-designer change (re-stamp + re-approve), not an edit to make silently. Until then it is reported, and will BLOCK the next PR that touches design/frames/app-specific-menu/**."
+    }
+  },
+  "mobile": {
+    "rule": "FuzeFront declares mobile required (.fuze/manifest.json). Each flow in build.flows[] must declare mobile coverage — a mobile/responsive frame (frames[].viewport), build.flows[].responsive (mobileFrame or coveredViewports), or responsive.exempt + exemptReason. Enforced for a feature this PR changes; backlog reported only.",
+    "backlog_flow_count": 58,
+    "backlog_features": [
+      "account-security", "api-tokens", "app-builder", "app-management", "app-scopes-user-menu",
+      "auth-experience", "authz-admin", "config-management", "connected-accounts", "devices-sessions",
+      "devportal", "employee-console", "identity-context-switcher", "member-directory", "mfa-management",
+      "mfa-stepup-mobile", "org-invitations-v2", "password-reset", "portal-admin-consoles",
+      "portals-directory", "selection-lists", "white-label-portal"
+    ],
+    "note": "These 22 features (58 flows) froze desktop-only frames before mobile was part of the contract. product-designer adds a mobile frame per flow (or an explicit exemption) as each feature is next touched; a PR touching any of them must clear its own flows. Run `node scripts/check-frames-schema.mjs --report` for the live count — it drifts as features gain mobile frames."
+  },
+  "flip_to_all": {
+    "criterion": "When both backlogs are empty — `node scripts/check-frames-schema.mjs --all` exits 0 — change the CI step to pass --all so the gate enforces across every feature, not only changed ones. Mirrors flipping gate-frames-first's uncovered.mode to fail.",
+    "owner": "@izzywdev"
+  }
+}

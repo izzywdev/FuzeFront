@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront App Registry API
-  version: 1.4.0
+  version: 1.6.1
   description: >-
     REST API for the FuzeFront **app registry** — the contract by which a
     federated (or standalone) application is registered, activated, and surfaced
@@ -34,6 +34,26 @@ info:
     These are the durable, cross-service system-of-record successors to the
     legacy Socket.io `app-registered` / `app-status-changed` emits (which the host
     may keep purely as a live UI push).
+
+    ### Changelog
+      * **1.6.1** — corrections to 1.6.0 before release (non-breaking):
+        `PublicationQueueItem.organizationId` is a wire-typed TypeID-or-UUID
+        string, not `format: uuid` (a prefixed `org_…` id is not a syntactic
+        UUID); the review-queue sort is documented per status (pending →
+        `submittedAt`, rejected → `rejectedAt`, approved → `approvedAt` with a
+        creation-time fallback), since a reject clears `marketplace_submitted_at`;
+        `PublicationQueueItem.icon` documented as always-present (server
+        placeholder when the manifest has none); and the personal-vs-platform
+        ownership wording on `organizationId` corrected.
+      * **1.6.0** — additive, non-breaking. Completes the app-builder design
+        frames (`design/frames/app-builder/`, `commissionedByApproval`): adds
+        the optional `AppCreator.contactEmail` (frame (e1) "Contact creator"
+        row) and the platform-admin-only, cursor-paginated collection
+        `GET /publication-requests` that backs the marketplace review queue
+        (frame (g)). Both are gated by their existing feature flags
+        (`fuzefront.apps.creator-ownership`, `fuzefront.apps.marketplace-publishing`).
+      * **1.5.0** — build-with-agent sessions, creator ownership, marketplace
+        publishing (flag-gated OFF).
   license:
     name: UNLICENSED
 
@@ -730,6 +750,87 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
+  /publication-requests:
+    get:
+      operationId: listPublicationRequests
+      tags: [publishing]
+      summary: List marketplace publication requests (admin review queue)
+      description: >-
+        The cross-app review queue that backs frame (g). Returns one row per app
+        whose publication is in the requested `status` (default `pending`),
+        **oldest first** so the longest-waiting item leads. "Oldest" is measured
+        by the instant that defines the requested status, because a rejected
+        request clears `marketplace_submitted_at`:
+          * `status=pending` — ascending by `submittedAt`;
+          * `status=rejected` — ascending by `rejection.rejectedAt`;
+          * `status=approved` — ascending by `approvedAt`, falling back to the
+            app's creation time when an approved app has no recorded
+            `approvedAt` (legacy/pre-attribution rows).
+        Each row carries the app's publication state plus the minimal display
+        context a reviewer needs — app display name, icon, owning
+        `organizationId`, and the creator contact (subject to the same
+        former-member rule as `App.creator`).
+
+        **Platform admins / reviewers only (403 otherwise).** As everywhere in
+        this contract, the authorization decision is Permit's, not this flag's
+        and not the knowledge of any id — admin/reviewer is enforced server-side
+        via Permit.
+
+        All data returned is owned by the app-registry service itself (apps,
+        their publication state, and the in-org creator contact), so this is a
+        single-service collection, **not** a client-side or cross-service join —
+        the frames deliberately do not scan `GET /apps`.
+
+        Cursor-paginated (`limit` default 50, max 200 — larger values are
+        clamped; `cursor` is opaque; a malformed cursor is a 400). Feature flag:
+        `fuzefront.apps.marketplace-publishing` (release, default OFF).
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: >-
+            Which publication requests to list. Defaults to `pending` (the
+            review queue). `none` is not a request state and is rejected 400.
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+            default: pending
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from `page.nextCursor`.
+          schema: { type: string }
+      responses:
+        '200':
+          description: A page of publication requests, oldest first (per-status instant; see operation description).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PublicationQueueItem' }
+                  page:
+                    type: object
+                    additionalProperties: false
+                    required: [nextCursor, hasMore]
+                    properties:
+                      nextCursor: { type: [string, 'null'] }
+                      hasMore: { type: boolean }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
   /health:
     get:
       operationId: getHealth
@@ -901,7 +1002,11 @@ components:
             same-origin shape.
         scope:
           type: string
-          description: MF remote scope/name. Required for module-federation.
+          description: >-
+            MF remote scope/name (required for module-federation), OR, for
+            `web-component`, the custom-element tag name the shell
+            instantiates (e.g. `my-widget`). See
+            docs/guides/WEB_COMPONENT_INTEGRATION.md for the latter.
         module:
           type: string
           description: Exposed module path, e.g. `./ClockApp`. Required for module-federation.
@@ -910,11 +1015,15 @@ components:
           format: uri-reference
           pattern: '^(https?://[^\s]+|/(?![/\\])[^\s?#\\]*)$'
           description: >-
-            Navigable URL for `iframe` and `standalone`/`spa` integrations.
-            Accepts the same two shapes as `remoteEntry`: a same-origin absolute
-            path such as `/apps/fuzesocial/` (preferred for in-cluster apps —
-            the host ingress proxies it, so the iframe does not re-enter the
-            public edge) or an absolute `http(s)` URL for externally hosted apps.
+            Navigable URL for `iframe` and `standalone`/`spa` integrations,
+            OR, for `web-component`, the script URL the shell injects to
+            define the custom element named by `scope` (see
+            docs/guides/WEB_COMPONENT_INTEGRATION.md). Accepts the same two
+            shapes as `remoteEntry`: a same-origin absolute path such as
+            `/apps/fuzesocial/` (preferred for in-cluster apps — the host
+            ingress proxies it, so the iframe/script does not re-enter the
+            public edge) or an absolute `http(s)` URL for externally hosted
+            apps.
 
     MenuItem:
       type: object
@@ -1140,6 +1249,30 @@ components:
           default: true
           description: 'Deployed via the FuzeInfra GitOps pipeline'
 
+    Distribution:
+      type: object
+      additionalProperties: false
+      description: >-
+        Public installation destinations for a product's native mobile build.
+        Omit a field until that exact store listing or APK is publicly available;
+        clients must never synthesize download URLs from a product name.
+      properties:
+        appleAppStoreUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Public Apple App Store product URL.
+        googlePlayUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Public Google Play Store product URL.
+        apkUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Direct public Android APK URL, normally the product's latest GitHub Release asset.
+
     AppManifest:
       type: object
       additionalProperties: false
@@ -1190,6 +1323,8 @@ components:
         routing: { $ref: '#/components/schemas/Routing' }
         infra:
           $ref: '#/components/schemas/Infra'
+        distribution:
+          $ref: '#/components/schemas/Distribution'
         visibility:
           $ref: '#/components/schemas/Visibility'
         scopeLevel:
@@ -1260,14 +1395,24 @@ components:
       additionalProperties: false
       required: [userId, isCurrentMember]
       description: >-
-        The app's creator. `displayName` is returned ONLY while the creator is
-        still an active member of the owning organization; a former member is
-        reduced to `isCurrentMember: false` (no name/contact) — the app stays
-        with the organization.
+        The app's creator. `displayName` and `contactEmail` are returned ONLY
+        while the creator is still an active member of the owning organization;
+        a former member is reduced to `isCurrentMember: false` (no name/contact)
+        — the app stays with the organization.
       properties:
         userId: { type: string, description: 'Creator user TypeID (`usr_…`).' }
         isCurrentMember: { type: boolean }
         displayName: { type: string }
+        contactEmail:
+          type: string
+          format: email
+          description: >-
+            The creator's contact address, backing frame (e1)'s "Contact
+            creator" row. Optional and informational — returned under the same
+            rule as `displayName` (only while `isCurrentMember` is true; absent
+            for a former member). A reference/read, never an identity or a
+            capability; authority is Permit + org role. The UI renders the
+            Contact row only when this is present, never a guessed address.
 
     RegisterAppRequest:
       type: object
@@ -1584,3 +1729,48 @@ components:
             reason: { type: string }
             rejectedAt: { type: string, format: date-time }
             rejectedBy: { type: [string, 'null'] }
+
+    PublicationQueueItem:
+      type: object
+      additionalProperties: false
+      required: [slug, name, icon, publication]
+      description: >-
+        One row of the marketplace review queue (`GET /publication-requests`):
+        an app's publication state together with the minimal app display context
+        a reviewer needs to triage it without a second call. Every field is
+        owned by the app-registry service — this is not a cross-service join.
+        `icon` is REQUIRED here even though `AppManifest.icon` is optional: the
+        queue row always renders an icon cell, so the server substitutes a
+        placeholder (`{ kind: emoji, value: "📦" }`) when the app's manifest has
+        none. Consumers can therefore rely on `icon` being present and non-null.
+      properties:
+        slug: { $ref: '#/components/schemas/Slug' }
+        name:
+          type: string
+          description: App display name (`manifest.name`), for the "App" column.
+        icon:
+          $ref: '#/components/schemas/Icon'
+          description: >-
+            Always present — the app's manifest icon, or a server-provided
+            placeholder (`📦` emoji) when the manifest declares none.
+        organizationId:
+          type: [string, 'null']
+          description: >-
+            Owning org (the publisher) as a wire-typed reference — a TypeID
+            (`org_…`, the value prefixed-ids returns in prod) or a bare UUID
+            (legacy/unprefixed). NOT `format: uuid`: a prefixed TypeID is not a
+            syntactic UUID and would fail that constraint. A personal app is
+            owned by the caller's personal org and still carries that org's id;
+            `null` is reserved for a genuinely platform-global app with no owning
+            org. The org's display name is resolved by the caller, not embedded.
+        creator:
+          description: >-
+            The creator as an in-org contact, or null — rendered in the
+            publisher/contact column. Subject to the SAME former-member rule as
+            `App.creator` (a former member is reduced to `isCurrentMember:false`
+            with no name/contact, per frame (e)). Present only when
+            `fuzefront.apps.creator-ownership` is ON.
+          oneOf:
+            - { $ref: '#/components/schemas/AppCreator' }
+            - { type: 'null' }
+        publication: { $ref: '#/components/schemas/AppPublication' }

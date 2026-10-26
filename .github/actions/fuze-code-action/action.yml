@@ -235,6 +235,23 @@ inputs:
       false AVAILABILITY/quota error (issue #418).
     required: false
     default: 'fuze-agent'
+  bot-name:
+    description: >-
+      Passed through verbatim as claude-code-action `bot_name`, the git author name
+      its `configureGitAuth` step stamps on commits. claude-code-action OVERWRITES
+      any `git config user.name` a caller set earlier in the job, so the only way
+      to attribute commits to a non-default identity (e.g. the least-privilege
+      `fuzeoneagent` coder) is to pass it here. Defaults to claude-code-action's
+      own default so a caller that does not set it is unchanged.
+    required: false
+    default: 'claude[bot]'
+  bot-id:
+    description: >-
+      Passed through verbatim as claude-code-action `bot_id` (the numeric GitHub
+      user id behind the `<id>+<name>@users.noreply.github.com` author email).
+      Pair with `bot-name`; defaults to claude-code-action's own default.
+    required: false
+    default: '41898282'
   additional-permissions:
     description: >-
       Passed through verbatim as claude-code-action `additional_permissions`
@@ -285,6 +302,35 @@ inputs:
       visible to later steps in the same job. Values are never echoed.
     required: false
     default: ''
+  review-only:
+    description: >-
+      'true' | anything else. When 'true', the multi-vendor fallover LADDER is switched
+      OFF and only the Anthropic rungs run (rung 1a, then rung 1). Intended for READ-ONLY
+      review callers (fuze-code-review) that need a verdict, not a vendor cascade.
+      .
+      What it removes, and why that is the point:
+        - Rung 2 (openai/codex-action) and rung 3 (run-gemini-cli) are NOT attempted. Each
+          installs a vendor CLI into the ephemeral runner pod on every availability
+          failure, and rung 2 runs with the composite's `codex-sandbox` default
+          (`danger-full-access`) -- full shell on the runner -- which silently voids a
+          caller's `--allowedTools "Read,Grep,Glob"` tool restriction (that restriction
+          reaches ONLY the two claude-code-action rungs). With the ladder off, the
+          tool policy the caller declared is the one that actually applies.
+        - `openai-api-key` / `gemini-api-key` are NOT forwarded to ./llm-endpoint, so its
+          runner-local LiteLLM fallback chain is anthropic-only and takes llm-endpoint's
+          documented single-vendor path: DIRECT to api.anthropic.com, no container and no
+          cold image pull. (The in-cluster LiteLLM gateway, when reachable, is unaffected:
+          it routes by its own server-side config.)
+      .
+      What it does NOT change: classification. An Anthropic availability failure with the
+      ladder off is still an availability failure -- the action fails with
+      `availability=true`, so fuze-code-review's credit-outage exception still applies --
+      and a task failure is still a task failure. No rung is retried into a vendor; the
+      chain is simply shorter. It cannot turn a failure into a success.
+      .
+      Default 'false' keeps every existing caller's behaviour byte-for-byte.
+    required: false
+    default: 'false'
   gemini-api-key:
     description: >-
       Gemini API key for the run-gemini-cli rung. Passed through as that action's
@@ -417,6 +463,8 @@ runs:
         claude_args: ${{ inputs.claude-args }}
         show_full_output: ${{ inputs.show-full-output }}
         allowed_bots: ${{ inputs.allowed-bots }}
+        bot_name: ${{ inputs.bot-name }}
+        bot_id: ${{ inputs.bot-id }}
         additional_permissions: ${{ inputs.additional-permissions }}
         settings: ${{ inputs.settings }}
 
@@ -546,8 +594,17 @@ runs:
         # error, so it read as configuration while doing nothing at all.
         # tests/test_local_action_inputs.py now fails on any such key.
         fallback-anthropic-key: ${{ inputs.anthropic-api-key }}
-        fallback-openai-key: ${{ inputs.openai-api-key }}
-        fallback-gemini-key: ${{ inputs.gemini-api-key }}
+        # review-only: do not forward the non-Anthropic keys, so the runner-local chain is
+        # anthropic-only and ./llm-endpoint goes DIRECT to api.anthropic.com instead of
+        # starting a multi-vendor LiteLLM container (see the `review-only` input).
+        # NOTE the ternary shape: `cond && VALUE || ''`, never `cond && '' || VALUE`.
+        # In a GitHub Actions expression '' is falsy, so `review-only == 'true' && ''`
+        # evaluates to '' and the trailing `|| inputs.*-api-key` then always wins —
+        # i.e. the inverted form forwards the key even under review-only, defeating the
+        # suppression entirely. Phrase the guard positively so the key is the value only
+        # when it must be forwarded, and '' is the hard default.
+        fallback-openai-key: ${{ inputs.review-only != 'true' && inputs.openai-api-key || '' }}
+        fallback-gemini-key: ${{ inputs.review-only != 'true' && inputs.gemini-api-key || '' }}
 
     # RUNG 1 — claude-code-action, credentialed via LiteLLM-or-direct-Anthropic
     # (see llm step above). Gated on the llm step's own outcome, not on raw input
@@ -581,6 +638,8 @@ runs:
         claude_args: ${{ inputs.claude-args }}
         show_full_output: ${{ inputs.show-full-output }}
         allowed_bots: ${{ inputs.allowed-bots }}
+        bot_name: ${{ inputs.bot-name }}
+        bot_id: ${{ inputs.bot-id }}
         additional_permissions: ${{ inputs.additional-permissions }}
         settings: ${{ inputs.settings }}
 
@@ -602,6 +661,21 @@ runs:
 
     - name: 'Classify rung 1'
       id: classify-claude
+      # Same gate as the `llm` and rung-1 `claude` steps above: only classify
+      # rung 1 when rung 1a did NOT already settle the run. Unguarded, a rung-1a
+      # SUCCESS (code 0), TASK failure (2) or DECLINE (3) left rung 1 skipped,
+      # and this always-run step then read that skip as an empty conclusion +
+      # skipped outcome = "action-could-not-start" = code 1 (availability). That
+      # spurious code 1 is exactly the verdict the metered OpenAI/Gemini rungs
+      # below gate on (`classify-claude.outputs.code == '1'`), so they fired on a
+      # run that was already finished — burning per-token spend and surfacing a
+      # provider error (e.g. Gemini 402) inside an otherwise-successful review,
+      # while the Finish step still settled on the rung-1a result. '' = rung 1a
+      # not attempted; '1' = it failed on availability — the only two states in
+      # which rung 1 legitimately runs and therefore needs classifying.
+      if: |
+        steps.classify-claude-oauth.outputs.code == '' ||
+        steps.classify-claude-oauth.outputs.code == '1'
       shell: bash
       # Every value that ultimately comes from outside this file (another action's
       # output) reaches the shell through env:, never interpolated via `${{ }}`
@@ -652,14 +726,14 @@ runs:
     # explicit review prompts and uses a fresh empty workdir, no shell tools,
     # no inherited secrets/config, and a read-only OS sandbox. Never downgrade.
     - name: Install pinned Node.js for Codex subscription reviewer
-      if: (steps.classify-claude-oauth.outputs.code == '' || steps.classify-claude-oauth.outputs.code == '1') && steps.classify-claude.outputs.code == '1' && inputs.task-prompt != '' && inputs.codex-auth-json != ''
+      if: (steps.classify-claude-oauth.outputs.code == '' || steps.classify-claude-oauth.outputs.code == '1') && steps.classify-claude.outputs.code == '1' && inputs.task-prompt != '' && inputs.codex-auth-json != '' && inputs.review-only != 'true'
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: '24'
         package-manager-cache: 'false'
 
     - name: Install pinned Codex subscription reviewer
-      if: (steps.classify-claude-oauth.outputs.code == '' || steps.classify-claude-oauth.outputs.code == '1') && steps.classify-claude.outputs.code == '1' && inputs.task-prompt != '' && inputs.codex-auth-json != ''
+      if: (steps.classify-claude-oauth.outputs.code == '' || steps.classify-claude-oauth.outputs.code == '1') && steps.classify-claude.outputs.code == '1' && inputs.task-prompt != '' && inputs.codex-auth-json != '' && inputs.review-only != 'true'
       shell: bash
       run: |
         cd "${RUNNER_TEMP}"
@@ -667,7 +741,7 @@ runs:
 
     - name: Codex subscription review
       id: codex-subscription
-      if: (steps.classify-claude-oauth.outputs.code == '' || steps.classify-claude-oauth.outputs.code == '1') && steps.classify-claude.outputs.code == '1' && inputs.task-prompt != '' && inputs.codex-auth-json != ''
+      if: (steps.classify-claude-oauth.outputs.code == '' || steps.classify-claude-oauth.outputs.code == '1') && steps.classify-claude.outputs.code == '1' && inputs.task-prompt != '' && inputs.codex-auth-json != '' && inputs.review-only != 'true'
       continue-on-error: true
       shell: bash
       env:
@@ -680,9 +754,11 @@ runs:
     - name: 'Rung 2: openai/codex-action'
       id: codex
       # inputs.task-prompt != '' — mention mode has no fallover (see task-prompt).
+      # inputs.review-only != 'true' — the ladder is OFF for read-only review callers.
       if: |
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
+        inputs.review-only != 'true' &&
         inputs.codex-auth-json == '' &&
         inputs.openai-api-key != ''
       continue-on-error: true
@@ -700,6 +776,7 @@ runs:
       if: |
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
+        inputs.review-only != 'true' &&
         inputs.codex-auth-json == '' &&
         inputs.openai-api-key == ''
       shell: bash
@@ -791,6 +868,7 @@ runs:
         inputs.task-prompt != '' &&
         inputs.codex-auth-json == '' &&
         steps.codex.outcome != 'success' &&
+        inputs.review-only != 'true' &&
         inputs.gemini-api-key != ''
       shell: bash
       run: echo "GEMINI_CLI_TRUST_WORKSPACE=true" >> "$GITHUB_ENV"
@@ -802,6 +880,7 @@ runs:
         inputs.task-prompt != '' &&
         inputs.codex-auth-json == '' &&
         steps.codex.outcome != 'success' &&
+        inputs.review-only != 'true' &&
         inputs.gemini-api-key != ''
       continue-on-error: true
       uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
@@ -817,6 +896,7 @@ runs:
         inputs.task-prompt != '' &&
         inputs.codex-auth-json == '' &&
         steps.codex.outcome != 'success' &&
+        inputs.review-only != 'true' &&
         inputs.gemini-api-key == ''
       shell: bash
       run: |
@@ -868,6 +948,16 @@ runs:
         if [ "${GEMINI_OUTCOME:-}" != "success" ] && [ -n "${GEMINI_ERROR:-}" ]; then
           echo "::warning title=fuze-code-action::gemini rung reported an error (classify verdict above): ${GEMINI_ERROR}"
         fi
+
+    - name: 'Review-only — OpenAI and Gemini rungs deliberately not attempted'
+      if: |
+        always() &&
+        steps.classify-claude.outputs.code == '1' &&
+        inputs.task-prompt != '' &&
+        inputs.review-only == 'true'
+      shell: bash
+      run: |
+        echo "::warning title=fuze-code-action::rung=claude failed on an AVAILABILITY error and review-only=true, so the Codex subscription, OpenAI and Gemini rungs were NOT attempted (no vendor CLI is installed on the runner, and the caller's read-only tool policy is never bypassed by a fallover vendor). This run ends as an availability failure (availability=true), which a caller with a credit-outage exception treats as an outage rather than a task failure. Re-run this job once Anthropic recovers, or unset review-only to re-enable the ladder."
 
     - name: 'Mention mode — fallover deliberately not attempted'
       if: |

@@ -19,6 +19,13 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  # Eight of this workflow's jobs are REQUIRED contexts on the master ruleset. A merge
+  # queue builds its candidate on a `refs/heads/gh-readonly-queue/...` branch and emits
+  # `merge_group`, NOT `pull_request` — so without this trigger those eight contexts are
+  # never created for a queue entry, and GitHub treats a required-but-never-reported
+  # context as unsatisfied. That is FuzeFront#286 all over again, relocated into the
+  # queue: nothing red to click, nothing to re-run, and the entry never merges.
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -327,6 +334,11 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           trivyignores: '.trivyignore'
+        env:
+          # Keep every Trivy gate on Aqua's canonical database. The default
+          # mirror has returned stale manifests whose OCI layers resolve 404.
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:1
       # Upload with upload-sarif's OWN ref/sha detection — do not hand-roll it.
       # This previously passed an explicit ref/sha pair computed by a bespoke
       # "detect open PR" step, which on a pull_request event pinned the analysis
@@ -711,6 +723,22 @@ jobs:
         # rather than being silently reported.
         shell: bash
         run: python scripts/gate_identifier.py . --source
+
+      - name: Telemetry parity gate — self-tests (the gate must be known to FIRE)
+        # Same philosophy as the identifier self-tests above: assert the gate
+        # FAILS on an injected Node<->Python drift, not merely that it passes on
+        # a clean tree. Stdlib-only, so no extra install is needed.
+        shell: bash
+        run: python -m unittest scripts.__tests__.test_gate_telemetry_parity -v
+
+      - name: Telemetry parity gate — Node<->Python contract (enforcing)
+        # Fails if the Python telemetry package (packages/telemetry-py) drifts
+        # from the Node package (packages/telemetry) on OTLP env var names, the
+        # trace_id/span_id log field keys, the pino log-level scale, or the
+        # shared secret-redaction list — mirroring gate_identifier --registry-parity.
+        # Reads source text only; needs no OpenTelemetry install.
+        shell: bash
+        run: python scripts/gate_telemetry_parity.py .
 
   gate-vacuous-check:
     # A verification step whose LAST EFFECTIVE COMMAND is a lint/test/type-check/security

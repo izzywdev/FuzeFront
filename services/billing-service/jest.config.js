@@ -26,12 +26,19 @@ module.exports = {
     // first (see .github/workflows/billing-service-tests.yml), same as it
     // already does for @izzywdev/fuzefront-identity.
     '^@fuzefront/auth$': '<rootDir>/../../packages/auth/src/index.ts',
+    // @fuzefront/telemetry's dist is gitignored too (same reasoning as auth
+    // above) — map straight to TS source for RUNTIME resolution. ts-jest's
+    // type-check still resolves the package's declared `types`
+    // (dist/index.d.ts), so CI additionally builds packages/telemetry first
+    // (see .github/workflows/billing-service-tests.yml).
+    '^@fuzefront/telemetry$': '<rootDir>/../../packages/telemetry/src/index.ts',
     // When shared/src/* files are compiled in-source by ts-jest they resolve
     // their own deps (zod, kafkajs) from shared/node_modules, which may not
-    // exist in a partial install. Pin to billing-service's copy so tests don't
-    // need a full workspace npm install.
-    '^zod$': '<rootDir>/node_modules/zod',
-    '^kafkajs$': '<rootDir>/node_modules/kafkajs',
+    // exist in a partial install. Pin to the workspace root's copy — billing-service
+    // is now a workspace member so npm hoists these to ../../node_modules, not the
+    // local node_modules.
+    '^zod$': '<rootDir>/../../node_modules/zod',
+    '^kafkajs$': '<rootDir>/../../node_modules/kafkajs',
   },
   testTimeout: 60000,
 };

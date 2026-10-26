@@ -1,4 +1,5 @@
 import permit from '../../config/permit'
+import { MEMBERSHIP_TO_PERMIT_ROLE, DEFAULT_PERMIT_ROLE } from '../../permit/schema'
 
 // Neutralizes CR/LF before a value reaches a log line (CodeQL js/log-injection
 // — an embedded newline could forge additional fake log lines). The
@@ -137,16 +138,8 @@ export async function assignOrganizationRole(
   membershipRole: 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
 ): Promise<boolean> {
   try {
-    // Map membership roles to Permit roles
-    const roleMapping: Record<string, string> = {
-      owner: 'admin', // Organization owners get admin permissions
-      admin: 'admin', // Admins get admin permissions
-      member: 'editor', // Members get editor permissions
-      viewer: 'viewer', // Viewers get view-only permissions
-      developer: 'developer', // docs/planning/developers-portal.md §5.3 — catalog + sandbox only
-    }
-
-    const permitRole = roleMapping[membershipRole] || 'viewer'
+    // Canonical mapping lives in permit/schema.ts (single source of truth).
+    const permitRole = MEMBERSHIP_TO_PERMIT_ROLE[membershipRole] || DEFAULT_PERMIT_ROLE
 
     return await assignRoleInPermit({
       user: userId,
@@ -169,17 +162,11 @@ export async function updateOrganizationRole(
   newRole: string
 ): Promise<boolean> {
   try {
-    // First unassign the old role
-    const roleMapping: Record<string, string> = {
-      owner: 'admin',
-      admin: 'admin',
-      member: 'editor',
-      viewer: 'viewer',
-      developer: 'developer',
-    }
-
-    const oldPermitRole = roleMapping[oldRole] || 'viewer'
-    const newPermitRole = roleMapping[newRole] || 'viewer'
+    // Canonical mapping lives in permit/schema.ts (single source of truth).
+    const toPermitRole = (r: string): string =>
+      MEMBERSHIP_TO_PERMIT_ROLE[r as keyof typeof MEMBERSHIP_TO_PERMIT_ROLE] || DEFAULT_PERMIT_ROLE
+    const oldPermitRole = toPermitRole(oldRole)
+    const newPermitRole = toPermitRole(newRole)
 
     if (oldPermitRole !== newPermitRole) {
       await unassignRoleInPermit({
