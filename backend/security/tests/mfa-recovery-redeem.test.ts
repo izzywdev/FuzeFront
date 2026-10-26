@@ -13,6 +13,7 @@ import jwt from 'jsonwebtoken'
 import request from 'supertest'
 import securityRouter, {
   resetMfaVerifyLimiter,
+  MFA_VERIFY_MAX_FAILS_PER_IP as IP_CAP,
   __fillMfaVerifyLimiterForTest,
   __recordSpoofedFailureForTest,
   __mfaVerifyLimiterSizeForTest,
@@ -480,8 +481,8 @@ describe('route: POST /mfa/verify', () => {
       }),
     })
     const app = makeApp(p)
-    await Promise.all(Array.from({ length: 40 }, (_, i) => post(app, { challengeId: `b${i}`, recoveryCode: 'bad' })))
-    expect(p.verifyMfaRecovery).toHaveBeenCalledTimes(20)
+    await Promise.all(Array.from({ length: IP_CAP * 2 }, (_, i) => post(app, { challengeId: `b${i}`, recoveryCode: 'bad' })))
+    expect(p.verifyMfaRecovery).toHaveBeenCalledTimes(IP_CAP)
   })
 
   it('in-flight reservations are released on success (no slot leak)', async () => {
@@ -522,7 +523,7 @@ describe('route: POST /mfa/verify', () => {
   })
 
   it('if EVERY entry is blocked, a new key is admitted untracked and no blocked entry is evicted', () => {
-    __fillMfaVerifyLimiterForTest(99) // all filler entries over any limit
+    __fillMfaVerifyLimiterForTest(IP_CAP) // all filler entries at/over their limit
     __recordSpoofedFailureForTest('2.2.2.2')
     expect(__mfaVerifyLimiterSizeForTest()).toBe(10_000)
     expect(__mfaVerifyLimiterHasForTest('ip:2.2.2.2')).toBe(false)
@@ -547,14 +548,14 @@ describe('route: POST /mfa/verify', () => {
     // per-challenge cap (5) was never reached for 'ghost'; per-IP count is 10
     p.verifyMfaRecovery = jest.fn().mockRejectedValue(new RecoveryCodeInvalidError())
     expect((await post(app, { challengeId: 'ghost', recoveryCode: 'x' })).status).toBe(401)
-    for (let i = 0; i < 9; i++) await post(makeApp(p), { challengeId: `o${i}`, recoveryCode: 'x' })
-    expect((await post(app, { challengeId: 'another', recoveryCode: 'x' })).status).toBe(429) // IP cap 20 reached
+    for (let i = 0; i < IP_CAP - 11; i++) await post(makeApp(p), { challengeId: `o${i}`, recoveryCode: 'x' })
+    expect((await post(app, { challengeId: 'another', recoveryCode: 'x' })).status).toBe(429) // IP cap reached
   })
 
   it('per-IP cap applies across challenges', async () => {
     const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new RecoveryCodeInvalidError()) })
     const app = makeApp(p)
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < IP_CAP; i++) {
       expect((await post(app, { challengeId: `c${i}`, recoveryCode: 'bad' })).status).toBe(401)
     }
     expect((await post(app, { challengeId: 'fresh', recoveryCode: 'bad' })).status).toBe(429)
@@ -758,21 +759,45 @@ describe('trusted proxy hops config', () => {
   it('rejects malformed values instead of silently falling back', () => {
     for (const bad of ['true', '-1', '1.5', 'a', '99']) expect(() => resolveTrustProxyHops(bad)).toThrow(/TRUST_PROXY_HOPS/)
   })
-  it('with 1 hop, a client-supplied left-hand X-Forwarded-For entry cannot choose the limiter key', async () => {
+  // Real prod chain: Cloudflare edge -> cloudflared tunnel -> ingress -> pod.
+  // The edge records the true peer in X-Forwarded-For; the ingress appends the
+  // cloudflared pod. A client-supplied value can only ever sit on the LEFT.
+  const chain = (spoof: string, client: string) => `${spoof}, ${client}, 10.42.0.5`
+
+  async function failFrom(app: any, xff: string, cid: string) {
+    return request(app).post('/api/v1/security/mfa/verify').set('X-Forwarded-For', xff)
+      .send({ challengeId: cid, recoveryCode: 'bad' })
+  }
+
+  it('with 2 hops the chain "<spoofed>, <client>, <cloudflared-ip>" resolves to <client>', async () => {
+    const seen: string[] = []
+    const probe = express()
+    probe.set('trust proxy', resolveTrustProxyHops('2'))
+    probe.get('/ip', (req, res) => { seen.push(req.ip as string); res.end() })
+    await request(probe).get('/ip').set('X-Forwarded-For', chain('6.6.6.6', '198.51.100.7'))
+    expect(seen).toEqual(['198.51.100.7'])
+  })
+
+  it('with 1 hop (mis-set for this path) req.ip collapses to the cloudflared pod for every user', async () => {
+    const seen: string[] = []
+    const probe = express()
+    probe.set('trust proxy', 1)
+    probe.get('/ip', (req, res) => { seen.push(req.ip as string); res.end() })
+    await request(probe).get('/ip').set('X-Forwarded-For', chain('6.6.6.6', '198.51.100.7'))
+    expect(seen).toEqual(['10.42.0.5']) // documents why prod must set 2
+  })
+
+  it('with 2 hops, rotating the spoofed entry does not escape the limiter and other clients are unaffected', async () => {
     const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new RecoveryCodeInvalidError()) })
     setIdentityProvider(p)
     const app = express()
     app.use(express.json())
-    app.set('trust proxy', 1)
+    app.set('trust proxy', resolveTrustProxyHops('2'))
     app.use('/api/v1/security', securityRouter)
-    // attacker rotates the spoofed (left) entry; the ingress-appended (right) entry is constant
-    for (let i = 0; i < 20; i++) {
-      const r = await request(app).post('/api/v1/security/mfa/verify')
-        .set('X-Forwarded-For', `6.6.6.${i}, 203.0.113.9`).send({ challengeId: `c${i}`, recoveryCode: 'bad' })
-      expect(r.status).toBe(401)
+    for (let i = 0; i < IP_CAP; i++) {
+      expect((await failFrom(app, chain(`6.6.${i >> 8}.${i & 255}`, '198.51.100.7'), `c${i}`)).status).toBe(401)
     }
-    const blocked = await request(app).post('/api/v1/security/mfa/verify')
-      .set('X-Forwarded-For', '7.7.7.7, 203.0.113.9').send({ challengeId: 'cz', recoveryCode: 'bad' })
-    expect(blocked.status).toBe(429) // same real client => same bucket
+    expect((await failFrom(app, chain('7.7.7.7', '198.51.100.7'), 'cz')).status).toBe(429) // same real client
+    expect((await failFrom(app, chain('7.7.7.7', '198.51.100.8'), 'cy')).status).toBe(401) // different client
   })
 })

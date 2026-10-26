@@ -253,7 +253,12 @@ function mfaRequiredBody(err: MfaRequiredError) {
 // RATE_LIMITED before any proof is evaluated. Successes are never counted.
 // In-process (matches the in-process challenge store); per-replica under HPA.
 const MFA_VERIFY_WINDOW_MS = 15 * 60_000
-const MFA_VERIFY_MAX_FAILS_PER_IP = 20
+// Per-IP is DEFENCE IN DEPTH, deliberately high: the primary guard is the
+// per-challenge counter (created only for real challenges). If the trusted hop
+// count is ever mis-set so many users share one `req.ip`, a low per-IP cap would
+// become a global lockout; 100 failures / 15 min keeps that blast radius far
+// from a handful of mistyped codes while still stopping a single-source spray.
+export const MFA_VERIFY_MAX_FAILS_PER_IP = 100
 const MFA_VERIFY_MAX_FAILS_PER_CHALLENGE = 5
 const MFA_VERIFY_MAX_KEYS = 10_000
 const mfaVerifyFails = new Map<string, { count: number; resetAt: number }>()
