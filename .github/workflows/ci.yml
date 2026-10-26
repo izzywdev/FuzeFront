@@ -1363,6 +1363,11 @@ jobs:
           ignore-unfixed: true
           exit-code: '0'
           trivyignores: '.trivyignore'
+        env:
+          # Use Aqua's canonical database rather than Trivy's mutable default
+          # mirror, which can expose an index whose referenced layer is absent.
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:1
 
       # This scan is a byte-for-byte duplicate of harden-gate.yml's
       # gate-dependency-scan (same scan-type: fs, scan-ref: ., ignore-unfixed,

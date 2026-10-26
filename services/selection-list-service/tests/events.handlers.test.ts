@@ -22,6 +22,13 @@ jest.mock('../src/db', () => ({
   },
 }));
 
+// The platform-org guard has its own real-Postgres suite (shared-lists.platform-org-guard.db.test.ts); this suite
+// pins the cascade SQL shape of an ordinary org, so the guard is stubbed to "not the platform org".
+jest.mock('../src/events/platformGuard', () => ({
+  isProtectedPlatformOrg: async () => false,
+  snapshotBreaksPlatformOrg: () => false,
+}));
+
 import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { handleOrgDeleted } from '../src/events/org-deleted.handler';
 import { handleUserDeleted } from '../src/events/user-deleted.handler';

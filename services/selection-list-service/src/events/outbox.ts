@@ -44,6 +44,8 @@ export const PRODUCED_TOPICS: ReadonlySet<string> = new Set<string>([
   TOPICS.SELECTION_LISTS_LIST_UPDATED,
   TOPICS.SELECTION_LISTS_LIST_ARCHIVED,
   TOPICS.SELECTION_LISTS_LIST_DELETED,
+  TOPICS.SELECTION_LISTS_LIST_FORKED,
+  TOPICS.SELECTION_LISTS_VISIBILITY_CHANGED,
   TOPICS.SELECTION_LISTS_ITEM_CREATED,
   TOPICS.SELECTION_LISTS_ITEM_UPDATED,
   TOPICS.SELECTION_LISTS_ITEM_ARCHIVED,
@@ -182,6 +184,16 @@ export async function bumpListRevision(trx: OutboxExecutor, organizationId: stri
  * transaction when it propagates out of the transaction callback.
  */
 export async function enqueueEvent(trx: OutboxExecutor, input: EnqueueEventInput): Promise<EnqueuedEvent> {
+  const event = prepareEvent(input);
+
+  await lockOrgOutbox(trx, event.organizationId);
+  await trx('event_outbox').insert(outboxRow(trx, event));
+
+  return event;
+}
+
+/** Validate `input` against its topic schema and mint its eventId. Throws on a bug (never persists anything). */
+function prepareEvent(input: EnqueueEventInput): EnqueuedEvent {
   if (!PRODUCED_TOPICS.has(input.topic)) throw new OutboxTopicError(input.topic);
   const schema = schemaForTopic(input.topic);
   if (!schema) throw new OutboxTopicError(input.topic);
@@ -201,18 +213,36 @@ export async function enqueueEvent(trx: OutboxExecutor, input: EnqueueEventInput
   }
   const payload = parsed.data as Record<string, unknown>;
   const correlationId = input.correlationId ?? currentRequestContext()?.reqId ?? eventId;
+  return { eventId, topic: input.topic, organizationId, payload, correlationId };
+}
 
-  await lockOrgOutbox(trx, organizationId);
-  await trx('event_outbox').insert({
-    id: eventId,
-    organization_id: organizationId,
-    topic: input.topic,
-    payload: trx.raw('?::jsonb', [JSON.stringify(payload)]),
-    correlation_id: correlationId,
+function outboxRow(trx: OutboxExecutor, e: EnqueuedEvent) {
+  return {
+    id: e.eventId,
+    organization_id: e.organizationId,
+    topic: e.topic,
+    payload: trx.raw('?::jsonb', [JSON.stringify(e.payload)]),
+    correlation_id: e.correlationId,
     status: 'pending',
     attempts: 0,
     created_at: trx.raw('clock_timestamp()'),
-  });
+  };
+}
 
-  return { eventId, topic: input.topic, organizationId, payload, correlationId };
+/** Rows per multi-row INSERT of `enqueueEvents` (bounded so one statement stays well under the bind limit). */
+const BATCH_INSERT_ROWS = 200;
+
+/**
+ * Write MANY events in order inside the caller's transaction, validating each exactly like `enqueueEvent`
+ * (any invalid payload throws and aborts the whole batch before anything is inserted), with one org lock and
+ * multi-row inserts instead of two statements per event. Used by operations that legitimately emit thousands
+ * of events at once (fork). Insertion order == `seq` order == publish order.
+ */
+export async function enqueueEvents(trx: OutboxExecutor, inputs: EnqueueEventInput[]): Promise<EnqueuedEvent[]> {
+  const events = inputs.map(prepareEvent);
+  for (const orgId of new Set(events.map((e) => e.organizationId))) await lockOrgOutbox(trx, orgId);
+  for (let i = 0; i < events.length; i += BATCH_INSERT_ROWS) {
+    await trx('event_outbox').insert(events.slice(i, i + BATCH_INSERT_ROWS).map((e) => outboxRow(trx, e)));
+  }
+  return events;
 }

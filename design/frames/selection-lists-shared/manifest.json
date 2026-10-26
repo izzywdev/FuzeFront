@@ -551,9 +551,9 @@
           "browse/ListSourceGroups",
           "browse/ReadOnlyListNotice"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:08.934Z"
       },
       {
         "id": "fork",
@@ -587,9 +587,9 @@
           "fork/ForkListDialog",
           "fork/ForkResultNotice"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:17.912Z"
       },
       {
         "id": "fork-provenance",
@@ -619,9 +619,9 @@
           "provenance/BehindSourceIndicator",
           "provenance/RevertToCommonConfirm"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:15.655Z"
       },
       {
         "id": "visibility",
@@ -650,9 +650,9 @@
           "visibility/VisibilityControl",
           "visibility/PublishPlatformConfirm"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:24.240Z"
       },
       {
         "id": "effective-picker",
@@ -681,9 +681,9 @@
         "components": [
           "picker/EffectiveListSource"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:20.862Z"
       }
     ],
     "components": [

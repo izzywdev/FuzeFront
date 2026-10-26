@@ -59,8 +59,11 @@ export interface PasswordLoginInput {
 export interface SignupInput {
   email: string;
   password: string;
-  firstName?: string;
-  lastName?: string;
+  /**
+   * Optional single display name (i18n-safe). Maps 1:1 to the identity store's
+   * `name`; replaces the former firstName/lastName split (contract 1.0.0).
+   */
+  name?: string;
   /** Optional tenant/organization name to provision on signup. */
   tenantName?: string;
 }

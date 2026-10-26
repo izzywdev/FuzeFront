@@ -261,6 +261,11 @@ jobs:
           exit-code: '0'
         env:
           TRIVY_TOKEN: ${{ secrets.TRIVY_TOKEN }}
+          # Trivy's default mirror returned an OCI layer 404 before the scan
+          # started. Pin Aqua's canonical public database so mirror drift cannot
+          # turn a successful image build into a false security-gate failure.
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:1
 
       # GitHub creates ONE check run per SARIF *tool*, aggregating every
       # configuration that reports under that tool name. Trivy writes

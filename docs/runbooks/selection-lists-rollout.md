@@ -52,6 +52,7 @@ Every row must hold before the final step. Rows marked IN FLIGHT must be re-chec
 | P3 | **Kafka topics exist with the intended settings** (13 change topics, 2 outcome topics, `seed.requested` + DLQ with 1-day retention because its messages carry bearer tokens) | **IN FLIGHT.** `kafkaTopics.enabled` is `false` in `values-prod.yaml` (the old post-upgrade hook wedged Argo syncs). A PR "fix(helm): make kafka-topics Job non-blocking and enable it in prod" (#1298) reworks it into a bounded last-wave Job. **Check the PR/merge state before relying on this.** Until it lands, topics rely on broker auto-create with default retention. | `kubectl -n fuzefront get jobs -l app.kubernetes.io/component=kafka-topics`; list topics via the FuzeInfra `cluster-query` workflow. Detail: seeding runbook section 2.3. |
 | P4 | **All three Unleash flags exist in Unleash, OFF** (`fuzefront.selection-lists.service`, `fuzefront.selection-lists.seed-defaults`, and the SL9 `fuzefront.selection-lists.shared-lists`, the last created by the same `flags=selection-lists-create` dispatch once this lands) | **Creation is wired; verify it ran.** The `selection-lists-create` set of `prod-unleash-ops` (#1296, plus the SL9 third flag) creates all three flags OFF and never enables anything. It has to be dispatched once after the SL9 flag-registration PR merges, so a third flag may be missing until then. **Check the live state; do not assume.** | Unleash prod admin UI or API: **all three** keys (`fuzefront.selection-lists.service`, `fuzefront.selection-lists.seed-defaults`, `fuzefront.selection-lists.shared-lists`) exist, environment `production` disabled. Never create them by hand in the UI if the workflow can. |
 | P5 | **Shared-lists / fork contract** (a list that an org shares with others, and forking a shared list into an org's own copy) | **IN FLIGHT.** A contract PR was reported open but no PR for it was found when this was written, so its number is not recorded here. It changes the API contract, so it is a reason to hold a GA, not a hard blocker for a pilot of the existing contract (4.0.0). **Find the PR and check its merge state before relying on this**; if it lands before the first ramp step, re-read the authz section of this runbook, because sharing changes who can read what. | `services/selection-list-service/openapi.yaml` `info.version` and the contract changelog; `gh pr list --search "selection list shared fork"`. |
+| P6 | **HARD PREREQUISITE: broker ACLs on the `identity.*` topics verified** (only the identity service may produce `identity.org.*` / `identity.user.*`; only the seed senders may produce `selection-lists.seed.requested`) | **FuzeInfra#1394.** **Do not enable the service in production until this is verified.** Rationale (owner decision): the service deliberately does NOT authenticate event producers in-process (no first-writer-wins owner hardening, no Security-API check before destructive org cascades). Its protection against forged events is therefore the broker: without ACLs any in-cluster workload that can reach Kafka could forge `identity.org.deleted` for an ordinary org (archive or purge a tenant's lists), `identity.user.deleted` (anonymise authorship, revoke a user's grants), `identity.org.created` (swap the owner used for seeded-list owner grants), `seed.requested` (write amplification up to the per-source caps) or flood a topic. The platform org is immune to deletion (it is only suspended) but the rest are accepted residual risks until the ACLs hold. The full list is in the design record, section 12 (Risks). | Ask FuzeInfra (via `@fuze`) for the verified ACL state of the three topic families, or `kafka-acls --list` through the `cluster-query` workflow: produce rights on `identity.org.*` / `identity.user.*` held by the identity service principal only, and on `selection-lists.seed.requested` by the registered seed senders only. UNVERIFIED when written. |
 
 **Hard prerequisite:** Broker ACLs on the `identity.*` Kafka topics verified (FuzeInfra#1394) before enabling the service in production.
 
@@ -272,3 +273,200 @@ After the merge: Argo sync green, then section 6 / stage 0, **with both flags st
 ## 9. Out of scope for this runbook
 
 App code / API / authz policy (`backend-engineer`, authz review), the shell UI and `@fuzefront/selection-lists-ui` (`frontend-engineer`), tests (`test-engineer`, `frontend-test-engineer`), org-wide hardening policy (`platform-governance`), and the shared cluster (FuzeInfra).
+
+## 10. Shared lists (SL9): run BEFORE turning `fuzefront.selection-lists.shared-lists` on
+
+This section applies to the second flag (`fuzefront.selection-lists.shared-lists`, design record
+`docs/planning/selection-lists-shared-and-fork.md`). The service has never been enabled in production, so the audit
+below is expected to return **no rows**. Run it anyway: with the flag ON the service treats the bare-UUID and the
+`org_…` rendering of one organization id as the same organization, and the database constraint
+`UNIQUE (organization_id, key)` does not (it compares the stored text).
+
+### 10.1 Pre-enable audit (read-only): the same key under two renderings of one org
+
+Creating or renaming a list is refused (409) when the key already exists for the same org under ANY rendering of its id,
+whatever the shared-lists flag says, so duplicates can only exist in data written before that rule (or by hand). The audit
+below finds them; at read time, with the flag ON, exactly one is effective (the one the caller can read: active, the
+caller's own rendering, oldest, smallest id).
+
+Run against the service database (`selection_list_svc`, read access is enough). It groups rows by the organization's
+**UUID** (taken from the org projection, which stores both renderings of every org it has seen) and reports every
+group with more than one row for a key **and** more than one stored rendering:
+
+```sql
+-- A. keys duplicated across renderings of the same org (expect 0 rows)
+WITH rows AS (
+  SELECT l.id, l.organization_id, l.key, l.status, l.visibility, l.created_at,
+         COALESCE(r.entity_id, l.organization_id) AS org_uuid
+    FROM selection_lists l
+    LEFT JOIN selection_list_ref_index r
+           ON r.entity_type = 'organization'
+          AND (r.wire_id = l.organization_id OR r.entity_id = l.organization_id)
+)
+SELECT org_uuid, key,
+       count(*)                                   AS rows,
+       array_agg(organization_id ORDER BY created_at, id) AS stored_as,
+       array_agg(id ORDER BY (status = 'active') DESC, created_at, id) AS ids_winner_first
+  FROM rows
+ GROUP BY org_uuid, key
+HAVING count(*) > 1 AND count(DISTINCT organization_id) > 1
+ ORDER BY org_uuid, key;
+
+-- B. forks of the same common list held by one org under two renderings (expect 0 rows)
+WITH rows AS (
+  SELECT l.id, l.organization_id, l.forked_from_list_id, l.created_at,
+         COALESCE(r.entity_id, l.organization_id) AS org_uuid
+    FROM selection_lists l
+    LEFT JOIN selection_list_ref_index r
+           ON r.entity_type = 'organization'
+          AND (r.wire_id = l.organization_id OR r.entity_id = l.organization_id)
+   WHERE l.forked_from_list_id IS NOT NULL
+)
+SELECT org_uuid, forked_from_list_id, array_agg(id ORDER BY created_at, id) AS fork_ids
+  FROM rows
+ GROUP BY org_uuid, forked_from_list_id
+HAVING count(*) > 1 AND count(DISTINCT organization_id) > 1;
+
+-- C. organizations whose renderings this audit cannot pair (not in the org projection): expect 0 rows.
+--    A TypeID cannot be decoded in SQL; if rows appear, decode them with the identity package
+--    (`toUuid('<org_…>')`) and re-run A/B for those orgs by hand.
+SELECT DISTINCT l.organization_id
+  FROM selection_lists l
+ WHERE NOT EXISTS (SELECT 1 FROM selection_list_ref_index r
+                    WHERE r.entity_type = 'organization' AND (r.wire_id = l.organization_id OR r.entity_id = l.organization_id));
+```
+
+If A, B and C return nothing, there is nothing to reconcile: go on with section 5.
+
+### 10.2 Reconciliation (only if A or B returned rows)
+
+**Which row wins** — the same rule the service applies at read time, so reconciling changes nothing a user can see:
+an **active** row beats an archived one; then the **oldest** (`created_at`), then the smallest `id`. (At read time an
+exact match of the caller's claim also outranks age; after reconciliation there is only one row, so that no longer
+matters.) The winner keeps its key, its id, its items, translations and grants. **Stored values elsewhere point at ids,
+so no id is ever deleted or changed.**
+
+**What happens to the loser** — it is renamed out of the way and archived, never deleted (its ids keep resolving, its
+audit trail stays). Preferred path, per loser (emits `list.updated` through the outbox, needs a `list-owner`/admin
+token of that org): `PATCH /v1/selection-lists/{loserId}` with
+`{"key": "<key>--dup-<first 8 chars of the id>", "status": "archived"}`.
+
+Fallback when no token can be produced, **with the shared-lists flag still OFF**, in one transaction, losers taken from
+query A (`ids_winner_first` without its first element) — it bypasses the outbox, so downstream projections learn the
+new key only from the next change of that list:
+
+```sql
+BEGIN;
+UPDATE selection_lists
+   SET key = key || '--dup-' || substr(id, length(id) - 7),
+       status = 'archived',
+       updated_at = now()
+ WHERE id IN ('<loser id>', '<loser id>');
+-- re-run query A: it must now return 0 rows
+COMMIT;
+```
+
+For B (duplicate forks): keep the winner (same rule), archive the loser fork and rename its key as above; then confirm
+`POST /v1/resolve` of one of the org's stored common ids returns one `effective_item_id`.
+
+**Order of operations:** audit (10.1) → reconcile (10.2) → re-run the audit (0 rows) → only then set
+`fuzefront.selection-lists.shared-lists` ON. Do not skip the re-run.
+
+#### Access mirror rows under both renderings of one user (informational; no action required)
+
+Lists created before the
+rendering-aware code can hold `selection_list_access` rows for BOTH the bare UUID and the `usr_...` TypeID of one user
+(the `(list_id, user_id)` key is exact). The service treats all live rows of a user as ONE grant group: `GET .../access`
+lists the user once (survivor = the row under the Permit key form, i.e. the bare UUID, then the oldest `granted_at`, then
+the smallest `user_id`); `DELETE` revokes every row's authority grant and soft-revokes every row; `PUT` converges the group
+to exactly one live row with the new role (every other role in the group is revoked first); the last-owner guard counts the
+pair as one owner (and the user as an owner when any row is). A TypeID cannot be decoded in SQL, so pairs are found with the
+identity package; the legacy-rendering rows to look at are:
+
+```sql
+-- D. live access rows stored under the usr_ rendering (legacy; pair them with a bare-UUID row of the same list by decoding)
+SELECT list_id, user_id, role, org_id FROM selection_list_access WHERE user_id LIKE 'usr_%' AND revoked_at IS NULL ORDER BY list_id, user_id;
+```
+
+Nothing needs to be reconciled by hand: the next `PUT` or `DELETE` of such a user through the API collapses the group.
+
+### 10.3 The platform organization: deactivation = writes suspended, reads available
+
+`SELECTION_LIST_PLATFORM_ORG_ID` must be a codec-valid `org_…` TypeID. A value that merely looks like one
+(`org_notatypeid`) is a **fatal boot error** (`PlatformOrgConfigError`, the pod crash-loops with a clear message),
+not a silent "waiting for the projection".
+
+The platform org owns every common list, so its lifecycle events are never allowed to delete or break them:
+
+| Event for the platform org | What the service does |
+|---|---|
+| `identity.org.deleted` (soft or hard) | **Nothing is deleted, archived or tombstoned.** Platform **writes are suspended** (`selection_list_ref_index.suspended_at` is set); logged at **error** with the event's `correlationId` (`SECURITY: … platform WRITES are SUSPENDED`) |
+| `identity.org.updated` / `identity.org.created` with `isActive:false` | Same: writes suspended, projection otherwise unchanged |
+| `identity.org.updated` / `identity.org.created` that changes its type away from `platform` | **Refused** (logged at error), no state change |
+| `identity.org.updated` / `identity.org.created`, `isActive:true`, type `platform` (re-activation) | Suspension **cleared**, writes resume; logged at **warn** (`platform writes RESUMED`) |
+
+While suspended, **reads keep working for every tenant** (common lists, items, resolve, ids, fork), and these are
+refused with 403: `publish_platform` (publishing, promoting a list to `platform`), any mutation of a `platform` list or
+its items/translations/grants by the platform org, purge of a platform list or item, and seeding of platform lists
+(`seed.failed`/`INTERNAL_ERROR`, retryable — it succeeds after reactivation). The state is read fresh on every request;
+the platform-org cache never masks it.
+
+**Ordering (the lifecycle topics have separate consumer groups, so events arrive out of order).** Every suspension
+path (`org.deleted` soft/hard, `org.updated`/`org.created` with `isActive:false`) compares the event's ORIGINAL
+`occurredAt` (never altered: the ordering value is identical on every delivery) with the newest snapshot already applied
+(`snapshot_at`).
+
+**Future-dated envelopes are REJECTED, not clamped.** The three org lifecycle handlers (`org.created`, `org.updated`,
+`org.deleted`, ordinary and platform orgs alike) acknowledge and **ignore** an envelope whose `occurredAt` is more than
+the skew tolerance ahead of this service's clock: warn `REJECTED a future-dated org lifecycle envelope …` with the
+`correlationId` and `occurredAt`, nothing applied (no projection, no suspension, no resume, no cascade, no seed). The
+tolerance is `SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS` (default **300** = 5 minutes). A clamp to now was unsafe: the same
+event got a different, later ordering instant on every redelivery, so a redelivered future-dated activation could clear
+a genuine suspension (and the mirror case could re-suspend). An event inside the tolerance is applied with its original
+timestamp, so a skew of up to the tolerance can make events of the next few minutes look stale (bounded, self-healing).
+**A legitimately skewed producer clock drops the event** (the warn names it); fix the clock and have an operator re-send it
+(for an `org.deleted` that was dropped the org simply keeps its data until the re-send).
+
+| Deactivation vs newest applied snapshot | Result |
+|---|---|
+| strictly **newer** | suspends; records the instant in `suspended_event_at` (the snapshot clock is *not* moved) |
+| **older** (stale) | ignored; **warn** `a STALE deactivation … was ignored` with the `correlationId` |
+| **same instant** (tie) | ignored, **ties go to active**; warn `… SAME instant …`. Rationale: an activation and a deactivation cannot both win; the side that fails open is recoverable (re-send the deactivation), a suspension nothing will ever clear is not |
+
+An activation (`isActive:true`, type `platform`) resumes only if it is **not older** than `suspended_event_at` (a tie
+resumes). So a stale activation cannot resume a newer deactivation, and a replay of an old deactivation after the
+resume is stale and ignored. A repeated deactivation keeps the first `suspended_at`; a repeated activation resumes once.
+An early `org.deleted` for a not-yet-projected platform org creates a typeless suspended row; the org's own (older)
+`org.created` still types it but resumes only if newer than the deactivation.
+
+**The gate is flag-independent.** With `fuzefront.selection-lists.shared-lists` OFF (rollback / fail-safe) a suspended
+platform org still refuses (403 `platform_suspended`) every mutation of a `platform`-visibility row it owns: list
+PATCH/archive/restore, items, translations, access, and purge; and a pack upgrade is not seeded into it. Non-platform
+rows and an unsuspended org keep their 4.0.0 behaviour with the flag OFF.
+
+**Suspension follows the OWNER of the platform rows, not the configuration.** The gates (request-level, in-transaction,
+purge, seeding) ask "is the org that owns *this* `platform` row suspended?" against the projection - they never ask
+"is `SELECTION_LIST_PLATFORM_ORG_ID` suspended?". Removing or changing the variable after common rows exist therefore
+does **not** lift a suspension: the former owner's rows stay write-refused (403 `platform_suspended`; seeding
+retryable) until that org is reactivated. Any org that owns a `visibility = 'platform'` row is protected from the org
+lifecycle consumers and is suspended (not deleted) by its own deactivation event, configured or not.
+
+**No race with a deactivation.** The deactivation recording and the resume take the **same per-org outbox lock** every
+mutating transaction takes first, and every mutating transaction re-reads the suspension (fresh) under that lock before it
+writes anything (list PATCH/archive/restore/DELETE, items, list and item translations, access PUT/DELETE, publish/promote,
+seeding). A write is either committed before the deactivation was recorded (a legitimate pre-suspension write) or is refused
+with nothing written and no event queued; none can commit after `suspended_at` is set.
+
+**Operator recovery.** A *legitimate* deactivation: nothing to do (that is the intended outcome). A *forged or
+mistaken* one: confirm in the log (`grep 'platform WRITES are SUSPENDED'`, note the `eventId`), then either have
+identity re-emit `identity.org.updated` with `isActive:true` for the platform org, or, if that is not possible,
+clear the flag directly:
+
+```sql
+SELECT wire_id, suspended_at FROM selection_list_ref_index WHERE wire_id = '<SELECTION_LIST_PLATFORM_ORG_ID>';
+UPDATE selection_list_ref_index SET suspended_at = NULL, updated_at = now()
+ WHERE wire_id = '<SELECTION_LIST_PLATFORM_ORG_ID>' AND suspended_at IS NOT NULL;
+```
+
+A forged event can therefore at worst *pause* platform publishing (recoverable as above); it can never break common-list
+reads or delete data. Broker ACLs on the `identity.*` topics (FuzeInfra#1394) remain the real producer control.
