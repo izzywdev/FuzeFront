@@ -76,6 +76,43 @@ const requiredNow = () => {
   return arr
 }
 
+// WIRED, not merely present — for every gate CLAUDE.md names with its workflow.
+//
+// This was the whole stated point of section 2, and it covered exactly one gate.
+// `gate-frames-schema` got only the path-exists check above, so if its workflow
+// stopped invoking scripts/check-frames-schema.mjs while both files stayed in the
+// tree, every claim here still passed — while CLAUDE.md went on saying the gate
+// "does exist and is wired" (Codex #1685). The same hole covered gate-frames-first
+// and this gate itself. A per-gate fix would have left the next one exposed, so the
+// pairs are a table: adding a "<workflow> runs <script>" sentence to CLAUDE.md means
+// adding a row here.
+for (const [wf, script] of [
+  ['gate-frames-schema.yml', 'scripts/check-frames-schema.mjs'],
+  ['gate-frames-first.yml', 'scripts/check-frames-first.mjs'],
+  ['gate-claims.yml', 'scripts/check-claude-md-claims.mjs'],
+]) {
+  claim(
+    `${wf} actually invokes ${script}`,
+    () => {
+      const text = read(`.github/workflows/${wf}`)
+      if (text === null) throw new Error(`.github/workflows/${wf} not found`)
+      // `node --test scripts/__tests__/<name>.test.mjs` is the gate's unit test, not the
+      // gate: match an invocation that is NOT the test runner, or a workflow could satisfy
+      // this by only testing the script it never runs.
+      const invoked = text
+        .split('\n')
+        .some(l => l.includes(`node ${script}`) && !l.includes('--test'))
+      if (!invoked) throw new Error(`no \`node ${script}\` invocation outside the unit test`)
+      if (/continue-on-error:\s*true/.test(text)) throw new Error('the workflow sets continue-on-error: true')
+      if (new RegExp(`${script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\n]*\\|\\|\\s*true`).test(text)) {
+        throw new Error('the invocation is suppressed with `|| true`')
+      }
+      return true
+    },
+    `CLAUDE.md says ${wf} runs ${script}; it does not, or the run is suppressed`,
+  )
+}
+
 // Two separate facts, and conflating them is how the CLAUDE.md line went wrong twice:
 // the job FAILS (no `|| true`, exits 1) but it does NOT BLOCK (not a required context,
 // so auto-merge never waits on it). Assert both, in the direction CLAUDE.md now states.
