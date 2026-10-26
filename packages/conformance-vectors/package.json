@@ -1,0 +1,19 @@
+{
+  "name": "@fuzefront/conformance-vectors",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Language-neutral JSON conformance vectors consumed by the TypeScript and Python event/consumer suites",
+  "license": "UNLICENSED",
+  "files": [
+    "events"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/conformance-vectors"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  }
+}
