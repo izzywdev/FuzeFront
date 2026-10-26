@@ -1131,6 +1131,14 @@ router.post('/tokens/workload', async (req: Request, res: Response) => {
     }
     const workload = await authenticateKubernetesWorkload(serviceAccountToken)
     const ttl = Math.min(workload.tokenTtlSeconds ?? 600, 900)
+    // Service-to-service, which the rule's own message exempts ("Service-to-service
+    // tokens are exempt"): this mints kind 'fuze-workload' for aud
+    // 'fuzefront-services', never a user/session token. The pod identity is proved
+    // by Kubernetes TokenReview (authenticateKubernetesWorkload) and the allowed
+    // service, audience and scopes come from the repo-owned FuzeWorkloadIdentity
+    // resource, not from the caller. TTL is capped at 900s and no reusable
+    // bootstrap secret is stored.
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const accessToken = jwt.sign({
       kind: 'fuze-workload',
       sub: workload.service,
@@ -1220,6 +1228,15 @@ router.post('/tokens/exchange', async (req: Request, res: Response) => {
       act: { sub: actor.subject, ...(previous ? { previous } : {}) },
       jti: crypto.randomUUID(),
     }
+    // This IS FuzeFront's identity service performing RFC 8693 delegated token
+    // exchange (issuer 'fuzefront-security', kind 'fuze-delegation') — the same
+    // issuer as routes/auth.ts /login, not a product self-minting a user token.
+    // Same justification as services/orgSessionToken.ts and routes/internal.ts.
+    // The subject token is verified before this point: getUserInfo() checks
+    // session revocation (introspection alone does not), proveSessionTenant()
+    // requires active tenant membership, and a delegated exchange cannot expand
+    // its audience or scopes.
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const accessToken = jwt.sign(claims, delegationSigningKey(), {
       algorithm: 'HS256',
       expiresIn: DELEGATION_TOKEN_TTL_SECONDS,
@@ -1496,7 +1513,8 @@ router.delete('/sessions/:id', async (req: Request, res: Response) => {
 
 /** Scope a service's workload token must carry to ask whether a session is live. */
 const SESSION_VALIDATE_SCOPE = 'sessions:validate'
-const SESSION_VALIDATE_FIELDS = ['userId', 'sessionId'] as const
+const SESSION_VALIDATE_REQUIRED = ['userId', 'sessionId'] as const
+const SESSION_VALIDATE_OPTIONAL = ['tenantId'] as const // the token's `tid` claim
 const SESSION_VALIDATE_MAX_LEN = 128
 
 /**
@@ -1544,22 +1562,35 @@ router.post('/sessions/validate', async (req: Request, res: Response) => {
       throw new InvalidInputError('userId and sessionId are required')
     }
     for (const key of Object.keys(body)) {
-      if (!(SESSION_VALIDATE_FIELDS as readonly string[]).includes(key)) {
+      if (
+        !(SESSION_VALIDATE_REQUIRED as readonly string[]).includes(key) &&
+        !(SESSION_VALIDATE_OPTIONAL as readonly string[]).includes(key)
+      ) {
         throw new InvalidInputError(`unexpected property: ${key}`)
       }
     }
-    for (const key of SESSION_VALIDATE_FIELDS) {
-      const v = body[key]
-      if (typeof v !== 'string' || v.length === 0 || v.length > SESSION_VALIDATE_MAX_LEN) {
+    const isBounded = (v: unknown) =>
+      typeof v === 'string' && v.length > 0 && v.length <= SESSION_VALIDATE_MAX_LEN
+    for (const key of SESSION_VALIDATE_REQUIRED) {
+      if (!isBounded(body[key])) {
         throw new InvalidInputError(`${key} is required (1-${SESSION_VALIDATE_MAX_LEN} characters)`)
       }
+    }
+    // Optional, but when present it must be a well-formed string: a wrong-typed
+    // `tenantId` is a client bug, not a way to skip the tenant check.
+    if (body.tenantId !== undefined && !isBounded(body.tenantId)) {
+      throw new InvalidInputError(`tenantId must be 1-${SESSION_VALIDATE_MAX_LEN} characters when present`)
     }
   } catch (err) {
     return void sendError(res, err)
   }
 
   try {
-    const active = await getIdentityProvider().isSessionActive(req.body.userId, req.body.sessionId)
+    const active = await getIdentityProvider().isSessionActive(
+      req.body.userId,
+      req.body.sessionId,
+      req.body.tenantId
+    )
     res.status(200).json({ active: active === true })
   } catch (err) {
     // Fail closed AND distinguishable: never `{ active: true }`, never a quiet
