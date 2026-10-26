@@ -1,0 +1,219 @@
+name: Build FuzeFront A2A image
+
+# Builds and publishes ghcr.io/izzywdev/fuzefront-a2a — the product-specific
+# A2A image that bakes in a pre-generated agent-card.json so the pod needs no
+# GitHub access at startup (no init container, no git token).
+#
+# Topology reference:
+#   izzywdev/FuzeAgent docs/a2a/per-product-pod.md
+#   build/a2a/Dockerfile  — extends ghcr.io/izzywdev/fuze-a2a + COPY card
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'build/a2a/**'
+      - 'agent-templates/roles/app-shell-platform/**'
+      - '.fuze/manifest.json'
+      - '.github/workflows/build-a2a-image.yml'
+  pull_request:
+    paths:
+      - 'build/a2a/**'
+      - 'agent-templates/roles/app-shell-platform/**'
+      - '.fuze/manifest.json'
+      - '.github/workflows/build-a2a-image.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Extra tag (e.g. 1.0.0). :sha and :latest are always published on master.'
+        required: false
+        type: string
+
+jobs:
+  image:
+    name: Build & publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Regenerate the agent-card.json from the current manifest + role so the
+      # baked card is always fresh. Uses a sparse checkout of FuzeAgent's
+      # agent-templates to run card_generator.py — the generator itself is in
+      # FuzeAgent because every product image uses it, not just FuzeFront.
+      - name: Sparse-clone FuzeAgent card_generator
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/izzywdev/FuzeAgent.git /tmp/fuzeagent-gen
+          cd /tmp/fuzeagent-gen
+          git sparse-checkout set agent-templates/a2a agent-templates/_contract
+
+      - name: Regenerate agent-card.json
+        run: python3 build/a2a/generate-card.py --fuzeagent-src /tmp/fuzeagent-gen
+
+      - name: Verify card is schema-valid
+        run: |
+          python3 - <<'EOF'
+          import json, sys
+          card = json.loads(open('build/a2a/agent-card.json').read())
+          required = {'name', 'description', 'version', 'supportedInterfaces',
+                      'capabilities', 'skills', 'signatures'}
+          missing = required - card.keys()
+          if missing:
+              print(f'::error title=agent-card::Missing required fields: {missing}')
+              sys.exit(1)
+          if not card['skills']:
+              print('::error title=agent-card::skills[] is empty')
+              sys.exit(1)
+          if not card['supportedInterfaces']:
+              print('::error title=agent-card::supportedInterfaces[] is empty')
+              sys.exit(1)
+          tenant = card['supportedInterfaces'][0].get('tenant')
+          if tenant != 'FuzeFront':
+              print(f'::error title=agent-card::wrong tenant: expected FuzeFront, got {tenant!r}')
+              sys.exit(1)
+          print(f'Card OK — {len(card["skills"])} skill(s), tenant={tenant!r}')
+          EOF
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        id: tag
+        run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch latest shared-base tag
+        id: base
+        run: |
+          # Resolve the latest published tag from the shared fuze-a2a image so
+          # this image pins the same base the shared deployment already uses.
+          # Falls back to 'latest' if the registry call fails (pull_request context
+          # has no push token, but the image is public/anonymous-pullable).
+          tag=$(
+            curl -sfL \
+              "https://ghcr.io/v2/izzywdev/fuze-a2a/tags/list" \
+              -H "Accept: application/json" 2>/dev/null \
+            | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          tags=[t for t in d.get('tags',[]) if len(t)==12 and all(c in '0123456789abcdef' for c in t)]
+          print(sorted(tags)[-1] if tags else 'latest')
+          " 2>/dev/null
+          ) || tag="latest"
+          echo "tag=${tag:-latest}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: build/a2a
+          file: build/a2a/Dockerfile
+          build-args: BASE_TAG=${{ steps.base.outputs.tag }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/izzywdev/fuzefront-a2a:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-a2a:latest
+            ${{ inputs.tag && format('ghcr.io/izzywdev/fuzefront-a2a:{0}', inputs.tag) || '' }}
+          cache-from: type=gha,scope=fuzefront-a2a
+          cache-to: type=gha,mode=max,scope=fuzefront-a2a
+
+      - name: Report
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "::notice::Published ghcr.io/izzywdev/fuzefront-a2a:${{ steps.tag.outputs.sha }}"
+          echo "## A2A image published" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`${{ steps.tag.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Base: \`ghcr.io/izzywdev/fuze-a2a:${{ steps.base.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # After each successful master-push build, open a PR that:
+  # 1. Pins the new :sha tag in values-prod.yaml
+  # 2. Commits the fresh agent-card.json (card may have changed if manifest/role changed)
+  # The PR carries auto-merge so it self-resolves once CI gates pass.
+  tag-update:
+    name: Bump helm image tag
+    needs: image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Sparse-clone FuzeAgent card_generator
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/izzywdev/FuzeAgent.git /tmp/fuzeagent-gen
+          cd /tmp/fuzeagent-gen
+          git sparse-checkout set agent-templates/a2a agent-templates/_contract
+
+      - name: Regenerate agent-card.json
+        run: python3 build/a2a/generate-card.py --fuzeagent-src /tmp/fuzeagent-gen
+
+      - name: Compute image tag
+        id: tag
+        run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Update a2a image tag in Helm values
+        env:
+          NEW_SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, re
+          sha = os.environ['NEW_SHA']
+          for path in [
+              'deploy/helm/fuzefront/values-prod.yaml',
+          ]:
+              content = open(path).read()
+              updated = re.sub(
+                  r'(repository: ghcr\.io/izzywdev/fuzefront-a2a\n(?:[ \t]*#[^\n]*\n)*[ \t]+tag: )"[^"]*"',
+                  f'\\g<1>"{sha}"',
+                  content,
+              )
+              open(path, 'w').write(updated)
+          PYEOF
+
+      - name: Open tag-bump PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy/helm/fuzefront/values-prod.yaml build/a2a/agent-card.json
+          if git diff --cached --quiet; then
+            echo "::notice::a2a image tag already ${NEW_SHA} and card unchanged; no PR needed"
+            exit 0
+          fi
+          BRANCH="fuzefront-a2a-image/tag-${NEW_SHA}"
+          git commit -m "chore(a2a): pin fuzefront-a2a image to ${NEW_SHA}
+
+          Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01WEuriU3M9tXxBbzYNr5FZW"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+          gh pr create \
+            --title "chore(a2a): pin fuzefront-a2a image to ${NEW_SHA}" \
+            --body "Auto-update from \`build-a2a-image.yml\` after the product A2A image was built and published to GHCR.
+
+          Image: \`ghcr.io/izzywdev/fuzefront-a2a:${NEW_SHA}\`
+          Built from commit: \`${GITHUB_SHA}\`
+
+          Updates:
+          - \`values-prod.yaml\` — pins the new \`:sha\` tag so Argo syncs the new image on merge
+          - \`build/a2a/agent-card.json\` — fresh card projection from current manifest + role
+
+          ---
+          _Generated by [Claude Code](https://claude.ai/code)_
+
+          https://claude.ai/code/session_01WEuriU3M9tXxBbzYNr5FZW" \
+            --label auto-merge \
+            --head "${BRANCH}" \
+            --base master

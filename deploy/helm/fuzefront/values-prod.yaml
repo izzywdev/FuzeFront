@@ -341,24 +341,17 @@ configMcp:
 a2a:
   enabled: true
   image:
-    # CORRECTED 2026-09-02: ghcr.io/izzywdev/fuzeagent-a2a (this pin's prior
-    # value) is a stale/abandoned image — last pushed 2026-08-24, still
-    # anonymously pullable but no longer built by anything. FuzeAgent's own
-    # release.yml ("Build & push a2a-shared" step) builds
-    # agent-templates/a2a/Dockerfile — the ONE shared A2A runtime — and
-    # publishes it ONLY as ghcr.io/izzywdev/fuze-a2a:{sha,latest}; that is
-    # also what FuzeAgent's own deploy/helm/a2a-shared/values-prod.yaml points
-    # at. (gate-a2a's own I1 default + the runtime standard doc still name
-    # `fuzeagent-a2a`; that is already-flagged gate/doc staleness, FuzeAgent
-    # PR #257 — an I1 finding against this file is that, not a new fork.)
-    repository: ghcr.io/izzywdev/fuze-a2a
-    # Plain CI-built SHA tag. Verified anonymously pullable 2026-09-09
-    # (anonymous GHCR token + manifest GET → HTTP 200 with OCI image index
-    # media type). Re-pin when FuzeAgent's CI publishes a new build.
-    # Previous tag `624956d8983b` returned HTTP 404 from GHCR on 2026-09-09
-    # (likely purged from the registry on a retention policy); replaced with
-    # the most recent tag that resolves clean.
-    tag: "98b9b314bb0d"
+    # Static-card product image (FuzeAgent PR #2088 / FuzeFront feat/a2a-static-card).
+    # Extends ghcr.io/izzywdev/fuze-a2a and bakes in build/a2a/agent-card.json
+    # so the pod serves its card without cloning GitHub at startup.
+    # Built and published by .github/workflows/build-a2a-image.yml.
+    # Tag is pinned to the last CI-built SHA; build-a2a-image.yml opens a
+    # tag-bump PR automatically after each successful master build.
+    repository: ghcr.io/izzywdev/fuzefront-a2a
+    # Placeholder tag — replaced by the first build-a2a-image.yml run after
+    # this PR merges. Until then the pod will ImagePullBackOff; trigger a
+    # manual build with workflow_dispatch on build-a2a-image.yml.
+    tag: "latest"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -407,8 +400,12 @@ a2a:
     keyId: a2a-v1
   tenants:
     - tenant: FuzeFront
-      repo: izzywdev/FuzeFront
-      ref: master   # NOT main — FuzeFront's default branch is master
+      # repo/ref removed: static-card topology (feat/a2a-static-card) means the
+      # pod bakes agent-card.json at image build time (build/a2a/Dockerfile) and
+      # needs no repo clone at startup. skipRepoSync: true below skips the init
+      # container entirely. If switching back to clone topology, restore:
+      #   repo: izzywdev/FuzeFront
+      #   ref: master
       enabled: true
       entryRole: app-shell-platform
       external: false
@@ -418,7 +415,11 @@ a2a:
 
 a2aDeploy:
   replicas: 1
-  reposGitTokenSecretRef: null   # public repo — anonymous clone
+  # Static-card topology: skip the repo-sync init container. The product image
+  # (ghcr.io/izzywdev/fuzefront-a2a) bakes in agent-card.json so the pod serves
+  # its /.well-known/agent-card.json without cloning GitHub at startup.
+  skipRepoSync: true
+  reposGitTokenSecretRef: null   # unused with skipRepoSync; kept for fallback reference
   providerApiKeySecretRef: { name: fuzefront-secrets, key: LITELLM_MASTER_KEY }
   providerBaseUrl: http://litellm.fuzeinfra.svc.cluster.local:4000
   gitImage: alpine/git:latest

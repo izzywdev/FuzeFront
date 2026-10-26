@@ -591,6 +591,13 @@ a2a:
 # byte-conformant to the schema the server validates).
 a2aDeploy:
   replicas: 1
+  # Static-card topology (FuzeAgent PR #2088 / FuzeFront PR feat/a2a-static-card):
+  # when skipRepoSync is true the repo-sync init container is omitted entirely.
+  # The product image must bake in the agent-card.json (build/a2a/Dockerfile) and
+  # set AGENT_CARD_FILE so the server serves it directly. tenant.repo is then
+  # optional (the tenant block can omit it). Set false to keep the legacy clone
+  # topology (default: false so existing deployments are unaffected).
+  skipRepoSync: false
   # GitOps repo-sync: shallow-clones each enabled tenant's repo at `ref` into
   # A2A_REPOS_DIR/<tenant> so the server can project a card + provision agent
   # sessions from THIS repo's own .fuze/manifest.json + agent-templates/roles/.
