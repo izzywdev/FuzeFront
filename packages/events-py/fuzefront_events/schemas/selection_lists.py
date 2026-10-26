@@ -108,6 +108,9 @@ def validate_list_forked(p: Any) -> dict:
         raise v.fail("a fork must cross organizations (source.org != fork.org)")
     if out["source"]["listKey"] != out["listKey"]:
         raise v.fail("source.listKey must equal the fork listKey")
+    if out["list"].get("visibility") == "platform":
+        # Mirrors selectionListsListForkedSchemaV1: a fork is never a platform list.
+        raise v.fail("a fork is never a platform list")
     unique(v.name, (m["originItemId"] for m in out["itemMap"]), "origin itemId")
     unique(v.name, (m["itemId"] for m in out["itemMap"]), "fork itemId")
     return out

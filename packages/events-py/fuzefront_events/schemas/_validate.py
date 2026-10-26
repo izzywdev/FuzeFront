@@ -247,7 +247,10 @@ def discriminated(
     if not isinstance(value, Mapping):
         raise SchemaValidationError(name, "must be an object")
     disc = value.get(key)
-    if disc not in branches:
+    # Guard the hashability of `disc`: a non-string discriminator (e.g. an array
+    # or object, ``{"type": []}``) would make ``disc not in branches`` raise
+    # TypeError instead of the documented SchemaValidationError.
+    if not isinstance(disc, str) or disc not in branches:
         raise SchemaValidationError(name, f"'{key}' must be one of {list(branches)}")
     return branches[disc](value)
 

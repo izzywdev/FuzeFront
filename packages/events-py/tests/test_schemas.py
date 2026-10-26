@@ -303,6 +303,55 @@ def test_seed_requested_preserves_translations():
     assert got["items"][0]["translations"] == [{"locale": "fr", "label": "États-Unis"}]
 
 
+def test_discriminator_non_string_type_rejected():
+    # A non-string discriminator (actor.type == []) must raise
+    # SchemaValidationError, not a bare TypeError from the `in` lookup.
+    bad = {**_sl_base(), "actor": {"type": []}}
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.list.deleted")(bad)
+
+
+def _fork_payload():
+    return {
+        "eventId": U,
+        "organizationId": "org_fork",
+        "actor": {"type": "user", "userId": "usr_x"},
+        "listId": "front_sl_fork",
+        "listKey": "countries",
+        "listRevision": 1,
+        "list": {
+            "listId": "front_sl_fork",
+            "key": "countries",
+            "sourceLocale": "en",
+            "status": "active",
+            "name": "Countries",
+            "description": None,
+            "seed": None,
+            "createdAt": TS,
+            "updatedAt": TS,
+        },
+        "source": {
+            "listId": "front_sl_src",
+            "organizationId": "org_src",
+            "listKey": "countries",
+            "listRevision": 2,
+        },
+        "itemMap": [],
+    }
+
+
+def test_fork_valid_parses():
+    assert schema_for_topic("selection-lists.list.forked")(_fork_payload())
+
+
+def test_fork_rejects_platform_visibility():
+    # Mirrors selectionListsListForkedSchemaV1: a fork is never a platform list.
+    bad = _fork_payload()
+    bad["list"]["visibility"] = "platform"
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.list.forked")(bad)
+
+
 def test_seed_requested_rejects_bad_translation_locale():
     bad = _seed_requested(
         lists=[

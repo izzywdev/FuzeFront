@@ -38,7 +38,6 @@ from .envelope import (
     partition_key,
     validate_envelope,
 )
-
 from .errors import SchemaValidationError
 from .outbox import enqueue_event, enqueue_event_async
 from .publisher import AIOKafkaPublisher, Publisher
