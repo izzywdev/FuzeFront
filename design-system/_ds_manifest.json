@@ -170,6 +170,10 @@
       "sourcePath": "components/forms/Textarea.jsx"
     },
     {
+      "name": "TextareaWithCounter",
+      "sourcePath": "components/forms/TextareaWithCounter.jsx"
+    },
+    {
       "name": "Toggle",
       "sourcePath": "components/forms/Toggle.jsx"
     },

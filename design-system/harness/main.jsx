@@ -9,11 +9,13 @@ import {
   StatCard,
   Stepper,
   SortableList,
+  RadioCardGroup,
+  TextareaWithCounter,
 } from "../index.js";
 
 // Dev-only harness for manually / MCP-driving the net-new portal DS
-// primitives commissioned by design/frames/white-label-portal and
-// design/frames/portal-admin-consoles. NOT part of the published package
+// primitives commissioned by design/frames/white-label-portal,
+// design/frames/portal-admin-consoles and design/frames/app-builder. NOT part of the published package
 // ("files" in package.json does not include harness/). Run with:
 //   npx vite design-system/harness --config design-system/harness/vite.config.mjs
 
@@ -160,6 +162,84 @@ function StepperDemo() {
   );
 }
 
+const PIPELINE = [
+  { id: "launching", title: "Launching" },
+  { id: "building", title: "Building" },
+  { id: "deploying", title: "Deploying" },
+  { id: "deployed", title: "Deployed" },
+];
+const withStatus = (statuses) => PIPELINE.map((s, i) => ({ ...s, status: statuses[i] }));
+
+function StepperPipelineDemo() {
+  return (
+    <section style={section} data-harness-section="Stepper-horizontal">
+      <h2 style={h2}>Stepper — horizontal</h2>
+      <div style={{ display: "grid", gap: "var(--space-6)" }}>
+        <Stepper orientation="horizontal" aria-label="In progress" steps={withStatus(["done", "current", "pending", "pending"])} />
+        <Stepper orientation="horizontal" aria-label="Failed" steps={withStatus(["done", "done", "failed", "pending"])} />
+        <Stepper orientation="horizontal" aria-label="Cancelled" steps={withStatus(["done", "cancelled", "cancelled", "cancelled"])} />
+        <Stepper orientation="horizontal" aria-label="Deployed" steps={withStatus(["done", "done", "done", "done"])} />
+        <div dir="rtl" data-testid="rtl-stepper">
+          <Stepper orientation="horizontal" aria-label="RTL" steps={withStatus(["done", "current", "pending", "pending"])} />
+        </div>
+      </div>
+      <h2 style={{ ...h2, marginTop: "var(--space-8)" }}>Stepper — vertical, failed / cancelled</h2>
+      <Stepper
+        steps={[
+          { id: "a", title: "Business details", status: "done" },
+          { id: "b", title: "Bank account", description: "Verification failed", status: "failed" },
+          { id: "c", title: "Review", status: "cancelled" },
+        ]}
+      />
+    </section>
+  );
+}
+
+function TextareaCounterDemo() {
+  const [brief, setBrief] = useState("Let team members log expenses with a receipt photo.");
+  return (
+    <section style={section} data-harness-section="TextareaWithCounter">
+      <h2 style={h2}>TextareaWithCounter</h2>
+      <div style={{ display: "grid", gap: "var(--space-6)", maxWidth: "640px" }}>
+        <TextareaWithCounter
+          label="What should it do?"
+          maxLength={4000}
+          rows={5}
+          value={brief}
+          onChange={(e) => setBrief(e.target.value)}
+          counterProps={{ "data-counter": "brief" }}
+        />
+        <TextareaWithCounter label="Over the limit" maxLength={20} rows={2} defaultValue="This text is definitely longer than twenty characters" />
+        <TextareaWithCounter label="Strict" maxLength={20} strict rows={2} defaultValue="short" />
+        <div dir="rtl" data-testid="rtl-counter">
+          <TextareaWithCounter label="RTL notes" maxLength={2000} rows={2} defaultValue="مرحبا" locale="ar-EG" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RadioCardDemo() {
+  const [v, setV] = useState("org");
+  return (
+    <section style={section} data-harness-section="RadioCardGroup">
+      <h2 style={h2}>RadioCardGroup</h2>
+      <div style={{ maxWidth: "640px" }}>
+        <RadioCardGroup
+          ariaLabel="Build target"
+          value={v}
+          onChange={setV}
+          options={[
+            { value: "org", label: "My organization", description: "Deploys into your org only." },
+            { value: "platform", label: "Marketplace", description: "Request publishing after review." },
+            { value: "off", label: "Unavailable", description: "Disabled option.", disabled: true },
+          ]}
+        />
+      </div>
+    </section>
+  );
+}
+
 function SortableListDemo() {
   const [apps, setApps] = useState([
     { id: "crm", name: "CorpABC CRM" },
@@ -197,6 +277,9 @@ function Harness() {
       <StatusPillDemo />
       <StatCardDemo />
       <StepperDemo />
+      <StepperPipelineDemo />
+      <TextareaCounterDemo />
+      <RadioCardDemo />
       <SortableListDemo />
     </div>
   );

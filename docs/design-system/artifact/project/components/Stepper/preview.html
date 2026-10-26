@@ -1,4 +1,4 @@
-<!-- @dsCard group="Feedback" height=212 static -->
+<!-- @dsCard group="Feedback" height=492 static -->
 <style>@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");</style>
 <style>
   body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
@@ -8,10 +8,24 @@
   .n { color: var(--text-primary); }
 </style>
 <span class="tag">Stepper · usage</span>
-<pre><code>&lt;Stepper
+<pre><code>// Vertical card list (default) — e.g. the Stripe Connect onboarding checklist
+&lt;Stepper
   steps={[
     { id: "business", title: "Business details", status: "done" },
     { id: "bank", title: "Bank account", description: "Add a payout account", status: "current" },
     { id: "review", title: "Review &amp; submit", status: "pending" },
+  ]}
+/&gt;
+
+// Horizontal segmented bar — e.g. a build pipeline that stopped at a failure
+&lt;Stepper
+  orientation="horizontal"
+  aria-label="Build progress"
+  aria-live="polite"
+  steps={[
+    { id: "launching", title: "Launching", status: "done" },
+    { id: "building", title: "Building", status: "done" },
+    { id: "deploying", title: "Deploying — failed", status: "failed" },
+    { id: "deployed", title: "Deployed", status: "pending" },
   ]}
 /&gt;</code></pre>
