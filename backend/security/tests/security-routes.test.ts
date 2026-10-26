@@ -15,6 +15,7 @@ import { listSessionWorkspaces, proveSessionTenant } from '../src/services/sessi
 import express from 'express'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
+import { randomBytes } from 'crypto'
 import securityRouter from '../src/routes/security'
 import { setIdentityProvider } from '../src/providers/factory'
 import {
@@ -1453,7 +1454,9 @@ describe('GET /session/workspaces', () => {
 
 describe('POST /sessions/validate (validateSession, service-to-service)', () => {
   const URL_PATH = '/api/v1/security/sessions/validate'
-  const KEY = 'validate-session-test-key'
+  // Random per run: nothing credential-shaped is committed (Semgrep jwt-hardcode).
+  const KEY = randomBytes(32).toString('hex')
+  const OTHER_KEY = randomBytes(32).toString('hex')
   const USER_ID = '11111111-1111-4111-8111-111111111111'
   const SESSION_ID = '33333333-3333-4333-8333-333333333333'
   const BODY = { userId: USER_ID, sessionId: SESSION_ID }
@@ -1583,7 +1586,7 @@ describe('POST /sessions/validate (validateSession, service-to-service)', () => 
     )
     const forged = jwt.sign(
       { kind: 'fuze-workload', sub: 's', aud: 'a', scope: 'sessions:validate', jti: 'j' },
-      'some-other-key',
+      OTHER_KEY,
       { algorithm: 'HS256', expiresIn: 600 }
     )
     for (const token of [expired, forged]) {
