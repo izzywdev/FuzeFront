@@ -23,14 +23,28 @@ export interface SelectionListItem {
   source_hash: string
 }
 
+/**
+ * One ceiling in the quota response. Mirrors the contract's
+ * `SelectionListQuotaEntry`; `quota-envelope.test.tsx` binds it to the generated
+ * `@fuzeone/selection-list-client` type in both directions (a tsc error on drift).
+ */
 export interface QuotaScope {
   scope: 'org_lists' | 'user_lists' | 'list_items' | 'list_locales'
+  /** What the ceiling is counted per. */
+  applies_to: 'organization' | 'user' | 'list'
+  /** `null` for per-list ceilings (usage depends on which list is asked about). */
   current: number | null
   limit: number
 }
 
+/**
+ * `GET /v1/selection-lists/quota` — the contract's `SelectionListQuotaStatus`,
+ * returned by `getQuota()` exactly as the service sends it. One entry per scope
+ * under `quotas` (not `scopes`).
+ */
 export interface QuotaStatus {
-  scopes: QuotaScope[]
+  organization_id: string
+  quotas: QuotaScope[]
 }
 
 export interface LocaleIndexEntry {

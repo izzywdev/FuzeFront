@@ -117,6 +117,15 @@ function SkeletonRow() {
 }
 
 // ── Quota Panel (frame 06) ────────────────────────────────────────────────────
+/** Guards the quota envelope at the boundary: `quotas` must be an array. */
+function isQuotaStatus(value: unknown): value is QuotaStatus {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as { quotas?: unknown }).quotas)
+  )
+}
+
 function QuotaPanel({
   quota,
   quotaLoading,
@@ -141,7 +150,7 @@ function QuotaPanel({
       {quota && !quotaLoading && !quotaError && (
         <>
           {/* Near-limit banner */}
-          {quota.scopes.some(sc => {
+          {quota.quotas.some(sc => {
             if (sc.current === null) return false
             return sc.current / sc.limit >= 0.8 && sc.current < sc.limit
           }) && (
@@ -150,13 +159,13 @@ function QuotaPanel({
             </div>
           )}
           {/* At-limit banner */}
-          {quota.scopes.some(sc => sc.current !== null && sc.current >= sc.limit) && (
+          {quota.quotas.some(sc => sc.current !== null && sc.current >= sc.limit) && (
             <div data-banner="quota-at" data-quota-state="at-limit" style={s.errorBox}>
               Quota limit reached
             </div>
           )}
           {/* Scope meters */}
-          {quota.scopes.map(sc => (
+          {quota.quotas.map(sc => (
             <div key={sc.scope} data-quota-scope={sc.scope} style={{ marginBottom: 'var(--space-2)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)', marginBottom: 'var(--space-1)' }}>
                 <span>{sc.scope}</span>
@@ -981,6 +990,9 @@ function SelectionListIndex({
     setQuotaError(false)
     try {
       const q = await getQuota()
+      // The quota read is advisory. An envelope we cannot read (wrong shape,
+      // null body) is an unavailable read - fail open - never a render crash.
+      if (!isQuotaStatus(q)) throw new Error('Unreadable quota response')
       setQuota(q)
     } catch {
       setQuotaError(true)
@@ -994,7 +1006,7 @@ function SelectionListIndex({
     loadQuota()
   }, [loadLists, loadQuota])
 
-  const atLimit = quota?.scopes.some(sc => sc.current !== null && sc.current >= sc.limit) ?? false
+  const atLimit = quota?.quotas.some(sc => sc.current !== null && sc.current >= sc.limit) ?? false
   // Fail-open: if quotaError, never disable the CTA
   const ctaDisabled = !quotaError && atLimit
 

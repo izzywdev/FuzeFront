@@ -8,7 +8,10 @@ const dsRoot = fileURLToPath(new URL('../../design-system', import.meta.url))
 export default defineConfig({
   plugins: [
     react(),
-    dts({ insertTypesEntry: true }),
+    // Tests are type-checked by `tsc --noEmit` but must not enter the published
+    // declaration program: quota-envelope.test.tsx type-imports the contract client,
+    // which would widen dts' common root and nest the output under dist/packages/.
+    dts({ insertTypesEntry: true, exclude: ['node_modules/**', 'src/**/*.test.*', 'src/test/**'] }),
   ],
   build: {
     lib: {
