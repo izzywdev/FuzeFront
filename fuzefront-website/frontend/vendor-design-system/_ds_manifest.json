@@ -210,6 +210,10 @@
       "sourcePath": "components/layout/AuthCard.jsx"
     },
     {
+      "name": "BulletList",
+      "sourcePath": "components/layout/BulletList.jsx"
+    },
+    {
       "name": "Center",
       "sourcePath": "components/layout/Center.jsx"
     },
