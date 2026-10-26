@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container } from '@fuzefront/design-system'
+import { Wrap, Container, Text, Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -168,7 +168,7 @@ function IndustrySection({ industry }: { industry: Industry }) {
           </div>
         </div>
 
-        <p className="text-gray-600 text-sm leading-relaxed mb-6">{industry.description}</p>
+        <Text as="p" tone="secondary" size="sm" leading="relaxed" spacing="lg">{industry.description}</Text>
 
         <div className="mb-6">
           <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">Key challenges addressed</h4>
@@ -246,9 +246,9 @@ export const IndustriesPage: React.FC = () => {
           <h2 className="text-3xl font-heading font-bold text-gray-900 mb-4">
             Don't see your industry?
           </h2>
-          <p className="text-gray-600 mb-8">
+          <Text tone="secondary" spacing="xl">
             Every business has unique requirements. Talk to our team — we'll help you map FuzeOne to your specific needs.
-          </p>
+          </Text>
           <Wrap gap={4} justify="center">
             <Link
               to="/contact"
@@ -257,9 +257,9 @@ export const IndustriesPage: React.FC = () => {
             >
               Talk to us <ArrowRight size={16} />
             </Link>
-            <Link to="/products" className="btn-secondary">
+            <Button as={Link} to="/products" variant="outline">
               Explore products
-            </Link>
+            </Button>
           </Wrap>
         </div>
       </section>
