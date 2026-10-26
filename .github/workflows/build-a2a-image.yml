@@ -219,11 +219,21 @@ jobs:
               'deploy/helm/fuzefront/values-prod.yaml',
           ]:
               content = open(path).read()
+              # Subsequent runs: bump the fuzefront-a2a tag in place.
               updated = re.sub(
                   r'(repository: ghcr\.io/izzywdev/fuzefront-a2a\n(?:[ \t]*#[^\n]*\n)*[ \t]+tag: )"[^"]*"',
                   f'\\g<1>"{sha}"',
                   content,
               )
+              if updated == content:
+                  # First run: values-prod.yaml still points at the base fuze-a2a
+                  # image (this PR's interim placeholder to avoid ImagePullBackOff).
+                  # Migrate the repository field to fuzefront-a2a and pin the tag.
+                  updated = re.sub(
+                      r'repository: ghcr\.io/izzywdev/fuze-a2a(\n(?:[ \t]*#[^\n]*\n)*[ \t]+tag: )"[^"]*"',
+                      f'repository: ghcr.io/izzywdev/fuzefront-a2a\\g<1>"{sha}"',
+                      content,
+                  )
               if updated == content:
                   print(f'::error::tag regex did not match in {path} — '
                         f'values file may have been reformatted; update the regex in the tag-update step')
