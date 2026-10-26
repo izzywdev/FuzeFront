@@ -398,6 +398,21 @@ export interface IdentityProvider {
     ctx?: SessionContext
   ): Promise<BrokeredSession>;
 
+  /**
+   * Redeem a single-use recovery code for a login challenge (contract 1.3.0).
+   * Rejects with RecoveryCodeInvalidError (wrong/used/replaced — indistinguishable)
+   * or UnauthorizedError (unknown/expired/completed challenge). A failed attempt
+   * consumes nothing.
+   */
+  verifyMfaRecovery(
+    challengeId: string,
+    recoveryCode: string,
+    ctx?: SessionContext
+  ): Promise<BrokeredSession>;
+
+  /** Counts for the caller's current recovery-code set. Never returns codes. */
+  getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }>;
+
   // ── Self-service password reset ──
 
   /**
@@ -457,15 +472,20 @@ export interface IdentityProvider {
    * verified a session token's signature and needs the one thing a signature
    * cannot say: whether the session was revoked or has expired since.
    *
-   * Resolves `true` only when the session exists, has not expired, and belongs
-   * to `userId`. Every other case (unknown, revoked, expired, owned by someone
-   * else, or an id that is not even well-formed) resolves `false` with no reason,
-   * so the answer cannot tell a caller which identifier was wrong.
+   * Resolves `true` only when the session exists, has not expired, belongs to
+   * `userId`, and (in multi-tenant mode) was minted for the tenant serving this
+   * request. `tenantId` is the token's `tid` claim. Every tenant's sessions are
+   * signed with one secret and the session row records no tenant, so the claim
+   * plus the host-derived tenant is the only thing that separates the tenants'
+   * account directories; it is checked exactly as a presented token is. Every
+   * other case (unknown, revoked, expired, owned by someone else, another
+   * tenant's, or an id that is not even well-formed) resolves `false` with no
+   * reason, so the answer cannot tell a caller which identifier was wrong.
    *
    * It REJECTS only when the session store cannot be read. The caller must map
    * that to a retryable 503: an outage is neither "active" nor "revoked".
    */
-  isSessionActive(userId: string, sessionId: string): Promise<boolean>;
+  isSessionActive(userId: string, sessionId: string, tenantId?: string): Promise<boolean>;
 
   // ── Account sign-in connections ──
 

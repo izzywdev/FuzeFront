@@ -64,6 +64,8 @@ spec:
               value: "true"
             - name: PORT
               value: {{ .Values.securityService.port | quote }}
+            - name: TRUST_PROXY_HOPS
+              value: {{ .Values.securityService.trustProxyHops | quote }}
             - name: DB_HOST
               value: {{ .Values.fuzeinfra.postgres.host | quote }}
             - name: DB_PORT

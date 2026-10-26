@@ -108,6 +108,13 @@ frontend:
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
 # the Phase 3 cutover. tag "" is rewritten by CI's release sed.
 securityService:
+  # Prod path: Cloudflare edge -> cloudflared tunnel -> ingress -> pod. Cloudflare
+  # records the true peer in X-Forwarded-For and the ingress appends the cloudflared
+  # pod, so the client is the 2nd entry from the right: 2 trusted hops. (Derived
+  # from the documented topology, NOT measured from this repo: confirm with one
+  # request through app.fuzefront.com that req.ip logs the real client; a value of
+  # 1 here would put every user in one bucket.)
+  trustProxyHops: 2
   enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
   # Synthetic account for post-prod e2e smoke (POST_PROD_EMAIL/POST_PROD_PASSWORD).
   # Fresh address (absent in prod) so the idempotent seed-admin hook does a clean
