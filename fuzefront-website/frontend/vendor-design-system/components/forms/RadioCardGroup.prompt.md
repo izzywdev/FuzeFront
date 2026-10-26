@@ -18,4 +18,4 @@ Props: `options` (`{ value, label, description?, disabled?, pending?, ...data-*/
 
 Behaviour (WAI-ARIA radio group): `role="radiogroup"` containing `role="radio"` cards with `aria-checked`; roving tab stop (the checked card, else the first enabled one); Arrow keys move focus **and** selection, wrap, and skip disabled cards; Space selects. Left/Right flip under `dir="rtl"`, Up/Down do not. Disabled cards are `aria-disabled`, dimmed and not selectable. `pending: true` draws a dashed accent border for "chosen, awaiting confirmation" without marking the card checked.
 
-Each card's accessible name is its `label`; its `description` is the accessible description. Cards are at least `--touch-target` (44px) tall, use logical properties so they mirror in RTL, and show the accent focus ring on keyboard focus. Below the xs breakpoint (480px) the stack tightens and the checked card is tinted with `--accent-soft`.
+Each card's accessible name is its `label`; its `description` is the accessible description. Cards are at least `--touch-target` (44px) tall, use logical properties so they mirror in RTL, and show the accent focus ring on keyboard focus.

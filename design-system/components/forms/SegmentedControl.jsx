@@ -23,7 +23,7 @@ const CSS = `
     color: var(--text-secondary);
     font-family: var(--font-sans);
     font-size: var(--text-sm);
-    line-height: inherit;
+    line-height: var(--leading-snug);
     cursor: pointer;
   }
   .ds-seg__opt + .ds-seg__opt {

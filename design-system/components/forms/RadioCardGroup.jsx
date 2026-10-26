@@ -73,13 +73,6 @@ const CSS = `
     color: var(--text-tertiary);
     font-size: var(--text-sm);
   }
-  /* xs breakpoint (< 480px): tighter stack, checked card is tinted so the
-     selection reads without relying on the hairline ring alone. */
-  @media (max-width: 479px) {
-    .ds-rcg { gap: var(--space-2); }
-    .ds-rcg__opt { padding: var(--space-3); }
-    .ds-rcg__opt[aria-checked='true'] { background: var(--accent-soft); }
-  }
   @media (forced-colors: active) {
     .ds-rcg__opt[aria-checked='true'] { border-color: Highlight; }
     .ds-rcg__opt[aria-checked='true'] .ds-rcg__radio {
