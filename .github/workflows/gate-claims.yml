@@ -60,5 +60,14 @@ jobs:
         with:
           node-version: '24.x'
 
+      # The gate's own job-scoping logic, tested against the real implementation —
+      # including the two structural bugs review found in it (a boundary miss silently
+      # widening the window to the whole file, and an unrelated job's
+      # `continue-on-error: true` failing a claim about a different job). Mirrors
+      # gate-frames-schema.yml: a gate never shown to fail on its own target is not
+      # evidence of anything, and hand-run mutation tests preserve nothing.
+      - name: Unit-test the gate itself
+        run: node --test scripts/__tests__/check-claude-md-claims.test.mjs
+
       - name: Check CLAUDE.md's falsifiable claims against the repo
         run: node scripts/check-claude-md-claims.mjs

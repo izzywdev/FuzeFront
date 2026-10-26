@@ -16,6 +16,7 @@
 // Add a claim here whenever CLAUDE.md asserts something a command could confirm.
 import { existsSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { jobBlock, jobBlockAround, stripYamlComments } from './lib/workflow-jobs.mjs'
 
 const read = p => (existsSync(p) ? readFileSync(p, 'utf8') : null)
 const claude = read('CLAUDE.md')
@@ -75,19 +76,6 @@ const requiredNow = () => {
   return arr
 }
 
-/** The job block CONTAINING line index `at` — same boundary rule as jobBlock. */
-const jobBlockAround = (lines, at) => {
-  let start = 0
-  for (let i = at; i >= 0; i--) {
-    if (/^  \S.*:\s*$/.test(lines[i])) { start = i; break }
-  }
-  let end = lines.length
-  for (let i = start + 1; i < lines.length; i++) {
-    if (/^  \S.*:\s*$/.test(lines[i])) { end = i; break }
-  }
-  return lines.slice(start, end).join('\n')
-}
-
 // WIRED, not merely present — for every gate CLAUDE.md names with its workflow.
 //
 // This was the whole stated point of section 2, and it covered exactly one gate.
@@ -120,9 +108,13 @@ for (const [wf, script] of [
       // a reason that has nothing to do with it — no false positive in these three files
       // today, but architecturally the wrong question, and it would fire the first time
       // someone adds an optional step (fuze-code-review #1685).
-      const job = jobBlockAround(lines, at)
+      // Comments stripped first: a comment EXPLAINING continue-on-error is not
+      // continue-on-error. This gate failed on its own workflow over exactly that.
+      const job = stripYamlComments(jobBlockAround(lines, at))
       if (/continue-on-error:\s*true/.test(job)) throw new Error('the job sets continue-on-error: true')
-      if (/\|\|\s*true/.test(lines[at])) throw new Error('the invocation is suppressed with `|| true`')
+      if (/\|\|\s*true/.test(stripYamlComments(lines[at]))) {
+        throw new Error('the invocation is suppressed with `|| true`')
+      }
       return true
     },
     `CLAUDE.md says ${wf} runs ${script}; it does not, or the run is suppressed`,
@@ -132,33 +124,12 @@ for (const [wf, script] of [
 // Two separate facts, and conflating them is how the CLAUDE.md line went wrong twice:
 // the job FAILS (no `|| true`, exits 1) but it does NOT BLOCK (not a required context,
 // so auto-merge never waits on it). Assert both, in the direction CLAUDE.md now states.
-/**
- * The YAML block of one job in a workflow: from its `  <name>:` header to the next
- * job header at the same indentation.
- *
- * Written out rather than done with indexOf of the NEXT job's literal name, which was
- * the first version here: `job.slice(0, job.indexOf('\n  gate-frontend-build:'))`
- * yields `slice(0, -1)` — almost the whole file — the moment that job is renamed,
- * removed or reordered above this one. The checks below would then read every other
- * job's steps, and a `continue-on-error: true` anywhere later in the file would fail
- * this claim for a reason that has nothing to do with it (fuze-code-review #1685).
- * A boundary miss now throws instead of silently widening the window.
- */
-const jobBlock = (wf, name) => {
-  const lines = wf.split('\n')
-  const start = lines.findIndex(l => l === `  ${name}:`)
-  if (start === -1) throw new Error(`job \`${name}\` not found`)
-  let end = lines.length
-  for (let i = start + 1; i < lines.length; i++) {
-    if (/^  \S.*:\s*$/.test(lines[i])) { end = i; break }
-  }
-  return lines.slice(start, end).join('\n')
-}
-
 claim(
   'gate-toolchain runs unsuppressed in harden-gate.yml',
   () => {
-    const job = jobBlock(read('.github/workflows/harden-gate.yml') || '', 'gate-toolchain')
+    const job = stripYamlComments(
+      jobBlock(read('.github/workflows/harden-gate.yml') || '', 'gate-toolchain'),
+    )
     return (
       job.includes('node scripts/gate-toolchain.mjs') &&
       !/gate-toolchain\.mjs[^\n]*(\|\| true|\|\|true)/.test(job) &&
