@@ -136,9 +136,26 @@ the configured platform. Two mechanisms, both safe to re-run on every deploy/boo
 [`templates/backend.yaml`](../../deploy/helm/fuzefront/templates/backend.yaml). Once that account
 exists (its first Google sign-in, §2), the boot bootstrap / 5-minute interval promotes it and
 grants root `org-admin` **automatically — no SQL, no hand restart.** To add another platform
-admin, add their email to `rootAdmins.emails` and let the normal GitOps deploy apply it; the
-seeding does the rest. The break-glass DB write in §3.2 is only for a one-off promotion when a
-GitOps change to `rootAdmins.emails` is not available.
+admin, **first pre-create their account as a checked-in Authentik blueprint identity** (as
+[`groups-fuzeinfra-admins.yaml`](../../deploy/helm/fuzefront/authentik/blueprints/groups-fuzeinfra-admins.yaml)
+does for `izzy`), **then** add their email to `rootAdmins.emails` and let the normal GitOps
+deploy apply it; the seeding does the rest. The break-glass DB write in §3.2 is only for a
+one-off promotion when a GitOps change to `rootAdmins.emails` is not available.
+
+> ⚠️ **TRUST ANCHOR — the pre-created blueprint identity is a hard prerequisite, not a
+> convenience.** Promotion keys on the **email** of an existing `users` row, and self-signup
+> does **not** verify email today (the enrollment flow
+> [`flow-enrollment.yaml`](../../deploy/helm/fuzefront/authentik/blueprints/flow-enrollment.yaml)
+> omits the verify stage and the OIDC mapping
+> [`provider-oidc.yaml`](../../deploy/helm/fuzefront/authentik/blueprints/provider-oidc.yaml)
+> hard-codes `email_verified: true`), while `promoteConfiguredRootAdmins()` matches users
+> **solely by email**. So listing an email in `rootAdmins.emails` whose Authentik account is
+> **not** pre-created by a checked-in blueprint lets **whoever self-registers that email first**
+> receive the automatic root grant — a privilege-escalation vector. A pre-created username
+> cannot be enrolled by anyone else, so the `users` row for that email can only come from that
+> account's own login. This mirrors the TRUST ANCHOR note in
+> [`rootOrgAdmin.ts`](../../backend/src/services/rootOrgAdmin.ts) and the security warning above
+> `rootAdmins.emails` in [`values.yaml`](../../deploy/helm/fuzefront/values.yaml).
 
 ### 3.1 The mechanism (what a superadmin grant resolves to)
 
@@ -153,7 +170,8 @@ GitOps change to `rootAdmins.emails` is not available.
 For a **configured** admin (an email in `rootAdmins.emails`) the `roles` write happens
 automatically (§3.0) — no manual step. A general-purpose authorized in-UI promotion for a
 non-configured account is still tracked by FFRNT-298; until it lands, promote a non-configured
-account either by adding it to `rootAdmins.emails` (preferred) or, break-glass, by the direct DB
+account either by adding it to `rootAdmins.emails` — **with the §3.0 trust-anchor prerequisite
+(a pre-created Authentik blueprint identity)** — (preferred) or, break-glass, by the direct DB
 write below.
 
 ### 3.2 Break-glass only — promoting a NON-configured account by hand
@@ -204,8 +222,9 @@ write below.
    **automatic** — the email is in Helm `rootAdmins.emails`, so the boot bootstrap / 5-minute
    interval promotes the account to `roles:['admin','user']`, makes it `owner` of the root org,
    and grants Permit root `org-admin` on its own, with no SQL and no hand restart (§3.0). For a
-   different, non-configured account, add it to `rootAdmins.emails` and deploy (preferred), or
-   use the break-glass DB write (§3.2).
+   different, non-configured account, add it to `rootAdmins.emails` **after pre-creating its
+   Authentik blueprint identity** (the §3.0 trust-anchor prerequisite) and deploy (preferred),
+   or use the break-glass DB write (§3.2).
 4. **Move a social link between accounts (disconnect/connect):** not possible in the UI in
    prod today — the disconnect (unlink) path exists server-side and in the UI client, but the
    **connect** path and the `/account/security/connections` surface are unbuilt (FFRNT-296).
