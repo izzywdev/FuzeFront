@@ -85,6 +85,7 @@ import {
   type NotificationClient,
 } from './notifications'
 import * as totp from './totp'
+import { ChallengeNotActiveError, RecoveryCodeInvalidError } from '../errors'
 import {
   idpProxyPrefix,
   jwtSecret,
@@ -96,11 +97,43 @@ import {
 export class MfaRequiredError extends Error {
   constructor(
     public challengeId: string,
-    public factors: { factorId: string; type: MfaFactorType }[]
+    public factors: { factorId: string; type: MfaFactorType }[],
+    /** True when the user holds >=1 unused recovery code (contract 1.3.0). */
+    public recoveryAvailable: boolean = false
   ) {
     super('mfa_required')
     this.name = 'MfaRequiredError'
   }
+}
+
+/**
+ * Canonical form of a user-typed recovery code: trim, drop spaces/hyphens,
+ * case-fold. Codes are stored as sha256 of this canonical form.
+ */
+/** Scheme 2: >= 80 bits (10 random bytes). Scheme 1 (legacy, 40 bit) is never redeemable. */
+export const RECOVERY_SCHEME_CURRENT = 2
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+
+/** 10 random bytes (80 bits) as 16 Crockford-base32 chars, grouped XXXX-XXXX-XXXX-XXXX. */
+export function generateRecoveryCode(): string {
+  const bytes = crypto.randomBytes(10)
+  let bits = 0
+  let acc = 0
+  let out = ''
+  for (const b of bytes) {
+    acc = (acc << 8) | b
+    bits += 8
+    while (bits >= 5) {
+      out += CROCKFORD[(acc >>> (bits - 5)) & 31]
+      bits -= 5
+    }
+    acc &= (1 << bits) - 1
+  }
+  return out.match(/.{4}/g)!.join('-')
+}
+
+export function normalizeRecoveryCode(raw: string): string {
+  return String(raw ?? '').replace(/[\s-]+/g, '').toLowerCase()
 }
 
 /** Thrown when an email already has an account (signup conflict). */
@@ -203,6 +236,8 @@ interface SocialState {
 interface MfaChallenge {
   userId: string
   expiresAt: number
+  /** Set synchronously while a recovery redemption is in flight (single-flight). */
+  inFlight?: boolean
 }
 /** An in-flight LINK handshake, bound to the account that started it. */
 interface SocialLinkState {
@@ -413,7 +448,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   }
 
   // ── Session minting ───────────────────────────────────────────────────────
-  private async mintSession(user: BrokeredUser, ctx?: SessionContext): Promise<BrokeredSession> {
+  private async mintSession(user: BrokeredUser, ctx?: SessionContext, trx?: any): Promise<BrokeredSession> {
     const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(this.now() + SESSION_TTL_MS)
     // `tid` binds the session to the tenant that minted it. Without it a token
@@ -429,7 +464,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     const token = jwt.sign({ userId: user.id, sessionId, tid: sessionTenantId() }, jwtSecret(), {
       expiresIn: '24h',
     })
-    await this.db('sessions').insert({
+    await (trx ?? this.db)('sessions').insert({
       id: sessionId,
       user_id: user.id,
       expires_at: expiresAt,
@@ -460,6 +495,19 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return rows.map(rowToFactor)
   }
 
+  /** Fail-safe: any lookup error means "not available" and never blocks login. */
+  private async hasUnusedRecoveryCode(userId: string): Promise<boolean> {
+    try {
+      const rows = await this.db('mfa_recovery_codes')
+        .where({ user_id: userId, used: false, scheme_version: RECOVERY_SCHEME_CURRENT })
+        .select('id')
+      return rows.length > 0
+    } catch (err) {
+      logger.warn({ userId, err }, 'authentik: recovery-code availability lookup failed')
+      return false
+    }
+  }
+
   /** Gate a freshly-authenticated user through MFA step-up when factors exist. */
   private async sessionOrChallenge(
     user: BrokeredUser,
@@ -474,7 +522,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       })
       throw new MfaRequiredError(
         challengeId,
-        factors.map(f => ({ factorId: f.factorId, type: f.type }))
+        factors.map(f => ({ factorId: f.factorId, type: f.type })),
+        await this.hasUnusedRecoveryCode(user.id)
       )
     }
     return this.mintSession(user, ctx)
@@ -833,8 +882,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return decoded as any
   }
 
-  private async loadUser(userId: string): Promise<BrokeredUser> {
-    const row = await this.db('users').where('id', userId).first()
+  private async loadUser(userId: string, trx?: any): Promise<BrokeredUser> {
+    const row = await (trx ?? this.db)('users').where('id', userId).first()
     if (!row) throw new UnauthorizedError('user not found')
     return {
       id: row.id,
@@ -1041,15 +1090,31 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
   async regenerateRecoveryCodes(token: string): Promise<string[]> {
     const { user } = await this.getUserInfo(token)
-    await this.db('mfa_recovery_codes').where({ user_id: user.id }).del()
-    const codes: string[] = []
-    for (let i = 0; i < 10; i++) {
-      codes.push(crypto.randomBytes(5).toString('hex'))
-    }
-    await this.db('mfa_recovery_codes').insert(
-      codes.map(c => ({ id: uuidv4(), user_id: user.id, code_hash: sha256(c), used: false }))
-    )
+    const codes = Array.from({ length: 10 }, () => generateRecoveryCode())
+    // One transaction under a per-user row lock: two overlapping regenerations
+    // serialize, so exactly one 10-code set survives (never 20 live codes).
+    await this.db.transaction(async (trx: any) => {
+      await trx('users').where({ id: user.id }).forUpdate().first()
+      await trx('mfa_recovery_codes').where({ user_id: user.id }).del()
+      await trx('mfa_recovery_codes').insert(
+        codes.map(c => ({
+          id: uuidv4(),
+          user_id: user.id,
+          code_hash: sha256(normalizeRecoveryCode(c)),
+          used: false,
+          scheme_version: RECOVERY_SCHEME_CURRENT,
+        }))
+      )
+    })
     return codes
+  }
+
+  async getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }> {
+    const { user } = await this.getUserInfo(token)
+    const rows: Array<{ used: boolean }> = await this.db('mfa_recovery_codes')
+      .where({ user_id: user.id, scheme_version: RECOVERY_SCHEME_CURRENT })
+      .select('used')
+    return { remaining: rows.filter(r => !r.used).length, total: rows.length }
   }
 
   // ── MFA login step-up ─────────────────────────────────────────────────────
@@ -1078,26 +1143,103 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return { challengeId, factorId, delivered: false }
   }
 
+  /**
+   * Synchronously claim a challenge for ONE in-flight proof (factor OR recovery).
+   * No await between the check and the flag, so concurrent proofs on the same
+   * challenge cannot both proceed. Always pair with releaseChallenge in finally.
+   */
+  private claimChallenge(challengeId: string): MfaChallenge {
+    const ch = this.mfaChallenges.get(challengeId)
+    if (!ch || ch.expiresAt < this.now() || ch.inFlight) {
+      if (ch && ch.expiresAt < this.now()) this.mfaChallenges.delete(challengeId)
+      throw new ChallengeNotActiveError()
+    }
+    ch.inFlight = true
+    return ch
+  }
+
+  private releaseChallenge(ch: MfaChallenge): void {
+    ch.inFlight = false
+  }
+
+  /** After an await: the claimed challenge must still be the live one. */
+  private assertStillClaimed(challengeId: string, ch: MfaChallenge): void {
+    if (this.mfaChallenges.get(challengeId) !== ch || ch.expiresAt < this.now()) {
+      throw new ChallengeNotActiveError()
+    }
+  }
+
   async verifyMfa(
     challengeId: string,
     factorId: string,
     code: string,
     ctx?: SessionContext
   ): Promise<BrokeredSession> {
-    const ch = this.mfaChallenges.get(challengeId)
-    if (!ch || ch.expiresAt < this.now()) {
+    const ch = this.claimChallenge(challengeId)
+    try {
+      const factor = await this.db('mfa_factors')
+        .where({ id: factorId, user_id: ch.userId, status: 'active' })
+        .first()
+      if (!factor) throw new UnauthorizedError('factor not found')
+      const ok = await this.verifyFactorCode(factor, code)
+      if (!ok) throw new UnauthorizedError('invalid code')
+      this.assertStillClaimed(challengeId, ch)
+      const user = await this.loadUser(ch.userId)
+      const session = await this.mintSession(user, ctx)
       this.mfaChallenges.delete(challengeId)
-      throw new UnauthorizedError('invalid or expired challenge')
+      return session
+    } finally {
+      this.releaseChallenge(ch)
     }
-    const factor = await this.db('mfa_factors')
-      .where({ id: factorId, user_id: ch.userId, status: 'active' })
-      .first()
-    if (!factor) throw new UnauthorizedError('factor not found')
-    const ok = await this.verifyFactorCode(factor, code)
-    if (!ok) throw new UnauthorizedError('invalid code')
-    this.mfaChallenges.delete(challengeId)
-    const user = await this.loadUser(ch.userId)
-    return this.mintSession(user, ctx)
+  }
+
+  /**
+   * Redeem a single-use recovery code against a login challenge.
+   *
+   * Atomicity: the code is burned by one conditional UPDATE
+   * (`used=false` -> `true`, rowcount checked) inside a transaction that also
+   * mints the session (same connection), so two concurrent redemptions of the
+   * same code succeed at most once and a later failure rolls the burn back. The
+   * challenge is claimed synchronously (shared with the factor path) so no two
+   * proofs can complete one challenge. A failed attempt consumes nothing and
+   * leaves the challenge usable. The code is never logged.
+   */
+  async verifyMfaRecovery(
+    challengeId: string,
+    recoveryCode: string,
+    ctx?: SessionContext
+  ): Promise<BrokeredSession> {
+    const ch = this.claimChallenge(challengeId)
+    try {
+      const normalized = normalizeRecoveryCode(recoveryCode)
+      if (!normalized) throw new RecoveryCodeInvalidError()
+      const codeHash = sha256(normalized)
+      const session = await this.db.transaction(async (trx: any) => {
+        this.assertStillClaimed(challengeId, ch)
+        // Lock order is user -> codes -> sessions on EVERY path (regeneration
+        // locks the users row first too). Taking the codes row first and then the
+        // session insert's FK key-share lock on users deadlocks against it.
+        await trx('users').where({ id: ch.userId }).forUpdate().first()
+        const burned = await trx('mfa_recovery_codes')
+          .where({ user_id: ch.userId, code_hash: codeHash, used: false, scheme_version: RECOVERY_SCHEME_CURRENT })
+          .update({ used: true })
+        if (!burned) throw new RecoveryCodeInvalidError()
+        // Reads + session insert ride the transaction connection (no second
+        // pool connection; the session rolls back with the code burn).
+        const user = await this.loadUser(ch.userId, trx)
+        return this.mintSession(user, ctx, trx)
+      })
+      this.mfaChallenges.delete(challengeId)
+      logger.info({ userId: ch.userId, outcome: 'redeemed' }, 'authentik: recovery code redeemed')
+      return session
+    } catch (err) {
+      if (err instanceof RecoveryCodeInvalidError) {
+        logger.info({ userId: ch.userId, outcome: 'invalid_code' }, 'authentik: recovery redeem failed')
+      }
+      throw err
+    } finally {
+      this.releaseChallenge(ch)
+    }
   }
 
   // ── Self-service password reset ───────────────────────────────────────────
@@ -1444,7 +1586,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     await q.del()
   }
 
-  async isSessionActive(userId: string, sessionId: string): Promise<boolean> {
+  async isSessionActive(userId: string, sessionId: string, tenantId?: string): Promise<boolean> {
     // `sessions.id` and `sessions.user_id` are uuid columns: Postgres rejects a
     // non-uuid operand with a syntax ERROR, which would surface as a 500/503 for
     // what is simply a session that cannot exist. Answer "not active" instead, so
@@ -1453,6 +1595,11 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     // so nothing may be inserted above them.)
     const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!uuidShape.test(userId) || !uuidShape.test(sessionId)) return false
+    // Tenant boundary, the same check getUserInfo applies to a presented token:
+    // all tenants share one signing secret and `sessions` rows carry no tenant,
+    // so without this a tenant-A session would read as active on a tenant-B host.
+    // Fail-closed: a token with no `tid` passes only in single-tenant mode.
+    if (!assertAmbientTenant(tenantId).ok) return false
     // Scoping the lookup to `user_id` is the binding check: a session only counts
     // as active for the user it belongs to. A DB failure is deliberately NOT
     // caught; the route maps it to a retryable 503, never to a boolean.
