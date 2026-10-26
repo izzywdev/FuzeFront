@@ -225,7 +225,8 @@ jobs:
                   f'\\g<1>"{sha}"',
                   content,
               )
-              if updated == content:
+              first_run = updated == content
+              if first_run:
                   # First run: values-prod.yaml still points at the base fuze-a2a
                   # image (this PR's interim placeholder to avoid ImagePullBackOff).
                   # Migrate the repository field to fuzefront-a2a and pin the tag.
@@ -238,6 +239,35 @@ jobs:
                   print(f'::error::tag regex did not match in {path} — '
                         f'values file may have been reformatted; update the regex in the tag-update step')
                   sys.exit(1)
+              if first_run:
+                  # Also atomically migrate to static-card topology:
+                  # remove interim tenant repo/ref + comment block, flip skipRepoSync.
+                  # The fuze-a2a interim state preserved dynamic projection (clone); the
+                  # product image no longer needs it (card is baked in).
+                  updated = re.sub(
+                      r'[ \t]+# Interim \(feat/a2a-static-card\)[^\n]*\n(?:[ \t]+#[^\n]*\n)*'
+                      r'[ \t]+repo: izzywdev/FuzeFront\n[ \t]+ref: master\n',
+                      '',
+                      updated,
+                  )
+                  updated = re.sub(
+                      r'(skipRepoSync: )false',
+                      r'\g<1>true',
+                      updated,
+                  )
+                  updated = re.sub(
+                      r'(reposGitTokenSecretRef: null\s+# public repo — anonymous clone)',
+                      r'reposGitTokenSecretRef: null   # unused with skipRepoSync',
+                      updated,
+                  )
+                  # Replace the interim comment block above skipRepoSync (3 lines).
+                  updated = re.sub(
+                      r'  # Interim: keep clone-based projection[^\n]*\n'
+                      r'(?:  #[^\n]*\n)+',
+                      '  # Static-card topology: skip the repo-sync init container.\n'
+                      '  # The product image bakes in agent-card.json at build time.\n',
+                      updated,
+                  )
               open(path, 'w').write(updated)
           PYEOF
 

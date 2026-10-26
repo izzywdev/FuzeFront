@@ -399,12 +399,13 @@ a2a:
     keyId: a2a-v1
   tenants:
     - tenant: FuzeFront
-      # repo/ref removed: static-card topology (feat/a2a-static-card) means the
-      # pod bakes agent-card.json at image build time (build/a2a/Dockerfile) and
-      # needs no repo clone at startup. skipRepoSync: true below skips the init
-      # container entirely. If switching back to clone topology, restore:
-      #   repo: izzywdev/FuzeFront
-      #   ref: master
+      # Interim (feat/a2a-static-card): the tag-update PR that merges after the
+      # first build-a2a-image.yml run on master will atomically switch the image
+      # to ghcr.io/izzywdev/fuzefront-a2a, remove repo/ref, and set
+      # skipRepoSync: true. Until then, dynamic projection from the clone is
+      # preserved so card discovery is never broken.
+      repo: izzywdev/FuzeFront
+      ref: master
       enabled: true
       entryRole: app-shell-platform
       external: false
@@ -414,11 +415,11 @@ a2a:
 
 a2aDeploy:
   replicas: 1
-  # Static-card topology: skip the repo-sync init container. The product image
-  # (ghcr.io/izzywdev/fuzefront-a2a) bakes in agent-card.json so the pod serves
-  # its /.well-known/agent-card.json without cloning GitHub at startup.
-  skipRepoSync: true
-  reposGitTokenSecretRef: null   # unused with skipRepoSync; kept for fallback reference
+  # Interim: keep clone-based projection while using the fuze-a2a base image.
+  # The tag-update PR (from build-a2a-image.yml first run on master) sets
+  # skipRepoSync: true atomically with the image switch to fuzefront-a2a.
+  skipRepoSync: false
+  reposGitTokenSecretRef: null   # public repo — anonymous clone
   providerApiKeySecretRef: { name: fuzefront-secrets, key: LITELLM_MASTER_KEY }
   providerBaseUrl: http://litellm.fuzeinfra.svc.cluster.local:4000
   gitImage: alpine/git:latest
