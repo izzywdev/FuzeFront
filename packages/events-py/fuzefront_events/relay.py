@@ -77,8 +77,12 @@ def drain_outbox_once(
     """Drain one batch of pending outbox rows. Returns {sent, failed}."""
     sent = 0
     failed = 0
-    rows = db.claim_pending(batch_size)
     try:
+        # The claim must be inside the try: a failed SELECT ... FOR UPDATE (e.g. a
+        # statement timeout or query cancellation) aborts the psycopg transaction,
+        # and without a rollback the same connection stays poisoned so every later
+        # claim fails. Rolling back here lets the relay loop recover on the next tick.
+        rows = db.claim_pending(batch_size)
         for row in rows:
             try:
                 publish(row)

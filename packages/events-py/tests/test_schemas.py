@@ -138,3 +138,71 @@ def test_unregistered_billing_topics_publish_raw():
         "billing.tenant.registered", "billing.payment_method.updated",
     ):
         assert schema_for_topic(t) is None
+
+
+def test_datetime_requires_utc_z():
+    # Mirrors Zod z.string().datetime() default: a trailing 'Z' is required; a
+    # tz-less value or a numeric offset is rejected (the payload schemas don't
+    # use { offset: true }).
+    ok = copy.deepcopy(VALID["app.heartbeat"])
+    ok["seenAt"] = "2026-01-01T00:00:00.500Z"
+    assert schema_for_topic("app.heartbeat")(ok)
+    for bad_ts in ("2026-01-01T00:00:00", "2026-01-01T00:00:00+02:00"):
+        bad = copy.deepcopy(VALID["app.heartbeat"])
+        bad["seenAt"] = bad_ts
+        with pytest.raises(SchemaValidationError):
+            schema_for_topic("app.heartbeat")(bad)
+
+
+# -- seed.* edge cases (findings: platform source, seed-list shape) ----------
+
+_SEED_OUTCOME_PLATFORM = {
+    "eventId": U, "requestId": None, "organizationId": "org_abc", "scope": "org",
+    "source": {"app": "platform", "service": "selection-list-service"},
+    "pack": {"key": "countries", "version": 1}, "trigger": "org-created",
+}
+
+
+def test_seed_outcome_allows_platform_source():
+    # Platform-default seeding emits outcome events with source.app='platform';
+    # the Node slSeedOutcomeBaseV1 permits it, so the mirror must too.
+    completed = {**_SEED_OUTCOME_PLATFORM, "outcome": "applied", "appliedVersion": 1, "lists": []}
+    assert schema_for_topic("selection-lists.seed.completed")(completed)
+    failed = {
+        **_SEED_OUTCOME_PLATFORM, "reason": "INTERNAL_ERROR",
+        "message": "boom", "retryable": True, "details": [],
+    }
+    assert schema_for_topic("selection-lists.seed.failed")(failed)
+
+
+def _seed_requested(**over):
+    base = {
+        "requestId": "app:org_abc:countries:v1", "organizationId": "org_abc", "scope": "org",
+        "source": {"app": "weather", "service": "weather-svc"},
+        "pack": {"key": "countries", "version": 1}, "trigger": "org-created",
+        "attestation": {"kind": "service-token", "token": "tok"},
+        "lists": [{"key": "countries", "sourceLocale": "en", "name": "Countries", "items": []}],
+    }
+    base.update(over)
+    return base
+
+
+def test_seed_requested_forbids_platform_source():
+    bad = _seed_requested(source={"app": "platform", "service": "svc"})
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(bad)
+
+
+def test_seed_requested_valid_shape_parses():
+    assert schema_for_topic("selection-lists.seed.requested")(_seed_requested())
+
+
+def test_seed_requested_rejects_malformed_list_entries():
+    for lists in ([None], [{}], [{"key": "countries", "sourceLocale": "en", "name": "C"}]):
+        with pytest.raises(SchemaValidationError):
+            schema_for_topic("selection-lists.seed.requested")(_seed_requested(lists=lists))
+
+
+def test_seed_requested_org_scope_forbids_user_id():
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(_seed_requested(userId="usr_x"))

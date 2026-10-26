@@ -75,21 +75,51 @@ def make_outbox_publisher(get_producer: Callable[[], Producer]) -> OutboxPublish
 class ConfluentProducer:
     """``Producer`` backed by ``confluent_kafka.Producer`` (``kafka`` extra)."""
 
-    def __init__(self, config: Optional[dict] = None, brokers: Optional[str] = None):
+    def __init__(
+        self,
+        config: Optional[dict] = None,
+        brokers: Optional[str] = None,
+        *,
+        flush_timeout: float = 10.0,
+    ):
         from confluent_kafka import Producer as _CKProducer  # type: ignore
 
         conf = dict(config or {})
         if brokers:
             conf.setdefault("bootstrap.servers", brokers)
         self._producer = _CKProducer(conf)
+        self._flush_timeout = flush_timeout
 
     def send(self, topic: str, key: Optional[str], value: str) -> Any:
+        # The Node transport this mirrors is kafkajs' producer.send(), which
+        # resolves only AFTER the broker acknowledges. confluent-kafka's
+        # produce() merely enqueues locally — poll(0) does not wait — so we
+        # attach a delivery callback and flush to confirm the ack, then RAISE on
+        # any delivery failure. That failure propagates up through the relay,
+        # which leaves the row 'pending' (retryable) rather than committing a
+        # lost event as 'sent'. Without this, a broker outage or async reject
+        # would permanently bypass the outbox retry/DLQ machinery.
+        errors: list = []
+
+        def _on_delivery(err: Any, _msg: Any) -> None:
+            if err is not None:
+                errors.append(err)
+
         self._producer.produce(
             topic,
             value=value.encode("utf-8"),
             key=key.encode("utf-8") if key is not None else None,
+            on_delivery=_on_delivery,
         )
-        self._producer.poll(0)
+        remaining = self._producer.flush(self._flush_timeout)
+        if remaining > 0:
+            raise RuntimeError(
+                f"Kafka delivery timed out: {remaining} message(s) unacknowledged "
+                f"within {self._flush_timeout}s"
+            )
+        if errors:
+            raise RuntimeError(f"Kafka delivery failed: {errors[0]}")
+        return None
 
     def flush(self, timeout: float = 10.0) -> int:
         return self._producer.flush(timeout)

@@ -12,6 +12,7 @@ from typing import Any
 
 from ._validate import _V, discriminated, unique
 from .selection_lists_common import (
+    DESCRIPTION_MAX,
     ITEM_CODE_RE,
     KEY_RE,
     LOCALES,
@@ -19,6 +20,7 @@ from .selection_lists_common import (
     MAX_ITEMS_PER_LIST,
     MAX_LISTS_PER_SEED,
     MESSAGE_MAX,
+    NAME_MAX,
     ROLES,
     SEED_REQUEST_ID_RE,
     SEED_SCOPES,
@@ -269,12 +271,17 @@ def validate_access_revoked(p: Any) -> dict:
 # ── seed.* (shape-level; see fidelity note) ────────────────────────────
 
 
-def _seed_source(value: Any) -> dict:
+def _seed_source(value: Any, *, allow_platform: bool = True) -> dict:
     sv = _V("seed.source", value)
     sv.string("app", pattern=SLUG_RE)
     sv.string("service", min_len=1, max_len=128)
-    if sv.out["app"] == "platform":
-        raise sv.fail("seed source app must not be 'platform'")
+    # Only seed.requested forbids the reserved 'platform' source (an app may not
+    # impersonate the service's own default packs). The OUTCOME events
+    # (seed.completed / seed.failed) legitimately carry source.app='platform'
+    # for platform-default seeding — the Node slSeedOutcomeBaseV1 uses the plain
+    # slSeedSourceV1 with no such refinement, so rejecting it here diverged.
+    if not allow_platform and sv.out["app"] == "platform":
+        raise sv.fail("'platform' is reserved for the service's own packs (seed.requested only)")
     return sv.done()
 
 
@@ -288,13 +295,40 @@ def _seed_pack(value: Any) -> dict:
 _SEED_TRIGGERS = ("org-created", "app-installed", "app-upgraded", "backfill", "manual")
 
 
+def _seed_item_spec(value: Any) -> dict:
+    """Shape of one item to seed (mirror of slSeedItemSpecV1's required fields)."""
+    sv = _V("seed.list.item", value)
+    sv.string("code", pattern=ITEM_CODE_RE, min_len=1, max_len=63)
+    sv.string("label", min_len=1, max_len=NAME_MAX)
+    sv.string("description", required=False, max_len=DESCRIPTION_MAX)
+    return sv.done()
+
+
+def _seed_list_spec(value: Any) -> dict:
+    """Shape of one list to seed (mirror of slSeedListSpecV1's required fields +
+    types). The deep cross-list refinements (unique keys/codes across the seed,
+    the per-seed item ceiling, translation-locale rules) stay deferred — see the
+    module note — but a list must at least be a well-formed object carrying its
+    required scalars and an ``items`` array, so a malformed request (``lists:
+    [null]``, ``[{}]``, or a list missing ``items``) fails locally here instead
+    of being published and then dead-lettered by the Node consumer."""
+    sv = _V("seed.list", value)
+    sv.string("key", pattern=KEY_RE, min_len=2, max_len=64)
+    sv.enum("sourceLocale", LOCALES)
+    sv.string("name", min_len=1, max_len=NAME_MAX)
+    sv.string("description", required=False, max_len=DESCRIPTION_MAX)
+    sv.enum("visibility", VISIBILITIES, required=False)
+    sv.array("items", _seed_item_spec, max_len=MAX_ITEMS_PER_LIST)
+    return sv.done()
+
+
 def validate_seed_requested(p: Any) -> dict:
     v = _V("selection-lists.seed.requested", p)
     v.string("requestId", pattern=SEED_REQUEST_ID_RE)
     org_id(v, "organizationId")
     v.enum("scope", SEED_SCOPES)
     user_id(v, "userId", required=False)
-    v.nested("source", _seed_source)
+    v.nested("source", lambda x: _seed_source(x, allow_platform=False))
     v.nested("pack", _seed_pack)
     v.enum("trigger", _SEED_TRIGGERS)
 
@@ -305,10 +339,12 @@ def validate_seed_requested(p: Any) -> dict:
         return sv.done()
 
     v.nested("attestation", _attestation)
-    v.array("lists", lambda x: x, min_len=1, max_len=MAX_LISTS_PER_SEED)  # shape-level
+    v.array("lists", _seed_list_spec, min_len=1, max_len=MAX_LISTS_PER_SEED)
     out = v.done(strict=True)
     if out["scope"] == "user" and not out.get("userId"):
         raise v.fail("userId is required when scope is 'user'")
+    if out["scope"] == "org" and out.get("userId") is not None:
+        raise v.fail("userId must be omitted when scope is 'org'")
     return out
 
 

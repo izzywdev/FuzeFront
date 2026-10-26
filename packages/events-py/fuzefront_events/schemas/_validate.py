@@ -22,9 +22,15 @@ _UUID_RE = re.compile(
 # Deliberately permissive, like Zod's z.string().email() (not RFC-complete).
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _E164_RE = re.compile(r"^\+[1-9]\d{1,14}$")
-# ISO-8601 with a time component, like Zod z.string().datetime().
+# ISO-8601 UTC, mirroring Zod z.string().datetime() with its defaults EXACTLY:
+# a trailing 'Z' is REQUIRED (no tz-less value, no numeric offset — those need
+# z's { offset: true }, which the payload schemas don't use). Deliberately NOT
+# calendar-range-validated: Zod 3.22's default .datetime() also accepts
+# '2026-99-99T99:99:99Z', so adding a range check here would make this Python
+# mirror REJECT values the Node contract ACCEPTS — a parity break in the other
+# direction. The only Node divergence to close is the required 'Z'.
 _DATETIME_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$"
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$"
 )
 
 _MISSING = object()

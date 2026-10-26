@@ -112,6 +112,23 @@ def test_drain_parks_failed_and_dead_letters_after_max_attempts():
     assert dead == ["a"]
 
 
+def test_drain_rolls_back_when_claim_fails():
+    # A failed claim (e.g. statement timeout on SELECT ... FOR UPDATE) must roll
+    # back so the connection isn't left in an aborted-transaction state that
+    # poisons every subsequent claim.
+    class ClaimBoomDb(FakeRelayDb):
+        def claim_pending(self, batch_size):
+            raise RuntimeError("statement timeout")
+
+    db = ClaimBoomDb([])
+    import pytest
+
+    with pytest.raises(RuntimeError, match="statement timeout"):
+        drain_outbox_once(db, publish=lambda r: None)
+    assert db.rolled_back == 1
+    assert db.committed == 0
+
+
 def test_drain_recovers_after_outage():
     db = FakeRelayDb([_row("a"), _row("b"), _row("c")])
     broker_up = {"v": False}
