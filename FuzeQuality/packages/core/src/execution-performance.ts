@@ -333,6 +333,8 @@ export type ExecutionOutcomeTrend = {
   invalidEvidenceUrlCount?: number
   /** GitHub Actions executions missing repository, workflow, or safe run URL provenance. */
   githubRunProvenanceMissingCount?: number
+  /** Retry attempts whose exact provider-attempt provenance could not be verified. */
+  attemptProvenanceUnverifiedCount?: number
   /** Post-production executions without a safe video evidence link. */
   postProductionVideoMissingCount?: number
   /** Terminal executions without a complete, valid timing interval. */
@@ -388,6 +390,7 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       evidenceNotCollectedCount: 0,
       invalidEvidenceUrlCount: 0,
       githubRunProvenanceMissingCount: 0,
+      attemptProvenanceUnverifiedCount: 0,
       postProductionVideoMissingCount: 0,
       terminalTimingMissingCount: 0,
       gateEvaluationCount: 0,
@@ -419,6 +422,9 @@ export function executionOutcomeTrend(executions: TestExecution[], history: Test
       (!execution.headRepository || !execution.workflowPath || !safeExecutionEvidenceUrl(execution.sourceUrl))
     ) {
       current.githubRunProvenanceMissingCount = (current.githubRunProvenanceMissingCount ?? 0) + 1
+    }
+    if (execution.evidenceCollection?.issues?.includes('attempt-provenance-unverified')) {
+      current.attemptProvenanceUnverifiedCount = (current.attemptProvenanceUnverifiedCount ?? 0) + 1
     }
     if (
       execution.kind === 'post-production' &&

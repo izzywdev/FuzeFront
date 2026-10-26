@@ -1961,6 +1961,9 @@ export class PostgresCatalogStore implements CatalogStore {
                     OR source_url !~* '^https://[^/?#[:space:]]+')
               )::integer AS github_run_provenance_missing_count,
               count(*) FILTER (
+                WHERE COALESCE(evidence_collection->'issues','[]'::jsonb) ? 'attempt-provenance-unverified'
+              )::integer AS attempt_provenance_unverified_count,
+              count(*) FILTER (
                 WHERE kind='post-production' AND NOT EXISTS (
                   SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
                   WHERE evidence.value->>'kind'='video'
@@ -2165,6 +2168,7 @@ export class PostgresCatalogStore implements CatalogStore {
       evidenceNotCollectedCount: row.evidence_not_collected_count,
       invalidEvidenceUrlCount: row.invalid_evidence_url_count,
       githubRunProvenanceMissingCount: row.github_run_provenance_missing_count,
+      attemptProvenanceUnverifiedCount: row.attempt_provenance_unverified_count,
       postProductionVideoMissingCount: row.post_production_video_missing_count,
       terminalTimingMissingCount: row.terminal_timing_missing_count,
       gateEvaluationCount: row.gate_evaluation_count,
