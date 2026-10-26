@@ -1,0 +1,114 @@
+name: Merge When Green
+
+# Finishes the auto-merges GitHub armed but did not fire. auto-merge.yml arms
+# `gh pr merge --auto`, which is MEANT to merge once required checks pass and
+# usually does — but observably not always: PR #1566 sat `blocked` for an hour
+# with mergeable=true, every required check green, the branch current and
+# auto-merge armed, and had to be merged by hand. This sweep is the safety net.
+#
+# It merges a PR ONLY when GitHub was already going to (native auto-merge armed)
+# AND it is genuinely ready (opted in via the `auto-merge` label, not draft, not
+# wip/hold/blocked, conflict-free, up to date, every RULESET-REQUIRED check green
+# on the head). The required set is read live from the branch ruleset, never
+# hardcoded, and the REST merge re-enforces that ruleset server-side — so the
+# readiness check here is an optimisation, not the security boundary. See
+# scripts/merge_when_green.py for the full reasoning.
+#
+# RUNS ON ubuntu-latest, off the ARC fleet, like ci-queue-watch: a sweep that
+# cannot reach the API must fail loud, not queue behind the backlog it clears.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  pull_request:
+    paths:
+      - 'scripts/merge_when_green.py'
+      - 'scripts/__tests__/test_merge_when_green.py'
+      - '.github/workflows/merge-when-green.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Evaluate and report which PRs are ready, but do not merge'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: merge-when-green
+  cancel-in-progress: true
+
+jobs:
+  # Self-tests run on any PR touching the watchdog. They assert the script
+  # REFUSES when it cannot see state (unreachable API, empty ruleset) — not
+  # merely that it merges correctly when it can. A watchdog wired to nothing
+  # passes every "does it merge a green PR" test while silently merging nothing,
+  # which is exactly the vacuous-green shape this family keeps relearning.
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Run watchdog self-tests
+        run: |
+          test -f scripts/__tests__/test_merge_when_green.py || {
+            echo "::error::watchdog self-tests are missing — refusing to ship the watchdog without them"
+            exit 1
+          }
+          python3 -m unittest discover -s scripts/__tests__ -p 'test_merge_when_green*.py' -v
+
+  watch:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      # The merge MUST be attributed to the fuze-agent App, not GITHUB_TOKEN:
+      # auto-merge.yml's dispatch-release job runs on `pull_request: closed`, and
+      # GitHub starts no workflow runs for events a GITHUB_TOKEN action produced.
+      # A GITHUB_TOKEN merge would therefore merge green and ship nothing (#400).
+      - name: Check fuze-agent App credentials
+        id: have_app
+        env:
+          APP_ID: ${{ secrets.FUZE_AGENT_APP_ID }}
+        run: |
+          if [ -n "$APP_ID" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=merge-when-green::FUZE_AGENT_APP_ID is unavailable — SKIPPING the sweep. Merging with GITHUB_TOKEN would not start the release dispatch (auto-merge.yml dispatch-release runs on the closed event, which GITHUB_TOKEN merges do not fire), so a deployable PR would merge green and ship nothing. A stalled PR stays visibly stalled instead."
+          fi
+
+      - name: Mint fuze-agent App token
+        id: app
+        if: steps.have_app.outputs.present == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+
+      - name: Merge every PR GitHub armed and left green
+        if: steps.app.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args="--repo ${GITHUB_REPOSITORY} --branch master --fail-on-error"
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            args="$args --dry-run"
+          fi
+          python3 scripts/merge_when_green.py $args
