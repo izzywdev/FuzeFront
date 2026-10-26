@@ -146,6 +146,16 @@ jobs:
             echo "image=ghcr.io/izzywdev/fuze-a2a:latest" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Validate extra tag input
+        if: inputs.tag != ''
+        env:
+          EXTRA_TAG: ${{ inputs.tag }}
+        run: |
+          if ! [[ "${EXTRA_TAG}" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "::error::inputs.tag must be a single OCI tag component (alphanumeric, dot, hyphen, underscore only — no commas, slashes, or colons)."
+            exit 1
+          fi
+
       - name: Build & push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
