@@ -65,7 +65,10 @@ jobs:
           git -C /tmp/fuzeagent-gen checkout FETCH_HEAD
 
       - name: Install card-generator dependencies
-        run: pip install pydantic jsonschema
+        # Pin all transitive deps with hashes so a compromised PyPI package
+        # cannot rewrite the Dockerfile inside this packages:write job.
+        # Hashes cover cp312 (github-actions ubuntu-latest) and cp313 (local dev).
+        run: pip install --require-hashes -r build/a2a/requirements.txt
 
       - name: Regenerate agent-card.json
         run: python3 build/a2a/generate-card.py --fuzeagent-src /tmp/fuzeagent-gen
