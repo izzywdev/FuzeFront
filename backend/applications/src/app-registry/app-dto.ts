@@ -96,6 +96,21 @@ export async function toAppDtos(apps: AppRecord[], opts: AppDtoOptions): Promise
   return Promise.all(
     apps.map(async app => {
       const { createdByUserId, ...rest } = app as AppRecord & { createdByUserId?: string | null }
+      // Operator-governed fields are DB-internal and NOT part of the frozen App
+      // contract (services/app-registry-service/openapi.yaml, additionalProperties:
+      // false). They are managed/served via the admin /api/apps surface, so they
+      // are stripped from this wire shape.
+      for (const k of [
+        'scopeLevel',
+        'orgInstallMode',
+        'personalRemovable',
+        'orgRemovable',
+        'systemApp',
+        'defaultInstallPersonal',
+        'defaultInstallOrg',
+      ]) {
+        delete (rest as Record<string, unknown>)[k]
+      }
       const dto: any = prefixDtoIds(rest as any, opts.prefixed, { organizationId: 'organization' })
       if (!opts.creatorOwnership) return dto
       if (!createdByUserId) {
