@@ -60,7 +60,6 @@ import json
 import os
 import re
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -126,8 +125,8 @@ def _req(method, path, token, body=None):
         detail = ""
         try:
             detail = e.read().decode()[:400]
-        except Exception:
-            pass
+        except (OSError, ValueError):
+            detail = ""  # best-effort diagnostic; body may be unreadable
         return None, f"HTTP {e.code} on {method} {path}: {detail}", e.code
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         return None, f"network error on {method} {path}: {e}", None
@@ -166,7 +165,7 @@ def required_contexts(repo, branch, token):
     Blind if the ruleset can't be read OR names no required checks: merging
     against an empty requirement is the vacuous-merge failure."""
     b = urllib.parse.quote(branch, safe="")
-    j, err, status = _req("GET", f"/repos/{repo}/rules/branches/{b}", token)
+    j, err, _ = _req("GET", f"/repos/{repo}/rules/branches/{b}", token)
     if err is not None:
         raise Blind(f"cannot read branch ruleset for {repo}@{branch}: {err}")
     contexts = set()

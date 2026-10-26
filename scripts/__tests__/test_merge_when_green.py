@@ -21,7 +21,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 SCRIPT = os.path.join(REPO_ROOT, "scripts", "merge_when_green.py")
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
-import merge_when_green as mwg  # noqa: E402
+import merge_when_green as mwg
 
 REPO = "izzywdev/FuzeFront"
 
@@ -62,12 +62,14 @@ def _green_checks(contexts):
 
 class Fixture:
     """Routing table the stub server answers from, set per test."""
-    rules = RULESET_OK
-    pulls_list = []            # list endpoint rows
-    pulls = {}                 # number -> PR object
-    checks = {}                # sha -> {"check_runs":[...]}
-    compare = {}               # sha -> behind_by
-    merged = []                # recorded successful merges (number, method)
+    def __init__(self):
+        self.rules = RULESET_OK
+        self.pulls_list = []       # list endpoint rows
+        self.pulls = {}            # number -> PR object
+        self.checks = {}           # sha -> {"check_runs":[...]}
+        self.compare = {}          # sha -> behind_by
+        self.merged = []           # recorded successful merges (number, method, sha)
+        self.merge_head = None     # if set, server 409s a merge whose sha != this
 
 
 class _Handler(BaseHTTPRequestHandler):
