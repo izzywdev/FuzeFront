@@ -190,6 +190,7 @@ describe('test-suite dispatch audit', () => {
       policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [{
         kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
       }],
+      evidenceCollection: { status: 'complete', checkedAt: '2026-10-22T20:03:00.000Z' },
     })
     await store.saveTestExecution({
       id: 'wrong-revision', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
@@ -217,6 +218,7 @@ describe('test-suite dispatch audit', () => {
         evidenceLinks: [{
           kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
         }],
+        evidenceCollection: { status: 'complete', checkedAt: '2026-10-22T20:03:00.000Z' },
         startedAt: '2026-10-22T20:01:00.000Z', completedAt: '2026-10-22T20:02:00.000Z',
       },
     })])
@@ -246,6 +248,9 @@ describe('test-suite dispatch audit', () => {
         { kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm' },
         { kind: 'video', name: 'Unsafe legacy video', url: 'javascript:alert(1)' },
       ],
+      result_evidence_collection: {
+        status: 'partial', checkedAt: '2026-10-22T20:03:00.000Z', issues: ['attempt-provenance-unverified'],
+      },
       result_started_at: new Date('2026-10-22T20:01:00.000Z'),
       result_completed_at: new Date('2026-10-22T20:02:00.000Z'),
     }] })
@@ -260,6 +265,9 @@ describe('test-suite dispatch audit', () => {
       evidenceLinks: [{
         kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
       }],
+      evidenceCollection: {
+        status: 'partial', checkedAt: '2026-10-22T20:03:00.000Z', issues: ['attempt-provenance-unverified'],
+      },
     })
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain('LEFT JOIN LATERAL')
@@ -286,6 +294,9 @@ describe('test-suite dispatch audit', () => {
       result_evidence_links: [{
         kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
       }],
+      result_evidence_collection: {
+        status: 'unavailable', checkedAt: '2026-10-22T20:03:00.000Z', errorCode: 'PROVIDER_TIMEOUT',
+      },
       result_started_at: new Date('2026-10-22T20:01:00.000Z'),
       result_completed_at: new Date('2026-10-22T20:02:00.000Z'),
     }] })
@@ -298,6 +309,9 @@ describe('test-suite dispatch audit', () => {
       evidenceLinks: [{
         kind: 'video', name: 'Playwright video', url: 'https://evidence.example/run-42/video.webm',
       }],
+      evidenceCollection: {
+        status: 'unavailable', checkedAt: '2026-10-22T20:03:00.000Z', errorCode: 'PROVIDER_TIMEOUT',
+      },
     })
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain('LEFT JOIN LATERAL')

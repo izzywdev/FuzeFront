@@ -826,6 +826,7 @@ export const testSuiteDispatchExecutionResultSchema = z.object({
   status: z.enum(['passed', 'failed', 'cancelled', 'running']),
   sourceUrl: httpsEvidenceUrlSchema.optional(),
   evidenceLinks: z.array(testExecutionEvidenceLinkSchema).max(100).optional(),
+  evidenceCollection: testExecutionEvidenceCollectionSchema.optional(),
   startedAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
 }).strict()

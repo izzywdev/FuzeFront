@@ -2986,6 +2986,22 @@ describe('RepositoryIntelligence flow inventory', () => {
     vi.mocked(api.latestPerformanceExecutions).mockImplementation(async () => ({
       items: [evidenceRefreshed ? refreshed : incomplete],
     }))
+    const dispatch = acceptedDispatch(loadArtifact)
+    vi.mocked(api.latestTestSuiteDispatches).mockImplementation(async () => ({
+      items: [{
+        ...dispatch,
+        executionResult: {
+          id: refreshed.id,
+          provider: refreshed.provider,
+          externalRunId: refreshed.externalRunId,
+          attempt: refreshed.attempt,
+          status: refreshed.status,
+          sourceUrl: refreshed.sourceUrl,
+          evidenceLinks: evidenceRefreshed ? refreshed.evidenceLinks : [],
+          evidenceCollection: evidenceRefreshed ? refreshed.evidenceCollection : incomplete.evidenceCollection,
+        },
+      }],
+    }))
     vi.mocked(api.refreshTestExecutionEvidence).mockImplementation(async () => {
       evidenceRefreshed = true
       return refreshed
@@ -2995,6 +3011,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     const outcome = await screen.findByLabelText(`Latest execution for ${loadArtifact.title}`)
+    expect(await screen.findByText(/Evidence collection unavailable · PROVIDER_TIMEOUT/)).toBeVisible()
     fireEvent.click(within(outcome).getByRole('button', { name: 'Refresh provider evidence' }))
 
     await waitFor(() => expect(api.refreshTestExecutionEvidence).toHaveBeenCalledWith(repository.id, {
@@ -3005,6 +3022,11 @@ describe('RepositoryIntelligence flow inventory', () => {
       'https://github.com/fuze/front/actions/runs/12345/artifacts/99',
     )
     expect(within(outcome).queryByRole('button', { name: 'Refresh provider evidence' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Open recorded video' })).toHaveAttribute(
+      'href',
+      'https://github.com/fuze/front/actions/runs/12345/artifacts/99',
+    )
+    expect(api.latestTestSuiteDispatches).toHaveBeenCalledTimes(2)
   })
 
   it('reapplies active evidence filters and aggregates after provider reconciliation', async () => {
