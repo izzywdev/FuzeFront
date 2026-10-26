@@ -1502,7 +1502,19 @@ describe('POST /sessions/validate (validateSession, service-to-service)', () => 
     expect(res.status).toBe(200)
     expect(res.type).toMatch(/json/)
     expect(res.body).toEqual({ active: true })
-    expect(isSessionActive).toHaveBeenCalledWith(USER_ID, SESSION_ID)
+    expect(isSessionActive).toHaveBeenCalledWith(USER_ID, SESSION_ID, undefined)
+  })
+
+  it('forwards the token tid as tenantId so the provider can enforce the tenant boundary', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn().mockResolvedValue(false)
+    const res = await call(provider(isSessionActive), workloadToken('sessions:validate'), {
+      ...BODY,
+      tenantId: 'fuzefront',
+    })
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ active: false })
+    expect(isSessionActive).toHaveBeenCalledWith(USER_ID, SESSION_ID, 'fuzefront')
   })
 
   it('answers { active: false } (200) for an inactive session, with no reason given', async () => {
@@ -1604,7 +1616,7 @@ describe('POST /sessions/validate (validateSession, service-to-service)', () => 
     expect(isSessionActive).not.toHaveBeenCalled()
   })
 
-  it('returns 400 MALFORMED for a body that is not exactly { userId, sessionId }', async () => {
+  it('returns 400 MALFORMED for a body that is not { userId, sessionId, tenantId? }', async () => {
     // @fuzequality api validateSession
     const isSessionActive = jest.fn()
     const bad: unknown[] = [
@@ -1619,6 +1631,11 @@ describe('POST /sessions/validate (validateSession, service-to-service)', () => 
       { userId: USER_ID, sessionId: '' },
       { userId: 'x'.repeat(129), sessionId: SESSION_ID },
       { userId: USER_ID, sessionId: 'x'.repeat(129) },
+      { ...BODY, tenantId: 5 },
+      { ...BODY, tenantId: '' },
+      { ...BODY, tenantId: null },
+      { ...BODY, tenantId: ['fuzefront'] },
+      { ...BODY, tenantId: 'x'.repeat(129) },
       [],
       [USER_ID, SESSION_ID],
     ]

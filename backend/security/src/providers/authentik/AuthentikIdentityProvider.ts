@@ -1444,7 +1444,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     await q.del()
   }
 
-  async isSessionActive(userId: string, sessionId: string): Promise<boolean> {
+  async isSessionActive(userId: string, sessionId: string, tenantId?: string): Promise<boolean> {
     // `sessions.id` and `sessions.user_id` are uuid columns: Postgres rejects a
     // non-uuid operand with a syntax ERROR, which would surface as a 500/503 for
     // what is simply a session that cannot exist. Answer "not active" instead, so
@@ -1453,6 +1453,11 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     // so nothing may be inserted above them.)
     const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!uuidShape.test(userId) || !uuidShape.test(sessionId)) return false
+    // Tenant boundary, the same check getUserInfo applies to a presented token:
+    // all tenants share one signing secret and `sessions` rows carry no tenant,
+    // so without this a tenant-A session would read as active on a tenant-B host.
+    // Fail-closed: a token with no `tid` passes only in single-tenant mode.
+    if (!assertAmbientTenant(tenantId).ok) return false
     // Scoping the lookup to `user_id` is the binding check: a session only counts
     // as active for the user it belongs to. A DB failure is deliberately NOT
     // caught; the route maps it to a retryable 503, never to a boolean.
