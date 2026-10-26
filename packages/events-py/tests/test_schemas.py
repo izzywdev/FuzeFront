@@ -303,6 +303,19 @@ def test_seed_requested_preserves_translations():
     assert got["items"][0]["translations"] == [{"locale": "fr", "label": "États-Unis"}]
 
 
+def test_integer_accepts_integral_float_rejects_fractional():
+    # Zod z.number().int() accepts 1.0 (json floats); mirror that, but still
+    # reject fractional / non-finite / boolean.
+    ok = copy.deepcopy(VALID["chat.response.chunk"])
+    ok["sequence"] = 1.0
+    assert schema_for_topic("chat.response.chunk")(ok)["sequence"] == 1
+    for bad_seq in (1.5, float("nan"), float("inf"), True):
+        bad = copy.deepcopy(VALID["chat.response.chunk"])
+        bad["sequence"] = bad_seq
+        with pytest.raises(SchemaValidationError):
+            schema_for_topic("chat.response.chunk")(bad)
+
+
 def test_discriminator_non_string_type_rejected():
     # A non-string discriminator (actor.type == []) must raise
     # SchemaValidationError, not a bare TypeError from the `in` lookup.

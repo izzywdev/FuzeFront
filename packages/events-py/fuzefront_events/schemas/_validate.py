@@ -144,13 +144,23 @@ class _V:
                 self.out[field] = None
                 return
             raise self.fail(f"field '{field}' must not be null")
-        if isinstance(v, bool) or not isinstance(v, int):
+        # Zod z.number().int() accepts any integral JSON number, including one
+        # json.loads() decodes to a float (1.0, 1e0). Mirror that: coerce a
+        # finite integral float to int; still reject booleans and fractional
+        # (or non-finite) values.
+        if isinstance(v, bool):
             raise self.fail(f"field '{field}' must be an integer")
-        if gt is not None and not v > gt:
+        if isinstance(v, int):
+            iv = v
+        elif isinstance(v, float) and v.is_integer():
+            iv = int(v)
+        else:
+            raise self.fail(f"field '{field}' must be an integer")
+        if gt is not None and not iv > gt:
             raise self.fail(f"field '{field}' must be > {gt}")
-        if ge is not None and not v >= ge:
+        if ge is not None and not iv >= ge:
             raise self.fail(f"field '{field}' must be >= {ge}")
-        self.out[field] = v
+        self.out[field] = iv
 
     def record(self, field: str, *, required: bool = True) -> None:
         """An arbitrary object map (Record<string, unknown>)."""
