@@ -861,6 +861,55 @@ export namespace PasswordChecklist {
   const rules: PasswordRule[];
 }
 
+// ----- RadioCardGroup (forms) -----
+export type RadioCardValue = string | number;
+
+export interface RadioCardOption extends Omit<React.HTMLAttributes<HTMLDivElement>, "children" | "title"> {
+  /** Unique, stable value of the option. */
+  value: RadioCardValue;
+  /** Card title — the option's accessible name. May contain inline badges/pills. */
+  label: React.ReactNode;
+  /** Supporting sentence shown under the title; exposed as the accessible description. */
+  description?: React.ReactNode;
+  /** Not selectable, skipped by arrow-key navigation, dimmed. */
+  disabled?: boolean;
+  /**
+   * The option has been chosen but not yet applied (e.g. awaiting a confirm
+   * step). Rendered with a dashed accent border; it is NOT `aria-checked`.
+   */
+  pending?: boolean;
+  /** Extra attributes (data-*, aria-describedby…) are forwarded to the card element. */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
+}
+
+export interface RadioCardGroupProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "defaultValue" | "children"> {
+  options: RadioCardOption[];
+  /** Controlled selected value. */
+  value?: RadioCardValue;
+  /** Initial value when uncontrolled. */
+  defaultValue?: RadioCardValue;
+  /** Called with the new value on click, Space, or arrow-key navigation. Not called when re-selecting the current value. */
+  onChange?: (value: RadioCardValue) => void;
+  /** Disables every card (e.g. while a mutation is in flight). */
+  disabled?: boolean;
+  /** When set, a hidden input carries the selected value for native form posts. */
+  name?: string;
+  /** Accessible name for the group — provide this or `ariaLabelledBy`. */
+  ariaLabel?: string;
+  /** Id of the element that labels the group. */
+  ariaLabelledBy?: string;
+  /** Native ref to the `role="radiogroup"` element. */
+  ref?: React.Ref<HTMLDivElement>;
+}
+
+/**
+ * A radio group rendered as selectable cards with a title and a per-card
+ * description. WAI-ARIA radiogroup semantics, roving focus, arrow keys that
+ * skip disabled cards and flip under `dir="rtl"`, 44px touch targets.
+ */
+export function RadioCardGroup(props: RadioCardGroupProps): React.JSX.Element;
+
 // ----- SearchField (forms) -----
 /**
  * Filter/search input for scannable lists — a leading search glyph inside a
@@ -879,6 +928,47 @@ export interface SearchFieldProps
 }
 
 export function SearchField(props: SearchFieldProps): React.JSX.Element;
+
+// ----- SegmentedControl (forms) -----
+export type SegmentValue = string | number;
+
+export interface SegmentedControlOption
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "value" | "children" | "type"> {
+  /** Unique, stable value of the segment. */
+  value: SegmentValue;
+  /** Segment content (usually a short text label). */
+  label: React.ReactNode;
+  /** Not selectable; rendered as a disabled native button. */
+  disabled?: boolean;
+  /** Extra attributes (data-*, aria-*…) are forwarded to the segment's button. */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
+}
+
+export interface SegmentedControlProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "defaultValue" | "children"> {
+  options: SegmentedControlOption[];
+  /** Controlled pressed value. */
+  value?: SegmentValue;
+  /** Initial value when uncontrolled. */
+  defaultValue?: SegmentValue;
+  /** Called with the new value. Not called when the pressed segment is pressed again. */
+  onChange?: (value: SegmentValue) => void;
+  /** Disables every segment. */
+  disabled?: boolean;
+  /** Accessible name for the group — provide this or `ariaLabelledBy`. */
+  ariaLabel?: string;
+  /** Id of the element that labels the group. */
+  ariaLabelledBy?: string;
+  /** Native ref to the `role="group"` element. */
+  ref?: React.Ref<HTMLDivElement>;
+}
+
+/**
+ * A compact single-select button group (`aria-pressed` buttons in a
+ * `role="group"`). Keyboard accessible, RTL-safe, 44px tap targets on touch
+ * devices and below the xs breakpoint.
+ */
+export function SegmentedControl(props: SegmentedControlProps): React.JSX.Element;
 
 // ----- Select (forms) -----
 /** A single choice in a {@link SelectProps.options} list. */
