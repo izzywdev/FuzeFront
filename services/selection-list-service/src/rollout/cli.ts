@@ -82,10 +82,18 @@ export async function main(argv: string[]): Promise<number> {
     return 1;
   }
   const { db } = await import('../db');
+  const started = Date.now();
+  logger.info({ op: 'rollout', job: opts.job, mode: opts.mode }, 'rollout job start');
   try {
     const report = await runJob(db, opts);
+    const code = exitCodeFor(report);
+    logger.info(
+      { op: 'rollout', job: opts.job, mode: opts.mode, runId: report.runId, exitCode: code, elapsedMs: Date.now() - started, changes: report.changes.length, blocked: report.blocked.length },
+      'rollout job end',
+    );
+    // the report is the LAST thing printed (after the structured log lines), so `--json` ends with one parseable line
     out(opts.json ? JSON.stringify(report) : formatReport(report));
-    return exitCodeFor(report);
+    return code;
   } catch (err) {
     if (err instanceof RolloutPreconditionError) {
       out(`PRECONDITION NOT MET (nothing was written): ${err.message}`);

@@ -7,6 +7,8 @@
 //
 // `orgPair(n)` is one organization under BOTH renderings (`uuid` = bare UUID, `wire` = `org_...` TypeID).
 
+import fs from 'fs';
+import path from 'path';
 import type { Knex } from 'knex';
 import { fromUuid, mintId, toUuid } from '@izzywdev/fuzefront-identity';
 import { createTestDb, TestDb } from './testDb';
@@ -118,3 +120,11 @@ export async function dump(db: Knex): Promise<string> {
 }
 
 export const uuidOf = (wire: string): string => toUuid(wire as never);
+
+/** The ```sql block of the rollout runbook that contains `marker` (so the docs' own statements are the ones under test). */
+export function runbookSql(marker: string): string {
+  const text = fs.readFileSync(path.join(__dirname, '../../../../docs/runbooks/selection-lists-rollout.md'), 'utf8');
+  const block = [...text.matchAll(/```sql\n([\s\S]*?)```/g)].map((m) => m[1]).find((b) => b.includes(marker));
+  if (!block) throw new Error(`no sql block with "${marker}" in the rollout runbook`);
+  return block;
+}

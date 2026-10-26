@@ -6,7 +6,7 @@
 import type { Knex } from 'knex';
 import { TOPICS } from '@fuzefront/shared/kafka';
 import { mintEventId, lockOrgOutbox } from '../src/events/outbox';
-import { createRolloutWorld, dump, orgPair, RolloutWorld } from './helpers/rolloutWorld';
+import { createRolloutWorld, dump, orgPair, RolloutWorld, runbookSql } from './helpers/rolloutWorld';
 import { dbDescribe } from './helpers/testDb';
 import { runVisibilityOrg, VISIBILITY_CHUNK } from '../src/rollout/visibilityOrg';
 import { exitCodeFor } from '../src/rollout/common';
@@ -232,6 +232,21 @@ dbDescribe('rollout: visibility-org (design record 9.4) on real Postgres', () =>
     const [r1, r2] = await Promise.all([runVisibilityOrg(w.db, 'apply'), runVisibilityOrg(w.db, 'apply')]);
     expect(r1.changes.length + r2.changes.length).toBe(6);
     for (const id of ids) expect(await events(id)).toHaveLength(1);
+  });
+
+  it('the runbook ROLLBACK statement puts exactly one run\'s lists back to private and touches nothing else', async () => {
+    const x = await world();
+    const other = await w.insertList({ key: 'already', org: x.a.wire, visibility: 'org', seed: seeded('already') });
+    const report = await runVisibilityOrg(w.db, 'apply');
+    expect(report.changes).toHaveLength(3);
+    const stmt = runbookSql('-- ROLLBACK visibility-org').replace(/<runId>/g, report.runId);
+    await w.db.raw(stmt);
+    for (const id of [x.ids.platformPack, x.ids.appPack, x.ids.archivedSeeded]) expect((await get(id)).visibility).toBe('private');
+    expect((await get(other)).visibility).toBe('org'); // not part of the run
+    expect((await get(x.ids.alreadyOrg)).visibility).toBe('org');
+    expect((await get(x.ids.common)).visibility).toBe('platform');
+    // and the job can be re-run to the same end state
+    expect((await runVisibilityOrg(w.db, 'apply')).changes).toHaveLength(3);
   });
 
   it('never reads a flag', async () => {

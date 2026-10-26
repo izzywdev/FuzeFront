@@ -11,7 +11,7 @@ import { _resetPlatformOrgCacheForTesting } from '../src/lib/sharedLists';
 import { runReconcileDuplicates } from '../src/rollout/duplicates';
 import { runRetroForks } from '../src/rollout/retroForks';
 import { RolloutPreconditionError, exitCodeFor } from '../src/rollout/common';
-import { createRolloutWorld, dump, orgPair, PLATFORM, RolloutWorld } from './helpers/rolloutWorld';
+import { createRolloutWorld, dump, orgPair, PLATFORM, RolloutWorld, runbookSql } from './helpers/rolloutWorld';
 import { dbDescribe } from './helpers/testDb';
 
 const state: { db: Knex | undefined } = { db: undefined };
@@ -150,6 +150,20 @@ dbDescribe('rollout: retro-forks (design record 9.6) on real Postgres', () => {
       expect(Number((await get(x.copyA)).revision)).toBe(revBefore + 1);
     });
 
+    it('the runbook ROLLBACK statement undoes exactly one run (provenance and origin ids cleared; ids, items, edits untouched) and the job can redo it', async () => {
+      const x = await world();
+      const copyBefore = await get(x.copyA);
+      const itemsBefore = (await items(x.copyA)).map((i: any) => i.id);
+      const report = await runRetroForks(w.db, 'apply');
+      expect(report.changes).toHaveLength(2);
+      await w.db.raw(runbookSql('-- ROLLBACK retro-forks').replace(/<runId>/g, report.runId));
+      expect(await get(x.copyA)).toMatchObject({ forked_from_list_id: null, forked_from_org_id: null, forked_from_revision: null, forked_at: null, key: copyBefore.key, visibility: 'org' });
+      expect((await items(x.copyA)).every((i: any) => i.origin_item_id === null)).toBe(true);
+      expect((await items(x.copyA)).map((i: any) => i.id)).toEqual(itemsBefore);
+      expect(await w.db('selection_lists').whereNotNull('forked_from_list_id').count<{ n: string }>('* as n').first()).toEqual({ n: '0' });
+      expect((await runRetroForks(w.db, 'apply')).changes).toHaveLength(2);
+    });
+
     it('a second run is a NO-OP: nothing changes, no event, the outbox sequence does not move', async () => {
       await world();
       await runRetroForks(w.db, 'apply');
@@ -258,7 +272,7 @@ dbDescribe('rollout: retro-forks (design record 9.6) on real Postgres', () => {
       expect(report.changes.map((c) => c.listId).sort()).toEqual([x.copyA, x.copyB, older].sort());
       expect((await get(older)).forked_from_list_id).toBe(x.yes);
       expect((await get(younger)).forked_from_list_id).toBeNull(); // the archived, renamed loser stays a plain list
-      expect(report.skipped.some((s) => s.listId === younger && s.reason.includes('renamed copy'))).toBe(true);
+      expect(report.skipped.some((s) => s.listId === younger && s.reason.includes('loser of reconcile-duplicates'))).toBe(true);
     });
   });
 

@@ -113,8 +113,8 @@ const DETAIL_LIMIT = 100;
 /** The human-readable report (the CLI prints this; `--json` prints the report object instead). */
 export function formatReport(r: RolloutReport): string {
   const out: string[] = [];
-  out.push(`=== selection-lists rollout: ${r.job} (${r.mode}) run ${r.runId} ===`);
-  out.push(r.mode === 'dry-run' ? 'DRY RUN: nothing was written. Re-run with --apply to make these changes.' : 'APPLY: changes were committed.');
+  out.push(`=== selection-lists rollout: ${r.job}${r.job === 'audit' ? '' : ` (${r.mode})`} run ${r.runId} ===`);
+  out.push(r.job === 'audit' ? 'READ ONLY: the audit never writes anything.' : r.mode === 'dry-run' ? 'DRY RUN: nothing was written. Re-run with --apply to make these changes.' : 'APPLY: changes were committed.');
   for (const [k, v] of Object.entries(r.summary)) out.push(`  ${k}: ${v}`);
   const section = (title: string, items: unknown[], line: (x: any) => string) => {
     if (items.length === 0) return;
@@ -123,7 +123,7 @@ export function formatReport(r: RolloutReport): string {
     if (items.length > DETAIL_LIMIT) out.push(`  ... ${items.length - DETAIL_LIMIT} more (use --json for the full list)`);
   };
   section(r.mode === 'dry-run' ? 'WOULD CHANGE' : 'CHANGED', r.changes, (c: RolloutChange) => `${c.action} ${c.listId} (org ${c.organizationId})${c.detail ? ` ${JSON.stringify(c.detail)}` : ''}`);
-  section('BLOCKED (needs an operator)', r.blocked, (s: RolloutSkip) => `${s.reason}${s.listId ? ` list ${s.listId}` : ''}${s.organizationId ? ` org ${s.organizationId}` : ''}${s.detail ? ` ${JSON.stringify(s.detail)}` : ''}`);
+  section(r.job === 'audit' ? 'DUPLICATES (run reconcile-duplicates)' : 'BLOCKED (needs an operator)', r.blocked, (s: RolloutSkip) => `${s.reason}${s.listId ? ` list ${s.listId}` : ''}${s.organizationId ? ` org ${s.organizationId}` : ''}${s.detail ? ` ${JSON.stringify(s.detail)}` : ''}`);
   section('LEFT ALONE', r.skipped, (s: RolloutSkip) => `${s.reason}${s.listId ? ` list ${s.listId}` : ''}${s.organizationId ? ` org ${s.organizationId}` : ''}${s.detail ? ` ${JSON.stringify(s.detail)}` : ''}`);
   section('WARNINGS', r.warnings, (w: string) => w);
   if (r.data) out.push(`data: ${JSON.stringify(r.data).slice(0, 4000)}`);

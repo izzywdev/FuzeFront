@@ -32,7 +32,7 @@ import { lockOrgOutbox, wireOrgId } from '../events/outbox';
 import { rankRows } from '../lib/renderingWinner';
 import { logger } from '../lib/logger';
 import { canonicalOrgId, orgForms, orgRenderings, resolvePlatformOrgId } from '../lib/sharedLists';
-import { findForkGroups, findKeyGroups, loadAllLists } from './duplicates';
+import { DUP_SEPARATOR, findForkGroups, findKeyGroups, loadAllLists } from './duplicates';
 import {
   correlationFor,
   emptyReport,
@@ -150,7 +150,9 @@ async function plan(ex: Knex | Knex.Transaction): Promise<Plan> {
       out.skipped.push({
         listId: copy.id,
         organizationId: copy.organization_id,
-        reason: 'renamed copy: its key differs from the common list, and a fork must keep its source key (left a plain list)',
+        reason: copy.key.includes(DUP_SEPARATOR)
+          ? 'a loser of reconcile-duplicates (renamed + archived): left a plain list'
+          : 'renamed copy: its key differs from the common list, and a fork must keep its source key (left a plain list)',
         detail: { key: copy.key, seedListKey: copy.seed_list_key },
       });
       continue;

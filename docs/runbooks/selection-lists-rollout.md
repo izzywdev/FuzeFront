@@ -274,24 +274,112 @@ After the merge: Argo sync green, then section 6 / stage 0, **with both flags st
 
 App code / API / authz policy (`backend-engineer`, authz review), the shell UI and `@fuzefront/selection-lists-ui` (`frontend-engineer`), tests (`test-engineer`, `frontend-test-engineer`), org-wide hardening policy (`platform-governance`), and the shared cluster (FuzeInfra).
 
-## 10. Shared lists (SL9): run BEFORE turning `fuzefront.selection-lists.shared-lists` on
+## 10. Shared lists (SL9): data jobs to run BEFORE turning `fuzefront.selection-lists.shared-lists` on
 
 This section applies to the second flag (`fuzefront.selection-lists.shared-lists`, design record
-`docs/planning/selection-lists-shared-and-fork.md`). The service has never been enabled in production, so the audit
-below is expected to return **no rows**. Run it anyway: with the flag ON the service treats the bare-UUID and the
-`org_…` rendering of one organization id as the same organization, and the database constraint
-`UNIQUE (organization_id, key)` does not (it compares the stored text).
+`docs/planning/selection-lists-shared-and-fork.md`, section 9). That flag has never been ON in production, so the audit
+below is expected to return **no rows** and the data jobs are expected to find only the seeded lists. Run them anyway:
+with the flag ON the service treats the bare-UUID and the `org_…` rendering of one organization id as the same
+organization, and the database constraint `UNIQUE (organization_id, key)` does not (it compares the stored text).
+
+### 10.0 The four jobs: what they are, the order, how to run them
+
+Four jobs ship in the service image (`services/selection-list-service/src/rollout/`). They are the **only** supported way
+to touch this data in production: each one is idempotent, **flag-independent** (it reads and writes data, never an Unleash
+flag), has a **dry run that prints a report and writes nothing**, and is safe while the service is serving (every change
+takes the same per-organization outbox lock every writer takes, re-reads under it, and writes its domain event through the
+outbox in the same transaction).
+
+| Step | Job | What it does | Design record | Section |
+|---|---|---|---|---|
+| 1 | `audit` | Read-only: the same key, or the same fork of a common list, held by one org under both renderings of its id (bare UUID and `org_…` TypeID) | 10 (pre-flag audit) | 10.1 |
+| 2 | `reconcile-duplicates` | Keeps the winner (active, then oldest, then smallest id), **renames + archives** every other row, never deletes | 10 | 10.2 |
+| 3 | `visibility-org` | `private` → `org` for every **seeded** list, so members can pick the default lists; nobody gains a write | 9.4 | 10.4 |
+| 4 | `retro-forks` | The existing per-org copies of the platform pack lists become **forks** of the published common lists | 9.6 | 10.5 |
+
+**Order:** `audit` → `reconcile-duplicates` → `audit` (0 findings) → `visibility-org` → *(design 9.3 and 9.5, not these
+jobs: flag ON for an internal org, publish the common lists)* → `retro-forks` → flag ON broadly. Each job: **dry run
+first, read it, then `--apply`.** `retro-forks --apply` refuses (exit 3) while the audit is not clean.
+
+**The command** (the service image, working directory `/app/services/selection-list-service`; it needs only the service's
+own `DB_*` environment, no Kafka, no Security API, no Unleash):
+
+```bash
+node dist/rollout/cli.js <audit|reconcile-duplicates|visibility-org|retro-forks> [--dry-run | --apply] [--json]
+```
+
+- **No mode flag = `--dry-run`.** A dry run executes in a `READ ONLY` transaction: Postgres refuses any write, it takes no
+  lock and enqueues no event. `--apply` is explicit. `audit` is always read-only and has no `--apply`.
+- `--json` prints the report as one JSON object on one line — the **last** line of stdout, after the structured log lines
+  (`rollout job start` / `rollout job end` with `elapsedMs`); the text report is the default. Set `LOG_LEVEL=warn` to drop the log lines.
+- Local / any shell with the service's environment: `npm run rollout -- <job> [--apply]` in `services/selection-list-service`.
+- **Exit codes:** `0` done or nothing to do · `1` unexpected error or bad usage · `2` findings (`audit` found a duplicate)
+  or an `--apply` that left a **BLOCKED** item for an operator · `3` a precondition is not met, nothing was written
+  (for example `retro-forks` without a confirmed platform organization).
+- Every event a run enqueues carries the correlation id `rollout:<job>:<runId>` (the run id is in the report's first line),
+  so one run's events and changes can be found again.
+
+**In production (GitOps; nobody has a shell in the cluster).** The chart renders one Job per run, only when
+`selectionListService.rolloutJob.enabled` is `true` (default `false`: nothing renders, and with it `false` the rendered
+manifests for `values.yaml`, `values-local.yaml` and `values-prod.yaml` are byte-identical to before the Job existed).
+One reviewed values change per run, merged like any other deploy:
+
+```yaml
+# deploy/helm/fuzefront/values-prod.yaml
+selectionListService:
+  rolloutJob:
+    enabled: true
+    job: "audit"          # audit | reconcile-duplicates | visibility-org | retro-forks
+    mode: "dry-run"       # dry-run | apply   (audit has no apply; anything else fails the render)
+```
+
+Argo runs the Job as a post-sync hook (`fuzefront-selection-list-rollout-<job>-<mode>`, one try, no automatic retry, killed
+after `activeDeadlineSeconds`, kept for `ttlSecondsAfterFinished`). Read the report, then set `enabled: false` again in the
+next change (the hook would otherwise re-run on every sync):
+
+```bash
+gh workflow run cluster-query.yml --repo izzywdev/FuzeInfra \
+  -f kubectl_args='-n fuzefront logs job/fuzefront-selection-list-rollout-audit-dry-run'
+gh workflow run cluster-query.yml --repo izzywdev/FuzeInfra \
+  -f kubectl_args='-n fuzefront get job fuzefront-selection-list-rollout-audit-dry-run'   # exit code: COMPLETIONS 1/1 = 0, Failed = 1/2/3
+```
+
+A Failed Job with exit code 2 or 3 is an **answer**, not an outage: the report in its logs says what needs a decision.
+Do not set `mode: apply` in the same change as the first `dry-run` of that job: review the dry-run report first.
 
 ### 10.1 Pre-enable audit (read-only): the same key under two renderings of one org
 
 Creating or renaming a list is refused (409) when the key already exists for the same org under ANY rendering of its id,
 whatever the shared-lists flag says, so duplicates can only exist in data written before that rule (or by hand). The audit
-below finds them; at read time, with the flag ON, exactly one is effective (the one the caller can read: active, the
+finds them; at read time, with the flag ON, exactly one is effective (the one the caller can read: active, the
 caller's own rendering, oldest, smallest id).
 
-Run against the service database (`selection_list_svc`, read access is enough). It groups rows by the organization's
-**UUID** (taken from the org projection, which stores both renderings of every org it has seen) and reports every
-group with more than one row for a key **and** more than one stored rendering:
+**Job:** `audit` (`rolloutJob.job: "audit"`, `mode: "dry-run"`). It loads every list once in a `REPEATABLE READ, READ ONLY`
+snapshot and pairs two stored ids as one organization when their canonical `org_…` TypeIDs are equal (the identity codec),
+so it also pairs organizations that are **not** in the org projection, which the SQL below cannot. Expected output when
+clean, exit code 0:
+
+```
+=== selection-lists rollout: audit run 01a1798f-7027-7edd-8983-ce95ab0a38c6 ===
+READ ONLY: the audit never writes anything.
+  lists: 5
+  keyDuplicateGroups: 0
+  forkDuplicateGroups: 0
+  unrecognisedOrgIds: 0
+exit code: 0
+```
+
+With a finding (exit code 2) each group is printed under `DUPLICATES (run reconcile-duplicates)` with the org, the key (or the
+forked common list), every stored rendering, and the ids **winner first**. `unrecognisedOrgIds` counts organization ids that
+are neither a UUID nor a TypeID (legacy data): they cannot be paired with anything, are listed under `LEFT ALONE`, and are never
+touched; they are informational, not a finding.
+
+Rollback: nothing to roll back (read-only).
+
+**The same check by hand** (psql against the service database, `selection_list_svc`, read access is enough — for staging or
+when the Job cannot run). It groups rows by the organization's **UUID** (taken from the org projection, which stores both
+renderings of every org it has seen) and reports every group with more than one row for a key **and** more than one stored
+rendering. The job and the SQL agree on every org the projection knows; a test runs this exact SQL against the job:
 
 ```sql
 -- A. keys duplicated across renderings of the same org (expect 0 rows)
@@ -329,33 +417,74 @@ SELECT org_uuid, forked_from_list_id,
 HAVING count(*) > 1 AND count(DISTINCT organization_id) > 1
    AND count(*) FILTER (WHERE status = 'active') > 1;
 
--- C. organizations whose renderings this audit cannot pair (not in the org projection): expect 0 rows.
---    A TypeID cannot be decoded in SQL; if rows appear, decode them with the identity package
---    (`toUuid('<org_…>')`) and re-run A/B for those orgs by hand.
+-- C. organizations whose renderings this SQL cannot pair (not in the org projection): informational.
+--    A TypeID cannot be decoded in SQL. The `audit` job pairs these through the identity codec; by hand, decode them with
+--    the identity package (`toUuid('<org_…>')`) and re-run A/B for those orgs.
 SELECT DISTINCT l.organization_id
   FROM selection_lists l
  WHERE NOT EXISTS (SELECT 1 FROM selection_list_ref_index r
                     WHERE r.entity_type = 'organization' AND (r.wire_id = l.organization_id OR r.entity_id = l.organization_id));
 ```
 
-If A, B and C return nothing, there is nothing to reconcile: go on with section 5.
+(B counts a pair of forks only when **more than one is active**: an archived fork beside an active one is not ambiguous —
+the service ignores the archived one — and an archived loser keeps its provenance after reconciliation, so counting it would
+make the check impossible to clear. The earlier version of this query did count it; that was the runbook's mistake, and the
+audit job and this SQL now agree.)
 
-### 10.2 Reconciliation (only if A or B returned rows)
+If A, B and the `audit` job report nothing, there is nothing to reconcile: go on with 10.4.
 
-**Which row wins** — the same rule the service applies at read time, so reconciling changes nothing a user can see:
-an **active** row beats an archived one; then the **oldest** (`created_at`), then the smallest `id`. (At read time an
-exact match of the caller's claim also outranks age; after reconciliation there is only one row, so that no longer
-matters.) The winner keeps its key, its id, its items, translations and grants. **Stored values elsewhere point at ids,
-so no id is ever deleted or changed.**
+### 10.2 Reconciliation (only if the audit found a group)
 
-**What happens to the loser** — it is renamed out of the way and archived, never deleted (its ids keep resolving, its
-audit trail stays). Preferred path, per loser (emits `list.updated` through the outbox, needs a `list-owner`/admin
-token of that org): `PATCH /v1/selection-lists/{loserId}` with
-`{"key": "<key>--dup-<first 8 chars of the id>", "status": "archived"}`.
+**Which row wins** — the same function the service applies at read time (`lib/renderingWinner.ts`, shared by the read path
+and the job, so they cannot disagree), so reconciling changes nothing a user can see: an **active** row beats an archived
+one; then the **oldest** (`created_at`), then the smallest `id`. (At read time an exact match of the caller's claim also
+outranks age; there is no caller here, and after reconciliation there is only one row, so that no longer matters.) The
+winner keeps its key, its id, its items, translations and grants and is **not written at all**. **Stored values elsewhere
+point at ids, so no id is ever deleted or changed.**
 
-Fallback when no token can be produced, **with the shared-lists flag still OFF**, in one transaction, losers taken from
-query A (`ids_winner_first` without its first element) — it bypasses the outbox, so downstream projections learn the
-new key only from the next change of that list:
+**What happens to the loser** — it is **renamed** to `<key>--dup-<last 8 characters of its id>` (a key longer than 50
+characters is cut to 50 first, so the result is still a legal key of at most 64) and **archived**, never deleted: its ids
+keep resolving, its audit trail stays. (An earlier version of this section said "first 8 characters"; every id starts
+`front_sl_`, so that name would have been the same for every loser. The SQL below always used the last 8. The runbook was
+wrong, the SQL and the code are right.) Two kinds of group are handled, key first and then fork, on the state the first
+phase leaves: *key* (the same key under two renderings: every non-winner) and *fork* (the same common list forked twice
+under two renderings with more than one active: the other active forks). A **common (`platform`) list is never
+auto-archived**: archiving one changes the key lookup of every tenant, so it is reported `BLOCKED` for a decision.
+
+**Job (preferred):** `reconcile-duplicates`. Dry run first (exit 0, writes nothing):
+
+```
+=== selection-lists rollout: reconcile-duplicates (dry-run) run 01a1798e-e1a9-7c02-abd9-111b4dba3e0f ===
+DRY RUN: nothing was written. Re-run with --apply to make these changes.
+  lists: 5
+  keyDuplicateGroups: 1
+  forkDuplicateGroups: 0
+  wouldRenameAndArchive: 1
+  blocked: 0
+WOULD CHANGE (1):
+  - rename+archive (key duplicate) front_sl_01m5wrx6npfhxv6qtxez9yvwsc (org org_01jpmf4z1yf88rpb9z9sd6pw01) {"org":"org_01jpmf4z1yf88rpb9z9sd6pw01","from":"yes-no","to":"yes-no--dup-ez9yvwsc","winner":"front_sl_01m5wrx6nffz9ba214qsfw2xna","wasActive":true}
+exit code: 0
+```
+
+Then `mode: "apply"` (`--apply`): the same lines under `CHANGED`, `renamedAndArchived: 1`. Per group, in one transaction: the
+organization outbox lock, the group's rows re-read under it (so a writer that got there first makes it a no-op), the rename +
+archive, and `selection-lists.list.updated` (`previousKey`) and, for a loser that was active, `selection-lists.list.archived`
+through the outbox. **Re-run = no-op** (`renamedAndArchived: 0`, no event). Then re-run `audit`: it must report 0 groups.
+`BLOCKED` entries (a common list; a rename target key that is already taken; legacy data whose event the contract
+refuses) leave the group untouched, are listed with a reason, and make the apply exit 2.
+
+**Rollback:** there is no automatic one — nothing was deleted and the report is the undo log (`from` → `to`, `winner`,
+`wasActive`). To give a loser its key back it must be free: first rename or archive the winner, then
+`PATCH /v1/selection-lists/{loserId}` with `{"key": "<from>", "status": "active"}`. Decide which row should win before
+doing that; the rule above is the one the service already uses to show users one row.
+
+**Alternative without the job** — per loser, preferred over SQL because it emits `list.updated` through the outbox, needs a
+`list-owner`/admin token of that org: `PATCH /v1/selection-lists/{loserId}` with
+`{"key": "<key>--dup-<last 8 chars of the id>", "status": "archived"}`.
+
+Last-resort fallback when no token can be produced, **with the shared-lists flag still OFF**, in one transaction, losers
+taken from query A (`ids_winner_first` without its first element) — it bypasses the outbox, so downstream projections learn
+the new key only from the next change of that list. A test runs this exact statement and checks it yields the job's name:
 
 ```sql
 BEGIN;
@@ -368,8 +497,9 @@ UPDATE selection_lists
 COMMIT;
 ```
 
-For B (duplicate forks): keep the winner (same rule), archive the loser fork and rename its key as above; then confirm
-`POST /v1/resolve` of one of the org's stored common ids returns one `effective_item_id`.
+For B (duplicate forks): the job handles them (phase 2); by hand keep the winner (same rule), archive the loser fork and
+rename its key as above; then confirm `POST /v1/resolve` of one of the org's stored common ids returns one
+`effective_item_id`.
 
 **Order of operations:** audit (10.1) → reconcile (10.2) → re-run the audit (0 rows) → only then set
 `fuzefront.selection-lists.shared-lists` ON. Do not skip the re-run.
@@ -472,3 +602,122 @@ UPDATE selection_list_ref_index SET suspended_at = NULL, updated_at = now()
 
 A forged event can therefore at worst *pause* platform publishing (recoverable as above); it can never break common-list
 reads or delete data. Broker ACLs on the `identity.*` topics (FuzeInfra#1394) remain the real producer control.
+
+### 10.4 Seeded lists become readable by their organization: `visibility-org` (design record 9.4)
+
+Closes the "seeded lists are invisible" gap without common lists: every list with `seed_source IS NOT NULL` that is still
+`private` becomes `org` (every member of the owning organization can read it; **nobody gains a write** — visibility widens
+reading only). All seed sources (the platform pack and every app pack) and all statuses are included, as the design record
+says. The pack content change that makes **new** orgs seed `org` (pack version 2 with identical content + `visibility`) is a
+separate, later change; this job only converts what already exists.
+
+**Run it once, before the shared-lists flag is ON for any organization.** While the flag is OFF every seeded list is `private`
+because nobody could choose otherwise (PATCH ignores `visibility`), so "seeded and private" means "never chosen". Once an owner
+can set a seeded list back to `private` on purpose, a later run would undo that choice. Two guards: the dry run names **every**
+list it would change (read it), and a list with a `selection-lists.visibility.changed` event by a **user** is left alone (best
+effort: delivered outbox rows are kept `OUTBOX_SENT_RETENTION_HOURS`, 168 h by default).
+
+**Job:** `visibility-org`. Dry run (`mode: "dry-run"`, exit 0, writes nothing):
+
+```
+=== selection-lists rollout: visibility-org (dry-run) run 01a1798f-5505-7216-9a17-3e1a54c1c2b5 ===
+DRY RUN: nothing was written. Re-run with --apply to make these changes.
+  seededListsTotal: 5
+  seededPrivateAtStart: 4
+  seededOrgAtStart: 0
+  seededPlatformAtStart: 1
+  wouldChange: 4
+  leftAlone: 0
+WOULD CHANGE (4):
+  - visibility private -> org front_sl_01m5wrx6nffz9ba214qsfw2xna (org 0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7001) {"key":"yes-no"}
+  ...
+exit code: 0
+```
+
+`seededListsTotal` / `…AtStart` is the census by visibility before the run. Then `mode: "apply"`: the same lines under
+`CHANGED` (`changed: N`). Per organization, in chunks of 200 lists per transaction: the organization outbox lock, the candidates
+re-read under it (a list a writer already changed meanwhile is skipped), the update, and one
+`selection-lists.visibility.changed` (previous `private`, now `org`, the service as actor) per list through the outbox in the same
+transaction. **Re-run = no-op** (`seededPrivateAtStart: 0`, `changed: 0`, no event). `LEFT ALONE` lists a user's deliberate
+choice and an organization id with no `org_` TypeID form (its event cannot be written). A list whose event the contract refuses
+(legacy data, for example a one-character key) is `BLOCKED` and left `private`; the rest convert and the apply exits 2.
+
+**Rollback** of one run (nothing else changes; the run id is in the report's first line). It bypasses the outbox, so
+projections keep reading `org` for those lists until their next change; prefer `PATCH /v1/selection-lists/{id}`
+`{"visibility": "private"}` per list with an owner token once the flag is ON for that org:
+
+```sql
+-- ROLLBACK visibility-org: replace <runId>
+BEGIN;
+UPDATE selection_lists SET visibility = 'private', updated_at = now()
+ WHERE visibility = 'org'
+   AND id IN (SELECT payload->>'listId' FROM event_outbox
+               WHERE topic = 'selection-lists.visibility.changed'
+                 AND correlation_id = 'rollout:visibility-org:<runId>');
+COMMIT;
+```
+
+(The outbox keeps delivered rows 168 h by default; after that take the ids from the saved `--json` report.)
+
+### 10.5 Existing per-org copies become forks of the common lists: `retro-forks` (design record 9.6)
+
+After the common lists exist (design 9.5: the platform pack lists published once into the platform organization as `platform`
+lists — **not one of these jobs**), the per-org copies the platform pack seeded earlier are made **forks** of them: the copy
+gets `forked_from_*` (the common list, its owner, its current revision, now) and each of its items whose `code` also exists in
+the common list gets `origin_item_id` (codes are immutable and list-unique, so the mapping is exact). The copy keeps its id,
+its items, its edits, its visibility and keeps shadowing the common list for its org (precedence is unchanged for its users);
+a stored common item id now resolves to the copy's item (`effective_item_id`).
+
+Which copies: matched by **seed provenance** (`seed_source = 'platform'` and, when the common list was itself seeded, the same
+`seed_key` and `seed_list_key`) **and the same current key** — the `list.forked` contract says a fork keeps its source key, so
+a copy a user renamed cannot be announced as a fork and is reported, not converted. A list a user authored by hand with the
+same key is not a copy and is never touched.
+
+**Prerequisites:** `SELECTION_LIST_PLATFORM_ORG_ID` set (the Job gets it from `selectionListService.platformOrgId`) and the org
+projection showing it as an active organization of type `platform` — otherwise the job exits **3** and writes nothing; at
+least one active common list (otherwise it says so and does nothing); and, for `--apply`, a clean audit (exit 3 otherwise:
+run `reconcile-duplicates` first).
+
+**Job:** `retro-forks`. Dry run (exit 0, writes nothing):
+
+```
+=== selection-lists rollout: retro-forks (dry-run) run 01a1798f-57a6-7970-a8cf-09efe83afb36 ===
+DRY RUN: nothing was written. Re-run with --apply to make these changes.
+  commonLists: 1
+  candidateCopies: 2
+  wouldFork: 2
+  leftAlone: 1
+WOULD CHANGE (2):
+  - make a fork of the common list front_sl_01m5wrx6nffz9ba214qsfw2xna (org 0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7001) {"key":"yes-no","common":"front_sl_01m5wrx6n0fbtrwsep844h0gb1","itemsMapped":2}
+  ...
+LEFT ALONE (1):
+  - renamed copy: its key differs from the common list, and a fork must keep its source key (left a plain list) list front_sl_… org … {"key":"…","seedListKey":"yes-no"}
+exit code: 0
+```
+
+Then `mode: "apply"` (`forked: N`). Per copy, one transaction: the copy's organization outbox lock, the copy and the common list
+re-read under it (the common list `FOR SHARE`, like the fork endpoint), the update, and one synthetic
+`selection-lists.list.forked` (the service as actor; `source`, and the `itemMap` of matched items) through the outbox in the
+same transaction. **Re-run = no-op** (`candidateCopies: 0`, no event). `LEFT ALONE` (with its reason): a renamed copy; a loser of
+`reconcile-duplicates`; an org that already holds a fork of that common list (any rendering); a copy held under two
+renderings (only the winner converts); an org id with no `org_` form; a different seed pack; more than 5000 items to map.
+
+**Rollback** of one run. It bypasses the outbox, so projections keep `forkedFrom` for those lists until their next change:
+
+```sql
+-- ROLLBACK retro-forks: replace <runId>
+BEGIN;
+UPDATE selection_list_items SET origin_item_id = NULL
+ WHERE list_id IN (SELECT payload->>'listId' FROM event_outbox
+                    WHERE topic = 'selection-lists.list.forked'
+                      AND correlation_id = 'rollout:retro-forks:<runId>');
+UPDATE selection_lists
+   SET forked_from_list_id = NULL, forked_from_org_id = NULL, forked_from_revision = NULL, forked_at = NULL, updated_at = now()
+ WHERE id IN (SELECT payload->>'listId' FROM event_outbox
+               WHERE topic = 'selection-lists.list.forked'
+                 AND correlation_id = 'rollout:retro-forks:<runId>');
+COMMIT;
+```
+
+The optional later "collapse untouched forks" job of the design record (archive a fork so the org falls through to the common
+list, after migrating consumers' stored values with the `itemMap`) is **not** built and not scheduled: an owner decision.
