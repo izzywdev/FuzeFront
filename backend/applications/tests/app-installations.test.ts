@@ -134,8 +134,24 @@ async function insertApp(
   scopeLevel: 'personal' | 'organization' | 'both',
   organizationId: string | null,
   visibility: 'private' | 'organization' | 'public' | 'marketplace' = 'private',
-  manifest: Record<string, unknown> = {}
+  manifest: Record<string, unknown> = {},
+  extraCols: Record<string, unknown> = {}
 ) {
+  // Governance org-install-mode is now a first-class column (not manifest-
+  // derived at request time). Mirror migration 019's backfill so a fixture that
+  // declares its intent via the manifest gets the matching column value: an
+  // org-scoped / everyone-declaring app is 'everyone', an explicit self is
+  // 'self', otherwise 'both'.
+  const m = manifest as Record<string, unknown>
+  const orgInstallMode =
+    scopeLevel === 'organization' ||
+    m.orgLevelOnly === true ||
+    m.installMode === 'everyone' ||
+    m.organizationInstallMode === 'everyone'
+      ? 'everyone'
+      : m.organizationInstallMode === 'self'
+        ? 'self'
+        : 'both'
   await db('apps').insert({
     id,
     name,
@@ -144,7 +160,9 @@ async function insertApp(
     organization_id: organizationId,
     visibility,
     scope_level: scopeLevel,
+    org_install_mode: orgInstallMode,
     manifest: JSON.stringify(manifest),
+    ...extraCols,
   })
 }
 
@@ -561,6 +579,40 @@ describe('app installations', () => {
 
   // --- uninstall ------------------------------------------------------------
   describe('DELETE /:id/install/:installationId', () => {
+    it('refuses to uninstall a core app from personal (personal_removable=false)', async () => {
+      const coreId = uuidv4()
+      await insertApp(
+        coreId,
+        `Core App ${suffix}`,
+        'both',
+        ORG_ID,
+        'public',
+        {},
+        { personal_removable: false, system_app: true }
+      )
+      try {
+        const install = await request(app)
+          .post(`/api/apps/${coreId}/install`)
+          .send({ scope: 'personal' })
+        expect(install.status).toBe(201)
+        const installationId = install.body.installation.id
+
+        const del = await request(app).delete(
+          `/api/apps/${coreId}/install/${installationId}`
+        )
+        expect(del.status).toBe(403)
+        expect(del.body.code).toBe('APP_NOT_REMOVABLE')
+
+        const row = await db('app_installations')
+          .where('id', installationId)
+          .first()
+        expect(row.status).toBe('active') // still installed
+      } finally {
+        await db('app_installations').where('app_id', coreId).del()
+        await db('apps').where('id', coreId).del()
+      }
+    })
+
     it('soft-revokes a personal install and allows reinstall afterwards', async () => {
       const install = await request(app)
         .post(`/api/apps/${BOTH_APP_ID}/install`)
