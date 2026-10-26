@@ -16,6 +16,7 @@
 // Add a claim here whenever CLAUDE.md asserts something a command could confirm.
 import { existsSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { validateSlugConvention } from '../packages/onboarding-kit/bin/validate-registration.mjs'
 
 const read = p => (existsSync(p) ? readFileSync(p, 'utf8') : null)
 const claude = read('CLAUDE.md')
@@ -58,25 +59,82 @@ for (const p of citedPaths) {
 }
 
 // --- 2. claims that a gate is WIRED, not merely present --------------------
-// `gate-toolchain` existed as a script for a long while CLAUDE.md said nothing
-// enforced the toolchain floor. A script nobody runs is the repo's recurring failure
-// mode, so assert the wiring too.
+// `gate-toolchain` existed as a script for a long while CLAUDE.md said nothing enforced
+// the toolchain floor. A script nobody runs is the repo's recurring failure mode.
+//
+// The first version of this check asserted the wiring with two substring searches, and
+// the second one passed on `governance/required-checks.json` while `gate-toolchain`
+// appeared there ONLY inside `enforce._doc` — prose about the gate, not membership of
+// the required set. A check that greps explanatory text for the name of the thing it is
+// meant to verify is exactly the vacuity this gate exists to catch, so: parse the JSON
+// and read the array (Codex #1685).
+const requiredNow = () => {
+  const raw = read('governance/required-checks.json')
+  if (!raw) throw new Error('governance/required-checks.json not found')
+  const arr = JSON.parse(raw)?.repos?.FuzeFront?.required_now
+  if (!Array.isArray(arr)) throw new Error('repos.FuzeFront.required_now is not an array')
+  return arr
+}
+
+// Two separate facts, and conflating them is how the CLAUDE.md line went wrong twice:
+// the job FAILS (no `|| true`, exits 1) but it does NOT BLOCK (not a required context,
+// so auto-merge never waits on it). Assert both, in the direction CLAUDE.md now states.
 claim(
-  'gate-toolchain is wired into harden-gate + required-checks',
-  () =>
-    (read('.github/workflows/harden-gate.yml') || '').includes('gate-toolchain') &&
-    (read('governance/required-checks.json') || '').includes('gate-toolchain'),
-  'CLAUDE.md claims the Node/React floor is enforced by gate-toolchain; it is not wired',
+  'gate-toolchain runs unsuppressed in harden-gate.yml',
+  () => {
+    const wf = read('.github/workflows/harden-gate.yml') || ''
+    const job = wf.slice(wf.indexOf('\n  gate-toolchain:'))
+    const step = job.slice(0, job.indexOf('\n  gate-frontend-build:'))
+    return (
+      step.includes('node scripts/gate-toolchain.mjs') &&
+      !/gate-toolchain\.mjs[^\n]*(\|\| true|\|\|true)/.test(step) &&
+      !/continue-on-error:\s*true/.test(step)
+    )
+  },
+  'CLAUDE.md says gate-toolchain runs in harden-gate.yml and fails on a violation; the step is missing or suppressed',
+)
+
+claim(
+  'gate-toolchain is NOT in the live required set, as CLAUDE.md states',
+  () => !requiredNow().includes('gate-toolchain'),
+  'gate-toolchain is now a required context — CLAUDE.md says it reports without blocking a merge; update that line',
+)
+
+// The required set itself, because CLAUDE.md quotes it in full. Verified equal to the
+// live ruleset (`gh api repos/izzywdev/FuzeFront/rules/branches/master`) on 2026-10-26;
+// required-checks.json is the in-repo mirror a CI job can read without a token.
+claim(
+  'the required-check list quoted in CLAUDE.md matches required_now',
+  () => {
+    const live = requiredNow()
+    const missing = live.filter(c => !claude.includes(`\`${c}\``))
+    if (missing.length) throw new Error(`required contexts CLAUDE.md does not list: ${missing.join(', ')}`)
+    return true
+  },
+  'the live required set and the list in CLAUDE.md disagree',
 )
 
 // --- 3. the FuzeBI/FuzeX carve-out is encoded, as CLAUDE.md now states -----
+// Grepping the source for 'FuzeBI'/'FuzeX' passed even with the exemption set emptied,
+// because the validator's own COMMENT names both products — so the check could not fail
+// on the one disagreement it was written to catch (Codex #1685). Call the function.
 claim(
-  'validateSlugConvention encodes the FuzeBI/FuzeX carve-out',
+  'validateSlugConvention exempts FuzeBI/FuzeX, and flags other Fuze-prefixed names',
   () => {
-    const v = read('packages/onboarding-kit/bin/validate-registration.mjs') || ''
-    return v.includes('FuzeBI') && v.includes('FuzeX')
+    const exempt = ['FuzeBI', 'FuzeX']
+    for (const name of exempt) {
+      for (const field of ['name', 'menuLabel']) {
+        const findings = validateSlugConvention({ slug: 'x', name: 'Ok', menuLabel: 'Ok', [field]: name })
+        if (findings.length) throw new Error(`${name} rejected in ${field}: ${JSON.stringify(findings)}`)
+      }
+    }
+    // The control: without a working carve-out this would also come back clean, which is
+    // what made the old grep vacuous.
+    const flagged = validateSlugConvention({ slug: 'fuzesales', name: 'FuzeSales', menuLabel: 'FuzeSales' })
+    if (!flagged.length) throw new Error('a Fuze-prefixed display name was not flagged at all')
+    return true
   },
-  'CLAUDE.md says the carve-out is encoded in the validator; the names are absent',
+  'CLAUDE.md says the FuzeBI/FuzeX carve-out is encoded in validateSlugConvention; the validator disagrees',
 )
 
 // --- 4. quoted counts must match the live gate ------------------------------
@@ -105,12 +163,35 @@ claim(
         )
       }
     }
-    const m = out.replace(/\x1b\[[0-9;]*m/g, '').match(/covered (\d+), blocked (\d+)/)
-    if (!m) throw new Error('could not parse "covered N, blocked N" from the gate output')
-    const [, covered, blocked] = m
-    const quoted = claude.match(/\*\*(\d+) covered \/ (\d+) blocked\*\*/)
-    if (!quoted) throw new Error('CLAUDE.md no longer quotes "**N covered / N blocked**"')
-    return quoted[1] === covered && quoted[2] === blocked
+    const plain = out.replace(/\x1b\[[0-9;]*m/g, '')
+    // Every number CLAUDE.md quotes from this report, not just the first two. It quoted
+    // "22 flows" against an actual 65 for as long as nothing compared them, and offered
+    // `blocked` as the flip-to-fail worklist when `uncovered` is the number that governs
+    // that decision — so check the flow count and the uncovered count too (Codex #1685).
+    const live = {
+      covered: plain.match(/covered (\d+)/)?.[1],
+      blocked: plain.match(/blocked (\d+)/)?.[1],
+      flows: plain.match(/coverage: (\d+) flow\(s\) across (\d+) feature\(s\)/)?.[1],
+      features: plain.match(/coverage: (\d+) flow\(s\) across (\d+) feature\(s\)/)?.[2],
+      uncovered: plain.match(/no declared coverage: (\d+)/)?.[1],
+    }
+    for (const [k, v] of Object.entries(live)) {
+      if (v === undefined) throw new Error(`could not parse ${k} from the gate output`)
+    }
+    const quoted = {
+      covered: claude.match(/\*\*(\d+) covered \/ (\d+) blocked\*\*/)?.[1],
+      blocked: claude.match(/\*\*(\d+) covered \/ (\d+) blocked\*\*/)?.[2],
+      flows: claude.match(/\*\*(\d+) flows across (\d+) of (\d+)\*\* manifests/)?.[1],
+      features: claude.match(/\*\*(\d+) flows across (\d+) of (\d+)\*\* manifests/)?.[2],
+      uncovered: claude.match(/while \*\*(\d+)\*\* tracked feature-UI files/)?.[1],
+    }
+    const wrong = Object.keys(live).filter(k => quoted[k] !== live[k])
+    if (wrong.length) {
+      throw new Error(
+        wrong.map(k => `${k}: CLAUDE.md says ${quoted[k] ?? '(not quoted)'}, gate reports ${live[k]}`).join('; '),
+      )
+    }
+    return true
   },
   'the numbers in CLAUDE.md no longer match scripts/check-frames-first.mjs — re-measure and update the line',
 )
