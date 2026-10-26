@@ -213,6 +213,8 @@ export interface paths {
          *
          *     **Answer.** `{ active: true }` only when the session exists, has not expired, AND belongs to the supplied `userId`. Every other case, an unknown id, a revoked or expired session, or a session owned by a different user, is the same `200 { active: false }`, with no reason given, so the endpoint cannot be used to learn which of the two identifiers was wrong. This operation does NOT verify any token signature; the caller must already have done that.
          *
+         *     **Tenant.** Every tenant's sessions are signed with the same secret, so a signature alone cannot tell two tenants' tokens apart; the token's `tid` claim plus the tenant serving the request is what separates them. Send the token's `tid` as `tenantId`. When multi-tenant identity is enabled a session is active only for the tenant that minted it: the answer is `{ active: false }` unless `tenantId` equals the tenant that serves this request (selected by the request `Host`, so call the host of the tenant your service belongs to). A token with no `tid` is active only in single-tenant mode, where `tenantId` may be omitted.
+         *
          *     **Fail-closed.** A store outage is `503`, never `{ active: true }` and never `{ active: false }`. A consumer MUST treat `503` as a retryable service condition, not as a revoked session: refusing every user because the store blinked is an outage, not a revocation. A consumer MUST treat anything other than a well-formed `{ active: true }` as inactive.
          */
         post: operations["validateSession"];
@@ -1995,6 +1997,8 @@ export interface components {
             userId: string;
             /** @description The `sessionId` claim of the session token. */
             sessionId: string;
+            /** @description The `tid` claim of the session token, if it has one. Required for a session to count as active when multi-tenant identity is enabled (it must equal the tenant serving the request). Omit it only for a token that carries no `tid`, which is valid only in single-tenant mode. */
+            tenantId?: string;
         };
         /** @description Whether the session is still active. A consumer MUST treat anything other than a well-formed `{ "active": true }` as inactive. */
         SessionValidation: {
