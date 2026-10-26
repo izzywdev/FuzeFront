@@ -25,6 +25,8 @@ import { isMemberDirectoryEnabled } from '../utils/memberDirectoryFlag'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import { assertTenantMatches, sessionTenantId } from '../middleware/tenant-context'
 import { mintOrgSessionToken, OrgSessionError } from '../services/orgSessionToken'
+import { applyOrgListVisibility, viewerSeesRootOrg } from '../services/orgListVisibility'
+import { isOrgListDirectOnlyEnabled } from '../utils/orgListDirectOnlyFlag'
 
 const router = express.Router()
 
@@ -393,20 +395,22 @@ router.get('/', authenticateToken, async (req: any, res) => {
           [req.user.id, ...rankRoles]
         )
       )
-      .where(function () {
-        // A user sees orgs they are an active member of, plus the single
-        // canonical platform root (every user has a baseline membership there,
-        // but new users may not yet — so keep it visible by id). Scoping to
-        // ROOT_ORG_ID, not type='platform', stops any other/legacy platform org
-        // leaking into every user's switcher as a phantom "Guest" tile.
-        this.whereExists(function () {
-          this.select(db.raw('1'))
-            .from('organization_memberships as om2')
-            .whereRaw('om2.organization_id = organizations.id')
-            .andWhere('om2.user_id', req.user.id)
-            .andWhere('om2.status', 'active')
-        }).orWhere('organizations.id', ROOT_ORG_ID)
-      })
+
+    // Visibility (owner decision, 2026-10-26): show ONLY orgs where the caller
+    // holds a DIRECT active membership. The root org is hidden from everyone but
+    // platform staff (root-membership gave every user a baseline `member` row
+    // there), and ancestors the caller is not a direct member of are never
+    // pulled in. See services/orgListVisibility.ts. Kill-switch default ON; OFF
+    // restores the previous list (direct memberships + root by id).
+    const directOnly = await isOrgListDirectOnlyEnabled({ userId: req.user.id })
+    const seesRoot = directOnly
+      ? await viewerSeesRootOrg({ userId: req.user.id, roles: req.user.roles })
+      : true
+    logger.debug(
+      { userId: req.user.id, directOnly, seesRoot },
+      'org-list: visibility resolved'
+    )
+    applyOrgListVisibility(query, { userId: req.user.id, seesRoot })
 
     // Apply filters
     if (type) {
