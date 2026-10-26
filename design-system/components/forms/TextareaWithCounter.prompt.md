@@ -9,7 +9,7 @@ A `Textarea` with a live character counter and a limit — for length-limited fr
   rows={6}
 />
 
-// Uncontrolled, optional field, with a native hard stop
+// Uncontrolled, optional field, hard-capped at the limit (strict)
 <TextareaWithCounter label="Notes for the reviewer" maxLength={2000} strict defaultValue="" />
 ```
 
@@ -17,7 +17,7 @@ Props: `maxLength` (required — the limit), `strict`, `value` / `defaultValue` 
 
 Behaviour:
 - **Counter** sits on the label row at the inline-end edge (mirrors under `dir="rtl"`), mono with tabular figures — `412 / 4,000`. It turns to the error colour and semibold when over the limit.
-- **Soft limit by default.** The user can type or paste past `maxLength`; the overflow is flagged (counter, `aria-invalid`, a visible error) so the form can block submit and the user can trim. Truncating pasted text silently is worse. Pass `strict` to also set the native `maxlength` and let the browser truncate instead.
+- **Soft limit by default.** The user can type or paste past `maxLength`; the overflow is flagged (counter, `aria-invalid`, a visible error) so the form can block submit and the user can trim. Truncating pasted text silently is worse. Pass `strict` to truncate input to `maxLength` code points instead (enforced in JS on change — the native `maxlength` attribute is not used, as it counts UTF-16 units and would cut an emoji off mid-surrogate).
 - **Counted in Unicode code points** — what an OpenAPI/JSON-Schema `maxLength` counts — so an emoji is 1, not 2.
 - A caller-supplied `error` (e.g. a server `VALIDATION` message) wins over the built-in over-limit message. It renders in a `role="alert"`; a message that changes every keystroke ("127 over") would be re-announced each time, so prefer a stable string.
 - `counterProps` is spread onto the visible counter — use it for test/automation hooks, e.g. `counterProps={{ "data-counter": "brief" }}`.

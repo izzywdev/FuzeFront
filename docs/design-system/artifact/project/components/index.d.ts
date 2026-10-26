@@ -1086,8 +1086,11 @@ export interface TextareaWithCounterProps
   /** The character limit. Counted in Unicode code points (what OpenAPI `maxLength` counts). */
   maxLength: number;
   /**
-   * Also set the native `maxlength` so the browser truncates typing/pasting.
-   * Default `false`: a soft limit — the user can exceed it and sees the overflow flagged.
+   * Truncate input to `maxLength` code points as the user types or pastes.
+   * Default `false`: a soft limit — the user can exceed it and sees the
+   * overflow flagged. (The native `maxlength` attribute is never used: it
+   * counts UTF-16 units and would cut an emoji off mid-surrogate, so the
+   * advertised limit would be unreachable.)
    */
   strict?: boolean;
   /** Controlled value. */
