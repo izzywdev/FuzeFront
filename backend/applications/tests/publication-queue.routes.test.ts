@@ -37,7 +37,6 @@ import { fromUuid } from '@izzywdev/fuzefront-identity'
 import { setFlagClient, FLAGS } from '../src/app-registry/flags'
 import { setPermitClient } from '../src/app-registry/permit'
 import { setCreatorResolver, toAppDtos } from '../src/app-registry/app-dto'
-import { setIdentityFlagClient } from '../src/identity/flags'
 import { appRegistryService, InvalidCursorError } from '../src/app-registry/service'
 import appBuildsRouter from '../src/routes/app-builds'
 
@@ -51,7 +50,6 @@ let publishFlag = true
 let creatorFlag = true
 let creatorFlagByOrg: Record<string, boolean> | null = null
 const creatorEvalCtx: any[] = []
-let prefixedFlag = false
 setFlagClient({
   getBooleanValue: async (key: string, def: boolean, ctx?: any) => {
     if (key === FLAGS.MARKETPLACE_PUBLISHING) return publishFlag
@@ -62,10 +60,6 @@ setFlagClient({
     }
     return def
   },
-})
-setIdentityFlagClient({
-  getBooleanValue: async (key: string, def: boolean) =>
-    key === 'fuzefront.identity.prefixed-ids' ? prefixedFlag : def,
 })
 const permitChecks: any[] = []
 setPermitClient({ check: async (...a: any[]) => { permitChecks.push(a); return true } })
@@ -93,7 +87,7 @@ let spy: jest.SpyInstance
 let creatorInfo: any
 
 beforeEach(() => {
-  publishFlag = true; creatorFlag = true; prefixedFlag = false; creatorFlagByOrg = null; creatorEvalCtx.length = 0
+  publishFlag = true; creatorFlag = true; creatorFlagByOrg = null; creatorEvalCtx.length = 0
   permitChecks.length = 0
   creatorInfo = { isCurrentMember: true, displayName: 'Casey Creator', contactEmail: 'casey@example.com' }
   setCreatorResolver({ resolve: async () => creatorInfo })
@@ -214,7 +208,7 @@ describe('GET /publication-requests — PublicationQueueItem shape', () => {
       slug: 'inv',
       name: 'App inv',
       icon: { kind: 'emoji', value: '🧾' },
-      organizationId: ORG,
+      organizationId: fromUuid('organization', ORG),
       creator: {
         userId: fromUuid('user', CREATOR),
         isCurrentMember: true,
@@ -286,8 +280,7 @@ describe('GET /publication-requests — PublicationQueueItem shape', () => {
     expect(res.body.items[0].icon).toEqual({ kind: 'emoji', value: '📦' })
   })
 
-  it('prefixed-ids flag ON: organizationId in wire form', async () => {
-    prefixedFlag = true
+  it('organizationId is always in TypeID wire form', async () => {
     const res = await request(app).get(URL).set(as(admin))
     expect(res.body.items[0].organizationId).toBe(fromUuid('organization', ORG))
   })
@@ -302,7 +295,7 @@ describe('GET /publication-requests — PublicationQueueItem shape', () => {
 
 describe('AppCreator.contactEmail (toAppDtos)', () => {
   const sameOrg = { userId: CREATOR, organizationIds: [ORG], isPlatformAdmin: false }
-  const opts = { prefixed: false, creatorOwnership: true, caller: sameOrg }
+  const opts = { creatorOwnership: true, caller: sameOrg }
   it('present while a current member; absent when email unknown', async () => {
     creatorInfo = { isCurrentMember: true, displayName: 'Casey', contactEmail: 'c@example.com' }
     expect((await toAppDtos([appRecord('a') as any], opts))[0].creator.contactEmail).toBe('c@example.com')
@@ -330,7 +323,7 @@ describe('AppCreator.contactEmail (toAppDtos)', () => {
     }
   })
   it('flag OFF: no creator surface at all', async () => {
-    const dto = (await toAppDtos([appRecord('a') as any], { prefixed: false, creatorOwnership: false }))[0]
+    const dto = (await toAppDtos([appRecord('a') as any], { creatorOwnership: false }))[0]
     expect(dto).not.toHaveProperty('creator')
   })
 })

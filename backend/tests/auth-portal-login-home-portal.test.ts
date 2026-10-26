@@ -1,3 +1,4 @@
+import { toUuid } from '@izzywdev/fuzefront-identity'
 import request from 'supertest'
 import express from 'express'
 import bcrypt from 'bcryptjs'
@@ -292,7 +293,7 @@ describe('FF-EPIC-11-S5 — home_portal_id cross-portal login rejection', () => 
     )
 
     expect(res.status).toBe(200)
-    const session = await db('sessions').where({ id: res.body.sessionId }).first()
+    const session = await db('sessions').where({ id: toUuid(res.body.sessionId) }).first()
     expect(session.active_organization_id).toBe(orgA)
   })
 
@@ -337,7 +338,7 @@ describe('FF-EPIC-11-S5 — identity_policy master-admin support access', () => 
 
       expect(res.status).toBe(200)
       expect(res.body.token).toBeTruthy()
-      const session = await db('sessions').where({ id: res.body.sessionId }).first()
+      const session = await db('sessions').where({ id: toUuid(res.body.sessionId) }).first()
       expect(session.active_organization_id).toBe(orgA)
 
       // AUDIT-LOGGED — a distinct, findable log line for this exact support

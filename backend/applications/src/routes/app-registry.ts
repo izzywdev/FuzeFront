@@ -10,7 +10,6 @@ import { randomBytes } from 'crypto'
 // then JWT session. authenticateToken is no longer referenced directly here — it
 // is reached through authenticateConsumerOrSession's fall-through.
 import { authenticateConsumerOrSession, SYNTHETIC_CONSUMER_USER_ID } from '../middleware/consumer-auth'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { toAppDto, toAppDtos } from '../app-registry/app-dto'
 import {
   appManifestSchema,
@@ -79,12 +78,11 @@ async function v1WriteGate(
 }
 
 /**
- * Wire-shape options for an App DTO: id prefixing + the creator-ownership
+ * Wire-shape options for an App DTO: the creator-ownership
  * surface (flag fuzefront.apps.creator-ownership, default OFF — when OFF the
  * DTO is byte-identical to the pre-feature shape).
  */
 async function dtoOptions(req: any, organizationId?: string | null) {
-  const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
   // Caller context for creator.contactEmail visibility. Memoised on the request
   // (resolveCaller hits the DB) and FAIL CLOSED: if it can't be resolved the
   // email is simply omitted.
@@ -96,7 +94,6 @@ async function dtoOptions(req: any, organizationId?: string | null) {
   }
   return {
     caller,
-    prefixed: await isPrefixedIdsEnabled(flagCtx),
     creatorOwnership: await isCreatorOwnershipEnabled({
       organizationId: organizationId ?? req.user?.organizationId,
       userId: req.user?.id,

@@ -10,7 +10,6 @@ import {
   rowToPortalContext,
 } from '../repositories/portalRepository'
 import { getRequestPortalsEnabled } from '../utils/portalFlag'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 
 /**
@@ -79,16 +78,14 @@ router.get('/context', portalContextRateLimiter, async (req: Request, res: Respo
       })
     }
     if (req.portalsFlagEnabled) {
-      const prefixed = await isPrefixedIdsEnabled()
-      return res.json(prefixDtoIds(bootstrapPortalContext() as any, prefixed, { id: 'portal' }))
+      return res.json(prefixDtoIds(bootstrapPortalContext() as any, { id: 'portal' }))
     }
     return res.status(404).json({
       error: 'NOT_FOUND',
       message: 'No portal context available.',
     })
   }
-  const prefixed = await isPrefixedIdsEnabled()
-  return res.json(prefixDtoIds(rowToPortalContext(portal) as any, prefixed, { id: 'portal' }))
+  return res.json(prefixDtoIds(rowToPortalContext(portal) as any, { id: 'portal' }))
 })
 
 /**
@@ -130,13 +127,11 @@ router.get('/current', portalCurrentRateLimiter, authenticateToken, async (req: 
   }
 
   const domains = await getPortalDomains(row.id, db)
-  const flagCtx = { userId: req.user?.id }
-  const prefixed = await isPrefixedIdsEnabled(flagCtx)
   const dto = rowToPortal(row, domains)
-  const prefixedDto = prefixDtoIds(dto as any, prefixed, { id: 'portal', organizationId: 'organization' })
+  const prefixedDto = prefixDtoIds(dto as any, { id: 'portal', organizationId: 'organization' })
   return res.json({
     ...prefixedDto,
-    domains: (dto as any).domains?.map((d: any) => prefixDtoIds(d, prefixed, { portalId: 'portal' })) ?? [],
+    domains: (dto as any).domains?.map((d: any) => prefixDtoIds(d, { portalId: 'portal' })) ?? [],
   })
 })
 

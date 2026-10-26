@@ -21,7 +21,6 @@ import { getRequestPortalsEnabled } from '../utils/portalFlag'
 import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
 import { checkOrganizationPermission } from '../utils/permit/permission-check'
 import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds, toWireId } from '../identity/serializer'
 
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
@@ -548,12 +547,10 @@ router.post('/login', async (req, res) => {
     // Self-heal provisioning in the background (does not block the response).
     selfHealProvisioningOnLogin(user.id)
 
-    const flagCtx = { userId: user.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     res.json({
       token,
-      user: prefixDtoIds(user, prefixed, { id: 'user', defaultAppId: 'app' }),
-      sessionId: toWireId('session', sessionId, prefixed),
+      user: prefixDtoIds(user, { id: 'user', defaultAppId: 'app' }),
+      sessionId: toWireId('session', sessionId),
     })
   } catch (error) {
     console.error(`💥 [${requestId}] Login error:`, {
@@ -615,10 +612,8 @@ const getUserRateLimiter = rateLimit({
 
 // GET /auth/user - Get current user
 router.get('/user', getUserRateLimiter, authenticateToken, async (req: any, res) => {
-  const flagCtx = { userId: req.user?.id }
-  const prefixed = await isPrefixedIdsEnabled(flagCtx)
   res.json({
-    user: prefixDtoIds(req.user, prefixed, { id: 'user', defaultAppId: 'app', portalId: 'portal', homePortalId: 'portal' }),
+    user: prefixDtoIds(req.user, { id: 'user', defaultAppId: 'app', portalId: 'portal', homePortalId: 'portal' }),
   })
 })
 
@@ -887,13 +882,11 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
 
     selfHealProvisioningOnLogin(user.id)
 
-    const flagCtx = { userId: user.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     console.log('🎉 Authentik password login successful', { requestId, userId: user.id })
     return res.json({
       token,
-      user: prefixDtoIds(user, prefixed, { id: 'user', defaultAppId: 'app' }),
-      sessionId: toWireId('session', sessionId, prefixed),
+      user: prefixDtoIds(user, { id: 'user', defaultAppId: 'app' }),
+      sessionId: toWireId('session', sessionId),
     })
   } catch (error) {
     if (error instanceof InvalidCredentialsError) {
@@ -1053,8 +1046,7 @@ router.post('/token-exchange', async (req, res) => {
     return res.status(401).json({ error: 'invalid or expired code' })
   }
   pendingCodes.delete(code)
-  const prefixed = await isPrefixedIdsEnabled()
-  return res.json({ token: pending.token, sessionId: toWireId('session', pending.sessionId, prefixed) })
+  return res.json({ token: pending.token, sessionId: toWireId('session', pending.sessionId) })
 })
 
 /**

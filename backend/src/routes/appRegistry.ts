@@ -2,7 +2,6 @@ import express, { Response, NextFunction } from 'express'
 import rateLimit from 'express-rate-limit'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 
 const router = express.Router()
@@ -133,9 +132,7 @@ router.get('/apps', appsReadLimiter, authenticateToken, async (req: any, res: Re
 
     const rows = await query.limit(parseInt(limit, 10))
     const rawApps = rows.map(rowToRegistryApp)
-    const flagCtx = { userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    const apps = rawApps.map((app: any) => prefixDtoIds(app, prefixed, { organizationId: 'organization' }))
+    const apps = rawApps.map((app: any) => prefixDtoIds(app, { organizationId: 'organization' }))
 
     res.json({ apps, nextCursor: null })
   } catch (error: any) {
