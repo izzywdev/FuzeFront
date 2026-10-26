@@ -227,6 +227,27 @@ class SafetyGatesBlockMerge(StubServerCase):
         self.assertEqual(self._run(), 0)
         self.assertEqual(self.fx.merged, [])
 
+    def test_hold_label_added_between_listing_and_fetch_blocks(self):
+        """TOCTOU: the list says eligible (auto-merge, no hold), but by the time
+        the per-PR fetch runs a `blocked` label has been added. Labels are the
+        only enforcement of operator opt-out (the ruleset does not gate on them),
+        so evaluate() must re-check the FRESH labels, not trust the stale list."""
+        self.fx.pulls_list = [{"number": 11, "draft": False,
+                               "labels": [{"name": "auto-merge"}]}]  # eligible at list time
+        self.fx.pulls = {11: _armed_pr(11, "s11", labels=("auto-merge", "blocked"))}  # changed since
+        self.fx.checks = {"s11": _green_checks(["gate-build", "gate-test", "gate-lint"])}
+        self.assertEqual(self._run(), 0)
+        self.assertEqual(self.fx.merged, [])
+
+    def test_optin_removed_between_listing_and_fetch_blocks(self):
+        """Mirror of the above: `auto-merge` removed after listing → not merged."""
+        self.fx.pulls_list = [{"number": 12, "draft": False,
+                               "labels": [{"name": "auto-merge"}]}]
+        self.fx.pulls = {12: _armed_pr(12, "s12", labels=())}  # opt-in gone since
+        self.fx.checks = {"s12": _green_checks(["gate-build", "gate-test", "gate-lint"])}
+        self.assertEqual(self._run(), 0)
+        self.assertEqual(self.fx.merged, [])
+
 
 class EmptyRulesetRefuses(StubServerCase):
     def test_no_required_checks_is_blind_refusal(self):

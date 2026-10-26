@@ -220,20 +220,35 @@ def is_behind(repo, base_ref, head_sha, token):
     return behind_by > 0, f"behind_by={behind_by}"
 
 
+def _label_disqualifier(labels):
+    """Return a reason string if these labels disqualify the PR, else ''.
+
+    The opt-in and hold labels are the ONLY thing enforcing operator intent —
+    GitHub's ruleset does not gate merges on labels — so this predicate is the
+    boundary, not a convenience. It is applied to the cheap list response AND
+    re-applied to the freshly-fetched PR in evaluate(), because the labels can
+    change in the window between the two (see evaluate())."""
+    names = {l.get("name") for l in (labels or [])}
+    if _OPT_IN_LABEL not in names:
+        return f"missing opt-in label {_OPT_IN_LABEL!r}"
+    held = names & _HOLD_LABELS
+    if held:
+        return f"hold label(s) present: {sorted(held)}"
+    return ""
+
+
 def candidate_prs(repo, token):
     """Open, non-draft PRs carrying the opt-in label and no hold label.
 
     The list endpoint omits `auto_merge` and `mergeable`, so this is only the
-    cheap first filter; the per-PR GET in evaluate() reads the rest."""
+    cheap first filter; the per-PR GET in evaluate() reads the rest — and
+    re-checks the labels, which may have changed since this listing."""
     prs = _get_all(f"/repos/{repo}/pulls?state=open", token)
     out = []
     for p in prs:
         if p.get("draft"):
             continue
-        labels = {l.get("name") for l in p.get("labels", [])}
-        if _OPT_IN_LABEL not in labels:
-            continue
-        if labels & _HOLD_LABELS:
+        if _label_disqualifier(p.get("labels")):
             continue
         out.append(p.get("number"))
     return out
@@ -249,6 +264,17 @@ def evaluate(repo, number, needed, token):
     if pr.get("state") != "open" or pr.get("draft"):
         v["reason"] = "not an open non-draft PR"
         return v
+    # Re-check labels on the FRESHLY-FETCHED PR, not just the list response that
+    # candidate_prs() filtered. candidate_prs() lists PRs, then each is fetched
+    # one at a time (with pagination and earlier candidates processed between);
+    # if `auto-merge` is removed or `hold`/`blocked` added in that window, the
+    # list said eligible but the PR no longer is. The ruleset does not enforce
+    # labels, so merging here would defeat the operator's opt-out entirely.
+    label_bad = _label_disqualifier(pr.get("labels"))
+    if label_bad:
+        v["reason"] = f"label changed since listing — {label_bad}"
+        return v
+
     am = pr.get("auto_merge")
     if not am:
         v["reason"] = "native auto-merge is not armed — watchdog only completes an armed intent"
