@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Read-only detail: states</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher" aria-label="App launcher">▦</div>
+    <div class="avatar" title="Lee Park · member of Acme Logistics">LP</div>
+  </header>
+  <div class="body">
+    <nav class="side" aria-label="Primary">
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Applications</a>
+      <div class="section-label">Organization</div>
+      <a class="nav-item" href="#"><span class="ico">☺</span> Members</a>
+      <a class="nav-item active" href="01-shared-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">⚙</span> Settings</a>
+    </nav>
+    <main class="content" data-frame="03-readonly-states">
+
+      <div class="sl-crumb"><a href="01-shared-index.html">Selection Lists</a> · Lead sources</div>
+      <h1 class="page-title">Lead sources</h1>
+      <div class="sl-head__meta">
+        <span class="sl-key">lead-sources</span>
+        <span class="sl-vis sl-vis--org" data-visibility="org" title="visibility: org">◉ Organization</span>
+        <span class="sl-ro" data-editable="false"><span aria-hidden="true">🔒</span> Read-only for you</span>
+      </div>
+
+      <!-- ReadOnlyListNotice (org): your own organization's list, shared with members -->
+      <div class="sl-banner sl-banner--info" data-readonly-notice="org" role="note">
+        <span class="sl-banner__ico" aria-hidden="true">☰</span>
+        <div class="sl-banner__body">
+          <p class="sl-banner__title">Shared with everyone in Acme Logistics</p>
+          <p>You can view this list and pick its values in forms. Being a member lets you <b>read</b> a list, never change it.
+            To change it, ask the list's owner for an editor role. <span data-owner-hint data-created-by-kind="user">It was created by a user, not set up automatically.</span></p>
+          <p class="sl-muted">No Fork here: this list already belongs to your organization, so a fork is refused
+            (<code class="sl-code">409 fork_not_applicable</code>) and the UI never offers one. There is no in-app access request, and
+            the list's roster is not visible to you, so the notice names no person: it says only what <code class="sl-code">created_by</code> proves.</p>
+        </div>
+      </div>
+      <dl class="sl-facts" data-owner-hint-variants style="margin: 0 0 var(--space-5);">
+        <dt>created_by user</dt><dd data-created-by-kind="user">“It was created by a user, not set up automatically.”</dd>
+        <dt>created_by system</dt><dd data-created-by-kind="system">“It was set up automatically for your organization.”</dd>
+        <dt>created_by deleted user</dt><dd data-created-by-kind="deleted-user">“Its creator's account has been deleted.”</dd>
+      </dl>
+      <p class="sl-field__hint" style="margin-bottom: var(--space-5);"><code class="sl-code">created_by</code> is an <code class="sl-code">AuthorPrincipal</code> — a user id, a system principal or
+        the deleted-user sentinel, decided offline by its prefix — and never a display name. The hint branches on that form only; it never
+        renders the raw identifier, never claims the creator is still a member, and never looks a <code class="sl-code">usr_</code> value up (no directory read is part of this contract, and a
+        member without a role cannot read the list's roster).</p>
+
+      <section class="sl-panel" data-panel="value-table" data-readonly="true" data-state="ready">
+        <div class="sl-panel__seam"></div>
+        <table class="sl-table">
+          <thead><tr><th scope="col">Label (en)</th><th scope="col">Code</th><th scope="col">Status</th></tr></thead>
+          <tbody>
+            <tr data-item="front_sli_01j9qk7m2x4c8e6g0h3n5r7tc1"><td class="name">Referral</td><td><span class="sl-key">REF</span></td><td><span class="sl-pill sl-pill--active" data-status="active">active</span></td></tr>
+            <tr data-item="front_sli_01j9qk7m2x4c8e6g0h3n5r7tc2"><td class="name">Trade show</td><td><span class="sl-key">EVENT</span></td><td><span class="sl-pill sl-pill--active" data-status="active">active</span></td></tr>
+            <tr data-item="front_sli_01j9qk7m2x4c8e6g0h3n5r7tc3"><td class="name">Inbound web</td><td><span class="sl-key">WEB</span></td><td><span class="sl-pill sl-pill--active" data-status="active">active</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div class="sl-section" id="shadowed">
+        <h2>A common list your organization has already replaced</h2>
+        <p class="sl-caption">Reached from the index with the <b>Common</b> filter, or from a link. The detail asks the service once which list
+          the key means for this organization (<code class="sl-code">getEffectiveList("priority")</code>). If the answer is not this list,
+          the Fork CTA is <b>not</b> offered — forking again would only return the existing fork — and the way forward is your version.</p>
+        <div class="sl-banner sl-banner--shared" data-readonly-notice="shadowed" role="note" style="margin-bottom: 0;">
+          <span class="sl-banner__ico" aria-hidden="true">⑂</span>
+          <div class="sl-banner__body">
+            <p class="sl-banner__title">Acme Logistics uses its own version of this list</p>
+            <p>This is the common <b>Priority</b> list. Forms in your organization use <b>your version</b> instead, which replaced it
+              on Sep 2. Changes to the common list do not reach your version automatically.</p>
+            <div class="sl-banner__actions">
+              <a class="btn btn-primary sl-btn-sm" href="07-fork-detail.html" data-action="open-own-version">Open your version</a>
+            </div>
+          </div>
+        </div>
+        <p class="sl-field__hint">If the lookup fails, the page shows the plain common-list notice <b>without</b> a Fork CTA and a quiet
+          “Couldn't check for your organization's version — Retry”: offering Fork on a guess is how a duplicate request ends in a confusing
+          <code class="sl-code">200</code>. A <b>private</b> fork you hold no role on is invisible to you; the service then answers with the common
+          list, the CTA shows, and forking returns <code class="sl-code">409 fork_exists</code> (<a href="06-fork-results.html#fork-exists">handled there</a>).</p>
+      </div>
+
+      <div class="sl-section" id="translations">
+        <h2>Translations tab, read-only</h2>
+        <p class="sl-caption">The approved 4.0.0 locale index (<code class="sl-code">selection-lists/07-locale-index</code>) minus every mutation:
+          no “Edit”, no “Auto-fill”, no “Add language”. Rows link to a read-only locale view. Machine text keeps its <b>M</b> badge.</p>
+        <section class="sl-panel" data-panel="locale-index" data-readonly="true">
+          <div class="sl-panel__seam"></div>
+          <table class="sl-table">
+            <thead><tr><th scope="col">Language</th><th scope="col" class="num">Translated</th><th scope="col">Notes</th></tr></thead>
+            <tbody>
+              <tr data-locale="en"><td class="name">English (source)</td><td class="num">5 / 5</td><td class="muted">—</td></tr>
+              <tr data-locale="fr"><td class="name"><a href="#locale-view" data-action="open-locale-readonly" data-locale-link="fr" style="color: var(--cyan-400);">Français</a></td><td class="num">5 / 5</td><td><span class="sl-pill sl-pill--machine" data-machine="true">M</span> 2 machine</td></tr>
+              <tr data-locale="he"><td class="name"><a href="#locale-view" data-action="open-locale-readonly" data-locale-link="he" style="color: var(--cyan-400);">עברית</a></td><td class="num">5 / 5</td><td class="muted">—</td></tr>
+            </tbody>
+          </table>
+        </section>
+        <p class="sl-field__hint">Each translated locale's name opens its read-only locale view at the existing 4.0.0 route
+          <code class="sl-code">/settings/selection-lists/:listId/translations/:locale</code>. The source locale has no link — its text is the Values tab.</p>
+
+        <div id="locale-view" style="margin-top: var(--space-5);">
+          <p class="sl-case">Read-only locale view — Français</p>
+          <section class="sl-panel" data-panel="locale-editor" data-readonly="true" data-locale-view="fr">
+            <div class="sl-panel__seam"></div>
+            <table class="sl-table">
+              <thead><tr><th scope="col">Code</th><th scope="col">English (source)</th><th scope="col">Français</th><th scope="col">Notes</th></tr></thead>
+              <tbody>
+                <tr><td><span class="sl-key">LOW</span></td><td dir="ltr">Low</td><td>Basse</td><td class="muted">—</td></tr>
+                <tr><td><span class="sl-key">NORMAL</span></td><td dir="ltr">Normal</td><td>Normale</td><td><span class="sl-pill sl-pill--machine" data-machine="true">M</span></td></tr>
+                <tr><td><span class="sl-key">HIGH</span></td><td dir="ltr">High</td><td>Haute</td><td><span class="sl-pill sl-pill--machine" data-machine="true">M</span></td></tr>
+              </tbody>
+            </table>
+          </section>
+          <p class="sl-field__hint">The approved 4.0.0 locale editor (<code class="sl-code">selection-lists/08-locale-editor</code>) with the same reads, rendered
+            <code class="sl-code">readOnly</code>: the target column is plain text — no inputs, no Save / Save all, no “Mark reviewed”, no Auto-fill.
+            Machine text keeps its <b>M</b> badge; for <code class="sl-code">he</code>/<code class="sl-code">ar</code> the target cell carries
+            <code class="sl-code">dir="rtl"</code> exactly as in the editor. Rows shown: the first three of the common <b>Priority</b> list.</p>
+        </div>
+      </div>
+
+      <div class="sl-section">
+        <h2>States</h2>
+        <p class="sl-caption">Every state below is contract. The detail route is the same for every visibility; only the badge, the notice and the
+          way forward change.</p>
+
+        <div class="sl-grid2">
+          <div>
+            <p class="sl-case">Loading</p>
+            <div class="sl-panel" data-panel="value-table" data-state="loading">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-panel__body" aria-busy="true">
+                <div class="sl-field__lock" style="margin-bottom: var(--space-4);">Badge, notice and CTA wait for the list — never guess “editable”</div>
+                <div class="sl-skel" style="width: 34%;"></div>
+                <div class="sl-skel" style="width: 88%;"></div>
+                <div class="sl-skel" style="width: 72%;"></div>
+              </div>
+            </div>
+            <p class="sl-field__hint">No edit controls and no Fork CTA render until <code class="sl-code">editable</code>, <code class="sl-code">visibility</code>
+              and the effective-list answer are known — a control that flashes and disappears reads as a bug.</p>
+          </div>
+
+          <div>
+            <p class="sl-case">Empty — a readable list with no active values</p>
+            <div class="sl-panel" data-panel="value-table" data-state="empty">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-state">
+                <div class="sl-state__ico" aria-hidden="true">☰</div>
+                <h3 class="sl-state__title">No values to pick from</h3>
+                <p class="sl-state__body">This list has no active values yet. Forms that use it show “No options available”.
+                  Only someone with a role on the list can add values.</p>
+              </div>
+            </div>
+            <p class="sl-field__hint">No “+ Add value” for a read-only viewer — the 4.0.0 empty-state CTA is gated on <code class="sl-code">editable</code>.</p>
+          </div>
+
+          <div>
+            <p class="sl-case">Error — the list loaded, its values didn't</p>
+            <div class="sl-panel" data-panel="value-table" data-state="error">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-state">
+                <div class="sl-state__ico" aria-hidden="true">⚠</div>
+                <h3 class="sl-state__title">Couldn't load values</h3>
+                <p class="sl-state__body">Nothing has been changed. The badge and notice above stay — they came from the list, which did load.</p>
+                <button class="btn btn-ghost" data-action="retry">Retry</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="sl-case">Not found — another organization's list, or no shared read</p>
+            <div class="sl-panel" data-panel="value-table" data-state="not-found">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-state">
+                <div class="sl-state__ico" aria-hidden="true">∅</div>
+                <h3 class="sl-state__title">List not found</h3>
+                <p class="sl-state__body" data-error="NOT_FOUND">No list with that id, or you can't read it. Another organization's
+                  <code class="sl-code">org</code> list, or a caller without shared read (the <code class="sl-code">developer</code> role), gets
+                  <code class="sl-code">404</code> — never <code class="sl-code">403</code> — so this URL can't probe whether a list exists.</p>
+                <a class="btn btn-ghost" href="01-shared-index.html">Back to all lists</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sl-grid2" style="margin-top: var(--space-6);">
+          <div>
+            <p class="sl-case"><code class="sl-code">editable</code> absent — service still on 4.0.0 behaviour</p>
+            <div class="sl-panel" data-panel="value-table" data-state="editable-unknown" data-editable="unknown">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-panel__body">
+                <p style="margin: 0; color: var(--text-secondary);">No read-only marker, no notice, no Fork CTA. The detail offers the approved 4.0.0
+                  affordances and lets each mutation's own authorization answer (<code class="sl-code">403</code> → the 4.0.0 message).
+                  Absence is <b>unknown</b>, never <code class="sl-code">false</code>.</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p class="sl-case">Feature flag OFF — <code class="sl-code">fuzefront.selection-lists.shared-lists</code></p>
+            <div class="sl-panel" data-panel="value-table" data-state="flag-off" data-flag="shared-lists:off">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-panel__body">
+                <div class="sl-head__meta" style="margin-bottom: var(--space-3);">
+                  <span class="sl-key">warehouse-zones</span>
+                  <span class="sl-pill sl-pill--active" data-status="active">active</span>
+                </div>
+                <p style="margin: 0; color: var(--text-secondary);">The shared-lists UI is <b>absent</b>, not disabled: no visibility badge,
+                  no read-only notice, no Fork CTA, no effective-list lookup. The detail is exactly the approved 4.0.0 frame
+                  <code class="sl-code">selection-lists/03-list-detail</code>. The service still sends 4.1.0 shapes
+                  (<code class="sl-code">visibility: "private"</code>, <code class="sl-code">forked_from: null</code>) — the UI ignores them. A member
+                  with no role cannot reach <b>Lead sources</b> at all (<code class="sl-code">404</code>), as today.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='03-readonly-states']</code> · <code>[data-visibility='org']</code> · <code>[data-readonly-notice='org']</code> · <code>[data-owner-hint][data-created-by-kind='user']</code> · <code>[data-created-by-kind='system']</code> · <code>[data-created-by-kind='deleted-user']</code> · <code>[data-editable='false']</code> · <code>[data-readonly-notice='shadowed']</code> · <code>[data-action='open-own-version']</code> · <code>[data-panel='locale-index'][data-readonly='true']</code> · <code>[data-action='open-locale-readonly']</code> · <code>[data-locale-link='fr']</code> · <code>[data-panel='locale-editor'][data-readonly='true']</code> · <code>[data-locale-view='fr']</code> · <code>[data-panel='value-table'][data-state='loading']</code> · <code>[data-panel='value-table'][data-state='empty']</code> · <code>[data-panel='value-table'][data-state='error']</code> · <code>[data-panel='value-table'][data-state='not-found']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-state='editable-unknown']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
+        Contract: <code>GET /v1/selection-lists/{listId}</code> · <code>GET /v1/selection-lists/{listId}/items</code> ·
+        <code>GET /v1/selection-lists/{listId}/translations</code> · <code>GET /v1/selection-lists?key=&amp;include_shared=true&amp;limit=1</code>. Shared read is
+        <code>SelectionListCatalog:read_shared</code> in the caller's tenant + the service's visibility predicate (design record D4).<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="02-common-detail.html" data-nav="prev">← Common list detail</a>
+  <span class="caption"><b>(1c) Read-only detail — states</b> · Flow 1 · Shared read · frame 3 of 15</span>
+  <a class="btn btn-primary" href="04-fork-required.html" data-nav="next">Fork required →</a>
+</nav>
+</body>
+</html>

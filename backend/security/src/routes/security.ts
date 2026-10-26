@@ -1,4 +1,4 @@
-import { canonicalSessionTenant, proveSessionTenant } from '../services/session-tenant'
+import { canonicalSessionTenant, listSessionWorkspaces, proveSessionTenant } from '../services/session-tenant'
 /**
  * The FuzeFront Security API — AuthN surface under `/api/v1/security`.
  *
@@ -42,6 +42,16 @@ import { resolveEmployeeStatus } from '../services/employeeRole'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import { authenticateKubernetesWorkload } from '../services/workload-identity'
+import { isAuthExperienceEnabled } from '../identity/flags'
+import { withReqId } from '../lib/logger'
+import { describeUnmet, evaluatePassword, getPasswordPolicy } from '../services/passwordPolicy'
+import {
+  CaptchaRejectedError,
+  CaptchaUnavailableError,
+  getCaptchaConfig,
+  publicCaptchaMethod,
+  verifyTurnstileToken,
+} from '../services/turnstile'
 
 
 const router = express.Router()
@@ -241,6 +251,21 @@ function sendError(res: Response, err: unknown): void {
     res.status(400).json({ error: err.message, code: 'MALFORMED' })
     return
   }
+  if (err instanceof CaptchaRejectedError) {
+    // A rejected/invalid/missing Turnstile token → 400 `CAPTCHA_FAILED` (added to
+    // ErrorBody.code in contract v1.1.0), distinct from a generic MALFORMED body,
+    // 409 email-exists, 422 PASSWORD_POLICY, and the 503 when Cloudflare itself is
+    // unreachable. The UI maps this code to the Turnstile "failed" state.
+    res.status(400).json({ error: err.message, code: 'CAPTCHA_FAILED' })
+    return
+  }
+  if (err instanceof CaptchaUnavailableError) {
+    // Cloudflare unreachable/too slow: fail CLOSED (never wave a signup through
+    // unverified) but retryable, and distinguishable from a rejected token.
+    res.setHeader('Retry-After', '5')
+    res.status(503).json({ error: 'Captcha verification unavailable', code: 'PROVIDER_UNAVAILABLE' })
+    return
+  }
   if (err instanceof ConflictError) {
     res.status(409).json({ error: err.message, code: 'CONFLICT' })
     return
@@ -383,6 +408,26 @@ router.get('/session', async (req: Request, res: Response) => {
       return void res.status(200).json({ identity: { ...identity, tenantId: verifiedTenant }, user: toApiUser(user) })
     }
     res.status(200).json({ identity, user: toApiUser(user) })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// Active tenant choices for standalone products. Discovery alone is not tenant
+// authority: the chosen id must still pass GET /session?tenant= membership proof.
+router.get('/session/workspaces', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const { identity } = await getIdentityProvider().getUserInfo(token)
+    let workspaces
+    try {
+      workspaces = await listSessionWorkspaces(identity.userId)
+    } catch {
+      return void res.status(503).json({ error: 'Workspace discovery unavailable' })
+    }
+    res.setHeader('Cache-Control', 'no-store')
+    res.status(200).json({ workspaces })
   } catch (err) {
     sendError(res, err)
   }
@@ -581,15 +626,90 @@ router.get('/social/google/callback', async (req: Request, res: Response) => {
 })
 
 // ── Signup ──────────────────────────────────────────────────────────────────
+//
+// Two behaviours, selected by the `fuzefront.auth.experience` release flag
+// (default OFF — see identity/flags.ts):
+//
+//   OFF  the pre-1.0.0 behaviour, unchanged: legacy `firstName`/`lastName` are
+//        honoured, no password-policy or captcha gate, no strict body schema.
+//   ON   the frozen 1.0.0 contract: single optional `name`, strict body
+//        (additionalProperties:false), server-side password policy (422
+//        PASSWORD_POLICY), Turnstile verification when configured.
+//
+// The flag is rollout convenience only. Signup is public/pre-auth either way;
+// it carries no Permit check and the flag never substitutes for one.
+
+/** Keys `SignupRequest` allows (additionalProperties:false in the 1.0.0 contract). */
+const SIGNUP_BODY_KEYS = new Set(['email', 'password', 'name', 'turnstileToken', 'tenantName', 'bindToken'])
+/** Upper bound for the display name; Authentik's `name` column is a bounded CharField. */
+const SIGNUP_NAME_MAX_LENGTH = 255
+
+/**
+ * Pre-1.0.0 first+last -> single name. Kept ONLY for the flag-OFF path so a
+ * not-yet-migrated client keeps working during the dark-launch window. Delete
+ * with the `fuzefront.auth.experience` flag (its removal criterion).
+ */
+function legacyDisplayName(firstName: unknown, lastName: unknown): string | undefined {
+  const joined = [firstName, lastName]
+    .filter((p): p is string => typeof p === 'string' && p.trim() !== '')
+    .join(' ')
+  return joined || undefined
+}
+
 router.post('/signup', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId, req as any)
   try {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const experience = await isAuthExperienceEnabled()
+    let name: string | undefined
+
+    if (experience) {
+      const unknownKeys = Object.keys(body).filter((k) => !SIGNUP_BODY_KEYS.has(k))
+      if (unknownKeys.length > 0) {
+        log.info({ op: 'signup', unknownKeyCount: unknownKeys.length }, 'signup rejected: unsupported body field(s)')
+        throw new InvalidInputError('Request body contains unsupported field(s)')
+      }
+      if (typeof body.email !== 'string' || !EMAIL_RE.test(body.email.trim())) {
+        throw new InvalidInputError('A valid email is required')
+      }
+      if (typeof body.password !== 'string' || body.password.length === 0) {
+        throw new InvalidInputError('password is required')
+      }
+      if (body.name !== undefined && (typeof body.name !== 'string' || body.name.length > SIGNUP_NAME_MAX_LENGTH)) {
+        throw new InvalidInputError(`name must be a string of at most ${SIGNUP_NAME_MAX_LENGTH} characters`)
+      }
+      if (body.turnstileToken !== undefined && typeof body.turnstileToken !== 'string') {
+        throw new InvalidInputError('turnstileToken must be a string')
+      }
+      name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : undefined
+
+      // Password policy FIRST: it is free, and checking it before the captcha means
+      // a weak-password retry does not burn the (single-use) Turnstile token.
+      const policy = getPasswordPolicy()
+      const verdict = evaluatePassword(body.password, policy)
+      if (!verdict.ok) {
+        log.info({ op: 'signup', unmet: verdict.unmet }, 'signup rejected: password policy')
+        throw new PasswordPolicyRejectedError(describeUnmet(verdict.unmet, policy))
+      }
+
+      if (getCaptchaConfig()) {
+        await verifyTurnstileToken(body.turnstileToken, { remoteIp: req.ip, log })
+      } else {
+        log.debug({ op: 'signup' }, 'captcha not configured; skipping verification')
+      }
+    } else {
+      name =
+        typeof body.name === 'string' && body.name.trim()
+          ? body.name.trim()
+          : legacyDisplayName(body.firstName, body.lastName)
+    }
+
     const session = await getIdentityProvider().signup(
       {
-        email: req.body?.email,
-        password: req.body?.password,
-        firstName: req.body?.firstName,
-        lastName: req.body?.lastName,
-        tenantName: req.body?.tenantName,
+        email: body.email as string,
+        password: body.password as string,
+        name,
+        tenantName: body.tenantName as string | undefined,
       },
       sessionContext(req)
     )
@@ -600,27 +720,77 @@ router.post('/signup', async (req: Request, res: Response) => {
 })
 
 // ── Public email availability ─────────────────────────────────────────────
-// GET /v1/security/email-available?email=<addr>
+// GET /v1/security/email-available?email=<addr>          (live endpoint)
+// GET /v1/security/signup/email-available?email=<addr>   (frozen-1.0.0 alias)
 //
 // Real-time signup feedback: is this email free to register? Checks the SAME
 // source of truth signup consults (`emailExists`), so the answer can never
 // disagree with what signup itself would do. Normalizes (trim + lowercase)
-// before checking and echoes the normalized address back. Rate-limited above —
-// the enumeration exposure is an accepted product tradeoff, not an oversight.
-router.get('/email-available', emailAvailableRateLimiter, async (req: Request, res: Response) => {
-  const raw = typeof req.query.email === 'string' ? req.query.email : ''
-  const email = raw.trim().toLowerCase()
-  if (!email || !EMAIL_RE.test(email)) {
-    res.status(400).json({ error: 'A valid email is required', code: 'MALFORMED' })
-    return
+// before checking. Rate-limited above — the enumeration exposure is an
+// accepted product tradeoff, not an oversight.
+//
+// ONE handler factory serves both paths (no duplicated logic). They differ only
+// in wire shape and error posture, both fixed by their contracts:
+//   live   -> { available, email }; a provider error surfaces via sendError
+//   alias  -> { available } (SignupEmailAvailability, additionalProperties:false),
+//             FAIL-OPEN: a provider error answers 200 { available:true } because
+//             the client contract is "never block submit on this check";
+//             authoritative duplicate rejection is POST /signup (409).
+//
+// TODO(consolidate): the alias duplicates the live `GET /email-available`
+// endpoint at the contract level — two paths for one capability. The
+// orchestrator is tracking merging them; until then both stay on this single
+// shared handler so they cannot drift.
+function emailAvailabilityHandler(opts: { echoEmail: boolean; failOpen: boolean; requireFlag: boolean }) {
+  return async (req: Request, res: Response): Promise<void> => {
+    const log = withReqId((req as any).requestId, req as any)
+    if (opts.requireFlag && !(await isAuthExperienceEnabled())) {
+      // Dark: indistinguishable from a route that does not exist.
+      res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' })
+      return
+    }
+    const raw = typeof req.query.email === 'string' ? req.query.email : ''
+    const email = raw.trim().toLowerCase()
+    if (!email || email.length > 320 || !EMAIL_RE.test(email)) {
+      res.status(400).json({ error: 'A valid email is required', code: 'MALFORMED' })
+      return
+    }
+    const start = Date.now()
+    try {
+      const exists = await getIdentityProvider().emailExists(email)
+      log.debug({ op: 'emailAvailable', elapsedMs: Date.now() - start }, 'emailAvailable: checked')
+      res.status(200).json(opts.echoEmail ? { available: !exists, email } : { available: !exists })
+    } catch (err) {
+      if (opts.failOpen) {
+        // Never 5xx-block the signup UI. The address is deliberately NOT logged.
+        log.warn(
+          { op: 'emailAvailable', elapsedMs: Date.now() - start, errName: (err as Error)?.name, err: (err as Error)?.message },
+          'emailAvailable: provider error; failing open'
+        )
+        res.status(200).json({ available: true })
+        return
+      }
+      sendError(res, err)
+    }
   }
-  try {
-    const exists = await getIdentityProvider().emailExists(email)
-    res.status(200).json({ available: !exists, email })
-  } catch (err) {
-    sendError(res, err)
-  }
-})
+}
+
+router.get(
+  '/email-available',
+  emailAvailableRateLimiter,
+  emailAvailabilityHandler({ echoEmail: true, failOpen: false, requireFlag: false })
+)
+
+// Shares the SAME per-IP limiter instance as the live endpoint, so the two
+// paths draw on ONE budget per client (a scraper cannot double its rate by
+// alternating). Captcha-gating is not practical here: the check fires on a
+// debounce per keystroke and a Turnstile token is single-use, so the per-IP
+// limit is the enumeration control (as for the live endpoint).
+router.get(
+  '/signup/email-available',
+  emailAvailableRateLimiter,
+  emailAvailabilityHandler({ echoEmail: false, failOpen: true, requireFlag: true })
+)
 
 // ── Capabilities ──────────────────────────────────────────────────────────
 /**
@@ -644,7 +814,7 @@ function smsTransportConfigured(): boolean {
  * what can actually complete end-to-end, and anything unconfigured is reported
  * as absent rather than assumed.
  */
-router.get('/methods', (_req: Request, res: Response) => {
+router.get('/methods', async (_req: Request, res: Response) => {
   const social: Array<'google'> = process.env.SECURITY_SOCIAL_GOOGLE === 'false' ? [] : ['google']
 
   const emailAvailable = emailVerificationEnabled()
@@ -656,12 +826,26 @@ router.get('/methods', (_req: Request, res: Response) => {
   if (smsAvailable) mfaTypes.push('sms')
   if (emailAvailable) mfaTypes.push('email')
 
-  res.status(200).json({
+  const methods: Record<string, unknown> = {
     password: true,
     social,
     mfa: { enabled: mfaTypes.length > 0, types: mfaTypes },
     verification: { email: emailAvailable, sms: smsAvailable },
-  })
+  }
+
+  // Auth-experience additions (contract 1.0.0), advertised only when the release
+  // flag is ON so the descriptor never promises a rule/widget the signup route is
+  // not yet enforcing. `passwordPolicy` is the AUTHORITATIVE policy (see
+  // services/passwordPolicy.ts for why it is a documented default and not read
+  // from the identity store); `captcha` is present ONLY when a Turnstile site key
+  // AND secret are configured, and never carries the secret.
+  if (await isAuthExperienceEnabled()) {
+    methods.passwordPolicy = getPasswordPolicy()
+    const captcha = publicCaptchaMethod()
+    if (captcha) methods.captcha = captcha
+  }
+
+  res.status(200).json(methods)
 })
 
 // ── M2M tokens ──────────────────────────────────────────────────────────────
@@ -1003,6 +1187,85 @@ router.delete('/sessions/:id', async (req: Request, res: Response) => {
     res.status(204).end()
   } catch (err) {
     sendError(res, err)
+  }
+})
+
+/** Scope a service's workload token must carry to ask whether a session is live. */
+const SESSION_VALIDATE_SCOPE = 'sessions:validate'
+const SESSION_VALIDATE_FIELDS = ['userId', 'sessionId'] as const
+const SESSION_VALIDATE_MAX_LEN = 128
+
+/**
+ * POST /v1/security/sessions/validate — is this session still active?
+ * (service-to-service; operationId `validateSession`)
+ *
+ * For a service that has ALREADY verified a session token's signature and needs
+ * the one thing a signature cannot say: has the session been revoked or expired
+ * since. Machine callers only: the bearer must be a `fuze-workload` token with
+ * the `sessions:validate` scope, so a browser cannot use this to probe sessions.
+ *
+ * `200 { active }` is the whole answer. Unknown, revoked, expired, malformed and
+ * wrong-user are all the same `{ active: false }` with no reason given. A failure
+ * to read the session store is 503, never a boolean: an outage is neither
+ * "active" nor "revoked", and the caller must be able to tell them apart.
+ */
+router.post('/sessions/validate', async (req: Request, res: Response) => {
+  const serviceToken = bearer(req)
+  if (!serviceToken) {
+    return void res.status(401).json({ error: 'Service bearer token is required', code: 'NO_TOKEN' })
+  }
+
+  // Authenticate the CALLER. Any failure here, including the provider fallback
+  // inside introspectAnyToken throwing, is a credential problem (a real workload
+  // token is verified locally and never reaches the provider), so it is a 401.
+  let caller: Awaited<ReturnType<typeof introspectAnyToken>>
+  try {
+    caller = await introspectAnyToken(serviceToken)
+  } catch {
+    return void res.status(401).json({ error: 'A Fuze workload token is required', code: 'NOT_ACTIVE' })
+  }
+  if (!caller.active || !caller.subject || (caller as any).tokenKind !== 'fuze-workload') {
+    return void res.status(401).json({ error: 'A Fuze workload token is required', code: 'NOT_ACTIVE' })
+  }
+  if (!isSubset([SESSION_VALIDATE_SCOPE], caller.scope)) {
+    return void res
+      .status(403)
+      .json({ error: `Missing required scope: ${SESSION_VALIDATE_SCOPE}`, code: 'FORBIDDEN' })
+  }
+
+  try {
+    // Strict body, matching the contract's `additionalProperties: false`.
+    const body = req.body
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new InvalidInputError('userId and sessionId are required')
+    }
+    for (const key of Object.keys(body)) {
+      if (!(SESSION_VALIDATE_FIELDS as readonly string[]).includes(key)) {
+        throw new InvalidInputError(`unexpected property: ${key}`)
+      }
+    }
+    for (const key of SESSION_VALIDATE_FIELDS) {
+      const v = body[key]
+      if (typeof v !== 'string' || v.length === 0 || v.length > SESSION_VALIDATE_MAX_LEN) {
+        throw new InvalidInputError(`${key} is required (1-${SESSION_VALIDATE_MAX_LEN} characters)`)
+      }
+    }
+  } catch (err) {
+    return void sendError(res, err)
+  }
+
+  try {
+    const active = await getIdentityProvider().isSessionActive(req.body.userId, req.body.sessionId)
+    res.status(200).json({ active: active === true })
+  } catch (err) {
+    // Fail closed AND distinguishable: never `{ active: true }`, never a quiet
+    // `{ active: false }` that would read as "revoked" and sign everyone out.
+    withReqId((req as any).requestId, req as any).error(
+      { op: 'validateSession', errName: (err as Error)?.name, err: (err as Error)?.message },
+      'session validity lookup failed'
+    )
+    res.setHeader('Retry-After', '5')
+    res.status(503).json({ error: 'Session store unavailable', code: 'PROVIDER_UNAVAILABLE' })
   }
 })
 

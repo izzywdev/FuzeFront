@@ -1,8 +1,9 @@
 jest.mock('../src/services/session-tenant', () => ({
   ...jest.requireActual('../src/services/session-tenant'),
   proveSessionTenant: jest.fn(),
+  listSessionWorkspaces: jest.fn(),
 }))
-import { proveSessionTenant } from '../src/services/session-tenant'
+import { listSessionWorkspaces, proveSessionTenant } from '../src/services/session-tenant'
 /**
  * Unit tests for the `/api/v1/security` AuthN router.
  *
@@ -13,6 +14,7 @@ import { proveSessionTenant } from '../src/services/session-tenant'
  */
 import express from 'express'
 import request from 'supertest'
+import jwt from 'jsonwebtoken'
 import securityRouter from '../src/routes/security'
 import { setIdentityProvider } from '../src/providers/factory'
 import {
@@ -1403,5 +1405,242 @@ describe('GET /session explicit tenant proof', () => {
   it('rejects malformed tenant query and missing bearer', async () => {
     expect((await request(app).get('/api/v1/security/session?tenant=invalid').set('Authorization','Bearer tok')).status).toBe(400)
     expect((await request(app).get('/api/v1/security/session').query({tenant})).status).toBe(401)
+  })
+})
+
+describe('GET /session/workspaces', () => {
+  beforeEach(() => {
+    setIdentityProvider(fakeProvider())
+    ;(listSessionWorkspaces as jest.Mock).mockReset()
+  })
+
+  it('returns canonical active memberships supplied by the tenant service', async () => {
+    ;(listSessionWorkspaces as jest.Mock).mockResolvedValue([
+      { id: '0195a8f2-6c3d-7f11-8b2e-012345678901', name: 'Personal', type: 'personal' },
+      { id: '0195a8f2-6c3d-7f11-8b2e-012345678902', name: 'Acme', type: 'organization' },
+    ])
+
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/session/workspaces')
+      .set('Authorization', 'Bearer tok')
+      .expect(200)
+
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(res.body.workspaces).toHaveLength(2)
+    expect(listSessionWorkspaces).toHaveBeenCalledWith('u1')
+  })
+
+  it('requires a bearer before exposing workspace membership', async () => {
+    await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/session/workspaces')
+      .expect(401)
+    expect(listSessionWorkspaces).not.toHaveBeenCalled()
+  })
+
+  it('keeps an authenticated workspace lookup retryable when storage is unavailable', async () => {
+    ;(listSessionWorkspaces as jest.Mock).mockRejectedValue(new Error('private SQL connection failure'))
+
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/session/workspaces')
+      .set('Authorization', 'Bearer tok')
+      .expect(503)
+
+    expect(res.body).toEqual({ error: 'Workspace discovery unavailable' })
+    expect(res.text).not.toContain('private SQL')
+    expect(listSessionWorkspaces).toHaveBeenCalledWith('u1')
+  })
+})
+
+describe('POST /sessions/validate (validateSession, service-to-service)', () => {
+  const URL_PATH = '/api/v1/security/sessions/validate'
+  const KEY = 'validate-session-test-key'
+  const USER_ID = '11111111-1111-4111-8111-111111111111'
+  const SESSION_ID = '33333333-3333-4333-8333-333333333333'
+  const BODY = { userId: USER_ID, sessionId: SESSION_ID }
+  let previousKey: string | undefined
+
+  beforeAll(() => {
+    previousKey = process.env.DELEGATION_SIGNING_KEY
+    process.env.DELEGATION_SIGNING_KEY = KEY
+  })
+  afterAll(() => {
+    if (previousKey === undefined) delete process.env.DELEGATION_SIGNING_KEY
+    else process.env.DELEGATION_SIGNING_KEY = previousKey
+  })
+
+  const workloadToken = (scope: string, over: Record<string, unknown> = {}) =>
+    jwt.sign(
+      {
+        kind: 'fuze-workload',
+        sub: 'fuzeplan',
+        aud: 'fuzefront-services',
+        scope,
+        namespace: 'fuzeplan',
+        serviceAccount: 'fuzeplan',
+        jti: 'j1',
+        ...over,
+      },
+      KEY,
+      { algorithm: 'HS256', expiresIn: 600, issuer: 'fuzefront-security' }
+    )
+  const provider = (isSessionActive: jest.Mock = jest.fn().mockResolvedValue(true)) =>
+    fakeProvider({
+      isSessionActive,
+      // Anything that is not a Fuze-signed token falls through to the provider.
+      introspectToken: jest.fn().mockResolvedValue({ active: false }),
+    } as Partial<IdentityProvider>)
+  const call = (p: IdentityProvider, token: string | null, body: unknown = BODY) => {
+    const r = request(makeApp(p)).post(URL_PATH)
+    if (token) r.set('Authorization', `Bearer ${token}`)
+    return r.send(body as object)
+  }
+
+  it('answers { active: true } for a live session, asking about exactly the supplied ids', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn().mockResolvedValue(true)
+    const res = await call(provider(isSessionActive), workloadToken('sessions:validate'))
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ active: true })
+    expect(isSessionActive).toHaveBeenCalledWith(USER_ID, SESSION_ID)
+  })
+
+  it('answers { active: false } (200) for an inactive session, with no reason given', async () => {
+    // @fuzequality api validateSession
+    const res = await call(provider(jest.fn().mockResolvedValue(false)), workloadToken('sessions:validate'))
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ active: false })
+  })
+
+  it('treats anything other than a strict boolean true from the provider as inactive', async () => {
+    // @fuzequality api validateSession
+    for (const odd of [1, 'true', {}, [], null, undefined]) {
+      const res = await call(provider(jest.fn().mockResolvedValue(odd)), workloadToken('sessions:validate'))
+      expect(res.status).toBe(200)
+      expect(res.body).toEqual({ active: false })
+    }
+  })
+
+  it('accepts the scope among several', async () => {
+    // @fuzequality api validateSession
+    const res = await call(provider(), workloadToken('invoices:read sessions:validate authz:check'))
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ active: true })
+  })
+
+  it('returns 401 NO_TOKEN without a bearer, and never consults the session store', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn()
+    const res = await call(provider(isSessionActive), null)
+    expect(res.status).toBe(401)
+    expect(res.body.code).toBe('NO_TOKEN')
+    expect(isSessionActive).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 for a token that is not a Fuze workload token', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn()
+    // A user session token (the browser case) and plain garbage.
+    for (const token of ['tok', 'not-a-jwt', jwt.sign({ userId: USER_ID, sessionId: SESSION_ID }, KEY)]) {
+      const res = await call(provider(isSessionActive), token)
+      expect(res.status).toBe(401)
+    }
+    expect(isSessionActive).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 for a delegation token (only a workload token may ask)', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn()
+    const delegation = jwt.sign(
+      { kind: 'fuze-delegation', sub: USER_ID, aud: 'service:x', scope: 'sessions:validate', act: { sub: 'svc' }, jti: 'j' },
+      KEY,
+      { algorithm: 'HS256', expiresIn: 600 }
+    )
+    const res = await call(provider(isSessionActive), delegation)
+    expect(res.status).toBe(401)
+    expect(isSessionActive).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 for an expired or wrongly-signed workload token', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn()
+    const expired = jwt.sign(
+      { kind: 'fuze-workload', sub: 's', aud: 'a', scope: 'sessions:validate', jti: 'j' },
+      KEY,
+      { algorithm: 'HS256', expiresIn: -10 }
+    )
+    const forged = jwt.sign(
+      { kind: 'fuze-workload', sub: 's', aud: 'a', scope: 'sessions:validate', jti: 'j' },
+      'some-other-key',
+      { algorithm: 'HS256', expiresIn: 600 }
+    )
+    for (const token of [expired, forged]) {
+      const res = await call(provider(isSessionActive), token)
+      expect(res.status).toBe(401)
+    }
+    expect(isSessionActive).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 (not a 5xx) when the provider fallback throws while authenticating the caller', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn()
+    const p = fakeProvider({
+      isSessionActive,
+      introspectToken: jest.fn().mockRejectedValue(new Error('idp down')),
+    } as Partial<IdentityProvider>)
+    const res = await call(p, 'opaque-m2m-token')
+    expect(res.status).toBe(401)
+    expect(isSessionActive).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 FORBIDDEN when the workload token lacks the sessions:validate scope', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn()
+    for (const scope of ['', 'sessions', 'sessions:read', 'invoices:read']) {
+      const res = await call(provider(isSessionActive), workloadToken(scope))
+      expect(res.status).toBe(403)
+      expect(res.body.code).toBe('FORBIDDEN')
+    }
+    expect(isSessionActive).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 MALFORMED for a body that is not exactly { userId, sessionId }', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn()
+    const bad: unknown[] = [
+      {},
+      { userId: USER_ID },
+      { sessionId: SESSION_ID },
+      { ...BODY, extra: 'x' },
+      { ...BODY, id: 'client-chosen' },
+      { userId: 5, sessionId: SESSION_ID },
+      { userId: USER_ID, sessionId: ['a'] },
+      { userId: '', sessionId: SESSION_ID },
+      { userId: USER_ID, sessionId: '' },
+      { userId: 'x'.repeat(129), sessionId: SESSION_ID },
+      { userId: USER_ID, sessionId: 'x'.repeat(129) },
+      [],
+      [USER_ID, SESSION_ID],
+    ]
+    for (const body of bad) {
+      const res = await call(provider(isSessionActive), workloadToken('sessions:validate'), body)
+      expect(res.status).toBe(400)
+      expect(res.body.code).toBe('MALFORMED')
+    }
+    expect(isSessionActive).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 with Retry-After, never a boolean, when the session store cannot be read', async () => {
+    // @fuzequality api validateSession
+    const res = await call(
+      provider(jest.fn().mockRejectedValue(new Error('connection refused'))),
+      workloadToken('sessions:validate')
+    )
+    expect(res.status).toBe(503)
+    expect(res.headers['retry-after']).toBe('5')
+    expect(res.body.code).toBe('PROVIDER_UNAVAILABLE')
+    expect(res.body).not.toHaveProperty('active')
+    // The internal error text must not leak to the caller.
+    expect(JSON.stringify(res.body)).not.toMatch(/connection refused/)
   })
 })

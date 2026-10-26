@@ -52,6 +52,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/session/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active workspaces available to the current session
+         * @description Returns canonical personal and organization workspace choices backed by the caller's direct active memberships. Discovery is available before a tenant is selected; callers must still prove the chosen workspace with GET /session?tenant= before using tenant-scoped APIs.
+         */
+        get: operations["listSessionWorkspaces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/session/password/reset-request": {
         parameters: {
             query?: never;
@@ -171,6 +191,32 @@ export interface paths {
          * @description Revokes a single active session belonging to the authenticated user. Idempotent — revoking an absent/already-revoked session still returns 204. A user may revoke their current session (equivalent to logout).
          */
         delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/sessions/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate that a session is still active (service-to-service)
+         * @description Answers one question for a downstream service: *has this session been revoked or expired?* A FuzeFront session token stays cryptographically valid until its `exp` (24h) even after the user logs out or revokes the device, and only the session store knows. A service that has already verified a session token's signature calls this with the token's `userId` and `sessionId` claims to close that gap.
+         *
+         *     **Caller.** A machine (service-to-service) caller only: the `Authorization` bearer MUST be a `fuze-workload` token carrying the `sessions:validate` scope (see `@izzywdev/fuzefront-service-auth`). A user session token is not accepted here, so a browser can never use this endpoint to probe sessions.
+         *
+         *     **Answer.** `{ active: true }` only when the session exists, has not expired, AND belongs to the supplied `userId`. Every other case, an unknown id, a revoked or expired session, or a session owned by a different user, is the same `200 { active: false }`, with no reason given, so the endpoint cannot be used to learn which of the two identifiers was wrong. This operation does NOT verify any token signature; the caller must already have done that.
+         *
+         *     **Fail-closed.** A store outage is `503`, never `{ active: true }` and never `{ active: false }`. A consumer MUST treat `503` as a retryable service condition, not as a revoked session: refusing every user because the store blinked is an outage, not a revocation. A consumer MUST treat anything other than a well-formed `{ active: true }` as inactive.
+         */
+        post: operations["validateSession"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -300,6 +346,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/signup/email-available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inline signup email-availability check
+         * @description Public, unauthenticated inline check for the signup form: is this email free to register? Backs the debounced "available / already registered" adornment on the create-account field. Consults the SAME source of truth `POST /v1/security/signup` uses to reject a duplicate, so the answer cannot disagree with signup. The email is normalized (trimmed + lowercased) server-side before checking.
+         *
+         *     **Fail-open (client contract).** This endpoint is a UX convenience, never a gate: the client MUST treat any error (timeout, 4xx, 5xx, network) as "unknown/available" and NEVER block submit on it. Authoritative duplicate-rejection happens at `POST /v1/security/signup` (`409`).
+         *
+         *     **Enumeration posture.** It intentionally reveals whether an address is registered (the product requires inline feedback), so the enumeration control is PER-IP RATE-LIMITING so it cannot be used as a bulk account-enumeration oracle beyond the signup UX. The backend enforces the limit; this contract specifies the requirement. Exceeding it returns `429`. It is NOT captcha-gated: the check fires per keystroke on a debounce and Turnstile tokens are single-use, so a captcha cannot gate a repeated, interactive check. Captcha applies only to the authoritative `POST /v1/security/signup` action.
+         */
+        get: operations["getSignupEmailAvailable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/methods": {
         parameters: {
             query?: never;
@@ -331,7 +401,7 @@ export interface paths {
          * Check whether an email is available to register
          * @description Public, unauthenticated inline check for the signup form: is this email free to register? Consults the SAME source of truth `signup` uses to reject a duplicate, so the answer cannot disagree with signup. The email is normalized (trimmed + lowercased) before checking and echoed back.
          *
-         *     This endpoint intentionally reveals whether an address is registered (product requires inline "available / already registered" feedback), so it is per-IP rate-limited (20/min/IP) as the deliberate mitigation for the resulting enumeration exposure. Exceeding the limit returns 429.
+         *     This endpoint intentionally reveals whether an address is registered (product requires inline "available / already registered" feedback), so the enumeration control is per-IP rate-limiting (20/min/IP) as the deliberate mitigation for the resulting enumeration exposure. Exceeding the limit returns 429. It is NOT captcha-gated: the check fires per keystroke on a debounce and Turnstile tokens are single-use, so a captcha cannot gate it; captcha applies only to the authoritative `signup` action.
          */
         get: operations["getEmailAvailable"];
         put?: never;
@@ -1293,8 +1363,10 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
-            firstName?: string;
-            lastName?: string;
+            /** @description Optional display name. Maps 1:1 to the identity store's single `name` field (i18n-safe), REPLACING the former `firstName`/`lastName` split — many names do not decompose into given/family parts. A client that still sends `firstName`/`lastName` is rejected (`additionalProperties: false`): this is the breaking change behind the 1.0.0 major bump. */
+            name?: string;
+            /** @description Cloudflare Turnstile token for server-side (anti-abuse) captcha verification. REQUIRED when `GET /v1/security/methods` reports `AuthMethods.captcha` (captcha enabled); omitted when captcha is disabled. The condition depends on SERVER configuration (`AuthMethods.captcha`), not on another field of this request body, so it cannot be expressed as a static JSON-Schema constraint here and is enforced server-side (fail-closed: a missing/invalid token when captcha is enabled rejects the signup). `turnstile`/`turnstileToken` is a DELIBERATE, approved exception to the vendor-name rule: a captcha is a browser widget the client must load with the vendor's own script + `siteKey`, so — unlike the hidden IDENTITY provider — the captcha vendor is necessarily consumer-visible. */
+            turnstileToken?: string;
             /** @description Optional tenant/organization name to provision on signup. */
             tenantName?: string;
             /** @description Optional single-use invitation bind token (from the `202` accept response, `InvitationEnrollResponse.bindToken`). When present, the server verifies the signup identity matches the invited channel identity, then auto-binds the invited membership (with its `memberType`/`role`) as part of signup — redeeming the invite without a second round-trip. Mismatch or an expired token fails signup-bind closed (the account may still be created; the bind is rejected). */
@@ -1339,6 +1411,17 @@ export interface components {
             identity: components["schemas"]["Identity"];
             user: components["schemas"]["User"];
         };
+        /** @description A canonical active workspace the session identity may select. */
+        SessionWorkspace: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            type: "personal" | "organization";
+        };
+        SessionWorkspaceList: {
+            workspaces: components["schemas"]["SessionWorkspace"][];
+        };
         /** @description Result of the public inline email-availability check. `available` is the negation of "an account already exists"; `email` is the normalized (trimmed + lowercased) address that was actually checked. */
         EmailAvailability: {
             /** @description True when no account exists for the email and it is free to register. */
@@ -1348,6 +1431,11 @@ export interface components {
              * @description The normalized address that was checked (echoed back).
              */
             email: string;
+        };
+        /** @description Result of the inline signup email-availability check (`GET /v1/security/signup/email-available`). `available` is false when an account already exists for the normalized email. The client treats any error as "available" and never blocks submit on this (fail-open). */
+        SignupEmailAvailability: {
+            /** @description True when no account exists for the email and it is free to register. */
+            available: boolean;
         };
         /** @description Neutral auth capability descriptor. Replaces `oidcConfigured`. Lets the UI render affordances (password form, social buttons, MFA, contact verification) without knowing any provider. */
         AuthMethods: {
@@ -1364,6 +1452,29 @@ export interface components {
             verification: {
                 email: boolean;
                 sms: boolean;
+            };
+            /** @description Captcha capability for pre-auth forms (signup / sign-in). PRESENT only when captcha is enabled; ABSENT when disabled. When present, `SignupRequest.turnstileToken` is required and the client renders the captcha widget. `provider`/`siteKey` is a DELIBERATE, approved exception to the vendor-name rule: the captcha is a browser widget the client must load with the vendor's own script + public `siteKey`, so the captcha vendor is necessarily consumer-visible (unlike the hidden identity provider). */
+            captcha?: {
+                /**
+                 * @description Captcha widget provider. `turnstile` = Cloudflare Turnstile.
+                 * @enum {string}
+                 */
+                provider: "turnstile";
+                /** @description Public site key for the captcha widget. Safe to expose to the browser (it is designed to be public); the secret key lives only server-side for verification. */
+                siteKey: string;
+            };
+            /** @description Authoritative password policy so the client renders the REAL rules (strength meter + per-rule checklist) instead of a hard-coded, drift-prone client copy. Advisory for UX; the server independently enforces the same policy and is the source of truth (`422 PASSWORD_POLICY`). */
+            passwordPolicy?: {
+                /** @description Minimum password length (currently 12). */
+                minLength: number;
+                /** @description Requires at least one uppercase letter. */
+                requireUpper: boolean;
+                /** @description Requires at least one lowercase letter. */
+                requireLower: boolean;
+                /** @description Requires at least one digit. */
+                requireDigit: boolean;
+                /** @description Requires at least one symbol. */
+                requireSymbol: boolean;
             };
         };
         /**
@@ -1850,6 +1961,18 @@ export interface components {
             /** @description True for the session making this request. */
             current: boolean;
         };
+        /** @description The session to check, taken verbatim from the `userId` and `sessionId` claims of an already-verified FuzeFront session token. Both identify EXISTING entities (references, not identity being created), and both are required: the session only counts as active for the user it belongs to. */
+        SessionValidateRequest: {
+            /** @description The `userId` claim of the session token. */
+            userId: string;
+            /** @description The `sessionId` claim of the session token. */
+            sessionId: string;
+        };
+        /** @description Whether the session is still active. A consumer MUST treat anything other than a well-formed `{ "active": true }` as inactive. */
+        SessionValidation: {
+            /** @description True only if the session exists, has not expired, and belongs to the supplied `userId`. False in every other case, with no reason given. */
+            active: boolean;
+        };
         /** @description Result of beginning a social-link handshake. The SPA navigates the browser to `redirectUrl` (the same-host authorize path); the browser never sees an internal identity host. */
         SocialLinkStart: {
             /** @description Same-origin/consent-host URL to navigate to in order to continue linking. */
@@ -2048,11 +2171,11 @@ export interface components {
             items: components["schemas"]["Portal"][];
             page: components["schemas"]["PageInfo"];
         };
-        /** @description Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED (past TTL or already used) and TOKEN_INVALID (matches nothing) are returned as 400 by the email-verify and password-reset confirm operations; they are NOT session failures and clients must not treat them as 401 session expiry. PASSWORD_POLICY (422) is returned by reset-confirm when the identity provider rejects the new password; the reset token stays live so a compliant retry succeeds. */
+        /** @description Stable error body. Fail-closed; provider-neutral codes. TOKEN_EXPIRED (past TTL or already used) and TOKEN_INVALID (matches nothing) are returned as 400 by the email-verify and password-reset confirm operations; they are NOT session failures and clients must not treat them as 401 session expiry. PASSWORD_POLICY (422) is returned by reset-confirm when the identity provider rejects the new password (and by `POST /v1/security/signup` when the chosen password fails the policy); the reset token stays live so a compliant retry succeeds. CAPTCHA_FAILED (400) is returned by `POST /v1/security/signup` when the supplied Cloudflare Turnstile token is rejected, invalid, or missing — a distinct, explicit failure from a generic MALFORMED body. A rejected captcha is a 400 (client-correctable: fetch a fresh token and retry); Cloudflare being unreachable is instead 503 PROVIDER_UNAVAILABLE (fail-closed), never CAPTCHA_FAILED. */
         ErrorBody: {
             error: string;
             /** @enum {string} */
-            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "TOKEN_EXPIRED" | "TOKEN_INVALID" | "PASSWORD_POLICY" | "LAST_FACTOR" | "NO_PASSWORD" | "RATE_LIMITED" | "UNKNOWN";
+            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "TOKEN_EXPIRED" | "TOKEN_INVALID" | "PASSWORD_POLICY" | "CAPTCHA_FAILED" | "LAST_FACTOR" | "NO_PASSWORD" | "RATE_LIMITED" | "UNKNOWN";
         };
     };
     responses: {
@@ -2260,6 +2383,28 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listSessionWorkspaces: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active workspace choices for the current identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionWorkspaceList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     requestPasswordReset: {
@@ -2486,6 +2631,34 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    validateSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description The session's state. `active` is `false` for an unknown, revoked or expired session and for a user mismatch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionValidation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
     linkSocial: {
         parameters: {
             query?: never;
@@ -2673,7 +2846,15 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description The request is rejected before account creation. `code: MALFORMED` for a malformed/invalid body; `code: CAPTCHA_FAILED` when the supplied Cloudflare Turnstile token is rejected, invalid, or missing (distinct from MALFORMED so the client can prompt for a fresh captcha and retry rather than treating it as a generic bad request). Cloudflare being unreachable is NOT a 400 — it fails closed as `503 PROVIDER_UNAVAILABLE`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description An account with that email already exists. */
             409: {
                 headers: {
@@ -2683,7 +2864,57 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description The chosen password fails the authoritative password policy (`code: PASSWORD_POLICY`), distinct from 409 email-exists and 503 provider errors. The server independently enforces the same policy advertised by `AuthMethods.passwordPolicy`; the client may render the per-rule checklist and let the user retry with a compliant password. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getSignupEmailAvailable: {
+        parameters: {
+            query: {
+                /** @description The email address to check. Normalized (trim + lowercase) server-side. */
+                email: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignupEmailAvailability"];
+                };
+            };
+            /** @description The `email` query param is missing or malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Rate limit exceeded (per-IP enumeration guard). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     getAuthMethods: {

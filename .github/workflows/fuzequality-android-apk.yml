@@ -1,0 +1,277 @@
+name: FuzeQuality — Build Android APK (TWA)
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'FuzeQuality/**'
+      - 'scripts/check-mobile-release.mjs'
+      - 'scripts/prepare-bubblewrap-project.mjs'
+      - '.github/workflows/fuzequality-android-apk.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'FuzeQuality/**'
+      - 'scripts/check-mobile-release.mjs'
+      - 'scripts/prepare-bubblewrap-project.mjs'
+      - '.github/workflows/fuzequality-android-apk.yml'
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Android version code (integer, e.g. 2)'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzequality-android-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-apk:
+    name: Build & sign FuzeQuality TWA APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact_name: ${{ steps.apk.outputs.artifact_name }}
+      release_name: ${{ steps.apk.outputs.release_name }}
+      release_tag: ${{ steps.apk.outputs.release_tag }}
+    env:
+      RELEASE_BUILD: ${{ github.ref_name == github.event.repository.default_branch && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      - name: Validate FuzeQuality mobile and standalone contract
+        run: node scripts/check-mobile-release.mjs FuzeQuality
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli@1.27.0
+
+      - name: Pre-configure Bubblewrap
+        run: |
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" \
+            > ~/.bubblewrap/config.json
+
+      # FuzeQuality is shipped from the FuzeFront monorepo and deliberately uses
+      # its managed Android release identity. The distinct packageId keeps the
+      # apps separate while the committed Digital Asset Links fingerprint stays
+      # verifiable against the repository-owned keystore.
+      - name: Restore release keystore
+        if: env.RELEASE_BUILD == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "ANDROID_KEYSTORE_B64 is required for release builds" >&2; exit 1; }
+          mkdir -p FuzeQuality/android/keystore
+          printf '%s' "$KEYSTORE_B64" | base64 -d > FuzeQuality/android/keystore/product-release.keystore
+
+      - name: Create ephemeral PR keystore
+        if: env.RELEASE_BUILD != 'true'
+        run: |
+          mkdir -p FuzeQuality/android/keystore
+          ALIAS=$(node -p "require('./FuzeQuality/android/twa-manifest.json').signingKey.alias")
+          keytool -genkeypair -noprompt \
+            -keystore FuzeQuality/android/keystore/product-release.keystore \
+            -storepass android -keypass android -alias "$ALIAS" \
+            -keyalg RSA -keysize 2048 -validity 30 \
+            -dname "CN=FuzeQuality CI Build, OU=FuzeOne, O=FuzeFront, C=IL"
+
+      - name: Set version metadata
+        id: version
+        env:
+          INPUT_VERSION_CODE: ${{ github.event.inputs.version_code }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          CODE="${INPUT_VERSION_CODE:-$RUN_NUMBER}"
+          [[ "$CODE" =~ ^[1-9][0-9]*$ ]] || { echo "version code must be a positive integer" >&2; exit 1; }
+          BASE_VERSION=$(node -p "require('./FuzeQuality/package.json').version")
+          VERSION_NAME="${BASE_VERSION}+build.${CODE}"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          VERSION_CODE="$CODE" VERSION_NAME="$VERSION_NAME" node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('FuzeQuality/android/twa-manifest.json','utf8'));
+            m.appVersionCode = parseInt(process.env.VERSION_CODE, 10);
+            m.appVersion = process.env.VERSION_NAME;
+            m.signingKey.path = './keystore/product-release.keystore';
+            fs.writeFileSync('FuzeQuality/android/twa-manifest.json', JSON.stringify(m, null, 2));
+          "
+          echo "alias=$(node -p "require('./FuzeQuality/android/twa-manifest.json').signingKey.alias")" >> "$GITHUB_OUTPUT"
+
+      - name: Scaffold Android project from FuzeQuality TWA manifest
+        working-directory: FuzeQuality/android
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          if [[ "$RELEASE_BUILD" != "true" ]]; then
+            export KEYSTORE_STORE_PASSWORD=android
+            export KEYSTORE_KEY_PASSWORD=android
+          fi
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('twa-manifest.json','utf8'));
+            m.signingKey.storePassword = process.env.KEYSTORE_STORE_PASSWORD || '';
+            m.signingKey.keyPassword = process.env.KEYSTORE_KEY_PASSWORD || '';
+            m.iconUrl = 'http://localhost:8080/icons/pwa-512x512.png';
+            m.maskableIconUrl = 'http://localhost:8080/icons/pwa-maskable-512x512.png';
+            m.monochromeIconUrl = 'http://localhost:8080/icons/pwa-512x512.png';
+            m.webManifestUrl = 'http://localhost:8080/manifest.webmanifest';
+            fs.writeFileSync('twa-manifest.json', JSON.stringify(m, null, 2));
+          "
+          python3 -m http.server 8080 --directory ../apps/web/public &
+          HTTP_PID=$!
+          trap 'kill $HTTP_PID 2>/dev/null || true' EXIT
+          sleep 1
+          bubblewrap update --skipPwaValidation --skipVersionUpgrade
+          node ../../scripts/prepare-bubblewrap-project.mjs .
+
+      - name: Force FuzeQuality minSdkVersion 24 in generated Gradle project
+        working-directory: FuzeQuality/android
+        run: |
+          set -euo pipefail
+          # Bubblewrap 1.27 scaffolds minSdk 21 even though the TWA manifest
+          # declares 24. Android Browser Helper 2.7.4 requires 24, so patch the
+          # generated Gradle file before either debug or release assembly.
+          GRADLE_FILE="app/build.gradle"
+          test -f "$GRADLE_FILE" || {
+            echo "::error::$GRADLE_FILE not found after Bubblewrap scaffold — template layout may have changed" >&2
+            exit 1
+          }
+          if grep -Eq 'minSdkVersion[[:space:]]+[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdkVersion[[:space:]]+[0-9]+/minSdkVersion 24/g' "$GRADLE_FILE"
+          elif grep -Eq 'minSdk[[:space:]]*=[[:space:]]*[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 24/g' "$GRADLE_FILE"
+          elif grep -Eq 'minSdk[[:space:]]+[0-9]+' "$GRADLE_FILE"; then
+            sed -i -E 's/minSdk[[:space:]]+[0-9]+/minSdk 24/g' "$GRADLE_FILE"
+          else
+            echo "::error::No minSdk/minSdkVersion declaration found in $GRADLE_FILE — update the Bubblewrap patch" >&2
+            cat "$GRADLE_FILE" >&2
+            exit 1
+          fi
+          grep -En 'minSdk(Version)?' "$GRADLE_FILE"
+          grep -Eq 'minSdk(Version)?([[:space:]]+|[[:space:]]*=[[:space:]]*)24\b' "$GRADLE_FILE" || {
+            echo "::error::minSdk patch did not yield 24 in $GRADLE_FILE" >&2
+            exit 1
+          }
+
+      - name: Build FuzeQuality APK
+        working-directory: FuzeQuality/android
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          if [[ "$RELEASE_BUILD" == "true" ]]; then
+            ./gradlew assembleRelease
+          else
+            ./gradlew assembleDebug
+          fi
+
+      - name: Sign and verify release APK
+        if: env.RELEASE_BUILD == 'true'
+        working-directory: FuzeQuality/android
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_STORE_PASSWORD" || { echo "ANDROID_KEYSTORE_STORE_PASSWORD is required" >&2; exit 1; }
+          test -n "$KEYSTORE_KEY_PASSWORD" || { echo "ANDROID_KEYSTORE_KEY_PASSWORD is required" >&2; exit 1; }
+          UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
+          SIGNED="app/build/outputs/apk/release/app-release.apk"
+          BUILD_TOOLS=$(ls "$ANDROID_HOME/build-tools/" | sort -V | tail -1)
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" sign \
+            --ks ./keystore/product-release.keystore \
+            --ks-pass "pass:${KEYSTORE_STORE_PASSWORD}" \
+            --key-pass "pass:${KEYSTORE_KEY_PASSWORD}" \
+            --ks-key-alias "${{ steps.version.outputs.alias }}" \
+            --out "$SIGNED" "$UNSIGNED"
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --verbose "$SIGNED"
+          EXPECTED_FINGERPRINT=$(node -p "require('./twa-manifest.json').fingerprints[0].value.replace(/:/g, '').toLowerCase()")
+          # Recent Android build-tools releases may emit certificate details on
+          # stderr even though verification succeeds. Capture both streams and
+          # keep the parser independent of the optional "Signer #1" prefix.
+          CERTIFICATE_OUTPUT=$("$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --print-certs "$SIGNED" 2>&1)
+          printf '%s\n' "$CERTIFICATE_OUTPUT"
+          ACTUAL_FINGERPRINT=$(printf '%s\n' "$CERTIFICATE_OUTPUT" \
+            | sed -nE 's/^.*certificate SHA-256 digest:[[:space:]]*//p' \
+            | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
+          test -n "$ACTUAL_FINGERPRINT" || { echo "Unable to read signed APK certificate fingerprint" >&2; exit 1; }
+          test "$ACTUAL_FINGERPRINT" = "$EXPECTED_FINGERPRINT" || {
+            echo "Signed APK certificate does not match the fingerprint published in twa-manifest.json and assetlinks.json" >&2
+            exit 1
+          }
+
+      - name: Locate FuzeQuality APK
+        id: apk
+        working-directory: FuzeQuality/android
+        run: |
+          if [[ "$RELEASE_BUILD" == "true" ]]; then
+            APK=$(find . -path "*/release/app-release.apk" | head -1)
+          else
+            APK=$(find . -path "*/debug/app-debug.apk" | head -1)
+          fi
+          test -n "$APK" || { echo "Expected FuzeQuality APK was not produced" >&2; exit 1; }
+          DEST="fuzequality-android-${{ steps.version.outputs.name }}.apk"
+          cp "$APK" "$DEST"
+          echo "artifact_name=fuzequality-android-v${{ steps.version.outputs.name }}" >> "$GITHUB_OUTPUT"
+          echo "path=FuzeQuality/android/$DEST" >> "$GITHUB_OUTPUT"
+          echo "release_name=FuzeQuality Android v${{ steps.version.outputs.name }}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=fuzequality-android-v${{ steps.version.outputs.name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload FuzeQuality APK artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.apk.outputs.artifact_name }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 90
+
+  release-apk:
+    name: Publish FuzeQuality Android release
+    needs: build-apk
+    if: github.ref_name == github.event.repository.default_branch && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # This write-capable job never checks out or executes selected-ref code. It
+      # receives only the APK built by the read-only job above.
+      - name: Download verified FuzeQuality APK
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.build-apk.outputs.artifact_name }}
+          path: release
+
+      - name: Create FuzeQuality Android release
+        uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7 # v2.3.4
+        with:
+          tag_name: ${{ needs.build-apk.outputs.release_tag }}
+          name: ${{ needs.build-apk.outputs.release_name }}
+          body: |
+            ## FuzeQuality Android APK (TWA)
+
+            Trusted Web Activity wrapping **https://fuzequality.fuzefront.com**.
+
+            The standalone origin serves the FuzeQuality PWA, Digital Asset Links,
+            and same-origin API under `/api` without FuzeFront portal chrome.
+          files: release/*.apk
+          draft: false
+          prerelease: false
+          overwrite_files: true

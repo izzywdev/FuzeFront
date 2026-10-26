@@ -6,57 +6,6 @@ import { PlanRepository } from '../repositories/plan.repository';
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes per spec
 
 /**
- * Static plan catalog returned when the Stripe catalogue has not been synced
- * yet (no rows in billing.plans). Keeps the UI functional before STRIPE_PRICE_*
- * env vars and a catalogue sync are configured. Prices/features from
- * https://fuzefront.com/pricing.
- */
-export const STATIC_DEFAULT_PLANS: Plan[] = [
-  {
-    priceId: 'price_starter_monthly_placeholder',
-    productId: 'prod_starter',
-    tierName: 'starter',
-    displayName: 'Starter',
-    billingInterval: 'month',
-    unitAmount: 2900,
-    currency: 'usd',
-    seatBased: false,
-    meteredMeterName: null,
-    features: ['Core features', 'Up to 5 users', '1 workspace', 'Email support'],
-    isActive: true,
-    sortOrder: 1,
-  },
-  {
-    priceId: 'price_growth_monthly_placeholder',
-    productId: 'prod_growth',
-    tierName: 'growth',
-    displayName: 'Growth',
-    billingInterval: 'month',
-    unitAmount: 9900,
-    currency: 'usd',
-    seatBased: false,
-    meteredMeterName: null,
-    features: ['Everything in Starter', 'Unlimited applications', 'SSO / OIDC', 'API keys', 'Module Federation hosting', 'Priority support'],
-    isActive: true,
-    sortOrder: 2,
-  },
-  {
-    priceId: 'contact_sales',
-    productId: 'prod_enterprise',
-    tierName: 'enterprise',
-    displayName: 'Enterprise',
-    billingInterval: 'month',
-    unitAmount: 0,
-    currency: 'usd',
-    seatBased: true,
-    meteredMeterName: null,
-    features: ['Everything in Growth', 'Custom SLAs', 'Custom domain', 'Compliance exports', 'Dedicated CSM', 'Custom contracts'],
-    isActive: true,
-    sortOrder: 3,
-  },
-];
-
-/**
  * Static plan-id → Stripe price mapping for the hosted-Checkout flow.
  *
  * The Stripe catalogue (synced into billing.plans) is keyed by price id /
@@ -126,6 +75,7 @@ export class PlanService {
     });
 
     let count = 0;
+    const syncedPriceIds: string[] = [];
     for (const price of result.data) {
       const product = price.product as Stripe.Product;
       const md = product.metadata ?? {};
@@ -147,7 +97,15 @@ export class PlanService {
         sortOrder: Number.parseInt(md.sort_order ?? '0', 10) || 0,
       };
       await this.repo.upsert(plan);
+      syncedPriceIds.push(price.id);
       count++;
+    }
+
+    // Deactivate seed-placeholder rows (and any retired prices) not returned by
+    // this Stripe sync, so listActive() never surfaces stale placeholders
+    // alongside the real Stripe-sourced rows.
+    if (syncedPriceIds.length > 0) {
+      await this.repo.deactivateNotIn(syncedPriceIds);
     }
 
     // Invalidate the read cache so getActivePlans reflects the fresh sync.
@@ -156,8 +114,9 @@ export class PlanService {
   }
 
   /** Returns active plans from the local cache, refreshing from the repo on TTL miss.
-   *  Falls back to STATIC_DEFAULT_PLANS when the catalogue has not been synced yet
-   *  OR when the DB is unavailable (e.g. schema not yet bootstrapped). */
+   *  billing.plans is always pre-populated by migration 006_seed_default_plans.sql;
+   *  an empty result means the migration runner did not execute that file, which is
+   *  a deployment error — not a signal to silently serve in-process fallback data. */
   async getActivePlans(): Promise<Plan[]> {
     if (this.cache && this.now() - this.cache.at < this.ttlMs) {
       return this.cache.plans;
@@ -166,12 +125,17 @@ export class PlanService {
     try {
       plans = await this.repo.listActive();
     } catch (err) {
-      console.warn('[plan-service] DB unavailable — serving static default plans:', err);
-      return STATIC_DEFAULT_PLANS;
+      console.error('[plan-service] DB error reading billing.plans — cannot serve plan catalogue:', err);
+      throw err;
     }
-    const resolved = plans.length > 0 ? plans : STATIC_DEFAULT_PLANS;
-    this.cache = { at: this.now(), plans: resolved };
-    return resolved;
+    if (plans.length === 0) {
+      console.warn(
+        '[plan-service] billing.plans is empty — migration 006_seed_default_plans.sql may not have run. ' +
+        'The plan catalogue will be empty until a Stripe sync or the migration is executed.',
+      );
+    }
+    this.cache = { at: this.now(), plans };
+    return plans;
   }
 
   /**

@@ -42,7 +42,8 @@
     "packages/fuzepicker-ui",
     "selection-list-client",
     "packages/billing-types",
-    "services/billing-service"
+    "services/billing-service",
+    "packages/metered-usage"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
@@ -63,6 +64,9 @@
     "check:frames-stamped": "node scripts/stamp-frames.mjs --check",
     "stamp:frames": "node scripts/stamp-frames.mjs --write",
     "test:frames-stamped": "node --test scripts/__tests__/stamp-frames.test.mjs",
+    "check:frames-schema": "node scripts/check-frames-schema.mjs",
+    "frames:schema-report": "node scripts/check-frames-schema.mjs --report",
+    "test:frames-schema": "node --test scripts/__tests__/check-frames-schema.test.mjs",
     "check:deployable-paths": "node scripts/check-deployable-paths.mjs",
     "deployable-paths:write": "node scripts/gen-deployable-paths.mjs --write",
     "test:deployable-paths": "node --test scripts/__tests__/deployable-paths.test.mjs"

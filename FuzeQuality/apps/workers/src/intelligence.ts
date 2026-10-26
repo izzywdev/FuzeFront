@@ -10,7 +10,7 @@ import {
 } from '@fuzequality/core'
 import { apiRequest, failureCode, runConsumer } from './runtime'
 import { searchJira } from './jira'
-import { runRepositoryInventoryAnalysis } from './repository-analysis'
+import { isRepositoryAnalysisTopic, reportExhaustedRepositoryAnalysis, repositoryQualityArtifactsPath, runTrackedRepositoryInventoryAnalysis, shouldRunRepositoryAnalysis } from './repository-analysis'
 
 await runConsumer(
   'fuzequality-intelligence-v1',
@@ -21,15 +21,25 @@ await runConsumer(
     // Repository analysis does not need retrieval. Keep it independent of
     // Chroma so a semantic-index outage cannot suppress persisted flow and
     // governance evidence for a newly scanned revision.
-    if (!command && topic === TOPICS.REPOSITORY_INVENTORY_CHANGED) {
+    if (!command && isRepositoryAnalysisTopic(topic)) {
       const inventory = payload as { repositoryId: string; revision: string }
-      const repository = await apiRequest<Repository>(`/api/v1/internal/repositories/${inventory.repositoryId}`)
-      const artifacts = await apiRequest<QualityArtifact[]>(`/api/v1/internal/repositories/${inventory.repositoryId}/quality-artifacts`)
-      const analyzer = new LiteLlmRepositoryFlowAnalyzer(process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1', process.env.FUZEQUALITY_LLM_MODEL ?? 'quality-analysis', process.env.LITELLM_MASTER_KEY)
-      await runRepositoryInventoryAnalysis(repository, inventory.revision, artifacts, {
+      const repository = await apiRequest<Repository>(`/api/v1/internal/repositories/${encodeURIComponent(inventory.repositoryId)}`)
+      if (!shouldRunRepositoryAnalysis(repository, inventory.revision)) return
+      const artifacts = await apiRequest<QualityArtifact[]>(repositoryQualityArtifactsPath(inventory.repositoryId, inventory.revision))
+      const analyzer = new LiteLlmRepositoryFlowAnalyzer(
+        process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1',
+        process.env.FUZEQUALITY_LLM_MODEL ?? 'quality-analysis',
+        process.env.LITELLM_MASTER_KEY,
+        fetch,
+        Number(process.env.FUZEQUALITY_REPOSITORY_ANALYSIS_TIMEOUT_MS),
+      )
+      const analysisPath = `/api/v1/internal/repositories/${encodeURIComponent(inventory.repositoryId)}/analysis-status`
+      await runTrackedRepositoryInventoryAnalysis(repository, inventory.revision, artifacts, {
         analyzer,
         persistCandidates: candidates => apiRequest('/api/v1/internal/repository-flow-candidates', { method: 'POST', body: JSON.stringify({ candidates }) }),
         persistEvaluations: evaluations => apiRequest('/api/v1/internal/policy-gate-evaluations', { method: 'POST', body: JSON.stringify({ evaluations }) }),
+        persistStatus: status => apiRequest(analysisPath, { method: 'POST', body: JSON.stringify(status) }),
+        heartbeat,
       })
       return
     }
@@ -98,5 +108,32 @@ await runConsumer(
       }
       throw error
     }
-  }
+  },
+  {
+    onExhausted: (topic, payload, _correlationId, error) => reportExhaustedRepositoryAnalysis(
+      topic,
+      payload,
+      error,
+      {
+        persistStatus: async (repositoryId, status) => {
+          // If analysis reached the tracked phase, retain its original start
+          // time. Setup failures remain distinguishable because their queued
+          // state has no start time yet.
+          const repository = await apiRequest<Repository>(
+            `/api/v1/internal/repositories/${encodeURIComponent(repositoryId)}`,
+          )
+          const startedAt = repository.lastAnalysis?.revision === status.revision
+            ? repository.lastAnalysis.startedAt
+            : undefined
+          await apiRequest(
+            `/api/v1/internal/repositories/${encodeURIComponent(repositoryId)}/analysis-status`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ ...status, ...(startedAt ? { startedAt } : {}) }),
+            },
+          )
+        },
+      },
+    ).then(() => undefined),
+  },
 )

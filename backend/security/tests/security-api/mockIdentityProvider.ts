@@ -228,8 +228,9 @@ export class MockIdentityProvider implements IdentityProvider {
     const u = this.seedUser({
       email: input.email,
       password: input.password,
-      firstName: input.firstName,
-      lastName: input.lastName,
+      // Contract 1.0.0: signup carries one `name`; the mock stores it as the
+      // display name (firstName slot) — it deliberately does not split it.
+      firstName: input.name,
       roles: ['user'],
       mfaEnabled: false,
     })
@@ -438,6 +439,11 @@ export class MockIdentityProvider implements IdentityProvider {
     for (const [t, userId] of [...this.sessions.entries()]) {
       if (userId === u.id && t !== token) this.sessions.delete(t)
     }
+  }
+
+  async isSessionActive(userId: string, sessionId: string): Promise<boolean> {
+    // Mirrors the real provider: active only for the user the session belongs to.
+    return this.sessions.get(sessionId) === userId
   }
 
   // ── Sign-in connections ──

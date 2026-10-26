@@ -5,6 +5,7 @@ export interface PlanRepository {
   upsert(plan: Plan): Promise<void>;
   listActive(): Promise<Plan[]>;
   findByPriceId(stripePriceId: string): Promise<Plan | null>;
+  deactivateNotIn(activePriceIds: string[]): Promise<void>;
 }
 
 interface PlanRow {
@@ -92,5 +93,13 @@ export class PgPlanRepository implements PlanRepository {
       [stripePriceId],
     );
     return res.rows[0] ? mapRow(res.rows[0]) : null;
+  }
+
+  async deactivateNotIn(activePriceIds: string[]): Promise<void> {
+    if (activePriceIds.length === 0) return;
+    await this.pool.query(
+      `UPDATE billing.plans SET is_active = FALSE WHERE stripe_price_id != ALL($1) AND is_active = TRUE`,
+      [activePriceIds],
+    );
   }
 }

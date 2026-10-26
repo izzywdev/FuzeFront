@@ -1,5 +1,131 @@
 # Changelog — @fuzefront/security-client
 
+## 1.3.0 — Session validity check for downstream services (additive, unreleased)
+
+`info.version` 1.2.0 -> 1.3.0, `SECURITY_CONTRACT_VERSION` 1.2.0 -> 1.3.0,
+package `version` 1.2.0 -> 1.3.0. MINOR — adds one operation and two schemas.
+Existing operations and response shapes are unchanged.
+
+### Added
+
+- `POST /v1/security/sessions/validate` (`validateSession`), service-to-service
+  only: the bearer must be a `fuze-workload` token with the `sessions:validate`
+  scope. Body `SessionValidateRequest { userId, sessionId }` (both required,
+  `additionalProperties: false`); response `SessionValidation { active }`.
+- `active` is `true` only when the session exists, is unexpired, and belongs to
+  the supplied `userId`. Unknown, revoked, expired and user-mismatch are all the
+  same `200 { active: false }` with no reason, so the endpoint is not an oracle
+  for which identifier was wrong. A store outage is `503`, never a boolean.
+
+### Why
+
+A FuzeFront session token stays cryptographically valid until `exp` (24h) after
+the user logs out or revokes the device. `@izzywdev/fuzefront-auth` 0.4.0 (Node)
+and `fuzefront-auth` 0.2.0 (Python) now refuse a `legacy-hs256` token that names
+a session unless the consumer supplies a `sessionValidator`. This is the
+endpoint such a validator calls. Contract + generated client only; the backend
+handler and the consumer wiring fan out after this freeze.
+
+### Migration
+
+None. Additive. A consumer that does not call the new operation is unaffected.
+
+## 1.2.0 — Tenant workspace discovery (additive, unreleased)
+
+`info.version` 1.1.0 -> 1.2.0, `SECURITY_CONTRACT_VERSION` 1.1.0 -> 1.2.0,
+package `version` 1.1.0 -> 1.2.0. MINOR — adds the authenticated,
+provider-agnostic `GET /v1/security/session/workspaces` discovery contract used
+by portal and standalone clients before proving a personal or organization
+tenant. Existing operations and response shapes are unchanged.
+
+## 1.1.0 — Auth-experience signup contract reconciliation (additive, unreleased)
+
+`info.version` 1.0.0 -> 1.1.0, `SECURITY_CONTRACT_VERSION` 1.0.0 -> 1.1.0,
+package `version` 1.0.0 -> 1.1.0. MINOR — additive error codes, a newly
+documented (already-implemented) response, and description corrections. No
+existing request/response shape is narrowed; oasdiff reports non-breaking.
+
+Reconciles three contract/implementation gaps surfaced while building the three
+auth-experience signup slices against 1.0.0. Contract + generated client only —
+backend/UI/test fan out after this freeze.
+
+### Added
+
+- `ErrorBody.code` enum: `CAPTCHA_FAILED`. A rejected/invalid/missing Cloudflare
+  Turnstile token on `POST /v1/security/signup` now returns **400 with code
+  `CAPTCHA_FAILED`** — distinct from a generic `MALFORMED` (previously the
+  backend returned `400 MALFORMED` and the frontend guessed `403`, so they
+  disagreed). Cloudflare being unreachable stays **503 `PROVIDER_UNAVAILABLE`**
+  (fail-closed), never `CAPTCHA_FAILED`. `ErrorBody.description` documents this.
+- `POST /v1/security/signup`: **422** response (body `ErrorBody`, `code:
+  PASSWORD_POLICY`) for a password that fails the authoritative policy — distinct
+  from 409 email-exists and 503 provider errors. `AuthMethods.passwordPolicy`
+  already referenced `422 PASSWORD_POLICY`; the operation now declares it. The
+  `PASSWORD_POLICY` code already existed in the enum.
+- Hand-authored `SecurityErrorCode` union in `src/types.ts` brought into full
+  lockstep with the `ErrorBody.code` enum — adds the two codes above plus
+  previously-drifted values (`REDIRECT_URI_NOT_ALLOWED`, `TOKEN_EXPIRED`,
+  `TOKEN_INVALID`, `PASSWORD_POLICY`, `LAST_FACTOR`, `NO_PASSWORD`,
+  `RATE_LIMITED`). Pure additive widening of a string-literal union.
+
+### Changed (documentation only)
+
+- `POST /v1/security/signup` `400` response: was a generic `BadRequest` ref; now
+  an inline description documenting both `MALFORMED` and `CAPTCHA_FAILED` and the
+  503-on-unreachable distinction. Same `ErrorBody` schema — non-breaking.
+- `GET /v1/security/signup/email-available` and the sibling
+  `GET /v1/security/email-available`: enumeration-posture text CORRECTED. The real
+  control is **per-IP rate-limiting** (the check fires per keystroke on a debounce
+  and Turnstile tokens are single-use, so a captcha cannot gate it); the prior
+  "per-IP rate-limited AND captcha-gated" claim was wrong. Now states explicitly
+  it is NOT captcha-gated. No captcha parameter added; the documented `429`
+  remains.
+
+## 1.0.0 — Auth-experience signup redesign (BREAKING, unreleased)
+
+`info.version` 0.12.0 -> 1.0.0, `SECURITY_CONTRACT_VERSION` 0.12.0 -> 1.0.0,
+package `version` 0.12.0 -> 1.0.0. MAJOR because `SignupRequest` drops
+`firstName`/`lastName` under `additionalProperties: false` — a request valid
+against 0.12.0 (sending `firstName`/`lastName`) is rejected by 1.0.0.
+
+Implements the frozen `design/frames/auth-experience/manifest.json`
+`contract.deltas` (all four build flows owner-approved). Contract + generated
+client only — no backend/UI/test implementation (fanned out after freeze).
+
+### BREAKING
+
+- `SignupRequest`: `firstName` + `lastName` REMOVED; replaced by a single
+  OPTIONAL `name` (display name; maps 1:1 to the identity store's single `name`,
+  i18n-safe). `additionalProperties: false` retained, so a client still sending
+  `firstName`/`lastName` now fails validation. Only in-repo consumer is the host
+  frontend via `@fuzefront/security-client`; `packages/auth-ui` re-derives its
+  `SignupRequest` from the regenerated client in a later (frontend-engineer)
+  phase — NOT edited here.
+
+### Added
+
+- `GET /v1/security/signup/email-available?email=` (`getSignupEmailAvailable`),
+  public/unauthenticated → `200 SignupEmailAvailability { available: boolean }`;
+  `400` malformed/missing email; `429` rate-limited. Debounced inline signup
+  check; client contract is FAIL-OPEN (never blocks submit on error);
+  documented MUST be per-IP rate-limited + captcha-gated so it is not an
+  enumeration oracle (backend enforces). NOTE — overlaps the pre-existing,
+  already-implemented `GET /v1/security/email-available` (`getEmailAvailable`,
+  `EmailAvailability { available, email }`); see the delivery note / flagged
+  item — consolidation of the two paths is an owner/orchestrator decision, not
+  resolved by this contract PR.
+- `SignupRequest.turnstileToken` (string, optional in-schema): Cloudflare
+  Turnstile token, REQUIRED server-side when `AuthMethods.captcha` is present.
+  The conditional depends on server config, not another request field, so it is
+  documented + enforced server-side rather than expressed as a static schema
+  constraint.
+- `AuthMethods.captcha` `{ provider: 'turnstile', siteKey }` (optional; absent
+  when captcha disabled) and `AuthMethods.passwordPolicy`
+  `{ minLength, requireUpper, requireLower, requireDigit, requireSymbol }`
+  (optional) so the client renders the authoritative policy. Both ADDITIVE /
+  non-breaking. Hand-authored `AuthMethods` in `src/types.ts` extended in
+  lockstep (`CaptchaMethod`, `PasswordPolicy`).
+
 ## 0.12.0 — Account: change password; MFA last-factor guard (unreleased)
 
 `info.version` 0.11.0 -> 0.12.0, `SECURITY_CONTRACT_VERSION` 0.11.0 -> 0.12.0.

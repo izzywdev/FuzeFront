@@ -7,7 +7,9 @@ import type {
   AuthPanelMode,
 } from '../types'
 import { DEFAULT_AUTH_LABELS } from '../types'
-import { GoogleGlyph } from './GoogleGlyph'
+import { SocialButton } from './SocialButton'
+import { SignUpFlow } from './signup/SignUpFlow'
+import { DEFAULT_SIGNUP_LABELS } from './signup/labels'
 
 /**
  * Fallback capability descriptor — rendered immediately so the form is never
@@ -49,28 +51,43 @@ export function AuthPanel({
   forgotPasswordHref,
   onForgotPassword,
   labels: labelOverrides,
+  experience = false,
+  signupLabels,
+  termsHref,
+  privacyHref,
+  onSignInInstead,
+  resetPasswordHref,
 }: AuthPanelProps) {
   const labels = { ...DEFAULT_AUTH_LABELS, ...labelOverrides }
+  const signupText = { ...DEFAULT_SIGNUP_LABELS, ...signupLabels }
   const [mode, setMode] = useState<AuthPanelMode>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
+  const [name, setName] = useState('')
   const [pending, setPending] = useState<PendingAction>(null)
   const loading = pending !== null
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  const [mfaPending, setMfaPending] = useState(false)
   const [authMethods, setAuthMethods] = useState<AuthMethods>(FALLBACK_METHODS)
+  // The new signup experience needs to know whether a captcha is required BEFORE it
+  // enables submit, so it waits for the capability fetch to settle (success or fallback).
+  const [methodsReady, setMethodsReady] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     transport
       .getAuthMethods()
       .then((methods) => {
-        if (!cancelled) setAuthMethods(methods)
+        if (!cancelled) {
+          setAuthMethods(methods)
+          setMethodsReady(true)
+        }
       })
       .catch(() => {
-        if (!cancelled) setAuthMethods(FALLBACK_METHODS)
+        if (!cancelled) {
+          setAuthMethods(FALLBACK_METHODS)
+          setMethodsReady(true)
+        }
       })
     return () => {
       cancelled = true
@@ -85,21 +102,20 @@ export function AuthPanel({
   const toggleMode = () => {
     setMode((m) => (m === 'signin' ? 'signup' : 'signin'))
     setError('')
-    setNotice('')
+    setMfaPending(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setPending('credentials')
     setError('')
-    setNotice('')
+    setMfaPending(false)
     try {
       if (mode === 'signup') {
         const session = await transport.signup({
           email,
           password,
-          firstName: firstName || undefined,
-          lastName: lastName || undefined,
+          name: name.trim() || undefined,
         })
         onAuthenticated(session, { mode: 'signup', email })
         return
@@ -107,7 +123,7 @@ export function AuthPanel({
 
       const result = await transport.login({ email, password })
       if (result.status === 'mfa_required') {
-        setNotice(labels.mfaNotice)
+        setMfaPending(true)
         onMfaRequired?.(result)
         return
       }
@@ -124,17 +140,17 @@ export function AuthPanel({
     if (!transport.startSocial) return
     setPending('google')
     setError('')
-    setNotice('')
+    setMfaPending(false)
     transport
       .startSocial('google')
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : undefined
-        setError(message || 'Failed to start sign-in')
+        setError(message || labels.socialStartError)
       })
       .finally(() => setPending(null))
   }
 
-  const form = (
+  const legacyForm = (
     <div className="fzf-auth-panel">
       <h2 className="fzf-auth-panel__heading">{labels.heading}</h2>
       <p className="fzf-auth-panel__subtitle">
@@ -142,37 +158,32 @@ export function AuthPanel({
       </p>
 
       {error && (
-        <Alert tone="error" title="Authentication Error" className="fzf-auth-panel__alert">
+        <Alert tone="error" title={labels.errorTitle} className="fzf-auth-panel__alert">
           {error}
         </Alert>
       )}
-      {notice && (
-        <Alert tone="info" className="fzf-auth-panel__alert">
-          {notice}
+      {mfaPending && (
+        <Alert tone="info" className="fzf-auth-panel__alert" data-state="mfa-required">
+          {experience ? (
+            <>
+              <b>{signupText.mfaTitle}</b> {signupText.mfaText}
+            </>
+          ) : (
+            labels.mfaNotice
+          )}
         </Alert>
       )}
 
       {passwordEnabled && (
         <form onSubmit={handleSubmit} className="fzf-auth-panel__form">
           {mode === 'signup' && (
-            <div className="fzf-auth-panel__name-row">
-              <Input
-                id="fzf-auth-firstName"
-                label={labels.firstNameLabel}
-                value={firstName}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFirstName(e.target.value)}
-                autoComplete="given-name"
-                style={{ flex: 1 }}
-              />
-              <Input
-                id="fzf-auth-lastName"
-                label={labels.lastNameLabel}
-                value={lastName}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLastName(e.target.value)}
-                autoComplete="family-name"
-                style={{ flex: 1 }}
-              />
-            </div>
+            <Input
+              id="fzf-auth-name"
+              label={labels.nameLabel}
+              value={name}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+              autoComplete="name"
+            />
           )}
 
           <Input
@@ -229,16 +240,13 @@ export function AuthPanel({
             <span className="fzf-auth-panel__divider-label">{labels.orDivider}</span>
             <SeamDivider style={{ flex: 1 }} />
           </div>
-          <button
-            type="button"
-            className="fzf-auth-panel__google-button"
-            onClick={handleGoogle}
+          <SocialButton
+            label={labels.googleCta}
+            pendingLabel={labels.googlePending}
+            pending={pending === 'google'}
             disabled={loading}
-            aria-label={labels.googleCta}
-          >
-            <GoogleGlyph />
-            {pending === 'google' ? labels.googlePending : labels.googleCta}
-          </button>
+            onClick={handleGoogle}
+          />
         </div>
       )}
 
@@ -252,6 +260,29 @@ export function AuthPanel({
       </div>
     </div>
   )
+
+  // `fuzefront.auth.experience`: the redesigned signup replaces ONLY the signup form;
+  // sign-in is untouched and, with the flag off, nothing here changes.
+  const form =
+    experience && mode === 'signup' ? (
+      <div className="fzf-auth-panel">
+        <SignUpFlow
+          variant="compact"
+          transport={transport}
+          methods={authMethods}
+          methodsReady={methodsReady}
+          social={social}
+          onAuthenticated={onAuthenticated}
+          onSignInInstead={onSignInInstead ?? toggleMode}
+          resetPasswordHref={resetPasswordHref ?? forgotPasswordHref}
+          termsHref={termsHref}
+          privacyHref={privacyHref}
+          labels={signupLabels}
+        />
+      </div>
+    ) : (
+      legacyForm
+    )
 
   if (variant === 'compact') return form
   return <CenteredCard maxWidth="440px">{form}</CenteredCard>

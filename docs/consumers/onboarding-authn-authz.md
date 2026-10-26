@@ -136,9 +136,17 @@ host — no internal identity host.
 await fetch('/api/v1/security/signup', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ email, password, firstName, lastName, tenantName }),
-}) // 201 → LoginResponse (session established); 409 if the email exists
+  body: JSON.stringify({ email, password, name, turnstileToken, tenantName }),
+}) // 201 → LoginResponse (session established); 409 if the email exists;
+   // 422 PASSWORD_POLICY; 400 CAPTCHA_FAILED. `name` and `turnstileToken` are optional.
 ```
+
+`name` (one optional display name) replaced `firstName`/`lastName` in
+`@fuzefront/security-client` 1.0.0; send `turnstileToken` only when
+`GET /api/v1/security/methods` includes `captcha`. See
+[`docs/guides/AUTH_EXPERIENCE_SIGNUP.md`](../guides/AUTH_EXPERIENCE_SIGNUP.md)
+for the full 1.1.0 migration and the `fuzefront.auth.experience` flag that gates
+the stricter server behaviour.
 
 > A valid token **authenticates**; it does **not** authorize. Always re-check
 > permissions at your API (Step 4).

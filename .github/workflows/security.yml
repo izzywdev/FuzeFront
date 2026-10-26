@@ -128,7 +128,17 @@ jobs:
           # only for `forbidden` and `unresolved` licenses, while `unlicensed`
           # is merely printed. Adding it would be an unverified multi-segment
           # purl bought for nothing.
-          allow-dependencies-licenses: pkg:githubactions/trufflesecurity/trufflehog
+          #
+          # confluent-kafka (pkg:pypi/confluent-kafka) bundles librdkafka as a
+          # compiled C extension, so its SPDX expression is a conjunction of the
+          # Python binding's Apache-2.0 with the transitive licenses of the
+          # statically-linked C dependencies: OpenSSL, SSLeay, Zlib, and public
+          # domain stubs. The non-SPDX ScanCode LicenseRef-* identifiers in that
+          # expression cannot be added to allow-licenses. All are permissive
+          # (no copyleft); the package is a server-side Kafka producer, never
+          # conveyed to end-users. Exempted by name for the same reason Zlib/ISC
+          # would belong on the allow-list if they were valid SPDX entries here.
+          allow-dependencies-licenses: "pkg:githubactions/trufflesecurity/trufflehog, pkg:pypi/confluent-kafka"
           # GHSA-qwcr-r2fm-qrc7 (body-parser@1.20.2 DoS via URL-encoding, high
           # severity): transitive via express@4.19.2, same version already on
           # master (see .trivyignore) and unrelated to this PR's devportal
@@ -251,6 +261,11 @@ jobs:
           exit-code: '0'
         env:
           TRIVY_TOKEN: ${{ secrets.TRIVY_TOKEN }}
+          # Trivy's default mirror returned an OCI layer 404 before the scan
+          # started. Pin Aqua's canonical public database so mirror drift cannot
+          # turn a successful image build into a false security-gate failure.
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:1
 
       # GitHub creates ONE check run per SARIF *tool*, aggregating every
       # configuration that reports under that tool name. Trivy writes
