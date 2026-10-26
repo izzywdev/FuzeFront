@@ -50,7 +50,7 @@ import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 import {
   organizationInstallModeAllows,
-  resolveOrganizationInstallMode,
+  type DeclaredInstallMode,
 } from '../app-registry/installation-policy'
 
 // Module-level singleton — KnexRefIndexRepository is stateless (wraps db).
@@ -116,6 +116,10 @@ interface AppRow {
   organization_id: string | null
   visibility: 'private' | 'organization' | 'public' | 'marketplace'
   scope_level: AppScopeLevel
+  org_install_mode?: 'self' | 'everyone' | 'both' | null
+  personal_removable?: boolean | null
+  org_removable?: boolean | null
+  system_app?: boolean | null
   install_count: number | null
   manifest?: unknown
 }
@@ -362,26 +366,27 @@ router.get(
       const outerDto = prefixDtoIds({ appId: app.id }, prefixed, {
         appId: 'app',
       })
-      let manifest: Record<string, any> = {}
-      try {
-        manifest =
-          typeof app.manifest === 'string'
-            ? JSON.parse(app.manifest)
-            : ((app.manifest as Record<string, any>) ?? {})
-      } catch {
-        manifest = {}
-      }
-      const isOrgLevelOnly = Boolean(
-        manifest.orgLevelOnly || manifest.installMode === 'everyone'
-      )
-      const organizationInstallMode = resolveOrganizationInstallMode(manifest)
+      // Operator-governed placement, read from the DB columns (the admin UI
+      // owns these), so the install dialog shows only the choices an app allows.
+      const scopeLevel = app.scope_level ?? 'both'
+      const organizationInstallMode =
+        (app.org_install_mode as DeclaredInstallMode) ?? 'both'
+      // orgLevelOnly means "no personal install at all" — that is scope, NOT org
+      // mode. A both-scope app with org everyone still installs personally, so it
+      // is NOT orgLevelOnly. The whole-org constraint rides organizationInstallMode.
+      // installMode stays the legacy signal: 'everyone' only for a true org-only
+      // app, else 'both', so personal-capable apps aren't hidden by consumers that
+      // read installMode==='everyone'.
+      const orgLevelOnly = scopeLevel === 'organization'
       res.json({
         appId: outerDto.appId,
-        scopeLevel: app.scope_level ?? 'both',
-        orgLevelOnly: isOrgLevelOnly,
-        installMode:
-          manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
+        scopeLevel,
+        orgLevelOnly,
+        installMode: orgLevelOnly ? organizationInstallMode : 'both',
         organizationInstallMode,
+        personalRemovable: app.personal_removable !== false,
+        orgRemovable: app.org_removable !== false,
+        systemApp: Boolean(app.system_app),
         installations: rows.map(row =>
           prefixDtoIds(toInstallation(row), prefixed, {
             appId: 'app',
@@ -429,19 +434,13 @@ router.post(
       }
 
       const scopeLevel: AppScopeLevel = app.scope_level ?? 'both'
-      let manifest: Record<string, any> = {}
-      try {
-        manifest =
-          typeof app.manifest === 'string'
-            ? JSON.parse(app.manifest)
-            : ((app.manifest as Record<string, any>) ?? {})
-      } catch {
-        manifest = {}
-      }
-      const isOrgLevelOnly = Boolean(
-        manifest.orgLevelOnly || manifest.installMode === 'everyone'
-      )
-      const organizationInstallMode = resolveOrganizationInstallMode(manifest)
+      // Operator-governed org install mode is DB-authoritative (apps
+      // .org_install_mode), not read from the manifest: an organization-scoped
+      // app is seeded to 'everyone' (org-level-only) and the operator can change
+      // it via the admin UI. Whether an app may be installed personally at all
+      // is governed by scope_level (scopeIsAllowed), independent of this.
+      const organizationInstallMode: DeclaredInstallMode =
+        (app.org_install_mode as DeclaredInstallMode) ?? 'both'
       const body = req.body ?? {}
 
       // --- resolve scope ----------------------------------------------------
@@ -463,13 +462,6 @@ router.post(
           })
         }
         scope = body.scope
-      }
-
-      if (isOrgLevelOnly && scope === 'personal') {
-        return res.status(422).json({
-          error: 'This app can only be installed in an organization context.',
-          code: 'ORG_LEVEL_ONLY',
-        })
       }
 
       if (!scopeIsAllowed(scopeLevel, scope)) {
@@ -494,13 +486,6 @@ router.post(
           })
         }
         mode = body.mode
-      }
-      if (isOrgLevelOnly && mode === 'self') {
-        return res.status(422).json({
-          error:
-            'This app can only be installed for the entire organization, not for individual users.',
-          code: 'ORG_LEVEL_ONLY',
-        })
       }
       if (
         scope === 'organization' &&
@@ -724,6 +709,24 @@ router.delete(
         return res.status(404).json({
           error: 'Installation not found',
           code: 'INSTALLATION_NOT_FOUND',
+        })
+      }
+
+      // Core / system apps cannot be uninstalled from the scope the operator
+      // locked (apps.personal_removable / apps.org_removable). This holds for
+      // everyone, including org owners — it is a platform policy, not a
+      // permission. e.g. FuzeAgent is a core product on a personal account.
+      // Checked AFTER the ownership/membership authz above so a locked app never
+      // becomes an existence oracle for installations the caller can't see.
+      const removable =
+        installation.scope === 'personal'
+          ? app.personal_removable !== false
+          : app.org_removable !== false
+      if (!removable) {
+        return res.status(403).json({
+          error:
+            'This is a core app and cannot be uninstalled from this account.',
+          code: 'APP_NOT_REMOVABLE',
         })
       }
 

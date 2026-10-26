@@ -72,13 +72,16 @@ export function responseErrors(method: string, pathTemplate: string, status: num
   if (!op) throw new Error(`openapi.yaml declares no ${method} ${pathTemplate}`);
   let response = op.responses?.[String(status)] as { $ref?: string; content?: Record<string, { schema?: unknown }> } | undefined;
   if (!response) return [`status ${status} is not declared for ${method} ${pathTemplate} (declared: ${Object.keys(op.responses ?? {}).join(', ')})`];
+  // A `$ref`'d response (the shared 400/401/403/404/409 error responses) lives under components/responses,
+  // so the compiled-schema pointer must follow the reference instead of the operation's own path.
+  let pointer = `#/paths/${esc(pathTemplate)}/${method.toLowerCase()}/responses/${status}/content/application~1json/schema`;
   if (response.$ref) {
     const name = response.$ref.replace('#/components/responses/', '');
     response = (loadSpec()['components'] as { responses: Record<string, typeof response> }).responses[name];
+    pointer = `#/components/responses/${esc(name)}/content/application~1json/schema`;
   }
   const json = response?.content?.['application/json'];
   if (!json?.schema) return body === null || body === '' ? [] : [`${method} ${pathTemplate} ${status} declares no JSON body but one was returned`];
-  const pointer = `#/paths/${esc(pathTemplate)}/${method.toLowerCase()}/responses/${status}/content/application~1json/schema`;
   const direct = getAjv().getSchema(`${SPEC_ID}${pointer}`);
   if (direct) {
     if (direct(body)) return [];
