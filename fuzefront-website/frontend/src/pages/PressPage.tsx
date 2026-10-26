@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container, Text, HeroPatternOverlay, Section, AmbientGlow } from '@fuzefront/design-system'
+import { IconTile, Container, Text, HeroPatternOverlay, Section, AmbientGlow, GradientText } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -47,7 +47,7 @@ export const PressPage: React.FC = () => {
             transition={{ duration: 0.6 }}
           >
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
-              Press &amp; <span className="gradient-text">Media</span>
+              Press &amp; <GradientText gradient="var(--primary-gradient)">Media</GradientText>
             </h1>
             <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
               News, announcements, and resources for journalists and media covering FuzeOne.
