@@ -219,6 +219,11 @@ Test ids are the `SL9-<FLOW>-<nnn>` prefix in each test title (`playwright test 
    Because of it, `world.quota` defaults to `403 FORBIDDEN` (the documented "no `read_quota`" answer, which the 4.0.0 index fails open on) and only the
    specs that need the numbers opt in with `grantQuotaRead(world)` (`SL9-FORK-024a`, `SL9-READ-018`) — otherwise every index spec and the `READ-001` canary would fail for the
    quota defect instead of for the missing shared-lists UI.
+   **Console-clean gate vs. these refusals:** Chromium logs every non-2xx fetch as a console error, so a ready-state page that reads the default quota (403) or runs the 4.0.0
+   editor's `HEAD …/items/reorder` permission probe (the service — and the mock — answer 404; HEAD is not a contract operation) would fail an unqualified console check
+   although the UI is right. `expectRuntimeClean` therefore tolerates exactly the named `EXPECTED_REFUSALS` (status + request path; quota 403, reorder-probe 404) and nothing else —
+   any other console error, uncaught exception, CSP/mixed-content message or other failed request still fails. A spec that injects more refusals on a success path passes its own
+   `expected` list. Delete the quota entry together with the 403 default once the client reads the real envelope (TODO tied to `SL9-READ-018`); the reorder-probe entry goes when the probe stops 404-ing.
    **5xx:** the contract defines no 5xx body and no `INTERNAL` code, so server failures are `fault(5xx)` (`{error:'boom'}`, the precedent of the green specs), never an `Error`-shaped body.
    A few specs send out-of-contract values **on purpose** to probe tolerance the contract demands or implies: `reason: some_future_reason` ("treat an unknown value as a plain CONFLICT"),
    `scope: something_new`, and an absolute `fork_url` (SL9-FORK-003).

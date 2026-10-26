@@ -71,6 +71,7 @@ import {
   expectInViewport,
   expectLtrIsland,
   expectRuntimeClean,
+  unexpectedConsoleErrors,
   expectTouchTarget,
   failTimes,
   forkPriorityItems,
@@ -393,9 +394,15 @@ test.describe('SL9 shared-read — frame 01-shared-index', () => {
     // until the client normalizes (or reads) the wire envelope. Red today for THAT reason; green when it is fixed.
     const { world } = await setup(page, { build: acmeIndex })
     grantQuotaRead(world)
+    const quotaAnswered = page.waitForResponse(r => r.url().endsWith('/v1/selection-lists/quota'))
     await openRoute(page, INDEX)
+    await quotaAnswered
+    // Let React apply the quota state: the shipped crash happens on that render, AFTER the rows first paint, so an assertion
+    // that races it can pass by luck (it did once). The settle is a render flush, not a wait for the network.
+    await page.evaluate(() => new Promise<void>(r => requestAnimationFrame(() => setTimeout(r, 300))))
     await expect(page.locator("[data-panel='list-index']")).toBeVisible()
     await expect(row(page, 'warehouse-zones'), 'the index must still render a row when GET /quota answers 200').toBeVisible()
+    expect(unexpectedConsoleErrors(rt), 'and must not log a TypeError').toEqual([])
   })
 })
 

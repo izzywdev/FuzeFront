@@ -662,8 +662,14 @@ export async function mountSelectionListApi(page: Page, world: World): Promise<A
 
 // ── Runtime health (console / page errors / same-origin API) ─────────────────
 
+export interface ConsoleEntry {
+  text: string
+  /** The URL the message is attributed to (for "Failed to load resource" it is the request URL). */
+  url: string
+}
+
 export interface Runtime {
-  consoleErrors: string[]
+  consoleErrors: ConsoleEntry[]
   pageErrors: string[]
   /** Absolute URLs of every request that left the page's origin toward an API path. */
   crossOriginApi: string[]
@@ -679,7 +685,7 @@ export function trackRuntime(page: Page): Runtime {
   const rt: Runtime = { consoleErrors: [], pageErrors: [], crossOriginApi: [] }
   page.on('console', (msg: ConsoleMessage) => {
     if (msg.type() !== 'error' || isShellHarnessNoise(msg)) return
-    rt.consoleErrors.push(msg.text())
+    rt.consoleErrors.push({ text: msg.text(), url: msg.location().url ?? '' })
   })
   page.on('pageerror', e => rt.pageErrors.push(e.message))
   page.on('request', req => {
@@ -691,12 +697,66 @@ export function trackRuntime(page: Page): Runtime {
   return rt
 }
 
-/** Console errors that are just Chromium narrating a deliberately-mocked non-2xx answer. */
-const MOCKED_HTTP_ERROR = /Failed to load resource: the server responded with a status of [45]\d\d/
+/** Chromium narrating a non-2xx answer: "Failed to load resource: the server responded with a status of 403 (Forbidden)". */
+const HTTP_ERROR_STATUS = /Failed to load resource: the server responded with a status of ([45]\d\d)/
 
-export function expectRuntimeClean(rt: Runtime, opts: { allowHttpErrors?: boolean } = {}) {
+/** One non-2xx answer the harness injects on purpose and the page is EXPECTED to log (matched by status AND request path). */
+export interface ExpectedRefusal {
+  name: string
+  status: number
+  path: RegExp
+}
+
+/**
+ * Refusals that are part of the harness itself, so a ready-state page logs them even when the UI is right.
+ * Every `expectRuntimeClean` call tolerates exactly these (and nothing else) unless it passes its own `expected`.
+ */
+export const EXPECTED_REFUSALS: readonly ExpectedRefusal[] = [
+  {
+    // The default world answers GET /quota with 403 (no `read_quota`) — see `World.quota` / `grantQuotaRead`. The 4.0.0
+    // management index requests it on mount and the fork dialog on open. TODO(SL9-READ-018): once the 4.0.0 client
+    // reads the real `{organization_id, quotas}` envelope, serve it by default, delete this entry and the 403 default.
+    name: 'quota read refused (default world)',
+    status: 403,
+    path: /\/v1\/selection-lists\/quota$/,
+  },
+  {
+    // The 4.0.0 value editor probes reorder permission with `HEAD …/items/reorder` (`probeReorderPermission`). HEAD is not an
+    // operation of the contract (reorder is PUT), so the service — like the mock — answers 404, and Chromium logs it.
+    name: '4.0.0 reorder-permission probe (HEAD) answers 404',
+    status: 404,
+    path: /\/v1\/selection-lists\/[^/]+\/items\/reorder$/,
+  },
+]
+
+/** The console errors that are NOT an expected refusal (what `expectRuntimeClean` asserts to be empty). */
+export function unexpectedConsoleErrors(rt: Runtime, expected: readonly ExpectedRefusal[] = EXPECTED_REFUSALS): string[] {
+  return rt.consoleErrors
+    .filter(e => {
+      const status = Number(HTTP_ERROR_STATUS.exec(e.text)?.[1])
+      if (!status) return true
+      let path = ''
+      try {
+        path = new URL(e.url).pathname.replace(/^\/api/, '')
+      } catch {
+        // unparseable attribution URL: it can match no rule, so it stays an error
+      }
+      return !expected.some(r => r.status === status && r.path.test(path))
+    })
+    .map(e => e.text)
+}
+
+/**
+ * Strict by default: 0 uncaught exceptions, 0 console errors, same-origin API — except the harness' own
+ * `EXPECTED_REFUSALS`. A spec that injects further refusals on a success path lists them in `expected`
+ * (concatenate with `EXPECTED_REFUSALS`); `allowHttpErrors` tolerates every HTTP-status console error
+ * (still failing on anything else: exceptions, CSP, mixed content, chunk-load errors).
+ */
+export function expectRuntimeClean(rt: Runtime, opts: { allowHttpErrors?: boolean; expected?: readonly ExpectedRefusal[] } = {}) {
   expect(rt.pageErrors, 'no uncaught exception may reach the page').toEqual([])
-  const errs = opts.allowHttpErrors ? rt.consoleErrors.filter(m => !MOCKED_HTTP_ERROR.test(m)) : rt.consoleErrors
+  const errs = opts.allowHttpErrors
+    ? rt.consoleErrors.map(e => e.text).filter(m => !HTTP_ERROR_STATUS.test(m))
+    : unexpectedConsoleErrors(rt, opts.expected ?? EXPECTED_REFUSALS)
   expect(errs, 'console must be clean (0 errors / 0 CSP / 0 mixed-content)').toEqual([])
   expect(rt.crossOriginApi, 'the API base is same-origin (no absolute API host)').toEqual([])
 }
