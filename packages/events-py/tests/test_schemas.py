@@ -190,6 +190,25 @@ def test_list_archived_requires_archived_status():
     assert schema_for_topic("selection-lists.list.archived")(base)
 
 
+def test_list_updated_previous_key_required_nullable():
+    # Node: previousKey is slListKeyV1.nullable() — present (may be null), NOT
+    # optional; set iff 'key' is in changedFields.
+    base = {**_sl_base(), "list": _sl_list_snapshot(), "changedFields": ["name"]}
+    assert schema_for_topic("selection-lists.list.updated")({**base, "previousKey": None})
+    # omitting previousKey is rejected (required-nullable, not optional)
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.list.updated")(base)
+    # key changed → previousKey must be set
+    changed = {**_sl_base(), "list": _sl_list_snapshot(), "changedFields": ["key"], "previousKey": "oldkey"}
+    assert schema_for_topic("selection-lists.list.updated")(changed)
+    # key changed but previousKey null → rejected
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.list.updated")({**changed, "previousKey": None})
+    # key unchanged but previousKey set → rejected
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.list.updated")({**base, "previousKey": "x"})
+
+
 def test_unregistered_billing_topics_publish_raw():
     for t in (
         "billing.trial.ending",

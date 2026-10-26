@@ -59,6 +59,11 @@ def validate_list_updated(p: Any) -> dict:
         min_len=1,
         allowed=("key", "sourceLocale", "status", "name", "description"),
     )
+    # Node declares previousKey `slListKeyV1.nullable()` — REQUIRED and present,
+    # may be null (NOT `.optional()`). A list.updated whose key did not change
+    # still carries `previousKey: null`; omitting the field is rejected. So
+    # required=True (the default) is correct here; required=False would accept a
+    # payload the Node consumer rejects.
     v.string("previousKey", nullable=True, pattern=KEY_RE)
     out = v.done()
     key_changed = "key" in out["changedFields"]
