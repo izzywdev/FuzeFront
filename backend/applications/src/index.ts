@@ -29,6 +29,7 @@ import appRegistryRoutes from './routes/app-registry'
 import portalCatalogRoutes from './routes/portal-catalog'
 import appBuildsRoutes from './routes/app-builds'
 import { ensureBuiltins } from './app-registry/builtins'
+import { provisionDefaultInstalls } from './app-registry/default-installs'
 import { initFeatureFlags } from './config/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
@@ -264,6 +265,11 @@ async function startServer() {
     await ensureBuiltins().catch(err =>
       console.error('⚠️  [applications-service] ensureBuiltins failed:', err)
     )
+
+    // Provision operator-configured default app installs (default_install_*),
+    // AFTER built-ins exist. Idempotent: backfills existing users/orgs and picks
+    // up anything new since the last boot. Best-effort; never aborts startup.
+    await provisionDefaultInstalls()
 
     // Install the OpenFeature/Unleash provider so app-registry flags actually
     // consult Unleash. Non-fatal: on failure they keep their in-code fail-safe

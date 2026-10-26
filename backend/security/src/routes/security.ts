@@ -37,6 +37,13 @@ import type {
   SessionContext,
 } from '../providers/IdentityProvider'
 import { authenticateToken } from '../middleware/auth'
+import { putBrokerCode, takeBrokerCode } from '../services/brokerCodes'
+import {
+  getBrokerClient,
+  getBrokerClientPublicBranding,
+  isAllowedRedirectUri,
+  verifyClientSecret,
+} from '../services/brokerClients'
 import { db } from '../config/database'
 import { resolveEmployeeStatus } from '../services/employeeRole'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
@@ -625,6 +632,102 @@ router.get('/social/google/callback', async (req: Request, res: Response) => {
   }
 })
 
+// ── Broker (consumer-product sign-in handoff, #238) ────────────────────────
+//
+// A registered consumer product ("broker client") sends its user to this
+// app's OWN themed sign-in UI with `?client=&redirect_uri=`. After the user
+// authenticates via the EXISTING session/social/signup surfaces above, the
+// SPA calls `POST /broker/handoff` with its just-established bearer token;
+// the product's BACKEND then redeems the returned single-use code
+// server-to-server via `POST /broker/token-exchange`. No bearer token is
+// ever put in a URL, fragment, or referrer — see packages/security/openapi.yaml
+// (`broker` tag) for the full contract and the boundary-guarantee rationale.
+
+const BROKER_HANDOFF_CODE_TTL_MS = 2 * 60 * 1000 // short-lived; single-use
+
+// GET /v1/security/broker/clients/{client} — public branding lookup.
+router.get('/broker/clients/:client', (req: Request, res: Response) => {
+  const result = getBrokerClientPublicBranding(req.params.client)
+  if (!result) {
+    res.status(404).json({ error: 'Unknown broker client', code: 'NOT_FOUND' })
+    return
+  }
+  res.status(200).json(result)
+})
+
+// POST /v1/security/broker/handoff — mint a one-time handoff code.
+//
+// Requires the bearer session the SPA just established via session/social/
+// signup — this endpoint does not itself authenticate the user. Validates
+// `redirectUri` against the client's registered allowlist (EXACT match only)
+// before minting anything.
+router.post('/broker/handoff', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const client = req.body?.client
+    const redirectUri = req.body?.redirectUri
+    if (typeof client !== 'string' || !client || typeof redirectUri !== 'string' || !redirectUri) {
+      res.status(400).json({ error: 'client and redirectUri are required', code: 'MALFORMED' })
+      return
+    }
+    if (!getBrokerClient(client)) {
+      res.status(400).json({ error: 'Unknown broker client', code: 'UNKNOWN_CLIENT' })
+      return
+    }
+    if (!isAllowedRedirectUri(client, redirectUri)) {
+      res
+        .status(400)
+        .json({ error: 'redirectUri is not registered for this client', code: 'REDIRECT_URI_NOT_ALLOWED' })
+      return
+    }
+    // Re-validates the bearer session is live and hydrates the user — the
+    // SAME path GET /session uses. A revoked/expired/invalid token fails
+    // closed here (sendError below), never minting a code for a dead session.
+    const { user } = await getIdentityProvider().getUserInfo(token)
+    const code = crypto.randomBytes(32).toString('hex')
+    // SAME single-use store `social/callback` -> `session/exchange` uses — one
+    // code format, one redemption path (backend/security/src/services/brokerCodes.ts).
+    putBrokerCode(code, {
+      token,
+      sessionId: crypto.randomUUID(),
+      user,
+      expiresAt: Date.now() + BROKER_HANDOFF_CODE_TTL_MS,
+    })
+    const dest = new URL(redirectUri)
+    dest.searchParams.set('code', code)
+    res.status(200).json({ redirectUri: dest.toString() })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// POST /v1/security/broker/token-exchange — server-to-server code redemption.
+//
+// Called by the PRODUCT'S BACKEND (never the browser). Fail-closed and
+// deliberately undifferentiated: an unknown client, a wrong clientSecret, and
+// an unknown/expired/already-redeemed code all return the SAME generic 401 —
+// never a distinguishable response that would make this a guessing oracle.
+// The code is consumed (single-use) on lookup regardless of outcome.
+router.post('/broker/token-exchange', (req: Request, res: Response) => {
+  const client = req.body?.client
+  const clientSecret = req.body?.clientSecret
+  const code = req.body?.code
+  const wellFormed =
+    typeof client === 'string' && !!client && typeof clientSecret === 'string' && typeof code === 'string' && !!code
+  // Always take the code (single-use, consumed regardless of outcome) when the
+  // body is well-formed enough to contain one, so a malformed/missing code
+  // never short-circuits before the client-secret check runs — both checks
+  // happen before either can affect the (identical) response.
+  const entry = wellFormed ? takeBrokerCode(code) : null
+  const credsOk = wellFormed && verifyClientSecret(client, clientSecret)
+  if (!wellFormed || !credsOk || !entry) {
+    res.status(401).json({ error: 'Invalid client credentials or code', code: 'UNAUTHORIZED' })
+    return
+  }
+  res.status(200).json(authenticatedSession({ token: entry.token, sessionId: entry.sessionId, user: entry.user }))
+})
+
 // ── Signup ──────────────────────────────────────────────────────────────────
 //
 // Two behaviours, selected by the `fuzefront.auth.experience` release flag
@@ -1187,6 +1290,85 @@ router.delete('/sessions/:id', async (req: Request, res: Response) => {
     res.status(204).end()
   } catch (err) {
     sendError(res, err)
+  }
+})
+
+/** Scope a service's workload token must carry to ask whether a session is live. */
+const SESSION_VALIDATE_SCOPE = 'sessions:validate'
+const SESSION_VALIDATE_FIELDS = ['userId', 'sessionId'] as const
+const SESSION_VALIDATE_MAX_LEN = 128
+
+/**
+ * POST /v1/security/sessions/validate — is this session still active?
+ * (service-to-service; operationId `validateSession`)
+ *
+ * For a service that has ALREADY verified a session token's signature and needs
+ * the one thing a signature cannot say: has the session been revoked or expired
+ * since. Machine callers only: the bearer must be a `fuze-workload` token with
+ * the `sessions:validate` scope, so a browser cannot use this to probe sessions.
+ *
+ * `200 { active }` is the whole answer. Unknown, revoked, expired, malformed and
+ * wrong-user are all the same `{ active: false }` with no reason given. A failure
+ * to read the session store is 503, never a boolean: an outage is neither
+ * "active" nor "revoked", and the caller must be able to tell them apart.
+ */
+router.post('/sessions/validate', async (req: Request, res: Response) => {
+  const serviceToken = bearer(req)
+  if (!serviceToken) {
+    return void res.status(401).json({ error: 'Service bearer token is required', code: 'NO_TOKEN' })
+  }
+
+  // Authenticate the CALLER. Any failure here, including the provider fallback
+  // inside introspectAnyToken throwing, is a credential problem (a real workload
+  // token is verified locally and never reaches the provider), so it is a 401.
+  let caller: Awaited<ReturnType<typeof introspectAnyToken>>
+  try {
+    caller = await introspectAnyToken(serviceToken)
+  } catch {
+    return void res.status(401).json({ error: 'A Fuze workload token is required', code: 'NOT_ACTIVE' })
+  }
+  if (!caller.active || !caller.subject || (caller as any).tokenKind !== 'fuze-workload') {
+    return void res.status(401).json({ error: 'A Fuze workload token is required', code: 'NOT_ACTIVE' })
+  }
+  if (!isSubset([SESSION_VALIDATE_SCOPE], caller.scope)) {
+    return void res
+      .status(403)
+      .json({ error: `Missing required scope: ${SESSION_VALIDATE_SCOPE}`, code: 'FORBIDDEN' })
+  }
+
+  try {
+    // Strict body, matching the contract's `additionalProperties: false`.
+    const body = req.body
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new InvalidInputError('userId and sessionId are required')
+    }
+    for (const key of Object.keys(body)) {
+      if (!(SESSION_VALIDATE_FIELDS as readonly string[]).includes(key)) {
+        throw new InvalidInputError(`unexpected property: ${key}`)
+      }
+    }
+    for (const key of SESSION_VALIDATE_FIELDS) {
+      const v = body[key]
+      if (typeof v !== 'string' || v.length === 0 || v.length > SESSION_VALIDATE_MAX_LEN) {
+        throw new InvalidInputError(`${key} is required (1-${SESSION_VALIDATE_MAX_LEN} characters)`)
+      }
+    }
+  } catch (err) {
+    return void sendError(res, err)
+  }
+
+  try {
+    const active = await getIdentityProvider().isSessionActive(req.body.userId, req.body.sessionId)
+    res.status(200).json({ active: active === true })
+  } catch (err) {
+    // Fail closed AND distinguishable: never `{ active: true }`, never a quiet
+    // `{ active: false }` that would read as "revoked" and sign everyone out.
+    withReqId((req as any).requestId, req as any).error(
+      { op: 'validateSession', errName: (err as Error)?.name, err: (err as Error)?.message },
+      'session validity lookup failed'
+    )
+    res.setHeader('Retry-After', '5')
+    res.status(503).json({ error: 'Session store unavailable', code: 'PROVIDER_UNAVAILABLE' })
   }
 })
 

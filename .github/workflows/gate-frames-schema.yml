@@ -31,9 +31,22 @@ name: gate-frames-schema
 # leaving that PR permanently "waiting on an expected check". The gate is dependency-
 # free (bare `node`, no `npm ci`) and runs in well under a second, so running it on
 # every PR costs nothing.
+#
+# `merge_group:` IS PRESENT so this context is safe to add to the required set. A merge
+# queue builds each candidate on a `refs/heads/gh-readonly-queue/...` branch and emits
+# `merge_group`, never `pull_request`; a required context whose workflow has no
+# merge_group trigger is never created for a queue entry and strands it (FuzeFront#286,
+# relocated into the queue). This is cheap here — the gate is sub-second and dependency-
+# free, so running it on every queue entry costs nothing. Under merge_group
+# `github.base_ref` is empty, so the step below falls back to the default branch, which
+# is the correct base to diff a queue candidate against (the candidate sits on top of
+# master). governance/required-check-triggers.json marks this workflow, and the guard
+# scripts/check-required-check-triggers.mjs will require merge_group here once this
+# context's requiredInRuleset flips to true (see docs/runbooks/widen-required-checks.md).
 
 on:
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 permissions:

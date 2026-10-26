@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveFederatedTenantId } from '../tenantContext'
+import { createFederatedTenantResolver, resolveFederatedTenantId } from '../tenantContext'
 
 describe('federated tenant context', () => {
   it('preserves a persisted organization before organization metadata hydrates', () => {
@@ -21,5 +21,10 @@ describe('federated tenant context', () => {
       organizations: [{ id: 'org-personal-fallback', type: 'personal' }],
       personalTenantId: null,
     })).toBe('org-personal-fallback')
+  })
+
+  it('publishes the selected workspace through the remote security contract', () => {
+    expect(createFederatedTenantResolver('org-selected')()).toBe('org-selected')
+    expect(createFederatedTenantResolver(null)()).toBeNull()
   })
 })

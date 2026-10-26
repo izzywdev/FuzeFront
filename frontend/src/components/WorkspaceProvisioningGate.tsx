@@ -7,6 +7,8 @@ import {
   getPersistedPersonalTenantId,
   ROOT_ORG_ID,
 } from '../lib/shared'
+import { isProvisionedMembership } from '../lib/orgMembership'
+import { useFlag } from '../platform/featureFlags'
 import { isEmployeeUser } from '../utils/employee'
 import { ProvisioningCard, ProvisioningState } from './ProvisioningCard'
 import type { Organization } from '../services/api'
@@ -38,41 +40,6 @@ function hasRestorableWorkspace(): boolean {
 }
 
 /**
- * Whether `o` is evidence the caller's workspace has actually been
- * provisioned — i.e. the caller holds a real membership in it, not merely
- * that it happens to be visible.
- *
- * `GET /organizations` (both `backend/src/routes/organizations.ts` and its
- * `backend/security/src/routes/organizations.ts` twin) returns every org the
- * caller is an active member of, PLUS any `type: 'platform'` org — the
- * latter is visible to *every* authenticated user regardless of membership
- * (`whereNotNull(organization_memberships.id) OR organizations.type =
- * 'platform'`). A brand-new, genuinely-unprovisioned user therefore is not
- * guaranteed an empty `orgs` array — they may still see the platform org —
- * so "orgs.length > 0" is NOT a safe readiness check on its own.
- *
- * The security-service route projects the caller's own membership role as
- * `user_role` (`null` when the caller merely sees a public platform org —
- * see the `Organization` type doc in `services/api.ts`), which is the
- * precise signal to use when present. A backend response that omits the
- * field entirely falls back to excluding platform orgs, which is exactly
- * equivalent given the same join condition governs both routes: a
- * non-platform org is only ever included because the caller has a
- * membership row.
- *
- * Originally this only recognised `type === 'personal'` — a proxy for
- * "provisioning completed" that breaks the moment an org's `type` column is
- * wrong for any other reason (e.g. the reclassification defect fixed by
- * PR #788) even though the user's membership was never touched.
- */
-function isProvisionedMembership(o: Organization): boolean {
-  if (o.user_role !== undefined) {
-    return o.user_role != null
-  }
-  return o.type !== 'platform'
-}
-
-/**
  * WorkspaceProvisioningGate
  *
  * Wraps the authenticated app shell. On mount it checks whether the caller's
@@ -92,9 +59,17 @@ function isProvisionedMembership(o: Organization): boolean {
 export function WorkspaceProvisioningGate({
   children,
 }: WorkspaceProvisioningGateProps) {
-  const { dispatch } = useAppContext()
+  const { state, dispatch } = useAppContext()
   const { user } = useCurrentUser()
   const isEmployee = isEmployeeUser(user?.roles)
+  // With the reconciled switcher, Personal is the `null` context and a
+  // `type='personal'` org is never a context of its own (see
+  // isSwitcherContextOrg in lib/orgMembership).
+  const personalContextEnabled = useFlag('fuzefront.identity.personal-context', false)
+  // `onOrgsLoaded` is also called from a long-lived interval closure, so read
+  // the flag through a ref instead of the stale render it captured.
+  const personalContextRef = useRef(personalContextEnabled)
+  personalContextRef.current = personalContextEnabled
 
   const [gateState, setGateState] = useState<
     'checking' | 'provisioning' | 'ready' | 'timeout' | 'error'
@@ -159,6 +134,26 @@ export function WorkspaceProvisioningGate({
     const personalTenantId = resolvedPersonalTenantId ?? personal?.id ?? null
     dispatch({ type: 'SET_PERSONAL_TENANT', payload: personalTenantId })
 
+    if (personalContextRef.current && (personalTenantId || eligibleOrgs.some(o => o.type !== 'personal'))) {
+      // A persisted personal-context choice reads back as `null`, the same as
+      // "nothing persisted" — and a persisted id may name the legacy
+      // type='personal' org this gate used to auto-select. Both mean Personal.
+      // Only a persisted, still-valid, non-personal membership wins.
+      const persistedId = getPersistedActiveOrganizationId()
+      const persisted = persistedId
+        ? eligibleOrgs.find(o => o.id === persistedId && o.type !== 'personal')
+        : undefined
+      // Without a resolvable personal tenant there is no Personal context to
+      // fall back to, so land on a real org membership instead of `null`.
+      const fallback = personalTenantId
+        ? null
+        : eligibleOrgs.find(o => o.type !== 'personal') ?? null
+      const active = persisted ?? fallback
+      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: active ? active.id : null })
+      markReady()
+      return true
+    }
+
     if (eligibleOrgs.length > 0) {
       // Prefer the org the user previously selected (persisted across reloads)
       // over blindly forcing the personal org — otherwise every reload reset
@@ -213,6 +208,18 @@ export function WorkspaceProvisioningGate({
     stopPolling()
     startPolling()
   }
+
+  // Flags load asynchronously, so the org list can arrive (and the branch
+  // above pick an org) before `personal-context` resolves ON. Once it does,
+  // a legacy type='personal' org selected under the old default moves to the
+  // Personal (`null`) context rather than lingering as the active org.
+  useEffect(() => {
+    if (!personalContextEnabled || state.activeOrganizationId === null) return
+    const active = state.organizations.find(o => o.id === state.activeOrganizationId)
+    if (active?.type === 'personal') {
+      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: null })
+    }
+  }, [personalContextEnabled, state.activeOrganizationId, state.organizations, dispatch])
 
   useEffect(() => {
     mountedRef.current = true

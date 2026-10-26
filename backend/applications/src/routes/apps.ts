@@ -5,6 +5,10 @@ import { authenticateToken, requireRole } from '../middleware/auth'
 import { App } from '../types/shared'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
+import {
+  ScopeLevel,
+  enforceOrgInstallMode,
+} from '../app-registry/app-governance'
 
 const router = express.Router()
 
@@ -177,9 +181,13 @@ router.get('/', authenticateToken, async (req: any, res) => {
         } catch {
           manifest = {}
         }
-        const isOrgLevelOnly = Boolean(
-          manifest.orgLevelOnly || manifest.installMode === 'everyone'
-        )
+        const a = app as any
+        // Governance is DB-authoritative (admin UI edits these columns), not
+        // manifest-derived. Surface them so the admin Edit form pre-fills.
+        const orgInstallMode = a.org_install_mode ?? 'both'
+        const scopeLevel = app.scope_level ?? 'both'
+        // orgLevelOnly = truly org-only (no personal) = scope, not org mode.
+        const orgLevelOnly = scopeLevel === 'organization'
         return {
           id: app.id,
           name: app.name,
@@ -193,13 +201,16 @@ router.get('/', authenticateToken, async (req: any, res) => {
           scope: app.scope,
           module: app.module,
           description: app.description,
-          scopeLevel: app.scope_level ?? 'both',
-          orgLevelOnly: isOrgLevelOnly,
-          installMode:
-            manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
-          organizationInstallMode:
-            manifest.organizationInstallMode ??
-            (isOrgLevelOnly ? 'everyone' : (manifest.installMode ?? 'both')),
+          scopeLevel,
+          orgInstallMode,
+          orgLevelOnly,
+          installMode: orgLevelOnly ? orgInstallMode : 'both',
+          organizationInstallMode: orgInstallMode,
+          personalRemovable: a.personal_removable !== false,
+          orgRemovable: a.org_removable !== false,
+          systemApp: Boolean(a.system_app),
+          defaultInstallPersonal: Boolean(a.default_install_personal),
+          defaultInstallOrg: Boolean(a.default_install_org),
           requiresOrgContext: Boolean(
             manifest.requiresOrgContext || app.scope_level === 'organization'
           ),
@@ -663,6 +674,38 @@ router.put(
         patch.scope_level = scopeLevel
       }
 
+      // Operator-governed fields (admin UI). orgInstallMode is kept consistent
+      // with the org-level-only rule via enforceOrgInstallMode.
+      if (body.orgInstallMode !== undefined) {
+        const m = trim(body.orgInstallMode)
+        if (!['self', 'everyone', 'both'].includes(m as string)) {
+          return res.status(400).json({
+            error: 'Invalid orgInstallMode. Must be self, everyone, or both.',
+          })
+        }
+        patch.org_install_mode = m
+      }
+      const boolField = (key: string, col: string) => {
+        if (body[key] !== undefined) patch[col] = Boolean(body[key])
+      }
+      boolField('personalRemovable', 'personal_removable')
+      boolField('orgRemovable', 'org_removable')
+      boolField('systemApp', 'system_app')
+      boolField('defaultInstallPersonal', 'default_install_personal')
+      boolField('defaultInstallOrg', 'default_install_org')
+
+      // Keep org-level-only coherent: if the effective scope is organization and
+      // the org mode would default to 'both', store 'everyone'.
+      const effScopeLevel = (patch.scope_level ?? existing.scope_level) as
+        | ScopeLevel
+        | undefined
+      if (effScopeLevel) {
+        patch.org_install_mode = enforceOrgInstallMode(
+          effScopeLevel,
+          (patch.org_install_mode as any) ?? existing.org_install_mode
+        )
+      }
+
       if (Object.keys(patch).length === 0) {
         return res
           .status(400)
@@ -696,6 +739,12 @@ router.put(
         description: row.description,
         visibility: row.visibility,
         scopeLevel: row.scope_level,
+        orgInstallMode: row.org_install_mode,
+        personalRemovable: row.personal_removable,
+        orgRemovable: row.org_removable,
+        systemApp: row.system_app,
+        defaultInstallPersonal: row.default_install_personal,
+        defaultInstallOrg: row.default_install_org,
       }
       const prefixed = await isPrefixedIdsEnabled({
         orgId: req.user?.organizationId,
