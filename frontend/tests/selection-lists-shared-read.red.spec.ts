@@ -66,7 +66,8 @@ import {
   createWorld,
   deferred,
   documentDir,
-  err,
+  fault,
+  grantQuotaRead,
   expectInViewport,
   expectLtrIsland,
   expectRuntimeClean,
@@ -323,7 +324,7 @@ test.describe('SL9 shared-read — frame 01-shared-index', () => {
     const { api } = await setup(page, { build: acmeIndex })
     await openRoute(page, INDEX)
     await expect(row(page, 'yes-no')).toBeVisible()
-    api.use(failTimes(1, 'GET', '/v1/selection-lists', err(500, 'INTERNAL')))
+    api.use(failTimes(1, 'GET', '/v1/selection-lists', fault(500)))
     await press(page.locator("[data-visibility-filter='org']"))
     const errState = panelState(page, 'list-index', 'error')
     await expect(errState).toBeVisible()
@@ -384,6 +385,17 @@ test.describe('SL9 shared-read — frame 01-shared-index', () => {
     await openRoute(page, INDEX)
     await expect(page.locator("[data-group='common']")).toBeVisible()
     expectRuntimeClean(rt)
+  })
+
+  test('SL9-READ-018 @4.0.0-defect the index survives the REAL GET /quota envelope ({ organization_id, quotas }) — the shipped client/flow read `quota.scopes` and the page unmounts with a TypeError', async ({ page }) => {
+    // Pins a defect in the SHIPPED 4.0.0 UI (packages/selection-lists-ui: `quota?.scopes.some(...)`), found while making
+    // the harness contract-faithful. The shared index lives on this page, so it cannot ship against the real service
+    // until the client normalizes (or reads) the wire envelope. Red today for THAT reason; green when it is fixed.
+    const { world } = await setup(page, { build: acmeIndex })
+    grantQuotaRead(world)
+    await openRoute(page, INDEX)
+    await expect(page.locator("[data-panel='list-index']")).toBeVisible()
+    await expect(row(page, 'warehouse-zones'), 'the index must still render a row when GET /quota answers 200').toBeVisible()
   })
 })
 
@@ -465,7 +477,7 @@ test.describe('SL9 shared-read — frame 02-common-detail', () => {
 
   test('SL9-READ-025 effective-list lookup failure: plain common-list notice without a Fork CTA plus a quiet Retry that restores the CTA', async ({ page }) => {
     const { api } = await setup(page, { org: ORGS.globex, build: globexCommonDetail })
-    api.use(failTimes(1, 'GET', '/v1/selection-lists', err(500, 'INTERNAL'), c => c.query.get('key') === 'priority'))
+    api.use(failTimes(1, 'GET', '/v1/selection-lists', fault(500), c => c.query.get('key') === 'priority'))
     await openRoute(page, detail(COMMON_PRIORITY_ID))
     await expect(page.locator("[data-readonly-notice='platform']")).toBeVisible()
     await expect(page.locator("[data-action='fork-to-edit']"), 'never offer Fork on a guess').toHaveCount(0)
@@ -620,7 +632,7 @@ test.describe('SL9 shared-read — frame 03-readonly-states', () => {
 
   test('SL9-READ-036 values error: Retry in place; the badge and notice (from the list, which loaded) are kept', async ({ page }) => {
     const { api } = await setup(page, { org: ORGS.globex, build: globexCommonDetail })
-    api.use(failTimes(1, 'GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}/items`, err(500, 'INTERNAL')))
+    api.use(failTimes(1, 'GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}/items`, fault(500)))
     await openRoute(page, detail(COMMON_PRIORITY_ID))
     await expect(panelState(page, 'value-table', 'error')).toBeVisible()
     await expect(page.locator("[data-badge='common']").first()).toBeVisible()

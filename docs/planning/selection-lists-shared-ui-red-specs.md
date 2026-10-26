@@ -80,16 +80,17 @@ Two kinds, both deliberate and labelled in their titles:
   is kept (`PICK-021` 403 on lookup = error state, `PICK-033-common-archived`, `PICK-034`). They exist so the implementation cannot leak shared-lists
   UI while the flag is OFF.
 
-## Verified RED baseline (2026-10-26, against `vite preview` of a production build of `master` f1308fc77)
+## Verified RED baseline (2026-10-26, against `vite preview` of a production build of `master` 87e32a2 merged into the PR branch)
 
-`npx playwright test tests/selection-lists-shared-*.red.spec.ts --project=chromium` → **211 tests: 21 pass, 190 fail, 0 setup errors / 0 timeouts.**
+`npx playwright test tests/selection-lists-shared-*.red.spec.ts --project=chromium` → **212 tests: 21 pass, 191 fail, 0 setup errors / 0 timeouts.**
 
 * **21 pass** = 7 canaries + 14 flag-OFF/4.0.0 guards (listed above). They pass because they assert the approved 4.0.0 UI or the *absence* of the new UI.
-* **190 fail**: 185 with `element(s) not found` on a frame hook (`[data-control='include-shared']`, `[data-badge='common']`,
-  `[data-action='fork-to-edit']`, `[data-panel='fork-provenance']`, `[data-panel='visibility-control']`, `[data-effective-source]`, …) and 5 on a
+* **191 fail**: 186 with `element(s) not found` — 185 on a frame hook (`[data-control='include-shared']`, `[data-badge='common']`,
+  `[data-action='fork-to-edit']`, `[data-panel='fork-provenance']`, `[data-panel='visibility-control']`, `[data-effective-source]`, …) plus `SL9-READ-018`, whose
+  index row is missing because the shipped 4.0.0 index crashes on the real quota envelope (finding 5) — and 5 on a
   frame-specified state/copy the 4.0.0 UI renders differently (`SL9-READ-014` "no common lists are published", `SL9-PICK-023`/`062×3` "List unavailable").
-  Every failure is "the new UI is missing", none is a harness/route/mock error — the canaries render the same session and mocks.
-* Static checks on the new files: `tsc --noEmit --strict --noUnusedLocals --noUnusedParameters` clean; `eslint --max-warnings 0` (the frontend config) clean.
+  Every failure is "the new UI is missing" (or, for READ-018, the named 4.0.0 defect); none is a harness/route/mock error — the canaries render the same session and mocks.
+* Static checks on the changed files: `tsc --noEmit --strict --noUnusedLocals --noUnusedParameters` clean; `eslint --max-warnings 0` (the frontend config) clean.
 
 ## Inventory — per flow: spec file → test ids → frame states
 
@@ -110,6 +111,7 @@ Test ids are the `SL9-<FLOW>-<nnn>` prefix in each test title (`playwright test 
 | 01 | loading (group headers appear with rows) / error (filters preserved, retry) / empty ON / empty OFF | READ-012, 013, 014, 015 |
 | 01 | flag OFF = 4.0.0 index (no switch/filter/groups/badges/columns/params) | READ-016 |
 | 01 | console-clean on the ready index | READ-017 |
+| 01 | **4.0.0 defect pin:** the index renders when `GET /quota` answers the real `{organization_id, quotas}` envelope (shipped client reads `scopes` and crashes) | READ-018 |
 | 02 common detail | badge, read-only notice, owner facts, read-only table with archived value badged, `status=all` | READ-021 |
 | 02 | read-only = absent (no add/drag/edit/archive/purge/Access tab; `GET …/access` never called) | READ-022 |
 | 02 | single Fork CTA gated on effective-list lookup (`key`, `include_shared=true`, `limit=1`); pending / failed lookup → no CTA + quiet retry | READ-023, 024, 025 |
@@ -200,11 +202,33 @@ Test ids are the `SL9-<FLOW>-<nnn>` prefix in each test title (`playwright test 
    375 px viewport, panels never scroll sideways, ≥44 px targets, stacked actions) and `PICK-060…` — the picker harness has no shell chrome —
    additionally asserts no document-level horizontal scroll. The shell drawer / overflow belongs to `mobile-frontend-engineer` (and 4.0.0 frame 15).
    `isMobile` emulation is deliberately **not** used: it widens the layout viewport and would make "fits the viewport" assertions pass vacuously.
-5. **`GET …/access` body shape.** The contract says `{items, page}`; the existing client (`getAccessGrants`) and the existing access spec use a bare
-   array. The visibility specs follow the existing harness (bare array); only the status code (200 vs 403) matters to `VisibilityControl`.
+5. **Mock fidelity: what follows the wire contract and the three 4.0.0 exceptions.** The harness answers `list`/`items` pages
+   (`{items, page:{nextCursor,hasMore,total}}`), single lists/items, `POST /resolve`, the error envelope (`ErrorCode` + `reason`/`source_list_id`/`fork_url`/`scope`/`limit`/`current`)
+   and `GET /quota` (`{organization_id, quotas:[{scope, applies_to, limit, current}]}`) exactly as `openapi.yaml` 4.1.0 defines them
+   (verified by validating every reply of a full run against the OpenAPI schemas with Ajv — list/item/page/quota/resolve/error: 0 violations).
+   Three routes deliberately stay in the shape the **shipped 4.0.0 UI** consumes, because the 4.0.0 canaries and the existing green
+   `selection-list-service-e2e` specs render through them; the 4.0.0 client, not the network mock, owns any normalization:
+   * `GET …/access` — contract `{items, page}` of `SelectionListAccessGrant`; the client (`getAccessGrants`) wants a bare array with `is_sole_owner`.
+     Only the status (200 vs 403) matters to `VisibilityControl`.
+   * `GET …/translations` — contract is a bare `TranslationLocaleStatus[]` (`completeness_pct`, …); the client wants `{locales:[{is_source,translated,…}]}`.
+   * `GET …/translations/{locale}` — **not an operation in the contract at all** (only `PUT`/`DELETE`); the 4.0.0 workbench calls it anyway.
+   All three are pre-existing UI-vs-contract divergences, not SL9 scope; the implementation of `shared-read` (read-only translations, frame 03) will have to
+   choose a contract-defined source.
+   **Quota is the one where the divergence is a shipped crash:** the 4.0.0 index does `quota?.scopes.some(…)` and the service sends `quotas`, so against the real
+   service the index throws a `TypeError` and does not render. `SL9-READ-018` pins it (RED for that reason, green once the client reads/normalizes the wire envelope).
+   Because of it, `world.quota` defaults to `403 FORBIDDEN` (the documented "no `read_quota`" answer, which the 4.0.0 index fails open on) and only the
+   specs that need the numbers opt in with `grantQuotaRead(world)` (`SL9-FORK-024a`, `SL9-READ-018`) — otherwise every index spec and the `READ-001` canary would fail for the
+   quota defect instead of for the missing shared-lists UI.
+   **5xx:** the contract defines no 5xx body and no `INTERNAL` code, so server failures are `fault(5xx)` (`{error:'boom'}`, the precedent of the green specs), never an `Error`-shaped body.
+   A few specs send out-of-contract values **on purpose** to probe tolerance the contract demands or implies: `reason: some_future_reason` ("treat an unknown value as a plain CONFLICT"),
+   `scope: something_new`, and an absolute `fork_url` (SL9-FORK-003).
 6. **Org name in the fork dialog title** ("Fork “Priority” for Globex Freight", `FORK-020`) comes from the shell's active organization; the
    package is host-agnostic, so the host must inject it. If that is not wanted, `FORK-020` is the one place to renegotiate.
-7. **Frame copy asserted verbatim** only where the frame makes it a contract (source-neutral shadow note, `fork_exists` owner-only wording,
+7. **Hook placement follows the frames, container or child.** Where a frame puts a marker on a wrapper and the action on a child (`data-revert-gate` on the
+   `sl-head__actions` wrapper around `data-action="archive-fork"`, frame 07 "Header action — source archived or gone"; `data-state` on the picker panel with
+   `aria-busy` on its combo control), the specs accept the marker on the element **or** its nearest ancestor/descendant as the frame draws it (`PROV-011`, `PICK-013`, `PICK-035`).
+   States whose frame draws no controls (fork dialog *Submitting*, visibility *Saving*) are asserted as "nothing operable" (absent / `disabled` / `aria-disabled`), not by an invented hook.
+8. **Frame copy asserted verbatim** only where the frame makes it a contract (source-neutral shadow note, `fork_exists` owner-only wording,
    conditional archive copy, "List unavailable", "Unknown value"). Everything else is asserted by hook/role, not by copy.
 
 ## Not covered here (named so nobody assumes it is)

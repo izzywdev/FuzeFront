@@ -310,6 +310,11 @@ export interface World {
   roles: Set<string>
   /** Index page size (cursor = offset). Unset = one page. */
   pageSize?: number
+  /**
+   * GET /v1/selection-lists/quota. DEFAULT = 403 (the caller lacks `read_quota`, a documented answer every
+   * non-admin gets; the 4.0.0 index fails open on it). A spec that needs the usage numbers opts in with
+   * `grantQuotaRead(world)`; see that function for why this is not 200 by default.
+   */
   quota: ApiReply
   /** GET …/access per list. Unset = 403 (the caller holds no manage_access). */
   access: Map<string, ApiReply>
@@ -323,22 +328,41 @@ export function createWorld(orgId: string = ORGS.acme.id): World {
     lists: new Map(),
     items: new Map(),
     roles: new Set(),
-    quota: json(200, defaultQuota()),
+    quota: err(403, 'FORBIDDEN'),
     access: new Map(),
     resolve: new Map(),
   }
 }
 
-/** Quota the caller may read (org_lists 37 of 100: the fork dialog previews 37 -> 38). */
-export function defaultQuota() {
+/**
+ * Quota the caller may read, in the WIRE envelope of `SelectionListQuotaStatus`
+ * (openapi 4.1.0): `{ organization_id, quotas: [{ scope, applies_to, limit, current }] }`,
+ * exactly four entries. org_lists 37 of 100: the fork dialog previews 37 -> 38.
+ * Any legacy-shape normalization is the UI client's concern, never this network mock's.
+ */
+export function defaultQuota(orgId: string = ORGS.acme.id) {
   return {
-    scopes: [
-      { scope: 'org_lists', current: 37, limit: 100 },
-      { scope: 'user_lists', current: 3, limit: 25 },
-      { scope: 'list_items', current: null, limit: 1000 },
-      { scope: 'list_locales', current: null, limit: 11 },
+    organization_id: orgId,
+    quotas: [
+      { scope: 'org_lists', applies_to: 'organization', limit: 100, current: 37 },
+      { scope: 'user_lists', applies_to: 'user', limit: 25, current: 3 },
+      { scope: 'list_items', applies_to: 'list', limit: 1000, current: null },
+      { scope: 'list_locales', applies_to: 'list', limit: 11, current: null },
     ],
   }
+}
+
+/**
+ * Let the caller read quota: GET /quota answers 200 with the real wire envelope.
+ *
+ * Not the default because the shipped 4.0.0 management index does `quota?.scopes.some(...)` on the response
+ * (packages/selection-lists-ui `SelectionListManagementFlow.tsx`), and the real service sends `quotas` — so on
+ * a 200 the 4.0.0 index throws a TypeError and unmounts. That is a product defect pinned by SL9-READ-018, and
+ * it must not turn every index-based spec (or the READ-001 canary) red for a reason that is not "the new UI is
+ * missing". The fork dialog's quota preview (SL9-FORK-024a) reads the wire envelope and opts in.
+ */
+export function grantQuotaRead(world: World): void {
+  world.quota = json(200, defaultQuota(world.orgId))
 }
 
 export function addList(world: World, list: WireList, items: WireItem[] = [], opts: { role?: boolean } = {}): WireList {
@@ -350,9 +374,39 @@ export function addList(world: World, list: WireList, items: WireItem[] = [], op
 
 export const json = (status: number, body?: unknown): ApiReply => ({ status, body })
 
-/** The service's single error shape. */
-export function err(status: number, code: string, extra: Record<string, unknown> = {}): ApiReply {
+/** `ErrorCode` (openapi 4.1.0). There is deliberately no 5xx code: the contract documents none. */
+export type ErrorCode = 'VALIDATION_ERROR' | 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'CONFLICT' | 'QUOTA_EXCEEDED'
+/** `ErrorReason` (openapi 4.1.0). A client treats an unknown value as a plain CONFLICT — see the forward-compat specs. */
+export type ErrorReason = 'fork_required' | 'fork_exists' | 'fork_not_applicable' | 'visibility_locked'
+
+/**
+ * Optional members of the contract `Error` object. `reason` is typed `string` ON PURPOSE: the contract says
+ * "treat an unknown value as a plain CONFLICT", so the forward-compat specs send one (`some_future_reason`).
+ * Likewise `scope` (`QuotaScope` is a closed enum in 4.1.0) and an absolute `fork_url` (the contract pattern is
+ * same-origin relative) are sent out-of-contract ONLY by the specs that probe the client's tolerance of them.
+ */
+export interface ErrorExtras {
+  reason?: ErrorReason | (string & {})
+  source_list_id?: string
+  fork_url?: string
+  scope?: string
+  limit?: number
+  current?: number
+  details?: Array<{ field: string; message: string }>
+}
+
+/** The service's single error shape (`Error`: `{ code, message, … }`). */
+export function err(status: number, code: ErrorCode, extra: ErrorExtras = {}): ApiReply {
   return { status, body: { code, message: `${code} (mock)`, ...extra } }
+}
+
+/**
+ * An unhandled server/gateway failure (5xx). The contract defines NO 5xx body and no `INTERNAL` code, so this
+ * is NOT the `Error` envelope — it mirrors what the existing green selection-lists specs inject for a 500
+ * (`{ "error": "boom" }`): a client must treat any 5xx body as opaque.
+ */
+export function fault(status: 500 | 502 | 503 | 504 = 500): ApiReply {
+  return { status, body: { error: 'boom' } }
 }
 
 export const NOT_FOUND = err(404, 'NOT_FOUND')
@@ -589,7 +643,9 @@ export async function mountSelectionListApi(page: Page, world: World): Promise<A
     return route.fulfill({
       status,
       contentType: 'application/json',
-      body: status === 204 || reply.body === undefined ? '' : JSON.stringify(reply.body),
+      // `_`-prefixed members (`_names`, `_labels`) are mock-only and never reach the wire, even when a spec
+      // returns a fixture object as-is.
+      body: status === 204 || reply.body === undefined ? '' : JSON.stringify(reply.body, (k, v) => (k.startsWith('_') ? undefined : v)),
     })
   })
 

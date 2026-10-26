@@ -37,6 +37,8 @@ import {
   deferred,
   documentDir,
   err,
+  fault,
+  grantQuotaRead,
   expectInViewport,
   expectLtrIsland,
   expectRuntimeClean,
@@ -350,8 +352,9 @@ test.describe('SL9 fork — frame 05-fork-dialog', () => {
     expect(forkCalls(api)).toHaveLength(0)
   })
 
-  test('SL9-FORK-024a quota preview "37 → 38 of 100" renders when GET /quota succeeds', async ({ page }) => {
-    await setup(page)
+  test('SL9-FORK-024a quota preview "37 → 38 of 100" renders when GET /quota succeeds (the REAL envelope: { organization_id, quotas: [{ scope, applies_to, limit, current }] })', async ({ page }) => {
+    const { world } = await setup(page)
+    grantQuotaRead(world)
     await openDialog(page)
     const q = dialog(page).locator("[data-quota-preview='org_lists']")
     await expect(q).toBeVisible()
@@ -390,7 +393,9 @@ test.describe('SL9 fork — frame 05-fork-dialog', () => {
     await expect(d).toHaveAttribute('aria-busy', 'true')
     await expect(d.locator("[data-action='confirm-fork'][disabled]")).toBeVisible()
     await expect(d.locator("[data-action='cancel'][disabled]")).toBeVisible()
-    await expect(d.locator("[data-visibility-option][aria-disabled='true']").first(), 'options are locked while in flight').toBeVisible()
+    // Frame 05 "Submitting": the body is the "Options are locked" sentence — no option elements are drawn — so assert that
+    // none is operable (absent, `disabled` or `aria-disabled` all satisfy it).
+    await expect(d.locator("[data-visibility-option]:not([aria-disabled='true']):not([disabled])"), 'options are locked while in flight').toHaveCount(0)
     await page.keyboard.press('Escape')
     await page.mouse.click(4, 4)
     await expect(d, 'a dialog that closes and then creates a list anyway is a surprise').toBeVisible()
@@ -652,7 +657,7 @@ test.describe('SL9 fork — frame 06-fork-results (refusals inside the dialog)',
 
   test('SL9-FORK-047 a 5xx is the same "outcome unknown" state as a network failure (retryable)', async ({ page }) => {
     const { api } = await setup(page)
-    api.use(on('POST', FORK_PATH, () => err(502, 'INTERNAL')))
+    api.use(on('POST', FORK_PATH, () => fault(502)))
     await openDialog(page)
     await press(confirm(page))
     await expect(dialog(page).locator("[data-error='network']")).toBeVisible()

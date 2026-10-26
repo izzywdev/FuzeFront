@@ -43,6 +43,7 @@ import {
   deferred,
   documentDir,
   err,
+  fault,
   expectInViewport,
   expectRuntimeClean,
   expectTouchTarget,
@@ -197,7 +198,7 @@ test.describe('SL9 provenance — frame 07-fork-detail', () => {
 
   test('SL9-PROV-008 check failed (5xx / network): "Couldn\'t check", Retry re-runs the read', async ({ page }) => {
     const { api } = await setup(page)
-    api.use(failTimes(1, 'GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}`, err(503, 'INTERNAL')))
+    api.use(failTimes(1, 'GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}`, fault(503)))
     await openRoute(page, detail(FORK_PRIORITY_ID))
     const p = behind(page, 'error')
     await expect(p).toBeVisible()
@@ -248,7 +249,10 @@ test.describe('SL9 provenance — frame 07-fork-detail', () => {
       const wanted = g.action === 'revert' ? revert(page) : archiveFork(page)
       const other = g.action === 'revert' ? archiveFork(page) : revert(page)
       await expect(wanted).toBeVisible()
-      await expect(wanted).toHaveAttribute('data-revert-gate', g.gate)
+      // The frames put the gate marker on the action itself (07 "revert", 13) OR on the action's wrapper
+      // (07 "Header action — source archived or gone": `<div class="sl-head__actions" data-revert-gate=…>`
+      // around `<a data-action="archive-fork">`). Accept the nearest of the two.
+      await expect(wanted.locator('xpath=ancestor-or-self::*[@data-revert-gate][1]'), `revert gate marker on the action or its wrapper`).toHaveAttribute('data-revert-gate', g.gate)
       await expect(other).toHaveCount(0)
       if (g.action === 'archive-fork') {
         await expect(page.getByRole('button', { name: /revert/i }), 'the word "revert" never appears when no active common list was read').toHaveCount(0)
@@ -425,7 +429,7 @@ for (const loc of [{ tag: 'en-US', dir: 'ltr' }, { tag: 'he-IL', dir: 'rtl' }] a
 
     test(`SL9-PROV-023b-${loc.tag} check failed at 375px: Retry is >=44px`, async ({ page }) => {
       const { api } = await setup(page)
-      api.use(failTimes(1, 'GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}`, err(503, 'INTERNAL')))
+      api.use(failTimes(1, 'GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}`, fault(503)))
       await openRoute(page, detail(FORK_PRIORITY_ID))
       await expect(behind(page, 'error')).toBeVisible()
       const retry = panel(page).locator("[data-action='retry']")

@@ -46,6 +46,7 @@ import {
   deferred,
   documentDir,
   err,
+  fault,
   expectNoHorizontalScroll,
   expectRuntimeClean,
   expectTouchTarget,
@@ -223,7 +224,8 @@ test.describe('SL9 picker — frame 09-picker-effective', () => {
     await open(page, { showSource: '1' })
     const loading = panelState(page, 'picker', 'loading')
     await expect(loading).toBeVisible()
-    await expect(page.locator("[data-panel='picker'] [data-state='loading'][aria-busy='true'], [data-panel='picker'][data-state='loading'][aria-busy='true']").first()).toBeVisible()
+    // Frame 09/15: `data-state` is on the panel, `aria-busy` on the child combo control (so: on the panel OR a descendant).
+    await expect(page.locator("[data-panel='picker'][aria-busy='true'], [data-panel='picker'] [aria-busy='true']").first()).toBeVisible()
     await expect(page.locator('[data-effective-source-caption]')).toHaveCount(0)
     gate.resolve()
     await expect(page.locator("[data-effective-source-caption='own']")).toBeVisible()
@@ -259,7 +261,7 @@ test.describe('SL9 picker — frame 09-picker-effective', () => {
 
   test('SL9-PICK-020 error (lookup 5xx): in-place Retry, the selection is kept, NO fallback to a different list', async ({ page }) => {
     const { api } = await setup(page)
-    api.use(failTimes(1, 'GET', '/v1/selection-lists', err(500, 'INTERNAL'), c => c.query.get('key') === 'priority'))
+    api.use(failTimes(1, 'GET', '/v1/selection-lists', fault(500), c => c.query.get('key') === 'priority'))
     await open(page, { value: FORK_ITEM_IDS.medium })
     const e = panelState(page, 'picker', 'error')
     await expect(e).toBeVisible()
@@ -282,7 +284,7 @@ test.describe('SL9 picker — frame 09-picker-effective', () => {
 
   test('SL9-PICK-022 the items request failing is the same in-place error (retry re-reads items for the SAME list)', async ({ page }) => {
     const { api } = await setup(page)
-    api.use(failTimes(1, 'GET', /\/items$/, err(500, 'INTERNAL')))
+    api.use(failTimes(1, 'GET', /\/items$/, fault(500)))
     await open(page)
     await expect(panelState(page, 'picker', 'error')).toBeVisible()
     await press(page.locator("[data-panel='picker'] [data-action='retry']"))
@@ -406,7 +408,8 @@ test.describe('SL9 picker — frame 10-picker-stored-values', () => {
     await open(page, { value: STORED })
     const r = panelState(page, 'picker', 'resolving')
     await expect(r).toBeVisible()
-    await expect(page.locator("[data-panel='picker'] [data-state='resolving'][aria-busy='true'], [data-panel='picker'][data-state='resolving'][aria-busy='true'], [data-panel='picker'] [aria-busy='true']").first()).toBeVisible()
+    // Frame 10/15: `data-state` is on the panel, `aria-busy` on the child combo control.
+    await expect(page.locator("[data-panel='picker'][aria-busy='true'], [data-panel='picker'] [aria-busy='true']").first()).toBeVisible()
     await expect(picker(page)).not.toContainText(STORED)
     if (await control(page).count()) {
       await control(page).click({ force: true, trial: false }).catch(() => undefined)
@@ -418,7 +421,7 @@ test.describe('SL9 picker — frame 10-picker-stored-values', () => {
 
   test('SL9-PICK-036 resolve failed: in-place Retry, the stored id is untouched, onEffectiveValue is never called; retry recovers', async ({ page }) => {
     const { api } = await setup(page, { resolve: redirect })
-    api.use(failTimes(1, 'POST', '/v1/resolve', err(500, 'INTERNAL')))
+    api.use(failTimes(1, 'POST', '/v1/resolve', fault(500)))
     await open(page, { value: STORED, migrate: '1' })
     await expect(panelState(page, 'picker', 'resolve-error')).toBeVisible()
     await expect(page.locator("[data-error='resolve-failed']")).toBeVisible()
@@ -489,7 +492,7 @@ for (const loc of [{ tag: 'en-US', dir: 'ltr' }, { tag: 'he-IL', dir: 'rtl' }, {
 
     test(`SL9-PICK-063-${loc.tag} error state at 375px: Retry is >=44px and in place`, async ({ page }) => {
       const { api } = await setup(page)
-      api.use(failTimes(1, 'GET', '/v1/selection-lists', err(500, 'INTERNAL'), c => c.query.get('key') === 'priority'))
+      api.use(failTimes(1, 'GET', '/v1/selection-lists', fault(500), c => c.query.get('key') === 'priority'))
       await open(page)
       const retry = page.locator("[data-panel='picker'] [data-action='retry']")
       await expect(retry).toBeVisible()

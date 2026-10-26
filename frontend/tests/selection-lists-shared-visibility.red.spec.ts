@@ -39,6 +39,7 @@ import {
   deferred,
   documentDir,
   err,
+  fault,
   expectInViewport,
   expectRuntimeClean,
   expectTouchTarget,
@@ -196,8 +197,11 @@ test.describe('SL9 visibility — frame 08-visibility-control', () => {
     const saving = page.locator("[data-panel='visibility-control'][data-state='saving'], [data-state='saving']").first()
     await expect(saving).toBeVisible()
     await expect(saving).toHaveAttribute('aria-busy', 'true')
-    await expect(page.locator("[data-confirm='visibility-to-private'] [data-action='confirm-visibility'][disabled]")).toBeVisible()
-    await expect(page.locator("[data-visibility-option][aria-disabled='true']").first(), 'options are locked until the service answers').toBeVisible()
+    // Frame 08 "Saving": the panel shows a spinner and the text "the options are locked until the service answers" — it
+    // draws NO option/confirm elements (no hook is declared for a locked option), so assert the contract of the state:
+    // nothing is operable. Absent, `disabled` or `aria-disabled` all satisfy it.
+    await expect(page.locator("[data-visibility-option]:not([aria-disabled='true']):not([disabled])"), 'options are locked until the service answers').toHaveCount(0)
+    await expect(page.locator("[data-action='confirm-visibility']:not([disabled]):not([aria-disabled='true'])"), 'the confirm cannot be activated twice').toHaveCount(0)
     gate.resolve()
     await expect(page.locator("[data-result='visibility-saved']")).toContainText(/is now private/i)
     await expect(opt(page, 'private')).toHaveAttribute('aria-checked', 'true')
@@ -245,7 +249,7 @@ test.describe('SL9 visibility — frame 08-visibility-control', () => {
 
   test('SL9-VIS-017b error: "Couldn\'t load access settings", Retry re-reads …/access', async ({ page }) => {
     const { api } = await setup(page)
-    api.use(failTimes(1, 'GET', `/v1/selection-lists/${FORK_PRIORITY_ID}/access`, err(500, 'INTERNAL')))
+    api.use(failTimes(1, 'GET', `/v1/selection-lists/${FORK_PRIORITY_ID}/access`, fault(500)))
     await openRoute(page, access(FORK_PRIORITY_ID))
     const e = page.locator("[data-panel='visibility-control'][data-state='error']")
     await expect(e).toBeVisible()
@@ -458,7 +462,7 @@ for (const loc of [{ tag: 'en-US', dir: 'ltr' }, { tag: 'he-IL', dir: 'rtl' }, {
 
     test(`SL9-VIS-033-${loc.tag} states at 375px: loading skeleton, error Retry >=44px`, async ({ page }) => {
       const { api } = await setup(page)
-      api.use(failTimes(1, 'GET', `/v1/selection-lists/${FORK_PRIORITY_ID}/access`, err(500, 'INTERNAL')))
+      api.use(failTimes(1, 'GET', `/v1/selection-lists/${FORK_PRIORITY_ID}/access`, fault(500)))
       await openRoute(page, access(FORK_PRIORITY_ID))
       const retry = page.locator("[data-panel='visibility-control'][data-state='error'] [data-action='retry']")
       await expect(retry).toBeVisible()
