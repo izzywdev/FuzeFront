@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container, TextLink, HeroPatternOverlay, Section, ResponsiveGrid, Wrap, Text } from '@fuzefront/design-system'
+import { Center, IconTile, Container, TextLink, HeroPatternOverlay, Section, ResponsiveGrid, Wrap, Text, AmbientGlow } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -77,8 +77,8 @@ export const AboutPage: React.FC = () => {
         className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
         <HeroPatternOverlay />
-        <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="primary" size={320} style={{ top: '2.5rem', left: '25%' }} />
+        <AmbientGlow tone="accent" size={288} opacity={0.15} style={{ bottom: 0, right: '25%' }} />
         <Container size="4xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

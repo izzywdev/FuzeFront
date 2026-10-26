@@ -16,7 +16,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap, Text, Button } from '@fuzefront/design-system'
+import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap, Text, Button, AmbientGlow } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -166,8 +166,8 @@ export const HomePage: React.FC = () => {
       <section className="relative min-h-screen flex items-center bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden">
         <HeroPatternOverlay />
         {/* Background orbs */}
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-20 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="primary" size={384} style={{ top: '5rem', left: '25%' }} />
+        <AmbientGlow tone="accent" size={320} opacity={0.15} style={{ bottom: '5rem', right: '25%' }} />
 
         <Container size="7xl" className="relative pt-24 pb-20">
           <div className="text-center max-w-4xl mx-auto">

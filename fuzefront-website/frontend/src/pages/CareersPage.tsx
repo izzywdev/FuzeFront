@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container, HeroPatternOverlay, Stack, Text } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroPatternOverlay, Stack, Text, AmbientGlow } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -103,7 +103,7 @@ export const CareersPage: React.FC = () => {
         className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
         <HeroPatternOverlay />
-        <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="primary" size={320} style={{ top: '2.5rem', left: '25%' }} />
         <Container size="4xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

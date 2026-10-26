@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container, Text, HeroPatternOverlay, Section } from '@fuzefront/design-system'
+import { IconTile, Container, Text, HeroPatternOverlay, Section, AmbientGlow } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -39,7 +39,7 @@ export const PressPage: React.FC = () => {
         className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
         <HeroPatternOverlay />
-        <div className="absolute top-10 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="accent" size={320} opacity={0.15} style={{ top: '2.5rem', right: '25%' }} />
         <Container size="4xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
