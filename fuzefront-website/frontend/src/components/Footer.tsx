@@ -64,7 +64,7 @@ export const Footer: React.FC = () => {
               <Logo src="/logo-icon.svg" name="FuzeOne" size="md" style={{ width: 36, height: 36 }} />
               <span className="font-heading font-bold text-xl text-[var(--text-primary)]">FuzeOne</span>
             </Link>
-            <Text as="p" tone="secondary" size="sm" leading="relaxed" className="mb-6 max-w-sm">
+            <Text as="p" tone="secondary" size="sm" leading="relaxed" spacing="lg" className="max-w-sm">
               The operating system for your SaaS. Enterprise auth, billing, AI, and
               Module Federation architecture — all in one platform.
             </Text>

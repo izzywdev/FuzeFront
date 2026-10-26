@@ -197,7 +197,7 @@ export const CareersPage: React.FC = () => {
                     </a>
                   </div>
 
-                  <Text as="p" tone="secondary" size="sm" leading="relaxed" className="mb-5">{position.description}</Text>
+                  <Text as="p" tone="secondary" size="sm" leading="relaxed" style={{ marginBlockEnd: 'var(--space-5)' }}>{position.description}</Text>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>

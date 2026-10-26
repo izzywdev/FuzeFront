@@ -168,7 +168,7 @@ function IndustrySection({ industry }: { industry: Industry }) {
           </div>
         </div>
 
-        <Text as="p" tone="secondary" size="sm" leading="relaxed" className="mb-6">{industry.description}</Text>
+        <Text as="p" tone="secondary" size="sm" leading="relaxed" spacing="lg">{industry.description}</Text>
 
         <div className="mb-6">
           <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">Key challenges addressed</h4>

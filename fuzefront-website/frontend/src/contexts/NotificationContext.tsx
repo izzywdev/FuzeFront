@@ -84,6 +84,7 @@ const NotificationComponent: React.FC<{
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -50, scale: 0.8 }}
       transition={{ duration: 0.3 }}
+      data-theme="light"
       className={`${bgColor} border rounded-lg p-4 shadow-lg max-w-md w-full`}
     >
       <div className="flex items-start gap-3">
