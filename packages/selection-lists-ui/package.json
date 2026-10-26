@@ -23,13 +23,15 @@
   "sideEffects": false,
   "scripts": {
     "build:client-types": "npm run build --prefix ../../selection-list-client",
-    "build": "npm run build:client-types && vite build && tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "build": "npm run build:client-types && vite build && tsc -p tsconfig.build.json --emitDeclarationOnly && npm run check:dist-types",
+    "check:dist-types": "node scripts/check-dist-types.mjs",
     "type-check": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {},
   "peerDependencies": {
     "@fuzefront/design-system": "^1.0.0",
+    "@fuzeone/selection-list-client": "^2.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.0.0"
