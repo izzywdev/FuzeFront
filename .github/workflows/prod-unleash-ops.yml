@@ -33,6 +33,7 @@ on:
             selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + seed-defaults + shared-lists, left OFF
             config-management   — fuzefront.config.management-console + .key-catalog + .secrets-audit (100%): Configuration Management Console UI (EPIC-19). Web-exposed; requires the catalog-registering build (#1571) deployed.
             account-security    — fuzefront.account-security.hub (100%): the Account Security hub UI (profile menu → Settings: password, MFA, devices/sessions, connected accounts). Web-exposed; consumes the existing security-service APIs.
+            all-flags           — owner-directed bulk GA: 28 flags to 100% = 26 release flags (incl. the 3 config-management flags) + 2 ops-kill-switches (created as type=kill-switch; ON = healthy). Excludes per-org / env-driven / unverified flags (billing authz-enabled + plan-flag-sync, selection-lists.shared-lists, auth.experience, billing plan-tier permission flags).
         required: true
         default: billing-portal
         type: choice
@@ -379,9 +380,22 @@ jobs:
           #    (build-with-agent / creator-ownership / marketplace-publishing)
           #    activate; selection-lists.seed-defaults at 100% seeds default
           #    lists into every org. All are reversible via the env `off` path.
-          # The 23 release flags (the two ops-kill-switches are handled
+          # The 26 release flags (the two ops-kill-switches are handled
           # separately below so their create records type=kill-switch).
-          ALL_FLAGS_RELEASE="fuzefront.apps.org-context-hidden fuzefront.apps.build-with-agent fuzefront.apps.creator-ownership fuzefront.apps.marketplace-publishing fuzefront.authz.chat-agent-security-api fuzefront.account-security.hub fuzefront.billing.invoice-history fuzefront.platform.multi-tenant-portals fuzefront.platform.portal-domains fuzefront.platform.portals-directory fuzefront.platform.config-management fuzefront.app-registry.v1-registry-write fuzefront.apps.portal-catalog fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.identity.root-membership fuzefront.identity.personal-context fuzefront.identity.member-directory fuzefront.identity.prefixed-ids fuzefront.identity.employee-console fuzefront.devportal.enabled fuzefront.identity.portal-scoped-users fuzefront.billing.reseller-connect"
+          # Swept in 2026-10-26 (owner: all flags ON in prod): the EPIC-19
+          # Configuration Management Console trio (config.management-console /
+          # key-catalog / secrets-audit) -- web-exposed release flags, already GA
+          # per owner decision 2026-10-19, registered in #1571.
+          # DELIBERATELY NOT in this set (held; see the PR that added the trio):
+          #  - billing.authz-enabled / billing.plan-flag-sync-enabled: billing-service
+          #    reads these from ENV (FUZEFRONT_BILLING_*), not Unleash, so an Unleash
+          #    flip is inert; plan-flag-sync also needs UNLEASH_ADMIN_TOKEN wired.
+          #  - selection-lists.shared-lists: docs/runbooks/selection-lists-rollout.md
+          #    section 10 pre-enable audit + platform-org confirmation must pass first.
+          #  - auth.experience: build-time VITE_FF_AUTH_EXPERIENCE, not Unleash.
+          #  - billing.plan-*/sso-enabled/api-access/custom-domain/module-federation:
+          #    per-org permission (entitlement) flags -- 100% would defeat tier gating.
+          ALL_FLAGS_RELEASE="fuzefront.apps.org-context-hidden fuzefront.apps.build-with-agent fuzefront.apps.creator-ownership fuzefront.apps.marketplace-publishing fuzefront.authz.chat-agent-security-api fuzefront.account-security.hub fuzefront.billing.invoice-history fuzefront.platform.multi-tenant-portals fuzefront.platform.portal-domains fuzefront.platform.portals-directory fuzefront.platform.config-management fuzefront.app-registry.v1-registry-write fuzefront.apps.portal-catalog fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.identity.root-membership fuzefront.identity.personal-context fuzefront.identity.member-directory fuzefront.identity.prefixed-ids fuzefront.identity.employee-console fuzefront.devportal.enabled fuzefront.identity.portal-scoped-users fuzefront.billing.reseller-connect fuzefront.config.management-console fuzefront.config.key-catalog fuzefront.config.secrets-audit"
           apply_all_flags() {
             # Two ops-kill-switches first, created with type=kill-switch. ON is
             # their SAFE/normal state (org-context-disabled ON = normal gating;
@@ -512,7 +526,7 @@ jobs:
           "
               done ;;
             all-flags)
-              for F in fuzefront.apps.org-context-disabled fuzefront.apps.org-context-hidden fuzefront.apps.build-with-agent fuzefront.apps.creator-ownership fuzefront.apps.marketplace-publishing fuzefront.authz.chat-agent-security-api fuzefront.account-security.hub fuzefront.billing.invoice-history fuzefront.platform.multi-tenant-portals fuzefront.platform.portal-domains fuzefront.platform.portals-directory fuzefront.platform.config-management fuzefront.app-registry.v1-registry-write fuzefront.app-registry.kafka-events-kill-switch fuzefront.apps.portal-catalog fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.identity.root-membership fuzefront.identity.personal-context fuzefront.identity.member-directory fuzefront.identity.prefixed-ids fuzefront.identity.employee-console fuzefront.devportal.enabled fuzefront.identity.portal-scoped-users fuzefront.billing.reseller-connect; do
+              for F in fuzefront.apps.org-context-disabled fuzefront.apps.org-context-hidden fuzefront.apps.build-with-agent fuzefront.apps.creator-ownership fuzefront.apps.marketplace-publishing fuzefront.authz.chat-agent-security-api fuzefront.account-security.hub fuzefront.billing.invoice-history fuzefront.platform.multi-tenant-portals fuzefront.platform.portal-domains fuzefront.platform.portals-directory fuzefront.platform.config-management fuzefront.app-registry.v1-registry-write fuzefront.app-registry.kafka-events-kill-switch fuzefront.apps.portal-catalog fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.identity.root-membership fuzefront.identity.personal-context fuzefront.identity.member-directory fuzefront.identity.prefixed-ids fuzefront.identity.employee-console fuzefront.devportal.enabled fuzefront.identity.portal-scoped-users fuzefront.billing.reseller-connect fuzefront.config.management-console fuzefront.config.key-catalog fuzefront.config.secrets-audit; do
                 check_flag "$F"
               done ;;
           esac
