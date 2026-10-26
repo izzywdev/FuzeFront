@@ -43,6 +43,19 @@ const LEADING = {
   relaxed: "var(--leading-relaxed)",
 };
 
+// `weight` maps to the DS font-weight scale — replaces the recurring ad-hoc
+// `font-medium`/`font-semibold`/`font-bold` utility. `inherit` (default)
+// preserves the original pre-`weight` behavior (no inline override, so the
+// surrounding stylesheet's — e.g. Tailwind preflight's `inherit` reset on
+// headings — weight applies, exactly as it did before this prop existed).
+const WEIGHTS = {
+  inherit: "inherit",
+  regular: "var(--weight-regular)",
+  medium: "var(--weight-medium)",
+  semibold: "var(--weight-semibold)",
+  bold: "var(--weight-bold)",
+};
+
 /**
  * Plain text with a semantic color tone — replaces the recurring ad-hoc
  * `className="text-gray-{500,600,900}"` (and `text-red-500`) pattern used
@@ -69,6 +82,13 @@ const LEADING = {
  * press excerpt, team-member bio): pairs with `tone="secondary"` and
  * `size="sm"` and picks a step of the DS line-height scale (default
  * `inherit`, unchanged from before).
+ *
+ * `weight` covers the recurring `className="font-medium text-gray-900"`
+ * pattern (a small bolded label/heading, e.g. a notification title or a
+ * contact-info item's label) via the DS font-weight scale instead of a raw
+ * Tailwind `font-*` utility: `inherit` (default) applies no inline
+ * override — unchanged from before `weight` existed — and `medium` /
+ * `semibold` / `bold` resolve to the matching DS weight token.
  */
 export function Text({
   as: As = "p",
@@ -76,6 +96,7 @@ export function Text({
   size = "inherit",
   spacing = "none",
   leading = "inherit",
+  weight = "inherit",
   children,
   style,
   ...rest
@@ -86,6 +107,7 @@ export function Text({
         margin: 0,
         fontFamily: "var(--font-sans)",
         fontSize: SIZES[size] || SIZES.inherit,
+        fontWeight: WEIGHTS[weight] || WEIGHTS.inherit,
         lineHeight: LEADING[leading] || LEADING.inherit,
         color: TONES[tone] || TONES.primary,
         marginBlockEnd: SPACING_BOTTOM[spacing] ?? SPACING_BOTTOM.none,

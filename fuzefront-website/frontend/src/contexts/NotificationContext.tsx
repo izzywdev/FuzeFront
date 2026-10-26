@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react'
-import { Caption, IconTile } from '@fuzefront/design-system'
+import { Caption, IconTile, Text } from '@fuzefront/design-system'
 
 interface Notification {
   id: string
@@ -89,7 +89,7 @@ const NotificationComponent: React.FC<{
       <div className="flex items-start gap-3">
         <NotificationIcon type={type} />
         <div className="flex-1">
-          <h4 className="font-medium text-gray-900">{title}</h4>
+          <Text as="h4" weight="medium">{title}</Text>
           {message && <Caption space="xs">{message}</Caption>}
           {action && (
             <button
