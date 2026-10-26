@@ -630,6 +630,15 @@ describe('contract discovery', () => {
       expect(schemas.TestSuiteDispatchAudit.properties.artifactLogicalId.description).toContain(
         'across repository scans'
       )
+      expect(schemas.TestSuiteDispatchAudit.properties.executionResult.$ref).toBe(
+        '#/components/schemas/TestSuiteDispatchExecutionResult'
+      )
+      expect(schemas.TestSuiteDispatchExecutionResult.required).toEqual(
+        ['id', 'provider', 'externalRunId', 'attempt', 'status']
+      )
+      expect(schemas.TestSuiteDispatchExecutionResult.properties.sourceUrl).toMatchObject({
+        type: 'string', format: 'uri', pattern: '^https://',
+      })
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.responses['200'].content[
           'application/json'
@@ -651,6 +660,9 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
       ).toContain('bounded tenant-scoped dispatch lookup')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
+      ).toContain('source revision, and dispatched ref all match exactly')
       expect(schemas.TestSuiteDispatchAuditPage.properties.page.$ref).toBe(
         '#/components/schemas/HistoryCursorPage'
       )

@@ -171,6 +171,86 @@ describe('test-suite dispatch audit', () => {
     })).toEqual([oldest])
   })
 
+  it('links an accepted dispatch only to its exact retained execution outcome', async () => {
+    const store = new MemoryCatalogStore()
+    const accepted = dispatch({
+      status: 'accepted',
+      ref: `fuzequality-revision-${'a'.repeat(40)}`,
+      completedAt: '2026-10-22T20:00:01.000Z',
+    })
+    await store.saveTestSuiteDispatch(accepted)
+    await store.saveTestExecution({
+      id: 'execution-result', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
+      provider: 'github-actions', externalRunId: 'provider-run-42', attempt: 2,
+      revision: accepted.sourceRevision, branch: accepted.ref, headRepository: 'acme/app',
+      kind: 'load', status: 'failed', name: 'Load test',
+      workflowPath: `${accepted.workflowPath}@refs/tags/${accepted.ref}`,
+      sourceUrl: 'https://github.com/acme/app/actions/runs/42',
+      startedAt: '2026-10-22T20:01:00.000Z', completedAt: '2026-10-22T20:02:00.000Z',
+      policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+    })
+    await store.saveTestExecution({
+      id: 'wrong-revision', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
+      provider: 'github-actions', externalRunId: 'provider-run-99', attempt: 1,
+      revision: 'b'.repeat(40), branch: accepted.ref, kind: 'load', status: 'passed',
+      name: 'Unrelated load test', workflowPath: accepted.workflowPath,
+      policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+    })
+    await store.saveTestExecution({
+      id: 'external-lookalike', repositoryId: accepted.repositoryId, tenantId: accepted.tenantId,
+      provider: 'external', externalRunId: 'external-run', attempt: 1,
+      revision: accepted.sourceRevision, branch: accepted.ref, kind: 'load', status: 'passed',
+      name: 'External lookalike', workflowPath: accepted.workflowPath,
+      completedAt: '2026-10-22T20:03:00.000Z',
+      policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [],
+    })
+
+    await expect(store.testSuiteDispatchHistory(
+      accepted.repositoryId, accepted.tenantId, accepted.artifactLogicalId,
+    )).resolves.toEqual([expect.objectContaining({
+      id: accepted.id,
+      executionResult: {
+        id: 'execution-result', provider: 'github-actions', externalRunId: 'provider-run-42',
+        attempt: 2, status: 'failed', sourceUrl: 'https://github.com/acme/app/actions/runs/42',
+        startedAt: '2026-10-22T20:01:00.000Z', completedAt: '2026-10-22T20:02:00.000Z',
+      },
+    })])
+  })
+
+  it('joins exact dispatch outcomes in the PostgreSQL history query', async () => {
+    const accepted = dispatch({ status: 'accepted' })
+    const query = vi.fn().mockResolvedValue({ rows: [{
+      id: accepted.id, repository_id: accepted.repositoryId, tenant_id: accepted.tenantId,
+      artifact_id: accepted.artifactId, artifact_logical_id: accepted.artifactLogicalId,
+      artifact_kind: accepted.artifactKind, workflow_path: accepted.workflowPath,
+      source_ref: accepted.ref, source_revision: accepted.sourceRevision,
+      requested_by: accepted.requestedBy, input_names: accepted.inputNames, status: accepted.status,
+      error: null, requested_at: new Date(accepted.requestedAt), completed_at: null,
+      result_id: 'execution-result', result_provider: 'github-actions',
+      result_external_run_id: 'provider-run-42', result_attempt: 1, result_status: 'passed',
+      result_source_url: 'https://github.com/acme/app/actions/runs/42',
+      result_started_at: new Date('2026-10-22T20:01:00.000Z'),
+      result_completed_at: new Date('2026-10-22T20:02:00.000Z'),
+    }] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+
+    const [result] = await store.testSuiteDispatchHistory(
+      accepted.repositoryId, accepted.tenantId, accepted.artifactLogicalId,
+    )
+    expect(result.executionResult).toMatchObject({
+      id: 'execution-result', externalRunId: 'provider-run-42', status: 'passed',
+    })
+    const [sql, parameters] = query.mock.calls[0]
+    expect(String(sql)).toContain('LEFT JOIN LATERAL')
+    expect(String(sql)).toContain("dispatch.status='accepted'")
+    expect(String(sql)).toContain('candidate.branch=dispatch.source_ref')
+    expect(String(sql)).toContain("candidate.provider='github-actions'")
+    expect(String(sql)).toContain('lower(candidate.revision)=lower(dispatch.source_revision)')
+    expect(String(sql)).toContain("split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path")
+    expect(parameters).toEqual([accepted.repositoryId, accepted.tenantId, accepted.artifactLogicalId, 50])
+  })
+
   it('resolves stable and legacy suite references without crossing tenant boundaries', async () => {
     const store = new MemoryCatalogStore()
     const receipt = dispatch({ artifactId: 'suite:load:revision-1' })

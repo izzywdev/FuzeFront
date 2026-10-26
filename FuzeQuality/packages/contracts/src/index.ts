@@ -818,6 +818,17 @@ export const testSuiteDispatchStatusSchema = z.enum([
   'failed',
 ])
 
+export const testSuiteDispatchExecutionResultSchema = z.object({
+  id: z.string().trim().min(1).max(500),
+  provider: z.enum(['github-actions', 'external']),
+  externalRunId: z.string().trim().min(1).max(500),
+  attempt: z.number().int().positive(),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']),
+  sourceUrl: httpsEvidenceUrlSchema.optional(),
+  startedAt: z.string().datetime().optional(),
+  completedAt: z.string().datetime().optional(),
+}).strict()
+
 export const testSuiteDispatchSchema = z.object({
   id: z.string().uuid(),
   repositoryId: z.string().uuid(),
@@ -839,6 +850,7 @@ export const testSuiteDispatchSchema = z.object({
   error: z.string().trim().min(1).max(2000).optional(),
   requestedAt: z.string().datetime(),
   completedAt: z.string().datetime().optional(),
+  executionResult: testSuiteDispatchExecutionResultSchema.optional(),
 }).strict()
 
 export type TestSuiteDispatch = z.infer<typeof testSuiteDispatchSchema>

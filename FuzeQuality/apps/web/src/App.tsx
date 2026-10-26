@@ -3089,6 +3089,16 @@ function TestSuiteDispatchHistory({
                     : ' · no workflow inputs'}
                   {dispatch.error ? ` · ${dispatch.error}` : ''}
                 </p>
+                {dispatch.executionResult ? (
+                  <p className="performance-inventory-only">
+                    Observed execution · {dispatch.executionResult.status} · attempt {dispatch.executionResult.attempt}
+                    {dispatch.executionResult.sourceUrl ? (
+                      <> · <a href={dispatch.executionResult.sourceUrl} target="_blank" rel="noreferrer">Open CI run</a></>
+                    ) : null}
+                  </p>
+                ) : dispatch.status === 'accepted' ? (
+                  <p className="performance-inventory-only">Awaiting an execution for this exact revision and ref.</p>
+                ) : null}
               </li>
             ))}
           </ol>

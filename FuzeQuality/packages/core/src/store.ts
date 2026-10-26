@@ -27,6 +27,7 @@ import type {
   QualityMembership,
 } from '@fuzequality/contracts'
 import { normalizeWorkflowPath, TOPICS } from '@fuzequality/contracts'
+import { safeExecutionEvidenceUrl } from '@fuzequality/contracts/workflow-execution'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
@@ -178,6 +179,46 @@ function matchesCurrentOrAcceptedDispatch(
     dispatch.sourceRevision.toLowerCase() === execution.revision.toLowerCase() &&
     normalizeWorkflowPath(dispatch.workflowPath) === normalizeWorkflowPath(execution.workflowPath)
   )
+}
+
+const executionKindForDispatch: Record<TestSuiteDispatch['artifactKind'], TestExecution['kind']> = {
+  'integration-test': 'integration',
+  'post-production-test': 'post-production',
+  'load-test': 'load',
+  'stress-test': 'stress',
+}
+
+/** Links only an accepted receipt to the newest exact revision/ref/workflow execution. */
+export function withDispatchExecutionResult(
+  dispatch: TestSuiteDispatch,
+  executions: TestExecution[],
+): TestSuiteDispatch {
+  if (dispatch.status !== 'accepted') return structuredClone(dispatch)
+  const execution = executions
+    .filter(item =>
+      item.repositoryId === dispatch.repositoryId &&
+      item.tenantId === dispatch.tenantId &&
+      item.provider === 'github-actions' &&
+      item.kind === executionKindForDispatch[dispatch.artifactKind] &&
+      item.branch === dispatch.ref &&
+      item.revision.toLowerCase() === dispatch.sourceRevision.toLowerCase() &&
+      normalizeWorkflowPath(item.workflowPath) === normalizeWorkflowPath(dispatch.workflowPath)
+    )
+    .sort((left, right) => latestTestExecutionAtMillis(right) - latestTestExecutionAtMillis(left) || right.id.localeCompare(left.id))[0]
+  if (!execution) return structuredClone(dispatch)
+  return {
+    ...structuredClone(dispatch),
+    executionResult: {
+      id: execution.id,
+      provider: execution.provider,
+      externalRunId: execution.externalRunId,
+      attempt: execution.attempt,
+      status: execution.status,
+      ...(safeExecutionEvidenceUrl(execution.sourceUrl) ? { sourceUrl: execution.sourceUrl } : {}),
+      ...(execution.startedAt ? { startedAt: execution.startedAt } : {}),
+      ...(execution.completedAt ? { completedAt: execution.completedAt } : {}),
+    },
+  }
 }
 export type IdentityLifecycleProjection =
   | { type: 'organization.upsert'; tenant: QualityTenant }
@@ -794,7 +835,7 @@ export class MemoryCatalogStore implements CatalogStore {
       .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
       .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
       .slice(0, limit)
-      .map(item => structuredClone(item))
+      .map(item => withDispatchExecutionResult(item, this.executions))
   }
 
   async testSuiteDispatchLogicalId(
@@ -2386,18 +2427,42 @@ export class PostgresCatalogStore implements CatalogStore {
     query: TestSuiteDispatchHistoryQuery = {},
   ): Promise<TestSuiteDispatch[]> {
     const values: unknown[] = [repositoryId, tenantId, artifactLogicalId]
-    const clauses = ['repository_id=$1', 'tenant_id=$2', 'artifact_logical_id=$3']
+    const clauses = ['dispatch.repository_id=$1', 'dispatch.tenant_id=$2', 'dispatch.artifact_logical_id=$3']
     if (query.after) {
       values.push(query.after.createdAt, query.after.id)
-      clauses.push(`(requested_at,id) < ($${values.length - 1}::timestamptz,$${values.length}::uuid)`)
+      clauses.push(`(dispatch.requested_at,dispatch.id) < ($${values.length - 1}::timestamptz,$${values.length}::uuid)`)
     }
     values.push(Math.min(Math.max(query.limit ?? 50, 1), 101))
     const result = await this.pool.query(
-      `SELECT id,repository_id,tenant_id,artifact_id,artifact_logical_id,artifact_kind,workflow_path,source_ref,
-         source_revision,requested_by,input_names,status,error,requested_at,completed_at
-       FROM fuzequality.test_suite_dispatches
+      `SELECT dispatch.id,dispatch.repository_id,dispatch.tenant_id,dispatch.artifact_id,dispatch.artifact_logical_id,
+         dispatch.artifact_kind,dispatch.workflow_path,dispatch.source_ref,dispatch.source_revision,dispatch.requested_by,
+         dispatch.input_names,dispatch.status,dispatch.error,dispatch.requested_at,dispatch.completed_at,
+         execution.id AS result_id,execution.provider AS result_provider,execution.external_run_id AS result_external_run_id,
+         execution.attempt AS result_attempt,execution.status AS result_status,execution.source_url AS result_source_url,
+         execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
+       FROM fuzequality.test_suite_dispatches AS dispatch
+       LEFT JOIN LATERAL (
+         SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
+                candidate.source_url,candidate.started_at,candidate.completed_at
+         FROM fuzequality.test_executions AS candidate
+         WHERE dispatch.status='accepted'
+           AND candidate.repository_id=dispatch.repository_id
+           AND candidate.tenant_id=dispatch.tenant_id
+           AND candidate.provider='github-actions'
+           AND candidate.kind=CASE dispatch.artifact_kind
+             WHEN 'integration-test' THEN 'integration'
+             WHEN 'post-production-test' THEN 'post-production'
+             WHEN 'load-test' THEN 'load'
+             WHEN 'stress-test' THEN 'stress'
+           END
+           AND candidate.branch=dispatch.source_ref
+           AND lower(candidate.revision)=lower(dispatch.source_revision)
+           AND split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path
+         ORDER BY COALESCE(candidate.completed_at,candidate.started_at,candidate.created_at) DESC,candidate.id DESC
+         LIMIT 1
+       ) AS execution ON true
        WHERE ${clauses.join(' AND ')}
-       ORDER BY requested_at DESC,id DESC
+       ORDER BY dispatch.requested_at DESC,dispatch.id DESC
        LIMIT $${values.length}`,
       values,
     )
@@ -2417,6 +2482,18 @@ export class PostgresCatalogStore implements CatalogStore {
       error: row.error ?? undefined,
       requestedAt: row.requested_at.toISOString(),
       completedAt: row.completed_at?.toISOString(),
+      ...(row.result_id ? {
+        executionResult: {
+          id: row.result_id,
+          provider: row.result_provider,
+          externalRunId: row.result_external_run_id,
+          attempt: row.result_attempt,
+          status: row.result_status,
+          ...(safeExecutionEvidenceUrl(row.result_source_url) ? { sourceUrl: row.result_source_url } : {}),
+          ...(row.result_started_at ? { startedAt: row.result_started_at.toISOString() } : {}),
+          ...(row.result_completed_at ? { completedAt: row.result_completed_at.toISOString() } : {}),
+        },
+      } : {}),
     }))
   }
 

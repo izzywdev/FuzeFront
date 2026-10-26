@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.14
+  version: 0.84.15
   license:
     name: UNLICENSED
 servers:
@@ -1384,7 +1384,8 @@ paths:
         identity in its latest receipt after a later repository scan removes the workflow. Stable
         logical identities avoid revision-sized catalog scans; legacy observation identities are
         resolved through a bounded tenant-scoped dispatch lookup. Input values are never persisted
-        or returned.
+        or returned. Accepted receipts include the newest retained execution only when its tenant,
+        repository, suite kind, workflow, source revision, and dispatched ref all match exactly.
       tags: [executions]
       security: [{ platformBearer: [] }]
       parameters:
@@ -2465,6 +2466,20 @@ components:
         status: { type: string, enum: [dispatching, accepted, failed] }
         error: { type: string, minLength: 1, maxLength: 2000 }
         requestedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        executionResult: { $ref: '#/components/schemas/TestSuiteDispatchExecutionResult' }
+    TestSuiteDispatchExecutionResult:
+      type: object
+      additionalProperties: false
+      required: [id, provider, externalRunId, attempt, status]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 500 }
+        provider: { type: string, enum: [github-actions, external] }
+        externalRunId: { type: string, minLength: 1, maxLength: 500 }
+        attempt: { type: integer, minimum: 1 }
+        status: { type: string, enum: [passed, failed, cancelled, running] }
+        sourceUrl: { type: string, format: uri, pattern: '^https://' }
+        startedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
     TestSuiteDispatchAuditPage:
       type: object

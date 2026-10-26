@@ -2506,12 +2506,25 @@ describe('RepositoryIntelligence flow inventory', () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
-    const latest = acceptedDispatch(loadArtifact)
+    const latest = {
+      ...acceptedDispatch(loadArtifact),
+      executionResult: {
+        id: 'execution-result',
+        provider: 'github-actions' as const,
+        externalRunId: 'provider-run-42',
+        attempt: 2,
+        status: 'failed' as const,
+        sourceUrl: 'https://github.com/acme/app/actions/runs/42',
+        startedAt: '2026-10-22T20:01:00.000Z',
+        completedAt: '2026-10-22T20:02:00.000Z',
+      },
+    }
     const failed = {
       ...latest,
       id: '55555555-5555-4555-8555-555555555555',
       status: 'failed' as const,
       error: 'Provider unavailable',
+      executionResult: undefined,
       requestedAt: '2026-10-22T19:00:00.000Z',
       completedAt: '2026-10-22T19:00:01.000Z',
     }
@@ -2519,6 +2532,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       ...latest,
       id: '66666666-6666-4666-8666-666666666666',
       requestedBy: 'older-reviewer',
+      executionResult: undefined,
       requestedAt: '2026-10-22T18:00:00.000Z',
       completedAt: '2026-10-22T18:00:01.000Z',
     }
@@ -2538,6 +2552,11 @@ describe('RepositoryIntelligence flow inventory', () => {
     fireEvent.click(await screen.findByText('Controlled dispatch history'))
     await waitFor(() => expect(historyRequest).toHaveBeenCalled())
     expect(await screen.findByText(/Provider unavailable/)).toBeVisible()
+    expect(screen.getByText(/Observed execution · failed · attempt 2/)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open CI run' })).toHaveAttribute(
+      'href',
+      'https://github.com/acme/app/actions/runs/42',
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Load more controlled dispatches' }))
     expect(await screen.findByText(/Requested by older-reviewer/)).toBeVisible()
     expect(historyRequest).toHaveBeenNthCalledWith(1, repository.id, loadArtifact.logicalId ?? loadArtifact.id, undefined)
