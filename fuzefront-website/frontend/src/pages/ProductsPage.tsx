@@ -6,7 +6,7 @@ import {
   Layers, Shield, Server, ClipboardList, Palette, Bot,
   Key, MessageSquare, CheckCircle2, Rocket, ArrowRight, ChevronRight
 } from 'lucide-react'
-import { ResponsiveGrid, Wrap, Container } from '@fuzefront/design-system'
+import { ResponsiveGrid, Wrap, Container, Text, Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -137,7 +137,7 @@ function ProductCard({ product }: { product: Product }) {
         </div>
         <p className="text-xs font-semibold text-primary-700 uppercase tracking-wider mb-1">{product.tagline}</p>
         <h3 className="text-xl font-bold text-gray-900 mb-3">{product.name}</h3>
-        <p className="text-gray-600 text-sm leading-relaxed mb-6">{product.description}</p>
+        <Text as="p" tone="secondary" size="sm" leading="relaxed" spacing="lg">{product.description}</Text>
 
         <ul className="space-y-2 mb-6">
           {product.features.map((feature) => (
@@ -188,12 +188,9 @@ export const ProductsPage: React.FC = () => {
               >
                 Start free <ArrowRight size={16} />
               </a>
-              <Link
-                to="/pricing"
-                className="btn-ghost flex items-center justify-center gap-2"
-              >
+              <Button as={Link} to="/pricing" variant="ghost-inverse">
                 View pricing
-              </Link>
+              </Button>
             </Wrap>
           </motion.div>
         </Container>
@@ -216,16 +213,16 @@ export const ProductsPage: React.FC = () => {
           <h2 className="text-3xl font-heading font-bold text-gray-900 mb-4">
             Not sure where to start?
           </h2>
-          <p className="text-gray-600 mb-8">
+          <Text tone="secondary" spacing="xl">
             Talk to our team. We'll map your use case to the right products and set you up with a custom trial.
-          </p>
+          </Text>
           <Wrap gap={4} justify="center">
             <Link to="/contact" className="btn-primary">
               Talk to sales
             </Link>
-            <Link to="/pricing" className="btn-secondary">
+            <Button as={Link} to="/pricing" variant="outline">
               Compare plans
-            </Link>
+            </Button>
           </Wrap>
         </div>
       </section>
