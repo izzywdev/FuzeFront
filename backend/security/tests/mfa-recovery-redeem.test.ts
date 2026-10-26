@@ -11,7 +11,13 @@ import crypto from 'crypto'
 import express from 'express'
 import jwt from 'jsonwebtoken'
 import request from 'supertest'
-import securityRouter, { resetMfaVerifyLimiter, __fillMfaVerifyLimiterForTest } from '../src/routes/security'
+import securityRouter, {
+  resetMfaVerifyLimiter,
+  __fillMfaVerifyLimiterForTest,
+  __recordSpoofedFailureForTest,
+  __mfaVerifyLimiterSizeForTest,
+  __mfaVerifyLimiterHasForTest,
+} from '../src/routes/security'
 import { setIdentityProvider } from '../src/providers/factory'
 import {
   AuthentikIdentityProvider,
@@ -21,6 +27,7 @@ import {
   generateRecoveryCode,
 } from '../src/providers/authentik/AuthentikIdentityProvider'
 import { RecoveryCodeInvalidError, ChallengeNotActiveError } from '../src/providers/errors'
+import { resolveTrustProxyHops, DEFAULT_TRUST_PROXY_HOPS } from '../src/config/trustProxy'
 import { MockIdentityProvider } from './security-api/mockIdentityProvider'
 import type { IdentityProvider, BrokeredSession } from '../src/providers/IdentityProvider'
 
@@ -483,15 +490,52 @@ describe('route: POST /mfa/verify', () => {
     expect((await post(app, { challengeId: 'okc', recoveryCode: 'ok' })).status).toBe(200)
   })
 
-  it('at map capacity a previously blocked challenge stays blocked (no mass reset)', async () => {
+  it('at capacity a previously blocked challenge stays blocked, and unseen keys are still ADMITTED (no global lockout)', async () => {
     const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new RecoveryCodeInvalidError()) })
     const app = makeApp(p)
     for (let i = 0; i < 5; i++) expect((await post(app, { challengeId: 'locked', recoveryCode: 'bad' })).status).toBe(401)
     expect((await post(app, { challengeId: 'locked', recoveryCode: 'bad' })).status).toBe(429)
-    __fillMfaVerifyLimiterForTest()
-    // new keys fail closed; the locked challenge is still blocked, not cleared
+    __fillMfaVerifyLimiterForTest() // fills with one-off (count 1) entries
     expect((await post(app, { challengeId: 'locked', recoveryCode: 'bad' })).status).toBe(429)
-    expect((await post(app, { challengeId: 'brand-new', recoveryCode: 'bad' })).status).toBe(429)
+    expect((await post(app, { challengeId: 'brand-new', recoveryCode: 'bad' })).status).toBe(401)
+    // a fresh legitimate login is NOT rejected
+    const ok = await post(makeApp(routeProvider()), { challengeId: 'fresh', recoveryCode: 'good' })
+    expect(ok.status).toBe(200)
+  })
+
+  it('spoofed one-off failures fill the map without 429-ing a fresh legitimate login; map stays bounded', async () => {
+    const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new ChallengeNotActiveError()) })
+    setIdentityProvider(p)
+    const app = express()
+    app.use(express.json())
+    app.set('trust proxy', true) // test only: lets supertest set the client address per request
+    app.use('/api/v1/security', securityRouter)
+    const fresh = 12_500
+    for (let i = 0; i < fresh; i++) {
+      // direct limiter pressure without HTTP: mimic one failure from a distinct address
+      __recordSpoofedFailureForTest(`10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`)
+    }
+    expect(__mfaVerifyLimiterSizeForTest()).toBeLessThanOrEqual(10_000)
+    setIdentityProvider(routeProvider())
+    const ok = await request(app).post('/api/v1/security/mfa/verify').send({ challengeId: 'fresh', recoveryCode: 'good' })
+    expect(ok.status).toBe(200)
+  })
+
+  it('if EVERY entry is blocked, a new key is admitted untracked and no blocked entry is evicted', () => {
+    __fillMfaVerifyLimiterForTest(99) // all filler entries over any limit
+    __recordSpoofedFailureForTest('2.2.2.2')
+    expect(__mfaVerifyLimiterSizeForTest()).toBe(10_000)
+    expect(__mfaVerifyLimiterHasForTest('ip:2.2.2.2')).toBe(false)
+    expect(__mfaVerifyLimiterHasForTest('filler:0')).toBe(true)
+  })
+
+  it('LRU: at capacity the least-recently-touched unblocked entry is evicted, blocked ones never are', () => {
+    __fillMfaVerifyLimiterForTest()
+    __recordSpoofedFailureForTest('1.1.1.1') // evicts the oldest filler, admitted
+    expect(__mfaVerifyLimiterSizeForTest()).toBe(10_000)
+    expect(__mfaVerifyLimiterHasForTest('ip:1.1.1.1')).toBe(true)
+    expect(__mfaVerifyLimiterHasForTest('filler:0')).toBe(false)
+    expect(__mfaVerifyLimiterHasForTest('filler:1')).toBe(true)
   })
 
   it('unknown/expired challenge ids count against the IP only, never create per-challenge entries', async () => {
@@ -700,5 +744,35 @@ describe('route: provider-neutral errors (Mock provider, no Authentik import)', 
     for (let i = 0; i < 5; i++) expect((await post(app, { challengeId: 'ghost', recoveryCode: 'x' })).status).toBe(401)
     // 'ghost' never hit a per-challenge cap of 5 (it would be 429 on the 6th if it had)
     expect((await post(app, { challengeId: 'ghost', recoveryCode: 'x' })).status).toBe(401)
+  })
+})
+
+describe('trusted proxy hops config', () => {
+  it('defaults explicitly to 1 and accepts an override', () => {
+    expect(DEFAULT_TRUST_PROXY_HOPS).toBe(1)
+    expect(resolveTrustProxyHops(undefined)).toBe(1)
+    expect(resolveTrustProxyHops('')).toBe(1)
+    expect(resolveTrustProxyHops('2')).toBe(2)
+    expect(resolveTrustProxyHops('0')).toBe(0)
+  })
+  it('rejects malformed values instead of silently falling back', () => {
+    for (const bad of ['true', '-1', '1.5', 'a', '99']) expect(() => resolveTrustProxyHops(bad)).toThrow(/TRUST_PROXY_HOPS/)
+  })
+  it('with 1 hop, a client-supplied left-hand X-Forwarded-For entry cannot choose the limiter key', async () => {
+    const p = routeProvider({ verifyMfaRecovery: jest.fn().mockRejectedValue(new RecoveryCodeInvalidError()) })
+    setIdentityProvider(p)
+    const app = express()
+    app.use(express.json())
+    app.set('trust proxy', 1)
+    app.use('/api/v1/security', securityRouter)
+    // attacker rotates the spoofed (left) entry; the ingress-appended (right) entry is constant
+    for (let i = 0; i < 20; i++) {
+      const r = await request(app).post('/api/v1/security/mfa/verify')
+        .set('X-Forwarded-For', `6.6.6.${i}, 203.0.113.9`).send({ challengeId: `c${i}`, recoveryCode: 'bad' })
+      expect(r.status).toBe(401)
+    }
+    const blocked = await request(app).post('/api/v1/security/mfa/verify')
+      .set('X-Forwarded-For', '7.7.7.7, 203.0.113.9').send({ challengeId: 'cz', recoveryCode: 'bad' })
+    expect(blocked.status).toBe(429) // same real client => same bucket
   })
 })

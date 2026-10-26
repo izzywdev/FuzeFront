@@ -295,18 +295,6 @@ function reserveMfaVerifyAttempt(req: Request): { keys: string[] } | { retryAfte
     }
   }
   if (blocked) return { retryAfterSec: Math.max(1, Math.ceil(retryMs / 1000)) }
-  // Capacity: evict only EXPIRED entries; if still full, existing counters stay
-  // authoritative and brand-new keys fail closed (429) instead of resetting them.
-  if (mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS) {
-    let soonest = Infinity
-    for (const [k, e] of mfaVerifyFails) {
-      if (e.resetAt <= now) mfaVerifyFails.delete(k)
-      else soonest = Math.min(soonest, e.resetAt)
-    }
-    if (mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS && keys.some(({ key }) => !mfaVerifyFails.has(key))) {
-      return { retryAfterSec: Math.max(1, Math.ceil((soonest - now) / 1000)) }
-    }
-  }
   for (const { key } of keys) mfaVerifyPending.set(key, (mfaVerifyPending.get(key) ?? 0) + 1)
   return { keys: keys.map(k => k.key) }
 }
@@ -319,26 +307,67 @@ function releaseMfaVerifyAttempt(keys: string[]): void {
   }
 }
 
+function capFor(key: string): number {
+  return key.startsWith('ch:') ? MFA_VERIFY_MAX_FAILS_PER_CHALLENGE : MFA_VERIFY_MAX_FAILS_PER_IP
+}
+
+/**
+ * Make room for ONE new key. Order: expired entries first, then the
+ * least-recently-touched entries that are NOT over their limit (Map insertion
+ * order is the LRU order: touches delete+re-set). Blocked counters are never
+ * evicted. Returns false when only blocked entries remain: the caller then
+ * admits the new key UNTRACKED rather than rejecting it, so a flood of one-off
+ * keys (e.g. spoofed addresses) can never lock legitimate users out globally.
+ */
+function makeRoomForMfaVerifyKey(now: number): boolean {
+  if (mfaVerifyFails.size < MFA_VERIFY_MAX_KEYS) return true
+  for (const [k, e] of mfaVerifyFails) if (e.resetAt <= now) mfaVerifyFails.delete(k)
+  if (mfaVerifyFails.size < MFA_VERIFY_MAX_KEYS) return true
+  for (const [k, e] of mfaVerifyFails) {
+    if (e.count < capFor(k) && !mfaVerifyPending.has(k)) {
+      mfaVerifyFails.delete(k)
+      return true
+    }
+  }
+  return false
+}
+
 function recordMfaVerifyFailure(req: Request, opts: { skipChallenge?: boolean } = {}): void {
   const now = Date.now()
   for (const { key } of mfaFailKeys(req)) {
     if (opts.skipChallenge && key.startsWith('ch:')) continue
     const e = mfaVerifyFails.get(key)
-    if (!e || e.resetAt <= now) {
-      // Never grow past the bound and never drop unexpired counters.
-      if (!e && mfaVerifyFails.size >= MFA_VERIFY_MAX_KEYS) continue
+    if (e && e.resetAt > now) {
+      // Touch: move to the most-recently-used end.
+      mfaVerifyFails.delete(key)
+      e.count++
+      mfaVerifyFails.set(key, e)
+    } else {
+      mfaVerifyFails.delete(key)
+      if (!makeRoomForMfaVerifyKey(now)) continue // untracked, bounded
       mfaVerifyFails.set(key, { count: 1, resetAt: now + MFA_VERIFY_WINDOW_MS })
-    } else e.count++
+    }
   }
 }
 
 /** Test seam: clear limiter state. */
 /** Test seam: shrink-free fill of the failure map to its bound. */
-export function __fillMfaVerifyLimiterForTest(): void {
+export function __fillMfaVerifyLimiterForTest(count = 1): void {
   const resetAt = Date.now() + MFA_VERIFY_WINDOW_MS
   for (let i = 0; mfaVerifyFails.size < MFA_VERIFY_MAX_KEYS; i++) {
-    mfaVerifyFails.set(`filler:${i}`, { count: 1, resetAt })
+    mfaVerifyFails.set(`filler:${i}`, { count, resetAt })
   }
+}
+
+/** Test seams for the limiter's bounded-memory behaviour. */
+export function __recordSpoofedFailureForTest(ip: string): void {
+  recordMfaVerifyFailure({ ip, body: {} } as unknown as Request, { skipChallenge: true })
+}
+export function __mfaVerifyLimiterSizeForTest(): number {
+  return mfaVerifyFails.size
+}
+export function __mfaVerifyLimiterHasForTest(key: string): boolean {
+  return mfaVerifyFails.has(key)
 }
 
 export function resetMfaVerifyLimiter(): void {
