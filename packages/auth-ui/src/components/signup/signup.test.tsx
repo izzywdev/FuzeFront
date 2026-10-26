@@ -650,12 +650,14 @@ describe('SignUpFlow — a11y + frame-fidelity polish (QA follow-ups)', () => {
 
   it('controls use the frame sizing tokens (--text-md text, 44px inputs, 46px submit)', () => {
     setup()
+    const fullName = document.querySelector<HTMLElement>('[data-field="full-name"]')
+    expect(fullName).not.toBeNull()
     for (const el of [
-      document.querySelector('[data-field="full-name"]'),
+      fullName!,
       screen.getByLabelText('Work email'),
       screen.getByLabelText('Password'),
       screen.getByLabelText('Confirm password'),
-    ] as HTMLElement[]) {
+    ]) {
       expect(el.style.fontSize).toBe('var(--text-md)')
       expect(el.style.minHeight).toBe('var(--touch-target)')
     }
