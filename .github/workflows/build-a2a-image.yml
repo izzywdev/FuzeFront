@@ -45,11 +45,19 @@ jobs:
       # agent-templates to run card_generator.py — the generator itself is in
       # FuzeAgent because every product image uses it, not just FuzeFront.
       - name: Sparse-clone FuzeAgent card_generator
+        # Pinned to a known-good master SHA — this job holds packages:write, so
+        # executing code from an unpinned HEAD is a supply-chain injection vector.
+        # Bump the SHA when a generator or contract update from FuzeAgent is needed.
         run: |
-          git clone --depth 1 --filter=blob:none --sparse \
-            https://github.com/izzywdev/FuzeAgent.git /tmp/fuzeagent-gen
-          cd /tmp/fuzeagent-gen
-          git sparse-checkout set agent-templates/a2a agent-templates/contracts/a2a/v1
+          mkdir /tmp/fuzeagent-gen
+          git -C /tmp/fuzeagent-gen init
+          git -C /tmp/fuzeagent-gen remote add origin https://github.com/izzywdev/FuzeAgent.git
+          git -C /tmp/fuzeagent-gen sparse-checkout init
+          git -C /tmp/fuzeagent-gen sparse-checkout set \
+            agent-templates/a2a agent-templates/contracts/a2a/v1
+          git -C /tmp/fuzeagent-gen fetch --depth 1 origin \
+            3f342219d448db3dd78d5c3a56d1cba6c2f4fc35
+          git -C /tmp/fuzeagent-gen checkout FETCH_HEAD
 
       - name: Install card-generator dependencies
         run: pip install pydantic jsonschema
