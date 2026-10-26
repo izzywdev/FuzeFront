@@ -276,3 +276,44 @@ def test_seed_requested_rejects_malformed_list_entries():
 def test_seed_requested_org_scope_forbids_user_id():
     with pytest.raises(SchemaValidationError):
         schema_for_topic("selection-lists.seed.requested")(_seed_requested(userId="usr_x"))
+
+
+def test_seed_requested_preserves_translations():
+    # Valid list/item translations must survive validation (not be silently
+    # dropped from the returned payload), mirroring slSeedListSpecV1/
+    # slSeedItemSpecV1 which retain them.
+    lists = [
+        {
+            "key": "countries",
+            "sourceLocale": "en",
+            "name": "Countries",
+            "translations": [{"locale": "fr", "name": "Pays", "description": "La liste"}],
+            "items": [
+                {
+                    "code": "US",
+                    "label": "United States",
+                    "translations": [{"locale": "fr", "label": "États-Unis"}],
+                }
+            ],
+        }
+    ]
+    out = schema_for_topic("selection-lists.seed.requested")(_seed_requested(lists=lists))
+    got = out["lists"][0]
+    assert got["translations"] == [{"locale": "fr", "name": "Pays", "description": "La liste"}]
+    assert got["items"][0]["translations"] == [{"locale": "fr", "label": "États-Unis"}]
+
+
+def test_seed_requested_rejects_bad_translation_locale():
+    bad = _seed_requested(
+        lists=[
+            {
+                "key": "countries",
+                "sourceLocale": "en",
+                "name": "Countries",
+                "translations": [{"locale": "xx", "name": "Nope"}],
+                "items": [],
+            }
+        ]
+    )
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(bad)

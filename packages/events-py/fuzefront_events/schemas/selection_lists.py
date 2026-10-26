@@ -295,12 +295,37 @@ def _seed_pack(value: Any) -> dict:
 _SEED_TRIGGERS = ("org-created", "app-installed", "app-upgraded", "backfill", "manual")
 
 
+# Non-source-locale translations carried on a seed list/item. Mirror of
+# slSeedListTranslationV1 / slSeedItemTranslationV1: validated AND preserved
+# (dropping them would lose localized content a caller passed in). The deep
+# cross-locale refinements (no source-locale entry, no duplicate locale) stay
+# deferred to selection-list-service, as noted in the module docstring.
+_MAX_SEED_TRANSLATIONS = len(LOCALES) - 1
+
+
+def _seed_list_translation(value: Any) -> dict:
+    tv = _V("seed.list.translation", value)
+    tv.enum("locale", LOCALES)
+    tv.string("name", min_len=1, max_len=NAME_MAX)
+    tv.string("description", required=False, max_len=DESCRIPTION_MAX)
+    return tv.done()
+
+
+def _seed_item_translation(value: Any) -> dict:
+    tv = _V("seed.list.item.translation", value)
+    tv.enum("locale", LOCALES)
+    tv.string("label", min_len=1, max_len=NAME_MAX)
+    tv.string("description", required=False, max_len=DESCRIPTION_MAX)
+    return tv.done()
+
+
 def _seed_item_spec(value: Any) -> dict:
     """Shape of one item to seed (mirror of slSeedItemSpecV1's required fields)."""
     sv = _V("seed.list.item", value)
     sv.string("code", pattern=ITEM_CODE_RE, min_len=1, max_len=63)
     sv.string("label", min_len=1, max_len=NAME_MAX)
     sv.string("description", required=False, max_len=DESCRIPTION_MAX)
+    sv.array("translations", _seed_item_translation, required=False, max_len=_MAX_SEED_TRANSLATIONS)
     return sv.done()
 
 
@@ -318,6 +343,7 @@ def _seed_list_spec(value: Any) -> dict:
     sv.string("name", min_len=1, max_len=NAME_MAX)
     sv.string("description", required=False, max_len=DESCRIPTION_MAX)
     sv.enum("visibility", VISIBILITIES, required=False)
+    sv.array("translations", _seed_list_translation, required=False, max_len=_MAX_SEED_TRANSLATIONS)
     sv.array("items", _seed_item_spec, max_len=MAX_ITEMS_PER_LIST)
     return sv.done()
 
