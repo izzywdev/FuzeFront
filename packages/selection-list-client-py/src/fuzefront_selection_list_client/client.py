@@ -2,7 +2,7 @@
 Typed client for the FuzeFront selection-list-service.
 
 One method per endpoint of ``services/selection-list-service/openapi.yaml``
-v4.1.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
+v4.2.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
 
 Usage::
 
@@ -119,7 +119,16 @@ def _parse_selection_list(raw: dict) -> SelectionList:
         forked_from=_parse_fork(raw.get("forked_from")),
         # Optional on the wire at 4.1.0: absent is "unknown" (None), never False.
         editable=None if raw.get("editable") is None else bool(raw["editable"]),
+        # Optional on the wire at 4.2.0: absent is "unknown" (None).
+        revision=_parse_revision(raw.get("revision")),
     )
+
+
+def _parse_revision(raw: object) -> int | None:
+    """``SelectionList.revision`` (4.2.0): an integer >= 1, or ``None`` when absent/unusable."""
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+        return None
+    return raw
 
 
 def _parse_item(raw: dict) -> SelectionListItem:

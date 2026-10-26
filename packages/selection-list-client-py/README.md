@@ -69,9 +69,9 @@ readable by every org — read-only for anyone without an instance role
 fork a common list before changing it.
 
 At contract 4.1.0 `visibility`, `forked_from`, `editable` and
-`origin_item_id` are **optional on the wire**: the service implementation
-ships later behind the default-OFF flag `fuzefront.selection-lists.shared-lists`
-and, until then, omits them. The parser maps absence to the 4.0.0 meaning —
+`origin_item_id` are **optional on the wire**: the service implements them
+behind the default-OFF flag `fuzefront.selection-lists.shared-lists` and omits
+`editable` while it is OFF (a pre-4.1.0 service omits all four). The parser maps absence to the 4.0.0 meaning —
 `visibility` → `PRIVATE`, `forked_from` / `origin_item_id` → `None`, and
 `editable` → `None` (unknown: behave as at 4.0.0 and let each mutation's own
 authorization decide; never read `None` as `False`).
@@ -92,6 +92,26 @@ except SelectionListApiError as exc:
 visibility; the default is unchanged. `resolve_ids` resolves common-list item
 ids everywhere and, inside an org holding an `org`-visible fork, returns the
 fork item's label with `effective_item_id` set.
+
+## Is a fork behind its source? (2.2.0, contract 4.2.0)
+
+`SelectionList.revision` is the per-list counter the events carry as
+`listRevision` (`1` at creation, +1 per committed change event about the list
+or anything inside it, never decreasing). A fork's `forked_from.revision` is the
+source's revision at copy time.
+
+```python
+from fuzefront_selection_list_client import ForkSourceComparison, compare_fork_to_source
+
+source = client.get_list(fork.forked_from.list_id)
+if compare_fork_to_source(fork, source) is ForkSourceComparison.BEHIND:
+    ...  # informational: no merge/sync operation exists
+```
+
+`revision` is optional on the wire at 4.2.0 (the service emits it once its
+implementation ships); the parser maps absence to `None`, which compares as
+`ForkSourceComparison.UNKNOWN` ("comparison unavailable"). The helper never
+looks at `updated_at`.
 
 ## Token provider
 

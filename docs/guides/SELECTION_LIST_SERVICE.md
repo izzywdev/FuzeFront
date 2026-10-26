@@ -6,20 +6,20 @@ How a consuming application stores, renders, and manages reference data
 `@fuzeone/selection-list-client`.
 
 The service contract lives at
-`services/selection-list-service/openapi.yaml` (**v4.1.0**). This guide is a
+`services/selection-list-service/openapi.yaml` (**v4.2.0**). This guide is a
 companion, not a replacement — the spec is the source of truth for any
-discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.1.0** and
-`fuzefront-selection-list-client` (Python) **2.1.0**.
+discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.2.0** and
+`fuzefront-selection-list-client` (Python) **2.2.0**.
 
-> **4.1.0 is a frozen contract ahead of its implementation.** Shared lists
-> (`visibility`), common (`platform`) lists and copy-on-write forks are specified
-> in the spec, the clients and the event schemas, but **the service does not
-> implement them yet** (the implementation wave follows the contract PR; plan:
-> [`docs/planning/selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md)).
-> Until it lands the service still returns 4.0.0 shapes and the new route
-> answers `404`. Everything in
-> [Shared lists, common lists and forks](#shared-lists-common-lists-and-forks-410)
-> below describes the contract, not running code. Kafka events and app
+> **Implementation status.** 4.1.0 — shared lists (`visibility`), common
+> (`platform`) lists and copy-on-write forks — is implemented in the service
+> behind the default-OFF release flag `fuzefront.selection-lists.shared-lists`
+> (plan: [`docs/planning/selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md)).
+> With the flag OFF the service answers as 4.0.0 in behaviour while emitting
+> 4.1.0 shapes, and the fork route answers `404`. **4.2.0 (`SelectionList.revision`)
+> is a frozen contract ahead of its implementation**: until the service wave
+> lands, responses omit `revision` and a client reads that as *unknown*
+> ([Is a fork behind its source?](#is-a-fork-behind-its-source-420)). Kafka events and app
 seeding are covered in [`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md);
 how seeding is enabled safely is in
 [`docs/runbooks/selection-lists-seeding-operations.md`](../runbooks/selection-lists-seeding-operations.md).
@@ -701,13 +701,15 @@ instance-only, the consequence on today's code for everyone but that owner is:
 
 This is a **known gap** on today's code, recorded in the seeding runbook. It is why seeding should
 not be switched on for an org that expects its members to use the seeded lists immediately. The
-**owner decision** is made and specified in contract 4.1.0 (not implemented yet): seeded lists get
+**owner decision** is made and specified in contract 4.1.0 (implemented behind the default-OFF
+flag `fuzefront.selection-lists.shared-lists`; while it is OFF the gap above stands): seeded lists get
 a `visibility` — `org` makes them readable by every member without any grant, and the platform
 defaults become one `platform` common list for every org — see the next section.
 
 ### Shared lists, common lists and forks (4.1.0)
 
-*Contract only — see the status note at the top. Design record:
+*Implemented behind the default-OFF flag `fuzefront.selection-lists.shared-lists` — see the
+status note at the top. Design record:
 [`selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md).*
 
 The requirement: a member who signs up must be able to **pick** from the app's common lists in
@@ -737,8 +739,10 @@ const page = await client.getLists({ include_shared: true })
 
 > **The four new response fields are optional at 4.1.0.** `SelectionList.visibility`,
 > `forked_from`, `editable` and `SelectionListItem.origin_item_id` are **not** in the spec's
-> `required` lists yet, because the running service (implementation behind the default-OFF flag
-> `fuzefront.selection-lists.shared-lists`) still omits them. Read absence as the 4.0.0 state:
+> `required` lists yet: the contract froze before the implementation, and the implementation
+> (behind the default-OFF flag `fuzefront.selection-lists.shared-lists`) still omits `editable`
+> while the flag is OFF (it always emits the other three — `private` / `null` / `null` when OFF).
+> Read absence as the 4.0.0 state:
 > `visibility` absent = `private`, `forked_from` / `origin_item_id` absent = `null`, `editable`
 > absent = **unknown** (no hint — behave as before and let the mutation's own authorization
 > answer; never treat it as `false`). The Python client maps them to `PRIVATE` / `None` / `None` /
@@ -772,6 +776,35 @@ try {
   `origin_item_id`) and names it in `effective_item_id`, so you can rewrite stored values lazily.
 - Events: `selection-lists.list.forked` (with the full source→fork item id map) and
   `selection-lists.visibility.changed` — see [`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md).
+
+#### Is a fork behind its source? (4.2.0)
+
+Every list carries a read-only **`revision`** — the same per-list counter the Kafka events carry
+as `listRevision`: `1` when the list is created, `+1` for every change event the service commits
+about the list or anything inside it (list fields, status, visibility, items, item order,
+translations — whether by a caller, seeding or autofill), never decreasing. Access-grant changes
+do not move it. A fork's `forked_from.revision` is the source's revision **at copy time** and is
+never updated, so one read of the source answers "has the common list changed since we forked?":
+
+```ts
+import { compareForkToSource } from '@fuzeone/selection-list-client'
+
+const source = await client.getList(fork.forked_from!.list_id) // 404 → source gone; status 'archived' → source archived
+switch (compareForkToSource(fork, source)) {
+  case 'behind':     /* source.revision > fork.forked_from.revision — informational, no merge/sync exists */ break
+  case 'up-to-date': /* equal */ break
+  case 'unknown':    /* no revision on the source response yet — show "comparison unavailable" */ break
+}
+```
+
+Python: `compare_fork_to_source(fork, source)` → `ForkSourceComparison.BEHIND` / `UP_TO_DATE` /
+`UNKNOWN`.
+
+- **`revision` is optional at 4.2.0** (the contract freezes before the service emits it).
+  **Absent means unknown** — never infer a revision, or "behind", from `updated_at`.
+- "Behind" means *changed since*, not that any particular item differs: a translation edit or an
+  item reorder on the source counts.
+- It is not a concurrency token: no request accepts it.
 
 ---
 

@@ -41,6 +41,7 @@ from .types import (
     CreateItemRequest,
     CreateListRequest,
     ForkProvenance,
+    ForkSourceComparison,
     ItemTranslationLocaleStatus,
     # Enums
     LifecycleStatus,
@@ -73,6 +74,7 @@ from .types import (
     UpsertItemTranslationRequest,
     UpsertListTranslationRequest,
     author_principal_kind,
+    compare_fork_to_source,
     is_user_author,
 )
 
@@ -93,6 +95,7 @@ __all__ = [
     "CreateItemRequest",
     "CreateListRequest",
     "ForkProvenance",
+    "ForkSourceComparison",
     "ItemTranslationLocaleStatus",
     # Enums
     "LifecycleStatus",
@@ -128,6 +131,7 @@ __all__ = [
     "author_principal_kind",
     "build_seed_request",
     "build_seed_request_envelope",
+    "compare_fork_to_source",
     "is_user_author",
     # Paginator
     "paginate",

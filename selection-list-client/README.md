@@ -2,7 +2,7 @@
 
 Typed client for the FuzeFront **selection-list-service**. Zero runtime dependencies; uses the platform `fetch`.
 
-Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v4.1.0**. The spec wins any disagreement.
+Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v4.2.0**. The spec wins any disagreement.
 
 ```ts
 import { SelectionListClient, isSelectionListApiError } from '@fuzeone/selection-list-client'
@@ -55,12 +55,14 @@ Lists carry `visibility` (`private` / `org` / `platform`), `forked_from` and a
 caller-relative `editable` hint; items carry `origin_item_id`. `org` lists are
 pickable by every member of their org and `platform` lists are common lists
 pickable by every org — read-only without an instance role. The service
-implements this in the wave after the contract (see
+implements this behind the default-OFF flag
+`fuzefront.selection-lists.shared-lists` (see
 `docs/planning/selection-lists-shared-and-fork.md`).
 
 All four fields are **optional** in the 4.1.0 types (`visibility?`,
 `forked_from?`, `editable?`, `origin_item_id?`) because the running service
-omits them until that wave ships behind `fuzefront.selection-lists.shared-lists`.
+omits `editable` while `fuzefront.selection-lists.shared-lists` is OFF (and a
+pre-4.1.0 service omits all four).
 Absent means the 4.0.0 state: `visibility` = `'private'`, `forked_from` /
 `origin_item_id` = `null`, `editable` = unknown (test `editable === false`, never
 `!editable`). A later contract MINOR tightens them to required.
@@ -82,19 +84,35 @@ try {
 and, where the org holds an `org`-visible fork, answers from the fork item with
 `effective_item_id` set.
 
-## Install locally (pre-publish)
+## Is a fork behind its source? (2.2.0, contract 4.2.0)
 
-The `@fuzeone` scope IS published now — but only for packages that are root
-workspaces. `@fuzeone/selection-lists-ui` is live as
-`@izzywdev/fuzeone-selection-lists-ui@0.1.0`; **this** package is not, because
-`selection-list-client` is missing from the root `package.json` `workspaces`
-array, which is the one list `scripts/publish-packages.mjs` reads. No workspace
-entry means no matrix leg, so `packages-publish` never attempts it and stays
-green regardless. Until it is added:
+Lists carry a read-only `revision` — the per-list counter the events carry as
+`listRevision` (`1` at creation, `+1` per committed change event about the list
+or anything inside it, never decreasing). A fork's `forked_from.revision` is the
+source's revision at copy time. `compareForkToSource(fork, source)` compares
+them: `'behind'` / `'up-to-date'` / `'unknown'`.
+
+```ts
+const source = await client.getList(fork.forked_from!.list_id)
+const state = compareForkToSource(fork, source) // never looks at updated_at
+```
+
+`revision?` is **optional** at 4.2.0: the service does not emit it until its
+implementation ships, and **absent means unknown** (`'unknown'` → show
+"comparison unavailable"). Archived (`status`) and gone (`404`) sources are
+yours to render; the helper answers only the revision question.
+
+## Install
+
+`selection-list-client` is a root `package.json` workspace, so `packages-publish`
+publishes it whenever its version changes. GitHub Packages requires the owner's
+scope, so it is published as **`@izzywdev/fuzeone-selection-list-client`** (the
+source tree keeps the canonical `@fuzeone/selection-list-client`; the rename is
+`scripts/publish-packages.mjs`'s scope alias). To try an unpublished build:
 
 ```bash
 cd selection-list-client && npm install && npm run build && npm pack
-npm install /path/to/fuzeone-selection-list-client-1.0.0.tgz
+npm install /path/to/fuzeone-selection-list-client-<version>.tgz
 ```
 
 ## Scripts

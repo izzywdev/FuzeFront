@@ -78,7 +78,7 @@ interface RequestOptions {
  * Typed client for the FuzeFront selection-list-service.
  *
  * One method per endpoint of `services/selection-list-service/openapi.yaml`
- * v4.1.0, plus {@link SelectionListClient.paginate} for walking a cursor and
+ * v4.2.0, plus {@link SelectionListClient.paginate} for walking a cursor and
  * {@link SelectionListClient.getEffectiveList} for key lookups.
  * Zero runtime dependencies — it uses the platform `fetch`.
  */
