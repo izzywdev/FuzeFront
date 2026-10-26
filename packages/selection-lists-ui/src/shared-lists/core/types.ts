@@ -190,6 +190,12 @@ export type ApiFailure =
     }
   /** Any other 409 (key taken, last owner, unknown reason, `fork_required` with the flag OFF). */
   | { kind: 'conflict'; reason: string | undefined }
+  /**
+   * The effective-list lookup walked its page bound without reaching a hit or
+   * the end of the results. NOT "no list": the answer is unknown, so it renders
+   * as a load failure with Retry, never as "List unavailable".
+   */
+  | { kind: 'incomplete' }
   /** Transport failure or 5xx/other: the outcome of a write is unknown. */
   | { kind: 'unknown'; status: number | undefined; network: boolean }
 

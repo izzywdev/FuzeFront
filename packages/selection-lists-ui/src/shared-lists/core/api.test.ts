@@ -7,6 +7,7 @@ import { configureSelectionListsAuth } from '../../api'
 import {
   changeVisibility,
   forkList,
+  MAX_EFFECTIVE_LOOKUP_PAGES,
   getEffectiveList,
   getListByKey,
   getSharedList,
@@ -152,7 +153,7 @@ describe('listSharedLists', () => {
 })
 
 describe('getEffectiveList (frame 09)', () => {
-  it('asks the service ONCE: ?key=…&include_shared=true&limit=1', async () => {
+  it('asks ?key=…&include_shared=true&limit=1 — one call when the first page has the list', async () => {
     fetchMock.mockResolvedValue(jsonResponse(page([makeForkList()])))
     const list = await getEffectiveList('priority')
     expect(callsOf(fetchMock)).toHaveLength(1)
@@ -190,6 +191,148 @@ describe('getEffectiveList (frame 09)', () => {
       status: 403,
       code: 'FORBIDDEN',
     })
+  })
+})
+
+describe('getEffectiveList — pages the service filtered down to nothing', () => {
+  // The service paginates BEFORE it drops rows the caller cannot read, so an
+  // unreadable newer private list with the same key can yield an EMPTY page
+  // that still has a next cursor leading to the readable common list.
+  it('an empty NON-terminal page is followed through the same endpoint to the hit', async () => {
+    const common = makeCommonList()
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'cur-1')))
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([common])))
+    const list = await getEffectiveList('priority', { locale: 'fr' })
+    expect(list?.id).toBe(common.id)
+    expect(callsOf(fetchMock)).toHaveLength(2)
+    expect(queryOf(callsOf(fetchMock)[0][0])).toEqual({
+      limit: '1',
+      key: 'priority',
+      include_shared: 'true',
+      locale: 'fr',
+    })
+    expect(queryOf(callsOf(fetchMock)[1][0])).toEqual({
+      limit: '1',
+      cursor: 'cur-1',
+      key: 'priority',
+      include_shared: 'true',
+      locale: 'fr',
+    })
+    for (const [url] of callsOf(fetchMock))
+      expect(url).toMatch(/^\/api\/v1\/selection-lists\?/)
+  })
+
+  it('several empty pages in a row, then a hit', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c1')))
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c2')))
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c3')))
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([makeCommonList()])))
+    expect((await getEffectiveList('priority'))?.id).toBe(makeCommonList().id)
+    expect(callsOf(fetchMock).map(([u]) => queryOf(u).cursor)).toEqual([
+      undefined,
+      'c1',
+      'c2',
+      'c3',
+    ])
+  })
+
+  it('a TERMINAL empty page is "no effective list": null, no further call', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], null)))
+    expect(await getEffectiveList('priority')).toBeNull()
+    expect(callsOf(fetchMock)).toHaveLength(1)
+  })
+
+  it('an empty non-terminal page followed by a terminal empty page is null', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c1')))
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], null)))
+    expect(await getEffectiveList('priority')).toBeNull()
+    expect(callsOf(fetchMock)).toHaveLength(2)
+  })
+
+  it('a cursor with hasMore:false is terminal', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ items: [], page: { nextCursor: 'c1', hasMore: false } })
+    )
+    expect(await getEffectiveList('priority')).toBeNull()
+    expect(callsOf(fetchMock)).toHaveLength(1)
+  })
+
+  it('a page with only differently-keyed rows keeps walking, and never renders one', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(page([makeSharedList({ key: 'other' })], 'c1'))
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([makeCommonList()])))
+    expect((await getEffectiveList('priority'))?.key).toBe('priority')
+    expect(callsOf(fetchMock)).toHaveLength(2)
+  })
+
+  it('guard exhaustion is NOT "none": it rejects as an incomplete lookup after the bound', async () => {
+    let n = 0
+    fetchMock.mockImplementation(async () => jsonResponse(page([], `c${++n}`)))
+    await expect(getEffectiveList('priority')).rejects.toMatchObject({
+      name: 'EffectiveLookupIncompleteError',
+      incomplete: true,
+      pages: MAX_EFFECTIVE_LOOKUP_PAGES,
+    })
+    expect(callsOf(fetchMock)).toHaveLength(MAX_EFFECTIVE_LOOKUP_PAGES)
+  })
+
+  it('a hit on the last allowed page still resolves', async () => {
+    for (let i = 1; i < MAX_EFFECTIVE_LOOKUP_PAGES; i++) {
+      fetchMock.mockResolvedValueOnce(jsonResponse(page([], `c${i}`)))
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([makeCommonList()])))
+    expect((await getEffectiveList('priority'))?.id).toBe(makeCommonList().id)
+    expect(callsOf(fetchMock)).toHaveLength(MAX_EFFECTIVE_LOOKUP_PAGES)
+  })
+
+  it('a failed page fetch mid-walk rejects; it never falls back to another list', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c1')))
+    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 'UNKNOWN' }, 503))
+    await expect(getEffectiveList('priority')).rejects.toMatchObject({
+      status: 503,
+    })
+    expect(callsOf(fetchMock)).toHaveLength(2)
+  })
+
+  it('a 403 on a later page is still a rejection (a load failure)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c1')))
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ code: 'FORBIDDEN', message: 'no' }, 403)
+    )
+    await expect(getEffectiveList('priority')).rejects.toMatchObject({
+      status: 403,
+      code: 'FORBIDDEN',
+    })
+  })
+
+  it('the abort signal reaches every page, and aborting mid-walk stops the walk', async () => {
+    const controller = new AbortController()
+    fetchMock.mockImplementationOnce(async () => {
+      controller.abort()
+      return jsonResponse(page([], 'c1'))
+    })
+    await expect(
+      getEffectiveList('priority', { signal: controller.signal })
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(callsOf(fetchMock)).toHaveLength(1)
+    expect(callsOf(fetchMock)[0][1]!.signal).toBe(controller.signal)
+  })
+
+  it('passes the same signal to later pages', async () => {
+    const controller = new AbortController()
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c1')))
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([makeCommonList()])))
+    await getEffectiveList('priority', { signal: controller.signal })
+    expect(callsOf(fetchMock)[1][1]!.signal).toBe(controller.signal)
+  })
+})
+
+describe('getListByKey does NOT paginate (the 4.0.0 lookup, flag OFF)', () => {
+  it('an empty page with a cursor is just "none": one call', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c1')))
+    expect(await getListByKey('priority')).toBeNull()
+    expect(callsOf(fetchMock)).toHaveLength(1)
   })
 })
 

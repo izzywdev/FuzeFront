@@ -24,6 +24,7 @@ import {
 } from '../../api'
 import type { PagedResponse } from '../../types'
 import {
+  EffectiveLookupIncompleteError,
   classifyApiError,
   forkOutcomeFromFailure,
   isAbortError,
@@ -114,21 +115,53 @@ function rowForKey(page: Paged<SharedList>, key: string): SharedList | null {
 }
 
 /**
+ * Upper bound on pages the effective-list lookup will walk. The service paginates
+ * BEFORE it drops rows the caller cannot read, so a lookup can meet a few empty
+ * pages; this stops a pathological or misbehaving service from walking forever.
+ */
+export const MAX_EFFECTIVE_LOOKUP_PAGES = 10
+
+/**
  * The EFFECTIVE list for `key`: the caller org's own readable active list with
  * that key (normally its fork) if there is one, else the active common list;
- * `null` when neither exists. One call —
- * `GET /v1/selection-lists?key=…&include_shared=true&limit=1` — and the service
- * makes the choice; callers must not fetch both and merge.
+ * `null` when neither exists. The service makes the choice through ONE endpoint,
+ * `GET /v1/selection-lists?key=…&include_shared=true&limit=1`; callers must not
+ * fetch both lists and merge.
+ *
+ * Usually that is one call, but not always. The service applies pagination
+ * BEFORE it filters out rows the caller cannot read (a newer unreadable private
+ * list with the same key can sit ahead of an older readable common one), so a
+ * page may be EMPTY and still carry a next cursor. An empty page is therefore
+ * only "no list" when it is TERMINAL; otherwise this follows the cursor through
+ * the same endpoint, with the same query, until a row for `key` is found or a
+ * page has no next cursor. The walk is bounded by `MAX_EFFECTIVE_LOOKUP_PAGES`;
+ * exhausting it rejects with `EffectiveLookupIncompleteError` and never resolves
+ * `null`. A failed page rejects (no fallback to a different list), and an
+ * aborted signal stops the walk.
  */
 export async function getEffectiveList(
   key: string,
   options: { locale?: Locale; signal?: AbortSignal } = {}
 ): Promise<SharedList | null> {
-  const page = await listSharedLists(
-    { key, include_shared: true, locale: options.locale, limit: 1 },
-    options.signal
-  )
-  return rowForKey(page, key)
+  let cursor: string | null = null
+  for (let walked = 0; walked < MAX_EFFECTIVE_LOOKUP_PAGES; walked++) {
+    if (options.signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const page: Paged<SharedList> = await listSharedLists(
+      {
+        key,
+        include_shared: true,
+        locale: options.locale,
+        limit: 1,
+        ...(cursor ? { cursor } : {}),
+      },
+      options.signal
+    )
+    const hit = rowForKey(page, key)
+    if (hit) return hit
+    if (!page.page.hasMore || !page.page.nextCursor) return null
+    cursor = page.page.nextCursor
+  }
+  throw new EffectiveLookupIncompleteError(MAX_EFFECTIVE_LOOKUP_PAGES)
 }
 
 /**

@@ -30,6 +30,19 @@ import type {
   VisibilityOutcome,
 } from './types'
 
+/**
+ * Thrown by the effective-list lookup when it followed its page bound of empty,
+ * non-terminal pages without finding the list or reaching the end. Never
+ * resolved as `null`: an exhausted walk is an unknown answer, not "no list".
+ */
+export class EffectiveLookupIncompleteError extends Error {
+  readonly incomplete = true as const
+  constructor(readonly pages: number) {
+    super(`Effective list lookup incomplete after ${pages} pages`)
+    this.name = 'EffectiveLookupIncompleteError'
+  }
+}
+
 /** The wire fields `request()` copies from the error body onto the thrown error. */
 interface DecoratedError {
   status?: unknown
@@ -92,6 +105,8 @@ export function classifyApiError(
   err: unknown,
   options: { sharedLists: boolean }
 ): ApiFailure {
+  if (err instanceof EffectiveLookupIncompleteError)
+    return { kind: 'incomplete' }
   const e = (
     typeof err === 'object' && err !== null ? err : {}
   ) as DecoratedError
@@ -190,6 +205,8 @@ export function forkOutcomeFromFailure(failure: ApiFailure): ForkOutcome {
     case 'fork_required':
       // The fork operation cannot itself require a fork; fail to the plain conflict copy.
       return { kind: 'key_taken' }
+    case 'incomplete':
+      return { kind: 'unknown_outcome', status: undefined }
     case 'unknown':
       return { kind: 'unknown_outcome', status: failure.status }
   }
@@ -221,6 +238,8 @@ export function restoreOutcomeFromFailure(failure: ApiFailure): RestoreOutcome {
       return { kind: 'conflict', reason: failure.reason }
     case 'validation':
       return { kind: 'unknown_outcome', status: 400 }
+    case 'incomplete':
+      return { kind: 'unknown_outcome', status: undefined }
     case 'unknown':
       return { kind: 'unknown_outcome', status: failure.status }
   }
@@ -252,6 +271,8 @@ export function visibilityOutcomeFromFailure(
       }
     case 'quota':
       return { kind: 'unknown_outcome', status: 403 }
+    case 'incomplete':
+      return { kind: 'unknown_outcome', status: undefined }
     case 'unknown':
       return { kind: 'unknown_outcome', status: failure.status }
   }

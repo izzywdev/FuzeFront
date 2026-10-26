@@ -3,23 +3,33 @@
  * (frames 09 and 10, flow `effective-picker`; also the detail's "is this list the
  * effective one for its key?" check in frames 02 and 03).
  *
- * ONE lookup, and the service decides: the caller org's own readable active
- * list with that key (normally its fork), else the active common list. The hook
- * never fetches both and never merges them, and a failed lookup never falls
- * back to a second, different list.
+ * ONE lookup through ONE endpoint, and the service decides: the caller org's own
+ * readable active list with that key (normally its fork), else the active common
+ * list. The hook never fetches both lists and never merges them, and a failed
+ * lookup never falls back to a second, different list.
+ *
+ * It is NOT always a single request. The service paginates before it drops rows
+ * the caller cannot read, so a page can come back empty yet non-terminal (a newer
+ * unreadable private list ahead of an older readable common one). With the flag
+ * ON the lookup therefore follows the cursor of the SAME query until it finds the
+ * list or reaches a page with no next cursor (bounded by
+ * `MAX_EFFECTIVE_LOOKUP_PAGES`).
  *
  * States (`status`):
  *  - `idle`    — no key (or `skip`): nothing is looked up.
  *  - `loading` — in flight; also reported for a new key until ITS answer lands.
  *  - `ready`   — `list` is the effective list; `source` says where it came from
  *                (`null` while the flag is OFF — no caption, ever).
- *  - `none`    — a 200 with an empty page ("List unavailable"). Not an error.
+ *  - `none`    — the walk ended on a TERMINAL page with no list ("List
+ *                unavailable"). Not an error.
  *  - `error`   — the lookup failed, including a 403 (a developer-role caller
  *                holds no `SelectionListCatalog:list`): a load failure, never
  *                "List unavailable". Keep any selected value; offer `retry`.
+ *                `error.kind === 'incomplete'` means the bounded walk ended
+ *                without an answer: unknown, so never "List unavailable".
  *
- * Flag OFF → the 4.0.0 lookup (`GET ?key=`, no `include_shared`); common lists
- * are invisible to it.
+ * Flag OFF → the 4.0.0 lookup (`GET ?key=`, no `include_shared`, exactly one
+ * request, no pagination); common lists are invisible to it.
  *
  * Stored values across a fork are resolved by `useStoredValues`, not here: one
  * hook per request, so a slow resolve never holds the options hostage.

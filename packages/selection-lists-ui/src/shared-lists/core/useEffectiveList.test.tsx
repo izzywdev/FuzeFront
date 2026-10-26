@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MAX_EFFECTIVE_LOOKUP_PAGES } from './api'
 import { useEffectiveList } from './useEffectiveList'
 import {
   COMMON_ID,
@@ -89,6 +90,67 @@ describe('useEffectiveList — flag ON (frames 09, 10)', () => {
     })
     await waitFor(() => expect(result.current.status).toBe('error'))
     expect(result.current).toMatchObject({ error: { kind: 'forbidden' } })
+  })
+
+  it('an empty page with a next cursor is followed: the readable common list is found, not "none"', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'cur-1')))
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([makeCommonList()])))
+    const { result } = renderHook(() => useEffectiveList('priority'), {
+      wrapper,
+    })
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+    expect(result.current).toMatchObject({
+      list: { id: COMMON_ID },
+      source: { kind: 'common' },
+    })
+    expect(callsOf(fetchMock)).toHaveLength(2)
+    expect(queryOf(lastUrl()).cursor).toBe('cur-1')
+  })
+
+  it('a terminal empty page is "none"', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c1')))
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], null)))
+    const { result } = renderHook(() => useEffectiveList('priority'), {
+      wrapper,
+    })
+    await waitFor(() => expect(result.current.status).toBe('none'))
+  })
+
+  it('an exhausted walk is an ERROR (incomplete), never "none"; retry walks again', async () => {
+    let n = 0
+    fetchMock.mockImplementation(async () => jsonResponse(page([], `c${++n}`)))
+    const { result } = renderHook(() => useEffectiveList('priority'), {
+      wrapper,
+    })
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current).toMatchObject({ error: { kind: 'incomplete' } })
+    expect(callsOf(fetchMock)).toHaveLength(MAX_EFFECTIVE_LOOKUP_PAGES)
+    fetchMock.mockReset()
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([makeCommonList()])))
+    act(() => result.current.retry())
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+  })
+
+  it('a key change mid-walk abandons the old walk and discards its answer', async () => {
+    let releaseOld: (r: Response) => void = () => undefined
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c1')))
+    fetchMock.mockImplementationOnce(
+      () => new Promise<Response>(resolve => (releaseOld = resolve))
+    )
+    const { result, rerender } = renderHook(({ k }) => useEffectiveList(k), {
+      wrapper,
+      initialProps: { k: 'priority' },
+    })
+    await waitFor(() => expect(callsOf(fetchMock)).toHaveLength(2))
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(page([makeSharedList({ key: 'status' })]))
+    )
+    rerender({ k: 'status' })
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+    await act(async () =>
+      releaseOld(jsonResponse(page([makeCommonList({ key: 'priority' })])))
+    )
+    expect(result.current).toMatchObject({ list: { key: 'status' } })
   })
 
   it('a failed lookup does NOT fall back to a second, different list', async () => {
@@ -204,6 +266,15 @@ describe('useEffectiveList — flag OFF (4.0.0 lookup)', () => {
     })
     await waitFor(() => expect(result.current.status).toBe('ready'))
     expect(result.current).toMatchObject({ source: null })
+  })
+
+  it('does not paginate: an empty page with a cursor is just "none" (4.0.0)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([], 'c1')))
+    const { result } = renderHook(() => useEffectiveList('priority'), {
+      wrapper,
+    })
+    await waitFor(() => expect(result.current.status).toBe('none'))
+    expect(callsOf(fetchMock)).toHaveLength(1)
   })
 
   it('a key with no own list is "none" (common lists are invisible)', async () => {

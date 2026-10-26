@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  EffectiveLookupIncompleteError,
   classifyApiError,
   classifyMutationError,
   forkOutcomeFromFailure,
@@ -500,6 +501,35 @@ describe('visibilityOutcomeFromFailure (frame 08)', () => {
       kind: 'unknown_outcome',
       status: 500,
     })
+  })
+})
+
+describe('an incomplete effective-list lookup', () => {
+  const incomplete = new EffectiveLookupIncompleteError(10)
+
+  it('is its own failure kind — not unknown, not "none"', () => {
+    expect(classifyApiError(incomplete, ON)).toEqual({ kind: 'incomplete' })
+    expect(classifyApiError(incomplete, OFF)).toEqual({ kind: 'incomplete' })
+  })
+
+  it('carries the page count and is an Error', () => {
+    expect(incomplete).toBeInstanceOf(Error)
+    expect(incomplete.pages).toBe(10)
+    expect(incomplete.incomplete).toBe(true)
+  })
+
+  it('maps to an unknown outcome wherever an outcome is needed (it cannot arise there)', () => {
+    expect(forkOutcomeFromFailure({ kind: 'incomplete' })).toEqual({
+      kind: 'unknown_outcome',
+      status: undefined,
+    })
+    expect(restoreOutcomeFromFailure({ kind: 'incomplete' })).toEqual({
+      kind: 'unknown_outcome',
+      status: undefined,
+    })
+    expect(visibilityOutcomeFromFailure({ kind: 'incomplete' }, 'org')).toEqual(
+      { kind: 'unknown_outcome', status: undefined }
+    )
   })
 })
 
