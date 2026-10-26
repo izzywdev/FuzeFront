@@ -137,14 +137,19 @@ and a direct `routing.host` such as `fuzeagent.fuzefront.com`. MendysRobotics is
 custom-domain exception and uses `live.mendysrobotics.com`. The APK launches that standalone UI
 origin at `/`; the UI reaches its backend through the same origin under relative `/api` paths.
 The TWA host, package ID, signing fingerprint, and Digital Asset Links declaration must agree.
+All Android TWAs must declare `minSdkVersion: 24`. Bubblewrap currently scaffolds API 21 even
+when the manifest declares API 24, so the managed workflow explicitly patches the generated
+Gradle project to API 24 before building. This is required by
+`androidbrowserhelper:2.7.4`; do not lower it or work around the manifest merger with
+`tools:overrideLibrary`.
 
 The canonical first-wave product and frontend-origin inventory is
 `fuzeone/mobile-products.json`; the complete runtime and production acceptance contract is
 documented in `docs/deployment/MOBILE_APK_TARGETS.md`.
 
-Pull requests and non-default branch builds retain an unsigned test APK as a 90-day Actions
-artifact. Every successful build on the repository's actual default branch increments the Android
-version code from the Actions run number, appends it to
+Pull requests and non-default branch builds retain a test APK as a 90-day Actions artifact. Every
+successful build on the repository's actual default branch increments the Android version code from
+the Actions run number, appends it to
 the repository SemVer for `versionName`, signs and verifies the APK, and stores it permanently in
 a GitHub Release. Generated versions are not committed back, avoiding a recursive build loop.
 

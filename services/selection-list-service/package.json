@@ -1,6 +1,6 @@
 {
   "name": "selection-list-service",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Org-scoped, translatable selection lists microservice for FuzeFront",
   "private": true,
   "main": "dist/index.js",
@@ -20,6 +20,7 @@
     "@fuzefront/feature-flags": "file:../../packages/feature-flags",
     "@fuzefront/service-auth": "file:../../packages/service-auth",
     "@fuzefront/shared": "file:../../shared",
+    "@fuzefront/telemetry": "file:../../packages/telemetry",
     "@izzywdev/fuzefront-identity": "file:../../packages/identity",
     "express": "4.19.2",
     "js-yaml": "^4.3.1",

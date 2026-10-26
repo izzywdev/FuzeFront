@@ -12,14 +12,18 @@
 //     ORG_INACTIVE and records seed.failed (S6);
 //   - an org the projection does not know yet falls through to the algorithm, which
 //     answers ORG_UNKNOWN (retryable).
-// Packs are applied in (packKey) order, one transaction each (one pack = one
+// After the packs, the org owner is granted list-owner on the seeded lists (ownerGrants.ts, after the
+// seed transactions committed; throws on a transient grant failure). Packs are applied in (packKey)
+// order, one transaction each (one pack = one
 // request = one outcome event).
 
 import type { Knex } from 'knex';
 import { PLATFORM_SEED_SOURCE, SELECTION_LIST_SERVICE_PRINCIPAL } from '@fuzefront/shared/kafka';
 import { logger } from '../lib/logger';
+import { isSharedListsEnabled } from '../flags';
 import { applySeedRequest } from './apply';
 import { readOrgProjection } from './org';
+import { ensureSeededListOwners, type EnsureSeededListOwnersOptions } from './ownerGrants';
 import { currentPlatformPacks, DEFAULT_PLATFORM_PACK_DIR, loadPlatformPack } from './packs';
 import type { SeedResult, SeedTrigger } from './types';
 
@@ -31,6 +35,8 @@ export interface ApplyPlatformDefaultsOptions {
   internalErrors?: 'record' | 'throw';
   /** Pack directory override (tests); default is the shipped `seed-packs/platform`. */
   packDir?: string;
+  /** Seam for tests: the list-owner grant call (default: the production `grantListOwner`, machine identity, fail closed). */
+  grantListOwner?: EnsureSeededListOwnersOptions['grantListOwner'];
 }
 
 export interface PlatformSeedOutcome {
@@ -49,6 +55,9 @@ export async function applyPlatformDefaults(
   const proj = await readOrgProjection(db, organizationId);
   const packs = currentPlatformPacks(options.packDir ?? DEFAULT_PLATFORM_PACK_DIR);
   const outcomes: PlatformSeedOutcome[] = [];
+  // Seed-list `visibility` is honoured only while the shared-lists release flag is ON for this org (read per
+  // call, here — the seed library reads no flags). OFF: every list is seeded private, the 4.0.0 behaviour.
+  const honorVisibility = await isSharedListsEnabled({ organizationId: organizationId });
   for (const pack of packs) {
     if (proj && proj.status === 'active' && proj.isActive === false) {
       logger.info({ organizationId, pack: pack.packKey }, 'seed: platform pack skipped, organization is inactive');
@@ -68,11 +77,23 @@ export async function applyPlatformDefaults(
       trigger: options.trigger ?? 'org-created',
       requestId: null,
       lists: pack.lists,
+      translationProvenance: pack.translationProvenance,
+      honorVisibility,
       correlationId: options.correlationId,
       internalErrors: options.internalErrors,
     });
     outcomes.push({ packKey: pack.packKey, version: pack.version, result });
   }
+
+  // The seed transactions have all committed (or were already applied / refused). Now - and only now,
+  // because it is an external call - make the org owner a list-owner of the seeded lists (decision Q3).
+  // Runs on EVERY call, including when every pack was already-applied, so a grant that failed on an
+  // earlier delivery is healed by the retry. A failure throws: the consumer is retried / the reconciler
+  // backs the org off; the seed itself is idempotent. A missing owner is a logged skip, never an error.
+  await ensureSeededListOwners(db, organizationId, {
+    grantListOwner: options.grantListOwner,
+    correlationId: options.correlationId,
+  });
   return outcomes;
 }
 

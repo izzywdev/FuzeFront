@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import express from 'express'
 import jwt from 'jsonwebtoken'
+import { z } from 'zod'
 import { db } from '../config/database'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import {
@@ -14,6 +15,11 @@ import {
 } from '../services/userLifecycle'
 import { syncUserToDatabase } from '../services/oidc'
 import { isDevportalEnabled } from '../utils/devportalFlag'
+import {
+  assignOrganizationRole,
+  unassignOrganizationRole,
+} from '../utils/permit/role-assignment'
+import { withReqId } from '../lib/logger'
 
 const router = express.Router()
 
@@ -338,5 +344,90 @@ router.post('/devportal-provision', async (req, res) => {
       .json({ error: 'Provisioning failed', detail: String(error?.message ?? error) })
   }
 })
+
+/**
+ * Body for the membership reconcile endpoints. `.strict()` = additionalProperties
+ * false: unknown keys are rejected rather than silently dropped. `role` is the
+ * MEMBERSHIP role (mapped to a Permit role inside role-assignment.ts).
+ */
+const membershipChangeBody = z
+  .object({
+    organizationId: z.string().uuid(),
+    userId: z.string().uuid(),
+    role: z.enum(['owner', 'admin', 'member', 'viewer', 'developer']),
+  })
+  .strict()
+
+type MembershipOp = 'membership-sync' | 'membership-unsync'
+
+async function handleMembershipChange(
+  op: MembershipOp,
+  apply: typeof assignOrganizationRole,
+  req: express.Request,
+  res: express.Response
+) {
+  if (!isAuthorized(req)) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const log = withReqId((req as any).requestId, req as any)
+  const parsed = membershipChangeBody.safeParse(req.body ?? {})
+  if (!parsed.success) {
+    const issues = (parsed as z.SafeParseError<unknown>).error.issues
+    log.warn({ op, fields: issues.map(i => i.path.join('.')) }, 'invalid membership change body')
+    return res.status(400).json({
+      error: 'organizationId, userId (uuid) and a valid role are required',
+    })
+  }
+  const { organizationId, userId, role } = parsed.data
+
+  try {
+    // assign/unassign swallow Permit errors and return false — a false MUST
+    // surface as non-2xx so the consumer retries rather than silently
+    // dropping the reconcile.
+    const ok = await apply(userId, organizationId, role)
+    if (!ok) {
+      log.error({ op, organizationId, userId, role }, 'permit role change failed')
+      return res.status(500).json({ error: 'Membership sync failed' })
+    }
+    log.info({ op, organizationId, userId, role }, 'membership role reconciled in permit')
+    return res.status(200).json({ ok: true, organizationId, userId, role })
+  } catch (error: any) {
+    log.error({ err: error, op, organizationId, userId, role }, 'internal membership change failed')
+    return res
+      .status(500)
+      .json({ error: 'Membership sync failed', detail: String(error?.message ?? error) })
+  }
+}
+
+/**
+ * Internal, service-to-service membership reconcile — called by
+ * provisioning-service on `identity.membership.added`. Assigns the Permit role
+ * that corresponds to the membership role in the org's tenant.
+ *
+ *   POST /internal/membership-sync
+ *   Headers: x-internal-secret: <INTERNAL_PROVISION_SECRET>
+ *   Body:    { "organizationId": "<uuid>", "userId": "<uuid>",
+ *              "role": "owner|admin|member|viewer|developer" }
+ *   200 { ok: true, organizationId, userId, role }
+ *   400 { error } invalid body / unknown role
+ *   401 { error } bad/missing secret
+ *   500 { error } Permit failure (consumer retries)
+ *
+ * Idempotent; safe to retry.
+ */
+router.post('/membership-sync', (req, res) =>
+  handleMembershipChange('membership-sync', assignOrganizationRole, req, res)
+)
+
+/**
+ * Teardown mirror of /membership-sync — called by provisioning-service on
+ * `identity.membership.removed`. Same body/status contract.
+ *
+ *   POST /internal/membership-unsync
+ */
+router.post('/membership-unsync', (req, res) =>
+  handleMembershipChange('membership-unsync', unassignOrganizationRole, req, res)
+)
 
 export default router

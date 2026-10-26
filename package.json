@@ -38,7 +38,12 @@
     "services/selection-list-service",
     "services/devportal-service",
     "packages/selection-lists-ui",
-    "packages/config-ui"
+    "packages/config-ui",
+    "packages/fuzepicker-ui",
+    "selection-list-client",
+    "packages/billing-types",
+    "services/billing-service",
+    "packages/metered-usage"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
@@ -54,9 +59,14 @@
     "type-check:backend": "npm run type-check -w backend",
     "check:workspace-deps": "node scripts/check-workspace-deps.mjs",
     "check:dockerfile-lockfile": "node scripts/check-dockerfile-lockfile.mjs",
+    "ds:artifact": "node scripts/ds-artifact/build-artifact.mjs",
+    "check:ds-artifact": "node scripts/ds-artifact/build-artifact.mjs --check",
     "check:frames-stamped": "node scripts/stamp-frames.mjs --check",
     "stamp:frames": "node scripts/stamp-frames.mjs --write",
     "test:frames-stamped": "node --test scripts/__tests__/stamp-frames.test.mjs",
+    "check:frames-schema": "node scripts/check-frames-schema.mjs",
+    "frames:schema-report": "node scripts/check-frames-schema.mjs --report",
+    "test:frames-schema": "node --test scripts/__tests__/check-frames-schema.test.mjs",
     "check:deployable-paths": "node scripts/check-deployable-paths.mjs",
     "deployable-paths:write": "node scripts/gen-deployable-paths.mjs --write",
     "test:deployable-paths": "node --test scripts/__tests__/deployable-paths.test.mjs"
@@ -71,7 +81,8 @@
     "lint-staged": "^16.1.2",
     "prettier": "^3.6.2",
     "sqlite3": "^6.0.1",
-    "wrangler": "4.116.0"
+    "wrangler": "4.116.0",
+    "typescript": "5.9.3"
   },
   "overrides": {
     "@types/express": "^4.17.21",
@@ -82,9 +93,10 @@
     "ip-address": ">=10.2.2",
     "undici": ">=7.29.0 <8",
     "qs": ">=6.16.0 <7",
-    "fast-uri": ">=3.1.6 <4",
+    "fast-uri": ">=3.1.8 <4",
     "morgan": ">=1.12.0 <2",
-    "nodemailer": ">=9.1.1 <10"
+    "nodemailer": ">=10.0.11 <11",
+    "axios": ">=1.20.0 <2"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [

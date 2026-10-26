@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, Text, HeroPatternOverlay, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -38,10 +38,7 @@ export const PressPage: React.FC = () => {
         ref={heroRef}
         className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
-        {/* Separate overlay div: `hero-pattern` and the gradient classes both
-            set `background-image`, so combining them on one element drops the
-            gradient entirely instead of layering. */}
-        <div className="absolute inset-0 hero-pattern pointer-events-none" />
+        <HeroPatternOverlay />
         <div className="absolute top-10 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
         <Container size="4xl" className="relative text-center">
           <motion.div
@@ -93,7 +90,7 @@ export const PressPage: React.FC = () => {
             <dl className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 shadow-soft">
               {factSheet.map((item) => (
                 <div key={item.label} className="flex justify-between px-5 py-4">
-                  <dt className="text-sm text-gray-600">{item.label}</dt>
+                  <Text as="dt" tone="secondary" size="sm">{item.label}</Text>
                   <dd className="text-sm font-medium text-gray-900">{item.value}</dd>
                 </div>
               ))}
@@ -103,10 +100,15 @@ export const PressPage: React.FC = () => {
           <div>
             <h2 className="text-2xl font-heading font-bold text-gray-900 mb-6">Media kit</h2>
             <div className="bg-white rounded-2xl border border-gray-200 shadow-soft p-6">
-              <p className="text-sm text-gray-600 leading-relaxed mb-5">
+              <Text
+                as="p"
+                tone="secondary"
+                size="sm"
+                style={{ lineHeight: 'var(--leading-relaxed)', marginBlockEnd: 'var(--space-5)' }}
+              >
                 Logos, brand colors, and product screenshots for editorial use. For a custom asset
                 or interview request, reach out to our press team directly.
-              </p>
+              </Text>
               <div className="flex flex-col gap-3">
                 <a
                   href="/logo-icon.svg"
@@ -130,7 +132,7 @@ export const PressPage: React.FC = () => {
       </section>
 
       {/* Contact */}
-      <section className="py-16 bg-white border-t border-secondary-100">
+      <Section padding="sm" divider>
         <div className="max-w-2xl mx-auto px-4 text-center">
           <p className="text-gray-600">
             For all press inquiries, contact{' '}
@@ -139,7 +141,7 @@ export const PressPage: React.FC = () => {
             </a>
           </p>
         </div>
-      </section>
+      </Section>
     </div>
   )
 }

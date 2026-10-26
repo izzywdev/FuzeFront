@@ -5,6 +5,18 @@
 export { applySeedRequest, recordSeedFailure } from './apply';
 export { applyPlatformDefaults, type ApplyPlatformDefaultsOptions, type PlatformSeedOutcome } from './platform';
 export { isSeedingEnabled } from './flagGate';
+export {
+  isReconcilerEnabled,
+  loadReconcilerConfig,
+  ReconcilerBackoff,
+  RECONCILER_DEFAULTS,
+  runReconcilerOnce,
+  startReconciler,
+  type ReconcilerConfig,
+  type ReconcilerHandle,
+  type ReconcilerRunOptions,
+  type ReconcilerRunSummary,
+} from './reconciler';
 export { readOrgProjection, type OrgProjection } from './org';
 export {
   currentPlatformPacks,
@@ -13,6 +25,8 @@ export {
   loadPlatformPacks,
   SeedPackError,
   type PlatformPack,
+  type PlatformPackContent,
+  type TranslationProvenance,
 } from './packs';
 export {
   DEFAULT_SEED_SOURCES_FILE,

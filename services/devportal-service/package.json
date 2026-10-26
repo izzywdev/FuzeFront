@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@fuzefront/auth": "file:../../packages/auth",
+    "@fuzefront/telemetry": "file:../../packages/telemetry",
     "cookie-parser": "^1.4.6",
     "express": "4.19.2",
     "js-yaml": "^4.3.1",

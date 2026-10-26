@@ -25,13 +25,14 @@ import {
 } from '../helpers/factories';
 import type { SelectionListId, SelectionListItemId } from '../helpers/factories';
 import type { SelectionListItem } from '@fuzeone/selection-list-client';
+import { testOrg, testUser } from '../helpers/ids';
 
 // ---------------------------------------------------------------------------
 // Test actors
 // ---------------------------------------------------------------------------
 
-const ORG_ID = 'org_01test00000000000items0000';
-const USER_OWNER = 'usr_01test00000000000itemowner0';
+const ORG_ID = testOrg('items');
+const USER_OWNER = testUser('itemowner');
 
 function ownerToken(): string {
   return mintTestToken({ userId: USER_OWNER, organizationId: ORG_ID });
@@ -313,7 +314,7 @@ describe('PUT /v1/selection-lists/{listId}/items/reorder', () => {
     createdListIds.push(list.id as SelectionListId);
 
     const ids = items.map((i) => i.id as SelectionListItemId);
-    ids.push('sli_01hnonexistentitemid000000' as SelectionListItemId); // extra
+    ids.push('front_sli_01hnonexistentitemid000000' as SelectionListItemId); // extra
     const { status, body } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(list.id)}/items/reorder`,
       {

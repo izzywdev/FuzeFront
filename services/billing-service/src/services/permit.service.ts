@@ -48,6 +48,7 @@ export class PermitSyncService {
   async syncPlanToPermit(args: {
     entityType: EntityType;
     entityId: string;
+    /** Canonical tier: free | starter | growth | enterprise. Legacy values normalized upstream. */
     planTier: string;
     status: string;
     seatQuantity?: number;

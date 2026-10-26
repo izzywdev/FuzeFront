@@ -28,18 +28,19 @@ import { makeClient, rawFetch } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
 import { createTestList, createTestListWithItems, purgeList } from '../helpers/factories';
 import type { SelectionListId, SelectionListItemId } from '../helpers/factories';
+import { testOrg, testUser } from '../helpers/ids';
 
 // ---------------------------------------------------------------------------
 // Test org — one org, one list, multiple actors
 // ---------------------------------------------------------------------------
 
-const ORG_ID = 'org_01test00000000authz0000000';
-const USER_OWNER = 'usr_01test00000000authzowner00';
-const USER_EDITOR = 'usr_01test00000000authzeditor0';
-const USER_CONTRIBUTOR = 'usr_01test00000000authzcontrib';
-const USER_TRANSLATOR = 'usr_01test00000000authztransl0';
-const USER_VIEWER = 'usr_01test00000000authzviewer0';
-const USER_ORG_ADMIN = 'usr_01test00000000authzadmin00';
+const ORG_ID = testOrg('authz');
+const USER_OWNER = testUser('authzowner');
+const USER_EDITOR = testUser('authzeditor');
+const USER_CONTRIBUTOR = testUser('authzcontrib');
+const USER_TRANSLATOR = testUser('authztransl');
+const USER_VIEWER = testUser('authzviewer');
+const USER_ORG_ADMIN = testUser('authzadmin');
 
 function tokenFor(userId: string, roles: string[] = []): string {
   return mintTestToken({ userId, organizationId: ORG_ID, roles });
@@ -430,8 +431,15 @@ describe('list-owner role', () => {
 // explicitly granted list-owner.
 // ---------------------------------------------------------------------------
 
-describe('tenant admin has no implicit list-owner (3.0.0)', () => {
-  const adminToken = () => tokenFor(USER_ORG_ADMIN, ['org-admin']);
+// Run for BOTH spellings: `admin` is the tenant role the 3.0.0 contract names
+// (docs/planning/selection-lists-permit-actions.md §4.1/§5 — customer org administrators hold the
+// TENANT role `admin`; ReBAC `org-admin` is FuzeOne staff), `org-admin` is the legacy claim the
+// stand-in Security API aliases to `admin`. The original block only exercised the alias.
+describe.each([
+  ['admin', testUser('authztenadmin')],
+  ['org-admin', USER_ORG_ADMIN],
+])('tenant role %s has no implicit list-owner (3.0.0)', (tenantRole, adminUser) => {
+  const adminToken = () => tokenFor(adminUser, [tenantRole]);
 
   let orgAdminListId: SelectionListId;
 
@@ -501,11 +509,62 @@ describe('tenant admin has no implicit list-owner (3.0.0)', () => {
     expect(res.status).toBe(200);
     const items = ((res.body as { items?: Array<{ id: string }> } | null)?.items ?? []) as Array<{ id: string }>;
     expect(items.map((i) => i.id)).not.toContain(orgAdminListId);
+
+    // `create` is half of what this test's title claims; it was previously never asserted
+    const created = await rawFetch('/v1/selection-lists', {
+      method: 'POST',
+      token: adminToken(),
+      body: JSON.stringify({ key: 'admin-own-' + Math.random().toString(16).slice(2, 8), name: 'Admin created' }),
+    });
+    expect(created.status).toBe(201);
+    await purgeList(makeClient(adminToken), (created.body as { id: string }).id as SelectionListId);
+  });
+
+  it('can NOT reach ANY other per-list action either: items, translations, reorder, archive, purge, grants (403/404, state unchanged)', async () => {
+    const ownerClient = makeClient(() => tokenFor(USER_OWNER));
+    const { list, items } = await createTestListWithItems(ownerClient, 2, {
+      key: 'admin-deny-' + Math.random().toString(16).slice(2, 8),
+      name: 'Admin Denied Everything',
+    });
+    const L = `/v1/selection-lists/${encodeURIComponent(list.id)}`;
+    const [i1, i2] = items.map((i) => encodeURIComponent(i.id));
+    const attempts: Array<[string, string, unknown]> = [
+      ['GET', `${L}/items`, undefined],
+      ['POST', `${L}/items`, { code: 'ADMINADD', label: 'x' }],
+      ['PATCH', `${L}/items/${i1}`, { label: 'admin edit' }],
+      ['PUT', `${L}/items/reorder`, { item_ids: [i2, i1] }],
+      ['POST', `${L}/items/${i1}/archive`, undefined],
+      ['DELETE', `${L}/items/${i1}`, undefined],
+      ['DELETE', `${L}/items/${i1}?purge=true`, undefined],
+      ['GET', `${L}/translations`, undefined],
+      ['PUT', `${L}/translations/fr`, { name: 'x' }],
+      ['PUT', `${L}/items/${i1}/translations/fr`, { label: 'x' }],
+      ['POST', `${L}/translations/fr/autofill`, {}],
+      ['POST', `${L}/archive`, undefined],
+      ['PATCH', L, { status: 'archived' }],
+      ['DELETE', `${L}?purge=true`, undefined],
+      ['PUT', `${L}/access/${encodeURIComponent(adminUser)}`, { role: 'list-owner' }], // self-escalation
+      ['DELETE', `${L}/access/${encodeURIComponent(USER_OWNER)}`, undefined],
+    ];
+    for (const [method, path, body] of attempts) {
+      const res = await rawFetch(path, { method, token: adminToken(), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      if (![403, 404].includes(res.status)) {
+        throw new Error(`${method} ${path} by tenant ${tenantRole} with no instance role returned ${res.status}, expected 403/404`);
+      }
+    }
+    // nothing changed: still active, 2 active items, owner is the only grant
+    const after = await rawFetch(L, { method: 'GET', token: tokenFor(USER_OWNER) });
+    expect(after.body).toMatchObject({ status: 'active', name: 'Admin Denied Everything' });
+    const itemsNow = await rawFetch(`${L}/items`, { method: 'GET', token: tokenFor(USER_OWNER) });
+    expect(((itemsNow.body as { items: Array<{ status: string }> }).items).map((i) => i.status)).toEqual(['active', 'active']);
+    const access = await rawFetch(`${L}/access`, { method: 'GET', token: tokenFor(USER_OWNER) });
+    expect(((access.body as { items: Array<{ user_id: string }> }).items).map((g) => g.user_id)).toEqual([USER_OWNER]);
+    await purgeList(ownerClient, list.id as SelectionListId);
   });
 
   it('once EXPLICITLY granted list-owner, the admin is a list-owner of that list', async () => {
     const ownerClient = makeClient(() => tokenFor(USER_OWNER));
-    await ownerClient.setAccess(orgAdminListId, USER_ORG_ADMIN, 'list-owner');
+    await ownerClient.setAccess(orgAdminListId, adminUser, 'list-owner');
     const { status } = await rawFetch(`/v1/selection-lists/${encodeURIComponent(orgAdminListId)}`, {
       method: 'GET',
       token: adminToken(),
@@ -527,7 +586,7 @@ describe('id is not a capability', () => {
     });
 
     const noGrantToken = mintTestToken({
-      userId: 'usr_01test00000000authznogrant',
+      userId: testUser('authznogrant'),
       organizationId: ORG_ID,
     });
 

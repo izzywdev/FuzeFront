@@ -211,4 +211,68 @@ spec:
     - name: http
       port: {{ .Values.a2a.service.port }}
       targetPort: http
+{{- if .Values.a2aDeploy.ingress.enabled }}
+{{- if eq .Values.ingress.className "traefik" }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: a2a-stripprefix
+  annotations:
+    # Apply before Ingress objects so Traefik never sees a router referencing a
+    # missing Middleware (Helm's Kind sort puts Ingress before CRD instances).
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a2a
+spec:
+  stripPrefix:
+    prefixes:
+      - /a2a
+{{- end }}
+---
+# Public Ingress for the A2A pod.
+# Exposes https://<host>/a2a/* → a2a-fuzefront (paths minus /a2a prefix).
+# Auth: the A2A pod validates OIDC tokens in-pod; no Ingress-layer auth needed.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-a2a
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a2a
+  annotations:
+    {{- if eq .Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- else if eq .Values.ingress.className "traefik" }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-a2a-stripprefix@kubernetescrd
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- if eq .Values.ingress.className "nginx" }}
+          - path: /a2a(/|$)(.*)
+            pathType: ImplementationSpecific
+          {{- else }}
+          - path: /a2a
+            pathType: Prefix
+          {{- end }}
+            backend:
+              service:
+                name: a2a-fuzefront
+                port:
+                  number: {{ .Values.a2a.service.port }}
+{{- end }}
 {{- end }}

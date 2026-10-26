@@ -58,6 +58,10 @@
       "sourcePath": "components/core/Text.jsx"
     },
     {
+      "name": "TextLink",
+      "sourcePath": "components/core/TextLink.jsx"
+    },
+    {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
     },
@@ -110,6 +114,10 @@
       "sourcePath": "components/feedback/Stepper.jsx"
     },
     {
+      "name": "StrengthMeter",
+      "sourcePath": "components/feedback/StrengthMeter.jsx"
+    },
+    {
       "name": "Toast",
       "sourcePath": "components/feedback/Toast.jsx"
     },
@@ -128,6 +136,10 @@
     {
       "name": "FileDropZone",
       "sourcePath": "components/forms/FileDropZone.jsx"
+    },
+    {
+      "name": "InlineValidatedInput",
+      "sourcePath": "components/forms/InlineValidatedInput.jsx"
     },
     {
       "name": "Input",
@@ -152,6 +164,10 @@
     {
       "name": "Toggle",
       "sourcePath": "components/forms/Toggle.jsx"
+    },
+    {
+      "name": "TurnstileContainer",
+      "sourcePath": "components/forms/TurnstileContainer.jsx"
     },
     {
       "name": "AppCard",
@@ -190,6 +206,10 @@
       "sourcePath": "components/layout/Eyebrow.jsx"
     },
     {
+      "name": "HeroPatternOverlay",
+      "sourcePath": "components/layout/HeroPatternOverlay.jsx"
+    },
+    {
       "name": "InfoRow",
       "sourcePath": "components/layout/InfoRow.jsx"
     },
@@ -204,6 +224,10 @@
     {
       "name": "ResponsiveGrid",
       "sourcePath": "components/layout/ResponsiveGrid.jsx"
+    },
+    {
+      "name": "Section",
+      "sourcePath": "components/layout/Section.jsx"
     },
     {
       "name": "SectionHead",
@@ -1179,6 +1203,18 @@
     {
       "name": "--space-16",
       "value": "4rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-20",
+      "value": "5rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-24",
+      "value": "6rem",
       "kind": "spacing",
       "definedIn": "tokens/spacing.css"
     },

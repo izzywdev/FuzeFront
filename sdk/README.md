@@ -252,14 +252,14 @@ function NotificationComponent() {
 ### Environment Detection
 
 ```typescript
-// Check if running in FrontFuse platform
+// Check if running in FuzeFront platform
 const isPlatformMode = window.__FRONTFUSE_PLATFORM__ === true
 
 // Access platform context
 const platformContext = window.__FRONTFUSE_CONTEXT__
 
 if (isPlatformMode) {
-  console.log('Running in FrontFuse platform')
+  console.log('Running in FuzeFront platform')
   console.log('Current user:', platformContext.user)
   console.log('Available apps:', platformContext.apps)
 } else {
@@ -392,7 +392,7 @@ test('renders component with platform context', () => {
 
 ```typescript
 // cypress/integration/platform.spec.ts
-describe('FrontFuse Integration', () => {
+describe('FuzeFront Integration', () => {
   it('should register app and show in platform', () => {
     cy.visit('http://localhost:3001')
     cy.wait(2000) // Wait for registration
@@ -543,4 +543,4 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 ---
 
-Made with ❤️ by the FrontFuse team
+Made with ❤️ by the FuzeFront team

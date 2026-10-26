@@ -1,0 +1,224 @@
+{{/*
+PreSync Job that provisions billing-service's Authentik S2S (client_credentials)
+machine identity and publishes its credentials as Secret/<authz.secretName>.
+
+WHY THIS EXISTS. billing-service's syncPlanToPermit() calls FuzeFront's Security
+API from Stripe WEBHOOK handlers, where there is no end-user token to forward,
+so it authenticates as a machine (see services/billing-service/src/services/
+machineToken.ts and docs/runbooks/s2s-client-credentials.md). That needs an
+Authentik `client_credentials` application holding the `authz:admin` scope, plus
+its client_id/client_secret in the namespace. Until this Job existed, both were
+manual: `kubectl exec` the CLI, copy the secret out of the Authentik Admin UI,
+seal it, commit the SealedSecret. Three hand steps, one of which is handling a
+live credential.
+
+WHY A JOB RATHER THAN A SEAL WORKFLOW. The secret is MINTED by Authentik inside
+the cluster. A seal workflow (seal-payment-secrets.yml and friends) is the right
+shape for an EXTERNAL vendor credential that a human already holds -- it takes
+the value from a GitHub repo secret. Routing a cluster-minted credential out to
+a GitHub repo secret and back in would add two places it can leak for no gain.
+Here the credential is generated, written to a memory-backed emptyDir, and
+consumed by `kubectl create secret` inside ONE pod: it never touches stdout, a
+`kubectl logs` capture, a repo secret, a PR diff, or this repo's history.
+
+ORDERING, and why it is PreSync. When billingService.authz.enabled is true,
+billing-service.yaml drops `optional: true` from the two secretKeyRefs, making
+them REQUIRED -- a missing Secret then means CreateContainerConfigError. So:
+  - pre-install/pre-upgrade (Argo: PreSync) runs BEFORE the Deployment is
+    updated, so the Secret is present by the time the new pod spec applies.
+  - If this Job FAILS, the sync aborts and the Deployment is NEVER touched. The
+    live billing pod keeps running its current spec. That is the fail-safe that
+    makes flipping the flag and dropping `optional` in one sync acceptable on a
+    service that is live in production.
+  - A post-install/post-upgrade hook would deadlock the opposite way: the
+    Deployment would be applied first and sit in CreateContainerConfigError
+    waiting for a Secret that a PostSync hook has not created yet.
+
+IDEMPOTENT. registerS2SClient() is built from ensureS2SScopeMapping /
+ensureS2SProvider / ensureS2SApplication and then READS the credentials back off
+the provider, so re-running against an already-provisioned Authentik returns the
+same client_id/secret rather than rotating them. Running on every chart upgrade
+is therefore safe and produces no churn.
+*/}}
+{{- if and .Values.billingService.enabled .Values.billingService.authz.register.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: billing-s2s-register
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: billing-s2s-register
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    # Weight -5 puts this AFTER its own SA/Role (-5 too, but Helm applies
+    # kinds in a fixed order within a weight, and ServiceAccount/Role/RoleBinding
+    # all sort before Job) and before any weight-0 hook.
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 600
+  # No retries. A failure here aborts the sync on purpose; retrying would only
+  # delay that signal, and every failure mode (admin token absent, Authentik
+  # unreachable, empty credentials) is a real misconfiguration rather than a
+  # transient the Job can wait out. Argo surfaces the failed hook directly.
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: billing-s2s-register
+    spec:
+      restartPolicy: Never
+      serviceAccountName: billing-s2s-register
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.billingService "root" $) | nindent 6 }}
+      # The credential is handed between the two containers on a tmpfs volume,
+      # so it is never written to a node's disk.
+      volumes:
+        - name: s2s-credentials
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: authentik-admin
+          secret:
+            secretName: {{ include "fuzefront.secretName" . }}
+            # optional: the key is absent on a dev install that has not sealed an
+            # Authentik bootstrap token. The initContainer exits non-zero in that
+            # case rather than writing an empty credential -- see below.
+            optional: true
+            items:
+              - key: AUTHENTIK_BOOTSTRAP_TOKEN
+                path: AUTHENTIK_ADMIN_TOKEN
+      initContainers:
+        # Step 1 — register in Authentik and write the credentials to the tmpfs.
+        # Runs the backend image because that is where the CLI and the Authentik
+        # Admin API client live (backend/src/authentik/**).
+        - name: register
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              TOKEN_FILE=/run/authentik-admin/AUTHENTIK_ADMIN_TOKEN
+              if [ ! -s "$TOKEN_FILE" ]; then
+                echo "FATAL: AUTHENTIK_BOOTSTRAP_TOKEN is absent or empty in" >&2
+                echo "Secret/{{ include "fuzefront.secretName" . }}. Without an Authentik admin" >&2
+                echo "token this Job cannot provision billing-service's S2S identity, and" >&2
+                echo "billing-service would start with no client_credentials to call the" >&2
+                echo "Security API with. Seal AUTHENTIK_BOOTSTRAP_TOKEN, or set" >&2
+                echo "billingService.authz.register.enabled=false to skip provisioning." >&2
+                exit 1
+              fi
+              # CAPABILITY PROBE, not belt-and-braces. This chart pins
+              # backend.image.tag, and release.yml rewrites that tag in a
+              # SEPARATE commit after this one merges — so there is a window in
+              # which Argo syncs these templates against a backend image built
+              # BEFORE --write-env-file existed. The old CLI ignores an unknown
+              # trailing flag, registers successfully, and writes nothing; the
+              # publish container would then fail with "ENV_FILE is missing",
+              # which says nothing about the real cause. Probe the usage string
+              # instead and name it. Either way the sync aborts without touching
+              # the Deployment, and the next sync (after the tag bump) succeeds.
+              if ! node dist/authentik/register-s2s-cli.js 2>&1 | grep -q -- '--write-env-file'; then
+                echo "FATAL: this backend image's register-s2s-cli.js does not support" >&2
+                echo "--write-env-file, so it cannot hand the credential to the publish" >&2
+                echo "step. The image predates that flag: backend.image.tag in" >&2
+                echo "values-prod.yaml has not yet been bumped by release.yml to a build" >&2
+                echo "that contains it. No action needed — the next sync after the tag" >&2
+                echo "bump will succeed. This sync aborts without touching the billing" >&2
+                echo "Deployment." >&2
+                exit 1
+              fi
+              # A newly created pod may precede kube-router's endpoint/ipset
+              # update. Wait on unauthenticated readiness before making the
+              # single privileged registration call; never retry a denied call.
+              node <<'NODE'
+              const http = require('node:http');
+              const base = process.env.AUTHENTIK_BASE_URL;
+              const timeout = Number(process.env.AUTHENTIK_READY_TIMEOUT_MS || 120000);
+              const deadline = Date.now() + timeout;
+              const ready = new URL('/-/health/ready/', base);
+              async function probe() {
+                return new Promise(resolve => {
+                  const req = http.get(ready, res => {
+                    res.resume();
+                    resolve(res.statusCode === 200);
+                  });
+                  req.setTimeout(3000, () => req.destroy());
+                  req.on('error', () => resolve(false));
+                });
+              }
+              (async () => {
+                while (Date.now() < deadline) {
+                  if (await probe()) {
+                    console.log('Authentik readiness confirmed; registering identity.');
+                    return;
+                  }
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+                console.error('FATAL: internal Authentik readiness timed out; registration was not attempted.');
+                process.exitCode = 1;
+              })().catch(() => { process.exitCode = 1; });
+              NODE
+              AUTHENTIK_ADMIN_TOKEN="$(cat "$TOKEN_FILE")" \
+              node dist/authentik/register-s2s-cli.js \
+                {{ .Values.billingService.authz.serviceName | quote }} \
+                {{ .Values.billingService.authz.scopes | quote }} \
+                --write-env-file /run/s2s/s2s.env
+          env:
+            # In-cluster Admin API, never the public edge: _helpers.tpl's
+            # authentikPublicPaths deliberately does NOT route /api/v3/providers
+            # or /api/v3/core from the internet. Same value backend.yaml uses.
+            - name: AUTHENTIK_BASE_URL
+              value: {{ .Values.authentik.oidc.internalUrl | default "http://authentik-server:9000" | quote }}
+          volumeMounts:
+            - name: s2s-credentials
+              mountPath: /run/s2s
+            - name: authentik-admin
+              mountPath: /run/authentik-admin
+              readOnly: true
+      containers:
+        # Step 2 — publish the credentials as a Secret. Separate container so
+        # the kubectl image never needs the Authentik admin token and the backend
+        # image never needs Secret-write RBAC.
+        - name: publish
+          # Same kubectl image the consumer-registration-seed Job uses; the tag
+          # is asserted to resolve in the registry by helm-validate before merge.
+          image: {{ .Values.consumerRegistrationSeed.image }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              NS="{{ .Release.Namespace }}"
+              SECRET_NAME="{{ .Values.billingService.authz.secretName }}"
+              ENV_FILE=/run/s2s/s2s.env
+              if [ ! -s "$ENV_FILE" ]; then
+                echo "FATAL: $ENV_FILE is missing or empty — the register step did not" >&2
+                echo "produce credentials. Not creating an empty Secret/$SECRET_NAME." >&2
+                exit 1
+              fi
+              kubectl -n "$NS" create secret generic "$SECRET_NAME" \
+                --from-env-file="$ENV_FILE" \
+                --dry-run=client -o yaml \
+              | kubectl -n "$NS" apply -f -
+              # Assert the POSTCONDITION, not the exit status of the apply.
+              # `kubectl apply` returning 0 is not evidence the keys landed, and
+              # a Secret that exists with an empty value is exactly the state
+              # that would later surface as an opaque 401 from Authentik's token
+              # endpoint. Only LENGTHS are examined; no value is ever printed.
+              for KEY in AUTHENTIK_CLIENT_ID AUTHENTIK_CLIENT_SECRET; do
+                LEN=$(kubectl -n "$NS" get secret "$SECRET_NAME" \
+                        -o "jsonpath={.data.$KEY}" | wc -c | tr -d ' ')
+                if [ "$LEN" -eq 0 ]; then
+                  echo "FATAL: Secret/$SECRET_NAME exists but key $KEY is empty." >&2
+                  exit 1
+                fi
+                echo "$SECRET_NAME.$KEY present (${LEN} base64 chars)."
+              done
+              echo "Secret/$SECRET_NAME ensured in namespace $NS."
+          volumeMounts:
+            - name: s2s-credentials
+              mountPath: /run/s2s
+              readOnly: true
+{{- end }}

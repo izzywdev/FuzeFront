@@ -16,7 +16,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -164,13 +164,7 @@ export const HomePage: React.FC = () => {
     <div className="overflow-x-hidden">
       {/* ── Hero ── */}
       <section className="relative min-h-screen flex items-center bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden">
-        {/* `hero-pattern` sets `background-image` too — combining it with the
-            gradient classes above on one element makes the browser drop the
-            gradient entirely (last background-image wins, they don't layer),
-            leaving the section transparent and the white/light hero text
-            unreadable. Rendered as its own overlay div instead, exactly like
-            the Pricing Teaser section below does it. */}
-        <div className="absolute inset-0 hero-pattern pointer-events-none" />
+        <HeroPatternOverlay />
         {/* Background orbs */}
         <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-20 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
@@ -270,7 +264,7 @@ export const HomePage: React.FC = () => {
               </p>
             </motion.div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <ResponsiveGrid columns={4} gap="xl">
               {valueProps.map((prop) => {
                 const Icon = prop.icon
                 return (
@@ -283,7 +277,7 @@ export const HomePage: React.FC = () => {
                   </motion.div>
                 )
               })}
-            </div>
+            </ResponsiveGrid>
           </SectionWrapper>
         </Container>
       </section>
@@ -410,7 +404,7 @@ export const HomePage: React.FC = () => {
                   </div>
                 ))}
               </div>
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <Wrap gap={4} justify="center">
                 <Link
                   to="/pricing"
                   className="btn-primary flex items-center justify-center gap-2"
@@ -425,7 +419,7 @@ export const HomePage: React.FC = () => {
                 >
                   Talk to sales
                 </Link>
-              </div>
+              </Wrap>
             </motion.div>
           </SectionWrapper>
         </Container>
@@ -487,7 +481,7 @@ export const HomePage: React.FC = () => {
               <p className="text-lg text-gray-600 mb-8">
                 Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
               </p>
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <Wrap gap={4} justify="center">
                 <a
                   href="https://app.fuzefront.com/signup"
                   className="btn-primary flex items-center justify-center gap-2 text-base"
@@ -502,7 +496,7 @@ export const HomePage: React.FC = () => {
                 >
                   Talk to sales
                 </Link>
-              </div>
+              </Wrap>
               <Caption space="lg" tone="primary">
                 No credit card required &middot; Free for 14 days &middot; Scales as you grow
               </Caption>

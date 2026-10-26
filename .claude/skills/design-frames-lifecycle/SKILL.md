@@ -47,12 +47,18 @@ content. Your repo's `design/frames/<feature>/` is always the one to edit.
    frame file the manifest references, pushes the manifest, and commits a fresh content
    stamp:
    ```bash
-   node scripts/design-frames-client.mjs sync <slug> design/frames/<slug> FuzeFront
+   node scripts/design-frames-client.mjs sync <slug> design/frames/<slug> izzywdev/FuzeFront
    ```
    Re-run this **every time the local frames change** — it's a publish step, not a
-   one-time migration. `<your-repo-name>` becomes the manifest's `sourceRepo`, so one
+   one-time migration. `<owner/repository>` becomes the manifest's `sourceRepo`, so one
    deployment of design-frames-service can serve multiple consuming products without
    their slugs colliding in the UI.
+   To onboard an existing repository catalogue in one run, use:
+   ```bash
+   node scripts/design-frames-client.mjs sync-all design/frames izzywdev/FuzeFront
+   ```
+   FuzeX groups all imported features under the source repository's app workspace,
+   so they appear together in the FuzeX remote inside the FuzeFront portal.
 5. **Share the navigable review site** for approval: `node scripts/design-frames-client.mjs get <slug>`
    prints the manifest; the site itself is at the URL `siteUrl(slug)` returns (also
    printed by `sync`).

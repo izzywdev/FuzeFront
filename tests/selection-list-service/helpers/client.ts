@@ -1,13 +1,13 @@
 /**
  * Typed SelectionListClient factory pointed at the test service instance.
  *
- * Service URL is read from SERVICE_BASE_URL (default http://localhost:3011).
+ * Service URL is read from SERVICE_BASE_URL (default http://localhost:3008).
  * Uses Node 18+ native fetch — no external dependency needed.
  */
 import { SelectionListClient } from '@fuzeone/selection-list-client';
 
 export const SERVICE_BASE_URL: string =
-  process.env['SERVICE_BASE_URL'] ?? 'http://localhost:3011';
+  process.env['SERVICE_BASE_URL'] ?? 'http://localhost:3008';
 
 /** Build a client for the given bearer token. */
 export function makeClient(token?: string | (() => string)): SelectionListClient {
@@ -22,9 +22,9 @@ export function makeClient(token?: string | (() => string)): SelectionListClient
 /** Raw fetch bypassing the typed client — for edge-case status/body assertions. */
 export async function rawFetch(
   path: string,
-  init: { method?: string; body?: string; token?: string; headers?: Record<string, string> } = {}
+  init: { method?: string; body?: string; token?: string; headers?: Record<string, string>; baseUrl?: string } = {}
 ): Promise<{ status: number; body: unknown }> {
-  const { token, headers: extraHeaders, ...rest } = init;
+  const { token, headers: extraHeaders, baseUrl, ...rest } = init;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
@@ -33,7 +33,7 @@ export async function rawFetch(
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  const res = await fetch(`${SERVICE_BASE_URL}${path}`, {
+  const res = await fetch(`${baseUrl ?? SERVICE_BASE_URL}${path}`, {
     ...rest,
     headers,
   });

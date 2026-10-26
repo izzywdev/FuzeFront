@@ -23,7 +23,8 @@ import { FuzeEvent, IdentityOrgCreatedPayloadV1 } from '@fuzefront/shared/kafka'
 import { db as defaultDb } from '../db';
 import { logger, timed } from '../lib/logger';
 import { applyPlatformDefaults, isSeedingEnabled, type PlatformSeedOutcome } from '../seed';
-import { upsertOrgProjection } from './orgProjection';
+import { futureSkewToleranceMs, isFutureDated, upsertOrgProjection } from './orgProjection';
+import { handlePlatformSnapshot, resumeIfReactivated } from './platformGuard';
 import { RetryBudget } from './retryBudget';
 
 export interface OrgCreatedDeps {
@@ -37,7 +38,8 @@ const defaultBudget = new RetryBudget();
 
 export type OrgCreatedResult =
   | { projected: true; seeding: 'skipped-inactive' | 'skipped-flag-off' }
-  | { projected: true; seeding: 'attempted'; outcomes: PlatformSeedOutcome[] };
+  | { projected: true; seeding: 'attempted'; outcomes: PlatformSeedOutcome[] }
+  | { projected: false; seeding: 'refused-platform-org' | 'rejected-future-dated' };
 
 export async function handleOrgCreated(
   event: FuzeEvent<IdentityOrgCreatedPayloadV1>,
@@ -50,12 +52,24 @@ export async function handleOrgCreated(
     budget: defaultBudget,
     ...overrides,
   };
-  const { organizationId, type, isActive } = event.payload;
+  const { organizationId, type, isActive, ownerId, name } = event.payload;
   const log = logger.child({ reqId: event.correlationId, component: 'org-created' });
   log.info({ organizationId, type, isActive }, 'identity.org.created received');
+  // An envelope dated beyond the skew tolerance is REJECTED (acknowledged, nothing applied): a clamp to now would give
+  // the same event a different ordering instant on every redelivery (events/orgProjection.ts `isFutureDated`).
+  if (isFutureDated(event.occurredAt)) {
+    log.warn({ organizationId, topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt, toleranceMs: futureSkewToleranceMs() }, 'REJECTED a future-dated org lifecycle envelope (beyond the clock-skew tolerance): nothing was applied; re-send once the producer clock is right');
+    return { projected: false, seeding: 'rejected-future-dated' };
+  }
+
+  // 0. The platform organization: a deactivation SUSPENDS its writes, a retype is refused (platformGuard.ts).
+  const ctx = { topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt };
+  if (await handlePlatformSnapshot(deps.db, { organizationId, type, isActive }, ctx, log)) return { projected: false, seeding: 'refused-platform-org' };
 
   // 1. Projection first, unconditionally (infra faults throw -> retried).
-  const wire = await timed(log, 'db.upsert-org-projection', () => upsertOrgProjection(deps.db, { organizationId, type, isActive }), { organizationId });
+  const wire = await timed(log, 'db.upsert-org-projection', () => upsertOrgProjection(deps.db, { organizationId, type, isActive, ownerId, name, occurredAt: event.occurredAt }), { organizationId });
+
+  await resumeIfReactivated(deps.db, { organizationId, type, isActive }, ctx, log);
 
   // 2. Inactive orgs are not seeded.
   if (!isActive) {

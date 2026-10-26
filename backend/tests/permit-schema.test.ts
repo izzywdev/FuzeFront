@@ -46,6 +46,11 @@ describe('permit schema IaC', () => {
     expect(Object.keys(app.actions).sort()).toEqual(
       ['create', 'delete', 'install', 'read', 'uninstall', 'update']
     )
+    // creator: instance-scoped, direct-assignment-only role (app-builder ownership model).
+    expect(Object.keys(app.roles ?? {})).toEqual(['creator'])
+    expect(app.roles!.creator.permissions.sort()).toEqual(['install', 'read', 'uninstall', 'update'])
+    expect(app.roles!.creator.permissions).not.toContain('delete')
+    expect(app.roles!.creator.granted_to).toBeUndefined()
     const um = permitSchema.resources.find(r => r.key === 'UserManagement')!
     expect(Object.keys(um.actions).sort()).toEqual(
       ['invite', 'remove', 'update_role', 'view_members']
@@ -120,9 +125,9 @@ describe('permit schema IaC', () => {
       }
     })
 
-    it('SelectionListCatalog declares the four tenant-level actions', () => {
+    it('SelectionListCatalog declares the six tenant-level actions (4.1.0: + read_shared, publish_platform)', () => {
       const cat = permitSchema.resources.find(r => r.key === 'SelectionListCatalog')!
-      expect(Object.keys(cat.actions).sort()).toEqual(['create', 'list', 'read_quota', 'resolve'])
+      expect(Object.keys(cat.actions).sort()).toEqual(['create', 'list', 'publish_platform', 'read_quota', 'read_shared', 'resolve'])
       expect(cat.roles).toBeUndefined()
     })
 
@@ -136,9 +141,9 @@ describe('permit schema IaC', () => {
       const catalog = (key: string) =>
         permitSchema.roles.find(r => r.key === key)!.permissions
           .filter(p => p.startsWith('SelectionListCatalog:')).map(p => p.split(':')[1]).sort()
-      expect(catalog('admin')).toEqual(['create', 'list', 'read_quota', 'resolve'])
-      expect(catalog('editor')).toEqual(['create', 'list', 'resolve'])
-      expect(catalog('viewer')).toEqual(['list', 'resolve'])
+      expect(catalog('admin')).toEqual(['create', 'list', 'publish_platform', 'read_quota', 'read_shared', 'resolve'])
+      expect(catalog('editor')).toEqual(['create', 'list', 'read_shared', 'resolve'])
+      expect(catalog('viewer')).toEqual(['list', 'read_shared', 'resolve'])
       expect(catalog('developer')).toEqual([])
     })
 

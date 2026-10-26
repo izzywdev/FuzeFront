@@ -13,6 +13,7 @@ import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
 import type { Knex } from 'knex'
 import { logger } from '../lib/logger'
+import { emitMembershipAdded } from '../events/membershipEvents'
 
 /**
  * Plan B — tenant provisioning that is correct, idempotent, and self-healing.
@@ -155,7 +156,7 @@ export async function ensurePersonalOrg(
         throw new Error(`Personal org still missing for user ${userId} after insert attempt`)
       }
 
-      await trx('organization_memberships')
+      const insertedOwner = await trx('organization_memberships')
         .insert({
           id: toUuid(mintId('membership')),
           user_id: userId,
@@ -168,6 +169,17 @@ export async function ensurePersonalOrg(
         })
         .onConflict(['user_id', 'organization_id'])
         .ignore()
+        .returning('id')
+
+      // Emit only when a row was actually inserted (ON CONFLICT DO NOTHING
+      // returns no row for a pre-existing membership) — no spurious add.
+      if (insertedOwner.length > 0) {
+        await emitMembershipAdded(trx, {
+          organizationId: actualOrg.id,
+          userId,
+          role: 'owner',
+        })
+      }
     })
   } catch (error: any) {
     // The `slug` unique constraint (`organizations_slug_unique`) is a
@@ -199,19 +211,30 @@ export async function ensurePersonalOrg(
             .where({ id: bySlug.id })
             .update({ type: 'personal', updated_at: db.fn.now() })
         }
-        await db('organization_memberships')
-          .insert({
-            id: toUuid(mintId('membership')),
-            user_id: userId,
-            organization_id: bySlug.id,
-            role: 'owner',
-            status: 'active',
-            joined_at: new Date(),
-            permissions: JSON.stringify({}),
-            metadata: JSON.stringify({}),
-          })
-          .onConflict(['user_id', 'organization_id'])
-          .ignore()
+        await db.transaction(async trx => {
+          const insertedOwner = await trx('organization_memberships')
+            .insert({
+              id: toUuid(mintId('membership')),
+              user_id: userId,
+              organization_id: bySlug.id,
+              role: 'owner',
+              status: 'active',
+              joined_at: new Date(),
+              permissions: JSON.stringify({}),
+              metadata: JSON.stringify({}),
+            })
+            .onConflict(['user_id', 'organization_id'])
+            .ignore()
+            .returning('id')
+          // Emit only on a real insert; the membership may already exist.
+          if (insertedOwner.length > 0) {
+            await emitMembershipAdded(trx, {
+              organizationId: bySlug.id,
+              userId,
+              role: 'owner',
+            })
+          }
+        })
         const healed = await db('organizations').where({ id: bySlug.id }).first()
         return rowToOrganization(healed)
       }
@@ -449,19 +472,31 @@ export async function ensureRootMembership(
     return
   }
 
-  await deps.db('organization_memberships')
-    .insert({
-      id: toUuid(mintId('membership')),
-      user_id: userId,
-      organization_id: ROOT_ORG_ID,
-      role: 'member',
-      status: 'active',
-      joined_at: new Date(),
-      permissions: JSON.stringify({}),
-      metadata: JSON.stringify({}),
-    })
-    .onConflict(['user_id', 'organization_id'])
-    .ignore()
+  await deps.db.transaction(async trx => {
+    const inserted = await trx('organization_memberships')
+      .insert({
+        id: toUuid(mintId('membership')),
+        user_id: userId,
+        organization_id: ROOT_ORG_ID,
+        role: 'member',
+        status: 'active',
+        joined_at: new Date(),
+        permissions: JSON.stringify({}),
+        metadata: JSON.stringify({}),
+      })
+      .onConflict(['user_id', 'organization_id'])
+      .ignore()
+      .returning('id')
+
+    // This runs on every login — emit only when a row was actually inserted.
+    if (inserted.length > 0) {
+      await emitMembershipAdded(trx, {
+        organizationId: ROOT_ORG_ID,
+        userId,
+        role: 'member',
+      })
+    }
+  })
 }
 
 /**
@@ -505,19 +540,31 @@ export async function ensureDeveloperMembership(
     .first()
 
   if (!existing) {
-    await deps.db('organization_memberships')
-      .insert({
-        id: toUuid(mintId('membership')),
-        user_id: userId,
-        organization_id: ROOT_ORG_ID,
-        role: 'developer',
-        status: 'active',
-        joined_at: new Date(),
-        permissions: JSON.stringify({}),
-        metadata: JSON.stringify({ developer: true }),
-      })
-      .onConflict(['user_id', 'organization_id'])
-      .ignore()
+    await deps.db.transaction(async trx => {
+      const inserted = await trx('organization_memberships')
+        .insert({
+          id: toUuid(mintId('membership')),
+          user_id: userId,
+          organization_id: ROOT_ORG_ID,
+          role: 'developer',
+          status: 'active',
+          joined_at: new Date(),
+          permissions: JSON.stringify({}),
+          metadata: JSON.stringify({ developer: true }),
+        })
+        .onConflict(['user_id', 'organization_id'])
+        .ignore()
+        .returning('id')
+      // A concurrent request may have inserted between the existence check
+      // and here; emit only when this insert actually wrote a row.
+      if (inserted.length > 0) {
+        await emitMembershipAdded(trx, {
+          organizationId: ROOT_ORG_ID,
+          userId,
+          role: 'developer',
+        })
+      }
+    })
   } else {
     const metadata =
       typeof existing.metadata === 'string'

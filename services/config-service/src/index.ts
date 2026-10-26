@@ -1,8 +1,10 @@
 import { configureIdentity } from '@izzywdev/fuzefront-identity';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { loadConfig } from './config';
 import { createApp } from './app';
 import { createPool, runMigrations } from './db';
 import { startLifecycleConsumers, LifecycleConsumers } from './events/consumer';
+import { createConfigChangePublisher } from './events/publisher';
 
 // governance/identifier-standard.md §8 ("Migration"): portal/organization/user
 // ids are spine types minted elsewhere in the family that have NOT yet been
@@ -15,6 +17,20 @@ import { startLifecycleConsumers, LifecycleConsumers } from './events/consumer';
 // backfills portal/organization/user.
 configureIdentity({
   legacyUuidTypes: new Set(['portal', 'organization', 'user']),
+});
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'config-service',
+  serviceVersion: SERVICE_VERSION,
 });
 
 async function main(): Promise<void> {
@@ -48,7 +64,17 @@ async function main(): Promise<void> {
   // Liveness stays on the shallow `/health`; readiness uses `/health/ready`,
   // which pings the DB — so a database that disappears LATER takes the pod
   // out of the Service without triggering a liveness restart loop.
-  const app = createApp(pool ? { pool } : undefined);
+  // config.changed producer (FF-EPIC-18-S4). null when KAFKA_BROKERS is unset;
+  // otherwise connects lazily on first publish, so it can never delay startup
+  // or fail a write (see src/events/publisher.ts).
+  const events = createConfigChangePublisher();
+  // eslint-disable-next-line no-console
+  console.log(
+    events
+      ? '[config-service] config.changed publisher enabled'
+      : '[config-service] KAFKA_BROKERS unset — config.changed events not published',
+  );
+  const app = createApp(pool ? { pool, events } : undefined);
   const server = app.listen(config.port, () => {
     // eslint-disable-next-line no-console
     console.log(`[config-service] Listening on port ${config.port}`);
@@ -85,7 +111,24 @@ async function main(): Promise<void> {
     console.log('[config-service] Shutting down...');
     // Disconnect the consumers before closing the server so in-flight handlers
     // finish against a live pool rather than being cut off mid-transaction.
-    const closeServer = () => server.close(() => process.exit(0));
+    const closeServer = () => {
+      const done = () =>
+        server.close(() => {
+          // Flush any spans still buffered before the process exits — otherwise
+          // the last few requests before shutdown silently never reach Tempo.
+          telemetry
+            .shutdown()
+            .catch((err) => {
+              // eslint-disable-next-line no-console
+              console.error('[config-service] telemetry shutdown error:', err);
+            })
+            .finally(() => process.exit(0));
+        });
+      // Disconnect the config.changed publisher before the listener closes;
+      // `.finally` so a broker failure never blocks shutdown or the span flush.
+      if (events) events.disconnect().finally(done);
+      else done();
+    };
     if (lifecycle) {
       lifecycle
         .disconnect()

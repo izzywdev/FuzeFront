@@ -93,6 +93,8 @@ describe('WEB_EXPOSED_FLAGS catalog', () => {
     // Selection Lists UI is browser-gated by useFlag(); without this entry the
     // flag reads permanently OFF in the browser no matter what Unleash says.
     expect(keys).toContain('fuzefront.selection-lists.service');
+    // Shared/common lists (SL9): the UI gates the common badge + fork flow on it.
+    expect(keys).toContain('fuzefront.selection-lists.shared-lists');
     // Seeding flag is server-only (selection-list-service consumers): it has a
     // FLAG_KEYS constant but must never be disclosed to the browser.
     expect(keys).not.toContain('fuzefront.selection-lists.seed-defaults');
@@ -108,6 +110,28 @@ describe('WEB_EXPOSED_FLAGS catalog', () => {
     expect(FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS).toBe(
       'fuzefront.selection-lists.seed-defaults',
     );
+  });
+
+  it('registers the shared-lists flag as a default-OFF release flag', () => {
+    expect(FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS).toBe('fuzefront.selection-lists.shared-lists');
+    const f = WEB_EXPOSED_FLAGS.find(x => x.key === FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS);
+    expect(f).toEqual({
+      key: 'fuzefront.selection-lists.shared-lists',
+      type: 'release',
+      default: false,
+    });
+  });
+
+  it('classifies fuzefront.apps.org-context-disabled as a default-ON kill-switch, not a release flag', () => {
+    // Runtime default is `true` (ON in prod; frontend useFlag fallback is true).
+    // A default-ON flag is only valid as an ops-kill-switch per the taxonomy;
+    // typing it `release` would violate release => default OFF.
+    const f = WEB_EXPOSED_FLAGS.find(x => x.key === FLAG_KEYS.APPS_ORG_CONTEXT_DISABLED);
+    expect(f).toEqual({
+      key: 'fuzefront.apps.org-context-disabled',
+      type: 'ops-kill-switch',
+      default: true,
+    });
   });
 
   it('declares release flags fail-safe OFF', () => {

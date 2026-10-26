@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleEmailRequested = void 0;
-const shared_1 = require("@fuzefront/shared");
+const kafka_1 = require("@fuzefront/shared/kafka");
 const templates_1 = require("../templates");
 const mask_1 = require("../utils/mask");
 const provider_error_1 = require("../utils/provider-error");
@@ -44,13 +44,13 @@ async function handleEmailRequested(event, deps) {
         providerMessageId,
         attemptedAt: new Date().toISOString(),
     };
-    await statusProducer.send(shared_1.TOPICS.NOTIFY_EMAIL_STATUS, {
+    await statusProducer.send(kafka_1.TOPICS.NOTIFY_EMAIL_STATUS, {
         version: '1.0',
-        topic: shared_1.TOPICS.NOTIFY_EMAIL_STATUS,
+        topic: kafka_1.TOPICS.NOTIFY_EMAIL_STATUS,
         correlationId: event.correlationId,
         occurredAt: new Date().toISOString(),
         payload: statusPayload,
-    }, shared_1.notifyEmailStatusSchemaV1);
+    }, kafka_1.notifyEmailStatusSchemaV1);
 }
 exports.handleEmailRequested = handleEmailRequested;
 //# sourceMappingURL=email-requested.handler.js.map

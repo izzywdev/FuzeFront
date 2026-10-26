@@ -34,20 +34,21 @@ flags:
   # fuzefront.apps.*
   # ---------------------------------------------------------------------------
   - key: fuzefront.apps.org-context-disabled
-    type: release
+    type: ops-kill-switch
     default: true
     description: >
       Controls whether federated apps requiring active organization context are
-      rendered in disabled state when the user is in personal context. ON in prod.
+      rendered in disabled state when the user is in personal context. ON in prod;
+      OFF is the break-glass that turns the org-context gating off.
     owner: frontend-engineer
-    removal_criterion: Permanent platform capability.
+    removal_criterion: Removed only if org-context gating is removed from the shell.
     gates:
       - "FuzeFront host SidePanel & AppSelector org-context gating"
     web_exposed: true
 
   - key: fuzefront.apps.org-context-hidden
     type: release
-    default: true
+    default: false
     description: >
       Controls whether federated apps requiring active organization context are
       completely hidden from navigation and launchers when in personal context.
@@ -117,6 +118,35 @@ flags:
       - "applications-service publication-requests API"
       - "Application detail: publish to marketplace controls"
     web_exposed: true
+
+  # ---------------------------------------------------------------------------
+  # fuzefront.auth.*
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.auth.experience
+    type: release
+    default: false
+    description: >
+      FFRNT-360 — gates the auth-experience UI (approved frames
+      design/frames/auth-experience): the public /signup/verify, /verify/email
+      and /reset routes, the "Forgot password?" link on sign-in, and the
+      post-signup redirect to the check-inbox screen. OFF = today's LoginPage
+      for every unauthenticated path, unchanged. Read PRE-AUTH by the browser
+      (no session exists yet, so GET /api/flags cannot serve it) via
+      isAuthExperienceEnabled() in @fuzefront/auth-ui: build-time default OFF
+      (VITE_FF_AUTH_EXPERIENCE=true to enable) plus a same-origin runtime
+      override (window.__FF_AUTH_EXPERIENCE__). Rollout convenience only — the
+      password-reset and verification endpoints are authorised/rate-limited
+      server-side regardless of this flag.
+    owner: frontend-engineer
+    removal_criterion: >
+      Delete once the auth-experience flows are GA for 100% of environments;
+      remove the flag, isAuthExperienceEnabled() and the flag-OFF branch in
+      frontend/src/App.tsx + LoginPage.tsx in the same PR.
+    gates:
+      - "frontend App.tsx unauthenticated routes /signup/verify, /verify/email, /reset"
+      - "AuthPanel Forgot password? link and post-signup verify redirect (LoginPage.tsx)"
+    web_exposed: false
+    jira: FFRNT-360
 
   # ---------------------------------------------------------------------------
   # fuzefront.authz.*
@@ -368,20 +398,104 @@ flags:
       - FFRNT-251
     epic: FF-EPIC-17
     story: S15
+    # Unleash creation record. Created OFF by the dispatchable workflow
+    # `prod-unleash-ops` (flags=selection-lists-create), which is CREATE-ONLY:
+    # it never turns the environment on and never adds a strategy. Enablement
+    # (a staged ramp, `flags=selection-lists`) is a separate, deliberate owner
+    # step. Evaluated by selection-list-service with context
+    # { orgId: 'org_...', userId: 'usr_...', app: 'selection-list-service' }
+    # (canonical wire TypeIDs, see services/selection-list-service/src/flags.ts
+    # buildFlagContext) -- write any orgId/userId constraint in that form.
     unleash:
       project: default
+      type: release
       environments:
         production:
-          enabled: true
-          strategies:
-            - type: flexibleRollout
-              rollout: 100
-              stickiness: default
-              segments:
-                - id: 1
-                  name: developers
-          # No org/user targeting at creation — enable per-org via Unleash
-          # targeting rules once the service is ready for a given org.
+          enabled: false
+          strategies: []
+
+  - key: fuzefront.config.management-console
+    type: release
+    default: false
+    description: >
+      Configuration Management Console UI (EPIC-19-S3/S4). Gates the
+      top-level "Configuration" left-nav item (SidePanel) and the /config
+      settings-editor route (App.tsx route guard, redirects to /dashboard
+      while OFF). Read in the browser via useFlag(); web_exposed so
+      GET /api/flags discloses it. Distinct from the server-only
+      fuzefront.platform.config-management (consumers reading FROM
+      config-service), which this flag does NOT affect.
+    owner: feature-flags-engineer
+    removal_criterion: >
+      When the console is GA for 100% of orgs for 30 days; delete the flag
+      and the SidePanel + App.tsx useFlag guards in one cleanup PR.
+    gates:
+      - '"Configuration" shell left-sidebar nav entry (SidePanel, UI-side)'
+      - '/config settings-editor route (App.tsx, UI-side)'
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-19
+    story: S3
+    unleash:
+      project: default
+      type: release
+      environments:
+        production:
+          enabled: false
+          strategies: []
+
+  - key: fuzefront.config.key-catalog
+    type: release
+    default: false
+    description: >
+      Config key catalog admin surface (EPIC-19-S4). Gates the
+      /admin/config/catalog and /admin/config/catalog/:key routes and the
+      catalog entry on AdminPage. Read in the browser via useFlag();
+      web_exposed so GET /api/flags discloses it. Default OFF (release).
+    owner: feature-flags-engineer
+    removal_criterion: >
+      When the catalog admin surface is GA for 100% of orgs for 30 days;
+      delete the flag and its App.tsx/AdminPage useFlag guards.
+    gates:
+      - '/admin/config/catalog + /admin/config/catalog/:key routes (App.tsx, UI-side)'
+      - 'config-catalog entry on AdminPage (UI-side)'
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-19
+    story: S4
+    unleash:
+      project: default
+      type: release
+      environments:
+        production:
+          enabled: false
+          strategies: []
+
+  - key: fuzefront.config.secrets-audit
+    type: release
+    default: false
+    description: >
+      Config secret + audit-history surface (EPIC-19-S4). Gates the
+      /admin/config/keys/:key/history route (App.tsx route guard). Read in
+      the browser via useFlag(); web_exposed so GET /api/flags discloses it.
+      Default OFF (release).
+    owner: feature-flags-engineer
+    removal_criterion: >
+      When the secret/audit surface is GA for 100% of orgs for 30 days;
+      delete the flag and its App.tsx useFlag guard.
+    gates:
+      - '/admin/config/keys/:key/history route (App.tsx, UI-side)'
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-19
+    story: S4
+    unleash:
+      project: default
+      type: release
+      environments:
+        production:
+          enabled: false
+          strategies: []
 
   - key: fuzefront.selection-lists.seed-defaults
     type: release
@@ -414,6 +528,71 @@ flags:
     web_exposed: false
     jira: ~
     epic: FF-EPIC-17
+    # Unleash creation record. Created OFF by `prod-unleash-ops`
+    # (flags=selection-lists-create, create-only; no environment enabled, no
+    # strategy). Seeding evaluates with { orgId, app } and NO userId, so a
+    # percentage rollout has no stable bucket: when the owner enables it, use a
+    # per-org `orgId IN [org_...]` constraint (canonical TypeID form, never a
+    # bare UUID), not a flexibleRollout percentage. Enablement is not part of
+    # this entry.
+    unleash:
+      project: default
+      type: release
+      environments:
+        production:
+          enabled: false
+          strategies: []
+
+  - key: fuzefront.selection-lists.shared-lists
+    type: release
+    default: false
+    description: >
+      Gates ALL shared/common-list behaviour added in selection-lists 4.1.0
+      (docs/planning/selection-lists-shared-and-fork.md, SL9): list
+      `visibility` (private | org | platform) and the shared read, the
+      `include_shared` / `visibility` listing parameters and key shadowing,
+      `POST /v1/selection-lists/{listId}/fork`, `409 fork_required` on common
+      lists, resolve of platform lists + the fork redirect
+      (`effective_item_id`), the `list.forked` / `visibility.changed` events,
+      and honouring seed-list `visibility`. OFF behaviour: the service answers
+      exactly as 4.0.0 in behaviour while still emitting 4.1.0 shapes (every
+      list `visibility: private`, `forked_from: null`, items
+      `origin_item_id: null`); `include_shared`/`visibility` are accepted and
+      ignored; the fork operation answers 404; PATCH/create with a
+      non-`private` visibility is 400; seed-list `visibility` is ignored. Real
+      authorization never routes through this flag: reads stay behind Permit
+      (`SelectionListCatalog:read_shared`, instance `read`) and every
+      mutation behind the instance roles. Independent of, and additionally
+      requires, the master gate fuzefront.selection-lists.service. Created OFF
+      in every Unleash environment (prod-unleash-ops `selection-lists-create`,
+      create only) — enablement is a deliberate per-org ramp by the owner.
+    owner: izzywdev
+    removal_criterion: >
+      Remove once the flag has been ON for all orgs for 30 consecutive days
+      with no fork / shared-read incident. Delete the flag in Unleash,
+      FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS, the WEB_EXPOSED_FLAGS entry,
+      isSharedListsEnabled() and every off-path branch in
+      services/selection-list-service in one cleanup PR.
+    gates:
+      - selection-list-service shared read, visibility, fork, resolve redirect, events, seed visibility (server-side)
+      - selection-lists UI shared/common badge, fork-to-edit flow, picker effective-list lookup (UI-side, UI wave)
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    # Unleash creation record. Created OFF by `prod-unleash-ops`
+    # (flags=selection-lists-create, create-only; no environment enabled, no
+    # strategy). Evaluated by selection-list-service with context
+    # { orgId: 'org_...', userId: 'usr_...', app: 'selection-list-service' }
+    # (canonical wire TypeIDs) -- write any orgId constraint in that form
+    # (per-org `orgId IN [org_...]`, never a bare UUID). Enablement is a
+    # separate, deliberate owner step and is not part of this entry.
+    unleash:
+      project: default
+      type: release
+      environments:
+        production:
+          enabled: false
+          strategies: []
 
   # ---------------------------------------------------------------------------
   # fuzefront.identity.* (FF-EPIC-17 — personal identity / root membership /

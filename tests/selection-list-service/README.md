@@ -1,7 +1,7 @@
 # Selection-List Service — Independent Acceptance and Contract Test Suite
 
 **FFRNT-198 / S12** — Written by `test-engineer` against the frozen spec
-(`services/selection-list-service/openapi.yaml` v1.0.0).
+(`services/selection-list-service/openapi.yaml`, frozen; currently 4.0.0).
 
 ## Status: GREEN, and a required CI gate
 
@@ -17,9 +17,9 @@ contract — fix the service (or amend the contract PR), never weaken the test.
 | Requirement | Notes |
 |---|---|
 | Node 24+ | `node --version` must be `>=24.0.0` |
-| Running `selection-list-service` | Defaults to `http://localhost:3011` |
+| Running `selection-list-service` | Defaults to `http://localhost:3008` |
 | Postgres (test DB) | Required for `security/mirror-not-authority.test.ts` and for the quota ceilings seeded by `helpers/global-setup.ts` |
-| Stand-in Security API | `node helpers/fake-security-api.mjs` (port 3002); point the service at it with `SECURITY_SERVICE_URL` |
+| Stand-in Security API | `node helpers/fake-security-api.mjs` (port 3002, or `PORT`); point the service at it with `SECURITY_SERVICE_URL` |
 
 ## Running the service locally
 
@@ -34,7 +34,7 @@ the service in test mode. The service must:
    not the allow-all `NODE_ENV=test` no-op: set `SECURITY_SERVICE_URL` and
    `FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED=true`. It grants only via the service's
    own grant calls, so the mirror-not-authority tests' direct DB injection is the
-   only way `usr_01test00000000mirrorb00000` could appear to have access
+   only way `testUser('mirrorb')` (helpers/ids.ts; fixture ids are codec-valid TypeIDs, never hand-typed literals) could appear to have access
 
 Quick start (adjust to the service's actual startup command):
 
@@ -50,9 +50,14 @@ JWT_SECRET=test-jwt-secret-for-selection-list-service \
 
 ```bash
 cd tests/selection-list-service
-npm install
+npm install        # also links the local @izzywdev/fuzefront-identity (packages/identity, its dist/ is committed)
 npm test
 ```
+
+`npm install` here is enough to run the stand-in on its own (`node helpers/fake-security-api.mjs`): the suite
+declares `@izzywdev/fuzefront-identity` (`file:../../packages/identity`, the same reference the services use), which
+the stand-in and the id fixtures import for the TypeID <-> UUID codec. It no longer relies on a root
+`npm ci` having hoisted the workspace package.
 
 Run only contract tests (faster, no DB dependency):
 
@@ -70,7 +75,9 @@ npm run test:security
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SERVICE_BASE_URL` | `http://localhost:3011` | URL of the running service |
+| `SERVICE_BASE_URL` | `http://localhost:3008` | URL of the running service |
+| `SECURITY_SERVICE_URL` | `http://localhost:3002` | Where the harness reaches the stand-in Security API to post fixtures (`/__fixture/*`) and read grants. Set it to the SAME value the service under test uses, so fixtures land on the stand-in the service consults |
+| `FAKE_SECURITY_URL` | (unset) | Explicit override of the above for the harness only (e.g. the harness reaches the stand-in at an address the service cannot use). Only honoured when set. Resolved once, in `helpers/security-url.ts` |
 | `JWT_SECRET` | `test-jwt-secret-for-selection-list-service` | Secret for signing test JWTs |
 | `TEST_DB_URL` | — | Full Postgres DSN (preferred) |
 | `DB_HOST` | `localhost` | Postgres host |
@@ -91,11 +98,48 @@ contract/
   access.test.ts        GET/PUT/DELETE /v1/selection-lists/{id}/access; last-owner
   quota.test.ts         Quota enforcement; concurrent creates; QUOTA_EXCEEDED shape
   resolve.test.ts       POST /v1/resolve; archived/missing ids; minimal shape
+  response-shape.test.ts   every resource/status validated against openapi.yaml 4.0.0 (Ajv): required
+                           nullable `seed`, AuthorPrincipal created_by/granted_by, Error envelope
+  outbox-events.test.ts    HTTP -> event_outbox: exactly the events of plan §4 per mutation, payloads valid
+                           against the shared Zod schemas, listRevision strictly increasing, no event on
+                           rejected/no-op requests, per-org seq order (plan §14 P1-P6)
+  outbox-relay.test.ts     relay delivery guarantees with a fake transport: key = org, 10 attempts -> park +
+                           DLQ, per-org head-of-line ordering across a failure (plan §14 O1-O3)
+  seeding.test.ts          platform defaults + app seeding through the compiled consumer handlers and the
+                           seed library (Kafka-free): S1-S7, R1-R14, attestation failure matrix, token never
+                           in outbox/logs/DLQ, seeded rows over HTTP, the [deleted-user] sentinel
+  identifiers.test.ts      identifier standard: server-minted ids, cross-type confusion, "an id is never a
+                           capability" (same-org and cross-org)
+  request-validation.test.ts  additionalProperties:false + resolve `ids` schema; contains the it.failing
+                           pins for the known deviations (see the file header)
+  spec-consistency.test.ts offline: client issues the spec's routes/bodies; x-permit-* == the 3.0.0 matrix
+                           in docs/planning/selection-lists-permit-actions.md; the CI stand-in Security
+                           API encodes the documented role tables
 
 security/
   authz.test.ts                  Authorization matrix (5 roles × 8 actions)
+  authz-catalog.test.ts          Tenant-role catalog actions (3.0.0); item purge M-1; PATCH archive L-1
   mirror-not-authority.test.ts   FFRNT-242: mirror table cannot authorize
 ```
+
+### Seeding / relay suites: how they run without Kafka
+
+`contract/seeding.test.ts` and `contract/outbox-relay.test.ts` import the **compiled** service
+(`services/selection-list-service/dist/...`, so `npm run -w selection-list-service build` must have run)
+and drive the consumer handlers / relay against the same Postgres the running service uses, with
+`DB_*` from the environment (identical to the service's). Run the service **without `KAFKA_BROKERS`** (the
+CI default): with a live relay the outbox rows would leave `pending` while the relay suite asserts on them.
+Only the Kafka transport and the Security API's token-introspection endpoint are faked (the latter by an
+in-process server the suite owns); the seeded lists are reached over HTTP through the stand-in Security API's
+machine-token grant route (the support path of docs/planning/selection-lists-permit-actions.md §5), so
+the harness's Security API URL (`SECURITY_SERVICE_URL`, overridable with `FAKE_SECURITY_URL`; default
+`http://localhost:3002`; see `helpers/security-url.ts`) must point at it.
+
+### `it.failing` = a known, ticketed deviation
+
+`contract/request-validation.test.ts` marks tests `it.failing` where the service deviates from the frozen
+spec. They keep CI green while the defect stays provable; when the service is fixed they go red ("expected
+to fail but passed") and the `.failing` must be removed in the same PR. Never weaken the assertion.
 
 ## FFRNT-242 — mirror-not-authority
 
@@ -104,9 +148,39 @@ It directly inserts a row into `selection_list_access` (bypassing Permit) and as
 that the service still denies all requests from that user. This test REQUIRES a DB
 connection to the test database.
 
-If the DB connection is unavailable, the tests are **SKIPPED** with a warning (not
-silently passed). The skip is a flagged gap — it means FFRNT-242 is not verified in
-that run.
+If the DB connection is unreachable, the tests **fail loudly** with a clear "test database
+unreachable" error (never silently skipped), so an unverified run can never report a false
+green. In CI, `selection-list-service-integration-tests` always provides a migrated Postgres,
+so this holds there.
+
+### Both renderings of the injected row
+
+A service build stores and looks up `selection_list_access.user_id` by the user's TypeID (`usr_...`) or by its
+bare UUID, depending on the build. `insertDirectAccessGrant` (helpers/db.ts) therefore writes the injected
+`USER_B` grant in **both** renderings (and `removeDirectAccessGrant` / `directAccessRowCount` address both), and
+`beforeEach` asserts that both rows landed. A row in only one form would be invisible to a service keyed by the
+other, and the test would pass without ever exercising "the mirror is consulted".
+
+### Proving the test is not vacuous (manual mutation check)
+
+This needs a service that consults the mirror, so it cannot run in CI. To re-check after touching the injection:
+in a scratch copy of the BUILT service (`services/selection-list-service/dist/middleware/authz.js`), insert before
+`const decision = await getAuthzClient().check(` in `requireAuthzCheck`:
+
+```js
+if (process.env.MUTATE_MIRROR && listId) {
+  const keyUser = process.env.MUTATE_MIRROR === 'uuid' ? require('@izzywdev/fuzefront-identity').toUuid(userId) : userId;
+  const hit = await db('selection_list_access').where({ list_id: listId, user_id: keyUser }).whereNull('revoked_at').first();
+  if (hit) { next(); return; }   // the mirror treated as an authority
+}
+```
+
+(`db` is whatever the compiled file calls the knex handle, `db_1.db` today.) Start the service with
+`MUTATE_MIRROR=typeid`, then `MUTATE_MIRROR=uuid`, and run `npx jest security/mirror-not-authority`: the six
+`USER_B cannot ...` tests must FAIL under both. Recorded result (current master service): both forms fail 6 of 8.
+The previous harness (TypeID-only injection) failed 6 of 8 under `typeid` but PASSED 8 of 8 under `uuid` - the
+vacuous pass this fixes. Against the PR #1462 service (bare-UUID rows) the new harness fails 6 of 8 under both forms, and the old one
+failed 6 of 8 under `typeid` but passed 8 of 8 under `uuid`. Discard the patched `dist` afterwards (rebuild).
 
 ## What these tests do NOT cover
 
