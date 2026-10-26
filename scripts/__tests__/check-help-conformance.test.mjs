@@ -14,6 +14,7 @@ import {
   checkArticle,
   checkCode,
   matchesAny,
+  shouldFullScan,
 } from '../check-help-conformance.mjs'
 
 const POLICY = {
@@ -156,8 +157,9 @@ test('checkFreshness flags stale and passes fresh', () => {
 })
 
 test('checkMedia enforces alt, existence, placeholder, video host', () => {
+  // _assets/... resolves against the help root (dirname of media.assetDir), NOT article-relative.
   const io = {
-    existsOf: rel => rel === 'docs/help/user-guide/_assets/real.png' || rel === 'docs/help/user-guide/_assets/empty.png',
+    existsOf: rel => rel === 'docs/help/_assets/real.png' || rel === 'docs/help/_assets/empty.png',
     statOf: rel => (rel.endsWith('empty.png') ? { size: 0 } : { size: 1024 }),
   }
   const rel = 'docs/help/user-guide/getting-started.md'
@@ -215,6 +217,49 @@ test('checkArticle: freshness is an error under mode=fail', () => {
 test('checkCode flags forbidden strings in a code surface', () => {
   const res = checkCode('frontend/src/pages/HelpPage.tsx', 'const title = "FrontFuse"', POLICY)
   assert.ok(res.errors.length > 0)
+})
+
+test('parseFrontmatter strips inline YAML comments on unquoted scalars (template)', () => {
+  // The authoring template carries inline comments; copying it verbatim must still validate.
+  const t = [
+    '---',
+    'title: Getting Started',
+    'description: How to start',
+    'audience: user            # user | developer',
+    'order: 1',
+    'owner: "@izzywdev"',
+    'lastReviewed: 2026-10-26   # today, YYYY-MM-DD',
+    'status: published          # published | draft',
+    '---',
+    'body',
+  ].join('\n')
+  const { data, found } = parseFrontmatter(t)
+  assert.equal(data.audience, 'user')
+  assert.equal(data.status, 'published')
+  assert.equal(data.lastReviewed, '2026-10-26')
+  assert.equal(checkFrontmatter(data, found, POLICY).length, 0)
+})
+
+test('checkMedia resolves the documented _assets/<slug> format against the help root', () => {
+  const io = {
+    existsOf: rel => rel === 'docs/help/_assets/getting-started/01-dashboard.png',
+    statOf: () => ({ size: 2048 }),
+  }
+  const rel = 'docs/help/user-guide/getting-started.md'
+  const errs = checkMedia(rel, { media: [{ src: '_assets/getting-started/01-dashboard.png', alt: 'Dashboard', type: 'image' }] }, POLICY, io)
+  assert.equal(errs.length, 0)
+})
+
+test('shouldFullScan escalates on policy/manifest change or article removal', () => {
+  const existsAll = () => true
+  // policy-only change
+  assert.equal(shouldFullScan(['governance/help-system-policy.json'], POLICY, 'governance/help-system-policy.json', existsAll), true)
+  // manifest change
+  assert.equal(shouldFullScan(['docs/help/manifest.json'], POLICY, 'governance/help-system-policy.json', existsAll), true)
+  // article deleted/renamed (changed but no longer on disk)
+  assert.equal(shouldFullScan(['docs/help/user-guide/getting-started.md'], POLICY, 'governance/help-system-policy.json', () => false), true)
+  // ordinary article edit → no escalation
+  assert.equal(shouldFullScan(['docs/help/user-guide/getting-started.md'], POLICY, 'governance/help-system-policy.json', existsAll), false)
 })
 
 test('matchesAny glob basics', () => {

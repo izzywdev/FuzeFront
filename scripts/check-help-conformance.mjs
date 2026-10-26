@@ -107,6 +107,15 @@ export function parseFrontmatter(text) {
   const data = {}
   let inMedia = false
   const strip = v => v.replace(/^['"]|['"]$/g, '').trim()
+  // Scalar values may carry an inline YAML comment (`status: published # published | draft`),
+  // which the authoring template uses. Drop an unquoted trailing ` #…` the way YAML does; a
+  // quoted value is kept verbatim so a legitimate '#' inside quotes survives.
+  const scalar = raw => {
+    const v = raw.trim()
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) return v.slice(1, -1)
+    const h = v.search(/\s#/)
+    return (h === -1 ? v : v.slice(0, h)).trim()
+  }
   for (const line of lines) {
     if (!line.trim()) continue
     if (/^media:\s*$/.test(line)) { inMedia = true; data.media = []; continue }
@@ -122,7 +131,7 @@ export function parseFrontmatter(text) {
       continue
     }
     const top = /^([A-Za-z0-9_]+):\s*(.*)$/.exec(line)
-    if (top) { inMedia = false; data[top[1]] = strip(top[2]) }
+    if (top) { inMedia = false; data[top[1]] = scalar(top[2]) }
   }
   return { data, found: true }
 }
@@ -219,8 +228,17 @@ export function checkMedia(relPath, data, policy, { statOf, existsOf }) {
       }
       continue // video is hosted, not committed to git
     }
-    // image: resolve relative to the article, check it exists, is non-empty, allowed ext, not placeholder
-    const rel = entry.src.startsWith('docs/') ? entry.src : path.posix.join(articleDir, entry.src)
+    // image: resolve the src, check it exists, is non-empty, allowed ext, not placeholder.
+    // The documented reference format is help-root-relative `_assets/<slug>/x.png` (see
+    // docs/help/_assets/README.md and the policy frontmatter example), which resolves against
+    // the parent of media.assetDir (i.e. docs/help). A `docs/`-prefixed src is taken as-is; any
+    // other relative src falls back to article-relative.
+    const assetDir = mediaCfg.assetDir || 'docs/help/_assets'
+    const helpRoot = path.posix.dirname(assetDir)
+    let rel
+    if (entry.src.startsWith('docs/')) rel = entry.src
+    else if (entry.src.startsWith('_assets/')) rel = path.posix.join(helpRoot, entry.src)
+    else rel = path.posix.join(articleDir, entry.src)
     const ext = path.posix.extname(rel).toLowerCase()
     if ((mediaCfg.allowedImageExtensions ?? []).length && !mediaCfg.allowedImageExtensions.includes(ext))
       out.push({ kind: 'media', msg: `media ${rel} extension "${ext}" not allowed` })
@@ -311,6 +329,19 @@ export function checkCode(relPath, text, policy) {
   return { errors, warnings: [] }
 }
 
+/**
+ * Decide whether a diff must be escalated to a full-surface scan. Tightening a machine rule
+ * (the policy JSON) must revalidate the content it governs — otherwise a PR that only edits the
+ * policy passes with zero files checked. Likewise, deleting or renaming an article (or changing
+ * the manifest) can break incoming links/media refs in UNCHANGED articles, which a diff-scoped
+ * run never looks at. In those cases we scan everything.
+ */
+export function shouldFullScan(changed, policy, policyRel, existsOf) {
+  if (changed.includes(policyRel)) return true
+  if (policy.manifest?.path && changed.includes(policy.manifest.path)) return true
+  return changed.some(f => isContentArticle(f, policy) && !existsOf(f)) // deleted/renamed target
+}
+
 /* --------------------------------------------------------------------- I/O */
 
 function arg(name, fallback = null) {
@@ -358,6 +389,7 @@ async function main() {
   const statOf = rel => { try { return statSync(path.join(REPO_ROOT, rel)) } catch { return null } }
   const io = { existsOf, statOf, today: new Date() }
 
+  const policyRel = path.relative(REPO_ROOT, POLICY_PATH).split(path.sep).join('/')
   let changed
   if (hasFlag('--all')) {
     changed = [...allArticles(policy), ...(policy.codeSurfaces ?? []).filter(existsOf)]
@@ -365,6 +397,11 @@ async function main() {
     const explicit = argList('--files')
     const base = arg('--base', 'origin/master')
     changed = explicit ?? gitFiles(['diff', '--name-only', `${base}...HEAD`])
+    // Not in explicit --files mode (targeted/local checks and the unit tests).
+    if (!explicit && shouldFullScan(changed, policy, policyRel, existsOf)) {
+      changed = [...new Set([...changed.filter(existsOf), ...allArticles(policy), ...(policy.codeSurfaces ?? []).filter(existsOf)])]
+      console.log(DIM('(policy/manifest change or article removal → full-surface scan)'))
+    }
   }
 
   const articles = changed.filter(f => isContentArticle(f, policy))
