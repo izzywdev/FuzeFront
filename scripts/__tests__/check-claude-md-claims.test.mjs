@@ -98,6 +98,11 @@ test('stripYamlComments: a # with no leading space is left alone', () => {
 // `continue-on-error` is valid at both levels, and treating them as one made an
 // unrelated step's flag report the gate invocation as suppressed, while a commented-out
 // invocation still counted as wired. Both were reproduced by review on #1685.
+// A suppressed sibling sits on BOTH sides of the invoking step, deliberately. With the
+// invocation last, a stepBlockAround() whose boundary never terminates runs to end of
+// file and picks up nothing extra — so the test passes even with the boundary broken,
+// and pins nothing. That is how the first version of this fixture was written, and the
+// mutation run is what exposed it.
 const JOB = [
   '  frames-schema:',
   '    runs-on: ubuntu-latest',
@@ -108,6 +113,9 @@ const JOB = [
   '      - name: Validate',
   '        run: |',
   '          node scripts/real-gate.mjs --base main',
+  '      - name: Upload an advisory artifact',
+  '        continue-on-error: true',
+  '        run: echo advisory',
   '',
 ].join('\n')
 
