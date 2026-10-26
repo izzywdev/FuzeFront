@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container, HeroPatternOverlay, Stack } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroPatternOverlay, Stack, Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -197,7 +197,7 @@ export const CareersPage: React.FC = () => {
                     </a>
                   </div>
 
-                  <p className="text-gray-600 text-sm leading-relaxed mb-5">{position.description}</p>
+                  <Text as="p" tone="secondary" size="sm" leading="relaxed" style={{ marginBlockEnd: 'var(--space-5)' }}>{position.description}</Text>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
