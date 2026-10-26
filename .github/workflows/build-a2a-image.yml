@@ -39,6 +39,11 @@ jobs:
       actions: write  # upload-artifact
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Do not persist the token in .git/config. The image job does no git
+          # push, so credentials in git config serve no purpose and would
+          # allow a PR's own generate-card.py to read them (Codex P1 finding).
+          persist-credentials: false
 
       # Regenerate the agent-card.json from the current manifest + role so the
       # baked card is always fresh. Uses a sparse checkout of FuzeAgent's
