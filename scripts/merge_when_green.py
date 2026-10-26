@@ -311,14 +311,22 @@ def evaluate(repo, number, needed, token):
     return v
 
 
-def do_merge(repo, number, method, token):
-    """Attempt the merge. Returns (merged_bool, message)."""
-    body = {"merge_method": method}
+def do_merge(repo, number, method, token, head_sha):
+    """Attempt the merge of the EXACT evaluated head. Returns (merged, message).
+
+    `sha` pins the merge to the commit whose readiness evaluate() checked: the
+    GitHub merge API merges only if the PR head still equals it, and returns 409
+    otherwise. Without it, a push landing between evaluate() and here would be
+    merged unverified — and since the ruleset does not preserve the armed-intent
+    condition, that new head could even be one where auto-merge was disabled. A
+    409 here is the guard doing its job, handled below as an expected skip."""
+    body = {"merge_method": method, "sha": head_sha}
     j, err, status = _req("PUT", f"/repos/{repo}/pulls/{number}/merge", token, body)
     if err is None and j and j.get("merged"):
         return True, j.get("sha", "")
-    # 405/409 = server says not mergeable (a gate we didn't model, or a race
-    # with a concurrent push). Expected, not a watchdog failure: report & skip.
+    # 405/409 = server says not mergeable: a gate we didn't model, a race with a
+    # concurrent push (the `sha` mismatch above), or the head moved. Expected,
+    # not a watchdog failure: report & skip.
     if status in (405, 409, 422):
         return False, f"server declined ({status}): {err}"
     # Anything else (403/5xx/network) is a real problem worth surfacing.
@@ -338,7 +346,7 @@ def run(repo, branch, token, dry_run, fail_on_error):
             if dry_run:
                 v["action"] = "would-merge (dry-run)"
             else:
-                merged, msg = do_merge(repo, n, v["merge_method"], token)
+                merged, msg = do_merge(repo, n, v["merge_method"], token, v["head_sha"])
                 v["action"] = f"MERGED {msg}" if merged else f"not merged: {msg}"
                 if not merged and msg.startswith("merge call failed"):
                     had_real_error = True

@@ -108,7 +108,12 @@ class _Handler(BaseHTTPRequestHandler):
             num = int(path.split("/pulls/")[1].split("/")[0])
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length) or "{}")
-            f.merged.append((num, body.get("merge_method")))
+            # Enforce the GitHub `sha` contract: if the caller pinned a head that
+            # no longer matches the server's current head, reject with 409.
+            server_head = getattr(f, "merge_head", None)
+            if server_head is not None and body.get("sha") != server_head:
+                return self._send(409, {"message": "Head branch was modified. Review and try the merge again."})
+            f.merged.append((num, body.get("merge_method"), body.get("sha")))
             return self._send(200, {"merged": True, "sha": f"merged-{num}"})
         return self._send(404, {"message": "no route"})
 
@@ -140,7 +145,8 @@ class ReadyPrMerges(StubServerCase):
         self.fx.checks = {"sha1": _green_checks(["gate-build", "gate-test", "gate-lint"])}
         rc = self._run()
         self.assertEqual(rc, 0)
-        self.assertEqual(self.fx.merged, [(1, "squash")])
+        # merged with the armed method AND pinned to the evaluated head sha.
+        self.assertEqual(self.fx.merged, [(1, "squash", "sha1")])
 
     def test_dry_run_never_merges(self):
         self.fx.pulls_list = [{"number": 1, "draft": False, "labels": [{"name": "auto-merge"}]}]
@@ -245,6 +251,19 @@ class SafetyGatesBlockMerge(StubServerCase):
                                "labels": [{"name": "auto-merge"}]}]
         self.fx.pulls = {12: _armed_pr(12, "s12", labels=())}  # opt-in gone since
         self.fx.checks = {"s12": _green_checks(["gate-build", "gate-test", "gate-lint"])}
+        self.assertEqual(self._run(), 0)
+        self.assertEqual(self.fx.merged, [])
+
+    def test_head_moved_between_evaluate_and_merge_is_declined(self):
+        """evaluate() checks head s13 and finds it green/ready, but the head has
+        since moved to s13-new. The merge is pinned to s13 via `sha`, so the
+        server returns 409 and nothing is merged — the watchdog never merges an
+        unverified head."""
+        self.fx.pulls_list = [{"number": 13, "draft": False,
+                               "labels": [{"name": "auto-merge"}]}]
+        self.fx.pulls = {13: _armed_pr(13, "s13")}
+        self.fx.checks = {"s13": _green_checks(["gate-build", "gate-test", "gate-lint"])}
+        self.fx.merge_head = "s13-new"   # server's head moved since evaluate()
         self.assertEqual(self._run(), 0)
         self.assertEqual(self.fx.merged, [])
 
