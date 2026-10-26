@@ -1,0 +1,138 @@
+{
+  "name": "Mobile bottom navigation — approval frames",
+  "description": "375px (phone / Android TWA viewport) frames for the host shell's primary mobile navigation, closing the gap recorded in docs/design-system/portal-ux.md §5: the design system's mobile guideline specifies a BottomNav below md (≤768px) and the BottomNav primitive exists in @fuzefront/design-system, but it is NOT wired into the host shell — the shell is drawer-only today, so a phone user has no persistent, thumb-reach navigation. These frames freeze how the bottom nav mounts in the shell (3 primary destinations + More), how it coexists with the existing slide-in drawer (one overlay, two triggers — reusing SidePanel/isSidebarOpen, not a second primitive), and the loading/empty/error/safe-area/touch-target states, before any shell code is written. Shell chrome owned by mobile-frontend-engineer; no new npm package. Approving the flow approves the component plan; frontend-test-engineer drives Playwright against the data-frame/data-* hooks.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "plan": "docs/design-system/portal-ux.md",
+  "implementation": {
+    "paths": [
+      "frontend/src/components/ShellBottomNav.tsx",
+      "frontend/src/components/useShellNavItems.ts",
+      "frontend/src/components/Layout.tsx",
+      "frontend/src/components/SidePanel.tsx",
+      "frontend/src/index.css"
+    ]
+  },
+  "entry": "index.html",
+  "contract": {
+    "component": "frontend/src → ShellBottomNav (wraps @fuzefront/design-system → BottomNav)",
+    "featureFlag": "fuzefront.shell.mobile-bottom-nav"
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "mobile-bottom-nav",
+        "orchestrator": "ShellBottomNav",
+        "route": "/dashboard",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "implementation": {
+          "paths": [
+            "frontend/src/components/ShellBottomNav.tsx",
+            "frontend/src/components/useShellNavItems.ts",
+            "frontend/src/components/Layout.tsx",
+            "frontend/src/components/SidePanel.tsx",
+            "frontend/src/index.css"
+          ]
+        },
+        "responsive": {
+          "mobileFrame": "01-bottom-nav",
+          "coveredViewports": [
+            "mobile"
+          ]
+        }
+      }
+    ],
+    "components": [
+      "ShellBottomNav",
+      "useShellNavItems"
+    ]
+  },
+  "frames": [
+    {
+      "id": "index",
+      "file": "index.html",
+      "label": "Index",
+      "route": "/",
+      "viewport": "responsive",
+      "summary": "Flow walker + build inventory + the frozen design decisions (3 tabs + More, drawer reuse, fail-open nav) and open questions for approval.",
+      "acceptanceNotes": "index links to every frame in order; the build inventory and design decisions are visible on the page, not only in manifest.json. No new npm package is listed — the BottomNav primitive already exists in the design system.",
+      "testHooks": [
+        "[data-frame='index']",
+        "[data-build-inventory]",
+        "[data-build-flow='mobile-bottom-nav']",
+        "[data-nav='01-bottom-nav']",
+        "[data-nav='02-more-drawer']",
+        "[data-nav='03-states']"
+      ]
+    },
+    {
+      "id": "01-bottom-nav",
+      "file": "01-bottom-nav.html",
+      "label": "(01) Bottom nav mounted",
+      "route": "/dashboard",
+      "flow": "mobile-bottom-nav",
+      "viewport": "mobile",
+      "summary": "The bottom nav mounted in the 375px shell: Home / Apps / Orgs / More, the active-tab fuse-seam indicator, a tab notification badge, collapsed top bar, content scrolling behind a fixed bar.",
+      "acceptanceNotes": "The bar is fixed at the viewport bottom (height --bottom-nav-height + --safe-area-bottom) and content padding-bottom clears it. Exactly one tab carries aria-current='page', derived from the router pathname (a /app/<slug> route lights the Apps tab). Each tab is >=--touch-target (44px) tall. The More tab is a button with aria-haspopup/aria-expanded that opens the drawer and never navigates. The badge is an accessible count.",
+      "testHooks": [
+        "[data-frame='01-bottom-nav']",
+        "[data-component='bottom-nav'][data-state='loaded']",
+        "[data-nav-item='home']",
+        "[data-nav-item='apps']",
+        "[data-nav-item='orgs']",
+        "[data-nav-item='more']",
+        "[data-nav-item='apps'][aria-current='page']",
+        "[data-action='toggle-drawer']",
+        "[data-badge]"
+      ]
+    },
+    {
+      "id": "02-more-drawer",
+      "file": "02-more-drawer.html",
+      "label": "(02) \"More\" → drawer",
+      "route": "/applications",
+      "flow": "mobile-bottom-nav",
+      "viewport": "mobile",
+      "summary": "Coexistence with the drawer: tapping More opens the existing SidePanel over a scrim for the long-tail (Billing, Connectors, Profile, Help, Status). Scrim/✕/Esc/item dismiss; More shows pressed + aria-expanded.",
+      "acceptanceNotes": "More and the top-bar hamburger both call the shell's single toggleSidebar (Layout.tsx isSidebarOpen) — one drawer, two triggers, no second overlay primitive. Open drawer is role='dialog' aria-modal='true'; the scrim covers content AND bar; backgrounded content is aria-hidden; the drawer honours --safe-area-top/-bottom. The drawer holds everything the four bar slots cannot. Dismiss via data-action='close-drawer' (scrim tap), the ✕, Esc, or any item.",
+      "testHooks": [
+        "[data-frame='02-more-drawer']",
+        "[data-panel='drawer'][data-state='open']",
+        "[data-scrim]",
+        "[data-action='close-drawer']",
+        "[data-nav-item='more'][data-pressed='true']",
+        "[data-drawer-item='billing']",
+        "[data-drawer-item='connectors']",
+        "[data-drawer-item='profile']",
+        "[data-drawer-item='help']",
+        "[data-drawer-item='status']"
+      ]
+    },
+    {
+      "id": "03-states",
+      "file": "03-states.html",
+      "label": "(03) States & edges",
+      "route": "/applications",
+      "flow": "mobile-bottom-nav",
+      "viewport": "mobile",
+      "summary": "Loading (bar instant, drawer apps skeleton), empty (no registered apps), error (registry failed — nav fail-open, scoped retry), plus safe-area/notch, >=44px touch targets, reduced-motion, and long-label truncation.",
+      "acceptanceNotes": "Loading never blanks the bar: [data-component='bottom-nav'][data-state='loaded'] is present from first paint; only the drawer's Apps section shows aria-busy skeletons. Empty keeps all four tabs and offers browse-apps, not a dead end. Error is fail-open and scoped — [data-error] is confined to the drawer Apps section with a retry; Home/Orgs/More and the Portal section stay usable. Safe-area: [data-safe-area='true'] bar height = calc(--bottom-nav-height + --safe-area-bottom); top bar pads --safe-area-top. Every .bn-item is >=--touch-target (44px). Drawer/scrim motion collapses under prefers-reduced-motion. Long labels ellipsize, never wrap or overflow.",
+      "testHooks": [
+        "[data-frame='03-states']",
+        "[data-state='loading']",
+        "[data-panel='drawer'][data-state='loading']",
+        "[data-state='empty']",
+        "[data-empty]",
+        "[data-action='browse-apps']",
+        "[data-state='error']",
+        "[data-error]",
+        "[data-action='retry']",
+        "[data-state='safe-area']",
+        "[data-safe-area='true']",
+        "[data-state='edge-truncate']"
+      ]
+    }
+  ],
+  "stamp": "9fbecb00e61b09481f54fc82ac909ab65e9bc2c55b3a8a7a0c4f20536b8fa17a"
+}

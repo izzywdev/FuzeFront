@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Mobile bottom navigation — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 940px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  h2 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display);
+    margin: var(--space-12) 0 var(--space-4); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 70ch; line-height: 1.55; }
+  .crumb { font-size: var(--text-sm); color: var(--text-tertiary); margin: var(--space-4) 0 0; line-height: 1.6; }
+  .crumb b { color: var(--text-secondary); font-weight: var(--weight-semibold); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-5); margin-top: var(--space-6); }
+  @media (max-width: 760px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); line-height: 1.5; }
+  .frame-link .states { margin-top: var(--space-3); display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .tag { font-family: var(--font-mono); font-size: var(--text-2xs); padding: 1px var(--space-2);
+    border-radius: var(--radius-pill); border: 1px solid var(--border-color); color: var(--text-secondary); }
+  .tag.warn { color: var(--warning-color); border-color: rgba(245,185,80,0.4); }
+  .tag.err { color: var(--error-color); border-color: rgba(243,105,127,0.4); }
+  .build { margin-top: var(--space-6); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .build h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); }
+  .build p.note { margin: 0 0 var(--space-4); color: var(--text-tertiary); font-size: var(--text-sm); max-width: 70ch; line-height: 1.5; }
+  .build dt { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--cyan-400); margin-top: var(--space-4); }
+  .build dd { margin: var(--space-2) 0 0; }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-pill);
+    padding: 2px var(--space-2); margin: 0 var(--space-2) var(--space-2) 0; color: var(--text-secondary); }
+  .chip.flow { color: var(--cyan-400); border-color: rgba(41,211,230,0.4); }
+  .chip.pkg { color: var(--accent-color); border-color: rgba(110,92,255,0.4); }
+  .decisions { margin-top: var(--space-6); background: var(--bg-tertiary); border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .decisions h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); color: var(--text-primary); }
+  .decisions ul { margin: 0; padding-left: 1.2em; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.6; }
+  .decisions li { margin-bottom: var(--space-3); }
+  .decisions li:last-child { margin-bottom: 0; }
+  .decisions code { font-family: var(--font-mono); color: var(--text-primary); }
+  .open-q { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border-color); }
+  .open-q h4 { margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--warning-color);
+    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+  .open-q ul { color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.6; padding-left: 1.2em; margin: 0; }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.6; }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid rgba(245,185,80,0.4); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="index" data-feature="mobile-bottom-nav">
+  <div class="eyebrow">Contract-freeze · UX approval · portal-ux.md §5 gap</div>
+  <h1>Mobile bottom navigation · Approval Frames</h1>
+  <p class="lead">375px (phone / Android&nbsp;TWA viewport) frames for the host shell's <b>primary mobile
+    navigation</b>. <code>docs/design-system/portal-ux.md</code> §5 records a real product gap: the
+    design system's mobile guideline specifies a <b>BottomNav below <code>md</code> (≤768px)</b> and the
+    <code>BottomNav</code> primitive exists in <code>@fuzefront/design-system</code>, but it is
+    <b>not wired into the host shell</b> — the shell is drawer-only today, so a phone user has no persistent,
+    thumb-reach navigation. These frames freeze how the bottom nav mounts in the shell, how it coexists with
+    the existing slide-in drawer, and the loading / empty / error / safe-area states before any shell code is
+    written. Built in the fuse-seam design system (tokens only).</p>
+  <p class="crumb">Shell chrome present on every authenticated route. Implemented by
+    <b>mobile-frontend-engineer</b> (responsive shell chrome), not in a federated remote. Reuses the existing
+    <b>drawer</b> (<code>SidePanel</code> / <code>.sidebar-scrim</code> in <code>Layout.tsx</code>) rather than
+    adding a second overlay.</p>
+
+  <h2>Walk the flow</h2>
+  <div class="grid">
+    <a href="01-bottom-nav.html" class="frame-link" data-nav="01-bottom-nav">
+      <div class="seam"></div>
+      <div class="step">Frame 01 · 375px</div>
+      <h3>Bottom nav mounted</h3>
+      <p>The bar in the mobile shell: 3 primary destinations + More, the active-tab fuse-seam indicator, a tab
+        notification badge, collapsed top bar, scrollable content behind a fixed bar.</p>
+      <div class="states"><span class="tag">default</span><span class="tag">active</span><span class="tag">badge</span></div>
+    </a>
+    <a href="02-more-drawer.html" class="frame-link" data-nav="02-more-drawer">
+      <div class="seam"></div>
+      <div class="step">Frame 02 · 375px</div>
+      <h3>"More" → drawer</h3>
+      <p>How bottom nav coexists with the drawer: tapping <b>More</b> opens the existing <code>SidePanel</code>
+        over a scrim for the long-tail (Billing, Connectors, Profile, Help, Status). Scrim dismiss; More shows
+        pressed.</p>
+      <div class="states"><span class="tag">drawer-open</span><span class="tag">coexistence</span></div>
+    </a>
+    <a href="03-states.html" class="frame-link" data-nav="03-states">
+      <div class="seam"></div>
+      <div class="step">Frame 03 · 375px</div>
+      <h3>States &amp; edges</h3>
+      <p>Loading (nav renders instantly, never blank), empty (no registered apps), error (apps registry failed —
+        nav still navigable), plus safe-area/notch, ≥44px touch targets, reduced motion and long-label truncation.</p>
+      <div class="states"><span class="tag">loading</span><span class="tag">empty</span><span class="tag err">error</span><span class="tag warn">safe-area</span><span class="tag warn">touch-44</span></div>
+    </a>
+  </div>
+
+  <!-- The build inventory is APPROVED WITH THE FRAMES: it is the architectural
+       contract, not a note. Keep it in sync with manifest.json `build`. -->
+  <section class="build" data-build-inventory>
+    <h3>What approving this builds</h3>
+    <p class="note">Approving these frames approves this inventory. The implementation builds exactly this flow
+      and these components — it cannot quietly invent a different architecture. No new npm package: the
+      <code>BottomNav</code> primitive already exists in <code>@fuzefront/design-system</code>; this is shell
+      wiring in <code>frontend/src</code>.</p>
+    <dl>
+      <dt>Flows</dt>
+      <dd><span class="chip flow" data-build-flow="mobile-bottom-nav">ShellBottomNav → /dashboard (shell-global)</span></dd>
+      <dt>Components (new, in <code>frontend/src</code>)</dt>
+      <dd>
+        <span class="chip" data-build-component>ShellBottomNav</span>
+        <span class="chip" data-build-component>useShellNavItems</span>
+      </dd>
+      <dt>Reused (not rebuilt)</dt>
+      <dd>
+        <span class="chip" data-reuse>@fuzefront/design-system → BottomNav</span>
+        <span class="chip" data-reuse>SidePanel (drawer)</span>
+        <span class="chip" data-reuse>Layout (isSidebarOpen / scrim)</span>
+      </dd>
+      <dt>Packages</dt>
+      <dd><span class="chip pkg" data-build-package>— none new (shell code) —</span></dd>
+    </dl>
+  </section>
+
+  <section class="decisions">
+    <h3>Design decisions frozen here</h3>
+    <ul>
+      <li><b>3 primary tabs + More = 4 slots.</b> The DS <code>BottomNav</code> renders max 4 items. The portal
+        has more destinations than fit, so the bar carries the three highest-frequency phone destinations —
+        <code>Home</code> (<code>/dashboard</code>), <code>Apps</code> (<code>/applications</code>),
+        <code>Orgs</code> (<code>/organizations</code>) — and a fourth <b>More</b> tab that opens the existing
+        drawer for the long tail. Derived from <code>SidePanel.tsx</code>'s portal section.</li>
+      <li><b>More reuses the drawer, it does not add a new overlay.</b> Tapping More calls the same
+        <code>toggleSidebar</code> that the top-bar hamburger already calls — one drawer, two entry points, so
+        there is never a bottom-sheet-vs-drawer split to maintain.</li>
+      <li><b>Nav never blocks on data.</b> The bar renders its static portal destinations immediately; only the
+        app-registry-derived long tail (inside the drawer) has loading/empty/error. Navigation is fail-open —
+        you can always reach Home/Orgs/More even when the registry call fails.</li>
+      <li><b>Active state is route-derived</b> via <code>aria-current="page"</code>, mapped from the router
+        pathname; a federated app route (<code>/app/&lt;slug&gt;</code>) lights the <code>Apps</code> tab.</li>
+      <li><b>≥768px is unchanged.</b> At <code>md</code> and up the bottom nav is hidden and the persistent
+        <code>SidePanel</code> returns — these frames specify the phone (xs/sm) treatment only.</li>
+    </ul>
+    <div class="open-q">
+      <h4>Open questions for approval</h4>
+      <ul>
+        <li>Is <code>Home / Apps / Orgs / More</code> the right four for the bar, or should <code>Billing</code>
+          or <code>Connectors</code> take a primary slot over <code>Orgs</code>? (All others live under More.)</li>
+        <li>When a federated app is active (<code>/app/&lt;slug&gt;</code>), should the bar switch to the app's
+          injected nav, or always stay portal-level with Apps highlighted? These frames assume
+          <b>stay portal-level</b>.</li>
+        <li>Should the bar hide on scroll-down to maximise content height, or stay pinned? Frames assume
+          <b>stay pinned</b> (simplest, most predictable for thumb reach).</li>
+      </ul>
+    </div>
+  </section>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval</span>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Primitive: <code>BottomNav</code> (<code>design-system/components/mobile/BottomNav.d.ts</code>) ·
+    Shell: <code>frontend/src/components/{Layout,SidePanel,ShellBottomNav}.tsx</code> + <code>index.css</code> ·
+    Owner: <code>mobile-frontend-engineer</code>.<br />
+    Reference gap: <code>docs/design-system/portal-ux.md</code> §5 · Mobile guideline:
+    <code>docs/design-system/artifact/project/README.md</code> ("Mobile &amp; responsiveness").<br />
+    Approval is written per-flow into <code>manifest.json</code> by the design-approval workflow —
+    reply <code>@claude approve</code> / <code>@claude reject: &lt;reason&gt;</code>.
+    Re-stamp after any edit: <code>node scripts/stamp-frames.mjs --write --feature mobile-bottom-nav</code>.
+  </p>
+</div>
+</body>
+</html>
