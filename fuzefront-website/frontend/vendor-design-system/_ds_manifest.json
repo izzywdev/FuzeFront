@@ -150,8 +150,16 @@
       "sourcePath": "components/forms/PasswordChecklist.jsx"
     },
     {
+      "name": "RadioCardGroup",
+      "sourcePath": "components/forms/RadioCardGroup.jsx"
+    },
+    {
       "name": "SearchField",
       "sourcePath": "components/forms/SearchField.jsx"
+    },
+    {
+      "name": "SegmentedControl",
+      "sourcePath": "components/forms/SegmentedControl.jsx"
     },
     {
       "name": "Select",
