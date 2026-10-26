@@ -162,6 +162,9 @@ export function scanForbiddenUrls(text, policy) {
   const urls = text.match(URL_RE) || []
   for (const url of urls) {
     for (const p of policy.forbiddenUrlPatterns?.entries ?? []) {
+      // p.pattern is a repo-controlled policy value (governance/help-system-policy.json, reviewed
+      // in a PR), not untrusted input, and this is a CI tool, not a request path.
+      // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
       if (new RegExp(p.pattern, 'i').test(url)) out.push({ kind: 'forbidden-url', url, reason: p.reason })
     }
   }
@@ -173,7 +176,9 @@ export function scanPlaceholders(text, policy, status) {
   if (allowed.includes(status)) return []
   const out = []
   for (const marker of policy.placeholderMarkers?.entries ?? []) {
-    // word-ish boundary so "todo" inside "methodology" does not trip
+    // word-ish boundary so "todo" inside "methodology" does not trip. `marker` is a repo-controlled
+    // policy value and is regex-escaped here; not untrusted input.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     const re = new RegExp(`(^|[^A-Za-z])${marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z]|$)`, 'i')
     if (re.test(text)) out.push({ kind: 'placeholder', marker })
   }
@@ -193,8 +198,10 @@ export function checkFrontmatter(data, found, policy) {
     out.push({ kind: 'frontmatter', msg: `audience "${data.audience}" not one of ${(fm.audienceValues ?? []).join('|')}` })
   if (data.status && !(fm.statusValues ?? []).includes(data.status))
     out.push({ kind: 'frontmatter', msg: `status "${data.status}" not one of ${(fm.statusValues ?? []).join('|')}` })
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- fm.ownerPattern is repo-controlled policy config
   if (data.owner && fm.ownerPattern && !new RegExp(fm.ownerPattern).test(data.owner))
     out.push({ kind: 'frontmatter', msg: `owner "${data.owner}" must match ${fm.ownerPattern}` })
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- fm.datePattern is repo-controlled policy config
   if (data.lastReviewed && fm.datePattern && !new RegExp(fm.datePattern).test(data.lastReviewed))
     out.push({ kind: 'frontmatter', msg: `lastReviewed "${data.lastReviewed}" must be YYYY-MM-DD` })
   return out
