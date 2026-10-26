@@ -244,23 +244,34 @@ jobs:
                   # remove interim tenant repo/ref + comment block, flip skipRepoSync.
                   # The fuze-a2a interim state preserved dynamic projection (clone); the
                   # product image no longer needs it (card is baked in).
+                  prev = updated
                   updated = re.sub(
                       r'[ \t]+# Interim \(feat/a2a-static-card\)[^\n]*\n(?:[ \t]+#[^\n]*\n)*'
                       r'[ \t]+repo: izzywdev/FuzeFront\n[ \t]+ref: master\n',
                       '',
                       updated,
                   )
+                  if updated == prev:
+                      print(f'::warning::first-run migration: repo/ref cleanup regex did not match in {path} — check for reformatting; residual interim fields are harmless')
+                  prev = updated
                   updated = re.sub(
                       r'(skipRepoSync: )false',
                       r'\g<1>true',
                       updated,
                   )
+                  if updated == prev:
+                      print(f'::error::first-run migration: skipRepoSync regex did not match in {path} — init container will run against product image without clone config; check for reformatting')
+                      sys.exit(1)
+                  prev = updated
                   updated = re.sub(
                       r'(reposGitTokenSecretRef: null\s+# public repo — anonymous clone)',
                       r'reposGitTokenSecretRef: null   # unused with skipRepoSync',
                       updated,
                   )
+                  if updated == prev:
+                      print(f'::warning::first-run migration: reposGitTokenSecretRef comment regex did not match in {path} — comment not updated, functionally harmless')
                   # Replace the interim comment block above skipRepoSync (3 lines).
+                  prev = updated
                   updated = re.sub(
                       r'  # Interim: keep clone-based projection[^\n]*\n'
                       r'(?:  #[^\n]*\n)+',
@@ -268,6 +279,8 @@ jobs:
                       '  # The product image bakes in agent-card.json at build time.\n',
                       updated,
                   )
+                  if updated == prev:
+                      print(f'::warning::first-run migration: interim comment block regex did not match in {path} — comment not updated, functionally harmless')
               open(path, 'w').write(updated)
           PYEOF
 
