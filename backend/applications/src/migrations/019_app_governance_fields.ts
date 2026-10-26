@@ -25,6 +25,31 @@ import type { Knex } from 'knex'
  * org-level-only rule.
  */
 export async function up(knex: Knex): Promise<void> {
+  // `apps.scope_level` is created by the HOST backend's migration 017 against
+  // the shared DB — a different migration chain (knex_migrations) than this
+  // service's (knex_migrations_apps). To keep the applications chain
+  // self-sufficient (it runs on its own in CI and must not depend on the host
+  // chain having run first), create the enum + column here IF they are missing.
+  // Idempotent with host 017: whichever runs first creates it, the other skips.
+  await knex.raw(`
+    DO $$ BEGIN
+      CREATE TYPE app_scope_level_enum AS ENUM ('personal', 'organization', 'both');
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+  `)
+  if (!(await knex.schema.hasColumn('apps', 'scope_level'))) {
+    await knex.schema.alterTable('apps', table => {
+      table
+        .enum('scope_level', null, {
+          useNative: true,
+          existingType: true,
+          enumName: 'app_scope_level_enum',
+        })
+        .notNullable()
+        .defaultTo('both')
+      table.index(['scope_level'])
+    })
+  }
+
   // Native enum for org_install_mode (mirrors the app_install_mode style).
   await knex.raw(`
     DO $$ BEGIN
