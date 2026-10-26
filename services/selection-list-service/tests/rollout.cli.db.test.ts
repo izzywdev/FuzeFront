@@ -32,8 +32,9 @@ dbDescribe('rollout CLI (real Postgres)', () => {
     delete process.env.SELECTION_LIST_PLATFORM_ORG_ID;
     _resetPlatformOrgCacheForTesting();
     out = '';
-    spy = jest.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+    spy = jest.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array, cb?: () => void) => {
       out += String(chunk);
+      cb?.(); // the CLI waits for the write callback before it returns
       return true;
     }) as never);
   });

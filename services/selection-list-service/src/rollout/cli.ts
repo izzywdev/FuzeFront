@@ -69,16 +69,21 @@ export async function runJob(db: Knex, opts: CliOptions): Promise<RolloutReport>
   }
 }
 
-const out = (text: string): void => {
-  process.stdout.write(`${text}\n`);
-};
+/**
+ * Print a line and resolve when stdout has TAKEN it (the write callback). A pipe can hold only ~64 KiB; the rest of a big
+ * report is still queued in this process when `main()` returns, so nothing may terminate the process before this resolves.
+ */
+const out = (text: string): Promise<void> =>
+  new Promise((resolve) => {
+    process.stdout.write(`${text}\n`, () => resolve());
+  });
 
 export async function main(argv: string[]): Promise<number> {
   let opts: CliOptions;
   try {
     opts = parseArgs(argv);
   } catch (err) {
-    out(`${(err as Error).message}\n${USAGE}`);
+    await out(`${(err as Error).message}\n${USAGE}`);
     return 1;
   }
   const { db } = await import('../db');
@@ -92,11 +97,11 @@ export async function main(argv: string[]): Promise<number> {
       'rollout job end',
     );
     // the report is the LAST thing printed (after the structured log lines), so `--json` ends with one parseable line
-    out(opts.json ? JSON.stringify(report) : formatReport(report));
+    await out(opts.json ? JSON.stringify(report) : formatReport(report));
     return code;
   } catch (err) {
     if (err instanceof RolloutPreconditionError) {
-      out(`PRECONDITION NOT MET (nothing was written): ${err.message}`);
+      await out(`PRECONDITION NOT MET (nothing was written): ${err.message}`);
       return 3;
     }
     logger.fatal({ err, job: opts.job, mode: opts.mode }, 'rollout job failed');
@@ -107,8 +112,23 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 if (require.main === module) {
-  main(process.argv.slice(2)).then(
-    (code) => process.exit(code),
-    () => process.exit(1),
-  );
+  // NEVER `process.exit()` here: it discards whatever is still buffered in a piped stdout (a 1 MB report arrived as its first
+  // 64 KiB, after the database changes had committed). Set the exit code and let the process end by itself: `main()` has
+  // awaited its output and destroyed the pool, so the event loop drains. A closed reader (EPIPE) must not crash it either.
+  process.stdout.on('error', () => undefined);
+  main(process.argv.slice(2))
+    .then(
+      (code) => {
+        process.exitCode = code;
+      },
+      (err) => {
+        logger.fatal({ err }, 'rollout CLI crashed');
+        process.exitCode = 1;
+      },
+    )
+    .finally(() => {
+      // Watchdog, not a way out: if something still holds the event loop long after the output was taken, end with the code.
+      // unref()'d, so it never keeps a healthy process alive.
+      setTimeout(() => process.exit(process.exitCode ?? 1), 10_000).unref();
+    });
 }
