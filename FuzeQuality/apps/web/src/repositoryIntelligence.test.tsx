@@ -3033,7 +3033,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)
-    fireEvent.change(await screen.findByLabelText('Evidence collection'), {
+    fireEvent.change(await screen.findByLabelText('Evidence collection state'), {
       target: { value: 'unavailable' },
     })
 
@@ -3455,7 +3455,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
-    fireEvent.change(screen.getByLabelText('Evidence collection'), {
+    fireEvent.change(screen.getByLabelText('Evidence collection state'), {
       target: { value: 'not-collected' },
     })
 

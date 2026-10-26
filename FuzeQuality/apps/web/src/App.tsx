@@ -6396,7 +6396,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </select>
             </label>
             <label>
-              Evidence collection
+              Evidence collection state
               <select
                 value={executionEvidenceCollectionStatus}
                 onChange={event =>
