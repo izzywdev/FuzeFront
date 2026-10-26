@@ -23,7 +23,7 @@
  */
 import {
   actor, call, createPlatformList, denyCatalogAction, expectError, fixtureGrant, forkList, L, newCodecOrg, rnd, assertSharedListsOn,
-  walkLists, type Actor, type ListLike,
+  PLATFORM_ORG_ID, walkLists, type Actor, type ListLike,
 } from '../helpers/shared-lists';
 import { closeDb, dbQuery } from '../helpers/db';
 import { canonicalUuid } from '../helpers/ids';
@@ -81,10 +81,15 @@ describe('1. the listing and the ?key= lookup return exactly ONE row, determinis
     const common = await createPlatformList({ key: key('shadow'), itemCodes: ['A'] });
     const unreadable = await plantList({ storedOrg: w.wire, key: common.list.key, visibility: 'private', ageMinutes: 30 }); // exact claim for byType, oldest, no role
     const readable = await plantList({ storedOrg: w.uuid, key: common.list.key, visibility: 'org', ageMinutes: 5 }); // the other rendering, read through read_shared
-    for (const qs of [`?key=${common.list.key}&include_shared=true`, '?include_shared=true']) {
-      const res = await call(w.byType, 'GET', `/v1/selection-lists${qs}`);
-      expect(res.status).toBe(200);
-      const mine = res.body.items.filter((r: ListLike) => r.key === common.list.key);
+    // The key-filtered lookup is one page by construction. The UNFILTERED listing is paged newest-first (50 by default), so
+    // it is WALKED to the end: the fixture is backdated, and on a shared database with more than a page of newer common lists
+    // it is not on page 1. Seed more than a page of newer common lists so that holds on every database, not just a young one.
+    for (let i = 0; i < 55; i++) await plantList({ storedOrg: PLATFORM_ORG_ID, key: key('newer'), visibility: 'platform' });
+    const filtered = await call(w.byType, 'GET', `/v1/selection-lists?key=${common.list.key}&include_shared=true`);
+    expect(filtered.status).toBe(200);
+    const unfiltered = (await walkLists(w.byType, 'include_shared=true')).rows;
+    for (const [qs, rows] of [['?key=…&include_shared=true', filtered.body.items as ListLike[]], ['?include_shared=true (walked)', unfiltered]] as const) {
+      const mine = rows.filter((r) => r.key === common.list.key);
       expect({ qs, ids: ids(mine) }).toEqual({ qs, ids: [readable.id] }); // the readable duplicate: not nothing, not the common list, not the unreadable one
     }
     // an unreadable list does not exist for the caller (404, never 403); the readable one is served
