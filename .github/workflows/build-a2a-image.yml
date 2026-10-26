@@ -48,7 +48,7 @@ jobs:
           git clone --depth 1 --filter=blob:none --sparse \
             https://github.com/izzywdev/FuzeAgent.git /tmp/fuzeagent-gen
           cd /tmp/fuzeagent-gen
-          git sparse-checkout set agent-templates/a2a agent-templates/_contract
+          git sparse-checkout set agent-templates/a2a agent-templates/contracts/a2a/v1
 
       - name: Regenerate agent-card.json
         run: python3 build/a2a/generate-card.py --fuzeagent-src /tmp/fuzeagent-gen
@@ -153,7 +153,7 @@ jobs:
           git clone --depth 1 --filter=blob:none --sparse \
             https://github.com/izzywdev/FuzeAgent.git /tmp/fuzeagent-gen
           cd /tmp/fuzeagent-gen
-          git sparse-checkout set agent-templates/a2a agent-templates/_contract
+          git sparse-checkout set agent-templates/a2a agent-templates/contracts/a2a/v1
 
       - name: Regenerate agent-card.json
         run: python3 build/a2a/generate-card.py --fuzeagent-src /tmp/fuzeagent-gen
