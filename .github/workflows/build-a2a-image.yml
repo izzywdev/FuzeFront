@@ -183,7 +183,14 @@ jobs:
 
       - name: Open tag-bump PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GH_RELEASE_PAT, not GITHUB_TOKEN: PRs opened with GITHUB_TOKEN do
+          # not trigger pull_request workflows (GitHub's recursion guard), so
+          # auto-merge.yml never runs and the auto-merge label does nothing.
+          # Pattern from claude-auto-pr.yml:93-111 — the PAT raises an ordinary
+          # user event that triggers CI normally. Falls back to GITHUB_TOKEN so
+          # the job does not fail if the PAT is absent (the PR will exist but
+          # may need a manual CI kick).
+          GH_TOKEN: ${{ secrets.GH_RELEASE_PAT || secrets.GITHUB_TOKEN }}
           NEW_SHA: ${{ steps.tag.outputs.sha }}
         run: |
           git config user.name "github-actions[bot]"
