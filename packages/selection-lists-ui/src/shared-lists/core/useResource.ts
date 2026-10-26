@@ -43,7 +43,20 @@ export function useResource<T>(
     token: string
     settled: Settled<T>
   } | null>(null)
-  const token = key === null ? null : `${key}#${tick}`
+
+  // A unique, monotonic GENERATION per request: it advances on EVERY key or
+  // reload transition, including A -> B -> A and A -> null -> A, so state keyed
+  // on `token` (the entry below, pagination in useSharedListIndex, patches in
+  // useSharedList) can never attach to a later request that merely reuses an
+  // earlier key. Derived during render (React re-renders at once, discarding
+  // this pass), so no render ever sees the new key with the old generation.
+  const [gen, setGen] = useState({ key, tick, id: 0 })
+  let current = gen
+  if (gen.key !== key || gen.tick !== tick) {
+    current = { key, tick, id: gen.id + 1 }
+    setGen(current)
+  }
+  const token = key === null ? null : `${key}#${current.id}`
 
   useEffect(() => {
     if (token === null) return undefined

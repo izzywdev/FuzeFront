@@ -113,4 +113,37 @@ describe('useSharedList (frames 02, 03)', () => {
     expect(result.current.phase).toBe('loading')
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it('A -> B -> A: a patch made on the first A never overrides the fresh read of the second A', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        makeSharedList({ id: 'front_sl_a', name: 'A', visibility: 'org' })
+      )
+    )
+    const { result, rerender } = renderHook(({ id }) => useSharedList(id), {
+      initialProps: { id: 'front_sl_a' },
+    })
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    act(() =>
+      result.current.setList(
+        makeSharedList({ id: 'front_sl_a', name: 'A', visibility: 'private' })
+      )
+    )
+    expect(result.current.list?.visibility).toBe('private')
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(makeSharedList({ id: 'front_sl_b', name: 'B' }))
+    )
+    rerender({ id: 'front_sl_b' })
+    await waitFor(() => expect(result.current.list?.name).toBe('B'))
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        makeSharedList({ id: 'front_sl_a', name: 'A', visibility: 'platform' })
+      )
+    )
+    rerender({ id: 'front_sl_a' })
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    expect(result.current.list?.visibility).toBe('platform')
+  })
 })

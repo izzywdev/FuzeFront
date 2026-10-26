@@ -124,4 +124,44 @@ describe('useResource', () => {
     act(() => result.current.reload())
     await waitFor(() => expect(second).toHaveBeenCalledTimes(1))
   })
+
+  it("A -> B -> A is a NEW request: the first A's answer is never shown for the second A", async () => {
+    const loads: Array<(v: string) => void> = []
+    const load = () => new Promise<string>(resolve => loads.push(resolve))
+    const { result, rerender } = renderHook(
+      ({ k }) => useResource<string>(k, load),
+      { initialProps: { k: 'A' as string | null } }
+    )
+    await waitFor(() => expect(loads).toHaveLength(1))
+    await act(async () => loads[0]('first A'))
+    expect(result.current.settled).toEqual({ status: 'done', value: 'first A' })
+    const firstToken = result.current.token
+
+    rerender({ k: 'B' })
+    await waitFor(() => expect(loads).toHaveLength(2))
+    rerender({ k: 'A' })
+    await waitFor(() => expect(loads).toHaveLength(3))
+    expect(result.current.settled).toEqual({ status: 'loading' })
+    expect(result.current.token).not.toBe(firstToken)
+    await act(async () => loads[2]('second A'))
+    expect(result.current.settled).toEqual({
+      status: 'done',
+      value: 'second A',
+    })
+  })
+
+  it('A -> null -> A is a new request too', async () => {
+    const { result, rerender } = renderHook(
+      ({ k }) => useResource<string>(k, async () => 'v'),
+      { initialProps: { k: 'A' as string | null } }
+    )
+    await waitFor(() => expect(result.current.settled.status).toBe('done'))
+    const first = result.current.token
+    rerender({ k: null })
+    expect(result.current.token).toBeNull()
+    rerender({ k: 'A' })
+    expect(result.current.token).not.toBe(first)
+    expect(result.current.settled).toEqual({ status: 'loading' })
+    await waitFor(() => expect(result.current.settled.status).toBe('done'))
+  })
 })

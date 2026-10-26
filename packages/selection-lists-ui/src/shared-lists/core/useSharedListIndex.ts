@@ -99,7 +99,20 @@ export function useSharedListIndex(
   useEffect(() => {
     tokenRef.current = token
   })
-  const inFlight = useRef(false)
+  // The pending LOAD MORE, scoped to the request generation that started it: a
+  // new query / reload (new token) can never be blocked by an obsolete one, and
+  // the obsolete one is cancelled.
+  const inFlight = useRef<{
+    token: string
+    controller: AbortController
+  } | null>(null)
+  useEffect(
+    () => () => {
+      inFlight.current?.controller.abort()
+      inFlight.current = null
+    },
+    [token]
+  )
 
   const firstPage = settled.status === 'done' ? settled.value : null
   const mine = more !== null && more.token === token ? more : null
@@ -114,15 +127,16 @@ export function useSharedListIndex(
 
   const loadMore = useCallback(() => {
     if (
-      inFlight.current ||
       token === null ||
+      inFlight.current?.token === token ||
       !firstPage ||
       !hasMore ||
       nextCursor === null
     )
       return
-    inFlight.current = true
     const startedFor = token
+    const request = { token, controller: new AbortController() }
+    inFlight.current = request
     const baseRows = rows
     setMore({
       token,
@@ -132,9 +146,12 @@ export function useSharedListIndex(
       loading: true,
       failed: false,
     })
-    listSharedLists({ ...paramsRef.current, cursor: nextCursor }).then(
+    listSharedLists(
+      { ...paramsRef.current, cursor: nextCursor },
+      request.controller.signal
+    ).then(
       page => {
-        inFlight.current = false
+        if (inFlight.current === request) inFlight.current = null
         if (tokenRef.current !== startedFor) return
         const added = appendUnique(baseRows, page.items).slice(baseRows.length)
         setMore({
@@ -147,7 +164,7 @@ export function useSharedListIndex(
         })
       },
       (err: unknown) => {
-        inFlight.current = false
+        if (inFlight.current === request) inFlight.current = null
         if (isAbortError(err) || tokenRef.current !== startedFor) return
         setMore({
           token: startedFor,

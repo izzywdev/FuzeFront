@@ -275,6 +275,121 @@ describe('useSharedListIndex — flag ON', () => {
     expect(result.current.loadMoreFailed).toBe(false)
   })
 
+  it('A -> B -> A: pages loaded for the first A never attach to the second A', async () => {
+    const A: UseSharedListIndexOptions = {
+      status: 'active',
+      includeShared: true,
+    }
+    const B: UseSharedListIndexOptions = {
+      status: 'archived',
+      includeShared: true,
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('a1')], 'cur-1')))
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('a2')], null)))
+    const { result, rerender } = renderHook(
+      (o: UseSharedListIndexOptions) => useSharedListIndex(o),
+      { wrapper, initialProps: A }
+    )
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    act(() => result.current.loadMore())
+    await waitFor(() =>
+      expect(result.current.rows.map(l => l.id)).toEqual(['a1', 'a2'])
+    )
+    expect(result.current.hasMore).toBe(false)
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('b1')], null)))
+    rerender(B)
+    await waitFor(() =>
+      expect(result.current.rows.map(l => l.id)).toEqual(['b1'])
+    )
+
+    // Back to A: the fresh first page has a NEW cursor and no a2 any more.
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('a1')], 'cur-2')))
+    rerender(A)
+    expect(result.current.phase).toBe('loading')
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    expect(result.current.rows.map(l => l.id)).toEqual(['a1'])
+    expect(result.current.hasMore).toBe(true)
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('a3')], null)))
+    act(() => result.current.loadMore())
+    await waitFor(() =>
+      expect(result.current.rows.map(l => l.id)).toEqual(['a1', 'a3'])
+    )
+    expect(queries()[queries().length - 1]).toMatchObject({ cursor: 'cur-2' })
+  })
+
+  it('a filter change during a pending LOAD MORE cancels it and the new query paginates independently', async () => {
+    const A: UseSharedListIndexOptions = {
+      status: 'active',
+      includeShared: true,
+    }
+    const B: UseSharedListIndexOptions = {
+      status: 'archived',
+      includeShared: true,
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('a1')], 'cur-a')))
+    // The obsolete request never settles, whatever its signal says.
+    fetchMock.mockImplementationOnce(
+      () => new Promise<Response>(() => undefined)
+    )
+    const { result, rerender } = renderHook(
+      (o: UseSharedListIndexOptions) => useSharedListIndex(o),
+      { wrapper, initialProps: A }
+    )
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    act(() => result.current.loadMore())
+    await waitFor(() => expect(callsOf(fetchMock)).toHaveLength(2))
+    const staleSignal = callsOf(fetchMock)[1][1]!.signal as AbortSignal
+    expect(staleSignal.aborted).toBe(false)
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('b1')], 'cur-b')))
+    rerender(B)
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    expect(staleSignal.aborted).toBe(true)
+    expect(result.current).toMatchObject({ hasMore: true, loadingMore: false })
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('b2')], null)))
+    act(() => result.current.loadMore())
+    await waitFor(() =>
+      expect(result.current.rows.map(l => l.id)).toEqual(['b1', 'b2'])
+    )
+    expect(queries()[queries().length - 1]).toMatchObject({
+      cursor: 'cur-b',
+      status: 'archived',
+    })
+  })
+
+  it('reloading page one releases a stalled LOAD MORE', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('a1')], 'cur-a')))
+    fetchMock.mockImplementationOnce(
+      () => new Promise<Response>(() => undefined)
+    )
+    const { result } = renderHook(
+      () => useSharedListIndex({ status: 'active', includeShared: true }),
+      { wrapper }
+    )
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    act(() => result.current.loadMore())
+    await waitFor(() => expect(callsOf(fetchMock)).toHaveLength(2))
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(page([own('a1')], 'cur-fresh'))
+    )
+    act(() => result.current.reload())
+    await waitFor(() => expect(result.current.phase).toBe('ready'))
+    expect(result.current.loadingMore).toBe(false)
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([own('a9')], null)))
+    act(() => result.current.loadMore())
+    await waitFor(() =>
+      expect(result.current.rows.map(l => l.id)).toEqual(['a1', 'a9'])
+    )
+    expect(queries()[queries().length - 1]).toMatchObject({
+      cursor: 'cur-fresh',
+    })
+  })
+
   it('exposes the forks on the page for the source-neutral shadow note', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(
