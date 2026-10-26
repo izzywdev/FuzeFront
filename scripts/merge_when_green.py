@@ -118,6 +118,7 @@ def _req(method, path, token, body=None):
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the `file://` read this rule names is unreachable: `url` is rejected above unless its scheme is in _ALLOWED_SCHEMES (http/https), and it is only ever API (a configured base) + a code-literal path, never a caller-supplied URL. Mirrors scripts/ci_queue_watch.py.
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read().decode() or "null"
             return json.loads(raw), None, resp.status
