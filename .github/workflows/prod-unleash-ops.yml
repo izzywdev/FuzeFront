@@ -32,6 +32,7 @@ on:
             root-membership     — fuzefront.identity.root-membership (100%): new signups take the root-membership path instead of a personal org (FF-EPIC-17-S1/S2; the S2 backfill is #1095, deployed)
             selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + seed-defaults + shared-lists, left OFF
             config-management   — fuzefront.config.management-console + .key-catalog + .secrets-audit (100%): Configuration Management Console UI (EPIC-19). Web-exposed; requires the catalog-registering build (#1571) deployed.
+            account-security    — fuzefront.account-security.hub (100%): the Account Security hub UI (profile menu → Settings: password, MFA, devices/sessions, connected accounts). Web-exposed; consumes the existing security-service APIs.
         required: true
         default: billing-portal
         type: choice
@@ -47,6 +48,7 @@ on:
           - selection-lists-create
           - billing-plan-flag-sync
           - config-management
+          - account-security
           - all-flags
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
@@ -333,6 +335,19 @@ jobs:
               "Release flag (EPIC-19, web-exposed). ON surfaces the /admin/config/keys/:key/history secret + audit-history surface. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
           }
 
+          # ── Account Security hub (profile menu → Settings) ─────────────────
+          # Web-exposed release flag gating the @fuzefront/account-security-ui
+          # hub mounted at /account/security (the profile menu's Settings item):
+          # password, MFA factors, devices/sessions, connected accounts. It
+          # consumes the existing security-service APIs — no new service or authz
+          # tier. GA per owner decision 2026-10-26 (izzy): expose the Settings UI.
+          # Owner: feature-flags-engineer. Removal: once the hub is GA at 100%
+          # for 30 days and the OFF placeholder path is removed.
+          apply_account_security() {
+            enable_ga "fuzefront.account-security.hub" \
+              "Release flag (web-exposed). ON surfaces the Account Security hub at /account/security (profile menu → Settings): password, MFA, devices/sessions, connected accounts. Consumes existing security-service APIs. GA per owner decision 2026-10-26 (izzy). Owner: feature-flags-engineer. Removal: hub GA at 100% for 30 days."
+          }
+
           # ── Selection Lists (CREATE ONLY) ───────────────────────────────────
           # Release flags, default OFF (packages/feature-flags/flag-registry.yaml).
           # Reuses create_only: creates the flags if absent (409 = already exists,
@@ -396,6 +411,7 @@ jobs:
             root-membership)     apply_root_membership ;;
             selection-lists-create) apply_selection_lists_create ;;
             config-management)   apply_config_management ;;
+            account-security)    apply_account_security ;;
             all-flags)           apply_all_flags ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
@@ -476,6 +492,8 @@ jobs:
               check_flag "fuzefront.config.management-console"
               check_flag "fuzefront.config.key-catalog"
               check_flag "fuzefront.config.secrets-audit" ;;
+            account-security)
+              check_flag "fuzefront.account-security.hub" ;;
             selection-lists-create)
               check_flag "fuzefront.selection-lists.service"
               check_flag "fuzefront.selection-lists.seed-defaults"
