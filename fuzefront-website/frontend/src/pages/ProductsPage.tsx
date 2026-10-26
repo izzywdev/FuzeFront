@@ -6,7 +6,7 @@ import {
   Layers, Shield, Server, ClipboardList, Palette, Bot,
   Key, MessageSquare, CheckCircle2, Rocket, ArrowRight, ChevronRight
 } from 'lucide-react'
-import { ResponsiveGrid, Wrap, Container, Text } from '@fuzefront/design-system'
+import { ResponsiveGrid, Wrap, Container, Text, Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -223,9 +223,9 @@ export const ProductsPage: React.FC = () => {
             <Link to="/contact" className="btn-primary">
               Talk to sales
             </Link>
-            <Link to="/pricing" className="btn-secondary">
+            <Button as={Link} to="/pricing" variant="outline">
               Compare plans
-            </Link>
+            </Button>
           </Wrap>
         </div>
       </section>

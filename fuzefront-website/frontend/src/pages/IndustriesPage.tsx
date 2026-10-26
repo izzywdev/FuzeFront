@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container, Text } from '@fuzefront/design-system'
+import { Wrap, Container, Text, Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -257,9 +257,9 @@ export const IndustriesPage: React.FC = () => {
             >
               Talk to us <ArrowRight size={16} />
             </Link>
-            <Link to="/products" className="btn-secondary">
+            <Button as={Link} to="/products" variant="outline">
               Explore products
-            </Link>
+            </Button>
           </Wrap>
         </div>
       </section>
