@@ -15,6 +15,7 @@ import { listSessionWorkspaces, proveSessionTenant } from '../src/services/sessi
 import express from 'express'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
+import { randomBytes } from 'crypto'
 import securityRouter from '../src/routes/security'
 import { setIdentityProvider } from '../src/providers/factory'
 import {
@@ -1453,7 +1454,9 @@ describe('GET /session/workspaces', () => {
 
 describe('POST /sessions/validate (validateSession, service-to-service)', () => {
   const URL_PATH = '/api/v1/security/sessions/validate'
-  const KEY = 'validate-session-test-key'
+  // Random per run: nothing credential-shaped is committed (Semgrep jwt-hardcode).
+  const KEY = randomBytes(32).toString('hex')
+  const OTHER_KEY = randomBytes(32).toString('hex')
   const USER_ID = '11111111-1111-4111-8111-111111111111'
   const SESSION_ID = '33333333-3333-4333-8333-333333333333'
   const BODY = { userId: USER_ID, sessionId: SESSION_ID }
@@ -1502,7 +1505,19 @@ describe('POST /sessions/validate (validateSession, service-to-service)', () => 
     expect(res.status).toBe(200)
     expect(res.type).toMatch(/json/)
     expect(res.body).toEqual({ active: true })
-    expect(isSessionActive).toHaveBeenCalledWith(USER_ID, SESSION_ID)
+    expect(isSessionActive).toHaveBeenCalledWith(USER_ID, SESSION_ID, undefined)
+  })
+
+  it('forwards the token tid as tenantId so the provider can enforce the tenant boundary', async () => {
+    // @fuzequality api validateSession
+    const isSessionActive = jest.fn().mockResolvedValue(false)
+    const res = await call(provider(isSessionActive), workloadToken('sessions:validate'), {
+      ...BODY,
+      tenantId: 'fuzefront',
+    })
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ active: false })
+    expect(isSessionActive).toHaveBeenCalledWith(USER_ID, SESSION_ID, 'fuzefront')
   })
 
   it('answers { active: false } (200) for an inactive session, with no reason given', async () => {
@@ -1571,7 +1586,7 @@ describe('POST /sessions/validate (validateSession, service-to-service)', () => 
     )
     const forged = jwt.sign(
       { kind: 'fuze-workload', sub: 's', aud: 'a', scope: 'sessions:validate', jti: 'j' },
-      'some-other-key',
+      OTHER_KEY,
       { algorithm: 'HS256', expiresIn: 600 }
     )
     for (const token of [expired, forged]) {
@@ -1604,7 +1619,7 @@ describe('POST /sessions/validate (validateSession, service-to-service)', () => 
     expect(isSessionActive).not.toHaveBeenCalled()
   })
 
-  it('returns 400 MALFORMED for a body that is not exactly { userId, sessionId }', async () => {
+  it('returns 400 MALFORMED for a body that is not { userId, sessionId, tenantId? }', async () => {
     // @fuzequality api validateSession
     const isSessionActive = jest.fn()
     const bad: unknown[] = [
@@ -1619,6 +1634,11 @@ describe('POST /sessions/validate (validateSession, service-to-service)', () => 
       { userId: USER_ID, sessionId: '' },
       { userId: 'x'.repeat(129), sessionId: SESSION_ID },
       { userId: USER_ID, sessionId: 'x'.repeat(129) },
+      { ...BODY, tenantId: 5 },
+      { ...BODY, tenantId: '' },
+      { ...BODY, tenantId: null },
+      { ...BODY, tenantId: ['fuzefront'] },
+      { ...BODY, tenantId: 'x'.repeat(129) },
       [],
       [USER_ID, SESSION_ID],
     ]
