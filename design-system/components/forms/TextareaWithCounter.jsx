@@ -24,6 +24,23 @@ function codePointLength(text) {
   return n;
 }
 
+/**
+ * Slice `text` to at most `max` Unicode code points. Unlike the native
+ * `maxlength` attribute (which counts UTF-16 code units and so cuts an emoji
+ * off at one surrogate half), this counts the same code points the counter
+ * shows, so a `max`-code-point value is always reachable.
+ */
+function sliceToCodePoints(text, max) {
+  let n = 0;
+  let end = 0;
+  for (const ch of text) {
+    if (n >= max) break;
+    n += 1;
+    end += ch.length;
+  }
+  return n >= max ? text.slice(0, end) : text;
+}
+
 function defaultFormatMessage({ remaining, over, max }, fmt) {
   if (over) {
     const by = fmt(-remaining);
@@ -44,7 +61,9 @@ function defaultOverLimitMessage(max, fmt) {
  *   set in mono with tabular figures, and turns to the error colour when over.
  * - **Soft limit by default**: the user may type or paste past `maxLength`; the
  *   counter and field flag the overflow and the form can block submit. Pass
- *   `strict` to also set the native `maxlength` so the browser truncates.
+ *   `strict` to truncate input to `maxLength` code points (the native
+ *   `maxlength` attribute is not used — it counts UTF-16 units and would cut an
+ *   emoji off mid-surrogate, making the advertised limit unreachable).
  * - Length is counted in Unicode code points (what an OpenAPI `maxLength`
  *   counts), so an emoji is one character, not two.
  * - Accessible: the visible counter is `aria-hidden`; the field is described by
@@ -109,7 +128,12 @@ export function TextareaWithCounter({
   }, [message, announceDelay]);
 
   const handleChange = (e) => {
-    if (!isControlled) setInner(e.target.value);
+    let next = e.target.value;
+    if (strict && max != null && codePointLength(next) > max) {
+      next = sliceToCodePoints(next, max);
+      e.target.value = next;
+    }
+    if (!isControlled) setInner(next);
     if (onChange) onChange(e);
   };
 
@@ -144,7 +168,6 @@ export function TextareaWithCounter({
         {...rest}
         value={text}
         onChange={handleChange}
-        maxLength={strict ? max : undefined}
         error={shownError}
         labelAccessory={counter}
         aria-describedby={describedBy}

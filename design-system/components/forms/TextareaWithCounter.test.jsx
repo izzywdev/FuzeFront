@@ -89,9 +89,22 @@ describe("<TextareaWithCounter> limit", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("strict sets the native maxlength", () => {
+  it("strict truncates input to the code-point limit (an emoji counts as one)", () => {
+    const onChange = vi.fn();
+    render(<TextareaWithCounter label="Brief" maxLength={3} strict onChange={onChange} />);
+    // The native maxlength attribute is never set — it counts UTF-16 units and
+    // would cut an emoji off mid-surrogate, making the limit unreachable.
+    expect(field()).not.toHaveAttribute("maxlength");
+    fireEvent.change(field(), { target: { value: "ab😀cd" } });
+    // "ab😀cd" is 5 code points; truncated to 3 → "ab😀" (not a broken surrogate).
+    expect(field()).toHaveValue("ab😀");
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("strict leaves within-limit input untouched", () => {
     render(<TextareaWithCounter label="Brief" maxLength={5} strict />);
-    expect(field()).toHaveAttribute("maxlength", "5");
+    fireEvent.change(field(), { target: { value: "abc" } });
+    expect(field()).toHaveValue("abc");
   });
 
   it("a caller-supplied error wins over the built-in over-limit message", () => {
