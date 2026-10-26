@@ -72,7 +72,7 @@ POST /api/apps/register  # backend: register app (alt); backend/src lacks openap
 POST /api/apps/{}/heartbeat  # backend: heartbeat; backend/src lacks openapi.yaml
 POST /api/apps/{}/install  # backend: install app; backend/src lacks openapi.yaml
 PUT /api/apps/{}/activate  # backend: activate app; backend/src lacks openapi.yaml
-PUT /api/apps/{}  # backend: admin update app fields (/admin Edit form); backend/src lacks openapi.yaml
+PUT /api/apps/{}  # backend: update an app's editable presentation/integration fields (admin Edit form); backend/src lacks openapi.yaml, same debt as the rest of the legacy /api/apps surface
 DELETE /api/apps/{}  # backend: delete app; backend/src lacks openapi.yaml
 DELETE /api/apps/{}/install/{}  # backend: uninstall app; backend/src lacks openapi.yaml
 GET /api/organizations  # backend: org list; backend/src lacks openapi.yaml
@@ -274,3 +274,4 @@ POST /auth/logout  # devportal-service: same raw_alias collision as /auth/oidc/l
 POST /api/v1/suggestions/{}/approve-expected-test  # fuzequality: tenant-authorized internal review action; not part of a public OpenAPI contract surface
 POST /api/v1/expectations/{}/exclusion  # Internal reviewed-exclusion action; it is not part of a scanned product API contract.
 GET /api/v1/repositories/{}/scan-history  # Internal catalog administration read model; not a scanned product API contract.
+POST /api/v1/rum  # host backend: browser RUM/client-log beacon sink (observability-standard P37); fire-and-forget telemetry ingest, not a product API contract surface

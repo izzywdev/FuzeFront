@@ -34,6 +34,7 @@ import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
 import federatedProxyRoutes from './routes/federatedProxy'
 import flagsRoutes from './routes/flags'
+import rumRoutes from './routes/rum'
 import portalRoutes from './routes/portal'
 import adminPortalRoutes from './routes/adminPortals'
 import { resolvePortalContext } from './middleware/portalContext'
@@ -367,6 +368,10 @@ app.use('/api/users', usersRoutes)
 // Browser-facing flag reads, evaluated server-side against the AUTHENTICATED
 // session so the `developers` segment cannot be self-assigned by a client.
 app.use('/api/flags', flagsRoutes)
+// Browser RUM + client error/log ingest (observability-standard P37). Auth is
+// optional by design (login-page errors must be reportable); the route is a
+// rate-limited, schema-validated, redacting log sink — see routes/rum.ts.
+app.use('/api/v1/rum', rumRoutes)
 // Portal context boot + the caller's own portal (FF-EPIC-10-S2). Both routes
 // are individually flag-gated (404 when off) — see routes/portal.ts.
 app.use('/api/v1/portal', portalRoutes)

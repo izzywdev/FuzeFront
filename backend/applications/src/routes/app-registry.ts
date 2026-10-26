@@ -85,7 +85,17 @@ async function v1WriteGate(
  */
 async function dtoOptions(req: any, organizationId?: string | null) {
   const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+  // Caller context for creator.contactEmail visibility. Memoised on the request
+  // (resolveCaller hits the DB) and FAIL CLOSED: if it can't be resolved the
+  // email is simply omitted.
+  let caller: Awaited<ReturnType<typeof resolveCaller>> | null = null
+  try {
+    caller = req._dtoCaller ?? (req._dtoCaller = await resolveCaller(req.user))
+  } catch {
+    caller = null
+  }
   return {
+    caller,
     prefixed: await isPrefixedIdsEnabled(flagCtx),
     creatorOwnership: await isCreatorOwnershipEnabled({
       organizationId: organizationId ?? req.user?.organizationId,

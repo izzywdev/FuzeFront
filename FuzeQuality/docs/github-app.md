@@ -11,8 +11,13 @@ Use the following repository permissions and no organization or account permissi
 | Permission | Access |
 |---|---|
 | Metadata | Read-only (GitHub-required baseline) |
-| Contents | Read-only |
+| Contents | Read and write (repository evidence plus deterministic immutable revision tags for reviewed workflow dispatch) |
 | Pull requests | Read-only |
+| Actions | Read and write (collect evidence and dispatch reviewed test workflows) |
+
+Existing installations must approve the Contents permission upgrade before
+workflow dispatch is enabled; scanning remains fail-closed when GitHub has not
+granted the declared permission set.
 
 Subscribe the webhook to:
 

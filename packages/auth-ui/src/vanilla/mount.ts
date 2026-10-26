@@ -121,8 +121,8 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
   const alertHost = el('div')
   const form = el('form', 'fzf-auth-panel__form')
   const nameRow = el('div', 'fzf-auth-panel__name-row')
-  const firstNameField = field('fzf-auth-vanilla-firstName', labels.firstNameLabel, 'text', 'given-name')
-  const lastNameField = field('fzf-auth-vanilla-lastName', labels.lastNameLabel, 'text', 'family-name')
+  // ONE optional full-name field (the contract's single `name`; first/last are gone in 1.0.0).
+  const nameField = field('fzf-auth-vanilla-name', labels.nameLabel, 'text', 'name')
   const emailField = field('fzf-auth-vanilla-email', labels.emailLabel, 'email', 'email')
   const passwordField = field('fzf-auth-vanilla-password', labels.passwordLabel, 'password', 'current-password')
   const submitBtn = el('button')
@@ -133,10 +133,8 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
   const toggleBtn = el('button')
   toggleBtn.type = 'button'
 
-  firstNameField.wrap.style.flex = '1'
-  lastNameField.wrap.style.flex = '1'
-  nameRow.appendChild(firstNameField.wrap)
-  nameRow.appendChild(lastNameField.wrap)
+  nameField.wrap.style.flex = '1'
+  nameRow.appendChild(nameField.wrap)
 
   applyButtonStyle(submitBtn, 'primary')
   applyButtonStyle(toggleBtn, 'secondary')
@@ -242,15 +240,13 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
     // in flight, and the callback must report the address that was SUBMITTED.
     const submittedEmail = emailField.input.value
     const submittedPassword = passwordField.input.value
-    const submittedFirst = firstNameField.input.value || undefined
-    const submittedLast = lastNameField.input.value || undefined
+    const submittedName = nameField.input.value.trim() || undefined
     try {
       if (mode === 'signup') {
         const session = await opts.transport.signup({
           email: submittedEmail,
           password: submittedPassword,
-          firstName: submittedFirst,
-          lastName: submittedLast,
+          name: submittedName,
         })
         opts.onAuthenticated(session, { mode: 'signup', email: submittedEmail })
         return

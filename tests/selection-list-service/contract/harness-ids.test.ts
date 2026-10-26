@@ -9,7 +9,9 @@
 import { fromUuid, parseId, toUuid } from '@izzywdev/fuzefront-identity';
 import { canonicalUuid, renderingsOf, sameId, testOrg, testUser, uuidsOf } from '../helpers/ids';
 import { FAKE_SECURITY_URL, newOrg, newUser } from '../helpers/shared-lists';
-import { PLATFORM_ORG_ID } from '../helpers/sl9-constants';
+import { DEACTIVATED_PLATFORM_ORG_ID, DECOY_PLATFORM_ORG_ID, PLATFORM_ORG_ID, UNCONFIRMED_PLATFORM_ORG_ID } from '../helpers/sl9-constants';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 
 describe('harness fixture ids are codec-valid and deterministic', () => {
   it('testOrg / testUser mint ids the identity codec accepts, of the right type', () => {
@@ -52,6 +54,26 @@ describe('harness fixture ids are codec-valid and deterministic', () => {
     if (process.env['TEST_PLATFORM_ORG_ID']) return; // overridden on both sides
     expect(PLATFORM_ORG_ID).toBe('org_01jpmf4z1yf88rpb9z9sd6pz00');
     expect(() => parseId('organization', PLATFORM_ORG_ID)).not.toThrow();
+  });
+});
+
+describe('the platform-org fixtures are codec-valid and the CI job configures the same ids', () => {
+  it('every platform-org constant decodes as an organization id', () => {
+    for (const id of [PLATFORM_ORG_ID, DECOY_PLATFORM_ORG_ID, UNCONFIRMED_PLATFORM_ORG_ID, DEACTIVATED_PLATFORM_ORG_ID]) {
+      expect(() => parseId('organization', id)).not.toThrow();
+    }
+    expect(new Set([PLATFORM_ORG_ID, DECOY_PLATFORM_ORG_ID, UNCONFIRMED_PLATFORM_ORG_ID, DEACTIVATED_PLATFORM_ORG_ID]).size).toBe(4);
+  });
+
+  it('.github/workflows/ci.yml starts the platform-disabled instances with exactly those ids', () => {
+    // The ids are literals in the workflow (a service refuses a SELECTION_LIST_PLATFORM_ORG_ID that is not a
+    // canonical TypeID, so a stale hand-typed value turns the whole job red at boot).
+    const ci = resolvePath(__dirname, '../../../.github/workflows/ci.yml');
+    expect(existsSync(ci)).toBe(true);
+    const text = readFileSync(ci, 'utf8');
+    expect(text).toContain(`PORT=3014 SELECTION_LIST_PLATFORM_ORG_ID=${UNCONFIRMED_PLATFORM_ORG_ID} `);
+    expect(text).toContain(`PORT=3015 SELECTION_LIST_PLATFORM_ORG_ID=${DEACTIVATED_PLATFORM_ORG_ID} `);
+    if (!process.env['TEST_PLATFORM_ORG_ID']) expect(text).toContain(`SELECTION_LIST_PLATFORM_ORG_ID: ${PLATFORM_ORG_ID}\n`);
   });
 });
 

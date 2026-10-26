@@ -59,8 +59,11 @@ export interface PasswordLoginInput {
 export interface SignupInput {
   email: string;
   password: string;
-  firstName?: string;
-  lastName?: string;
+  /**
+   * Optional single display name (i18n-safe). Maps 1:1 to the identity store's
+   * `name`; replaces the former firstName/lastName split (contract 1.0.0).
+   */
+  name?: string;
   /** Optional tenant/organization name to provision on signup. */
   tenantName?: string;
 }
@@ -448,6 +451,21 @@ export interface IdentityProvider {
 
   /** Revoke every session for the caller EXCEPT the one presenting `token`. Idempotent. */
   revokeOtherSessions(token: string): Promise<void>;
+
+  /**
+   * Is this session still live for this user? For a service that has ALREADY
+   * verified a session token's signature and needs the one thing a signature
+   * cannot say: whether the session was revoked or has expired since.
+   *
+   * Resolves `true` only when the session exists, has not expired, and belongs
+   * to `userId`. Every other case (unknown, revoked, expired, owned by someone
+   * else, or an id that is not even well-formed) resolves `false` with no reason,
+   * so the answer cannot tell a caller which identifier was wrong.
+   *
+   * It REJECTS only when the session store cannot be read. The caller must map
+   * that to a retryable 503: an outage is neither "active" nor "revoked".
+   */
+  isSessionActive(userId: string, sessionId: string): Promise<boolean>;
 
   // ── Account sign-in connections ──
 
