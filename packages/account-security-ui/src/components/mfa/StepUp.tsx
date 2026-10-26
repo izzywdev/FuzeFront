@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Input, OtpInput, Skeleton, Spinner, StatusCallout } from '@fuzefront/design-system'
+import { Button, OtpInput, Skeleton, Spinner, StatusCallout } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
-import { classifyCodeFailure, classifyRecoveryFailure } from '../../api/errors'
+import { classifyCodeFailure, classifyRecoveryFailure, retryAfterOf } from '../../api/errors'
 import type { MfaFactorRef, MfaFactorType, MfaSession, StepUpClient } from '../../types'
 import {
   Actions,
@@ -14,6 +14,8 @@ import {
   type FlowBaseProps,
 } from '../common/flowKit'
 import { FACTOR_ICON, factorName } from './factorMeta'
+import { RateLimitCallout, retryButtonLabel, retryDeadline, useRetryCountdown } from './rateLimit'
+import { RecoveryCodeEntry, type RecoveryStatus } from './RecoveryEntry'
 
 /** Seconds a delivered code stays valid / before "resend" re-enables. */
 const EXPIRY_SECONDS = 300
@@ -169,7 +171,15 @@ export function FactorPicker({
 
 // ── MfaChallengeCard (code entry) ───────────────────────────────────────────
 
-type CodeStatus = 'idle' | 'verifying' | 'error-invalid' | 'error-service' | 'error-delivery'
+type CodeStatus =
+  | 'idle'
+  | 'verifying'
+  | 'error-invalid'
+  | 'error-service'
+  | 'error-delivery'
+  | 'rate-limited'
+  | 'error-expired'
+  | 'error-generic'
 
 export function MfaChallengeCard({
   factor,
@@ -178,17 +188,23 @@ export function MfaChallengeCard({
   onVerify,
   onResend,
   onChooseFactor,
+  onRestart,
+  retryAt,
   expiresAt,
   hosted = false,
   variant = 'desktop',
 }: {
-  factor: Choice
+  factor: MfaFactorRef
   status: CodeStatus
   /** A code was dispatched (sms / email) → show expiry + resend cooldown. */
   delivered: boolean
   onVerify: (code: string) => void
   onResend: () => void
   onChooseFactor?: () => void
+  /** Restart sign-in (offered on the rate-limited screen). */
+  onRestart?: () => void
+  /** Epoch-ms end of a 429 wait; null/undefined = no usable Retry-After. */
+  retryAt?: number | null
   /** Fixed challenge deadline (epoch ms). Defaults to now + the expiry window, captured once. */
   expiresAt?: number
   /** Rendered inside a host card: no card chrome of our own. */
@@ -203,17 +219,23 @@ export function MfaChallengeCard({
   const expiresIn = useDeadlineCountdown(expiresAt ?? fallbackDeadline.current, delivered)
   const cooldown = useCountdown(RESEND_COOLDOWN_SECONDS, resendKey, delivered)
   const mobile = variant === 'mobile'
-  const recovery = factor.type === 'recovery'
-  // A recovery code is opaque (contract: no client-side format validation beyond non-empty),
-  // so it gets a plain text field; factor codes stay a fixed 6-cell OTP.
   const needed = 6
+  const rateLimited = status === 'rate-limited'
+  const wait = useRetryCountdown(rateLimited ? retryAt : undefined)
+  const cooling = rateLimited && wait !== null && wait > 0
 
   // Hooks differ per frame: desktop → data-component/mfa-challenge, mobile → data-panel/enter-code.
   const frameAttrs = mobile
-    ? { 'data-panel': 'enter-code', 'data-state': status === 'idle' ? 'idle' : status, 'data-factor': factor.type }
+    ? {
+        'data-panel': 'enter-code',
+        'data-state': status === 'idle' ? 'idle' : status,
+        'data-http-status': rateLimited ? '429' : undefined,
+        'data-factor': factor.type,
+      }
     : {
         'data-component': 'mfa-challenge',
         'data-state': status === 'idle' ? (factor.type === 'totp' ? 'totp-prompt' : 'code-prompt') : status,
+        'data-http-status': rateLimited ? '429' : undefined,
         'data-factor': factor.type,
       }
 
@@ -239,11 +261,7 @@ export function MfaChallengeCard({
   }
 
   const prompt =
-    recovery
-      ? status === 'error-invalid'
-        ? m.stepUp.recoveryInvalidPrompt
-        : m.stepUp.recoveryPrompt
-      : status === 'error-invalid'
+    status === 'error-invalid'
         ? m.stepUp.invalidPrompt
         : delivered
           ? factor.type === 'email'
@@ -258,43 +276,19 @@ export function MfaChallengeCard({
       <h2 style={{ margin: '0 0 var(--space-2)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
         {m.stepUp.codeTitle}
       </h2>
-      <Hint>{prompt}</Hint>
-      {recovery ? (
-        <Input
-          id="mfa-recovery-code"
-          data-field="recovery-code"
-          aria-label={m.stepUp.recoveryLabel}
-          dir="ltr"
-          autoComplete="off"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          maxLength={64}
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && status !== 'verifying' && code.trim().length > 0) onVerify(code)
-          }}
-          invalid={status === 'error-invalid'}
-          disabled={status === 'verifying'}
-          autoFocus
-        />
-      ) : (
-        <OtpInput
-          length={needed}
-          numeric
-          value={code}
-          onChange={setCode}
-          error={status === 'error-invalid'}
-          disabled={status === 'verifying'}
-          size={mobile ? 'touch' : 'md'}
-          aria-label={m.stepUp.codeLabel}
-          autoFocus
-        />
-      )}
-      {status === 'error-invalid' && (
-        <InlineError data-error="invalid-code">{recovery ? m.stepUp.recoveryInvalid : m.stepUp.invalid}</InlineError>
-      )}
+      {rateLimited ? <RateLimitCallout seconds={wait} /> : <Hint>{prompt}</Hint>}
+      <OtpInput
+        length={needed}
+        numeric
+        value={code}
+        onChange={setCode}
+        error={status === 'error-invalid'}
+        disabled={status === 'verifying'}
+        size={mobile ? 'touch' : 'md'}
+        aria-label={m.stepUp.codeLabel}
+        autoFocus
+      />
+      {status === 'error-invalid' && <InlineError data-error="invalid-code">{m.stepUp.invalid}</InlineError>}
       {status === 'error-service' && <InlineError data-error="service-error">{m.stepUp.serviceError}</InlineError>}
       {delivered && (
         <>
@@ -332,23 +326,33 @@ export function MfaChallengeCard({
           fullWidth
           data-action="verify-mfa"
           onClick={() => onVerify(code)}
-          disabled={status === 'verifying' || (recovery ? code.trim().length === 0 : !OtpInput.isComplete(code, needed))}
+          disabled={status === 'verifying' || cooling || !OtpInput.isComplete(code, needed)}
+          data-state={cooling ? 'cooldown' : undefined}
+          aria-disabled={cooling || undefined}
           aria-busy={status === 'verifying' || undefined}
           leadingIcon={status === 'verifying' ? <Spinner size={16} label={m.stepUp.verifying} /> : undefined}
         >
           {status === 'verifying'
             ? m.stepUp.verifying
-            : status === 'error-invalid' || status === 'error-service'
+            : rateLimited
+              ? retryButtonLabel(m, wait)
+              : status === 'error-invalid' || status === 'error-service'
               ? m.stepUp.tryAgain
               : mobile
                 ? m.stepUp.verifyShort
                 : m.stepUp.verify}
         </Button>
-        {onChooseFactor && (
-          <Button variant="ghost" fullWidth data-action="choose-factor" onClick={onChooseFactor} disabled={status === 'verifying'}>
-            {m.stepUp.useDifferent}
-          </Button>
-        )}
+        {rateLimited
+          ? onRestart && (
+              <Button variant="ghost" fullWidth data-action="back-to-sign-in" onClick={onRestart}>
+                {m.stepUp.backToSignIn}
+              </Button>
+            )
+          : onChooseFactor && (
+              <Button variant="ghost" fullWidth data-action="choose-factor" onClick={onChooseFactor} disabled={status === 'verifying'}>
+                {m.stepUp.useDifferent}
+              </Button>
+            )}
       </Actions>
     </SeamCard>
   )
@@ -363,7 +367,7 @@ type FactorsState =
 
 type Step =
   | { name: 'choose' }
-  | { name: 'code'; factor: Choice; delivered: boolean; code: CodeStatus }
+  | { name: 'code'; factor: Choice; delivered: boolean; code: CodeStatus; retryAt?: number | null }
 
 /**
  * Login MFA step-up (desktop frame 05 `/login/mfa`; mobile frames 01-02 at
@@ -419,9 +423,7 @@ function StepUpInner({
   const expiresAt = useRef(Date.now() + EXPIRY_SECONDS * 1000)
   // Tracked on EVERY path (incl. TOTP, which shows no countdown): once the window
   // closes the server rejects everything, so we must not keep inviting codes.
-  // The server can also end the challenge early (recovery redeem → 401 NOT_ACTIVE).
-  const [serverExpired, setServerExpired] = useState(false)
-  const expired = useDeadlineCountdown(expiresAt.current, true) === 0 || serverExpired
+  const expired = useDeadlineCountdown(expiresAt.current, true) === 0
   const alive = useRef(true)
 
   const loadList = useCallback(async () => {
@@ -495,21 +497,29 @@ function StepUpInner({
         onAuthenticated(session)
       } catch (err) {
         if (!factor.factorId) {
-          // Recovery redemption has distinct, contract-coded outcomes.
+          // Recovery redemption has distinct, contract-coded outcomes (frame 07 / mobile 05).
           const kind = classifyRecoveryFailure(err)
-          if (kind === 'expired') {
-            if (alive.current) setServerExpired(true)
-            return
-          }
-          // 'rate-limited' renders as the retryable service state: the frames have no
-          // dedicated rate-limit screen, and it must not claim the code was wrong.
-          setStep({ name: 'code', factor, delivered, code: kind === 'invalid' ? 'error-invalid' : 'error-service' })
+          const code: CodeStatus =
+            kind === 'invalid'
+              ? 'error-invalid'
+              : kind === 'expired'
+                ? 'error-expired'
+                : kind === 'rate-limited'
+                  ? 'rate-limited'
+                  : 'error-generic'
+          setStep({ name: 'code', factor, delivered, code, retryAt: kind === 'rate-limited' ? retryDeadline(retryAfterOf(err)) : undefined })
           return
         }
-        // Fail closed on this screen either way. A rejected code (400/401/403/422)
-        // is "invalid"; a 5xx / 429 / network failure is a retryable service error
-        // that must not claim the code was wrong.
-        setStep({ name: 'code', factor, delivered, code: classifyCodeFailure(err) === 'invalid' ? 'error-invalid' : 'error-service' })
+        // Fail closed on this screen. A rejected code (400/401/403/422) is "invalid"; a 429 shows the
+        // Retry-After countdown (never "wrong code"); other 5xx / network failures are a retryable service error.
+        const kind = classifyCodeFailure(err)
+        setStep({
+          name: 'code',
+          factor,
+          delivered,
+          code: kind === 'invalid' ? 'error-invalid' : kind === 'rate-limited' ? 'rate-limited' : 'error-service',
+          retryAt: kind === 'rate-limited' ? retryDeadline(retryAfterOf(err)) : undefined,
+        })
       } finally {
         inFlight.current = false
       }
@@ -517,10 +527,14 @@ function StepUpInner({
     [api, challenge.challengeId, onAuthenticated]
   )
 
-  const title = step.name === 'choose' ? m.stepUp.chooseTitle : m.stepUp.codeTitle
+  const onRecovery = step.name === 'code' && step.factor.type === 'recovery'
+  const title = step.name === 'choose' ? m.stepUp.chooseTitle : onRecovery ? m.stepUp.recoveryTitle : m.stepUp.codeTitle
   const wrapAttrs = mobile
-    ? { 'data-frame': step.name === 'choose' ? '01-choose-factor' : '02-enter-code', 'data-viewport': '375' }
-    : { 'data-frame': '05-step-up-challenge', 'data-route': '/login/mfa' }
+    ? {
+        'data-frame': step.name === 'choose' ? '01-choose-factor' : onRecovery ? '05-recovery-code' : '02-enter-code',
+        'data-viewport': '375',
+      }
+    : { 'data-frame': onRecovery ? '07-recovery-code-entry' : '05-step-up-challenge', 'data-route': '/login/mfa' }
 
   let body: React.ReactNode
   if (expired) {
@@ -542,12 +556,28 @@ function StepUpInner({
         </StatusCallout>
       </div>
     )
+  } else if (step.name === 'code' && step.factor.type === 'recovery') {
+    const factor = step.factor
+    body = (
+      <RecoveryCodeEntry
+        variant={variant}
+        status={step.code as RecoveryStatus}
+        retryAt={step.retryAt}
+        onVerify={(code) => void verify(factor, step.delivered, code)}
+        onChooseFactor={() => setStep({ name: 'choose' })}
+        onRestart={onBack}
+        onContactSupport={onContactSupport}
+        hosted={hosted}
+      />
+    )
   } else if (step.name === 'code') {
     body = (
       <MfaChallengeCard
         variant={variant}
-        factor={step.factor}
+        factor={step.factor as MfaFactorRef}
         status={step.code}
+        retryAt={step.retryAt}
+        onRestart={onBack}
         delivered={step.delivered}
         onVerify={(code) => void verify(step.factor, step.delivered, code)}
         onResend={() => void choose(step.factor)}

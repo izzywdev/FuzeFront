@@ -31,6 +31,11 @@ export function isRateLimited(err: unknown): boolean {
   return statusOf(err) === 429 || (err instanceof HttpError && err.code === 'RATE_LIMITED')
 }
 
+/** Seconds to wait from a 429's `Retry-After`, or undefined when missing / not a positive integer. */
+export function retryAfterOf(err: unknown): number | undefined {
+  return err instanceof HttpError ? err.retryAfter : undefined
+}
+
 export type CodeFailure = 'invalid' | 'service' | 'rate-limited'
 
 /**

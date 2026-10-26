@@ -68,6 +68,8 @@ export interface SmsEnrollPanelProps {
   onActivate: (code: string) => void
   onResend: () => void
   onCancel: () => void
+  /** Confirm step only: discard the pending factor and go back to the number step. */
+  onChangeNumber?: () => void
   activating?: boolean
   invalid?: boolean
   /** The submission failed for a non-rejection reason (5xx / 429 / network): retryable. */
@@ -162,6 +164,11 @@ export function SmsEnrollPanel(p: SmsEnrollPanelProps) {
         >
           {p.activating ? m.mfa.totp.activating : m.mfa.sms.activate}
         </Button>
+        {p.onChangeNumber && (
+          <Button variant="ghost" data-action="change-number" onClick={p.onChangeNumber} disabled={p.activating}>
+            {m.mfa.sms.changeNumber}
+          </Button>
+        )}
       </Actions>
     </SeamCard>
   )
@@ -302,6 +309,12 @@ function SmsEnrollInner(props: EnrollFlowProps) {
           onSendCode={() => undefined}
           onActivate={(code) => void activate(phase.factorId, code)}
           onResend={() => void sendCode()}
+          onChangeNumber={() => {
+            // Same reconcile-then-delete path as Cancel. It is best-effort: the pending factor was
+            // never active, so a failed discard must not trap the user on the confirm step.
+            pending.discard()
+            setPhase({ name: 'enter-phone', sending: false, failed: false })
+          }}
           onCancel={() => {
             pending.discard()
             go(routes.overview)

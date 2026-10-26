@@ -5,8 +5,8 @@ import type { AuthMethods, FullAccountSecurityClient, MfaFactor } from '../types
 /** A strong password that satisfies the DS policy (12+, upper, lower, digit, symbol). */
 export const STRONG = 'Correct-Horse-Battery-9!'
 
-export const err = (status: number, code?: string) =>
-  new HttpError(status, `HTTP ${status}`, code ? { code } : undefined)
+export const err = (status: number, code?: string, retryAfter?: number) =>
+  new HttpError(status, `HTTP ${status}`, code ? { code } : undefined, retryAfter)
 
 export const methods = (types: AuthMethods['mfa']['types'] = ['totp']): AuthMethods => ({
   password: true,

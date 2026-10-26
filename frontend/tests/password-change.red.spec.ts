@@ -164,24 +164,47 @@ test.describe('Password — change (frame 05-signed-in, variant change)', () => 
     expect(called).toBe(false)
   })
 
-  test('generic failure shows retry, then succeeds', async ({ page }) => {
-    let n = 0
-    await page.route('**/v1/security/password/change', route => {
-      n += 1
-      return n === 1
-        ? route.fulfill(json(500, { error: 'boom' }))
-        : route.fulfill({ status: 204 })
-    })
+  const fillChange = async (page: Page) => {
     await page.goto(PASSWORD_ROUTE, { waitUntil: 'domcontentloaded' })
     const form = page.locator("[data-variant='change']")
     await form.locator("[data-input='current-password']").fill('old-password-1!')
     await form.locator("[data-input='new-password']").fill(STRONG)
     await form.locator("[data-input='confirm-password']").fill(STRONG)
     await form.locator("[data-action='change-password']").click()
-    await expect(page.locator("[data-state='error']")).toBeVisible()
+  }
+
+  test('definite 4xx failure (429): "The change wasn\'t saved", retry, then succeeds', async ({ page }) => {
+    let n = 0
+    await page.route('**/v1/security/password/change', route => {
+      n += 1
+      return n === 1
+        ? route.fulfill(json(429, { error: 'slow down', code: 'RATE_LIMITED' }))
+        : route.fulfill({ status: 204 })
+    })
+    await fillChange(page)
+    await expect(page.locator("[data-state='error']")).toContainText("The change wasn't saved. Your password is unchanged")
     await page.locator("[data-action='retry']").click()
     await expect(page.locator("[data-state='success']")).toBeVisible()
   })
+
+  for (const [name, handler] of [
+    ['5xx', (route: import('@playwright/test').Route) => route.fulfill(json(500, { error: 'boom' }))],
+    ['network error', (route: import('@playwright/test').Route) => route.abort('failed')],
+  ] as const) {
+    test(`${name} after submit is INDETERMINATE: no "unchanged" claim, no retry, only Back to security`, async ({ page }) => {
+      let calls = 0
+      await page.route('**/v1/security/password/change', route => { calls += 1; return handler(route) })
+      await fillChange(page)
+      const state = page.locator("[data-state='indeterminate']")
+      await expect(state.locator("[data-error='change-indeterminate']")).toContainText("We couldn't confirm the change.")
+      await expect(state).toContainText("Try signing in with your new password. If that doesn't work, your old password still does.")
+      await expect(state).not.toContainText(/unchanged/i)
+      await expect(page.locator("[data-action='retry']")).toHaveCount(0)
+      await expect(state.locator("[data-action='back-to-security']")).toBeVisible()
+      await expect(page.locator("[data-variant='change']")).toHaveCount(0)
+      expect(calls).toBe(1)
+    })
+  }
 })
 
 test.describe('Password — set first password (frame 05-signed-in variant set; 06-states 409)', () => {

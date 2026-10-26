@@ -111,15 +111,27 @@ describe('MfaStepUpFlow (desktop, frame 05)', () => {
 })
 
 describe.each([['desktop', MfaStepUpFlow], ['mobile', MfaStepUpMobileFlow]] as const)(
-  'recovery-code redemption (%s)',
-  (_name, Flow) => {
-    const open = async (client: ReturnType<typeof makeClient>, onAuthenticated = vi.fn()) => {
+  'recovery-code entry (%s, frames 07 / 05)',
+  (name, Flow) => {
+    const mobile = name === 'mobile'
+    const root = () =>
+      q(mobile ? '[data-panel="recovery-code"]' : '[data-component="mfa-challenge"][data-factor="recovery"]')!
+    const stateIs = (desktopState: string, mobileState: string) =>
+      root().getAttribute('data-state') === (mobile ? mobileState : desktopState)
+    const field = () => q('[data-field="recovery-code"]') as HTMLInputElement
+    const verifyBtn = () => q('[data-action="verify-recovery"]') as HTMLButtonElement
+    const open = async (
+      client: ReturnType<typeof makeClient>,
+      extra: { onAuthenticated?: () => void; onBack?: () => void; onContactSupport?: () => void } = {}
+    ) => {
       const user = userEvent.setup()
       render(
         <Flow
           client={asClient(client)}
           challenge={{ challengeId: 'chl_9', factors: [TOTP], recoveryAvailable: true }}
-          onAuthenticated={onAuthenticated}
+          onAuthenticated={extra.onAuthenticated ?? vi.fn()}
+          onBack={extra.onBack}
+          onContactSupport={extra.onContactSupport}
         />
       )
       const different = screen.queryByRole('button', { name: /different method/i })
@@ -128,104 +140,248 @@ describe.each([['desktop', MfaStepUpFlow], ['mobile', MfaStepUpMobileFlow]] as c
       return user
     }
     const submit = async (user: ReturnType<typeof userEvent.setup>, code: string) => {
-      await user.type(q('[data-field="recovery-code"]') as Element, code)
-      await user.click(q('[data-action="verify-mfa"]')!)
+      await user.type(field(), code)
+      await user.click(verifyBtn())
     }
 
-    it('submits { challengeId, recoveryCode } and proceeds like a factor verify', async () => {
+    it('idle: frame hooks, helper text, one opaque text field with the frame attributes', async () => {
+      await open(makeClient())
+      expect(stateIs('recovery-prompt', 'idle')).toBe(true)
+      expect(q(`[data-frame="${mobile ? '05-recovery-code' : '07-recovery-code-entry'}"]`)).toBeTruthy()
+      expect(q('[data-component="recovery-code-input"]')).toBeTruthy()
+      expect(q('[data-component="otp-input"]')).toBeNull()
+      const f = field()
+      expect(f.type).toBe('text')
+      expect(f.getAttribute('maxlength')).toBe('64')
+      expect(f.getAttribute('autocomplete')).toBe('one-time-code')
+      expect(f.getAttribute('autocapitalize')).toBe('none')
+      expect(f.getAttribute('spellcheck')).toBe('false')
+      expect(f.getAttribute('inputmode')).toBeNull()
+      expect(f.getAttribute('placeholder')).toBeNull()
+      const help = q('[data-help="recovery-code"]')!
+      expect(help.textContent).toBe('Each code works once. Spaces and dashes are fine — type it the way you saved it.')
+      expect(f.getAttribute('aria-describedby')).toBe(help.id)
+      expect(verifyBtn().disabled).toBe(true)
+      expect(q('[data-action="choose-factor"]')).toBeTruthy()
+    })
+
+    it('contact support is present on the entry state and calls onContactSupport', async () => {
+      const onContactSupport = vi.fn()
+      const user = await open(makeClient(), { onContactSupport })
+      await user.click(q('[data-action="contact-support"]')!)
+      expect(onContactSupport).toHaveBeenCalled()
+    })
+
+    it('submits exactly { challengeId, recoveryCode } as typed (trimmed) and proceeds like a factor verify', async () => {
       const client = makeClient()
       const onAuthenticated = vi.fn()
-      const user = await open(client, onAuthenticated)
-      await submit(user, ' ab12-cd34ef ')
+      const user = await open(client, { onAuthenticated })
+      await submit(user, ' ab12-CD34 ef ')
       await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith({ token: 'tok', sessionId: 's1' }))
-      expect(client.verifyRecoveryCode).toHaveBeenCalledWith('chl_9', 'ab12-cd34ef')
+      expect(client.verifyRecoveryCode).toHaveBeenCalledWith('chl_9', 'ab12-CD34 ef')
       expect(client.verifyMfa).not.toHaveBeenCalled()
     })
 
-    it('verify stays disabled until a non-empty code is entered (no format validation)', async () => {
+    it('Verify is disabled only while the trimmed value is empty (no format check)', async () => {
       const user = await open(makeClient())
-      expect((q('[data-action="verify-mfa"]') as HTMLButtonElement).disabled).toBe(true)
-      await user.type(q('[data-field="recovery-code"]') as Element, 'x')
-      expect((q('[data-action="verify-mfa"]') as HTMLButtonElement).disabled).toBe(false)
+      await user.type(field(), '   ')
+      expect(verifyBtn().disabled).toBe(true)
+      await user.type(field(), 'x')
+      expect(verifyBtn().disabled).toBe(false)
     })
 
-    it('RECOVERY_CODE_INVALID: inline error, stays on screen, and the user can retry', async () => {
-      const verifyRecoveryCode = vi.fn().mockRejectedValueOnce(err(401, 'RECOVERY_CODE_INVALID')).mockResolvedValueOnce({ token: 't2' })
-      const onAuthenticated = vi.fn()
-      const user = await open(makeClient({ verifyRecoveryCode }), onAuthenticated)
-      await submit(user, 'wrong')
-      await waitFor(() => expect(q('[data-error="invalid-code"]')).toBeTruthy())
-      expect(onAuthenticated).not.toHaveBeenCalled()
-      expect(q('[data-state="expired"]')).toBeNull()
-      await user.clear(q('[data-field="recovery-code"]') as Element)
-      await user.type(q('[data-field="recovery-code"]') as Element, 'right')
-      await user.click(q('[data-action="verify-mfa"]')!)
-      await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith({ token: 't2' }))
-      expect(verifyRecoveryCode).toHaveBeenCalledTimes(2)
-    })
-
-    it('RATE_LIMITED (429): retryable service state, never claims the code was wrong', async () => {
-      const verifyRecoveryCode = vi.fn(async () => { throw err(429, 'RATE_LIMITED') })
-      const user = await open(makeClient({ verifyRecoveryCode }))
-      await submit(user, 'abc')
-      await waitFor(() => expect(q('[data-error="service-error"]')).toBeTruthy())
-      expect(q('[data-error="invalid-code"]')).toBeNull()
-      expect((q('[data-action="verify-mfa"]') as HTMLButtonElement).disabled).toBe(false)
-    })
-
-    it('NOT_ACTIVE: challenge gone -> the existing expired state with a restart action', async () => {
-      const verifyRecoveryCode = vi.fn(async () => { throw err(401, 'NOT_ACTIVE') })
-      const onBack = vi.fn()
-      const user = userEvent.setup()
-      render(
-        <Flow
-          client={asClient(makeClient({ verifyRecoveryCode }))}
-          challenge={{ challengeId: 'chl_9', factors: [TOTP], recoveryAvailable: true }}
-          onAuthenticated={vi.fn()}
-          onBack={onBack}
-        />
-      )
-      const different = screen.queryByRole('button', { name: /different method/i })
-      if (different) await user.click(different)
-      await user.click((await waitFor(() => q('[data-factor="recovery"]')!)) as Element)
-      await submit(user, 'abc')
-      await waitFor(() => expect(q('[data-state="expired"]')).toBeTruthy())
-      await user.click(q('[data-action="restart-sign-in"]')!)
-      expect(onBack).toHaveBeenCalled()
-    })
-
-    it('5xx / network: retryable service error, code not judged wrong', async () => {
-      const verifyRecoveryCode = vi.fn(async () => { throw err(503) })
-      const user = await open(makeClient({ verifyRecoveryCode }))
-      await submit(user, 'abc')
-      await waitFor(() => expect(q('[data-error="service-error"]')).toBeTruthy())
-    })
-
-    it('no double submit while a redemption is in flight', async () => {
+    it('verifying: field + button disabled, spinner, and no double submit', async () => {
       let release!: (v: unknown) => void
       const verifyRecoveryCode = vi.fn(() => new Promise((r) => { release = r }))
       const user = await open(makeClient({ verifyRecoveryCode }))
-      await user.type(q('[data-field="recovery-code"]') as Element, 'abc')
-      await user.click(q('[data-action="verify-mfa"]')!)
+      await user.type(field(), 'abc')
+      await user.click(verifyBtn())
+      expect(stateIs('recovery-verifying', 'verifying')).toBe(true)
+      expect(field().disabled).toBe(true)
+      expect(verifyBtn().disabled).toBe(true)
+      expect(verifyBtn().getAttribute('aria-busy')).toBe('true')
       await user.keyboard('{Enter}')
-      await user.click(q('[data-action="verify-mfa"]')!)
+      await user.click(verifyBtn())
       expect(verifyRecoveryCode).toHaveBeenCalledTimes(1)
       await act(async () => release({ token: 't' }))
     })
 
-    it('with no listed factors but recoveryAvailable, recovery is the offered way in (not the dead-end state)', async () => {
+    it('401 RECOVERY_CODE_INVALID: frame copy, no time-based wording, value kept + selected, retry works', async () => {
+      const verifyRecoveryCode = vi.fn().mockRejectedValueOnce(err(401, 'RECOVERY_CODE_INVALID')).mockResolvedValueOnce({ token: 't2' })
+      const onAuthenticated = vi.fn()
+      const user = await open(makeClient({ verifyRecoveryCode }), { onAuthenticated })
+      await submit(user, 'wrong')
+      await waitFor(() => expect(stateIs('recovery-error-invalid', 'error-invalid')).toBe(true))
+      expect(root().getAttribute('data-http-status')).toBe('401')
+      const msg = q('[data-error="recovery-invalid"]')!.textContent!
+      expect(msg).toContain("That recovery code didn't work. Check it for typos, or try another of your codes — each code works only once.")
+      expect(document.body.textContent).not.toMatch(/30 seconds|expired|authenticator/i)
+      expect(field().value).toBe('wrong')
+      expect(field().getAttribute('aria-invalid')).toBe('true')
+      expect(verifyBtn().textContent).toMatch(/try again/i)
+      expect(onAuthenticated).not.toHaveBeenCalled()
+      await user.click(verifyBtn())
+      await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith({ token: 't2' }))
+    })
+
+    it('401 NOT_ACTIVE: neutral "Your sign-in expired" — no field, no claim about the code, Back to sign in', async () => {
+      const verifyRecoveryCode = vi.fn(async () => { throw err(401, 'NOT_ACTIVE') })
+      const onBack = vi.fn()
+      const user = await open(makeClient({ verifyRecoveryCode }), { onBack })
+      await submit(user, 'abc')
+      await waitFor(() => expect(stateIs('recovery-error-expired', 'error-expired')).toBe(true))
+      const text = root().textContent!
+      expect(text).toContain('Your sign-in expired')
+      expect(text).toContain('Start again to sign in.')
+      expect(text).not.toMatch(/\bused\b|unused|consumed|still valid|code (was|is)/i)
+      expect(field()).toBeNull()
+      expect(q('[data-action="verify-recovery"]')).toBeNull()
+      await user.click(q('[data-action="restart-sign-in"]')!)
+      expect(onBack).toHaveBeenCalled()
+    })
+
+    it('network / 5xx / unrecognised: "We couldn\'t check your code", not a wrong code, never says unused, retry kept', async () => {
+      const verifyRecoveryCode = vi.fn()
+        .mockRejectedValueOnce(err(503))
+        .mockRejectedValueOnce(new TypeError('network'))
+        .mockRejectedValueOnce(err(400, 'MALFORMED'))
+      const user = await open(makeClient({ verifyRecoveryCode }))
+      await user.type(field(), 'abc')
+      for (let i = 0; i < 3; i++) {
+        await user.click(verifyBtn())
+        await waitFor(() => expect(stateIs('recovery-error-generic', 'error-generic')).toBe(true))
+        const text = root().textContent!
+        expect(text).toContain("We couldn't check your code")
+        expect(text).toContain('Something went wrong while checking it. Check your connection and try again.')
+        expect(text).not.toMatch(/unused|still valid|wrong code|didn't work/i)
+        expect(q('[data-error="recovery-invalid"]')).toBeNull()
+        expect(field().value).toBe('abc')
+        expect(verifyBtn().disabled).toBe(false)
+      }
+    })
+
+    it('use a different method returns to the factor picker', async () => {
+      const user = await open(makeClient())
+      await user.click(q('[data-action="choose-factor"]')!)
+      expect(q('[data-component="factor-picker"]')).toBeTruthy()
+    })
+
+    it('no listed factors but recoveryAvailable: recovery is offered (not the dead-end state)', async () => {
       render(
-        <Flow
-          client={asClient(makeClient())}
-          challenge={{ challengeId: 'c', factors: [], recoveryAvailable: true }}
-          onAuthenticated={vi.fn()}
-        />
+        <Flow client={asClient(makeClient())} challenge={{ challengeId: 'c', factors: [], recoveryAvailable: true }} onAuthenticated={vi.fn()} />
       )
       await waitFor(() => expect(q('[data-factor="recovery"]')).toBeTruthy())
       expect(q('[data-state="empty"]')).toBeNull()
     })
   }
 )
+
+describe.each([
+  ['desktop factor code', MfaStepUpFlow, 'factor'],
+  ['mobile factor code', MfaStepUpMobileFlow, 'factor'],
+  ['desktop recovery code', MfaStepUpFlow, 'recovery'],
+  ['mobile recovery code', MfaStepUpMobileFlow, 'recovery'],
+] as const)('429 RATE_LIMITED with a Retry-After countdown (%s)', (_n, Flow, kind) => {
+  const recovery = kind === 'recovery'
+  const isMobile = Flow === MfaStepUpMobileFlow
+  const btn = () => q(recovery ? '[data-action="verify-recovery"]' : '[data-action="verify-mfa"]') as HTMLButtonElement
+  const fakeUser = () => userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) })
+
+  async function reach429(verify: ReturnType<typeof vi.fn>, onBack = vi.fn()) {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = fakeUser()
+    const client = makeClient(recovery ? { verifyRecoveryCode: verify } : { verifyMfa: verify })
+    render(
+      <Flow client={asClient(client)} challenge={{ challengeId: 'chl_1', factors: [TOTP], recoveryAvailable: true }} onAuthenticated={vi.fn()} onBack={onBack} />
+    )
+    if (recovery) {
+      const different = screen.queryByRole('button', { name: /different method/i })
+      if (different) await user.click(different)
+      await user.click((await waitFor(() => q('[data-factor="recovery"]')!)) as Element)
+      await user.type(q('[data-field="recovery-code"]') as Element, 'abc')
+    } else {
+      if (isMobile) await user.click((await waitFor(() => q('[data-factor="totp"][data-action="challenge"]')!)) as Element)
+      await waitFor(() => expect(q('[data-component="otp-input"] input')).toBeTruthy())
+      await typeCode(user, '123456')
+    }
+    await user.click(btn())
+    await waitFor(() => expect(q('[data-error="rate-limited"]')).toBeTruthy())
+    return { user, onBack }
+  }
+
+  it('shows a live m:ss countdown in the callout and on a disabled button, then re-enables', async () => {
+    const verify = vi.fn(async () => { throw err(429, 'RATE_LIMITED', 125) })
+    await reach429(verify)
+    expect(q('[data-value="retry-after"]')!.textContent).toBe('2:05')
+    expect(q('[data-error="rate-limited"]')!.textContent).toMatch(/Too many attempts/)
+    expect(q('[data-error="rate-limited"]')!.textContent).toMatch(/won't skip the wait/)
+    expect(btn().disabled).toBe(true)
+    expect(btn().getAttribute('data-state')).toBe('cooldown')
+    expect(btn().textContent).toBe('Try again in 2:05')
+    expect(q('[data-error="invalid-code"], [data-error="recovery-invalid"]')).toBeNull()
+    await act(async () => { vi.advanceTimersByTime(5000) })
+    expect(q('[data-value="retry-after"]')!.textContent).toBe('2:00')
+    expect(btn().textContent).toBe('Try again in 2:00')
+    await act(async () => { vi.advanceTimersByTime(120_000) })
+    expect(btn().disabled).toBe(false)
+    expect(btn().getAttribute('data-state')).toBeNull()
+    expect(btn().textContent).toMatch(/^try again$/i)
+  })
+
+  it('exposes the frame hooks (http status 429) and keeps the entered code', async () => {
+    const verify = vi.fn(async () => { throw err(429, 'RATE_LIMITED', 30) })
+    await reach429(verify)
+    const rootEl = isMobile
+      ? q(recovery ? '[data-panel="recovery-code"]' : '[data-panel="enter-code"]')!
+      : q('[data-component="mfa-challenge"][data-factor]')!
+    expect(rootEl.getAttribute('data-http-status')).toBe('429')
+    expect(rootEl.getAttribute('data-state')).toBe(recovery && !isMobile ? 'recovery-rate-limited' : 'rate-limited')
+    if (recovery) expect((q('[data-field="recovery-code"]') as HTMLInputElement).value).toBe('abc')
+    else expect((document.querySelectorAll('[data-component="otp-input"] input')[0] as HTMLInputElement).value).toBe('1')
+  })
+
+  it('a repeated 429 restarts the countdown from the new header', async () => {
+    const verify = vi.fn().mockRejectedValueOnce(err(429, 'RATE_LIMITED', 10)).mockRejectedValueOnce(err(429, 'RATE_LIMITED', 90))
+    const { user } = await reach429(verify)
+    await act(async () => { vi.advanceTimersByTime(10_000) })
+    expect(btn().disabled).toBe(false)
+    await user.click(btn())
+    await waitFor(() => expect(q('[data-value="retry-after"]')!.textContent).toBe('1:30'))
+    expect(btn().disabled).toBe(true)
+    expect(verify).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([[undefined], [0]])('missing/invalid Retry-After (%s): "Wait a few minutes, then try again." and the button is enabled', async (ra) => {
+    const verify = vi.fn(async () => { throw err(429, 'RATE_LIMITED', ra) })
+    await reach429(verify)
+    expect(q('[data-value="retry-after"]')).toBeNull()
+    expect(q('[data-error="rate-limited"]')!.textContent).toContain('Wait a few minutes, then try again.')
+    expect(btn().disabled).toBe(false)
+    expect(btn().textContent).toMatch(/^try again$/i)
+  })
+
+  it('Back to sign in calls onBack', async () => {
+    const verify = vi.fn(async () => { throw err(429, 'RATE_LIMITED', 30) })
+    const { user, onBack } = await reach429(verify)
+    await user.click(q('[data-action="back-to-sign-in"]')!)
+    expect(onBack).toHaveBeenCalled()
+  })
+})
+
+describe('Retry-After parsing', () => {
+  it('reads a positive integer header off a 429 and ignores junk / dates / zero', async () => {
+    const { HttpClient } = await import('../../api/http')
+    const mk = (h?: string) =>
+      new HttpClient({ fetchImpl: (async () => new Response('{"code":"RATE_LIMITED"}', { status: 429, headers: h ? { 'Retry-After': h } : {} })) as never })
+    const get = async (h?: string) => (await mk(h).get('/x').catch((e: unknown) => e)) as { retryAfter?: number }
+    expect((await get('120')).retryAfter).toBe(120)
+    expect((await get()).retryAfter).toBeUndefined()
+    expect((await get('0')).retryAfter).toBeUndefined()
+    expect((await get('abc')).retryAfter).toBeUndefined()
+    expect((await get('Wed, 21 Oct 2026 07:28:00 GMT')).retryAfter).toBeUndefined()
+    expect((await get('1.5')).retryAfter).toBeUndefined()
+  })
+})
 
 describe('classifyCodeFailure / classifyRecoveryFailure', () => {
   it('maps the contract outcomes', async () => {
@@ -405,8 +561,8 @@ describe('MfaStepUpMobileFlow (frames 01-02, 375px)', () => {
     const verifyMfa = vi
       .fn()
       .mockRejectedValueOnce(err(503, 'UNAVAILABLE'))
-      .mockRejectedValueOnce(err(429, 'RATE'))
       .mockRejectedValueOnce(new TypeError('network'))
+      .mockRejectedValueOnce(err(502))
     const client = makeClient({ verifyMfa })
     render(
       <MfaStepUpFlow client={asClient(client)} challenge={{ challengeId: 'c', factors: [TOTP] }} onAuthenticated={vi.fn()} />

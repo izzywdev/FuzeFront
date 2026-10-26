@@ -99,56 +99,145 @@ export type CountsState =
   | { status: 'error' }
   | { status: 'ready'; counts: RecoveryCodesStatusResult }
 
-/** "You have **8 of 10** recovery codes left…" (frame 04, returning state). Counts only, never codes. */
-function RecoveryCountLine({ counts }: { counts: RecoveryCodesStatusResult }) {
+/** "8 of 10 left" with the numbers in `data-value` hooks (frame 04). Counts only, never codes. */
+function CountLine({ counts }: { counts: RecoveryCodesStatusResult }) {
   const { messages: m } = useAccountSecurityI18n()
-  const fraction = m.mfa.recovery.statusFraction
-    .replace('{remaining}', String(counts.remaining))
-    .replace('{total}', String(counts.total))
-  const [before, after = ''] = m.mfa.recovery.statusCount.split('{fraction}')
+  const parts = m.mfa.recovery.statusLeft.split(/(\{remaining\}|\{total\})/)
   return (
-    <Hint data-value="recovery-count" data-remaining={counts.remaining} data-total={counts.total}>
-      {before}
-      <b style={{ color: 'var(--text-primary)' }}>{fraction}</b>
-      {after}
-    </Hint>
+    <p
+      style={{
+        margin: '0 0 var(--space-3)',
+        fontFamily: 'var(--font-display)',
+        fontSize: 'var(--text-lg)',
+        fontWeight: 'var(--weight-semibold)',
+      }}
+    >
+      {parts.map((p, i) =>
+        p === '{remaining}' ? (
+          <span key={i} data-value="remaining">{counts.remaining}</span>
+        ) : p === '{total}' ? (
+          <span key={i} data-value="total">{counts.total}</span>
+        ) : (
+          <span key={i}>{p}</span>
+        )
+      )}
+    </p>
   )
 }
 
+/** Returning view (frame 04). One card per count state; never renders per-code tiles. */
 export function RecoveryCodesStatus({
-  onRegenerate,
   counts,
+  onRegenerate,
+  onGenerate,
   onRetryCounts,
 }: {
+  counts: CountsState
+  /** Opens the regenerate confirm (invalidates the current set). */
   onRegenerate: () => void
-  /** Omit to render the count-less description (e.g. when no set was ever generated). */
-  counts?: CountsState
-  onRetryCounts?: () => void
+  /** Straight to generation — only offered when there is no old set to invalidate. */
+  onGenerate: () => void
+  onRetryCounts: () => void
 }) {
   const { messages: m } = useAccountSecurityI18n()
+  const r = m.mfa.recovery
+
+  if (counts.status === 'loading') {
+    return (
+      <SeamCard data-component="recovery-codes" data-state="loading" aria-busy="true" aria-label={r.statusLoadingLabel}>
+        <div aria-hidden="true" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <Skeleton width="40%" height="var(--space-5)" radius="var(--radius-md)" />
+          <Skeleton width="90%" height="var(--space-4)" radius="var(--radius-md)" />
+          <Skeleton width="70%" height="var(--space-4)" radius="var(--radius-md)" />
+        </div>
+        <Actions>
+          <Button variant="ghost" data-action="regenerate-open" disabled>
+            {r.regenerate}
+          </Button>
+        </Actions>
+      </SeamCard>
+    )
+  }
+
+  if (counts.status === 'error') {
+    return (
+      <SeamCard data-component="recovery-codes" data-state="error">
+        <div data-error="status-load">
+          <StatusCallout tone="error" icon="⚠" title={r.statusErrorTitle} role="alert">
+            {r.statusErrorText}
+          </StatusCallout>
+        </div>
+        <Actions>
+          <Button variant="primary" data-action="retry" onClick={onRetryCounts}>
+            {r.statusRetry}
+          </Button>
+          <Button variant="ghost" data-action="regenerate-open" onClick={onRegenerate}>
+            {r.generateNew}
+          </Button>
+        </Actions>
+      </SeamCard>
+    )
+  }
+
+  const { remaining, total } = counts.counts
+  if (total === 0) {
+    return (
+      <SeamCard data-component="recovery-codes" data-state="none">
+        <p style={{ margin: '0 0 var(--space-3)', fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 'var(--weight-semibold)' }}>
+          {r.noneTitle}
+        </p>
+        <Hint>{r.noneText}</Hint>
+        <Actions style={{ marginBlockStart: 0 }}>
+          <Button variant="primary" data-action="generate-codes" onClick={onGenerate}>
+            {r.generate}
+          </Button>
+        </Actions>
+      </SeamCard>
+    )
+  }
+  if (remaining === 0) {
+    return (
+      <SeamCard data-component="recovery-codes" data-state="exhausted">
+        <CountLine counts={counts.counts} />
+        <StatusCallout tone="error" icon="⚠" title={r.exhaustedTitle} role="alert">
+          {r.exhaustedText}
+        </StatusCallout>
+        <Actions>
+          <Button variant="primary" data-action="regenerate-open" onClick={onRegenerate}>
+            {r.generateNew}
+          </Button>
+        </Actions>
+      </SeamCard>
+    )
+  }
+  if (remaining <= 2) {
+    return (
+      <SeamCard data-component="recovery-codes" data-state="low">
+        <CountLine counts={counts.counts} />
+        <StatusCallout tone="warning" icon="⚠" title={r.lowTitle} role="status">
+          {remaining === 1 ? r.lowTextOne : r.lowTextMany.replace('{remaining}', String(remaining))}
+        </StatusCallout>
+        <Actions>
+          <Button variant="primary" data-action="regenerate-open" onClick={onRegenerate}>
+            {r.generateNew}
+          </Button>
+        </Actions>
+      </SeamCard>
+    )
+  }
+  const fraction = r.statusFraction.replace('{remaining}', String(remaining)).replace('{total}', String(total))
+  const [before, after = ''] = r.statusCount.split('{fraction}')
   return (
     <SeamCard data-component="recovery-codes" data-state="status">
-      {counts?.status === 'loading' ? (
-        <div data-state="counts-loading" role="status" aria-busy="true" aria-label={m.mfa.recovery.statusLoadingLabel}>
-          <Skeleton width="100%" height="var(--space-6)" radius="var(--radius-md)" />
-        </div>
-      ) : counts?.status === 'ready' && counts.counts.total > 0 ? (
-        <RecoveryCountLine counts={counts.counts} />
-      ) : counts?.status === 'error' ? (
-        <div data-state="counts-error" role="alert">
-          <Hint>{m.mfa.recovery.statusErrorText}</Hint>
-          {onRetryCounts && (
-            <Button variant="ghost" data-action="retry-counts" onClick={onRetryCounts}>
-              {m.mfa.recovery.statusRetry}
-            </Button>
-          )}
-        </div>
-      ) : (
-        <Hint>{m.mfa.recovery.statusText}</Hint>
-      )}
+      <CountLine counts={counts.counts} />
+      <Hint>
+        {before}
+        <b style={{ color: 'var(--text-primary)' }}>{fraction}</b>
+        {after}
+      </Hint>
       <Actions style={{ marginBlockStart: 0 }}>
         <Button variant="ghost" data-action="regenerate-open" onClick={onRegenerate}>
-          {m.mfa.recovery.regenerate}
+          {r.regenerate}
         </Button>
       </Actions>
     </SeamCard>
@@ -248,8 +337,9 @@ function RecoveryCodesInner(props: FlowBaseProps & MfaNavProps) {
   }, [api])
   useEffect(() => (phaseName === 'status' ? loadCounts() : undefined), [phaseName, loadCounts])
 
-  const regenerate = () => inFlight(async () => {
-    setPhase({ name: 'confirm', busy: true })
+  const regenerate = (fromConfirm = true) => inFlight(async () => {
+    // A first-ever generation has no old set to invalidate, so it skips the confirm dialog.
+    if (fromConfirm) setPhase({ name: 'confirm', busy: true })
     try {
       const codes = await api.regenerateRecoveryCodes()
       setPhase({ name: 'shown', codes })
@@ -267,6 +357,7 @@ function RecoveryCodesInner(props: FlowBaseProps & MfaNavProps) {
           counts={counts}
           onRetryCounts={loadCounts}
           onRegenerate={() => setPhase({ name: 'confirm', busy: false })}
+          onGenerate={() => void regenerate(false)}
         />
       )}
       {phase.name === 'confirm' && (

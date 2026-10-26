@@ -299,6 +299,39 @@ test.describe('SMS enrolment (frame 03-sms-enroll) — leads with channel-unavai
     await expect(page.locator("[data-state='error-invalid']")).toBeVisible()
     await expect(page.locator("[data-error='invalid-code']")).toBeVisible()
   })
+
+  test('Use a different number (invalid-code state): discards the pending factor, back to step 1 with the number prefilled', async ({ page }) => {
+    await mockMethods(page, ['totp', 'sms'])
+    const deleted: string[] = []
+    await page.route('**/v1/security/mfa/factors', route => {
+      if (route.request().method() === 'POST') {
+        return route.fulfill(json(201, { factorId: 'fct_sms_new', type: 'sms', status: 'pending', codeSent: true }))
+      }
+      return route.fulfill(json(200, { items: [{ factorId: 'fct_sms_new', type: 'sms', status: 'pending', label: '•••• 0471' }] }))
+    })
+    await page.route('**/v1/security/mfa/factors/*/activate', route =>
+      route.fulfill(json(401, { error: 'invalid code', code: 'NOT_ACTIVE' })),
+    )
+    await page.route('**/v1/security/mfa/factors/fct_sms_new', route => {
+      if (route.request().method() === 'DELETE') {
+        deleted.push(route.request().url())
+        return route.fulfill({ status: 204 })
+      }
+      return route.continue()
+    })
+    await page.goto('/account/security/mfa/add/phone', { waitUntil: 'domcontentloaded' })
+    await page.locator("[data-field='phone']").fill('+44 7700 900471')
+    await page.locator("[data-action='send-code']").click()
+    await expect(page.locator("[data-component='sms-enroll'][data-state='confirm-code']").locator("[data-action='change-number']")).toBeVisible()
+    await page.locator("[data-component='otp-input'] input").first().click()
+    await page.keyboard.type('000000')
+    await page.locator("[data-action='activate-factor']").click()
+    await expect(page.locator("[data-state='error-invalid']")).toBeVisible()
+    await page.locator("[data-state='error-invalid'] [data-action='change-number']").click()
+    await expect(page.locator("[data-component='sms-enroll'][data-state='enter-phone']")).toBeVisible()
+    await expect(page.locator("[data-field='phone']")).toHaveValue(/7700 900471|\+447700900471/)
+    await expect.poll(() => deleted.length).toBe(1)
+  })
 })
 
 test.describe('Recovery codes (frame 04) — REVEAL ONCE', () => {
@@ -328,17 +361,48 @@ test.describe('Recovery codes (frame 04) — REVEAL ONCE', () => {
   test('status shows "N of M recovery codes left" from the GET counts', async ({ page }) => {
     await mockRecovery(page)
     await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
-    const count = page.locator("[data-value='recovery-count']")
-    await expect(count).toContainText('8 of 10')
+    const card = page.locator("[data-component='recovery-codes'][data-state='status']")
+    await expect(card.locator("[data-value='remaining']")).toHaveText('8')
+    await expect(card.locator("[data-value='total']")).toHaveText('10')
+    await expect(card).toContainText('8 of 10 recovery codes left')
     await expect(page.locator('[data-codes] code')).toHaveCount(0)
   })
 
   test('status count failure is explicit with a retry; regenerate stays available', async ({ page }) => {
     await mockRecovery(page, { counts: json(500, { error: 'boom' }) })
     await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
-    await expect(page.locator("[data-state='counts-error']")).toBeVisible()
-    await expect(page.locator("[data-action='retry-counts']")).toBeVisible()
-    await expect(page.locator("[data-action='regenerate-open']")).toBeVisible()
+    const card = page.locator("[data-component='recovery-codes'][data-state='error']")
+    await expect(card.locator("[data-error='status-load']")).toBeVisible()
+    await expect(card.locator("[data-action='retry']")).toBeVisible()
+    await expect(card.locator("[data-action='regenerate-open']")).toBeVisible()
+  })
+
+  for (const [name, counts, state] of [
+    ['running low (1 of 10)', { remaining: 1, total: 10 }, 'low'],
+    ['all used (0 of 10)', { remaining: 0, total: 10 }, 'exhausted'],
+    ['never generated (0 of 0)', { remaining: 0, total: 0 }, 'none'],
+  ] as const) {
+    test(`status: ${name} -> data-state=${state}, counts only, no code tiles`, async ({ page }) => {
+      await mockRecovery(page, { counts: json(200, counts) })
+      await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
+      await expect(page.locator(`[data-component='recovery-codes'][data-state='${state}']`)).toBeVisible()
+      await expect(page.locator('[data-codes] code')).toHaveCount(0)
+    })
+  }
+
+  test('loading: skeleton with Regenerate disabled until the count resolves', async ({ page }) => {
+    let release!: () => void
+    const gate = new Promise<void>(r => { release = r })
+    await page.route('**/v1/security/mfa/recovery-codes', async route => {
+      await gate
+      return route.fulfill(json(200, { remaining: 8, total: 10 }))
+    })
+    await page.goto('/account/security/mfa/recovery-codes', { waitUntil: 'domcontentloaded' })
+    const loading = page.locator("[data-component='recovery-codes'][data-state='loading']")
+    await expect(loading).toBeVisible()
+    await expect(loading.locator("[data-action='regenerate-open']")).toBeDisabled()
+    release()
+    await expect(page.locator("[data-component='recovery-codes'][data-state='status']")).toBeVisible()
   })
 
   test('landing shows STATUS only — codes are never fetched or displayed until regenerated', async ({ page }) => {

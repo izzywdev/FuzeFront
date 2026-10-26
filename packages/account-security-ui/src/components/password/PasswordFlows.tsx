@@ -9,6 +9,7 @@ import {
   ErrorWithRetry,
   FlowPage,
   FlowRoot,
+  SeamCard,
   useInFlight,
   useSecurityClient,
   type FlowBaseProps,
@@ -198,25 +199,23 @@ function ChangePasswordInner({
       ) : phase.name === 'no-password' ? (
         <NoPasswordYet onSet={() => nav(ROUTES.password + '?mode=set')} />
       ) : phase.name === 'indeterminate' ? (
-        <div data-state="indeterminate" role="alert">
-          <StatusCallout
-            tone="warning"
-            icon="!"
-            title={m.password.errors.indeterminateTitle}
-            actions={
-              <Button variant="ghost" data-action="back" onClick={() => (onCancel ? onCancel() : nav(ROUTES.security))}>
+        <div data-state="indeterminate">
+          <SeamCard data-error="change-indeterminate">
+            <StatusCallout tone="warning" icon="?" title={m.password.errors.indeterminateTitle} role="alert">
+              {m.password.errors.indeterminateText}
+            </StatusCallout>
+            <Actions>
+              <Button variant="primary" data-action="back-to-security" onClick={() => (onCancel ? onCancel() : nav(ROUTES.security))}>
                 {m.password.success.back}
               </Button>
-            }
-          >
-            {m.password.errors.indeterminateText}
-          </StatusCallout>
+            </Actions>
+          </SeamCard>
         </div>
       ) : phase.name === 'error' ? (
         <ErrorWithRetry
           data-state="error"
           title={m.password.errors.genericTitle}
-          text={m.password.errors.genericText}
+          text={m.password.errors.definiteText}
           retryLabel={m.password.errors.retry}
           onRetry={phase.retry}
         />

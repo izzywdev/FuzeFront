@@ -464,6 +464,50 @@ describe('SmsEnrollFlow', () => {
     expect(client.activateFactor).toHaveBeenCalledWith('fct_sms_new', '319028')
   })
 
+  describe.each([['confirm-code', false], ['error-invalid', true]])('Use a different number (%s state)', (state, wrongCode) => {
+    const reach = async (client: ReturnType<typeof makeClient>) => {
+      const user = userEvent.setup()
+      render(<SmsEnrollFlow client={asClient(client)} />)
+      await waitFor(() => expect(q('[data-field="phone"]')).toBeTruthy())
+      await user.type(q('[data-field="phone"]')!, '+447700900471')
+      await user.click(q('[data-action="send-code"]')!)
+      await waitFor(() => expect(q('[data-component="otp-input"]')).toBeTruthy())
+      if (wrongCode) {
+        await user.click(document.querySelector('[data-component="otp-input"] input')!)
+        await user.keyboard('000000')
+        await user.click(q('[data-action="activate-factor"]')!)
+      }
+      await waitFor(() => expect(q(`[data-component="sms-enroll"][data-state="${state}"]`)).toBeTruthy())
+      return user
+    }
+    const base = (over: Record<string, unknown> = {}) =>
+      makeClient({
+        getMethods: vi.fn(async () => methods(['sms'])),
+        enrollFactor: vi.fn(async () => ({ factorId: 'fct_pending', type: 'sms', status: 'pending', codeSent: true })),
+        activateFactor: vi.fn(async () => { throw err(401) }),
+        listFactors: vi.fn(async () => [{ factorId: 'fct_pending', type: 'sms', status: 'pending', label: '•••• 0471' }]),
+        ...over,
+      })
+
+    it('discards the pending factor (reconcile then DELETE) and returns to the number step with the number prefilled', async () => {
+      const client = base()
+      const user = await reach(client)
+      await user.click(q('[data-action="change-number"]')!)
+      await waitFor(() => expect(q('[data-component="sms-enroll"][data-state="enter-phone"]')).toBeTruthy())
+      expect((q('[data-field="phone"]') as HTMLInputElement).value).toBe('+447700900471')
+      await waitFor(() => expect(client.removeFactor).toHaveBeenCalledWith('fct_pending'))
+      expect(client.listFactors).toHaveBeenCalled()
+    })
+
+    it('still goes back when the discard fails (best-effort: the factor was never active)', async () => {
+      const client = base({ removeFactor: vi.fn(async () => { throw err(500) }) })
+      const user = await reach(client)
+      await user.click(q('[data-action="change-number"]')!)
+      await waitFor(() => expect(q('[data-component="sms-enroll"][data-state="enter-phone"]')).toBeTruthy())
+      expect((q('[data-field="phone"]') as HTMLInputElement).value).toBe('+447700900471')
+    })
+  })
+
   it('FAIL-CLOSED: wrong / expired code shows the inline error', async () => {
     const user = userEvent.setup()
     const client = makeClient({
@@ -666,10 +710,12 @@ describe('SmsEnrollFlow', () => {
 
 describe('RecoveryCodesFlow — REVEAL ONCE', () => {
   const CODES = ['4f2a-9c11', '8b7d-1e04']
+  const onStatus = () => waitFor(() => expect(q('[data-component="recovery-codes"][data-state="status"]')).toBeTruthy())
 
-  it('lands on STATUS only: nothing is fetched or shown', () => {
+  it('lands on STATUS only: nothing is fetched or shown', async () => {
     const client = makeClient()
     render(<RecoveryCodesFlow client={asClient(client)} />)
+    await onStatus()
     expect(q('[data-component="recovery-codes"][data-state="status"]')).toBeTruthy()
     expect(q('[data-codes]')).toBeNull()
     expect(client.regenerateRecoveryCodes).not.toHaveBeenCalled()
@@ -679,6 +725,7 @@ describe('RecoveryCodesFlow — REVEAL ONCE', () => {
     const user = userEvent.setup()
     const client = makeClient({ regenerateRecoveryCodes: vi.fn(async () => CODES) })
     render(<RecoveryCodesFlow client={asClient(client)} />)
+    await onStatus()
     await user.click(q('[data-action="regenerate-open"]')!)
     expect(q('[data-component="recovery-codes"][data-state="regenerate-confirm"]')).toBeTruthy()
     expect(q('[data-action="regenerate-confirm"]')).toBeDisabled()
@@ -695,6 +742,7 @@ describe('RecoveryCodesFlow — REVEAL ONCE', () => {
     const user = userEvent.setup()
     const client = makeClient({ regenerateRecoveryCodes: vi.fn(async () => CODES) })
     render(<RecoveryCodesFlow client={asClient(client)} />)
+    await onStatus()
     await user.click(q('[data-action="regenerate-open"]')!)
     await user.click(q('[data-field="ack-invalidate"]')!)
     await user.click(q('[data-action="regenerate-confirm"]')!)
@@ -709,12 +757,14 @@ describe('RecoveryCodesFlow — REVEAL ONCE', () => {
     const user = userEvent.setup()
     const client = makeClient({ regenerateRecoveryCodes: vi.fn(async () => CODES) })
     const first = render(<RecoveryCodesFlow client={asClient(client)} />)
+    await onStatus()
     await user.click(q('[data-action="regenerate-open"]')!)
     await user.click(q('[data-field="ack-invalidate"]')!)
     await user.click(q('[data-action="regenerate-confirm"]')!)
     await waitFor(() => expect(q('[data-codes]')).toBeTruthy())
     first.unmount()
     render(<RecoveryCodesFlow client={asClient(client)} />)
+    await onStatus()
     expect(q('[data-component="recovery-codes"][data-state="status"]')).toBeTruthy()
     expect(document.body.textContent).not.toContain('4f2a-9c11')
     expect(client.regenerateRecoveryCodes).toHaveBeenCalledTimes(1)
@@ -724,6 +774,7 @@ describe('RecoveryCodesFlow — REVEAL ONCE', () => {
     const user = userEvent.setup()
     const client = makeClient({ regenerateRecoveryCodes: vi.fn(async () => { throw err(500) }) })
     render(<RecoveryCodesFlow client={asClient(client)} />)
+    await onStatus()
     await user.click(q('[data-action="regenerate-open"]')!)
     await user.click(q('[data-field="ack-invalidate"]')!)
     await user.click(q('[data-action="regenerate-confirm"]')!)
@@ -736,6 +787,7 @@ describe('RecoveryCodesFlow — REVEAL ONCE', () => {
     const user = userEvent.setup()
     const client = makeClient({ regenerateRecoveryCodes: vi.fn(async () => { throw err(500) }) })
     render(<RecoveryCodesFlow client={asClient(client)} />)
+    await onStatus()
     await user.click(q('[data-action="regenerate-open"]')!)
     await user.click(q('[data-field="ack-invalidate"]')!)
     await user.click(q('[data-action="regenerate-confirm"]')!)
@@ -745,51 +797,111 @@ describe('RecoveryCodesFlow — REVEAL ONCE', () => {
     expect(text).toMatch(/may no longer work/i)
   })
 
-  it('status shows "N of M codes left" from the GET and never fetches codes', async () => {
-    const client = makeClient({ getRecoveryCodesStatus: vi.fn(async () => ({ remaining: 8, total: 10 })) })
+  const withCounts = (remaining: number, total: number) =>
+    makeClient({ getRecoveryCodesStatus: vi.fn(async () => ({ remaining, total })) })
+  const stateOf = () => q('[data-component="recovery-codes"]')?.getAttribute('data-state')
+
+  it('loading: skeleton card (aria-busy) with Regenerate disabled until the count resolves', async () => {
+    let release!: (v: { remaining: number; total: number }) => void
+    const client = makeClient({ getRecoveryCodesStatus: vi.fn(() => new Promise((r) => { release = r as never })) })
     render(<RecoveryCodesFlow client={asClient(client)} />)
-    expect(q('[data-state="counts-loading"]')).toBeTruthy()
-    await waitFor(() => expect(q('[data-value="recovery-count"]')).toBeTruthy())
-    expect(q('[data-value="recovery-count"]')!.textContent).toMatch(/8 of 10 recovery codes left/)
+    const card = q('[data-component="recovery-codes"][data-state="loading"]')!
+    expect(card.getAttribute('aria-busy')).toBe('true')
+    expect(card.getAttribute('aria-label')).toMatch(/loading your recovery codes/i)
+    expect(q('[data-action="regenerate-open"]')).toBeDisabled()
+    await act(async () => release({ remaining: 8, total: 10 }))
+    await waitFor(() => expect(stateOf()).toBe('status'))
+    expect(q('[data-action="regenerate-open"]')).toBeEnabled()
+  })
+
+  it('status: "8 of 10 left" via data-value hooks, no per-code tiles, never fetches codes', async () => {
+    const client = withCounts(8, 10)
+    render(<RecoveryCodesFlow client={asClient(client)} />)
+    await waitFor(() => expect(stateOf()).toBe('status'))
+    expect(q('[data-value="remaining"]')!.textContent).toBe('8')
+    expect(q('[data-value="total"]')!.textContent).toBe('10')
+    expect(q('[data-component="recovery-codes"]')!.textContent).toMatch(/8 of 10 recovery codes left/)
+    expect(q('[data-codes]')).toBeNull()
+    expect(q('code')).toBeNull()
     expect(client.regenerateRecoveryCodes).not.toHaveBeenCalled()
   })
 
-  it('status falls back to the count-less text when no set was ever generated (total 0)', async () => {
-    const client = makeClient({ getRecoveryCodesStatus: vi.fn(async () => ({ remaining: 0, total: 0 })) })
-    render(<RecoveryCodesFlow client={asClient(client)} />)
-    await waitFor(() => expect(q('[data-state="counts-loading"]')).toBeNull())
-    expect(q('[data-value="recovery-count"]')).toBeNull()
-    expect(q('[data-component="recovery-codes"][data-state="status"]')!.textContent).toMatch(/never show existing codes/i)
+  it.each([[2, 'two'], [1, 'one']])('low: remaining %i shows the warning and a primary "Generate new codes"', async (remaining) => {
+    render(<RecoveryCodesFlow client={asClient(withCounts(remaining, 10))} />)
+    await waitFor(() => expect(stateOf()).toBe('low'))
+    expect(q('[data-value="remaining"]')!.textContent).toBe(String(remaining))
+    expect(document.body.textContent).toMatch(/almost out of recovery codes/i)
+    expect(document.body.textContent).toMatch(remaining === 1 ? /Only 1 code is left/ : /Only 2 codes are left/)
+    expect(q('[data-action="regenerate-open"]')!.textContent).toMatch(/generate new codes/i)
   })
 
-  it('status count failure: explicit error + retry; regenerate stays available', async () => {
+  it('exhausted (0 of 10): error callout, sign-in with a recovery code will not be offered', async () => {
+    render(<RecoveryCodesFlow client={asClient(withCounts(0, 10))} />)
+    await waitFor(() => expect(stateOf()).toBe('exhausted'))
+    expect(q('[data-value="remaining"]')!.textContent).toBe('0')
+    expect(q('[data-value="total"]')!.textContent).toBe('10')
+    expect(document.body.textContent).toMatch(/no recovery codes left/i)
+    expect(document.body.textContent).toMatch(/won't be offered until you generate a new set/i)
+  })
+
+  it('none (0 of 0): empty state; "Generate recovery codes" goes straight to POST (no confirm) and shows once', async () => {
+    const user = userEvent.setup()
+    const client = makeClient({
+      getRecoveryCodesStatus: vi.fn(async () => ({ remaining: 0, total: 0 })),
+      regenerateRecoveryCodes: vi.fn(async () => CODES),
+    })
+    render(<RecoveryCodesFlow client={asClient(client)} />)
+    await waitFor(() => expect(stateOf()).toBe('none'))
+    expect(document.body.textContent).toMatch(/no recovery codes yet/i)
+    expect(q('[data-value="remaining"]')).toBeNull()
+    await user.click(q('[data-action="generate-codes"]')!)
+    await waitFor(() => expect(stateOf()).toBe('shown-once'))
+    expect(q('[data-state="regenerate-confirm"]')).toBeNull()
+    expect(client.regenerateRecoveryCodes).toHaveBeenCalledTimes(1)
+  })
+
+  it('error: explicit callout, Try again re-issues the GET, Generate new codes opens the confirm; never a guessed count', async () => {
     const user = userEvent.setup()
     const getRecoveryCodesStatus = vi.fn().mockRejectedValueOnce(err(500)).mockResolvedValueOnce({ remaining: 3, total: 10 })
     render(<RecoveryCodesFlow client={asClient(makeClient({ getRecoveryCodesStatus }))} />)
-    await waitFor(() => expect(q('[data-state="counts-error"]')).toBeTruthy())
-    expect(q('[data-action="regenerate-open"]')).toBeTruthy()
-    await user.click(q('[data-action="retry-counts"]')!)
-    await waitFor(() => expect(q('[data-value="recovery-count"]')!.textContent).toMatch(/3 of 10/))
+    await waitFor(() => expect(stateOf()).toBe('error'))
+    expect(q('[data-error="status-load"]')!.textContent).toMatch(/couldn't check how many recovery codes you have left/i)
+    expect(q('[data-value="remaining"]')).toBeNull()
+    await user.click(q('[data-action="regenerate-open"]')!)
+    expect(stateOf()).toBe('regenerate-confirm')
+    await user.click(q('[data-action="cancel"]')!)
+    await waitFor(() => expect(stateOf()).toBe('status'))
+    expect(getRecoveryCodesStatus).toHaveBeenCalledTimes(2)
+  })
+
+  it('error then Try again recovers', async () => {
+    const user = userEvent.setup()
+    const getRecoveryCodesStatus = vi.fn().mockRejectedValueOnce(err(500)).mockResolvedValueOnce({ remaining: 3, total: 10 })
+    render(<RecoveryCodesFlow client={asClient(makeClient({ getRecoveryCodesStatus }))} />)
+    await waitFor(() => expect(stateOf()).toBe('error'))
+    await user.click(q('[data-action="retry"]')!)
+    await waitFor(() => expect(q('[data-value="remaining"]')!.textContent).toBe('3'))
   })
 
   it('re-reads the counts after regenerating (back on status)', async () => {
     const user = userEvent.setup()
-    const getRecoveryCodesStatus = vi.fn().mockResolvedValueOnce({ remaining: 2, total: 10 }).mockResolvedValue({ remaining: 10, total: 10 })
+    const getRecoveryCodesStatus = vi.fn().mockResolvedValueOnce({ remaining: 3, total: 10 }).mockResolvedValue({ remaining: 10, total: 10 })
     const client = makeClient({ getRecoveryCodesStatus, regenerateRecoveryCodes: vi.fn(async () => CODES) })
     render(<RecoveryCodesFlow client={asClient(client)} />)
-    await waitFor(() => expect(q('[data-value="recovery-count"]')!.textContent).toMatch(/2 of 10/))
+    await waitFor(() => expect(q('[data-value="remaining"]')!.textContent).toBe('3'))
     await user.click(q('[data-action="regenerate-open"]')!)
     await user.click(q('[data-field="ack-invalidate"]')!)
     await user.click(q('[data-action="regenerate-confirm"]')!)
-    await waitFor(() => expect(q('[data-state="shown-once"]')).toBeTruthy())
+    await waitFor(() => expect(stateOf()).toBe('shown-once'))
     await user.click(q('[data-action="codes-saved"]')!)
-    await waitFor(() => expect(q('[data-value="recovery-count"]')!.textContent).toMatch(/10 of 10/))
+    await waitFor(() => expect(q('[data-value="remaining"]')!.textContent).toBe('10'))
   })
 
   it('cancel returns to status without calling the server', async () => {
     const user = userEvent.setup()
     const client = makeClient()
     render(<RecoveryCodesFlow client={asClient(client)} />)
+    await onStatus()
     await user.click(q('[data-action="regenerate-open"]')!)
     await user.click(q('[data-action="cancel"]')!)
     expect(q('[data-component="recovery-codes"][data-state="status"]')).toBeTruthy()

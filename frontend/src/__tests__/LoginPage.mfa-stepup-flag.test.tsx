@@ -241,7 +241,7 @@ describe('LoginPage — MFA step-up', () => {
       await openPicker(user)
       await user.click(await waitFor(() => document.querySelector('[data-factor="recovery"]')! as Element))
       await user.type(document.querySelector('[data-field="recovery-code"]')!, 'a1b2c3d4e5')
-      await user.click(document.querySelector('[data-action="verify-mfa"]')!)
+      await user.click(document.querySelector('[data-action="verify-recovery"]')!)
       await waitFor(() => expect(persist).toHaveBeenCalledWith({ token: 'tok_r', sessionId: 'sess_r' }))
       const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
       expect(url).toBe('/api/v1/security/mfa/verify')

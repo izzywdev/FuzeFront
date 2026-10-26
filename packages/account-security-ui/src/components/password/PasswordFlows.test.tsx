@@ -106,10 +106,16 @@ describe('ChangePasswordFlow', () => {
       await user.click(screen.getByRole('button', { name: /save new password/i }))
       await waitFor(() => expect(document.querySelector('[data-state="indeterminate"]')).toBeTruthy())
       const text = document.body.textContent ?? ''
-      expect(text).toMatch(/couldn't confirm the change/i)
-      expect(text).toMatch(/old password still works/i)
-      expect(text).not.toMatch(/unchanged/i)
+      expect(document.querySelector('[data-error="change-indeterminate"]')).toBeTruthy()
+      expect(text).toContain("We couldn't confirm the change.")
+      expect(text).toContain("Try signing in with your new password. If that doesn't work, your old password still does.")
+      expect(text).not.toMatch(/unchanged|wasn.t saved/i)
       expect(screen.queryByRole('button', { name: /try again/i })).toBeNull()
+      expect(document.querySelector('[data-action="retry"]')).toBeNull()
+      // only action: Back to security; both password fields are gone (cleared)
+      expect(document.querySelectorAll('[data-action]').length).toBe(1)
+      expect(document.querySelector('[data-action="back-to-security"]')!.textContent).toBe('Back to security')
+      expect(document.querySelector('input[type="password"]')).toBeNull()
       expect(changePassword).toHaveBeenCalledTimes(1)
     }
   )
@@ -117,10 +123,14 @@ describe('ChangePasswordFlow', () => {
   it('other unmapped failure (429) → retryable error, then success', async () => {
     const user = userEvent.setup()
     const changePassword = vi.fn().mockRejectedValueOnce(err(429)).mockResolvedValueOnce(undefined)
+    // (definite 4xx failure: the frame's reworded copy)
     render(<ChangePasswordFlow client={asClient(makeClient({ changePassword }))} />)
     await fillChange(user)
     await user.click(screen.getByRole('button', { name: /save new password/i }))
     await waitFor(() => expect(document.querySelector('[data-state="error"]')).toBeTruthy())
+    expect(document.querySelector('[data-state="error"]')!.textContent).toContain(
+      "The change wasn't saved. Your password is unchanged — try again."
+    )
     await user.click(screen.getByRole('button', { name: /try again/i }))
     await waitFor(() => expect(document.querySelector('[data-state="success"]')).toBeTruthy())
     expect(changePassword).toHaveBeenCalledTimes(2)
