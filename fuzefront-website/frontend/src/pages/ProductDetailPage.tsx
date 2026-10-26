@@ -5,7 +5,7 @@ import {
   Layers, Shield, Server, ClipboardList, Palette, Bot,
   Key, MessageSquare, CheckCircle2, Rocket, ArrowRight, ArrowLeft
 } from 'lucide-react'
-import { ResponsiveGrid, Wrap } from '@fuzefront/design-system'
+import { ResponsiveGrid, Wrap, Text, Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -377,9 +377,9 @@ export const ProductDetailPage: React.FC = () => {
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-4">
             Ready to get started with {product.name}?
           </h2>
-          <p className="text-gray-600 mb-8">
+          <Text tone="secondary" spacing="xl">
             Try free for 14 days. No credit card required.
-          </p>
+          </Text>
           <Wrap gap={4} justify="center">
             <a
               href="https://app.fuzefront.com/signup"
@@ -388,9 +388,9 @@ export const ProductDetailPage: React.FC = () => {
             >
               {product.ctaText} <ArrowRight size={16} />
             </a>
-            <Link to="/pricing" className="btn-secondary">
+            <Button as={Link} to="/pricing" variant="outline">
               Compare plans
-            </Link>
+            </Button>
           </Wrap>
         </div>
       </section>

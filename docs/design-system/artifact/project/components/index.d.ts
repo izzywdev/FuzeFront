@@ -203,8 +203,14 @@ export function Badge(props: BadgeProps): React.JSX.Element;
  * open-in-new-tab, keyboard link semantics) instead of a `<button>`.
  */
 type ButtonSharedProps = {
-  /** Visual style. `primary` = accent fill with the fuse glow; `danger` = error fill. */
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  /**
+   * Visual style. `primary` = accent fill; `secondary` = neutral raised +
+   * border; `outline` = accent border/text on a light surface; `ghost` =
+   * text-only; `ghost-inverse` = ghost for a dark/brand surface not driven
+   * by `data-theme` (white outline/text, filled-white on hover, legible in
+   * any theme); `danger` = error fill.
+   */
+  variant?: "primary" | "secondary" | "outline" | "ghost" | "ghost-inverse" | "danger";
   size?: "sm" | "md" | "lg";
   /** Append a trailing arrow glyph (used on "Launch app", "Continue"). */
   withArrow?: boolean;
@@ -325,7 +331,7 @@ export function IconTile(props: IconTileProps): React.JSX.Element;
  */
 export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   /** Rendered element. @default "p" */
-  as?: "p" | "span" | "div" | "label";
+  as?: "p" | "span" | "div" | "label" | "h3" | "h4";
   /**
    * Semantic tone: `primary` = default reading text, `secondary` =
    * de-emphasized supporting copy, `muted` = lowest-emphasis placeholder /
@@ -342,10 +348,26 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   /**
    * Step of the DS spacing scale applied as `margin-block-end` (a logical
    * property, so it mirrors under RTL). `none` (default) keeps the original
-   * zero-margin behavior.
+   * zero-margin behavior. `lg`/`xl` cover the wider `mb-6`/`mb-8` gap used
+   * under a centered CTA/section heading.
    * @default "none"
    */
-  spacing?: "none" | "sm" | "md";
+  spacing?: "none" | "sm" | "md" | "lg" | "xl";
+  /**
+   * Step of the DS line-height scale. `inherit` (default) reads the
+   * surrounding layout's line-height, unchanged from before `leading`
+   * existed. `relaxed` covers the recurring card/feature-description
+   * paragraph pattern (pairs with `tone="secondary"` `size="sm"`).
+   * @default "inherit"
+   */
+  leading?: "inherit" | "tight" | "snug" | "normal" | "relaxed";
+  /**
+   * Step of the DS font-weight scale. `inherit` (default) applies no inline
+   * override, unchanged from before `weight` existed (the surrounding
+   * stylesheet's weight, e.g. Tailwind preflight's heading reset, applies).
+   * @default "inherit"
+   */
+  weight?: "inherit" | "regular" | "medium" | "semibold" | "bold";
   children?: React.ReactNode;
 }
 

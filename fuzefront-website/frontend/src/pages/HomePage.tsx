@@ -16,7 +16,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap } from '@fuzefront/design-system'
+import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap, Text, Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -273,7 +273,7 @@ export const HomePage: React.FC = () => {
                       <Icon size={22} className="text-white" />
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">{prop.title}</h3>
-                    <p className="text-gray-600 text-sm leading-relaxed">{prop.description}</p>
+                    <Text as="p" tone="secondary" size="sm" leading="relaxed">{prop.description}</Text>
                   </motion.div>
                 )
               })}
@@ -412,13 +412,14 @@ export const HomePage: React.FC = () => {
                 >
                   See all plans <ArrowRight size={16} />
                 </Link>
-                <Link
+                <Button
+                  as={Link}
                   to="/contact"
-                  className="btn-ghost flex items-center justify-center gap-2"
+                  variant="ghost-inverse"
                   onClick={() => trackEvent('cta_click', { button: 'talk_sales', location: 'pricing_teaser' })}
                 >
                   Talk to sales
-                </Link>
+                </Button>
               </Wrap>
             </motion.div>
           </SectionWrapper>
@@ -434,9 +435,9 @@ export const HomePage: React.FC = () => {
               <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-3">
                 Stay in the loop
               </h2>
-              <p className="text-gray-600 mb-8">
+              <Text tone="secondary" spacing="xl">
                 Product updates, engineering deep-dives, and launch announcements. No spam.
-              </p>
+              </Text>
 
               {newsletterSuccess ? (
                 <div className="flex items-center justify-center gap-2 text-success-600 font-medium">
