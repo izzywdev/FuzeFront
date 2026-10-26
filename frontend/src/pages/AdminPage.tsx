@@ -334,6 +334,12 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {/* Governance is DB-authoritative and only settable via the update
+                path (PUT /api/apps/:id). The create POST does not persist it, so
+                these controls appear in edit mode only; a new app is configured
+                here right after it is registered. */}
+            {editingApp && (
+              <>
             <h4 style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>
               Placement &amp; governance
             </h4>
@@ -420,6 +426,8 @@ export default function AdminPage() {
                 ]}
               />
             </div>
+              </>
+            )}
 
             <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
               <Button type="submit" variant="primary" disabled={loading}>

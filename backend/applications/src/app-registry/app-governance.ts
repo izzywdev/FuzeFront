@@ -47,9 +47,16 @@ export const GOVERNANCE_DEFAULTS: AppGovernance = {
   defaultInstallOrg: false,
 }
 
-/** Per-slug initial governance. Absent slugs use GOVERNANCE_DEFAULTS. */
+/**
+ * Per-slug initial governance, keyed by the ACTUAL registry slug (not the
+ * product's display name). Per CLAUDE.md §"slug, display name…" and
+ * scripts/expected-portal-apps.json, the live slugs are unprefixed for
+ * deploy/contact/sales/service, and prefixed for fuzequality/fuzex/fuzeagent.
+ * The prefixed fuzesales/fuzeservice rows are stranded/suspended (migration
+ * 013) and are NOT the active products. Absent slugs use GOVERNANCE_DEFAULTS.
+ */
 export const APP_GOVERNANCE: Record<string, AppGovernance> = {
-  fuzedeploy: {
+  deploy: {
     scopeLevel: 'both',
     orgInstallMode: 'both',
     personalRemovable: true,
@@ -58,7 +65,7 @@ export const APP_GOVERNANCE: Record<string, AppGovernance> = {
     defaultInstallPersonal: true,
     defaultInstallOrg: false,
   },
-  fuzecontact: {
+  contact: {
     scopeLevel: 'organization',
     orgInstallMode: 'everyone',
     personalRemovable: true,
@@ -85,7 +92,7 @@ export const APP_GOVERNANCE: Record<string, AppGovernance> = {
     defaultInstallPersonal: true,
     defaultInstallOrg: false,
   },
-  fuzesales: {
+  sales: {
     scopeLevel: 'organization',
     orgInstallMode: 'everyone',
     personalRemovable: true,
@@ -94,7 +101,7 @@ export const APP_GOVERNANCE: Record<string, AppGovernance> = {
     defaultInstallPersonal: false,
     defaultInstallOrg: false,
   },
-  fuzeservice: {
+  service: {
     scopeLevel: 'organization',
     orgInstallMode: 'everyone',
     personalRemovable: true,

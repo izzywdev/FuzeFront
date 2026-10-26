@@ -58,14 +58,14 @@ describe('APP_GOVERNANCE seed matrix', () => {
   })
 
   it('makes the org-only products everyone-install', () => {
-    for (const slug of ['fuzecontact', 'fuzesales', 'fuzeservice']) {
+    for (const slug of ['contact', 'sales', 'service']) {
       expect(APP_GOVERNANCE[slug].scopeLevel).toBe('organization')
       expect(APP_GOVERNANCE[slug].orgInstallMode).toBe('everyone')
     }
   })
 
   it('default-installs fuzedeploy and fuzequality on personal', () => {
-    expect(APP_GOVERNANCE.fuzedeploy.defaultInstallPersonal).toBe(true)
+    expect(APP_GOVERNANCE.deploy.defaultInstallPersonal).toBe(true)
     expect(APP_GOVERNANCE.fuzequality.defaultInstallPersonal).toBe(true)
   })
 

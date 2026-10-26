@@ -185,6 +185,9 @@ router.get('/', authenticateToken, async (req: any, res) => {
         // Governance is DB-authoritative (admin UI edits these columns), not
         // manifest-derived. Surface them so the admin Edit form pre-fills.
         const orgInstallMode = a.org_install_mode ?? 'both'
+        const scopeLevel = app.scope_level ?? 'both'
+        // orgLevelOnly = truly org-only (no personal) = scope, not org mode.
+        const orgLevelOnly = scopeLevel === 'organization'
         return {
           id: app.id,
           name: app.name,
@@ -198,10 +201,10 @@ router.get('/', authenticateToken, async (req: any, res) => {
           scope: app.scope,
           module: app.module,
           description: app.description,
-          scopeLevel: app.scope_level ?? 'both',
+          scopeLevel,
           orgInstallMode,
-          orgLevelOnly: orgInstallMode === 'everyone',
-          installMode: orgInstallMode,
+          orgLevelOnly,
+          installMode: orgLevelOnly ? orgInstallMode : 'both',
           organizationInstallMode: orgInstallMode,
           personalRemovable: a.personal_removable !== false,
           orgRemovable: a.org_removable !== false,

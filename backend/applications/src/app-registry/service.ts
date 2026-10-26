@@ -564,6 +564,11 @@ export class AppRegistryService {
       organization_id: organizationId,
       // Only present when creator-ownership is ON and a human registered it.
       ...(opts?.createdByUserId ? { created_by_user_id: opts.createdByUserId } : {}),
+      // Seeded from the manifest on FIRST create and never clobbered by a later
+      // re-registration (updateManifest no longer writes it). Must be set here,
+      // or a public/org app would be stuck at migration 002's 'private' default
+      // and stay invisible to non-owners forever.
+      visibility: (manifest.visibility ?? 'private') as Visibility,
       scope_level:
         manifest.scopeLevel ??
         (manifest.requiresOrgContext || manifest.visibility === 'organization'

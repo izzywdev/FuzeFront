@@ -76,10 +76,13 @@ export async function up(knex: Knex): Promise<void> {
         OR (manifest->>'installMode') = 'everyone'
         OR (manifest->>'organizationInstallMode') = 'everyone'
   `)
+  // An explicit organizationInstallMode='self' is an opt-in the install path
+  // still honors (enforceOrgInstallMode returns it as-is), so preserve it
+  // regardless of scope — including org-scoped apps that the first UPDATE set to
+  // 'everyone'. Run this second so it wins for those rows.
   await knex.raw(`
     UPDATE apps SET org_install_mode = 'self'
-     WHERE scope_level <> 'organization'
-       AND (manifest->>'organizationInstallMode') = 'self'
+     WHERE (manifest->>'organizationInstallMode') = 'self'
   `)
 }
 

@@ -371,12 +371,18 @@ router.get(
       const scopeLevel = app.scope_level ?? 'both'
       const organizationInstallMode =
         (app.org_install_mode as DeclaredInstallMode) ?? 'both'
-      const orgLevelOnly = organizationInstallMode === 'everyone'
+      // orgLevelOnly means "no personal install at all" — that is scope, NOT org
+      // mode. A both-scope app with org everyone still installs personally, so it
+      // is NOT orgLevelOnly. The whole-org constraint rides organizationInstallMode.
+      // installMode stays the legacy signal: 'everyone' only for a true org-only
+      // app, else 'both', so personal-capable apps aren't hidden by consumers that
+      // read installMode==='everyone'.
+      const orgLevelOnly = scopeLevel === 'organization'
       res.json({
         appId: outerDto.appId,
         scopeLevel,
         orgLevelOnly,
-        installMode: organizationInstallMode,
+        installMode: orgLevelOnly ? organizationInstallMode : 'both',
         organizationInstallMode,
         personalRemovable: app.personal_removable !== false,
         orgRemovable: app.org_removable !== false,
@@ -681,22 +687,6 @@ router.delete(
         })
       }
 
-      // Core / system apps cannot be uninstalled from the scope the operator
-      // locked (apps.personal_removable / apps.org_removable). This holds for
-      // everyone, including org owners — it is a platform policy, not a
-      // permission. e.g. FuzeAgent is a core product on a personal account.
-      const removable =
-        installation.scope === 'personal'
-          ? app.personal_removable !== false
-          : app.org_removable !== false
-      if (!removable) {
-        return res.status(403).json({
-          error:
-            'This is a core app and cannot be uninstalled from this account.',
-          code: 'APP_NOT_REMOVABLE',
-        })
-      }
-
       if (installation.install_mode === 'everyone') {
         const role = installation.organization_id
           ? await getMembershipRole(userId, installation.organization_id)
@@ -719,6 +709,24 @@ router.delete(
         return res.status(404).json({
           error: 'Installation not found',
           code: 'INSTALLATION_NOT_FOUND',
+        })
+      }
+
+      // Core / system apps cannot be uninstalled from the scope the operator
+      // locked (apps.personal_removable / apps.org_removable). This holds for
+      // everyone, including org owners — it is a platform policy, not a
+      // permission. e.g. FuzeAgent is a core product on a personal account.
+      // Checked AFTER the ownership/membership authz above so a locked app never
+      // becomes an existence oracle for installations the caller can't see.
+      const removable =
+        installation.scope === 'personal'
+          ? app.personal_removable !== false
+          : app.org_removable !== false
+      if (!removable) {
+        return res.status(403).json({
+          error:
+            'This is a core app and cannot be uninstalled from this account.',
+          code: 'APP_NOT_REMOVABLE',
         })
       }
 
