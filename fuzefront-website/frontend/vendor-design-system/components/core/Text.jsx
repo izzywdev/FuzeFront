@@ -22,12 +22,16 @@ const SIZES = {
 };
 
 // `spacing` maps to the DS spacing scale for the block's bottom margin —
-// replaces the recurring ad-hoc `mb-2`/`mb-4` utility. `none` (default)
-// preserves the original zero-margin behavior.
+// replaces the recurring ad-hoc `mb-2`/`mb-4`/`mb-6`/`mb-8` utility. `none`
+// (default) preserves the original zero-margin behavior. `lg`/`xl` cover the
+// wider gaps used under a centered CTA/hero heading (`mb-6`/`mb-8`), beyond
+// the original `sm`/`md` block-caption steps.
 const SPACING_BOTTOM = {
   none: 0,
   sm: "var(--space-2)",
   md: "var(--space-4)",
+  lg: "var(--space-6)",
+  xl: "var(--space-8)",
 };
 
 // `leading` maps to the DS line-height scale — replaces the recurring ad-hoc
@@ -41,6 +45,19 @@ const LEADING = {
   snug: "var(--leading-snug)",
   normal: "var(--leading-normal)",
   relaxed: "var(--leading-relaxed)",
+};
+
+// `weight` maps to the DS font-weight scale — replaces the recurring ad-hoc
+// `font-medium`/`font-semibold`/`font-bold` utility. `inherit` (default)
+// preserves the original pre-`weight` behavior (no inline override, so the
+// surrounding stylesheet's — e.g. Tailwind preflight's `inherit` reset on
+// headings — weight applies, exactly as it did before this prop existed).
+const WEIGHTS = {
+  inherit: "inherit",
+  regular: "var(--weight-regular)",
+  medium: "var(--weight-medium)",
+  semibold: "var(--weight-semibold)",
+  bold: "var(--weight-bold)",
 };
 
 /**
@@ -61,7 +78,9 @@ const LEADING = {
  * without reaching for a raw Tailwind size/margin utility: `size` picks a
  * step of the DS type scale (default `inherit`, unchanged from before), and
  * `spacing` picks a step of the DS spacing scale for `margin-block-end`
- * (default `none`, unchanged from before).
+ * (default `none`, unchanged from before). `spacing="lg"`/`"xl"` additionally
+ * cover the recurring `text-gray-{500,600} mb-{6,8}` pattern — a centered
+ * lead paragraph under a CTA/section `<h2>`/`<h3>`.
  *
  * `leading` covers the recurring `text-gray-{500,600} text-sm
  * leading-relaxed` card/feature-description pattern (a short paragraph of
@@ -69,6 +88,13 @@ const LEADING = {
  * press excerpt, team-member bio): pairs with `tone="secondary"` and
  * `size="sm"` and picks a step of the DS line-height scale (default
  * `inherit`, unchanged from before).
+ *
+ * `weight` covers the recurring `className="font-medium text-gray-900"`
+ * pattern (a small bolded label/heading, e.g. a notification title or a
+ * contact-info item's label) via the DS font-weight scale instead of a raw
+ * Tailwind `font-*` utility: `inherit` (default) applies no inline
+ * override — unchanged from before `weight` existed — and `medium` /
+ * `semibold` / `bold` resolve to the matching DS weight token.
  */
 export function Text({
   as: As = "p",
@@ -76,6 +102,7 @@ export function Text({
   size = "inherit",
   spacing = "none",
   leading = "inherit",
+  weight = "inherit",
   children,
   style,
   ...rest
@@ -86,6 +113,7 @@ export function Text({
         margin: 0,
         fontFamily: "var(--font-sans)",
         fontSize: SIZES[size] || SIZES.inherit,
+        fontWeight: WEIGHTS[weight] || WEIGHTS.inherit,
         lineHeight: LEADING[leading] || LEADING.inherit,
         color: TONES[tone] || TONES.primary,
         marginBlockEnd: SPACING_BOTTOM[spacing] ?? SPACING_BOTTOM.none,

@@ -46,8 +46,8 @@ describe("<Button>", () => {
     expect(button).toHaveAttribute("data-app-id", "app-123");
   });
 
-  it("renders every variant as a real, distinctly-styled button (primary/secondary/outline/ghost/danger)", () => {
-    const variants = ["primary", "secondary", "outline", "ghost", "danger"];
+  it("renders every variant as a real, distinctly-styled button (primary/secondary/outline/ghost/ghost-inverse/danger)", () => {
+    const variants = ["primary", "secondary", "outline", "ghost", "ghost-inverse", "danger"];
     variants.forEach((variant) => {
       const { unmount } = render(<Button variant={variant}>{variant}</Button>);
       const button = screen.getByRole("button", { name: variant });
@@ -135,7 +135,7 @@ describe("<Button>", () => {
     });
 
     it("renders every variant as a real, identically-styled anchor", () => {
-      const variants = ["primary", "secondary", "outline", "ghost", "danger"];
+      const variants = ["primary", "secondary", "outline", "ghost", "ghost-inverse", "danger"];
       variants.forEach((variant) => {
         const { unmount } = render(
           <Button href="https://example.com" variant={variant}>
@@ -188,4 +188,24 @@ describe("<Button>", () => {
       expect(button.tagName).toBe("BUTTON");
     });
   });
+
+  it("ghost-inverse stays legible on a dark surface regardless of theme: white outline/text, transparent fill", () => {
+    render(<Button variant="ghost-inverse">Talk to sales</Button>);
+    const button = screen.getByRole("button", { name: "Talk to sales" });
+    expect(button.style.background).toBe("transparent");
+    expect(button.style.color).toBe("rgb(255, 255, 255)");
+    expect(button.style.border).toBe("2px solid rgb(255, 255, 255)");
+  });
+
+  it("ghost-inverse inverts to a filled white pill with accent-colored text on hover, and reverts on leave", () => {
+    render(<Button variant="ghost-inverse">Talk to sales</Button>);
+    const button = screen.getByRole("button", { name: "Talk to sales" });
+    fireEvent.mouseEnter(button);
+    expect(button.style.background).toBe("rgb(255, 255, 255)");
+    expect(button.style.color).toBe("var(--accent-color)");
+    fireEvent.mouseLeave(button);
+    expect(button.style.background).toBe("transparent");
+    expect(button.style.color).toBe("rgb(255, 255, 255)");
+  });
+
 });
