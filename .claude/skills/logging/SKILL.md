@@ -226,6 +226,16 @@ app.use((req, res, next) => {
 
 **Known gap — not yet wired into onboarding.** `sdlc-bootstrap` (steps 1–10) does not yet install `@izzywdev/fuzefront-telemetry` or mount `tracingMiddleware()` for a newly onboarded repo; a fresh repo gets `reqId` correlation from this skill but no trace correlation until someone adds it by hand. Adding that as a bootstrap step is a real design decision (every onboarded repo must actually reach FuzeInfra's Collector, and the step would need its own env-resolution default) rather than a one-line addition, so it's recorded here as a gap rather than guessed at — a follow-up to `sdlc-bootstrap` should close it once a rollout owner is assigned.
 
+## Canonical observability standard
+
+This skill is the implementation recipe. The **canonical policy** is the numbered observability standard in **`izzywdev/FuzeFront` → `governance/observability-standard.md`** (logging, trace correlation, RUM, metrics, health, sampling/retention, alerting/SLO, enforcement). Read it for the authoritative rules; **do not restate it** in a repo overlay or here — a copy drifts silently and `governance-sync` will not reconcile it. The non-negotiables this skill implements:
+
+- **Structured logging** — pino JSON, one shared logger per service, no raw `console.*` (§1–§2).
+- **Boundary logging** — every external call logs start/end/elapsed ms; caught errors log with context (§3).
+- **Mandatory redaction** — secrets/credentials never reach a log line (§5).
+- **Trace correlation** — `trace_id`/`span_id` on every line via `@izzywdev/fuzefront-telemetry` (§9).
+- **RUM for frontends** — browser telemetry via `initBrowserTelemetry()` (§9); the standard defines the RUM policy.
+
 ## Related
 - `@izzywdev/fuzefront-telemetry` (§9) — distributed tracing correlated with this skill's `reqId`/pino standard; FuzeInfra's `docs/consuming-repos/OBSERVABILITY_DASHBOARDS.md` is the upstream app-side contract it implements.
 - `ui-runtime-validation` — browser **console-cleanliness** at runtime (leftover errors/noise), complementary to deliberate app logging.
