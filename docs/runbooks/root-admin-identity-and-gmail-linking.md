@@ -4,9 +4,11 @@
 **Related gaps (in-UI flows):** [FFRNT-296](https://fuzefront.atlassian.net/browse/FFRNT-296) (connect/disconnect UI), [FFRNT-298](https://fuzefront.atlassian.net/browse/FFRNT-298) (platform-superadmin promotion)
 
 This runbook documents the **current, pre-UI reality**. Several steps below are manual
-(GitOps blueprint / DB write / sealed-secret read) precisely because the in-app flows do
-not exist yet — they are tracked by the tickets above. Everything here is verified against
-the code paths cited, not against docs.
+(GitOps blueprint / sealed-secret read) precisely because the in-app flows do not exist yet —
+they are tracked by the tickets above. The platform-superadmin setup, by contrast, is now
+**automated** first-deploy Permit seeding for the configured admins (§3.0, FFRNT-380); the
+direct DB write is break-glass only. Everything here is verified against the code paths cited,
+not against docs.
 
 > **Boundary reminder:** prod is GitOps. Do **not** hand-deploy or `kubectl apply` app
 > changes to prod. The read-only inspection commands below are fine; anything that mutates
@@ -93,9 +95,52 @@ the IdP by an Authentik blueprint + email matching.
 
 ---
 
-## 3. Becoming a FuzeFront platform superadmin (today = DB write + restart)
+## 3. Platform Permit seeding & becoming a superadmin
 
-### 3.1 The mechanism
+### 3.0 First-deploy Permit seeding (automated — FFRNT-380)
+
+On a fresh platform deploy the Permit authorization model is seeded **automatically,
+idempotently, and fail-soft** — there is **no manual Permit setup and no manual DB write** for
+the configured platform. Two mechanisms, both safe to re-run on every deploy/boot:
+
+1. **Permit policy schema** — the resources/actions/roles from
+   [`backend/src/permit/schema.ts`](../../backend/src/permit/schema.ts), including the
+   tenant-role hierarchy (`owner`/`admin` ⊇ `member`/`editor` ⊇ `viewer`, FFRNT-376) and the
+   ReBAC `Organization.parent` relation with its derived `org-admin` role — is pushed to Permit
+   by both:
+   - the Helm `post-install,post-upgrade` hook
+     [`permit-schema-job.yaml`](../../deploy/helm/fuzefront/templates/permit-schema-job.yaml)
+     (`node dist/permit/sync-permit-schema.js`), and
+   - the backend boot bootstrap (`syncPermitSchemaFromRegistry` in
+     [`backend/src/index.ts`](../../backend/src/index.ts)), which also merges per-product policies.
+2. **Root tenant instance + root-admin grant** — the backend boot bootstrap
+   (`runPostListenBootstrap` in [`index.ts`](../../backend/src/index.ts)) then, in order:
+   - `ensureRootPortal()` — the seeded root portal;
+   - [`ensureRootOrgAdmins()`](../../backend/src/services/rootOrgAdmin.ts), which **(a)** seeds
+     the ROOT org as a Permit **resource instance** (`createOrganizationResourceInstance`,
+     idempotent) so the parent→child derivation has an instance to derive **from** — without it
+     `org-admin` targets a nonexistent `Organization:<root>` and the whole mechanism resolves to
+     nothing; **(b)** promotes every email in `PLATFORM_ROOT_ADMIN_EMAILS` to
+     `roles:['…','admin']` plus an active `owner` membership on the root org; and **(c)** grants
+     Permit ReBAC `org-admin` on the root org to every `admin` user (excluding `platform-registrar`);
+   - a **5-minute interval** (`ensureConfiguredRootAdmins`) so a configured admin's **first login**
+     takes effect without a restart.
+
+   Every step is idempotent (Permit treats a repeat grant as a benign conflict; the instance seed
+   swallows already-exists) and **fail-soft** — Permit being unreachable never blocks boot, because
+   authorization already fails closed.
+
+**Configured platform admins need no manual step.** `PLATFORM_ROOT_ADMIN_EMAILS` is set from Helm
+[`rootAdmins.emails`](../../deploy/helm/fuzefront/values.yaml) (currently
+`izzy.weinberg@gmail.com`), wired in
+[`templates/backend.yaml`](../../deploy/helm/fuzefront/templates/backend.yaml). Once that account
+exists (its first Google sign-in, §2), the boot bootstrap / 5-minute interval promotes it and
+grants root `org-admin` **automatically — no SQL, no hand restart.** To add another platform
+admin, add their email to `rootAdmins.emails` and let the normal GitOps deploy apply it; the
+seeding does the rest. The break-glass DB write in §3.2 is only for a one-off promotion when a
+GitOps change to `rootAdmins.emails` is not available.
+
+### 3.1 The mechanism (what a superadmin grant resolves to)
 
 - A **platform superadmin** = a `users` row whose `roles` JSON array contains `admin`.
 - On every backend boot, [`ensureRootOrgAdmins()`](../../backend/src/services/rootOrgAdmin.ts)
@@ -105,9 +150,18 @@ the IdP by an Authentik blueprint + email matching.
   ([`backend/src/permit/schema.ts`](../../backend/src/permit/schema.ts)), so root org-admin ⇒
   admin over **every** tenant in the hierarchy.
 
-There is **no API or UI** to set `roles` today (FFRNT-298). It is a direct DB write.
+For a **configured** admin (an email in `rootAdmins.emails`) the `roles` write happens
+automatically (§3.0) — no manual step. A general-purpose authorized in-UI promotion for a
+non-configured account is still tracked by FFRNT-298; until it lands, promote a non-configured
+account either by adding it to `rootAdmins.emails` (preferred) or, break-glass, by the direct DB
+write below.
 
-### 3.2 To promote an account (manual, until FFRNT-298 lands)
+### 3.2 Break-glass only — promoting a NON-configured account by hand
+
+> Prefer adding the email to Helm `rootAdmins.emails` and deploying (§3.0): the seeding then
+> promotes and grants it automatically, no SQL. Use the direct DB write below **only** as
+> break-glass — a one-off promotion when a GitOps change is not available — and never for an
+> account already listed in `rootAdmins.emails` (the boot bootstrap handles those).
 
 1. Identify the projected `users` row (matched by email; the local `id` is a generated uuid,
    deliberately **not** the OIDC `sub`):
@@ -146,8 +200,12 @@ There is **no API or UI** to set `roles` today (FFRNT-298). It is a direct DB wr
 2. **Link your Gmail:** first **Continue with Google** as `izzy.weinberg@gmail.com` links into
    the pre-created `izzy` superuser account via the blueprint + `email_link` (§2). This is an
    IdP/infra-admin identity, separate from `akadmin`.
-3. **Make your own account a FuzeFront platform superadmin:** set `roles:['admin','user']` on
-   your `users` row and restart the backend (§3). No UI for this yet.
+3. **Become a FuzeFront platform superadmin:** for `izzy.weinberg@gmail.com` this is
+   **automatic** — the email is in Helm `rootAdmins.emails`, so the boot bootstrap / 5-minute
+   interval promotes the account to `roles:['admin','user']`, makes it `owner` of the root org,
+   and grants Permit root `org-admin` on its own, with no SQL and no hand restart (§3.0). For a
+   different, non-configured account, add it to `rootAdmins.emails` and deploy (preferred), or
+   use the break-glass DB write (§3.2).
 4. **Move a social link between accounts (disconnect/connect):** not possible in the UI in
    prod today — the disconnect (unlink) path exists server-side and in the UI client, but the
    **connect** path and the `/account/security/connections` surface are unbuilt (FFRNT-296).
@@ -162,6 +220,7 @@ There is **no API or UI** to set `roles` today (FFRNT-298). It is a direct DB wr
 |---|---|
 | Connect/disconnect Google via blueprint + DB | [FFRNT-296](https://fuzefront.atlassian.net/browse/FFRNT-296) — in-UI connect + `/account/security/connections` |
 | Hub not reachable in prod (flag OFF, sub-routes 404) | [FFRNT-297](https://fuzefront.atlassian.net/browse/FFRNT-297) — route wiring + flag rollout |
-| Promote to platform superadmin via DB write | [FFRNT-298](https://fuzefront.atlassian.net/browse/FFRNT-298) — first-admin bootstrap + authorized promotion |
+| Promote a **configured** admin (in `rootAdmins.emails`) | ✅ **done** — automated first-deploy Permit seeding ([FFRNT-380](https://fuzefront.atlassian.net/browse/FFRNT-380)); no manual step (§3.0) |
+| Promote a **non-configured** account without a GitOps change | [FFRNT-298](https://fuzefront.atlassian.net/browse/FFRNT-298) — first-admin bootstrap + authorized in-UI promotion (break-glass DB write until then, §3.2) |
 
 Parent epic for the account-security UI: [FFRNT-139](https://fuzefront.atlassian.net/browse/FFRNT-139).
