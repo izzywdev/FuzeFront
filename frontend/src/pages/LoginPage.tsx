@@ -4,6 +4,7 @@ import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
 import type { SessionResult } from '../services/api'
 import { Alert, AuthCard } from '@fuzefront/design-system'
+import { useT } from '@fuzefront/i18n'
 import { AuthPanel, isAuthExperienceEnabled } from '@fuzefront/auth-ui'
 import type {
   AuthenticatedMeta,
@@ -13,6 +14,7 @@ import type {
   MfaRequiredChallenge,
 } from '@fuzefront/auth-ui'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
+import { authError, buildAuthLabels, buildSignupLabels, type TFn } from './authI18n'
 
 /**
  * LoginPage — a thin adapter around `@fuzefront/auth-ui`'s `AuthPanel`.
@@ -27,13 +29,12 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
  *     provider's redirect back to the app) — this is page-load ROUTING, not a
  *     form-submit concern, so it stays here rather than moving into AuthPanel.
  *
- * KNOWN GAP vs. the pre-refactor page (tracked for a fast-follow to
- * @fuzefront/auth-ui, not fixed here): AuthPanel v0.1.0 does not yet implement
- * the signup confirm-password field, the password-policy checklist gating
- * submit, or the inline email-availability check that the old LoginPage had.
- * Those are UI capabilities the reusable component does not yet expose — they
- * are NOT reintroduced as one-off LoginPage markup (that would refork the
- * logic AuthPanel is meant to own). See the PR description for the follow-up.
+ * `fuzefront.auth.experience` (release flag, default OFF): when ON, signup mode renders
+ * the redesigned `SignUpFlow` (optional full name, inline email availability, policy
+ * checklist + strength meter from `AuthMethods.passwordPolicy`, confirm-match,
+ * Turnstile when `AuthMethods.captcha` is present, explicit error states). When OFF the
+ * current form is unchanged apart from the contract's single `name` field. All copy
+ * is routed through i18n (`./authI18n` -> `locales/<lng>/common.json`, `auth.*`).
  */
 
 // `variant="compact"` — the design-system `AuthCard` (design-system/components/layout)
@@ -49,9 +50,9 @@ const PANEL_VARIANT = 'compact' as const
  * / 500 / fallback) so AuthPanel — which just surfaces `Error.message` as-is —
  * shows the exact same wording as before. Kept here (not in AuthPanel) because
  * it is a mapping of THIS app's axios/Security-API error shapes, not a
- * generic UI concern.
+ * generic UI concern. Every sentence is routed through i18n (`auth.error.*`).
  */
-function mapAuthError(err: any): string {
+function mapAuthError(err: any, t: TFn): string {
   const isTimeout = err?.code === 'ECONNABORTED' || err?.name === 'CanceledError'
   const isNetworkError = !isTimeout && (err?.code === 'NETWORK_ERROR' || !err?.response)
   const status = err?.response?.status
@@ -59,39 +60,52 @@ function mapAuthError(err: any): string {
   if (isTimeout) {
     // The request was bounded and did not answer in time — this is NOT "you
     // typed the wrong password"; word it as a service condition.
-    return 'Sign-in is taking longer than expected — the service may be busy. Please try again.'
+    return authError(t, 'timeout')
   }
   if (status === 503) {
     // The Security API distinguishes a provider outage from a rejected
     // credential (503 PROVIDER_UNAVAILABLE vs 401) — say the true thing and
     // nothing else, never mention credentials.
     return err?.response?.data?.code === 'PROVIDER_UNAVAILABLE'
-      ? 'The sign-in service is temporarily unavailable. Your details are fine — please try again in a moment.'
-      : err?.response?.data?.error ||
-          'The sign-in service is temporarily unavailable. Please try again in a moment.'
+      ? authError(t, 'providerUnavailable')
+      : err?.response?.data?.error || authError(t, 'serviceUnavailable')
   }
   if (status === 401) {
     // Genuinely means "these credentials were rejected" (outage moved to 503
     // above). Deliberately doesn't name WHICH field is wrong.
-    return 'Incorrect email or password. Please try again.'
+    return authError(t, 'invalidCredentials')
   }
   if (isNetworkError) {
-    return (
-      (err?.message || 'Authentication failed') +
-      ' (Network connection failed — check if the service is running)'
-    )
+    return (err?.message || authError(t, 'failed')) + authError(t, 'networkSuffix')
   }
   if (status === 500) {
     return (
-      (err?.response?.data?.error || err?.message || 'Authentication failed') +
-      ' (Server error — please try again shortly)'
+      (err?.response?.data?.error || err?.message || authError(t, 'failed')) +
+      authError(t, 'serverSuffix')
     )
   }
-  return err?.response?.data?.error || err?.message || 'Authentication failed'
+  return err?.response?.data?.error || err?.message || authError(t, 'failed')
+}
+
+/**
+ * The Error the AuthTransport throws: the friendly message PLUS the HTTP `status`
+ * and contract `code`, so the redesigned signup can tell a 409 (account exists), a
+ * weak-password 400/422, a 503 (provider down) and a 429 apart without parsing copy.
+ */
+function toAuthError(err: any, t: TFn): Error {
+  return Object.assign(new Error(mapAuthError(err, t)), {
+    status: err?.response?.status as number | undefined,
+    code: (err?.response?.data?.code as string | undefined) ?? (err?.code as string | undefined),
+  })
 }
 
 function LoginPage() {
   const { t } = useLanguage()
+  // i18next `t` (locales/<lng>/common.json, `auth.*`) for the auth copy; the legacy
+  // `useLanguage().t` above still supplies the two sign-in/sign-up toggle strings.
+  const { t: tr } = useT()
+  const ti = tr as unknown as TFn
+  const experience = isAuthExperienceEnabled()
   // Open in sign-up mode when the user arrived at /signup; sign-in otherwise.
   // Anchored to the start of the path: `includes('signup')` also matched things
   // like /apps/signup-widget. This only works because api.ts no longer redirects
@@ -140,9 +154,7 @@ function LoginPage() {
   // A `SessionResult` may instead be an `mfa_required` challenge (step-up).
   const completeSession = async (result: SessionResult): Promise<void> => {
     if (result.status === 'mfa_required') {
-      setCallbackNotice(
-        'Additional verification is required to finish signing in. Please complete the verification step to continue.'
-      )
+      setCallbackNotice(buildAuthLabels(ti).mfaNotice ?? '')
       return
     }
     try {
@@ -159,7 +171,7 @@ function LoginPage() {
           : '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
-      setCallbackError('Signed in, but failed to load your profile. Please retry.')
+      setCallbackError(authError(ti, 'profileLoad'))
     }
   }
 
@@ -170,7 +182,7 @@ function LoginPage() {
       .handleAuthCallback()
       .then(({ result, error: callbackErr }) => {
         if (callbackErr) {
-          setCallbackError(`Authentication failed: ${callbackErr}`)
+          setCallbackError(authError(ti, 'callbackFailed', { error: callbackErr }))
           return
         }
         if (result) {
@@ -180,7 +192,7 @@ function LoginPage() {
       .catch(err => {
         // Backstop: a rejected promise must never freeze the page.
         console.error('Unexpected error in auth-callback handler:', err)
-        setCallbackError('Authentication encountered an unexpected error. Please try again.')
+        setCallbackError(authError(ti, 'callbackUnexpected'))
       })
     // Runs ONCE on mount — this is a page-load handler (social-callback
     // exchange only now; AuthPanel owns its own auth-methods fetch).
@@ -197,14 +209,14 @@ function LoginPage() {
         try {
           return await authAPI.login(req)
         } catch (err) {
-          throw new Error(mapAuthError(err))
+          throw toAuthError(err, ti)
         }
       },
       signup: async req => {
         try {
           const res = await authAPI.signup(req)
           if (!res?.token || !res?.user) {
-            throw new Error('Invalid response from server')
+            throw new Error(authError(ti, 'invalidResponse'))
           }
           return {
             status: 'authenticated',
@@ -213,13 +225,23 @@ function LoginPage() {
             user: res.user,
           }
         } catch (err) {
-          throw new Error(mapAuthError(err))
+          throw toAuthError(err, ti)
         }
       },
       getAuthMethods: () => authAPI.getAuthMethods(),
       startSocial: provider => authAPI.startSocialLogin(provider),
+      // GET /v1/security/signup/email-available — the new signup's debounced inline
+      // check. Offered only with `fuzefront.auth.experience` ON; it rejects on any
+      // failure and the form renders that as "couldn't check" (fail-open).
+      ...(experience
+        ? {
+            checkEmailAvailable: (email: string, signal?: AbortSignal) =>
+              authAPI.checkSignupEmailAvailable(email, signal),
+          }
+        : {}),
     }),
-    []
+    // `tr` changes with the active language so error copy follows it.
+    [tr, experience]
   )
 
   // `fuzefront.auth.experience` (default OFF): a fresh signup whose email is not
@@ -270,15 +292,21 @@ function LoginPage() {
   // to a challenge — nothing further to surface here.
   const handleMfaRequired = (_challenge: MfaRequiredChallenge) => {}
 
-  // Only the mode-toggle strings were ever routed through t() on this page —
-  // the heading/subtitle were always literal English, which is exactly
-  // AuthPanel's default copy, so no override is needed for those.
+  // Every auth label goes through i18n: the panel/sign-in copy and the redesigned
+  // signup copy come from `locales/<lng>/common.json` (`auth.*`, see ./authI18n);
+  // the sign-in <-> sign-up toggle strings still come from the legacy translations
+  // table (`useLanguage().t`), which already carries their en/he wording.
   const labels = useMemo(
     () => ({
+      ...buildAuthLabels(ti),
       toggleToSignUpPrompt: t('signUpMessage'),
       toggleToSignUpCta: t('signUp'),
     }),
-    [t]
+    [t, tr]
+  )
+  const signupLabels = useMemo(
+    () => buildSignupLabels(ti),
+    [tr]
   )
 
   return (
@@ -295,7 +323,7 @@ function LoginPage() {
       </div>
 
       {callbackError && (
-        <Alert tone="error" title="Authentication Error" style={{ marginBottom: 'var(--space-4, 16px)' }}>
+        <Alert tone="error" title={labels.errorTitle} style={{ marginBottom: 'var(--space-4, 16px)' }}>
           {callbackError}
         </Alert>
       )}
@@ -311,7 +339,9 @@ function LoginPage() {
         transport={transport}
         onAuthenticated={handleAuthenticated}
         onMfaRequired={handleMfaRequired}
-        forgotPasswordHref={isAuthExperienceEnabled() ? '/reset' : undefined}
+        forgotPasswordHref={experience ? '/reset' : undefined}
+        experience={experience}
+        signupLabels={signupLabels}
         labels={labels}
       />
     </AuthCard>

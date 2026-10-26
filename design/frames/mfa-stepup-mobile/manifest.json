@@ -51,9 +51,9 @@
         "id": "mfa-stepup-mobile",
         "orchestrator": "MfaStepUpMobileFlow",
         "route": "/login/mfa",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:28.925Z",
         "implementation": {
           "paths": [
             "packages/account-security-ui/src/components/mfa/**"
@@ -64,9 +64,9 @@
         "id": "confirm-contact-phone",
         "orchestrator": "ConfirmContactFlow",
         "route": "/account/security/verify/phone",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:08.200Z",
         "implementation": {
           "paths": [
             "packages/account-security-ui/src/components/mfa/**"
@@ -77,9 +77,9 @@
         "id": "security-status-mobile",
         "orchestrator": "SecurityStatusMobileFlow",
         "route": "/account/security",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-21T06:50:10.381Z",
         "implementation": {
           "paths": [
             "packages/account-security-ui/src/components/security-status/**"

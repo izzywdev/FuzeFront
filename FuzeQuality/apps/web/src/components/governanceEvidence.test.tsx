@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { PolicyGateEvaluation, QualityArtifact } from '@fuzequality/contracts'
-import { PolicyGateEvidence } from './governanceEvidence'
+import { PolicyGateEvidence, policyGateArtifactReferenceProblems } from './governanceEvidence'
 
 const evaluation: PolicyGateEvaluation = {
   id: 'evaluation-1',
@@ -22,13 +22,22 @@ const evaluation: PolicyGateEvaluation = {
     sourcePaths: ['governance/auth.md'],
     subjects: ['authentication'],
   },
+  evidencePassages: [{
+    artifactId: 'policy-auth',
+    sourcePath: 'governance/auth.md',
+    text: 'Authentication is required.',
+    signal: 'obligation',
+  }],
+  remediationAction: 'build-gate',
   recommendation: 'Add a gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T08:00:00.000Z',
 }
 
 const artifacts: QualityArtifact[] = [{
-  id: 'policy-auth',
+  id: 'policy-auth-revision-abc123',
+  logicalId: 'policy-auth',
+  revision: 'abc123',
   repositoryId: evaluation.repositoryId,
   kind: 'policy',
   title: 'Authentication policy',
@@ -44,8 +53,75 @@ describe('PolicyGateEvidence', () => {
     expect(screen.getByText('75%')).toBeInTheDocument()
     expect(screen.getByText('abc123')).toBeInTheDocument()
     expect(screen.getByText('Matched subjects: authentication')).toBeInTheDocument()
-    expect(screen.getByText('Authentication policy')).toBeInTheDocument()
+    expect(screen.getAllByText('Authentication policy')).toHaveLength(2)
     expect(screen.getByText('policy · governance/auth.md')).toBeInTheDocument()
+    expect(screen.getByRole('generic', { name: 'Decisive policy passages' })).toHaveTextContent('Authentication is required.')
+    expect(screen.getByText('Requires')).toBeInTheDocument()
+    expect(screen.getByText('Build a gate')).toBeInTheDocument()
+    expect(screen.getByText('Add a gate.')).toBeInTheDocument()
+    expect(screen.getByText(/Proposal only/)).toBeInTheDocument()
+  })
+
+  it('resolves a stable logical ID within the evaluation revision', () => {
+    const view = render(
+      <PolicyGateEvidence
+        evaluation={evaluation}
+        artifacts={[
+          {
+            ...artifacts[0],
+            id: 'policy-auth-current',
+            revision: 'newer-revision',
+            title: 'Current authentication policy',
+            sourcePath: 'governance/current-auth.md',
+          },
+          artifacts[0],
+        ]}
+      />
+    )
+
+    expect(within(view.container).getAllByText('Authentication policy')).toHaveLength(2)
+    expect(within(view.container).queryByText('Current authentication policy')).not.toBeInTheDocument()
+    expect(within(view.container).getByText('policy · governance/auth.md')).toBeInTheDocument()
+  })
+
+  it('compares contradiction polarity with the resolved policy sources', () => {
+    const contradictory: PolicyGateEvaluation = {
+      ...evaluation,
+      kind: 'contradictory-policy',
+      title: 'Conflicting deployment policies',
+      policyArtifactIds: ['policy-auth', 'policy-exception'],
+      evidencePassages: [
+        { ...evaluation.evidencePassages![0], signal: 'obligation' },
+        {
+          artifactId: 'policy-exception',
+          sourcePath: 'governance/exceptions.md',
+          text: 'Emergency authentication must not require approval.',
+          signal: 'prohibition',
+        },
+      ],
+    }
+    const view = render(
+      <PolicyGateEvidence
+        evaluation={contradictory}
+        artifacts={[
+          ...artifacts,
+          {
+            ...artifacts[0],
+            id: 'policy-exception',
+            logicalId: 'policy-exception',
+            title: 'Emergency authentication exception',
+            sourcePath: 'governance/exceptions.md',
+          },
+        ]}
+      />,
+    )
+
+    const passages = view.container.querySelector('.governance-passages')
+    expect(passages).toHaveTextContent('Requires')
+    expect(passages).toHaveTextContent('Prohibits')
+    expect(passages).toHaveTextContent('Authentication policy')
+    expect(passages).toHaveTextContent('Emergency authentication exception')
+    expect(passages).toHaveTextContent('governance/exceptions.md')
   })
 
   it('keeps legacy evaluations without confidence or scope reviewable', () => {
@@ -59,5 +135,19 @@ describe('PolicyGateEvidence', () => {
 
     expect(screen.getByText('Unknown')).toBeInTheDocument()
     expect(screen.getByText('Repository scope was not recorded for this legacy evaluation.')).toBeInTheDocument()
+  })
+
+  it('does not render generated metadata as a decisive repository passage', () => {
+    const view = render(<PolicyGateEvidence evaluation={{ ...evaluation, evidencePassages: [] }} artifacts={artifacts} />)
+
+    expect(view.container.querySelector('.governance-passages')).toBeNull()
+    expect(view.container).not.toHaveTextContent('policy evidence discovered during repository analysis')
+  })
+
+  it('rejects a decisive passage whose signal does not match its artifact kind', () => {
+    expect(policyGateArtifactReferenceProblems({
+      ...evaluation,
+      evidencePassages: [{ ...evaluation.evidencePassages![0], signal: 'gate' }],
+    }, artifacts)).toEqual(['policy-auth'])
   })
 })

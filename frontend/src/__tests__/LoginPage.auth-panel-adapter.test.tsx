@@ -15,12 +15,11 @@
  *      form-submit notice, since AuthPanel has no prop to surface an
  *      externally-sourced result).
  *
- * NOTE: the pre-refactor LoginPage also had a confirm-password field, a
- * password-policy checklist gating submit, and an inline email-availability
- * check on signup. @fuzefront/auth-ui's AuthPanel (v0.1.0) does not yet
- * implement any of those, so they are gone from this page — not
- * reintroduced as one-off markup here, which would refork logic AuthPanel is
- * meant to own. Tracked as a fast-follow against @fuzefront/auth-ui.
+ * NOTE: these cover the flag-OFF (default) signup — the current single-name
+ * form. The confirm-password field, password-policy checklist gating submit and
+ * inline email-availability check live in @fuzefront/auth-ui's `SignUpFlow` and
+ * render only with `fuzefront.auth.experience` ON (see
+ * LoginPage.auth-experience.test.tsx).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
@@ -110,10 +109,9 @@ describe('LoginPage <-> AuthPanel adapter', () => {
     vi.mocked(authAPI.getCurrentUser).mockResolvedValue(mockUser as any)
 
     render(<LoginPage />)
-    await waitFor(() => expect(screen.getByLabelText(/first name/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toBeInTheDocument())
 
-    fireEvent.change(screen.getByLabelText(/first name/i), { target: { value: 'Ada' } })
-    fireEvent.change(screen.getByLabelText(/last name/i), { target: { value: 'Lovelace' } })
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Ada Lovelace' } })
     fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'ada@ex.com' } })
     fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: 'S3cret!!!!' } })
 
@@ -124,8 +122,7 @@ describe('LoginPage <-> AuthPanel adapter', () => {
     expect(authAPI.signup).toHaveBeenCalledWith({
       email: 'ada@ex.com',
       password: 'S3cret!!!!',
-      firstName: 'Ada',
-      lastName: 'Lovelace',
+      name: 'Ada Lovelace',
     })
     await waitFor(() => expect(setUser).toHaveBeenCalledWith(mockUser))
     expect(locationStub.href).toBe('/dashboard')
@@ -137,7 +134,7 @@ describe('LoginPage <-> AuthPanel adapter', () => {
     vi.mocked(authAPI.signup).mockRejectedValue(outageErr)
 
     render(<LoginPage />)
-    await waitFor(() => expect(screen.getByLabelText(/first name/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toBeInTheDocument())
 
     fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'ada@ex.com' } })
     fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: 'S3cret!!!!' } })

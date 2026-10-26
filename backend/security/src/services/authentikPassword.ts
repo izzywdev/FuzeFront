@@ -27,6 +27,7 @@ import { getOidcService } from './oidc'
 import { currentTenant } from '../providers/authentik/tenants'
 import { User } from '../types/shared'
 import { logger } from '../lib/logger'
+import { deriveSignupUsername } from './signupUsername'
 
 /**
  * Hard per-fetch timeout (ms) for EVERY server-side Authentik HTTP hop driven in
@@ -826,8 +827,12 @@ export class EnrollmentConflictError extends Error {
 export interface AuthentikSignupInput {
   email: string
   password: string
-  firstName?: string
-  lastName?: string
+  /**
+   * Optional single display name, forwarded 1:1 to Authentik's single `name`
+   * field. No given/family split: many names do not decompose that way, and
+   * joining first+last is a Western-order assumption.
+   */
+  name?: string
   username?: string
 }
 
@@ -890,9 +895,13 @@ async function authentikSignupInner(input: AuthentikSignupInput): Promise<User> 
   // client-side LOGIN_TIMEOUT_MS, so it gets the same whole-request budget.
   const deadline = new Deadline()
 
-  // Derive a username from the local-part when the caller did not supply one.
-  const username =
-    input.username || input.email.split('@')[0].replace(/[^a-zA-Z0-9_.-]/g, '') || input.email
+  // Derive a username when the caller did not supply one. Non-ASCII safe — see
+  // deriveSignupUsername (the old regex strip gutted non-Latin local-parts).
+  const username = input.username || deriveSignupUsername(input.email)
+  logger.debug(
+    { op: 'authentik.signup.username', derivedFromEmail: !input.username, usernameLength: username.length },
+    'authentikPassword: signup username resolved'
+  )
 
   let challenge = await flowRequest(base, slug, jar, undefined, deadline)
   const MAX_STEPS = 8
@@ -917,9 +926,8 @@ async function authentikSignupInner(input: AuthentikSignupInput): Promise<User> 
         password_repeat: input.password,
         tos_accepted: true,
       }
-      if (input.firstName || input.lastName) {
-        body.name = [input.firstName, input.lastName].filter(Boolean).join(' ')
-      }
+      const displayName = typeof input.name === 'string' ? input.name.trim() : ''
+      if (displayName) body.name = displayName
       challenge = await flowRequest(base, slug, jar, body, deadline)
     } else if (component === 'ak-stage-user-login' || component === 'ak-stage-user-write') {
       // Non-interactive stages that occasionally surface a challenge — re-POST

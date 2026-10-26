@@ -17,12 +17,31 @@
  *       ids AND the backfill is complete; remove from legacyUuidTypes at the
  *       same time to close the dual-accept window.
  *
+ *   - fuzefront.auth.experience
+ *       type: release | default: OFF
+ *       owner: backend-engineer (security) for the server half; the flag itself
+ *       is registered by feature-flags-engineer (packages/feature-flags/
+ *       flag-registry.yaml) and shared with the frontend half.
+ *       When ON the signup surface switches to the auth-experience contract
+ *       (1.0.0): single `name`, server-side password-policy enforcement (422
+ *       PASSWORD_POLICY), Turnstile verification when configured, the
+ *       `GET /signup/email-available` alias, and `passwordPolicy`/`captcha` on
+ *       `GET /methods`. OFF = the pre-1.0.0 behaviour, byte-for-byte (legacy
+ *       firstName/lastName honoured, no policy/captcha gate, alias 404s).
+ *       This is rollout convenience only — real authz stays in Permit; the
+ *       signup/availability endpoints are rate-limited/validated regardless.
+ *       removal criterion: delete with the frontend half once the
+ *       auth-experience flows are GA in 100% of environments; drop the OFF
+ *       branches (legacy firstName/lastName shim in routes/security.ts) in the
+ *       same PR.
+ *
  * In-code defaults are the fail-safe values (OFF for release) so an
  * Unleash/client outage fails safe. Any error from the client → the default.
  */
 
 export const FLAGS = {
   PREFIXED_IDS: 'fuzefront.identity.prefixed-ids',
+  AUTH_EXPERIENCE: 'fuzefront.auth.experience',
 } as const
 
 export interface FlagContext {
@@ -78,6 +97,23 @@ export async function isPrefixedIdsEnabled(ctx?: Partial<FlagContext>): Promise<
   if (!client) return false // fail-safe: release default OFF
   try {
     return await client.getBooleanValue(FLAGS.PREFIXED_IDS, false, buildContext(ctx))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Release flag (default OFF): serve/enforce the auth-experience signup contract?
+ *
+ * Evaluated PRE-AUTH — there is no user or org yet — so the context is just
+ * `app` + `environment` (the documented "no principal" case in the
+ * feature-flags skill). Rollout is therefore per-environment, not per-user.
+ */
+export async function isAuthExperienceEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
+  const client = resolveClient()
+  if (!client) return false // fail-safe: release default OFF
+  try {
+    return await client.getBooleanValue(FLAGS.AUTH_EXPERIENCE, false, buildContext(ctx))
   } catch {
     return false
   }

@@ -1,24 +1,292 @@
-import type { TestExecution } from '@fuzequality/contracts'
+import { normalizeWorkflowPath, type QualityArtifact, type Repository, type TestExecution } from '@fuzequality/contracts'
+import { executableWorkflowTarget, safeExecutionEvidenceUrl } from '@fuzequality/contracts/workflow-execution'
+
+export { executableWorkflowTarget, isPreferredWorkflowExecutionArtifact, validateWorkflowDispatchInputs } from '@fuzequality/contracts/workflow-execution'
+
+/** Backward-compatible performance-only guard for the original API route. */
+export function performanceWorkflowTarget(artifact: QualityArtifact): string | undefined {
+  if (!['load-test', 'stress-test'].includes(artifact.kind)) return undefined
+  return executableWorkflowTarget(artifact)
+}
+
+/** Returns the immutable source commit that produced the current reviewed catalog. */
+export function testSuiteDispatchRevision(repository: Repository): string | undefined {
+  const details = repository.lastScanDetails
+  if (!repository.lastScanRevision || details?.catalogRevision !== repository.lastScanRevision) return undefined
+  const revision = details.sourceRevision
+  return revision && /^[0-9a-f]{40}$/i.test(revision) ? revision : undefined
+}
+
+/** @deprecated Use testSuiteDispatchRevision for new test-suite dispatch paths. */
+export const performanceDispatchRevision = testSuiteDispatchRevision
 
 export type PolicyGatePerformance = {
+  repositoryId: string
   policyArtifactId: string
+  policyTitle?: string
+  policySourcePath?: string
   gateArtifactId: string
+  gateTitle?: string
+  gateSourcePath?: string
+  /** Source commits represented by this aggregate; omitted by legacy APIs. */
+  revisions?: string[]
+  revisionCount?: number
+  latestRevision?: string
+  /** All explicit outcomes observed for this policy/gate pair. */
+  total: number
   passed: number
   failed: number
   cancelled: number
   running: number
+  /** Passed share of terminal outcomes; zero when no terminal outcome exists. */
+  passRate: number
   latestCompletedAt?: string
 }
 
-export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status'>> & { from?: string; until?: string }
+export type PolicyGatePerformancePage = {
+  items: PolicyGatePerformance[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
+export type ExecutionEvidenceRequirement =
+  | 'evidence-url-invalid'
+  | 'github-run-provenance-missing'
+  | 'policy-gate-outcome-missing'
+  | 'post-production-video-missing'
+  | 'performance-threshold-missing'
+  | 'terminal-timing-missing'
+
+export type ExecutionFilter = Partial<Pick<TestExecution, 'id' | 'kind' | 'status' | 'provider' | 'externalRunId' | 'branch' | 'revision' | 'workflowPath' | 'name'>> & {
+  /** Canonical repository owner/name used to exclude same-named branches from GitHub forks. */
+  headRepository?: string
+  evidenceKind?: TestExecution['evidenceLinks'][number]['kind']
+  evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
+  evidenceCollectionErrorCode?: NonNullable<TestExecution['evidenceCollection']>['errorCode']
+  evidenceCheckedAfter?: string
+  evidenceCheckedBefore?: string
+  evidenceRequirement?: ExecutionEvidenceRequirement
+  thresholdOutcome?: 'passed' | 'failed'
+  gateOutcome?: TestExecution['status']
+  policyArtifactId?: string
+  gateArtifactId?: string
+  attemptScope?: 'initial' | 'retry' | 'recovered'
+  minimumDurationMs?: number
+  maximumDurationMs?: number
+  from?: string
+  until?: string
+}
+
+function retainedGateEvaluations(execution: TestExecution) {
+  return execution.gateEvaluations.length
+    ? execution.gateEvaluations
+    : execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1
+      ? [{ policyArtifactId: execution.policyArtifactIds[0], gateArtifactId: execution.gateArtifactIds[0], status: execution.status }]
+      : []
+}
+
+function artifactIdentityMap(artifacts: QualityArtifact[]) {
+  return new Map(artifacts.flatMap(artifact => {
+    const logicalId = artifact.logicalId ?? artifact.id
+    return [
+      [`${artifact.repositoryId}\u0000${artifact.id}`, logicalId] as const,
+      [`${artifact.repositoryId}\u0000${logicalId}`, logicalId] as const,
+    ]
+  }))
+}
+
+type ArtifactIdentityMap = ReturnType<typeof artifactIdentityMap>
+
+export function qualityArtifactLogicalIdentity(
+  repositoryId: string,
+  artifactId: string | undefined,
+  artifacts: QualityArtifact[],
+  identities: ArtifactIdentityMap = artifactIdentityMap(artifacts),
+) {
+  if (!artifactId) return artifactId
+  return identities.get(`${repositoryId}\u0000${artifactId}`) ?? artifactId
+}
+
+/** Canonicalizes retained observation IDs without crossing repository boundaries. */
+export function normalizeExecutionArtifactIdentities(
+  execution: TestExecution,
+  artifacts: QualityArtifact[],
+  identities: ArtifactIdentityMap = artifactIdentityMap(artifacts),
+): TestExecution {
+  if (!artifacts.length) return execution
+  const identity = (artifactId: string) =>
+    identities.get(`${execution.repositoryId}\u0000${artifactId}`) ?? artifactId
+  return {
+    ...execution,
+    policyArtifactIds: [...new Set(execution.policyArtifactIds.map(identity))],
+    gateArtifactIds: [...new Set(execution.gateArtifactIds.map(identity))],
+    gateEvaluations: [...new Map(execution.gateEvaluations.map(evaluation => {
+      const canonical = {
+        ...evaluation,
+        policyArtifactId: identity(evaluation.policyArtifactId),
+        gateArtifactId: identity(evaluation.gateArtifactId),
+      }
+      return [`${canonical.policyArtifactId}\u0000${canonical.gateArtifactId}`, canonical]
+    })).values()],
+  }
+}
+
+/** Matches an explicitly retained pair; legacy evidence is paired only when exactly one policy and gate exist. */
+export function executionMatchesPolicyGate(
+  execution: TestExecution,
+  policyArtifactId?: string,
+  gateArtifactId?: string,
+) {
+  if (!policyArtifactId && !gateArtifactId) return true
+  const pairs = execution.gateEvaluations.length
+    ? execution.gateEvaluations
+    : execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1
+      ? [{ policyArtifactId: execution.policyArtifactIds[0], gateArtifactId: execution.gateArtifactIds[0] }]
+      : []
+  if (policyArtifactId && gateArtifactId) {
+    return pairs.some(pair =>
+      pair.policyArtifactId === policyArtifactId && pair.gateArtifactId === gateArtifactId
+    )
+  }
+  if (policyArtifactId) {
+    return execution.policyArtifactIds.includes(policyArtifactId) ||
+      pairs.some(pair => pair.policyArtifactId === policyArtifactId)
+  }
+  const selectedGateArtifactId = gateArtifactId ?? ''
+  return execution.gateArtifactIds.includes(selectedGateArtifactId) ||
+    pairs.some(pair => pair.gateArtifactId === selectedGateArtifactId)
+}
+
+/** Applies an outcome to the selected pair instead of any unrelated pair in the same execution. */
+function executionMatchesGateOutcome(
+  execution: TestExecution,
+  outcome?: TestExecution['status'],
+  policyArtifactId?: string,
+  gateArtifactId?: string,
+) {
+  if (!outcome) return true
+  return retainedGateEvaluations(execution).some(evaluation =>
+    evaluation.status === outcome &&
+    (!policyArtifactId || evaluation.policyArtifactId === policyArtifactId) &&
+    (!gateArtifactId || evaluation.gateArtifactId === gateArtifactId)
+  )
+}
+
+/** Requires retained failed-attempt evidence; a successful rerun alone is not recovery evidence. */
+export function isRecoveredExecution(execution: TestExecution, history: TestExecution[]): boolean {
+  if (execution.attempt <= 1 || execution.status !== 'passed') return false
+  return history.some(previous =>
+    previous.tenantId === execution.tenantId &&
+    previous.repositoryId === execution.repositoryId &&
+    previous.provider === execution.provider &&
+    previous.externalRunId === execution.externalRunId &&
+    previous.attempt < execution.attempt &&
+    previous.status === 'failed'
+  )
+}
 
 /** Filters only the caller's already tenant-scoped execution evidence. */
-export function filterTestExecutions(executions: TestExecution[], filter: ExecutionFilter = {}) {
+export function filterTestExecutions(
+  executions: TestExecution[],
+  filter: ExecutionFilter = {},
+  history: TestExecution[] = executions,
+  artifacts: QualityArtifact[] = [],
+) {
+  const repositoryId = executions[0]?.repositoryId
+  const identities = artifactIdentityMap(artifacts)
+  const selectedPolicyArtifactId = repositoryId
+    ? qualityArtifactLogicalIdentity(repositoryId, filter.policyArtifactId, artifacts, identities)
+    : filter.policyArtifactId
+  const selectedGateArtifactId = repositoryId
+    ? qualityArtifactLogicalIdentity(repositoryId, filter.gateArtifactId, artifacts, identities)
+    : filter.gateArtifactId
   const from = filter.from ? Date.parse(filter.from) : undefined
   const until = filter.until ? Date.parse(filter.until) : undefined
-  return executions.filter(execution => {
+  const evidenceCheckedAfter = filter.evidenceCheckedAfter ? Date.parse(filter.evidenceCheckedAfter) : undefined
+  const evidenceCheckedBefore = filter.evidenceCheckedBefore ? Date.parse(filter.evidenceCheckedBefore) : undefined
+  const normalizedHistory = artifacts.length
+    ? history.map(execution => normalizeExecutionArtifactIdentities(execution, artifacts, identities))
+    : history
+  return executions.filter(retainedExecution => {
+    const execution = normalizeExecutionArtifactIdentities(retainedExecution, artifacts, identities)
+    if (filter.id && execution.id !== filter.id) return false
     if (filter.kind && execution.kind !== filter.kind) return false
     if (filter.status && execution.status !== filter.status) return false
+    if (filter.provider && execution.provider !== filter.provider) return false
+    if (
+      filter.headRepository &&
+      execution.provider === 'github-actions' &&
+      execution.headRepository?.toLowerCase() !== filter.headRepository.toLowerCase() &&
+      !(filter.evidenceRequirement === 'github-run-provenance-missing' && execution.headRepository === undefined)
+    ) return false
+    if (filter.evidenceKind && !execution.evidenceLinks.some(link =>
+      link.kind === filter.evidenceKind && safeExecutionEvidenceUrl(link.url)
+    )) return false
+    if (filter.evidenceCollectionStatus === 'not-collected' && execution.evidenceCollection) return false
+    if (filter.evidenceCollectionStatus && filter.evidenceCollectionStatus !== 'not-collected' && execution.evidenceCollection?.status !== filter.evidenceCollectionStatus) return false
+    if (filter.evidenceCollectionErrorCode && execution.evidenceCollection?.errorCode !== filter.evidenceCollectionErrorCode) return false
+    if (evidenceCheckedAfter !== undefined) {
+      const checkedAt = Date.parse(execution.evidenceCollection?.checkedAt ?? '')
+      if (!Number.isFinite(checkedAt) || checkedAt < evidenceCheckedAfter) return false
+    }
+    if (evidenceCheckedBefore !== undefined) {
+      const checkedAt = Date.parse(execution.evidenceCollection?.checkedAt ?? '')
+      if (!Number.isFinite(checkedAt) || checkedAt > evidenceCheckedBefore) return false
+    }
+    if (
+      filter.evidenceRequirement === 'evidence-url-invalid' &&
+      !execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'github-run-provenance-missing' &&
+      (execution.provider !== 'github-actions' ||
+        (execution.headRepository !== undefined &&
+          execution.workflowPath !== undefined &&
+          execution.sourceUrl !== undefined &&
+          safeExecutionEvidenceUrl(execution.sourceUrl)))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'post-production-video-missing' &&
+      (execution.kind !== 'post-production' || execution.evidenceLinks.some(link =>
+        link.kind === 'video' && safeExecutionEvidenceUrl(link.url)
+      ))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'performance-threshold-missing' &&
+      (!['load', 'stress'].includes(execution.kind) || execution.thresholds.length > 0)
+    ) return false
+    if (
+      filter.evidenceRequirement === 'policy-gate-outcome-missing' &&
+      (execution.gateEvaluations.length > 0 ||
+        (execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'terminal-timing-missing' &&
+      (execution.status === 'running' || (execution.startedAt !== undefined && execution.completedAt !== undefined))
+    ) return false
+    if (filter.thresholdOutcome && !execution.thresholds.some(threshold =>
+      threshold.passed === (filter.thresholdOutcome === 'passed')
+    )) return false
+    if (!executionMatchesGateOutcome(execution, filter.gateOutcome, selectedPolicyArtifactId, selectedGateArtifactId)) return false
+    if (filter.externalRunId && execution.externalRunId !== filter.externalRunId) return false
+    if (filter.name && execution.name !== filter.name) return false
+    if (!executionMatchesPolicyGate(execution, selectedPolicyArtifactId, selectedGateArtifactId)) return false
+    if (filter.branch && execution.branch !== filter.branch) return false
+    if (filter.revision && execution.revision !== filter.revision) return false
+    if (
+      filter.workflowPath &&
+      normalizeWorkflowPath(execution.workflowPath) !== normalizeWorkflowPath(filter.workflowPath)
+    ) return false
+    if (filter.attemptScope === 'initial' && execution.attempt !== 1) return false
+    if (filter.attemptScope === 'retry' && execution.attempt <= 1) return false
+    if (filter.attemptScope === 'recovered' && !isRecoveredExecution(execution, normalizedHistory)) return false
+    if (filter.minimumDurationMs !== undefined || filter.maximumDurationMs !== undefined) {
+      const startedAt = Date.parse(execution.startedAt ?? '')
+      const completedAt = Date.parse(execution.completedAt ?? '')
+      if (!Number.isFinite(startedAt) || !Number.isFinite(completedAt) || completedAt < startedAt) return false
+      const durationMs = completedAt - startedAt
+      if (filter.minimumDurationMs !== undefined && durationMs < filter.minimumDurationMs) return false
+      if (filter.maximumDurationMs !== undefined && durationMs > filter.maximumDurationMs) return false
+    }
     const occurredAt = Date.parse(execution.completedAt ?? execution.startedAt ?? '')
     if (from !== undefined && (!Number.isFinite(occurredAt) || occurredAt < from)) return false
     if (until !== undefined && (!Number.isFinite(occurredAt) || occurredAt > until)) return false
@@ -26,40 +294,232 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
   })
 }
 
-export type ExecutionOutcomeTrend = { date: string; passed: number; failed: number; cancelled: number; running: number }
+export type ExecutionOutcomeTrend = {
+  date: string
+  /** All retained executions in this UTC-day bucket. */
+  total: number
+  passed: number
+  failed: number
+  cancelled: number
+  running: number
+  /** Passed share of terminal outcomes (passed, failed, or cancelled); zero when no terminal outcome exists. */
+  passRate: number
+  /** Runs with a valid, non-negative start/end interval. */
+  durationSampleCount: number
+  /** Rounded arithmetic mean for the valid intervals in this UTC-day bucket. */
+  averageDurationMs: number
+  /** Longest valid interval in this UTC-day bucket. */
+  maximumDurationMs: number
+  /** Provider attempts after the original attempt. */
+  retryAttemptCount: number
+  /** Retry attempts whose retained outcome is passed. */
+  successfulRetryCount: number
+  /** Passed retry attempts with an explicitly retained failed earlier attempt for the same provider run. */
+  recoveredRunCount: number
+  /** Provider evidence collections that completed without a retained collection error. */
+  evidenceCompleteCount?: number
+  /** Provider evidence collections that completed with bounded or incomplete results. */
+  evidencePartialCount?: number
+  /** Provider evidence collections that failed before usable results were retained. */
+  evidenceUnavailableCount?: number
+  /** Executions with no retained provider evidence collection attempt. */
+  evidenceNotCollectedCount?: number
+  /** Executions retaining at least one evidence link that is not a safe HTTPS URL. */
+  invalidEvidenceUrlCount?: number
+  /** GitHub Actions executions missing repository, workflow, or safe run URL provenance. */
+  githubRunProvenanceMissingCount?: number
+  /** Post-production executions without a safe video evidence link. */
+  postProductionVideoMissingCount?: number
+  /** Terminal executions without a complete, valid timing interval. */
+  terminalTimingMissingCount?: number
+  /** Explicit policy/gate outcomes, including unambiguous legacy single-pair evidence. */
+  gateEvaluationCount?: number
+  gatePassedCount?: number
+  gateFailedCount?: number
+  gateCancelledCount?: number
+  gateRunningCount?: number
+  /** Executions that cannot be attributed to a policy/gate outcome without inference. */
+  gateUnevaluatedExecutionCount?: number
+  /** Retained threshold observations in this UTC-day bucket. */
+  thresholdEvaluationCount?: number
+  thresholdPassedCount?: number
+  thresholdFailedCount?: number
+  /** Load or stress executions that retained no measurable threshold outcome. */
+  performanceExecutionWithoutThresholdCount?: number
+}
 
 /** Produces an evidence-only daily outcome series; missing days are not invented. */
-export function executionOutcomeTrend(executions: TestExecution[]): ExecutionOutcomeTrend[] {
-  const results = new Map<string, ExecutionOutcomeTrend>()
+export function executionOutcomeTrend(executions: TestExecution[], history: TestExecution[] = executions): ExecutionOutcomeTrend[] {
+  const results = new Map<string, ExecutionOutcomeTrend & { totalDurationMs: number }>()
+  const failedAttemptsByRun = new Map<string, Set<number>>()
+  for (const execution of history) {
+    if (execution.status !== 'failed') continue
+    const runKey = [execution.tenantId, execution.repositoryId, execution.provider, execution.externalRunId].join('\u0000')
+    const attempts = failedAttemptsByRun.get(runKey) ?? new Set<number>()
+    attempts.add(execution.attempt)
+    failedAttemptsByRun.set(runKey, attempts)
+  }
   for (const execution of executions) {
     const timestamp = execution.completedAt ?? execution.startedAt
     if (!timestamp || Number.isNaN(Date.parse(timestamp))) continue
     const date = timestamp.slice(0, 10)
-    const current = results.get(date) ?? { date, passed: 0, failed: 0, cancelled: 0, running: 0 }
+    const current = results.get(date) ?? {
+      date,
+      total: 0,
+      passed: 0,
+      failed: 0,
+      cancelled: 0,
+      running: 0,
+      passRate: 0,
+      durationSampleCount: 0,
+      averageDurationMs: 0,
+      maximumDurationMs: 0,
+      retryAttemptCount: 0,
+      successfulRetryCount: 0,
+      recoveredRunCount: 0,
+      evidenceCompleteCount: 0,
+      evidencePartialCount: 0,
+      evidenceUnavailableCount: 0,
+      evidenceNotCollectedCount: 0,
+      invalidEvidenceUrlCount: 0,
+      githubRunProvenanceMissingCount: 0,
+      postProductionVideoMissingCount: 0,
+      terminalTimingMissingCount: 0,
+      gateEvaluationCount: 0,
+      gatePassedCount: 0,
+      gateFailedCount: 0,
+      gateCancelledCount: 0,
+      gateRunningCount: 0,
+      gateUnevaluatedExecutionCount: 0,
+      thresholdEvaluationCount: 0,
+      thresholdPassedCount: 0,
+      thresholdFailedCount: 0,
+      performanceExecutionWithoutThresholdCount: 0,
+      totalDurationMs: 0,
+    }
+    current.total++
     current[execution.status]++
+    if (execution.evidenceCollection) {
+      if (execution.evidenceCollection.status === 'complete') current.evidenceCompleteCount = (current.evidenceCompleteCount ?? 0) + 1
+      if (execution.evidenceCollection.status === 'partial') current.evidencePartialCount = (current.evidencePartialCount ?? 0) + 1
+      if (execution.evidenceCollection.status === 'unavailable') current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + 1
+    } else {
+      current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + 1
+    }
+    if (execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))) {
+      current.invalidEvidenceUrlCount = (current.invalidEvidenceUrlCount ?? 0) + 1
+    }
+    if (
+      execution.provider === 'github-actions' &&
+      (!execution.headRepository || !execution.workflowPath || !safeExecutionEvidenceUrl(execution.sourceUrl))
+    ) {
+      current.githubRunProvenanceMissingCount = (current.githubRunProvenanceMissingCount ?? 0) + 1
+    }
+    if (
+      execution.kind === 'post-production' &&
+      !execution.evidenceLinks.some(link => link.kind === 'video' && safeExecutionEvidenceUrl(link.url))
+    ) {
+      current.postProductionVideoMissingCount = (current.postProductionVideoMissingCount ?? 0) + 1
+    }
+    const gateEvaluations = retainedGateEvaluations(execution)
+    current.gateEvaluationCount = (current.gateEvaluationCount ?? 0) + gateEvaluations.length
+    if (!gateEvaluations.length) {
+      current.gateUnevaluatedExecutionCount = (current.gateUnevaluatedExecutionCount ?? 0) + 1
+    }
+    for (const evaluation of gateEvaluations) {
+      if (evaluation.status === 'passed') current.gatePassedCount = (current.gatePassedCount ?? 0) + 1
+      if (evaluation.status === 'failed') current.gateFailedCount = (current.gateFailedCount ?? 0) + 1
+      if (evaluation.status === 'cancelled') current.gateCancelledCount = (current.gateCancelledCount ?? 0) + 1
+      if (evaluation.status === 'running') current.gateRunningCount = (current.gateRunningCount ?? 0) + 1
+    }
+    current.thresholdEvaluationCount = (current.thresholdEvaluationCount ?? 0) + execution.thresholds.length
+    current.thresholdPassedCount = (current.thresholdPassedCount ?? 0) + execution.thresholds.filter(threshold => threshold.passed).length
+    current.thresholdFailedCount = (current.thresholdFailedCount ?? 0) + execution.thresholds.filter(threshold => !threshold.passed).length
+    if (['load', 'stress'].includes(execution.kind) && !execution.thresholds.length) {
+      current.performanceExecutionWithoutThresholdCount = (current.performanceExecutionWithoutThresholdCount ?? 0) + 1
+    }
+    if (execution.attempt > 1) {
+      current.retryAttemptCount++
+      if (execution.status === 'passed') {
+        current.successfulRetryCount++
+        const runKey = [execution.tenantId, execution.repositoryId, execution.provider, execution.externalRunId].join('\u0000')
+        if ([...(failedAttemptsByRun.get(runKey) ?? [])].some(attempt => attempt < execution.attempt)) {
+          current.recoveredRunCount++
+        }
+      }
+    }
+    const startedAt = Date.parse(execution.startedAt ?? '')
+    const completedAt = Date.parse(execution.completedAt ?? '')
+    if (execution.status !== 'running' && (!Number.isFinite(startedAt) || !Number.isFinite(completedAt) || completedAt < startedAt)) {
+      current.terminalTimingMissingCount = (current.terminalTimingMissingCount ?? 0) + 1
+    }
+    if (Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt) {
+      current.durationSampleCount++
+      const durationMs = completedAt - startedAt
+      current.totalDurationMs += durationMs
+      current.averageDurationMs = Math.round(current.totalDurationMs / current.durationSampleCount)
+      current.maximumDurationMs = Math.max(current.maximumDurationMs, durationMs)
+    }
     results.set(date, current)
   }
-  return [...results.values()].sort((left, right) => left.date.localeCompare(right.date))
+  return [...results.values()]
+    .map(({ totalDurationMs: _totalDurationMs, ...trend }) => {
+      const terminalOutcomes = trend.passed + trend.failed + trend.cancelled
+      return { ...trend, passRate: terminalOutcomes ? trend.passed / terminalOutcomes : 0 }
+    })
+    .sort((left, right) => left.date.localeCompare(right.date))
 }
 
 /** Aggregates immutable execution evidence; no missing link is inferred as a passing gate. */
-export function executionPerformance(executions: TestExecution[]): PolicyGatePerformance[] {
+export function executionPerformance(
+  executions: TestExecution[],
+  artifacts: QualityArtifact[] = [],
+  gateOutcome?: TestExecution['status'],
+): PolicyGatePerformance[] {
   const results = new Map<string, PolicyGatePerformance>()
-  for (const execution of executions) {
+  const artifactsById = new Map(artifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
+  const identities = artifactIdentityMap(artifacts)
+  for (const retainedExecution of executions) {
+    const execution = normalizeExecutionArtifactIdentities(retainedExecution, artifacts, identities)
     // Rows created before explicit pair evidence existed are only safe to use
     // when there is exactly one possible pair. Never create a Cartesian product.
-    const gateEvaluations = execution.gateEvaluations.length
-      ? execution.gateEvaluations
-      : execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1
-        ? [{ policyArtifactId: execution.policyArtifactIds[0], gateArtifactId: execution.gateArtifactIds[0], status: execution.status }]
-        : []
+    const gateEvaluations = retainedGateEvaluations(execution)
     for (const evaluation of gateEvaluations) {
-      const key = `${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`
-      const current = results.get(key) ?? { policyArtifactId: evaluation.policyArtifactId, gateArtifactId: evaluation.gateArtifactId, passed: 0, failed: 0, cancelled: 0, running: 0 }
+      if (gateOutcome && evaluation.status !== gateOutcome) continue
+      const key = `${execution.repositoryId}:${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`
+      const policy = artifactsById.get(evaluation.policyArtifactId)
+      const gate = artifactsById.get(evaluation.gateArtifactId)
+      const current = results.get(key) ?? {
+        repositoryId: execution.repositoryId,
+        policyArtifactId: evaluation.policyArtifactId,
+        ...(policy?.kind === 'policy' ? { policyTitle: policy.title, policySourcePath: policy.sourcePath } : {}),
+        gateArtifactId: evaluation.gateArtifactId,
+        ...(gate?.kind === 'gate' ? { gateTitle: gate.title, gateSourcePath: gate.sourcePath } : {}),
+        revisions: [],
+        total: 0,
+        passed: 0,
+        failed: 0,
+        cancelled: 0,
+        running: 0,
+        passRate: 0,
+      }
+      current.revisions ??= []
+      if (!current.revisions.includes(execution.revision)) current.revisions.push(execution.revision)
+      current.total++
       current[evaluation.status]++
+      const terminalOutcomes = current.passed + current.failed + current.cancelled
+      current.passRate = terminalOutcomes ? current.passed / terminalOutcomes : 0
       if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
       results.set(key, current)
     }
   }
-  return [...results.values()].sort((left, right) => right.failed - left.failed || right.passed - left.passed || left.gateArtifactId.localeCompare(right.gateArtifactId))
+  return [...results.values()].sort((left, right) =>
+    right.failed - left.failed ||
+    right.passed - left.passed ||
+    left.gateArtifactId.localeCompare(right.gateArtifactId) ||
+    left.policyArtifactId.localeCompare(right.policyArtifactId)
+  )
 }

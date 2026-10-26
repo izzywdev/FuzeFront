@@ -95,10 +95,18 @@ Concrete flaws of `null` that this avoids:
 seeding (`system:selection-list-service`).
 
 The service learns the platform org's wire id from configuration
-(`SELECTION_LIST_PLATFORM_ORG_ID`, the `org_…` TypeID of `ROOT_ORG_ID`), with a
-fallback to the `selection_list_ref_index` row whose `org_type = 'platform'`;
-if neither resolves, every platform feature **fails closed** (no `platform`
-lists are served or created, nothing else changes).
+(`SELECTION_LIST_PLATFORM_ORG_ID`, the `org_…` TypeID of `ROOT_ORG_ID`) and
+**only** from configuration. There is deliberately **no** fallback to the
+`selection_list_ref_index` row whose `org_type = 'platform'`: that column comes
+from `identity.org.created.type`, which a logged-in user controls
+(`POST /api/organizations {type: 'platform'}`), so "the org the projection calls
+platform" is attacker-chosen and would let any user publish common lists into
+every tenant. The projection is only a **veto** on a configured value (a row
+saying the configured org is not an active platform org, or is deleted, makes it
+untrusted; the boot check refuses to start on that contradiction). If the
+variable is unset or does not resolve, every platform feature **fails closed**
+(no `platform` list is served, created, promoted or resolved, nothing else
+changes).
 
 ### D3 ⚠ — `SelectionListCatalog:read_shared` for every **customer** tenant role (not `developer`)
 
@@ -477,6 +485,46 @@ Authorization never routes through the flag (Permit stays the authority).
   minted only by the service; `404` (never `403`) for unreadable lists.
 - Tenant roles confer no `SelectionList:*` action; no admin → owner derivation.
 
+**Platform organization lifecycle (suspend writes, never break reads).** The configured value must be a codec-valid
+`org_…` TypeID (`parseId` decodes it and re-encoding gives the same string); anything else is a fatal boot error, not
+an "unconfirmed" state. Because the platform org owns every common list, the org lifecycle consumers treat it as
+immutable: no event deletes, archives or tombstones it, and a type change away from `platform` is refused. A
+**deactivation** (`identity.org.deleted` soft or hard, or `org.updated`/`org.created` with `isActive:false`) is split into
+its two effects: **reads stay available** to every tenant (list reads, items, resolve, fork, ids), and **writes fail
+closed** — the projection row records `suspended_at`, and while it is set `publish_platform`, every mutation of a
+`platform` list (list, items, translations, grants), purge of a platform list or item, and seeding of platform lists are
+refused, the state read fresh per request (never from the platform-org cache). A legitimate reactivation (`isActive:true`,
+type `platform`) clears it. The suspend/resume state machine is ORDERED by the envelope's ORIGINAL time (future-dated envelopes beyond `SELECTION_LIST_EVENT_FUTURE_SKEW_SECONDS`, default 300, are rejected and ignored, never clamped: a clamp re-orders the same event on every redelivery; `snapshot_at` for applied snapshots,
+`suspended_event_at` for the deactivation that suspended): a deactivation suspends only if strictly newer than the newest
+applied snapshot (stale and same-instant ones are ignored, ties go to active), an activation resumes only if not older than
+the suspending deactivation. The write gate is flag-independent (like the purge guard): with the shared-lists flag OFF a
+suspended platform org still refuses every mutation of a platform row it owns and the seeding of packs into it. The gate is
+keyed by the OWNER of the platform row (the projection's `suspended_at` of the org owning the `visibility = 'platform'` row
+being mutated or seeded), never by `SELECTION_LIST_PLATFORM_ORG_ID`, so removing the variable after common rows exist does not
+lift a suspension. It is race-free: the deactivation recording and the resume take the per-org outbox lock that every mutating
+transaction takes first, and each mutating transaction re-checks the suspension fresh under that lock before writing
+(`assertPlatformWritable`; the request-level check is only the fast path). A forged
+event can therefore at worst pause platform publishing; recovery steps are in
+`docs/runbooks/selection-lists-rollout.md` §10.3. Protected = the configured platform org, the root platform org, or any
+org owning a `visibility = 'platform'` row (the fallback when unconfigured); never the projection's user-controllable
+`org_type`.
+
+**One effective list per key.** `(organization_id, key)` is unique per *stored string*, so one org could hold a key under both
+renderings of its id. Two rules close that:
+- *Creation is blocked, flag ON or OFF.* Creating or renaming a list is a 409 (the usual key-taken code) when the key exists
+  for the same org under ANY rendering of its id, checked under the per-org outbox lock (so concurrent creates through
+  different renderings admit exactly one). This is a deliberate change to the flag-OFF create path (the service had never
+  been enabled in production); every other flag-OFF behaviour and response shape is unchanged. Data that already holds a
+  duplicate is handled by the audit and reconciliation in `docs/runbooks/selection-lists-rollout.md` §10.1–10.2.
+- *Reads pick ONE row, Permit-aware.* With the flag ON every key-resolving consumer (the listing and its `?key=` lookup,
+  the fork lookups, the resolve fork redirect, shadowing) applies the same rule to the rows the caller can actually READ:
+  an active row over an archived one, then the row stored under the caller's claim, then the oldest, then the smallest id
+  (`pickWinner` / `readableWinners` in `services/sharedReads.ts`). An unreadable private winner therefore never hides a
+  readable duplicate under the other rendering, and a key with no readable candidate has no effective row and does not
+  suppress a common list. The decision for a row depends only on that row and its (few: one per rendering) duplicates, so a
+  paged walk shows each effective list once; readability is checked once per request (bulk, chunked); a Security API failure
+  fails closed (nothing is shown).
+
 ## 9. Rollout and migration of existing data
 
 Order matters (fail-closed authz): **Permit schema → service → flag → data**.
@@ -528,7 +576,7 @@ Every stream gates on this contract PR being **merged**.
 | 7 | `backend-engineer` | Resolve: platform ids + fork redirect + `effective_item_id`; keep one round trip; cache key unchanged except fork presence (ETag must vary) | resolve tests incl. private-fork no-redirect |
 | 8 | `backend-engineer` | Events: add both topics to `PRODUCED_TOPICS`; emitters for `list.forked` / `visibility.changed`; snapshots carry `visibility`/`forkedFrom`/`originItemId` | `outbox.*` tests; payloads validate via `SCHEMA_BY_TOPIC` |
 | 9 | `backend-engineer` | Seeding: honour seed-list `visibility` (`org` per org; `platform` once into the platform org, skipped per org); refuse `platform` from apps (schema already does) | seed tests; ledger semantics unchanged |
-| 10 | `backend-engineer` + `database-engineer` | Rollout data migrations §9.4 and §9.6 as idempotent, flag-independent jobs with dry-run | dry-run report on staging; re-run is a no-op |
+| 10 | `backend-engineer` + `database-engineer` | Rollout data migrations §9.4 and §9.6 as idempotent, flag-independent jobs with dry-run. **Plus, before the flag is turned on:** the read-only duplicate-key audit (the same key, or the same fork, held by one org under both renderings of its id) and its reconciliation (winner = active, then oldest, then smallest id; loser renamed and archived, never deleted) — the exact queries and statements are in `docs/runbooks/selection-lists-rollout.md` §10.1–10.2. The service resolves such duplicates deterministically at read time with the same rule, so the audit is for cleanliness, not correctness | dry-run report on staging; re-run is a no-op; the audit returns 0 rows before the flag goes ON |
 | 11 | `test-engineer` | `tests/selection-list-service/contract` + `security`: shared-read allow/deny per tenant role (incl. `developer` 403/404), cross-org `404`, fork 201/200/409×3, precedence, resolve redirect, `fork_required` body, visibility lock, purge needs operator; `helpers/fake-security-api.mjs` evaluates `publish_platform` with tenant = platform org | suites green against the running service, both flag states |
 | 12 | `docs-maintainer` | Drop the "contract only" banners from the guides/skill once the service ships; runbook entries for §9 jobs | docs match code |
 | 13 | `product-designer` | Frames for: shared/common badge + read-only list detail, "fork to edit" CTA on `fork_required`, fork confirmation (visibility choice), fork provenance + "behind source" indicator, picker unchanged except effective-list lookup; loading/empty/error/`fork_exists`/quota states | frames PR approved per flow (`gate-frames-first`) |
@@ -574,3 +622,18 @@ Every stream gates on this contract PR being **merged**.
 - **Platform org identification** is configuration; a wrong
   `SELECTION_LIST_PLATFORM_ORG_ID` would let that org publish — the boot check
   must confirm the configured org's projection type is `platform`.
+- **Forged identity events (ACCEPTED RESIDUAL; broker ACLs are the control).** Owner decision: the service does NOT
+  authenticate the producer of `identity.*` / seed topics in-process (no first-writer-wins owner hardening, no Security-API
+  confirmation before a destructive org cascade). Producer authentication is an infrastructure control: broker ACLs on the
+  `identity.*` topics (FuzeInfra#1394) are a **hard prerequisite before the service is enabled in production**
+  (`docs/runbooks/selection-lists-rollout.md` P6). Until they are verified, a principal that can publish to the broker can:
+  (1) `identity.org.deleted` for an ORDINARY org (soft or hard cascade): archive or purge that tenant's lists, items,
+  translations and grants (the platform org is immune: it is suspended, never deleted); (2) `identity.user.deleted`:
+  anonymise a user's authorship and revoke that user's list grants; (3) `identity.org.created`: project an organization
+  with a chosen owner, so the owner id used for seeded-list owner grants can be swapped (a later `org.created` replaces the recorded owner:
+  there is no first-writer-wins hardening); (4) `selection-lists.seed.requested`: amplify writes up to
+  the per-source caps and quotas (requests carry a bearer attestation that is verified, but a flood of valid-looking
+  requests is bounded only by those caps); (5) plain flooding of any consumed topic (retry budgets and the DLQ bound the
+  damage, not the volume). Mitigations that DO exist in-service: the platform org can only be suspended (writes) never
+  deleted, future-dated envelopes are rejected, deactivation is ordered by envelope time, all consumers are idempotent. Those
+  five stay accepted until the broker ACLs are verified.

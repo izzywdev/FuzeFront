@@ -76,6 +76,10 @@ run_register() {
   REGISTRATION_DIR="$REG" \
   FUZEFRONT_API_URL="$FUZEFRONT_API_URL" \
   FUZEFRONT_REGISTRATION_TOKEN="${1:-test-token}" \
+  FUZEFRONT_REMOTE_HEALTH_URL="${2:-}" \
+  SKIP_ACTIVATE="${3:-false}" \
+  FUZEFRONT_PORTAL_URL="${4:-}" \
+  FUZEFRONT_REGISTRATION_PHASE="${5:-post-start}" \
     sh "$SCRIPT" > "${WORK}/run.out" 2>&1
 }
 
@@ -103,6 +107,20 @@ check "does NOT re-activate an already-activated app" "$REACT" "0"
 echo "$CALLS2" | grep -q '^PUT /api/v1/app-registry/apps/testapp$' && ok "refreshes the manifest on re-run" || notok "refreshes the manifest on re-run"
 cleanup; SERVER_PID=""
 
+# A shipped init container must also survive an all-replicas-down restart. The
+# existing registry row does not prove that the frontend is currently serving,
+# so init mode neither probes the remote nor refreshes the live manifest.
+start_server
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/missing-cold-start-remoteEntry.js" "false" "" "init"; RC=$?; set -e
+check "cold-restart init registration does not deadlock on its own remote" "$RC" "0"
+INIT_CALLS="$(cat "${WORK}/calls.txt")"
+INIT_REFRESH="$(echo "$INIT_CALLS" | grep -c '^PUT /api/v1/app-registry/apps/testapp$' || true)"
+check "init registration does not refresh an unverified live manifest" "$INIT_REFRESH" "0"
+grep -q 'deferring federation probe to post-start registration' "${WORK}/run.out" \
+  && ok "init registration explains the deferred probe" || notok "init registration explains the deferred probe"
+cleanup; SERVER_PID=""
+
 # ---- 4. auth failure is FATAL ------------------------------------------------
 start_server
 set +e; run_register "wrong-token"; RC=$?; set -e
@@ -116,12 +134,61 @@ set +e; run_register; RC=$?; set -e
 check "survives 2 transient 500s" "$RC" "0"
 cleanup; SERVER_PID=""
 
+# ---- 6. federation health is checked before any registry mutation ------------
+printf 'const remote = "__federation_method_ensure";\n' > "${WORK}/remoteEntry.js"
+start_server
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
+check "healthy federation asset permits registration" "$RC" "0"
+
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "/apps/testapp/assets/remoteEntry.js" "false" "$FUZEFRONT_API_URL"; RC=$?; set -e
+check "same-origin federation path resolves against portal origin" "$RC" "0"
+grep -q '^GET /apps/testapp/assets/remoteEntry.js$' "${WORK}/calls.txt" \
+  && ok "probes the resolved same-origin federation URL" || notok "probes the resolved same-origin federation URL"
+
+printf 'const fallback = "<body>temporary error</body>"; const remote = "__federation_method_ensure";\n' > "${WORK}/remoteEntry.js"
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
+check "HTML strings inside JavaScript do not reject the federation asset" "$RC" "0"
+
+# SKIP_ACTIVATE only stages inactive rows. Refreshing an already-active row changes
+# the live portal immediately, so a broken replacement must be rejected before PUT.
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/missing-active-remoteEntry.js" "true"; RC=$?; set -e
+if [ "$RC" -ne 0 ]; then ok "staged refresh of active app probes federation asset"; else notok "staged refresh of active app probes federation asset (got 0)"; fi
+ACTIVE_STAGED_WRITES="$(grep -Ec '^(POST|PUT|DELETE) ' "${WORK}/calls.txt" || true)"
+check "broken staged refresh causes no registry writes" "$ACTIVE_STAGED_WRITES" "0"
+
+printf '<!doctype html><html><body>ingress fallback</body></html>\n' > "${WORK}/remoteEntry.js"
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
+if [ "$RC" -ne 0 ]; then ok "HTML federation fallback exits NON-ZERO"; else notok "HTML federation fallback exits NON-ZERO (got 0)"; fi
+grep -q 'federation asset for testapp is empty or HTML' "${WORK}/run.out" \
+  && ok "reports the broken federation asset clearly" || notok "reports the broken federation asset clearly"
+WRITES="$(grep -Ec '^(POST|PUT|DELETE) ' "${WORK}/calls.txt" || true)"
+check "broken federation asset causes no registry writes" "$WRITES" "0"
+cleanup; SERVER_PID=""
+
+# A staged registration cannot expose a broken remote, so it must not require the
+# deployment asset to exist before recording the manifest.
+start_server
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/missing-remoteEntry.js" "true"; RC=$?; set -e
+check "staged registration skips federation health" "$RC" "0"
+STAGED_CALLS="$(cat "${WORK}/calls.txt")"
+STAGED_ACTIVATE="$(echo "$STAGED_CALLS" | grep -c '/activate$' || true)"
+check "staged registration does not activate" "$STAGED_ACTIVATE" "0"
+cleanup; SERVER_PID=""
+
 # ---- 7. suite: apps/*.json siblings each register and activate ----------------
 # The failure this guards against is silent: before apps/ support, a repo shipping
 # several surfaces registered only the primary and the rest simply never appeared in
 # the portal — no error, no log line, just a product missing four of its five entries.
 mkdir -p "${REG}/apps"
-cat > "${REG}/apps/talent.json" <<'JSON'
+printf 'const talent = "__federation_method_ensure";\n' > "${WORK}/talent-remoteEntry.js"
+printf 'const recruiter = "__federation_method_ensure";\n' > "${WORK}/recruiter-remoteEntry.js"
+cat > "${REG}/apps/talent.json" <<JSON
 {
   "manifestVersion": "1",
   "slug": "testapp-talent",
@@ -129,23 +196,42 @@ cat > "${REG}/apps/talent.json" <<'JSON'
   "menuLabel": "Talent",
   "mode": "portal",
   "modes": ["portal", "standalone"],
-  "integration": { "type": "module-federation", "remoteEntry": "https://testapp.example.com/talent/remoteEntry.js", "scope": "testappTalent", "module": "./App" },
+  "integration": { "type": "module-federation", "remoteEntry": "file://${WORK}/talent-remoteEntry.js", "scope": "testappTalent", "module": "./App" },
   "nav": { "section": "build", "order": 10, "suite": { "id": "testapp", "label": "TestApp", "order": 5 } },
   "visibility": "organization"
 }
 JSON
-cat > "${REG}/apps/recruiter.json" <<'JSON'
+cat > "${REG}/apps/recruiter.json" <<JSON
 {
   "manifestVersion": "1",
   "slug": "testapp-recruiter",
   "name": "TestApp Recruiter",
   "menuLabel": "Recruiter",
   "mode": "portal",
-  "integration": { "type": "module-federation", "remoteEntry": "https://testapp.example.com/recruiter/remoteEntry.js", "scope": "testappRecruiter", "module": "./App" },
+  "integration": { "type": "module-federation", "remoteEntry": "file://${WORK}/recruiter-remoteEntry.js", "scope": "testappRecruiter", "module": "./App" },
   "nav": { "section": "build", "order": 20, "suite": { "id": "testapp", "label": "TestApp", "order": 5 } },
   "visibility": "organization"
 }
 JSON
+
+# First-time init-container registration must not wait on the application remote:
+# the app container cannot start until this script exits. Stage all rows once, then
+# prove a later activation/refresh still validates every remote before any write.
+start_server
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "" "true"; RC=$?; set -e
+check "first suite registration does not deadlock on federation probes" "$RC" "0"
+grep -q 'deferring federation probe until the app can start' "${WORK}/run.out" \
+  && ok "explains the deferred first-install federation probe" || notok "explains the deferred first-install federation probe"
+
+printf '<html><body>broken sibling</body></html>\n' > "${WORK}/recruiter-remoteEntry.js"
+: > "${WORK}/calls.txt"
+set +e; run_register; RC=$?; set -e
+if [ "$RC" -ne 0 ]; then ok "broken sibling federation asset exits NON-ZERO"; else notok "broken sibling federation asset exits NON-ZERO (got 0)"; fi
+WRITES="$(grep -Ec '^(POST|PUT|DELETE) ' "${WORK}/calls.txt" || true)"
+check "broken sibling prevents every refresh or activation write" "$WRITES" "0"
+cleanup; SERVER_PID=""
+printf 'const recruiter = "__federation_method_ensure";\n' > "${WORK}/recruiter-remoteEntry.js"
 
 start_server
 : > "${WORK}/calls.txt"
@@ -173,7 +259,7 @@ rm -f "${REG}/apps/broken.json"
 cleanup; SERVER_PID=""
 rm -rf "${REG}/apps"
 
-# ---- 6. missing required env is fatal ----------------------------------------
+# ---- 9. missing required env is fatal ----------------------------------------
 set +e
 REGISTRATION_DIR="$REG" FUZEFRONT_API_URL="" FUZEFRONT_REGISTRATION_TOKEN="x" sh "$SCRIPT" >/dev/null 2>&1
 RC=$?
