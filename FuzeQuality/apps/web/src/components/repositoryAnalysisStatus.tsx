@@ -10,7 +10,7 @@ export function RepositoryAnalysisStatus({ analysis, onRetry, retrying = false }
     : analysis.errorCode === 'INTELLIGENCE_TIMEOUT'
     ? 'FuzeInfra LiteLLM timed out; deterministic evidence remains available.'
     : analysis.errorCode === 'INTELLIGENCE_INVALID_RESPONSE'
-      ? 'FuzeInfra LiteLLM returned analysis that failed the reviewed schema; no unreviewed proposal was stored and deterministic evidence remains available.'
+      ? 'FuzeInfra LiteLLM returned an invalid provider envelope or analysis that failed the reviewed schema; no unreviewed proposal was stored and deterministic evidence remains available.'
     : analysis.errorCode
       ? 'Reviewed analysis unavailable; deterministic evidence remains available.'
       : undefined

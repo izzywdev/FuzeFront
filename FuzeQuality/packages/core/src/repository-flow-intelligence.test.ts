@@ -312,6 +312,9 @@ describe('repository flow wireframes', () => {
 
   it.each([
     ['malformed LiteLLM envelope', new Response('not-json')],
+    ['null LiteLLM envelope', new Response('null')],
+    ['array LiteLLM envelope', new Response('[]')],
+    ['primitive LiteLLM envelope', new Response('42')],
     ['missing LiteLLM content', new Response(JSON.stringify({ choices: [{}] }))],
     ['malformed analysis JSON', new Response(JSON.stringify({ choices: [{ message: { content: 'not-json' } }] }))],
     ['schema-invalid analysis', new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ flows: [{ title: '', confidence: 2, evidenceArtifactIds: [], steps: [] }] }) } }] }))],

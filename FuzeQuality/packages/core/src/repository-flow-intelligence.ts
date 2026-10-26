@@ -11,6 +11,12 @@ const responseSchema = z.object({
   }).strict()).max(30),
 }).strict()
 
+const liteLlmEnvelopeSchema = z.object({
+  choices: z.array(z.object({
+    message: z.object({ content: z.string().min(1) }).passthrough(),
+  }).passthrough()).min(1),
+}).passthrough()
+
 export const REPOSITORY_FLOW_PROMPT_VERSION = 'fuzequality-repository-flow-v3'
 export const REPOSITORY_FLOW_SCHEMA_VERSION = '1.0'
 export const REPOSITORY_FLOW_SOURCE_BUDGET_BYTES = 64 * 1024
@@ -172,15 +178,16 @@ export class LiteLlmRepositoryFlowAnalyzer {
       throw error
     }
     if (!response.ok) throw new Error(`LiteLLM returned ${response.status}`)
-    let payload: { choices?: Array<{ message?: { content?: string } }> }
+    let payload: unknown
     try {
-      payload = await response.json() as typeof payload
+      payload = await response.json()
     } catch (error) {
       if (signal.aborted) throw new RepositoryFlowAnalysisTimeoutError(this.timeoutMs)
       throw new RepositoryFlowAnalysisInvalidResponseError()
     }
-    const content = payload.choices?.[0]?.message?.content
-    if (!content) throw new RepositoryFlowAnalysisInvalidResponseError()
+    const envelope = liteLlmEnvelopeSchema.safeParse(payload)
+    if (!envelope.success) throw new RepositoryFlowAnalysisInvalidResponseError()
+    const content = envelope.data.choices[0].message.content
     let parsed: z.infer<typeof responseSchema>
     try {
       parsed = responseSchema.parse(JSON.parse(content))
