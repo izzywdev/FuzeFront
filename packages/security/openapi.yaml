@@ -576,6 +576,17 @@ paths:
         signature; the caller must already have done that.
 
 
+        **Tenant.** Every tenant's sessions are signed with the same secret, so
+        a signature alone cannot tell two tenants' tokens apart; the token's
+        `tid` claim plus the tenant serving the request is what separates them.
+        Send the token's `tid` as `tenantId`. When multi-tenant identity is
+        enabled a session is active only for the tenant that minted it: the
+        answer is `{ active: false }` unless `tenantId` equals the tenant that
+        serves this request (selected by the request `Host`, so call the host of
+        the tenant your service belongs to). A token with no `tid` is active
+        only in single-tenant mode, where `tenantId` may be omitted.
+
+
         **Fail-closed.** A store outage is `503`, never `{ active: true }` and
         never `{ active: false }`. A consumer MUST treat `503` as a retryable
         service condition, not as a revoked session: refusing every user because
@@ -4364,6 +4375,16 @@ components:
           minLength: 1
           maxLength: 128
           description: The `sessionId` claim of the session token.
+        tenantId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >-
+            The `tid` claim of the session token, if it has one. Required for a
+            session to count as active when multi-tenant identity is enabled
+            (it must equal the tenant serving the request). Omit it only for a
+            token that carries no `tid`, which is valid only in single-tenant
+            mode.
       required: [userId, sessionId]
     SessionValidation:
       type: object

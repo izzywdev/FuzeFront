@@ -10,8 +10,15 @@ Existing operations and response shapes are unchanged.
 
 - `POST /v1/security/sessions/validate` (`validateSession`), service-to-service
   only: the bearer must be a `fuze-workload` token with the `sessions:validate`
-  scope. Body `SessionValidateRequest { userId, sessionId }` (both required,
-  `additionalProperties: false`); response `SessionValidation { active }`.
+  scope. Body `SessionValidateRequest { userId, sessionId, tenantId? }`
+  (`userId` and `sessionId` required, `additionalProperties: false`); response
+  `SessionValidation { active }`.
+- `tenantId` is the token's `tid` claim. When multi-tenant identity is enabled a
+  session is active only for the tenant that minted it (`tenantId` must equal the
+  tenant serving the request); a token with no `tid` is active only in
+  single-tenant mode. Every tenant's sessions share one signing secret and the
+  consumer packages do not check `tid`, so this is the one place the boundary can
+  be enforced for them.
 - `active` is `true` only when the session exists, is unexpired, and belongs to
   the supplied `userId`. Unknown, revoked, expired and user-mismatch are all the
   same `200 { active: false }` with no reason, so the endpoint is not an oracle
