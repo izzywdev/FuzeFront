@@ -24,6 +24,14 @@ export class RepositoryFlowAnalysisTimeoutError extends Error {
   }
 }
 
+/** Safe classification for a successful LiteLLM request whose body cannot satisfy the reviewed response contract. */
+export class RepositoryFlowAnalysisInvalidResponseError extends Error {
+  constructor() {
+    super('FuzeInfra LiteLLM repository analysis returned an invalid response')
+    this.name = 'RepositoryFlowAnalysisInvalidResponseError'
+  }
+}
+
 const candidateId = (repositoryId: string, revision: string, source: string, identity: unknown) =>
   `repo-flow:${createHash('sha256').update(`${repositoryId}\u0000${revision}\u0000${source}\u0000${JSON.stringify(identity)}`).digest('hex').slice(0, 24)}`
 
@@ -169,11 +177,16 @@ export class LiteLlmRepositoryFlowAnalyzer {
       payload = await response.json() as typeof payload
     } catch (error) {
       if (signal.aborted) throw new RepositoryFlowAnalysisTimeoutError(this.timeoutMs)
-      throw error
+      throw new RepositoryFlowAnalysisInvalidResponseError()
     }
     const content = payload.choices?.[0]?.message?.content
-    if (!content) throw new Error('LiteLLM returned no repository flow analysis')
-    const parsed = responseSchema.parse(JSON.parse(content))
+    if (!content) throw new RepositoryFlowAnalysisInvalidResponseError()
+    let parsed: z.infer<typeof responseSchema>
+    try {
+      parsed = responseSchema.parse(JSON.parse(content))
+    } catch {
+      throw new RepositoryFlowAnalysisInvalidResponseError()
+    }
     // Grounding means evidence the model actually received, not merely an ID
     // that happens to exist elsewhere in a larger repository inventory.
     const allowed = new Set(safeArtifacts.map(item => item.id))

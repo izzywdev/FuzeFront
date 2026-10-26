@@ -590,6 +590,16 @@ describe('contract discovery', () => {
       expect(schemas.RepositoryProcessingStatus.properties.lastScanFailure.$ref).toBe(
         '#/components/schemas/RepositoryScanFailure'
       )
+      expect(schemas.RepositoryProcessingStatus.properties.lastAnalysis.properties.errorCode.enum).toEqual([
+        'INTELLIGENCE_UNAVAILABLE',
+        'INTELLIGENCE_TIMEOUT',
+        'INTELLIGENCE_INVALID_RESPONSE',
+      ])
+      expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/analysis-status'].post.requestBody.content[
+          'application/json'
+        ].schema.properties.errorCode.enum
+      ).toEqual(['INTELLIGENCE_UNAVAILABLE', 'INTELLIGENCE_TIMEOUT', 'INTELLIGENCE_INVALID_RESPONSE'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/analysis-retries'].post.responses['409'].content[
           'application/json'

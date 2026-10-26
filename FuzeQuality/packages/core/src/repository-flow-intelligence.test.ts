@@ -5,6 +5,7 @@ import {
   REPOSITORY_FLOW_PROMPT_VERSION,
   REPOSITORY_FLOW_SCHEMA_VERSION,
   REPOSITORY_FLOW_SOURCE_BUDGET_BYTES,
+  RepositoryFlowAnalysisInvalidResponseError,
   RepositoryFlowAnalysisTimeoutError,
 } from './repository-flow-intelligence'
 
@@ -307,6 +308,20 @@ describe('repository flow wireframes', () => {
       item.title || item.sourcePath || item.summary || (item.evidence as string[]).length,
     ))).toBe(true)
     expect(omittedId).not.toBe('')
+  })
+
+  it.each([
+    ['malformed LiteLLM envelope', new Response('not-json')],
+    ['missing LiteLLM content', new Response(JSON.stringify({ choices: [{}] }))],
+    ['malformed analysis JSON', new Response(JSON.stringify({ choices: [{ message: { content: 'not-json' } }] }))],
+    ['schema-invalid analysis', new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ flows: [{ title: '', confidence: 2, evidenceArtifactIds: [], steps: [] }] }) } }] }))],
+  ])('classifies %s without retaining provider output', async (_label, response) => {
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer(
+      'http://litellm/v1', 'quality-analysis', undefined, (async () => response) as typeof fetch,
+    )
+
+    await expect(analyzer.analyze(repository, 'abc', artifacts))
+      .rejects.toEqual(new RepositoryFlowAnalysisInvalidResponseError())
   })
 
   it('aborts a stalled FuzeInfra LiteLLM analysis at its configured deadline', async () => {
