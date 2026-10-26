@@ -237,13 +237,17 @@ def _label_disqualifier(labels):
     return ""
 
 
-def candidate_prs(repo, token):
-    """Open, non-draft PRs carrying the opt-in label and no hold label.
+def candidate_prs(repo, branch, token):
+    """Open, non-draft PRs targeting `branch`, opted in and not held.
 
-    The list endpoint omits `auto_merge` and `mergeable`, so this is only the
-    cheap first filter; the per-PR GET in evaluate() reads the rest — and
-    re-checks the labels, which may have changed since this listing."""
-    prs = _get_all(f"/repos/{repo}/pulls?state=open", token)
+    Scoped to `branch` because the required-check set is loaded for that branch
+    alone (required_contexts()): a PR targeting a different base has different
+    gates, so judging it against this branch's contexts is simply wrong. The
+    list is filtered server-side by base, and evaluate() re-checks the base on
+    the fresh PR. The list endpoint omits `auto_merge`/`mergeable`, so this is
+    only the cheap first filter; the per-PR GET in evaluate() reads the rest."""
+    b = urllib.parse.quote(branch, safe="")
+    prs = _get_all(f"/repos/{repo}/pulls?state=open&base={b}", token)
     out = []
     for p in prs:
         if p.get("draft"):
@@ -254,7 +258,7 @@ def candidate_prs(repo, token):
     return out
 
 
-def evaluate(repo, number, needed, token):
+def evaluate(repo, number, needed, branch, token):
     """Decide whether PR #number is ready to merge. Returns a dict verdict."""
     pr, err, _ = _req("GET", f"/repos/{repo}/pulls/{number}", token)
     if err is not None:
@@ -263,6 +267,12 @@ def evaluate(repo, number, needed, token):
 
     if pr.get("state") != "open" or pr.get("draft"):
         v["reason"] = "not an open non-draft PR"
+        return v
+    # Re-check the base on the fresh PR: `needed` was loaded for `branch`, so a
+    # PR whose base is (now) something else must not be judged by these gates.
+    pr_base = pr.get("base", {}).get("ref")
+    if pr_base != branch:
+        v["reason"] = f"base is {pr_base!r}, not the evaluated branch {branch!r}"
         return v
     # Re-check labels on the FRESHLY-FETCHED PR, not just the list response that
     # candidate_prs() filtered. candidate_prs() lists PRs, then each is fetched
@@ -337,11 +347,11 @@ def run(repo, branch, token, dry_run, fail_on_error):
     if not _valid_repo(repo):
         raise Blind(f"refusing malformed repo {repo!r}")
     needed = required_contexts(repo, branch, token)
-    numbers = candidate_prs(repo, token)
+    numbers = candidate_prs(repo, branch, token)
     results = []
     had_real_error = False
     for n in numbers:
-        v = evaluate(repo, n, needed, token)
+        v = evaluate(repo, n, needed, branch, token)
         if v["ready"]:
             if dry_run:
                 v["action"] = "would-merge (dry-run)"

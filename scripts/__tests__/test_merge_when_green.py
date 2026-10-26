@@ -43,7 +43,7 @@ RULESET_EMPTY = [{"type": "pull_request", "parameters": {}}]
 
 
 def _armed_pr(number, sha, mergeable=True, auto_merge=True, draft=False,
-              labels=("auto-merge",), state="open"):
+              labels=("auto-merge",), state="open", base="master"):
     return {
         "number": number,
         "state": state,
@@ -52,7 +52,7 @@ def _armed_pr(number, sha, mergeable=True, auto_merge=True, draft=False,
         "auto_merge": {"merge_method": "squash"} if auto_merge else None,
         "labels": [{"name": l} for l in labels],
         "head": {"sha": sha},
-        "base": {"ref": "master"},
+        "base": {"ref": base},
     }
 
 
@@ -251,6 +251,17 @@ class SafetyGatesBlockMerge(StubServerCase):
                                "labels": [{"name": "auto-merge"}]}]
         self.fx.pulls = {12: _armed_pr(12, "s12", labels=())}  # opt-in gone since
         self.fx.checks = {"s12": _green_checks(["gate-build", "gate-test", "gate-lint"])}
+        self.assertEqual(self._run(), 0)
+        self.assertEqual(self.fx.merged, [])
+
+    def test_pr_targeting_other_base_is_skipped(self):
+        """The required set is loaded for master, so a PR targeting a different
+        base (e.g. a release branch) must not be judged by master's gates —
+        evaluate() rejects on the base mismatch rather than merge it."""
+        self.fx.pulls_list = [{"number": 20, "draft": False,
+                               "labels": [{"name": "auto-merge"}]}]
+        self.fx.pulls = {20: _armed_pr(20, "s20", base="release/1.2")}
+        self.fx.checks = {"s20": _green_checks(["gate-build", "gate-test", "gate-lint"])}
         self.assertEqual(self._run(), 0)
         self.assertEqual(self.fx.merged, [])
 
