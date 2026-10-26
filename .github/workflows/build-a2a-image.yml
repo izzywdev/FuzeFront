@@ -105,23 +105,12 @@ jobs:
 
       - name: Fetch latest shared-base tag
         id: base
-        run: |
-          # Resolve the latest published tag from the shared fuze-a2a image so
-          # this image pins the same base the shared deployment already uses.
-          # Falls back to 'latest' if the registry call fails (pull_request context
-          # has no push token, but the image is public/anonymous-pullable).
-          tag=$(
-            curl -sfL \
-              "https://ghcr.io/v2/izzywdev/fuze-a2a/tags/list" \
-              -H "Accept: application/json" 2>/dev/null \
-            | python3 -c "
-          import json,sys
-          d=json.load(sys.stdin)
-          tags=[t for t in d.get('tags',[]) if len(t)==12 and all(c in '0123456789abcdef' for c in t)]
-          print(sorted(tags)[-1] if tags else 'latest')
-          " 2>/dev/null
-          ) || tag="latest"
-          echo "tag=${tag:-latest}" >> "$GITHUB_OUTPUT"
+        # GHCR OCI v2 tag-list requires authentication even for public packages;
+        # unauthenticated requests return 401, which caused the SHA-selection
+        # logic to silently fall back to 'latest' on every run (dead code).
+        # Using :latest explicitly is the honest default until explicit base
+        # pinning is wired; the fuze-a2a base is a controlled internal image.
+        run: echo "tag=latest" >> "$GITHUB_OUTPUT"
 
       - name: Build & push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -190,7 +179,7 @@ jobs:
           NEW_SHA: ${{ steps.tag.outputs.sha }}
         run: |
           python3 - <<'PYEOF'
-          import os, re
+          import os, re, sys
           sha = os.environ['NEW_SHA']
           for path in [
               'deploy/helm/fuzefront/values-prod.yaml',
@@ -201,6 +190,10 @@ jobs:
                   f'\\g<1>"{sha}"',
                   content,
               )
+              if updated == content:
+                  print(f'::error::tag regex did not match in {path} — '
+                        f'values file may have been reformatted; update the regex in the tag-update step')
+                  sys.exit(1)
               open(path, 'w').write(updated)
           PYEOF
 
