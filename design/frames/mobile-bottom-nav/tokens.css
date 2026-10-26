@@ -125,7 +125,12 @@ body {
    ===================================================================== */
 /* Collapsed top bar on xs/sm */
 .m-topbar {
-  height: var(--top-bar-height-mobile); flex: none;
+  /* Reserve the notch inset ON TOP of the control height: with global border-box
+     sizing, folding --safe-area-top into `padding-top` alone would eat into the
+     52px bar and leave < the 44px touch-target below the notch. Adding the inset
+     to `height` keeps the full control area below the notch — mirrors how
+     .bottom-nav adds --safe-area-bottom to its height. */
+  height: calc(var(--top-bar-height-mobile) + var(--safe-area-top)); flex: none;
   display: flex; align-items: center; gap: var(--space-3);
   padding: 0 var(--space-4);
   padding-top: var(--safe-area-top);
