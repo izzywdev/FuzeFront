@@ -138,7 +138,21 @@ jobs:
           # (no copyleft); the package is a server-side Kafka producer, never
           # conveyed to end-users. Exempted by name for the same reason Zlib/ISC
           # would belong on the allow-list if they were valid SPDX entries here.
-          allow-dependencies-licenses: "pkg:githubactions/trufflesecurity/trufflehog, pkg:pypi/confluent-kafka"
+          #
+          # typing-extensions (pkg:pypi/typing-extensions) is the CPython typing
+          # backport, licensed PSF (Python-2.0). GitHub's dependency-review
+          # action emits a compound SPDX expression
+          # "Python-2.0 AND GPL-1.0-or-later AND Python-2.0 AND BSD-3-Clause ..."
+          # because it aggregates license signals from multiple CPython-bundled
+          # artifacts that appear in the PyPI SPDX metadata. The actual
+          # typing-extensions distribution is Python-2.0 (PSF) only — a
+          # permissive license with no copyleft. GPL-1.0-or-later must NOT be
+          # added to allow-licenses (that would permit copyleft in the product's
+          # own npm graph); instead we exempt this package by name, the same
+          # pattern applied to confluent-kafka. Surfaced by
+          # build/a2a/requirements.txt which pins typing-extensions as a
+          # transitive dep of pydantic/jsonschema (PR #1710).
+          allow-dependencies-licenses: "pkg:githubactions/trufflesecurity/trufflehog, pkg:pypi/confluent-kafka, pkg:pypi/typing-extensions"
           # GHSA-qwcr-r2fm-qrc7 (body-parser@1.20.2 DoS via URL-encoding, high
           # severity): transitive via express@4.19.2, same version already on
           # master (see .trivyignore) and unrelated to this PR's devportal
