@@ -1,75 +1,56 @@
-"""Transactional-outbox writer — Python mirror of enqueueEvent in
-backend/core/src/events/outbox.ts.
-
-``enqueue_event`` inserts ONE ``event_outbox`` row inside the caller's open DB
-transaction, so the event is persisted atomically with the state change it
-describes (no dual-write gap). A separate relay (see ``relay.py``) later
-publishes pending rows to Kafka.
-
-The DB handle is injected via the ``OutboxDb`` protocol so the enqueue logic is
-unit-testable with an in-memory fake; ``PsycopgOutboxDb`` (behind the
-``postgres`` extra) is the concrete Postgres adapter and applies the required
-``%s::jsonb`` cast, exactly like the Node ``?::jsonb``.
-
-event_outbox columns (migration 009): id uuid, topic varchar(255), payload jsonb,
-correlation_id varchar(128), status outbox_status_enum('pending','sent','failed'),
-attempts int, last_error text, created_at, sent_at.
-"""
+"""Transactional outbox writer. Call inside the same transaction as the state change."""
 
 from __future__ import annotations
 
-import json
-import uuid
-from typing import Any, Protocol, runtime_checkable
+from datetime import UTC, datetime
+from typing import Any
 
-# INSERT used by the Postgres adapter. The payload placeholder is cast to jsonb
-# because Postgres rejects an implicit text->jsonb coercion in a parameterized
-# query (identical reason to the Node `?::jsonb`).
-_INSERT_SQL = (
-    "INSERT INTO event_outbox "
-    "(id, topic, payload, correlation_id, status, attempts) "
-    "VALUES (%s, %s, %s::jsonb, %s, 'pending', 0)"
-)
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+
+from .envelope import EnvelopeError, validate_envelope
+from .tables import event_outbox, new_row_id
 
 
-@runtime_checkable
-class OutboxDb(Protocol):
-    """Minimal DB surface the outbox writer needs.
+def _row_values(event: dict[str, Any]) -> dict[str, Any]:
+    errs = validate_envelope(event)
+    if errs:
+        raise EnvelopeError(errs)
+    occurred = datetime.fromisoformat(event["occurredAt"])
+    if occurred.tzinfo is None:  # pattern forbids this; defensive
+        occurred = occurred.replace(tzinfo=UTC)
+    return {
+        "id": new_row_id(),
+        "event_id": event["eventId"],
+        "topic": event["topic"],
+        "payload": event["payload"],
+        "aggregate_type": event["aggregateType"],
+        "aggregate_id": event["aggregateId"],
+        "aggregate_version": event["aggregateVersion"],
+        "producer": event["producer"],
+        "correlation_id": event["correlationId"],
+        "causation_id": event.get("causationId"),
+        "schema_version": event["schemaVersion"],
+        "status": "pending",
+        "attempts": 0,
+        # envelope occurredAt == time of the state change, set at enqueue (tables.md)
+        "created_at": occurred,
+    }
 
-    ``execute`` runs a parameterized statement on the caller's current
-    transaction — it must NOT commit (atomicity is the caller's).
+
+def enqueue_event(session: Session, event: dict[str, Any]) -> str:
+    """Insert one v2 outbox row via a sync Session; returns ``eventId``.
+
+    Does NOT commit: the row commits (or rolls back) with the caller's state
+    change. A duplicate ``(aggregate_type, aggregate_id, aggregate_version)``
+    raises ``IntegrityError`` at flush/commit — a racing second writer fails
+    instead of forking the aggregate's history.
     """
-
-    def execute(self, sql: str, params: tuple) -> Any:  # pragma: no cover - protocol
-        ...
-
-
-def enqueue_event(db: OutboxDb, topic: str, payload: Any, correlation_id: str) -> str:
-    """Write one pending ``event_outbox`` row inside the caller's transaction.
-
-    MUST be called with the same transaction/connection that performs the state
-    change: if that transaction rolls back, the event is dropped with it.
-    Returns the generated row id.
-    """
-    row_id = str(uuid.uuid4())
-    db.execute(
-        _INSERT_SQL,
-        (row_id, topic, json.dumps(payload), correlation_id),
-    )
-    return row_id
+    session.execute(event_outbox.insert().values(**_row_values(event)))
+    return event["eventId"]
 
 
-class PsycopgOutboxDb:
-    """``OutboxDb`` backed by a psycopg connection/cursor (``postgres`` extra).
-
-    Pass either a connection or a cursor already enlisted in the caller's
-    transaction. ``execute`` does not commit.
-    """
-
-    def __init__(self, conn_or_cursor: Any):
-        self._target = conn_or_cursor
-
-    def execute(self, sql: str, params: tuple) -> Any:
-        cur = self._target
-        # psycopg Connection.execute exists in v3; a cursor has .execute too.
-        return cur.execute(sql, params)
+async def enqueue_event_async(session: AsyncSession, event: dict[str, Any]) -> str:
+    """Async twin of :func:`enqueue_event` for ``AsyncSession``."""
+    await session.execute(event_outbox.insert().values(**_row_values(event)))
+    return event["eventId"]

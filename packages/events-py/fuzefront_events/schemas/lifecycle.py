@@ -8,7 +8,7 @@ Each ``validate_*`` returns the validated payload dict or raises
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any
 
 from ._validate import _V
 

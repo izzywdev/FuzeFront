@@ -12,6 +12,15 @@ import {
   DEFAULT_NAV_SECTION,
   navSectionRank,
 } from './manifest.schema'
+import {
+  ScopeLevel,
+  OrgInstallMode,
+  GOVERNANCE_DEFAULTS,
+  enforceOrgInstallMode,
+  APP_GOVERNANCE,
+  deriveGovernanceFromManifest,
+  governanceColumns,
+} from './app-governance'
 
 // Owner ruling 2026-08-19/2026-08-25: "there should be no app without orgid.
 // at the minimum fuzefront itself the root org is the orgid for our own
@@ -61,6 +70,16 @@ export interface AppRecord {
    */
   createdByUserId?: string | null
   manifest: AppManifest
+  // Operator-governed, DB-authoritative fields (not from the manifest). These
+  // are managed via the API / admin UI and are never clobbered by an app's
+  // self-registration. See app-governance.ts.
+  scopeLevel: ScopeLevel
+  orgInstallMode: OrgInstallMode
+  personalRemovable: boolean
+  orgRemovable: boolean
+  systemApp: boolean
+  defaultInstallPersonal: boolean
+  defaultInstallOrg: boolean
   isHealthy: boolean | null
   lastSeenAt: string | null
   createdAt: string
@@ -78,6 +97,21 @@ export interface AppCaller {
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
 
+/**
+ * Total timestamp -> ISO conversion for response mapping. A stored 'infinity' /
+ * '-infinity' (node-postgres: a non-finite Date/number) or a year outside
+ * 0000..9999 (extended-year ISO, not RFC 3339) must never throw and turn a read
+ * into a 500; it maps to null so the caller can fall back.
+ */
+export function safeIso(d: unknown): string | null {
+  if (d === null || d === undefined || d === '') return null
+  const t = new Date(d as any)
+  if (Number.isNaN(t.getTime())) return null
+  const y = t.getUTCFullYear()
+  if (y < 0 || y > 9999) return null
+  return t.toISOString()
+}
+
 function rowToApp(row: any): AppRecord {
   const manifest: AppManifest =
     typeof row.manifest === 'string' ? JSON.parse(row.manifest) : row.manifest
@@ -89,10 +123,24 @@ function rowToApp(row: any): AppRecord {
     organizationId: row.organization_id ?? null,
     createdByUserId: row.created_by_user_id ?? null,
     manifest,
+    scopeLevel: (row.scope_level ?? GOVERNANCE_DEFAULTS.scopeLevel) as ScopeLevel,
+    orgInstallMode: (row.org_install_mode ??
+      GOVERNANCE_DEFAULTS.orgInstallMode) as OrgInstallMode,
+    personalRemovable:
+      row.personal_removable === undefined || row.personal_removable === null
+        ? GOVERNANCE_DEFAULTS.personalRemovable
+        : Boolean(row.personal_removable),
+    orgRemovable:
+      row.org_removable === undefined || row.org_removable === null
+        ? GOVERNANCE_DEFAULTS.orgRemovable
+        : Boolean(row.org_removable),
+    systemApp: Boolean(row.system_app),
+    defaultInstallPersonal: Boolean(row.default_install_personal),
+    defaultInstallOrg: Boolean(row.default_install_org),
     isHealthy: row.is_healthy === null || row.is_healthy === undefined ? null : Boolean(row.is_healthy),
-    lastSeenAt: row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null,
-    createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
-    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+    lastSeenAt: safeIso(row.last_seen_at),
+    createdAt: safeIso(row.created_at) ?? new Date().toISOString(),
+    updatedAt: safeIso(row.updated_at) ?? new Date().toISOString(),
   }
 }
 
@@ -222,13 +270,117 @@ function readJson(v: unknown): Record<string, any> {
 }
 
 function rowToPublication(row: any): PublicationRow {
-  const iso = (d: unknown) => (d ? new Date(d as any).toISOString() : null)
+  const iso = safeIso
   return {
     submittedAt: iso(row.marketplace_submitted_at),
     isApproved: Boolean(row.is_marketplace_approved),
     approvedAt: iso(row.marketplace_approved_at),
     approvedBy: row.approved_by ?? null,
     metadata: readJson(row.marketplace_metadata),
+  }
+}
+
+// ── marketplace review queue (GET /publication-requests) ──────────────────────
+export type PublicationQueueStatus = 'pending' | 'approved' | 'rejected'
+export const PUBLICATION_QUEUE_STATUSES: readonly PublicationQueueStatus[] = ['pending', 'approved', 'rejected']
+
+export interface PublicationQueuePage {
+  items: { app: AppRecord; publication: PublicationRow }[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
+/** Thrown for a malformed / wrong-status cursor; the route maps it to 400. */
+export class InvalidCursorError extends Error {
+  constructor() {
+    super('invalid cursor')
+    this.name = 'InvalidCursorError'
+  }
+}
+
+/**
+ * The instant each queue is ordered by ("oldest first by submittedAt"). It MUST
+ * be a value that does not change while the row stays in that queue, or the
+ * keyset cursor would skip/repeat rows under concurrent writes:
+ *  - pending : marketplace_submitted_at (immutable until decided).
+ *  - approved: marketplace_approved_at (the contract's `approvedAt`, set once by
+ *              approve), falling back to creation time for legacy rows with no
+ *              recorded approval. NOT the retained submission instant: reviews
+ *              can complete out of submission order.
+ *  - rejected: reject clears marketplace_submitted_at, so the stable instant is
+ *              the recorded rejectedAt (immutable until resubmission moves the
+ *              row to pending); a missing/unparseable value falls back to
+ *              creation time (see "cast-safety" below).
+ * Every expression is truncated to ms so it compares exactly with the
+ * ms-precision ISO string carried in the cursor (JS Date has no microseconds).
+ */
+function publicationSortExpr(status: PublicationQueueStatus): string {
+  switch (status) {
+    case 'pending':
+      return sortInstant('marketplace_submitted_at')
+    case 'approved':
+      return sortInstant('marketplace_approved_at', 'created_at')
+    case 'rejected':
+      return sortInstant(REJECTED_AT_SQL, 'created_at')
+  }
+}
+
+// ── cast-safety for the sort key ───────────────────────────────────────────────
+// Nothing stored may make the queue query RAISE or yield a key the cursor cannot
+// round-trip, or one bad legacy row would 500 (or silently skip rows from) the
+// whole view. Hazards handled here:
+//  - a rejectedAt string that is shape-valid but not a real timestamp
+//    ('2026-01-01Tbogus', '2026-02-30T00:00:00Z', bad zone): cast via
+//    apps_try_timestamptz() (migration 019), which yields NULL instead of raising.
+//    The prefilter regex also excludes the PG special inputs ('now', 'today',
+//    'epoch', ...) that cast fine but are NOT stable instants.
+//  - 'infinity' / '-infinity' / years outside 0001..9999 (JS Date.toISOString
+//    would emit an extended year or throw, and the cursor would no longer parse):
+//    bounded() turns them into NULL.
+//  - a NULL key (keyset `NULL > x` is NULL -> the row would vanish): the final
+//    COALESCE fallback is the epoch, so every row has a finite, total-ordered key.
+const EPOCH_SQL = "'1970-01-01 00:00:00+00'::timestamptz"
+const REJECTED_AT_SQL =
+  "(CASE WHEN (marketplace_metadata #>> '{publication,rejection,rejectedAt}') " +
+  "~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}' " +
+  "THEN apps_try_timestamptz(marketplace_metadata #>> '{publication,rejection,rejectedAt}') END)"
+
+function bounded(expr: string): string {
+  return (
+    `(CASE WHEN ${expr} >= '0001-01-01 00:00:00+00'::timestamptz ` +
+    `AND ${expr} <= '9999-12-31 23:59:59.999+00'::timestamptz THEN ${expr} END)`
+  )
+}
+
+/** First usable candidate, ms-truncated, never NULL, never infinite, always in 0001..9999. */
+function sortInstant(...candidates: string[]): string {
+  return `date_trunc('milliseconds', COALESCE(${candidates.map(bounded).join(', ')}, ${EPOCH_SQL}))`
+}
+
+function encodePublicationCursor(status: PublicationQueueStatus, at: unknown, slug: string): string {
+  return Buffer.from(`pq1|${status}|${new Date(at as any).toISOString()}|${slug}`, 'utf8').toString('base64url')
+}
+
+function decodePublicationCursor(
+  cursor: string,
+  status: PublicationQueueStatus
+): { at: string; slug: string } | null {
+  try {
+    const parts = Buffer.from(cursor, 'base64url').toString('utf8').split('|')
+    if (parts.length < 4 || parts[0] !== 'pq1') return null
+    // A cursor is only valid for the queue it was issued for.
+    if (parts[1] !== status) return null
+    // Strict ms-precision UTC ISO, years 0001..9999 only: anything else (forged,
+    // extended-year, non-canonical) is a 400 here rather than a cast error later.
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/.test(parts[2])) return null
+    const t = new Date(parts[2])
+    if (Number.isNaN(t.getTime()) || t.toISOString() !== parts[2]) return null
+    const slug = parts.slice(3).join('|')
+    // A NUL byte in a bound parameter makes Postgres raise (500), so reject it.
+    if (!slug || slug.includes('\u0000')) return null
+    return { at: parts[2], slug }
+  } catch {
+    return null
   }
 }
 
@@ -412,11 +564,29 @@ export class AppRegistryService {
       organization_id: organizationId,
       // Only present when creator-ownership is ON and a human registered it.
       ...(opts?.createdByUserId ? { created_by_user_id: opts.createdByUserId } : {}),
+      // Seeded from the manifest on FIRST create and never clobbered by a later
+      // re-registration (updateManifest no longer writes it). Must be set here,
+      // or a public/org app would be stuck at migration 002's 'private' default
+      // and stay invisible to non-owners forever.
+      visibility: (manifest.visibility ?? 'private') as Visibility,
       scope_level:
         manifest.scopeLevel ??
         (manifest.requiresOrgContext || manifest.visibility === 'organization'
           ? 'organization'
           : 'both'),
+      // Operator-governed; seeded from the manifest's intent on FIRST create and
+      // never clobbered afterwards (see updateManifest). Org-scoped ⇒ 'everyone'.
+      org_install_mode: enforceOrgInstallMode(
+        (manifest.scopeLevel ??
+          (manifest.requiresOrgContext ||
+          manifest.visibility === 'organization'
+            ? 'organization'
+            : 'both')) as ScopeLevel,
+        manifest.organizationInstallMode ??
+          (manifest.orgLevelOnly || manifest.installMode === 'everyone'
+            ? 'everyone'
+            : (manifest.installMode as OrgInstallMode | undefined))
+      ),
       is_active: false,
       heartbeat_token: heartbeatToken,
       created_at: now,
@@ -451,12 +621,12 @@ export class AppRegistryService {
         module: manifest.integration.module ?? null,
         manifest: JSON.stringify(manifest),
         mode: manifest.mode,
-        visibility: (manifest.visibility ?? existing.manifest.visibility ?? 'private') as Visibility,
-        ...(manifest.scopeLevel
-          ? { scope_level: manifest.scopeLevel }
-          : manifest.requiresOrgContext || manifest.visibility === 'organization'
-          ? { scope_level: 'organization' }
-          : {}),
+        // Operator-governed fields (visibility, scope_level, org_install_mode,
+        // removable/system/default-install) are DB-authoritative and are
+        // DELIBERATELY NOT written here: a product re-registering on every pod
+        // start must not clobber settings an operator changed via the admin UI.
+        // They are seeded once on first create (register) and edited through the
+        // API / admin UI thereafter.
         updated_at: new Date(),
         // Re-derive placement: a manifest update may move the app in the menu.
         ...navColumns(manifest),
@@ -484,6 +654,73 @@ export class AppRegistryService {
   async getPublication(slug: string): Promise<PublicationRow | null> {
     const row = await db('apps').where('slug', slug).whereNotNull('manifest').first()
     return row ? rowToPublication(row) : null
+  }
+
+  /**
+   * Cross-app marketplace review queue (`GET /publication-requests`). A
+   * single-service collection over this service's own `apps` table — NOT a
+   * cross-service join. Oldest first on the per-status sort instant (see
+   * publicationSortExpr), `slug` as the total-order tiebreak, keyset-paginated
+   * with an opaque cursor that is bound to the requested status.
+   *
+   * NO visibility/BOLA filter here by design: the caller is authorised as a
+   * platform admin by the route BEFORE this runs (fail closed), and the queue
+   * is by definition cross-org.
+   */
+  async listPublicationRequests(params: {
+    status: PublicationQueueStatus
+    limit?: number
+    cursor?: string | null
+  }): Promise<PublicationQueuePage> {
+    const limit = Math.min(Math.max(params.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT)
+    const sortExpr = publicationSortExpr(params.status)
+
+    let query = db('apps').whereNotNull('slug').whereNotNull('manifest')
+    switch (params.status) {
+      case 'pending':
+        query = query
+          .whereNotNull('marketplace_submitted_at')
+          .whereRaw('COALESCE(is_marketplace_approved, false) = false')
+        break
+      case 'approved':
+        query = query.whereRaw('COALESCE(is_marketplace_approved, false) = true')
+        break
+      case 'rejected':
+        // Mirrors publicationStatus(): not approved, submission cleared, and a
+        // recorded rejection.
+        query = query
+          .whereRaw('COALESCE(is_marketplace_approved, false) = false')
+          .whereNull('marketplace_submitted_at')
+          .whereRaw("jsonb_typeof(marketplace_metadata #> '{publication,rejection}') = 'object'")
+        break
+    }
+
+    if (params.cursor) {
+      const c = decodePublicationCursor(params.cursor, params.status)
+      if (!c) throw new InvalidCursorError()
+      query = query.whereRaw(`(${sortExpr} > ?::timestamptz OR (${sortExpr} = ?::timestamptz AND slug > ?))`, [
+        c.at,
+        c.at,
+        c.slug,
+      ])
+    }
+
+    const rows = await query
+      .select('apps.*', db.raw(`${sortExpr} AS queue_sort_at`))
+      .orderByRaw(`${sortExpr} ASC`)
+      .orderBy('slug', 'asc')
+      .limit(limit + 1)
+
+    const hasMore = rows.length > limit
+    const page = hasMore ? rows.slice(0, limit) : rows
+    const last = page[page.length - 1]
+    const nextCursor = hasMore && last ? encodePublicationCursor(params.status, last.queue_sort_at, last.slug) : null
+
+    return {
+      items: page.map((row: any) => ({ app: rowToApp(row), publication: rowToPublication(row) })),
+      nextCursor,
+      hasMore,
+    }
   }
 
   /** Marks the app as submitted to the marketplace (pending review). */
@@ -664,11 +901,13 @@ export class AppRegistryService {
         // any other, owned by the platform root org rather than org-less.
         organization_id: ROOT_ORG_ID,
         visibility: (manifest.visibility ?? 'public') as Visibility,
-        scope_level:
-          manifest.scopeLevel ??
-          (manifest.requiresOrgContext || manifest.visibility === 'organization'
-            ? 'organization'
-            : 'both'),
+        // Seed operator governance for the built-in on first create: an explicit
+        // per-slug policy (fuzeagent is core on personal) or one derived from the
+        // manifest. Already-existing built-ins keep their DB state (early return
+        // above); existing rows are seeded instead by migration 020.
+        ...governanceColumns(
+          APP_GOVERNANCE[manifest.slug] ?? deriveGovernanceFromManifest(manifest)
+        ),
         is_active: status === 'activated',
         heartbeat_token: heartbeatToken,
         created_at: now,

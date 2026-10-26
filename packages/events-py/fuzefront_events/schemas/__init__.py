@@ -1,3 +1,4 @@
+# ruff: noqa: F401
 """Per-topic payload validators mirroring shared/src/kafka/schemas.
 
 Re-exports every ``validate_*`` function from the domain modules. The topic ->

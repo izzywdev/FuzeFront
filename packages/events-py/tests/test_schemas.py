@@ -8,7 +8,10 @@ import copy
 
 import pytest
 
-from fuzefront_events import SchemaValidationError, schema_for_topic
+# Submodule imports: the payload-schema mirror is stdlib-only, so its tests
+# stay runnable without the async runtime's deps (aiokafka/sqlalchemy/…).
+from fuzefront_events.errors import SchemaValidationError
+from fuzefront_events.registry import schema_for_topic
 
 U = "11111111-1111-1111-1111-111111111111"
 U2 = "22222222-2222-2222-2222-222222222222"
@@ -17,46 +20,88 @@ TS = "2026-01-01T00:00:00Z"
 # A valid payload per topic (one per domain + a few edge cases).
 VALID = {
     "app.registered": {
-        "slug": "picker", "name": "Picker", "mode": "portal",
-        "integrationType": "module-federation", "builtin": False,
-        "organizationId": None, "registeredAt": TS,
+        "slug": "picker",
+        "name": "Picker",
+        "mode": "portal",
+        "integrationType": "module-federation",
+        "builtin": False,
+        "organizationId": None,
+        "registeredAt": TS,
     },
     "app.heartbeat": {"slug": "picker", "status": "online", "seenAt": TS},
     "billing.llm.usage": {
-        "userId": U, "orgId": U2, "model": "gpt", "promptTokens": 1,
-        "completionTokens": 2, "totalTokens": 3, "conversationId": U, "timestamp": TS,
+        "userId": U,
+        "orgId": U2,
+        "model": "gpt",
+        "promptTokens": 1,
+        "completionTokens": 2,
+        "totalTokens": 3,
+        "conversationId": U,
+        "timestamp": TS,
     },
     "billing.payment.completed": {
-        "productKey": "p", "externalOrderId": "o", "entityType": "user",
-        "entityId": U, "stripeSessionId": "s", "stripePaymentIntentId": None,
-        "amountTotalCents": 100, "currency": "usd", "status": "paid", "occurredAt": TS,
+        "productKey": "p",
+        "externalOrderId": "o",
+        "entityType": "user",
+        "entityId": U,
+        "stripeSessionId": "s",
+        "stripePaymentIntentId": None,
+        "amountTotalCents": 100,
+        "currency": "usd",
+        "status": "paid",
+        "occurredAt": TS,
     },
     "identity.user.created": {"userId": U, "email": "a@b.co", "intent": "signup"},
     "identity.org.created": {
-        "organizationId": U, "slug": "acme", "name": "Acme", "type": "organization",
-        "parentId": None, "ownerId": None, "isActive": True,
+        "organizationId": U,
+        "slug": "acme",
+        "name": "Acme",
+        "type": "organization",
+        "parentId": None,
+        "ownerId": None,
+        "isActive": True,
     },
     "identity.org.deleted": {"organizationId": U, "slug": "acme", "ownerId": None, "cascade": "soft"},
     "identity.membership.added": {"organizationId": U, "userId": U2, "role": "admin"},
     "identity.invitation.created": {
-        "organizationId": U, "invitationId": U2, "invitedByUserId": U, "role": "member",
-        "memberType": "employee", "channel": "email", "email": "x@y.co", "expiresAt": TS,
+        "organizationId": U,
+        "invitationId": U2,
+        "invitedByUserId": U,
+        "role": "member",
+        "memberType": "employee",
+        "channel": "email",
+        "email": "x@y.co",
+        "expiresAt": TS,
     },
     "identity.authorization.changed": {
-        "organizationId": U, "subjectId": U2, "change": "membership_added", "role": "admin",
+        "organizationId": U,
+        "subjectId": U2,
+        "change": "membership_added",
+        "role": "admin",
     },
     "notify.email.requested": {
-        "to": "a@b.co", "template": "welcome", "vars": {}, "correlationId": "c1",
+        "to": "a@b.co",
+        "template": "welcome",
+        "vars": {},
+        "correlationId": "c1",
     },
     "portal.created": {
-        "portalId": "prt_1", "slug": "s", "organizationId": U,
-        "ownerEmail": "a@b.co", "status": "active",
+        "portalId": "prt_1",
+        "slug": "s",
+        "organizationId": U,
+        "ownerEmail": "a@b.co",
+        "status": "active",
     },
     "chat.response.chunk": {
-        "userId": "u", "conversationId": "c", "messageId": "m", "sequence": 0, "type": "delta",
+        "userId": "u",
+        "conversationId": "c",
+        "messageId": "m",
+        "sequence": 0,
+        "type": "delta",
     },
     "config.changed": {
-        "namespace": "theme", "scope": {"scopeType": "org", "scopeId": "o1"},
+        "namespace": "theme",
+        "scope": {"scopeType": "org", "scopeId": "o1"},
         "changedKeys": ["primaryColor"],
     },
 }
@@ -64,26 +109,39 @@ VALID = {
 
 def _sl_base():
     return {
-        "eventId": U, "organizationId": "org_abc",
+        "eventId": U,
+        "organizationId": "org_abc",
         "actor": {"type": "user", "userId": "usr_x"},
-        "listId": "front_sl_1", "listKey": "countries", "listRevision": 1,
+        "listId": "front_sl_1",
+        "listKey": "countries",
+        "listRevision": 1,
     }
 
 
 def _sl_list_snapshot():
     return {
-        "listId": "front_sl_1", "key": "countries", "sourceLocale": "en",
-        "status": "active", "name": "Countries", "description": None, "seed": None,
-        "createdAt": TS, "updatedAt": TS,
+        "listId": "front_sl_1",
+        "key": "countries",
+        "sourceLocale": "en",
+        "status": "active",
+        "name": "Countries",
+        "description": None,
+        "seed": None,
+        "createdAt": TS,
+        "updatedAt": TS,
     }
 
 
 VALID["selection-lists.list.created"] = {**_sl_base(), "list": _sl_list_snapshot()}
 VALID["selection-lists.access.granted"] = {
-    "eventId": U, "organizationId": "org_abc",
+    "eventId": U,
+    "organizationId": "org_abc",
     "actor": {"type": "user", "userId": "usr_x"},
-    "listId": "front_sl_1", "listKey": "countries", "userId": "usr_y",
-    "role": "list-viewer", "previousRole": None,
+    "listId": "front_sl_1",
+    "listKey": "countries",
+    "userId": "usr_y",
+    "role": "list-viewer",
+    "previousRole": None,
 }
 
 
@@ -134,8 +192,10 @@ def test_list_archived_requires_archived_status():
 
 def test_unregistered_billing_topics_publish_raw():
     for t in (
-        "billing.trial.ending", "billing.payment.failed",
-        "billing.tenant.registered", "billing.payment_method.updated",
+        "billing.trial.ending",
+        "billing.payment.failed",
+        "billing.tenant.registered",
+        "billing.payment_method.updated",
     ):
         assert schema_for_topic(t) is None
 
@@ -157,9 +217,13 @@ def test_datetime_requires_utc_z():
 # -- seed.* edge cases (findings: platform source, seed-list shape) ----------
 
 _SEED_OUTCOME_PLATFORM = {
-    "eventId": U, "requestId": None, "organizationId": "org_abc", "scope": "org",
+    "eventId": U,
+    "requestId": None,
+    "organizationId": "org_abc",
+    "scope": "org",
     "source": {"app": "platform", "service": "selection-list-service"},
-    "pack": {"key": "countries", "version": 1}, "trigger": "org-created",
+    "pack": {"key": "countries", "version": 1},
+    "trigger": "org-created",
 }
 
 
@@ -169,17 +233,23 @@ def test_seed_outcome_allows_platform_source():
     completed = {**_SEED_OUTCOME_PLATFORM, "outcome": "applied", "appliedVersion": 1, "lists": []}
     assert schema_for_topic("selection-lists.seed.completed")(completed)
     failed = {
-        **_SEED_OUTCOME_PLATFORM, "reason": "INTERNAL_ERROR",
-        "message": "boom", "retryable": True, "details": [],
+        **_SEED_OUTCOME_PLATFORM,
+        "reason": "INTERNAL_ERROR",
+        "message": "boom",
+        "retryable": True,
+        "details": [],
     }
     assert schema_for_topic("selection-lists.seed.failed")(failed)
 
 
 def _seed_requested(**over):
     base = {
-        "requestId": "app:org_abc:countries:v1", "organizationId": "org_abc", "scope": "org",
+        "requestId": "app:org_abc:countries:v1",
+        "organizationId": "org_abc",
+        "scope": "org",
         "source": {"app": "weather", "service": "weather-svc"},
-        "pack": {"key": "countries", "version": 1}, "trigger": "org-created",
+        "pack": {"key": "countries", "version": 1},
+        "trigger": "org-created",
         "attestation": {"kind": "service-token", "token": "tok"},
         "lists": [{"key": "countries", "sourceLocale": "en", "name": "Countries", "items": []}],
     }

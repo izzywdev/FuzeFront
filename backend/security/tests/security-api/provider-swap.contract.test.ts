@@ -168,6 +168,9 @@ class AltIdentityProvider implements IdentityProvider {
   }
   async revokeSession(): Promise<void> {}
   async revokeOtherSessions(): Promise<void> {}
+  async isSessionActive(): Promise<boolean> {
+    return false // fail-closed: this stand-in provider keeps no session store
+  }
   async getIdentityConnections(): Promise<IdentityConnections> {
     return { providers: [], hasPassword: true }
   }

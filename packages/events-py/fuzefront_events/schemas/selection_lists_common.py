@@ -53,19 +53,19 @@ MAX_FORK_ITEMS = 5000
 
 
 # ── scalars (TypeID-shaped strings) ────────────────────────────────────
-def org_id(v: "_V", field: str, **kw: Any) -> None:
+def org_id(v: _V, field: str, **kw: Any) -> None:
     v.string(field, pattern=ORG_ID_RE, max_len=255, **kw)
 
 
-def user_id(v: "_V", field: str, **kw: Any) -> None:
+def user_id(v: _V, field: str, **kw: Any) -> None:
     v.string(field, pattern=USER_ID_RE, max_len=255, **kw)
 
 
-def list_id(v: "_V", field: str, **kw: Any) -> None:
+def list_id(v: _V, field: str, **kw: Any) -> None:
     v.string(field, pattern=LIST_ID_RE, max_len=255, **kw)
 
 
-def item_id(v: "_V", field: str, **kw: Any) -> None:
+def item_id(v: _V, field: str, **kw: Any) -> None:
     v.string(field, pattern=ITEM_ID_RE, max_len=255, **kw)
 
 
@@ -86,9 +86,7 @@ def _actor_system(value: Any) -> dict:
 
 
 def validate_actor(value: Any) -> dict:
-    return discriminated(
-        "slActor", value, "type", {"user": _actor_user, "system": _actor_system}
-    )
+    return discriminated("slActor", value, "type", {"user": _actor_user, "system": _actor_system})
 
 
 # ── provenance + snapshots ─────────────────────────────────────────────
@@ -141,7 +139,7 @@ def item_snapshot(value: Any) -> dict:
     return v.done()
 
 
-def apply_event_base(v: "_V") -> None:
+def apply_event_base(v: _V) -> None:
     """Populate the fields shared by most list/item events (slListEventBaseV1)."""
     v.uuid("eventId")
     org_id(v, "organizationId")

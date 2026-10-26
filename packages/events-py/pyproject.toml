@@ -1,25 +1,44 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "fuzefront-events"
-version = "1.0.0"
-description = "Python mirror of the FuzeFront Kafka event contract (topics, schemas, envelope) plus a transactional-outbox writer and relay for Python services"
+version = "0.2.0"
+description = "FuzeFront Python events runtime (envelope v2, transactional outbox, relay, idempotent consumer) plus the v1 Kafka payload-contract mirror (topics + per-topic payload schemas)"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "UNLICENSED" }
-dependencies = []
+dependencies = [
+    "aiokafka>=0.10",
+    "sqlalchemy[asyncio]>=2.0",
+    "jsonschema>=4.18",
+    "fuzefront-identity>=1.0,<2",
+]
 
 [project.optional-dependencies]
-# Core (topics/schemas/envelope + outbox & relay LOGIC) is stdlib-only and
-# unit-testable with injected fakes. The concrete adapters import these.
-dev = ["pytest>=8.0"]
-postgres = ["psycopg[binary]>=3.1"]
-kafka = ["confluent-kafka>=2.3"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "aiosqlite>=0.19",
+    "psycopg[binary]>=3.1",
+    "asyncpg>=0.29",
+    "ruff>=0.5",
+]
 
 [tool.setuptools.packages.find]
 include = ["fuzefront_events*"]
 
+[tool.setuptools.package-data]
+fuzefront_events = ["envelope.v2.schema.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "postgres: needs a real Postgres (FUZEFRONT_EVENTS_TEST_PG_URL, e.g. postgresql+asyncpg://...); skipped when unset",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"

@@ -8,8 +8,9 @@ contract-parity test reads the live TypeScript source and fails on any drift.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Any, Mapping, Optional
+from typing import Any
 
 # Mirror of the TS `TOPICS` object. Keys and values are identical to
 # shared/src/kafka/types.ts (checked by tests/test_contract_parity.py).
@@ -79,7 +80,7 @@ def dlq_topic(topic: str) -> str:
 _PARTITION_KEY_FIELDS = ("organizationId", "userId", "portalId", "entityId", "appId")
 
 
-def partition_key_for_payload(payload: Any) -> Optional[str]:
+def partition_key_for_payload(payload: Any) -> str | None:
     """Derive the Kafka partition key from an event payload.
 
     Falls through organizationId -> userId -> portalId -> entityId -> appId,

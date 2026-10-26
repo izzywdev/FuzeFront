@@ -10,8 +10,9 @@ returns None for them, and the publisher then sends the payload unvalidated.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Optional
+from typing import Any
 
 from . import schemas as s
 from .topics import TOPICS
@@ -66,6 +67,6 @@ SCHEMA_BY_TOPIC: Mapping[str, Validator] = MappingProxyType(
 )
 
 
-def schema_for_topic(topic: str) -> Optional[Validator]:
+def schema_for_topic(topic: str) -> Validator | None:
     """Return the validator for ``topic``, or None if it publishes raw."""
     return SCHEMA_BY_TOPIC.get(topic)

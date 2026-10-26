@@ -11,7 +11,8 @@ Field names stay camelCase (the wire contract) throughout.
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any
 
 from ..errors import SchemaValidationError
 
@@ -29,9 +30,7 @@ _E164_RE = re.compile(r"^\+[1-9]\d{1,14}$")
 # '2026-99-99T99:99:99Z', so adding a range check here would make this Python
 # mirror REJECT values the Node contract ACCEPTS — a parity break in the other
 # direction. The only Node divergence to close is the required 'Z'.
-_DATETIME_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$"
-)
+_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 
 _MISSING = object()
 
@@ -48,7 +47,7 @@ class _V:
         self.payload = payload
         self.out: dict = {}
 
-    def fail(self, msg: str) -> "SchemaValidationError":
+    def fail(self, msg: str) -> SchemaValidationError:
         return SchemaValidationError(self.name, msg)
 
     # -- presence -------------------------------------------------------
@@ -66,9 +65,9 @@ class _V:
         *,
         required: bool = True,
         nullable: bool = False,
-        min_len: Optional[int] = None,
-        max_len: Optional[int] = None,
-        pattern: Optional[re.Pattern] = None,
+        min_len: int | None = None,
+        max_len: int | None = None,
+        pattern: re.Pattern | None = None,
     ) -> None:
         v = self._raw(field, required)
         if v is _MISSING:
@@ -134,8 +133,8 @@ class _V:
         *,
         required: bool = True,
         nullable: bool = False,
-        gt: Optional[int] = None,
-        ge: Optional[int] = None,
+        gt: int | None = None,
+        ge: int | None = None,
     ) -> None:
         v = self._raw(field, required)
         if v is _MISSING:
@@ -162,7 +161,9 @@ class _V:
             raise self.fail(f"field '{field}' must be an object")
         self.out[field] = dict(v)
 
-    def nested(self, field: str, validator: Validator, *, required: bool = True, nullable: bool = False) -> None:
+    def nested(
+        self, field: str, validator: Validator, *, required: bool = True, nullable: bool = False
+    ) -> None:
         v = self._raw(field, required)
         if v is _MISSING:
             return
@@ -182,8 +183,8 @@ class _V:
         item: Validator,
         *,
         required: bool = True,
-        min_len: Optional[int] = None,
-        max_len: Optional[int] = None,
+        min_len: int | None = None,
+        max_len: int | None = None,
     ) -> None:
         v = self._raw(field, required)
         if v is _MISSING:
@@ -207,8 +208,8 @@ class _V:
         field: str,
         *,
         required: bool = True,
-        min_len: Optional[int] = None,
-        allowed: Optional[Sequence[str]] = None,
+        min_len: int | None = None,
+        allowed: Sequence[str] | None = None,
     ) -> None:
         def _item(el: Any) -> str:
             if not isinstance(el, str):
@@ -247,9 +248,7 @@ def discriminated(
         raise SchemaValidationError(name, "must be an object")
     disc = value.get(key)
     if disc not in branches:
-        raise SchemaValidationError(
-            name, f"'{key}' must be one of {list(branches)}"
-        )
+        raise SchemaValidationError(name, f"'{key}' must be one of {list(branches)}")
     return branches[disc](value)
 
 

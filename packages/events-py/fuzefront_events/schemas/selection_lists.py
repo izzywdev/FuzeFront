@@ -366,7 +366,7 @@ _SEED_FAIL_REASONS = (
 )
 
 
-def _seed_outcome_base(v: "_V") -> None:
+def _seed_outcome_base(v: _V) -> None:
     v.uuid("eventId")
     v.string("requestId", nullable=True, pattern=SEED_REQUEST_ID_RE)
     org_id(v, "organizationId")
@@ -389,8 +389,7 @@ def validate_seed_completed(p: Any) -> dict:
         sv.string("key", pattern=KEY_RE)
         sv.enum(
             "action",
-            ("created", "updated", "unchanged", "archived",
-             "skipped-user-edited", "skipped-user-deleted"),
+            ("created", "updated", "unchanged", "archived", "skipped-user-edited", "skipped-user-deleted"),
         )
         sv.integer("itemsCreated", ge=0)
         sv.integer("itemsUpdated", ge=0)

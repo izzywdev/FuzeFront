@@ -87,7 +87,7 @@ carrying your heartbeat token:
 
 ```
 HTTP/1.1 201 Created
-X-App-Heartbeat-Token: 9f3a1c2e7b4d5f6089ab...   <- save this, it is shown ONCE
+X-App-Heartbeat-Token: <your-heartbeat-token>   <- save this, it is shown ONCE
 Content-Type: application/json
 
 {
@@ -161,7 +161,7 @@ registration token:
 
 ```bash
 curl -i -X POST "$FUZEFRONT_API_URL/api/v1/app-registry/apps/myapp/heartbeat" \
-  -H "Authorization: Bearer 9f3a1c2e7b4d5f6089ab..." \
+  -H "Authorization: Bearer <your-heartbeat-token>" \
   -H "Content-Type: application/json" \
   -d '{ "status": "online" }'
 ```

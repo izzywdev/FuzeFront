@@ -1,222 +1,213 @@
-"""Outbox relay — Python mirror of drainOutboxOnce / startOutboxRelay in
-backend/core/src/events/outboxRelay.ts.
+"""Outbox relay: drains ``event_outbox`` to the broker, in order per aggregate.
 
-The relay claims pending ``event_outbox`` rows (on Postgres with
-``FOR UPDATE SKIP LOCKED`` so replicas never double-publish), publishes each, and
-on success marks it ``sent``; on a publish failure it increments ``attempts`` and
-leaves the row ``pending`` until ``max_attempts``, after which it is parked
-``failed`` and dead-lettered. The retry/attempts/DLQ decision logic lives here
-(and is unit-tested with a fake); the DB access is injected via ``RelayDb`` and
-the concrete Postgres claim/update SQL lives in ``PsycopgRelayDb`` behind the
-``postgres`` extra.
+Rules (contracts/events/tables.md "Relay ordering and claim rule"):
+
+* Claim with ``SELECT ... FOR UPDATE SKIP LOCKED`` (Postgres) — replicas never
+  publish the same row. SQLite has no row locks; it is for single-relay tests.
+* Order is per aggregate by ``aggregate_version``. Only the *head* of an
+  aggregate (no lower-version row that is not ``sent``) is claimable, so a
+  ``failed`` head **blocks** its aggregate; different aggregates interleave.
+  After claiming a head the relay publishes the aggregate's whole pending chain
+  in version order inside the same transaction (replicas cannot see/claim the
+  later rows: the head is still unsent from their snapshot).
+* Key = ``aggregate_id``; ``sent`` only after broker ack. Publishing is inside
+  the claim transaction, so a crash after publish but before commit republishes
+  (at-least-once; consumers dedupe on ``eventId``).
+* After ``max_attempts`` the row is dead-lettered to ``<topic>.dlq`` and parked
+  ``failed``. If the DLQ send itself fails the row stays ``pending`` and is retried.
 """
 
 from __future__ import annotations
 
-import time
+import asyncio
+import json
+import logging
 from dataclasses import dataclass
-from typing import Any, Callable, List, Optional, Protocol, runtime_checkable
+from datetime import UTC, datetime
+from typing import Any
 
-PENDING = "pending"
-SENT = "sent"
-FAILED = "failed"
+from sqlalchemy import and_, exists, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-DEFAULT_BATCH_SIZE = 20
-DEFAULT_MAX_ATTEMPTS = 10
+from .envelope import format_occurred_at
+from .publisher import Publisher
+from .tables import event_outbox as o
 
+log = logging.getLogger("fuzefront_events.relay")
 
-@dataclass
-class OutboxRecord:
-    """One decoded outbox row handed to the publisher (mirror of OutboxRecord)."""
-
-    id: str
-    topic: str
-    payload: Any
-    correlationId: str  # noqa: N815 - wire-ish; mirrors the Node field
-    attempts: int
+_lower = o.alias("lower_rows")
 
 
-@dataclass
+def row_to_envelope(row: Any) -> dict[str, Any]:
+    """Rebuild the wire envelope from an outbox row (payload is the topic payload only)."""
+    env: dict[str, Any] = {
+        "eventId": row.event_id,
+        "topic": row.topic,
+        "schemaVersion": row.schema_version,
+        "aggregateType": row.aggregate_type,
+        "aggregateId": row.aggregate_id,
+        "aggregateVersion": int(row.aggregate_version),
+        "producer": row.producer,
+        "occurredAt": format_occurred_at(row.created_at),
+        "correlationId": row.correlation_id,
+        "payload": row.payload if not isinstance(row.payload, str) else json.loads(row.payload),
+    }
+    if row.causation_id is not None:
+        env["causationId"] = row.causation_id
+    return env
+
+
+def dlq_topic(topic: str) -> str:
+    return f"{topic}.dlq"
+
+
+@dataclass(frozen=True)
 class DrainResult:
-    sent: int
-    failed: int
+    sent: int = 0
+    failed: int = 0  # publish attempts that failed (row retried or parked)
+    dead_lettered: int = 0
 
 
-# publish(record) -> None; raise to signal a retryable failure.
-Publish = Callable[[OutboxRecord], None]
-OnDeadLetter = Callable[[OutboxRecord, BaseException], None]
+def _head_query(batch_size: int):
+    blocked = exists().where(
+        and_(
+            _lower.c.aggregate_type == o.c.aggregate_type,
+            _lower.c.aggregate_id == o.c.aggregate_id,
+            _lower.c.aggregate_version < o.c.aggregate_version,
+            _lower.c.status != "sent",
+        )
+    )
+    return (
+        select(o.c.aggregate_type, o.c.aggregate_id)
+        .where(o.c.status == "pending", ~blocked)
+        .order_by(o.c.created_at, o.c.aggregate_version)
+        .limit(batch_size)
+        .with_for_update(skip_locked=True)
+    )
 
 
-@runtime_checkable
-class RelayDb(Protocol):
-    """Transactional claim/update surface the relay needs.
-
-    ``claim_pending`` opens a transaction and returns up to ``batch_size`` pending
-    rows locked ``FOR UPDATE SKIP LOCKED``; ``mark_sent`` / ``mark_retry`` update a
-    claimed row; ``commit`` ends the claim transaction.
-    """
-
-    def claim_pending(self, batch_size: int) -> List[OutboxRecord]: ...  # pragma: no cover
-    def mark_sent(self, record: OutboxRecord) -> None: ...  # pragma: no cover
-    def mark_retry(
-        self, record: OutboxRecord, *, attempts: int, status: str, last_error: str
-    ) -> None: ...  # pragma: no cover
-    def commit(self) -> None: ...  # pragma: no cover
-    def rollback(self) -> None: ...  # pragma: no cover
-
-
-def drain_outbox_once(
-    db: RelayDb,
-    publish: Publish,
+async def drain_once(
+    session_factory: async_sessionmaker[AsyncSession],
+    publisher: Publisher,
     *,
-    batch_size: int = DEFAULT_BATCH_SIZE,
-    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
-    on_dead_letter: Optional[OnDeadLetter] = None,
-    logger: Any = None,
+    batch_size: int = 20,
+    max_attempts: int = 10,
+    chain_limit: int = 100,
 ) -> DrainResult:
-    """Drain one batch of pending outbox rows. Returns {sent, failed}."""
-    sent = 0
-    failed = 0
-    try:
-        # The claim must be inside the try: a failed SELECT ... FOR UPDATE (e.g. a
-        # statement timeout or query cancellation) aborts the psycopg transaction,
-        # and without a rollback the same connection stays poisoned so every later
-        # claim fails. Rolling back here lets the relay loop recover on the next tick.
-        rows = db.claim_pending(batch_size)
-        for row in rows:
-            try:
-                publish(row)
-                db.mark_sent(row)
+    """One claim-publish-commit pass. Safe to run from many replicas on Postgres."""
+    sent = failed = dead = 0
+    async with session_factory() as session, session.begin():
+        heads = (await session.execute(_head_query(batch_size))).all()
+        for agg_type, agg_id in heads:
+            rows = (
+                await session.execute(
+                    select(o)
+                    .where(
+                        o.c.aggregate_type == agg_type, o.c.aggregate_id == agg_id, o.c.status == "pending"
+                    )
+                    .order_by(o.c.aggregate_version)
+                    .limit(chain_limit)
+                    .with_for_update()
+                )
+            ).all()
+            for row in rows:
+                envelope = row_to_envelope(row)
+                value = json.dumps(envelope, separators=(",", ":")).encode()
+                try:
+                    await publisher.send(row.topic, row.aggregate_id.encode(), value)
+                except Exception as exc:  # noqa: BLE001
+                    attempts = row.attempts + 1
+                    err = str(exc)[:1000]
+                    failed += 1
+                    log.error(
+                        "outbox publish failed topic=%s event_id=%s attempt=%d: %s",
+                        row.topic,
+                        row.event_id,
+                        attempts,
+                        err,
+                    )
+                    parked = False
+                    if attempts >= max_attempts:
+                        try:
+                            await publisher.send(
+                                dlq_topic(row.topic),
+                                row.aggregate_id.encode(),
+                                value,
+                                [("x-error", err.encode()), ("x-attempts", str(attempts).encode())],
+                            )
+                            parked = True
+                            dead += 1
+                        except Exception as dlq_exc:  # noqa: BLE001
+                            log.error("DLQ publish failed event_id=%s: %s", row.event_id, dlq_exc)
+                    await session.execute(
+                        update(o)
+                        .where(o.c.id == row.id)
+                        .values(status="failed" if parked else "pending", attempts=attempts, last_error=err)
+                    )
+                    break  # head-of-line block: never publish a later version past a failed one
+                await session.execute(
+                    update(o)
+                    .where(o.c.id == row.id)
+                    .values(status="sent", attempts=row.attempts + 1, sent_at=datetime.now(UTC))
+                )
                 sent += 1
-            except BaseException as err:  # noqa: BLE001 - mirror the TS catch-all
-                attempts = row.attempts + 1
-                parked = attempts >= max_attempts
-                db.mark_retry(
-                    row,
-                    attempts=attempts,
-                    status=FAILED if parked else PENDING,
-                    last_error=str(err)[:1000],
-                )
-                failed += 1
-                if logger is not None:
-                    logger.error(
-                        f"outbox publish failed for {row.topic} ({row.id}) "
-                        f"attempt {attempts}: {err}"
-                    )
-                if parked and on_dead_letter is not None:
-                    try:
-                        on_dead_letter(row, err)
-                    except BaseException:  # noqa: BLE001 - DLQ is best-effort
-                        pass
-        db.commit()
-    except BaseException:
-        db.rollback()
-        raise
-    return DrainResult(sent=sent, failed=failed)
+    return DrainResult(sent, failed, dead)
 
 
-class OutboxRelayHandle:
-    def __init__(self) -> None:
-        self._stopped = False
+async def requeue_failed_event(session: AsyncSession, event_id: str) -> bool:
+    """Operator action: put a dead-lettered (``failed``) row back to ``pending``.
 
-    def stop(self) -> None:
-        self._stopped = True
-
-    @property
-    def stopped(self) -> bool:
-        return self._stopped
-
-
-def start_outbox_relay(
-    db: RelayDb,
-    publish: Publish,
-    *,
-    interval_ms: int = 1000,
-    batch_size: int = DEFAULT_BATCH_SIZE,
-    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
-    on_dead_letter: Optional[OnDeadLetter] = None,
-    logger: Any = None,
-) -> OutboxRelayHandle:
-    """Run drain_outbox_once on an interval in a background thread.
-
-    A Kafka outage simply means rows accumulate as ``pending`` and drain once
-    publishing recovers. Returns a handle whose ``stop()`` ends the loop.
+    Resets ``attempts`` to 0 (``last_error`` is kept for the record). Until this
+    (or a deliberate mark-``sent``) runs, the failed row blocks later versions of
+    its aggregate. Runs in the caller's transaction; returns whether a ``failed``
+    row was found and requeued.
     """
-    import threading
+    res = await session.execute(
+        update(o).where(o.c.event_id == event_id, o.c.status == "failed").values(status="pending", attempts=0)
+    )
+    return res.rowcount == 1
 
-    handle = OutboxRelayHandle()
 
-    def _loop() -> None:
-        while not handle.stopped:
+class OutboxRelay:
+    """Background poller around :func:`drain_once`."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        publisher: Publisher,
+        *,
+        interval_s: float = 1.0,
+        **drain_kwargs: Any,
+    ):
+        self._sf = session_factory
+        self._publisher = publisher
+        self._interval = interval_s
+        self._kwargs = drain_kwargs
+        self._task: asyncio.Task | None = None
+        self._stop = asyncio.Event()
+
+    async def _loop(self) -> None:
+        while not self._stop.is_set():
             try:
-                result = drain_outbox_once(
-                    db,
-                    publish,
-                    batch_size=batch_size,
-                    max_attempts=max_attempts,
-                    on_dead_letter=on_dead_letter,
-                    logger=logger,
-                )
-                if (result.sent or result.failed) and logger is not None:
-                    logger.info(
-                        f"outbox relay: sent={result.sent} failed={result.failed}"
-                    )
-            except BaseException as err:  # noqa: BLE001
-                if logger is not None:
-                    logger.error(f"outbox relay drain error: {err}")
-            time.sleep(interval_ms / 1000.0)
+                res = await drain_once(self._sf, self._publisher, **self._kwargs)
+                if res.sent or res.failed:
+                    log.info("outbox relay sent=%d failed=%d dlq=%d", res.sent, res.failed, res.dead_lettered)
+                if res.sent:
+                    continue  # more may be waiting; drain without sleeping
+            except Exception:
+                log.exception("outbox relay drain error")
+            try:
+                await asyncio.wait_for(self._stop.wait(), self._interval)
+            except TimeoutError:
+                pass
 
-    thread = threading.Thread(target=_loop, name="fuzefront-outbox-relay", daemon=True)
-    thread.start()
-    return handle
+    def start(self) -> None:
+        if self._task is None:
+            self._stop.clear()
+            self._task = asyncio.create_task(self._loop())
 
-
-class PsycopgRelayDb:
-    """``RelayDb`` backed by a psycopg (v3) connection (``postgres`` extra).
-
-    Each ``claim_pending`` opens a transaction; ``commit``/``rollback`` close it.
-    Uses ``FOR UPDATE SKIP LOCKED`` so multiple relay replicas never publish the
-    same row.
-    """
-
-    _CLAIM_SQL = (
-        "SELECT id, topic, payload, correlation_id, attempts "
-        "FROM event_outbox WHERE status = 'pending' "
-        "ORDER BY created_at ASC LIMIT %s FOR UPDATE SKIP LOCKED"
-    )
-    _SENT_SQL = (
-        "UPDATE event_outbox SET status='sent', attempts=attempts+1, "
-        "sent_at=now() WHERE id=%s"
-    )
-    _RETRY_SQL = (
-        "UPDATE event_outbox SET status=%s, attempts=%s, last_error=%s WHERE id=%s"
-    )
-
-    def __init__(self, conn: Any):
-        self._conn = conn
-
-    def claim_pending(self, batch_size: int) -> List[OutboxRecord]:
-        cur = self._conn.cursor()
-        cur.execute(self._CLAIM_SQL, (batch_size,))
-        rows = cur.fetchall()
-        self._cur = cur
-        return [
-            OutboxRecord(
-                id=str(r[0]), topic=r[1], payload=r[2], correlationId=r[3], attempts=r[4]
-            )
-            for r in rows
-        ]
-
-    def mark_sent(self, record: OutboxRecord) -> None:
-        self._cur.execute(self._SENT_SQL, (record.id,))
-
-    def mark_retry(
-        self, record: OutboxRecord, *, attempts: int, status: str, last_error: str
-    ) -> None:
-        self._cur.execute(self._RETRY_SQL, (status, attempts, last_error, record.id))
-
-    def commit(self) -> None:
-        self._conn.commit()
-
-    def rollback(self) -> None:
-        self._conn.rollback()
+    async def stop(self) -> None:
+        self._stop.set()
+        if self._task:
+            await self._task
+            self._task = None

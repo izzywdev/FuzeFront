@@ -1,143 +1,41 @@
-name: Publish fuzefront-events (Python)
+name: Publish fuzefront-events to PyPI
 
-# Builds the wheel + sdist for packages/events-py and attaches them to a GitHub
-# Release, so Python microservices in other family repos can install a PINNED
-# artifact rather than tracking a branch.
+# Triggered when a tag matching the pattern below is pushed. Tests first, then
+# calls the shared python-publish.yml reusable workflow (PyPI trusted publishing).
 #
-# Mirrors config-client-py-publish.yml / identity-py-publish.yml exactly (see
-# those files for the "why a Release asset and not a registry" rationale):
-# GitHub Packages has no PyPI-compatible registry, and this is a
-# private/proprietary family package so public PyPI is out. A Release asset is
-# the one private-by-default artifact store the family already authenticates
-# against (the same GITHUB_TOKEN that serves npm.pkg.github.com).
+# Versioning: bump the version in packages/events-py/pyproject.toml, commit to
+# master, then tag:
 #
-# Consumers install either:
-#   pip install https://github.com/izzywdev/FuzeFront/releases/download/events-py-vX.Y.Z/fuzefront_events-X.Y.Z-py3-none-any.whl
-#   pip install "git+https://github.com/izzywdev/FuzeFront.git@events-py-vX.Y.Z#subdirectory=packages/events-py"
-# The first is preferred -- it is a pinned immutable artifact and needs no git.
+#   git tag events-py/v0.1.0
+#   git push origin events-py/v0.1.0
+#
+# The verify step in python-publish.yml installs the package from PyPI and
+# imports it, proving the upload succeeded (FFRNT-264).
+#
+# NOTE: PyPI trusted publishing requires a one-time setup in the PyPI web UI
+# (a human action) for the `fuzefront-events` project:
+#   Repository: izzywdev/FuzeFront
+#   Workflow:   python-publish.yml
+#   Environment: pypi
+#
+# DEPENDENCY: fuzefront-events requires `fuzefront-identity`, which today ships
+# as a GitHub Release asset, not on PyPI. Publish fuzefront-identity to PyPI
+# first (it can adopt python-publish.yml unchanged) or `pip install` of this
+# package from PyPI will fail to resolve it.
 
 on:
   push:
-    tags: ['events-py-v*']
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to build (must match pyproject.toml)'
-        required: true
-
-permissions:
-  contents: write # create the Release + upload assets
-
-concurrency:
-  group: events-py-publish
-  cancel-in-progress: false
+    tags:
+      - "events-py/v*"
 
 jobs:
+  test:
+    uses: ./.github/workflows/events-py-tests.yml
+
   publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
-        with: { python-version: '3.12' }
-
-      - name: Verify the tag matches pyproject version
-        # A tag that disagrees with pyproject produces a wheel whose filename
-        # and metadata contradict the release it is attached to -- the kind
-        # of mismatch that is only discovered by a consumer, months later.
-        #
-        # `inputs.version` and `github.*` reach the shell through env, NEVER
-        # through ${{ }} interpolation in `run:`. A dispatch input is
-        # arbitrary attacker-supplied text; interpolated directly it is a
-        # command-injection sink, and this job holds `contents: write` and
-        # publishes an artifact consumers install -- the worst possible place
-        # to have one.
-        #
-        # Also emits `version` (the bare X.Y.Z, no 'events-py-v' prefix) as a
-        # step output, so the Release body below can build the correct wheel
-        # filename -- the wheel is `fuzefront_events-X.Y.Z-py3-none-any.whl`,
-        # NOT `...-events-py-vX.Y.Z-...`.
-        id: version
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          cd packages/events-py
-          PY_VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            TAG_VER="$INPUT_VERSION"
-          else
-            TAG_VER="${REF_NAME#events-py-v}"
-          fi
-          echo "pyproject=$PY_VER  tag=$TAG_VER"
-          [ "$PY_VER" = "$TAG_VER" ] || { echo "::error::pyproject version $PY_VER != tag $TAG_VER"; exit 1; }
-          echo "version=$PY_VER" >> "$GITHUB_OUTPUT"
-          echo "tag=events-py-v$PY_VER" >> "$GITHUB_OUTPUT"
-
-      - name: Test before publishing
-        # The core (topics/schemas/envelope + outbox & relay logic) is
-        # dependency-free and unit-testable with injected fakes, so the suite
-        # needs no services. There is no excuse for shipping it untested.
-        run: |
-          cd packages/events-py
-          pip install -q -e '.[dev]'
-          pytest -q
-
-      - name: Build wheel + sdist
-        run: |
-          cd packages/events-py
-          pip install -q build
-          python -m build
-
-      - name: Verify dist contents
-        # A green build step is not evidence that anything was produced --
-        # confirm the wheel actually exists before attaching it to a Release.
-        run: |
-          cd packages/events-py
-          ls -lh dist/
-          if [ -z "$(ls dist/*.whl 2>/dev/null)" ]; then
-            echo "::error::No wheel found in dist/ -- build failed silently."
-            exit 1
-          fi
-
-      - name: Refuse to overwrite an existing release tag from a different commit
-        # workflow_dispatch can run on any branch. If the canonical tag already
-        # exists it must point at the commit being published, or the Release
-        # step would replace immutable assets consumers install.
-        shell: bash
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-          BUILT_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          REFS=$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
-          # Peeled (^{}) line is the commit for annotated tags; else the tag line.
-          TAG_SHA=$(echo "$REFS" | awk '/\^\{\}$/{print $1; exit}')
-          [ -n "$TAG_SHA" ] || TAG_SHA=$(echo "$REFS" | awk 'NR==1{print $1}')
-          if [ -n "$TAG_SHA" ] && [ "$TAG_SHA" != "$BUILT_SHA" ]; then
-            echo "::error::Tag $TAG already exists at $TAG_SHA, not $BUILT_SHA -- refusing to overwrite its release assets"
-            exit 1
-          fi
-
-      - name: Attach to the Release
-        uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7  # v2
-        with:
-          files: packages/events-py/dist/*
-          tag_name: ${{ steps.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          name: fuzefront-events ${{ steps.version.outputs.tag }}
-          body: |
-            Python mirror of the FuzeFront Kafka event contract (topics,
-            schemas, envelope) plus a transactional-outbox writer and relay
-            for Python services.
-
-            Contract: `shared/src/kafka/` (Node source of truth)
-            Node peer: `@fuzefront/core` (outbox) + `shared/src/kafka`
-
-            ```bash
-            pip install https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/fuzefront_events-${{ steps.version.outputs.version }}-py3-none-any.whl
-            ```
-          fail_on_unmatched_files: true
+    needs: test
+    uses: ./.github/workflows/python-publish.yml
+    with:
+      package-dir: packages/events-py
+      package-name: fuzefront-events
+      python-version: "3.12"

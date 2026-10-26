@@ -142,7 +142,7 @@
     ],
     "entryServer": "fuzefront-mcp",
     "protocolVersion": "2025-06-18",
-    "toolCount": 45,
+    "toolCount": 46,
     "irreversibleTools": [
       "deleteApp",
       "deleteSelectionList",
@@ -151,7 +151,7 @@
       "deleteSelectionListItemTranslation",
       "revokeSelectionListAccess"
     ],
-    "note": "GATEWAY dialect — the shared @fuzefront/mcp-gateway image (packages/mcp-gateway, published by this repo), not per-repo server code. TWO gateways: (1) fuzefront-mcp fronts the app-registry contract (20 tools, always-on); (2) selection-list-mcp fronts the selection-list-service contract (25 tools, ships dark — both selectionListService.enabled AND selectionListsMcp.enabled must be true). Both use the same image; what distinguishes each pod is its mounted OpenAPI spec + overrides pair. The app-registry gateway is exposed publicly via Ingress (values-prod.yaml mcp.ingress.enabled=true); the selection-list gateway is ClusterIP-only. Both forward the caller's bearer token and hold no credential of their own. Spec copies in deploy/helm/fuzefront/files/ must stay in sync with their sources — run scripts/check-mcp-spec-drift.sh. toolCount = 20 (app-registry) + 25 (selection-list). Owned by mcp-maintainer for upkeep of this block/deployment wiring; tool behaviour is owned by backend-engineer."
+    "note": "GATEWAY dialect — the shared @fuzefront/mcp-gateway image (packages/mcp-gateway, published by this repo), not per-repo server code. TWO gateways: (1) fuzefront-mcp fronts the app-registry contract (21 tools, always-on); (2) selection-list-mcp fronts the selection-list-service contract (25 tools, ships dark — both selectionListService.enabled AND selectionListsMcp.enabled must be true). Both use the same image; what distinguishes each pod is its mounted OpenAPI spec + overrides pair. The app-registry gateway is exposed publicly via Ingress (values-prod.yaml mcp.ingress.enabled=true); the selection-list gateway is ClusterIP-only. Both forward the caller's bearer token and hold no credential of their own. Spec copies in deploy/helm/fuzefront/files/ must stay in sync with their sources — run scripts/check-mcp-spec-drift.sh. toolCount = 21 (app-registry) + 25 (selection-list). Owned by mcp-maintainer for upkeep of this block/deployment wiring; tool behaviour is owned by backend-engineer."
   },
   "providesTo": [
     "FuzeAgent",

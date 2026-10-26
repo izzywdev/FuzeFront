@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Every image release.yml PUSHES must also be BUILT pre-merge by
- * image-reproducibility.yml's build-images matrix.
+ * Every image a production release workflow PUSHES must also be BUILT
+ * pre-merge by image-reproducibility.yml's build-images matrix.
  *
  * Why this exists: `master` is deploy-on-push, so release.yml builds and ships
  * an image the moment a PR lands. If that image has no pre-merge build, a
@@ -21,11 +21,16 @@
  */
 import { readFileSync } from 'node:fs';
 
-const RELEASE = '.github/workflows/release.yml';
+const RELEASES = [
+  '.github/workflows/release.yml',
+  '.github/workflows/fuzequality-release.yml',
+];
 const REPRO = '.github/workflows/image-reproducibility.yml';
 
-/** file -> context for docker/build-push-action steps that actually push. */
-function releasedImages(text) {
+const imageKey = (file, target) => `${file}#${target ?? ''}`;
+
+/** file+target -> metadata for docker/build-push-action steps that push. */
+function releasedImages(text, workflow) {
   const out = new Map();
   const blocks = text.split(/\n(?=      - name: )/);
   for (const b of blocks) {
@@ -34,12 +39,21 @@ function releasedImages(text) {
     if (!/push:\s*true/.test(b)) continue;
     const f = b.match(/^\s*file:\s*(\S+)\s*$/m);
     const c = b.match(/^\s*context:\s*(\S+)\s*$/m);
-    if (f) out.set(f[1], c ? c[1] : null);
+    const t = b.match(/^\s*target:\s*(\S+)\s*$/m);
+    if (f) {
+      const target = t ? t[1] : null;
+      out.set(imageKey(f[1], target), {
+        file: f[1],
+        context: c ? c[1] : null,
+        target,
+        workflow,
+      });
+    }
   }
   return out;
 }
 
-/** file -> context for each entry in the build-images matrix. */
+/** file+target -> metadata for each entry in the build-images matrix. */
 function preMergeImages(text) {
   const out = new Map();
   const matrix = text.slice(text.indexOf('matrix:'), text.indexOf('steps:', text.indexOf('matrix:')));
@@ -48,20 +62,36 @@ function preMergeImages(text) {
   for (const entry of matrix.split(/\n(?=\s*- name: )/)) {
     const f = entry.match(/^\s*file:\s*(\S+)\s*$/m);
     const c = entry.match(/^\s*context:\s*(\S+)\s*$/m);
-    if (f) out.set(f[1], c ? c[1] : null);
+    const t = entry.match(/^\s*target:\s*(\S+)\s*$/m);
+    if (f) {
+      const target = t ? t[1] : null;
+      out.set(imageKey(f[1], target), {
+        file: f[1],
+        context: c ? c[1] : null,
+        target,
+      });
+    }
   }
   return out;
 }
 
-const released = releasedImages(readFileSync(RELEASE, 'utf8'));
+const released = new Map();
+for (const workflow of RELEASES) {
+  for (const [key, image] of releasedImages(readFileSync(workflow, 'utf8'), workflow)) {
+    released.set(key, image);
+  }
+}
 const preMerge = preMergeImages(readFileSync(REPRO, 'utf8'));
 
 if (released.size === 0) {
-  console.error(`FAIL: parsed 0 pushed images from ${RELEASE} — the parser is broken, not the workflow.`);
+  console.error(`FAIL: parsed 0 pushed images from ${RELEASES.join(', ')} — the parser is broken, not the workflows.`);
   process.exit(1);
 }
 
-const missing = [...released.keys()].filter((f) => !preMerge.has(f)).sort();
+const missing = [...released.entries()]
+  .filter(([key]) => !preMerge.has(key))
+  .map(([, image]) => image)
+  .sort((a, b) => imageKey(a.file, a.target).localeCompare(imageKey(b.file, b.target)));
 
 // A matrix entry that builds a released Dockerfile from a DIFFERENT context is
 // not coverage — it builds something other than what ships, and then either
@@ -72,14 +102,14 @@ const missing = [...released.keys()].filter((f) => !preMerge.has(f)).sort();
 // "/services/payment-service/package.json: not found" — a red that said nothing
 // about the image that actually ships. Coverage-by-path alone did not catch it.
 const mismatched = [...released.entries()]
-  .filter(([f, ctx]) => preMerge.has(f) && preMerge.get(f) !== ctx)
-  .map(([f, ctx]) => `  - ${f}\n      release.yml context: ${ctx}\n      matrix context:     ${preMerge.get(f)}`)
+  .filter(([key, image]) => preMerge.has(key) && preMerge.get(key).context !== image.context)
+  .map(([key, image]) => `  - ${key}\n      ${image.workflow} context: ${image.context}\n      matrix context:     ${preMerge.get(key).context}`)
   .sort();
 
 if (mismatched.length > 0) {
   console.error(
     `FAIL: ${mismatched.length} image(s) are built pre-merge from a DIFFERENT context than\n` +
-      `release.yml uses, so the pre-merge build does not reproduce what ships:\n`
+      `the release workflow uses, so the pre-merge build does not reproduce what ships:\n`
   );
   for (const m of mismatched) console.error(m);
   console.error(`\nMake the matrix context match release.yml's for each.`);
@@ -88,11 +118,13 @@ if (mismatched.length > 0) {
 
 if (missing.length > 0) {
   console.error(
-    `FAIL: ${missing.length} image(s) are built and pushed by release.yml but have no pre-merge build\n` +
+    `FAIL: ${missing.length} image(s) are built and pushed by a production release workflow but have no pre-merge build\n` +
       `in ${REPRO}'s build-images matrix. master is deploy-on-push, so these would be\n` +
       `discovered broken by production. Add a matrix entry for each:\n`
   );
-  for (const f of missing) console.error(`  - ${f}`);
+  for (const image of missing) {
+    console.error(`  - ${image.file}${image.target ? ` (target: ${image.target})` : ''} [${image.workflow}]`);
+  }
   console.error(
     `\nUse the same context release.yml uses — a self-contained Dockerfile builds from its\n` +
       `own subtree, and a root context would not reproduce what ships.`
@@ -100,4 +132,4 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-console.log(`OK: all ${released.size} released images have a pre-merge build, each from release.yml's own context.`);
+console.log(`OK: all ${released.size} released image targets have a pre-merge build from their release workflow's own context.`);

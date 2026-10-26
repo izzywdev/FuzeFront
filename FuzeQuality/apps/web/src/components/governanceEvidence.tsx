@@ -1,5 +1,53 @@
 import type { PolicyGateEvaluation, QualityArtifact } from '@fuzequality/contracts'
 
+const evidenceSignalLabels = {
+  policy: 'Policy statement',
+  gate: 'Gate statement',
+  obligation: 'Requires',
+  prohibition: 'Prohibits',
+  ambiguous: 'Ambiguous',
+} as const
+
+const remediationActionLabels = {
+  'build-gate': 'Build a gate',
+  'build-policy': 'Build a policy',
+  'disambiguate-policy': 'Disambiguate policy',
+  'align-policy-gate': 'Align policy and gate',
+} as const
+
+export function policyGateArtifactReferenceProblems(
+  evaluation: PolicyGateEvaluation,
+  artifacts: QualityArtifact[],
+) {
+  const revisionArtifacts = artifacts.filter(
+    artifact =>
+      artifact.repositoryId === evaluation.repositoryId &&
+      (!artifact.revision || artifact.revision === evaluation.revision)
+  )
+  const artifactsById = new Map(revisionArtifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
+  const problems: string[] = []
+  for (const [artifactId, expectedKind] of [
+    ...evaluation.policyArtifactIds.map(id => [id, 'policy'] as const),
+    ...evaluation.gateArtifactIds.map(id => [id, 'gate'] as const),
+  ]) {
+    const artifact = artifactsById.get(artifactId)
+    if (!artifact || artifact.kind !== expectedKind) problems.push(artifactId)
+  }
+  for (const passage of evaluation.evidencePassages ?? []) {
+    const artifact = artifactsById.get(passage.artifactId)
+    const expectedKind = passage.signal === 'gate' ? 'gate' : 'policy'
+    if (
+      !artifact ||
+      artifact.sourcePath !== passage.sourcePath ||
+      artifact.kind !== expectedKind
+    ) problems.push(passage.artifactId)
+  }
+  return [...new Set(problems)]
+}
+
 /** App-specific governance evidence composed from semantic HTML primitives. */
 export function PolicyGateEvidence({
   evaluation,
@@ -8,7 +56,13 @@ export function PolicyGateEvidence({
   evaluation: PolicyGateEvaluation
   artifacts: QualityArtifact[]
 }) {
-  const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
+  const revisionArtifacts = artifacts.filter(
+    artifact => !artifact.revision || artifact.revision === evaluation.revision
+  )
+  const artifactsById = new Map(revisionArtifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
   const evidenceIds = [
     ...(evaluation.policyArtifactIds ?? []),
     ...(evaluation.gateArtifactIds ?? []),
@@ -20,6 +74,7 @@ export function PolicyGateEvidence({
     ? `${Math.round(evaluation.confidence * 100)}%`
     : 'Unknown'
   const scope = evaluation.scope ?? { sourcePaths: [], subjects: [] }
+  const passages = evaluation.evidencePassages ?? []
 
   return (
     <section
@@ -64,6 +119,38 @@ export function PolicyGateEvidence({
             )
           })}
         </ul>
+      </div>
+      {passages.length > 0 && (
+        <div className="governance-passages" aria-label="Decisive policy passages">
+          <strong>Decisive passages</strong>
+          <ul>
+            {passages.map((passage, index) => {
+              const artifact = artifactsById.get(passage.artifactId)
+              return (
+                <li key={`${passage.artifactId}:${passage.signal}:${index}`}>
+                  <span className={`status-pill governance-signal-${passage.signal}`}>
+                    {evidenceSignalLabels[passage.signal]}
+                  </span>
+                  <q>{passage.text}</q>
+                  <div className="governance-passage-source">
+                    <strong>{artifact?.title ?? passage.artifactId}</strong>
+                    <code>{passage.sourcePath}</code>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+      <div className="governance-remediation">
+        <strong>Proposed remediation</strong>
+        <span className="status-pill">
+          {evaluation.remediationAction
+            ? remediationActionLabels[evaluation.remediationAction]
+            : 'Review recommendation'}
+        </span>
+        <p>{evaluation.recommendation}</p>
+        <small>Proposal only — a reviewer must accept it before implementation.</small>
       </div>
     </section>
   )
