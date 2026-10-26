@@ -130,6 +130,7 @@
       "label": "(01) Choose a factor",
       "route": "/login/mfa",
       "flow": "mfa-stepup-mobile",
+      "viewport": "mobile",
       "summary": "Mobile factor picker (authenticator / email / SMS / recovery) at 375px, plus loading skeleton, generic load-error, and a zero-factors fail-closed state not present in the desktop frame.",
       "acceptanceNotes": "Factor list driven by mfa_required.factors; SMS/email offered only when enrolled. Loading shows skeleton rows, not a blank screen. Load error offers retry only (no silent fallback). Zero-factors is fail-closed to a support contact, never a dead end.",
       "testHooks": [
@@ -153,6 +154,7 @@
       "label": "(02) Enter code",
       "route": "/login/mfa",
       "flow": "mfa-stepup-mobile",
+      "viewport": "mobile",
       "summary": "Mobile OTP entry (auto-advance, paste-aware, 44px+ touch cells) with in-flight/verifying, wrong/expired fail-closed (no navigation), expiry countdown + resend cooldown, and delivery-failure fallback.",
       "acceptanceNotes": "Verify via POST /mfa/verify; a wrong/expired code stays on screen with an inline error, never navigates away. The verify button disables and shows a spinner while in flight so a slow network can't produce a double-submit. Resend is disabled during the cooldown window with a live countdown.",
       "testHooks": [
@@ -174,6 +176,7 @@
       "label": "(03) Confirm your phone",
       "route": "/account/security/verify/phone",
       "flow": "confirm-contact-phone",
+      "viewport": "mobile",
       "summary": "Phone-only OTP verification: enter phone -> sending -> enter code -> verified, with wrong-code and generic send-failure fail-closed states, and 'Skip for now' (re-prompts from profile). Email verification intentionally stays on the existing approved link-click pattern (linked in copy, not re-implemented here) — see manifest reconciliation notes.",
       "acceptanceNotes": "POST /verify/phone/start then /verify/phone/confirm. Wrong/expired code shows inline error, no navigation. A generic send failure (not a bad code) offers retry or skip, never a silent hang. Skip is always available and the manifest records that profile re-prompts until verified.",
       "testHooks": [
@@ -196,6 +199,7 @@
       "label": "(04) Security status (profile)",
       "route": "/account/security",
       "flow": "security-status-mobile",
+      "viewport": "mobile",
       "summary": "Combined mobile 2FA + contact-verification status (Active/Verified/Unverified chips), with loading skeleton, generic load-error, and the remove-last-2FA-factor -> 409 fail-closed guard (reusing mfa-management's RemoveFactorDialog pattern) when the account's only active factor is removed under an enforced-MFA policy.",
       "acceptanceNotes": "Status rows render only confirmed server state (no optimistic 'Active'/'Verified' before the server says so). DELETE /mfa/factors/{factorId} on the only active factor returns 409 and the UI blocks removal via the bottom-sheet dialog, routing to 'Add another method first' rather than silently succeeding. Password state is out of scope here (owned by account-security/02-states.html) and is not duplicated.",
       "testHooks": [
@@ -214,5 +218,5 @@
       ]
     }
   ],
-  "stamp": "9da49f3b629209412ee20c7fae94ecdb8d01eaa38d3c6010cb6da8587aa163f3"
+  "stamp": "b67d9a7f47db39b1c3833f01bc598992d87e40a28c2ab98b006bedec9bd7a9ae"
 }
