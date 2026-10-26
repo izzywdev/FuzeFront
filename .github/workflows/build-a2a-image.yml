@@ -124,9 +124,12 @@ jobs:
         # the published image pins its runtime and a future :latest retag cannot
         # silently incorporate a compromised release (Codex P2 finding).
         # PR builds are ephemeral and never published, so :latest is acceptable.
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_REF: ${{ github.ref }}
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" && \
-                "${{ github.ref }}" == "refs/heads/master" ]]; then
+          if [[ "${GH_EVENT_NAME}" != "pull_request" && \
+                "${GH_REF}" == "refs/heads/master" ]]; then
             DIGEST=$(docker buildx imagetools inspect \
               ghcr.io/izzywdev/fuze-a2a:latest \
               --format '{{.Manifest.Digest}}' 2>/dev/null || true)
