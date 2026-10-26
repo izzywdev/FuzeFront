@@ -3535,6 +3535,7 @@ type FlowInventorySelection = {
   source: RepositoryFlowCandidate['source'] | ''
   status: RepositoryFlowCandidate['status'] | ''
   revisionScope: FlowRevisionScope
+  targetId: string
   model: string
   promptVersion: string
   schemaVersion: string
@@ -3780,6 +3781,11 @@ export function flowCandidateMatchesInventory(
     return false
   if (selection.source && flow.source !== selection.source) return false
   if (selection.status && flow.status !== selection.status) return false
+  if (selection.targetId && !(
+    flow.evidence.includes(selection.targetId) ||
+    flow.steps.some(step => step.targetIds.includes(selection.targetId)) ||
+    flow.wireframe.nodes.some(node => node.targetIds.includes(selection.targetId))
+  )) return false
   if (selection.model && flow.analysis?.model !== selection.model) return false
   if (
     selection.promptVersion &&
@@ -3841,6 +3847,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowSource, setFlowSource] = useState<RepositoryFlowCandidate['source'] | ''>('')
   const [flowStatus, setFlowStatus] = useState<RepositoryFlowCandidate['status'] | ''>('')
   const [flowRevisionScope, setFlowRevisionScope] = useState<FlowRevisionScope>('all')
+  const [flowTargetId, setFlowTargetId] = useState('')
   const [flowModel, setFlowModel] = useState('')
   const [flowPromptVersion, setFlowPromptVersion] = useState('')
   const [flowSchemaVersion, setFlowSchemaVersion] = useState('')
@@ -4036,6 +4043,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     source: flowSource,
     status: flowStatus,
     revisionScope: flowRevisionScope,
+    targetId: flowTargetId.trim(),
     model: flowModel.trim(),
     promptVersion: flowPromptVersion.trim(),
     schemaVersion: flowSchemaVersion.trim(),
@@ -4054,6 +4062,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowSource,
     flowStatus,
     flowRevisionScope,
+    flowTargetId.trim(),
     flowModel.trim(),
     flowPromptVersion.trim(),
     flowSchemaVersion.trim(),
@@ -4610,6 +4619,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       flowRevisionScope === 'current'
                         ? repository.lastScanRevision ?? ''
                         : '',
+                    targetId: flowTargetId.trim(),
                     model: flowModel.trim(),
                     promptVersion: flowPromptVersion.trim(),
                     schemaVersion: flowSchemaVersion.trim(),
@@ -4649,6 +4659,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowRevisionScope,
     flowSource,
     flowStatus,
+    flowTargetId,
     flowModel,
     flowPromptVersion,
     flowSchemaVersion,
@@ -5089,6 +5100,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             source: flowSource,
             status: flowStatus,
             revision: flowRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
+            targetId: flowTargetId.trim(),
             model: flowModel.trim(),
             promptVersion: flowPromptVersion.trim(),
             schemaVersion: flowSchemaVersion.trim(),
@@ -5426,6 +5438,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             source={flowSource}
             status={flowStatus}
             revisionScope={flowRevisionScope}
+            targetId={flowTargetId}
             model={flowModel}
             promptVersion={flowPromptVersion}
             schemaVersion={flowSchemaVersion}
@@ -5437,6 +5450,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             onSourceChange={setFlowSource}
             onStatusChange={setFlowStatus}
             onRevisionScopeChange={setFlowRevisionScope}
+            onTargetIdChange={setFlowTargetId}
             onModelChange={setFlowModel}
             onPromptVersionChange={setFlowPromptVersion}
             onSchemaVersionChange={setFlowSchemaVersion}

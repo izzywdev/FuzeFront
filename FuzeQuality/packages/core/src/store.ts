@@ -51,6 +51,7 @@ export type RepositoryFlowCandidateQuery = {
   source?: RepositoryFlowCandidate['source']
   status?: RepositoryFlowCandidate['status']
   revision?: string
+  targetId?: string
   model?: string
   promptVersion?: string
   schemaVersion?: string
@@ -542,6 +543,9 @@ export class MemoryCatalogStore implements CatalogStore {
         (!query.source || item.source === query.source) &&
         (!query.status || item.status === query.status) &&
         (!query.revision || item.revision === query.revision) &&
+        (!query.targetId || item.evidence.includes(query.targetId) ||
+          item.steps.some(step => step.targetIds.includes(query.targetId!)) ||
+          item.wireframe.nodes.some(node => node.targetIds.includes(query.targetId!))) &&
         (!query.model || item.analysis?.model === query.model) &&
         (!query.promptVersion || item.analysis?.promptVersion === query.promptVersion) &&
         (!query.schemaVersion || item.analysis?.schemaVersion === query.schemaVersion) &&
@@ -1462,10 +1466,27 @@ export class PostgresCatalogStore implements CatalogStore {
              OR COALESCE((analysis_provenance->'grounding'->>'ungroundedStepCount')::integer,0)>0))
            OR ($12='prompt-truncated' AND source='litellm' AND analysis_provenance->>'promptTruncated'='true')
            OR ($12='provenance-missing' AND source='litellm' AND analysis_provenance IS NULL))
+         AND ($16::text IS NULL
+           OR EXISTS (
+             SELECT 1 FROM jsonb_array_elements_text(COALESCE(evidence, '[]'::jsonb)) AS evidence_target(value)
+             WHERE evidence_target.value=$16
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements(COALESCE(steps, '[]'::jsonb)) AS step,
+                  LATERAL jsonb_array_elements_text(COALESCE(step->'targetIds', '[]'::jsonb)) AS step_target(value)
+             WHERE step_target.value=$16
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements(COALESCE(wireframe->'nodes', '[]'::jsonb)) AS node,
+                  LATERAL jsonb_array_elements_text(COALESCE(node->'targetIds', '[]'::jsonb)) AS node_target(value)
+             WHERE node_target.value=$16
+           ))
          AND ($13::timestamptz IS NULL OR (created_at,id) < ($13::timestamptz,$14::text))
        ORDER BY created_at DESC,id DESC
        LIMIT COALESCE($15::integer, 2147483647)`,
-      [repositoryId, tenantId, query.id ?? null, query.source ?? null, query.status ?? null, query.revision ?? null, query.model ?? null, query.promptVersion ?? null, query.schemaVersion ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.analysisRisk ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+      [repositoryId, tenantId, query.id ?? null, query.source ?? null, query.status ?? null, query.revision ?? null, query.model ?? null, query.promptVersion ?? null, query.schemaVersion ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.analysisRisk ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.targetId ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, analysis: row.analysis_provenance ?? undefined, source: row.source, createdAt: row.created_at.toISOString() }))
   }

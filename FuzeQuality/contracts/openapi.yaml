@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.19
+  version: 0.84.20
   license:
     name: UNLICENSED
 servers:
@@ -359,6 +359,10 @@ paths:
           schema: { type: string, enum: [proposed, confirmed, rejected] }
         - name: revision
           in: query
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: targetId
+          in: query
+          description: Exact revision-grounded route, component, or evidence artifact identifier referenced by the flow.
           schema: { type: string, minLength: 1, maxLength: 500 }
         - name: model
           in: query

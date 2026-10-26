@@ -1830,6 +1830,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         source: 'litellm',
         status: 'proposed',
         revisionScope: 'current',
+        targetId: '',
         model: '',
         promptVersion: '',
         schemaVersion: '',
@@ -1847,6 +1848,7 @@ describe('RepositoryIntelligence flow inventory', () => {
           source: 'litellm',
           status: 'proposed',
           revisionScope: 'current',
+          targetId: '',
           model: '',
           promptVersion: '',
           schemaVersion: '',
@@ -1862,6 +1864,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         source: 'litellm',
         status: 'proposed',
         revisionScope: 'current',
+        targetId: '',
         model: '',
         promptVersion: '',
         schemaVersion: '',
@@ -1915,6 +1918,61 @@ describe('RepositoryIntelligence flow inventory', () => {
         maxConfidence: '0.9',
       })
     )
+  })
+
+  it('filters UX flows by exact target artifact and retains it during continuation', async () => {
+    mockEvidenceApis()
+    const targetedCandidate = {
+      ...candidate,
+      steps: [{ ...candidate.steps[0], targetIds: ['route-checkout'] }],
+      wireframe: { kind: 'sequence' as const, nodes: [{ label: 'Checkout', targetIds: ['route-checkout'] }] },
+    }
+    const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates').mockImplementation(async (_repositoryId, filter) =>
+      filter?.cursor
+        ? { items: [], page: { nextCursor: null, hasMore: false } }
+        : { items: [targetedCandidate], page: { nextCursor: 'flow-page-2', hasMore: true } }
+    )
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+
+    fireEvent.change(screen.getByLabelText('Target artifact ID'), {
+      target: { value: ' route-checkout ' },
+    })
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      targetId: 'route-checkout',
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more UX-flow history' }))
+    await waitFor(() => expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+      targetId: 'route-checkout',
+      cursor: 'flow-page-2',
+    }))
+    expect(flowCandidateMatchesInventory(targetedCandidate, [repository], {
+      repositoryId: '',
+      source: '',
+      status: '',
+      revisionScope: 'all',
+      targetId: 'route-checkout',
+      model: '',
+      promptVersion: '',
+      schemaVersion: '',
+      analysisRisk: '',
+      minimumConfidencePercent: '',
+      maximumConfidencePercent: '',
+    })).toBe(true)
+    expect(flowCandidateMatchesInventory(targetedCandidate, [repository], {
+      repositoryId: '',
+      source: '',
+      status: '',
+      revisionScope: 'all',
+      targetId: 'route',
+      model: '',
+      promptVersion: '',
+      schemaVersion: '',
+      analysisRisk: '',
+      minimumConfidencePercent: '',
+      maximumConfidencePercent: '',
+    })).toBe(false)
   })
 
   it('queries UX flows by retained LiteLLM review risk', async () => {

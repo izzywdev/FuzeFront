@@ -449,6 +449,7 @@ describe('contract discovery', () => {
         'source',
         'status',
         'revision',
+        'targetId',
         'model',
         'promptVersion',
         'schemaVersion',
