@@ -17,13 +17,19 @@
     "     therefore never created for a queue entry — #286 relocated into the queue, where",
     "     it strands the entry instead of the PR.",
     "",
-    "`requiredInRuleset` records whether ruleset 17974934 ('Protect default branch')",
-    "currently lists the context under `required_status_checks`. Measured 2026-10-19: the",
-    "eleven true entries below are exactly that set. The four false entries are kept",
-    "deliberately — their `pull_request:` path-filter protection still applies, and dropping",
-    "them would only shrink enforcement — but they are not required today, so demanding a",
-    "`merge_group` trigger for them would burn runner time on every queue entry (notably",
-    "e2e.yml's Playwright run) to satisfy a context nothing gates on.",
+    "`requiredInRuleset` records whether ruleset 17974934 (live name 'Protect default",
+    "branch', verified 2026-10-26) currently lists the context under `required_status_checks`.",
+    "The eleven true entries below are exactly that live set. The four false entries are NOT",
+    "required today and are kept deliberately — their `pull_request:` path-filter protection",
+    "still applies, and dropping them would only shrink enforcement. Two of them,",
+    "`gate-frames-schema` and `gate-ds-artifact`, are STAGED FOR PROMOTION to the required set",
+    "(they are already in governance/required-status-checks.json's desired set): their",
+    "workflows now carry a `merge_group:` trigger PROACTIVELY, because both are sub-second and",
+    "dependency-free so running them on a queue entry costs nothing — flipping their",
+    "`requiredInRuleset` to true is then a pure listing with no workflow edit. The other two,",
+    "`gate-platform-org-pin` and `Playwright sign-in flow`, are left without `merge_group`",
+    "deliberately — adding it (notably e2e.yml's Playwright run) would burn runner time on",
+    "every queue entry to satisfy a context nothing gates on.",
     "",
     "This file WAS stale: it listed six contexts, only two of which the ruleset required,",
     "while nine required contexts were absent — so the guard covered 2 of 11. Its own rule",
@@ -99,12 +105,14 @@
     {
       "context": "gate-frames-schema",
       "file": ".github/workflows/gate-frames-schema.yml",
-      "requiredInRuleset": false
+      "requiredInRuleset": false,
+      "note": "STAGED FOR PROMOTION. In governance/required-status-checks.json's desired set, not yet in the live ruleset (verified 2026-10-26: live required set is the 11 requiredInRuleset:true contexts). The workflow now carries a merge_group: trigger (added proactively — the gate is sub-second and dependency-free, so unlike Playwright it costs nothing on a queue entry), so promoting it is a pure listing: flip requiredInRuleset to true here IN THE SAME CHANGE that FuzeSDLC's apply-ruleset.yml adds it live, with no workflow edit. See docs/runbooks/widen-required-checks.md §4a."
     },
     {
       "context": "gate-ds-artifact",
       "file": ".github/workflows/gate-ds-artifact.yml",
-      "requiredInRuleset": false
+      "requiredInRuleset": false,
+      "note": "STAGED FOR PROMOTION. In governance/required-status-checks.json's desired set, not yet in the live ruleset (verified 2026-10-26). The workflow now carries a merge_group: trigger (added proactively — a pure regenerate-and-diff that reads no PR context, so it behaves identically under merge_group), so promoting it is a pure listing: flip requiredInRuleset to true here IN THE SAME CHANGE that FuzeSDLC's apply-ruleset.yml adds it live, with no workflow edit. See docs/runbooks/widen-required-checks.md §4a."
     },
     {
       "context": "Playwright sign-in flow",
