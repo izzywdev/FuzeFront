@@ -50,6 +50,7 @@ export type PolicyGatePerformancePage = {
 
 export type ExecutionEvidenceRequirement =
   | 'evidence-url-invalid'
+  | 'provider-collection-failure'
   | 'github-run-provenance-missing'
   | 'attempt-provenance-unverified'
   | 'policy-gate-outcome-missing'
@@ -236,6 +237,10 @@ export function filterTestExecutions(
     if (
       filter.evidenceRequirement === 'evidence-url-invalid' &&
       !execution.evidenceLinks.some(link => !safeExecutionEvidenceUrl(link.url))
+    ) return false
+    if (
+      filter.evidenceRequirement === 'provider-collection-failure' &&
+      !execution.evidenceCollection?.errorCode
     ) return false
     if (
       filter.evidenceRequirement === 'github-run-provenance-missing' &&

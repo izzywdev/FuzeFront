@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.84.24
+  version: 0.84.25
   license:
     name: UNLICENSED
 servers:
@@ -1542,8 +1542,8 @@ components:
     ExecutionEvidenceRequirement:
       name: evidenceRequirement
       in: query
-      description: Select executions missing evidence required for a reviewed quality claim. Invalid URL finds retained artifact links that are malformed or do not use HTTPS. GitHub run provenance requires the head repository, normalized workflow path, and HTTPS provider run URL. Attempt provenance selects runs whose provider artifacts were withheld because they could not be proven to belong to the exact retry attempt. Policy–gate outcome requires an explicit retained pair or an unambiguous legacy one-policy/one-gate association. Performance thresholds apply only to load and stress executions. Terminal timing requires both start and completion timestamps for a non-running execution.
-      schema: { type: string, enum: [evidence-url-invalid, github-run-provenance-missing, attempt-provenance-unverified, policy-gate-outcome-missing, post-production-video-missing, performance-threshold-missing, terminal-timing-missing] }
+      description: Select executions missing evidence required for a reviewed quality claim. Invalid URL finds retained artifact links that are malformed or do not use HTTPS. Provider collection failure selects any retained artifact-discovery failure, independent of its normalized error code. GitHub run provenance requires the head repository, normalized workflow path, and HTTPS provider run URL. Attempt provenance selects runs whose provider artifacts were withheld because they could not be proven to belong to the exact retry attempt. Policy–gate outcome requires an explicit retained pair or an unambiguous legacy one-policy/one-gate association. Performance thresholds apply only to load and stress executions. Terminal timing requires both start and completion timestamps for a non-running execution.
+      schema: { type: string, enum: [evidence-url-invalid, provider-collection-failure, github-run-provenance-missing, attempt-provenance-unverified, policy-gate-outcome-missing, post-production-video-missing, performance-threshold-missing, terminal-timing-missing] }
     ExecutionThresholdOutcome:
       name: thresholdOutcome
       in: query

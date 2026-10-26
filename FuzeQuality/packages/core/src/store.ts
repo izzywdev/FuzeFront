@@ -1760,6 +1760,8 @@ export class PostgresCatalogStore implements CatalogStore {
                SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
+           OR ($25='provider-collection-failure'
+             AND executions.evidence_collection->>'errorCode' IS NOT NULL)
            OR ($25='github-run-provenance-missing'
              AND executions.provider='github-actions'
              AND (executions.head_repository IS NULL
@@ -2113,6 +2115,8 @@ export class PostgresCatalogStore implements CatalogStore {
                SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
                WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
              ))
+           OR ($25='provider-collection-failure'
+             AND executions.evidence_collection->>'errorCode' IS NOT NULL)
            OR ($25='github-run-provenance-missing'
              AND executions.provider='github-actions'
              AND (executions.head_repository IS NULL
@@ -2249,6 +2253,8 @@ export class PostgresCatalogStore implements CatalogStore {
                  SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
                  WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
                ))
+             OR ($28='provider-collection-failure'
+               AND executions.evidence_collection->>'errorCode' IS NOT NULL)
              OR ($28='github-run-provenance-missing'
                AND executions.provider='github-actions'
                AND (executions.head_repository IS NULL

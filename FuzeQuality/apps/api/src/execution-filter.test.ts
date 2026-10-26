@@ -89,6 +89,8 @@ describe('execution evidence filter', () => {
       .toBe('policy-gate-outcome-missing')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'evidence-url-invalid' }).evidenceRequirement)
       .toBe('evidence-url-invalid')
+    expect(executionFilterSchema.parse({ evidenceRequirement: 'provider-collection-failure' }).evidenceRequirement)
+      .toBe('provider-collection-failure')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'github-run-provenance-missing' }).evidenceRequirement)
       .toBe('github-run-provenance-missing')
     expect(executionFilterSchema.parse({ evidenceRequirement: 'attempt-provenance-unverified' }).evidenceRequirement)

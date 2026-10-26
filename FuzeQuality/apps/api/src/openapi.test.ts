@@ -274,8 +274,10 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionEvidenceRequirement).toMatchObject({
         name: 'evidenceRequirement',
         in: 'query',
-        schema: { type: 'string', enum: ['evidence-url-invalid', 'github-run-provenance-missing', 'attempt-provenance-unverified', 'policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
+        schema: { type: 'string', enum: ['evidence-url-invalid', 'provider-collection-failure', 'github-run-provenance-missing', 'attempt-provenance-unverified', 'policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
       })
+      expect(document.components.parameters.ExecutionEvidenceRequirement.description)
+        .toContain('Provider collection failure')
       expect(document.components.parameters.ExecutionEvidenceRequirement.description)
         .toContain('GitHub run provenance')
       expect(document.components.parameters.ExecutionEvidenceRequirement.description)
