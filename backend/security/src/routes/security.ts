@@ -693,6 +693,14 @@ router.post('/tokens/workload', async (req: Request, res: Response) => {
     }
     const workload = await authenticateKubernetesWorkload(serviceAccountToken)
     const ttl = Math.min(workload.tokenTtlSeconds ?? 600, 900)
+    // Service-to-service, which the rule's own message exempts ("Service-to-service
+    // tokens are exempt"): this mints kind 'fuze-workload' for aud
+    // 'fuzefront-services', never a user/session token. The pod identity is proved
+    // by Kubernetes TokenReview (authenticateKubernetesWorkload) and the allowed
+    // service, audience and scopes come from the repo-owned FuzeWorkloadIdentity
+    // resource, not from the caller. TTL is capped at 900s and no reusable
+    // bootstrap secret is stored.
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const accessToken = jwt.sign({
       kind: 'fuze-workload',
       sub: workload.service,
@@ -782,6 +790,15 @@ router.post('/tokens/exchange', async (req: Request, res: Response) => {
       act: { sub: actor.subject, ...(previous ? { previous } : {}) },
       jti: crypto.randomUUID(),
     }
+    // This IS FuzeFront's identity service performing RFC 8693 delegated token
+    // exchange (issuer 'fuzefront-security', kind 'fuze-delegation') — the same
+    // issuer as routes/auth.ts /login, not a product self-minting a user token.
+    // Same justification as services/orgSessionToken.ts and routes/internal.ts.
+    // The subject token is verified before this point: getUserInfo() checks
+    // session revocation (introspection alone does not), proveSessionTenant()
+    // requires active tenant membership, and a delegated exchange cannot expand
+    // its audience or scopes.
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const accessToken = jwt.sign(claims, delegationSigningKey(), {
       algorithm: 'HS256',
       expiresIn: DELEGATION_TOKEN_TTL_SECONDS,
