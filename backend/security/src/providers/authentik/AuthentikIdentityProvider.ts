@@ -1444,6 +1444,27 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     await q.del()
   }
 
+  async isSessionActive(userId: string, sessionId: string): Promise<boolean> {
+    // `sessions.id` and `sessions.user_id` are uuid columns: Postgres rejects a
+    // non-uuid operand with a syntax ERROR, which would surface as a 500/503 for
+    // what is simply a session that cannot exist. Answer "not active" instead, so
+    // a malformed id is indistinguishable from an unknown one. (Declared here, not
+    // at module level: the identifier allowlist pins `uuidv4` sites by line number,
+    // so nothing may be inserted above them.)
+    const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidShape.test(userId) || !uuidShape.test(sessionId)) return false
+    // Scoping the lookup to `user_id` is the binding check: a session only counts
+    // as active for the user it belongs to. A DB failure is deliberately NOT
+    // caught; the route maps it to a retryable 503, never to a boolean.
+    const row = await this.db('sessions')
+      .where({ id: sessionId, user_id: userId })
+      .first('expires_at')
+    if (!row) return false // unknown or revoked (revocation deletes the row)
+    // Same expiry rule getUserInfo enforces on a presented token.
+    if (row.expires_at && new Date(row.expires_at).getTime() < this.now()) return false
+    return true
+  }
+
   // ── Account sign-in connections ───────────────────────────────────────────
 
   /** Map identity-store source slugs to neutral provider slugs (unknown → dropped). */

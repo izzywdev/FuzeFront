@@ -400,6 +400,58 @@ migration. See
 [`docs/consumers/onboarding-authn-authz.md`](../consumers/onboarding-authn-authz.md)
 for the step-by-step recipe.
 
+### Checking that a session is still live (backend services)
+
+A FuzeFront session token stays cryptographically valid until its `exp` (24h)
+even after the user logs out or revokes the device; only FuzeFront's session
+store knows. A backend that verifies session tokens itself
+(`@izzywdev/fuzefront-auth` ≥ 0.4.0 / Python `fuzefront-auth` ≥ 0.2.0, in
+`legacy-hs256` mode) therefore **refuses a token that names a session** unless
+you supply a `sessionValidator` (`session_validator` in Python). Build it on
+`POST /api/v1/security/sessions/validate`:
+
+- **Caller:** a service, not a user. Send a workload token (see
+  `@izzywdev/fuzefront-service-auth`) whose scope includes `sessions:validate`.
+  A user session token is rejected (401), and a token without the scope is 403.
+- **Body:** `{ "userId": "...", "sessionId": "..." }`, taken from the token's
+  claims after you have verified its signature. Nothing else is accepted.
+- **Answer:** `200 { "active": true }` only for a live session that belongs to
+  that user. An unknown, revoked, expired or wrong-user session is the same
+  `200 { "active": false }`, with no reason.
+- **An outage must throw, not return `false`.** A `503` (or any non-2xx, or a
+  network error) means "could not check", not "revoked". Let the validator raise;
+  the auth package turns that into a retryable 503 for your caller. Returning
+  `false` on error would sign every user out whenever the session store blinks.
+  Treat anything other than a strict `active === true` as inactive.
+
+```ts
+const sessionValidator = async (userId: string, sessionId: string) => {
+  const res = await fetch(`${SECURITY_SERVICE_URL}/api/v1/security/sessions/validate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${await auth.getToken()}` },
+    body: JSON.stringify({ userId, sessionId }),
+  })
+  if (!res.ok) throw new Error(`session validity check failed: ${res.status}`) // outage or misconfig: throw
+  return (await res.json()).active === true
+}
+```
+
+```python
+def session_validator(user_id, session_id, claims):
+    r = httpx.post(
+        f"{SECURITY_SERVICE_URL}/api/v1/security/sessions/validate",
+        json={"userId": user_id, "sessionId": session_id},
+        headers={"Authorization": f"Bearer {service_token()}"},
+        timeout=3,
+    )
+    r.raise_for_status()  # non-2xx raises: the package answers 503, never "revoked"
+    return r.json().get("active") is True
+```
+
+If you cannot call it, the only alternative is the explicit opt-out
+(`allowUnvalidatedSessions: true` / `allow_unvalidated_sessions=True`), which
+knowingly accepts that a logged-out session keeps working for up to 24h.
+
 ---
 
 ## 4. Authorization (Security API)
