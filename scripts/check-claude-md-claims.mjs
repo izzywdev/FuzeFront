@@ -16,7 +16,6 @@
 // Add a claim here whenever CLAUDE.md asserts something a command could confirm.
 import { existsSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { validateSlugConvention } from '../packages/onboarding-kit/bin/validate-registration.mjs'
 
 const read = p => (existsSync(p) ? readFileSync(p, 'utf8') : null)
 const claude = read('CLAUDE.md')
@@ -76,6 +75,19 @@ const requiredNow = () => {
   return arr
 }
 
+/** The job block CONTAINING line index `at` — same boundary rule as jobBlock. */
+const jobBlockAround = (lines, at) => {
+  let start = 0
+  for (let i = at; i >= 0; i--) {
+    if (/^  \S.*:\s*$/.test(lines[i])) { start = i; break }
+  }
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^  \S.*:\s*$/.test(lines[i])) { end = i; break }
+  }
+  return lines.slice(start, end).join('\n')
+}
+
 // WIRED, not merely present — for every gate CLAUDE.md names with its workflow.
 //
 // This was the whole stated point of section 2, and it covered exactly one gate.
@@ -99,14 +111,18 @@ for (const [wf, script] of [
       // `node --test scripts/__tests__/<name>.test.mjs` is the gate's unit test, not the
       // gate: match an invocation that is NOT the test runner, or a workflow could satisfy
       // this by only testing the script it never runs.
-      const invoked = text
-        .split('\n')
-        .some(l => l.includes(`node ${script}`) && !l.includes('--test'))
-      if (!invoked) throw new Error(`no \`node ${script}\` invocation outside the unit test`)
-      if (/continue-on-error:\s*true/.test(text)) throw new Error('the workflow sets continue-on-error: true')
-      if (new RegExp(`${script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\n]*\\|\\|\\s*true`).test(text)) {
-        throw new Error('the invocation is suppressed with `|| true`')
-      }
+      const lines = text.split('\n')
+      const at = lines.findIndex(l => l.includes(`node ${script}`) && !l.includes('--test'))
+      if (at === -1) throw new Error(`no \`node ${script}\` invocation outside the unit test`)
+      // Scope the suppression checks to the JOB that holds the invocation, not the whole
+      // file. Testing the raw text means any unrelated optional step elsewhere in the same
+      // workflow that legitimately carries `continue-on-error: true` fails this claim for
+      // a reason that has nothing to do with it — no false positive in these three files
+      // today, but architecturally the wrong question, and it would fire the first time
+      // someone adds an optional step (fuze-code-review #1685).
+      const job = jobBlockAround(lines, at)
+      if (/continue-on-error:\s*true/.test(job)) throw new Error('the job sets continue-on-error: true')
+      if (/\|\|\s*true/.test(lines[at])) throw new Error('the invocation is suppressed with `|| true`')
       return true
     },
     `CLAUDE.md says ${wf} runs ${script}; it does not, or the run is suppressed`,
@@ -200,17 +216,55 @@ claim(
 claim(
   'validateSlugConvention exempts FuzeBI/FuzeX, and flags other Fuze-prefixed names',
   () => {
-    const exempt = ['FuzeBI', 'FuzeX']
-    for (const name of exempt) {
-      for (const field of ['name', 'menuLabel']) {
-        const findings = validateSlugConvention({ slug: 'x', name: 'Ok', menuLabel: 'Ok', [field]: name })
-        if (findings.length) throw new Error(`${name} rejected in ${field}: ${JSON.stringify(findings)}`)
+    // Run in a CHILD process, not via a top-level import of the validator.
+    //
+    // This started as `import { validateSlugConvention } from '../packages/...'`, and a
+    // static top-level import of another package's module is evaluated before ANY claim
+    // runs — so if that module ever grows an npm dependency, this gate dies at load with
+    // a module-not-found error and checks nothing, in a workflow that deliberately has no
+    // `npm ci` (fuze-code-review #1685). Verified stdlib-only today (it imports node:fs,
+    // node:path, node:url and nothing else), and gate-claims has passed in CI on every
+    // head carrying the import — but "true today" is exactly the kind of latent
+    // dependency this file exists to stop trusting. In a child process a load failure
+    // fails THIS claim, named, and the other claims still run.
+    const probe = `
+      import { validateSlugConvention } from './packages/onboarding-kit/bin/validate-registration.mjs'
+      const out = []
+      for (const name of ['FuzeBI', 'FuzeX']) {
+        for (const field of ['name', 'menuLabel']) {
+          const f = validateSlugConvention({ slug: 'x', name: 'Ok', menuLabel: 'Ok', [field]: name })
+          if (f.length) out.push(name + ' rejected in ' + field + ': ' + JSON.stringify(f))
+        }
       }
+      // The control: without a working carve-out an all-clear validator would pass the
+      // exempt cases too, which is what made the original grep vacuous.
+      if (!validateSlugConvention({ slug: 'fuzesales', name: 'FuzeSales', menuLabel: 'FuzeSales' }).length) {
+        out.push('a Fuze-prefixed display name was not flagged at all')
+      }
+      process.stdout.write(out.join(' | '))
+    `
+    let out
+    try {
+      out = execFileSync('node', ['--input-type=module', '-e', probe], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    } catch (e) {
+      // Node prints a multi-line trace ending in its own version banner, so `.pop()`
+      // reported "Node.js v22.22.0" as the reason. Take the first line that actually
+      // names the error instead.
+      // Prefer the human-readable message over the internal frame that merely names the
+      // error class: Node's trace puts `throw new ERR_MODULE_NOT_FOUND(...)` above the
+      // actual "Cannot find package 'x'" line.
+      const lines = String(e.stderr || '').split('\n').map(l => l.trim())
+      const why =
+        lines.find(l => /^[A-Za-z]*Error: |Cannot find (package|module)/.test(l)) ||
+        lines.find(l => /ERR_[A-Z_]+/.test(l)) ||
+        lines.find(Boolean) ||
+        e.message
+      throw new Error(`could not load/run validateSlugConvention: ${why}`)
     }
-    // The control: without a working carve-out this would also come back clean, which is
-    // what made the old grep vacuous.
-    const flagged = validateSlugConvention({ slug: 'fuzesales', name: 'FuzeSales', menuLabel: 'FuzeSales' })
-    if (!flagged.length) throw new Error('a Fuze-prefixed display name was not flagged at all')
+    if (out.trim()) throw new Error(out.trim())
     return true
   },
   'CLAUDE.md says the FuzeBI/FuzeX carve-out is encoded in validateSlugConvention; the validator disagrees',
