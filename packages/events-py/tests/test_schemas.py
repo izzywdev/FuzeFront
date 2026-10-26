@@ -352,6 +352,28 @@ def test_fork_rejects_platform_visibility():
         schema_for_topic("selection-lists.list.forked")(bad)
 
 
+def test_seed_requested_rejects_platform_list_visibility():
+    # Node selectionListsSeedRequestedSchemaV1 forbids an app request creating a
+    # platform (common) list.
+    bad = _seed_requested(
+        lists=[{"key": "countries", "sourceLocale": "en", "name": "C", "visibility": "platform", "items": []}]
+    )
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.seed.requested")(bad)
+
+
+def test_translation_target_enforces_name_max():
+    # slNameV1 caps list-translation names at 200 chars.
+    base = {
+        **_sl_base(),
+        "locale": "fr",
+        "isMachine": False,
+        "target": {"kind": "list", "name": "x" * 201, "description": None},
+    }
+    with pytest.raises(SchemaValidationError):
+        schema_for_topic("selection-lists.translation.upserted")(base)
+
+
 def test_seed_requested_rejects_bad_translation_locale():
     bad = _seed_requested(
         lists=[

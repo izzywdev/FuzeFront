@@ -194,8 +194,8 @@ def _upsert_target(value: Any) -> dict:
     def _list(val: Any) -> dict:
         sv = _V("translation.target.list", val)
         sv.enum("kind", ("list",))
-        sv.string("name", min_len=1)
-        sv.string("description", nullable=True)
+        sv.string("name", min_len=1, max_len=NAME_MAX)
+        sv.string("description", nullable=True, max_len=DESCRIPTION_MAX)
         return sv.done()
 
     def _item(val: Any) -> dict:
@@ -203,8 +203,8 @@ def _upsert_target(value: Any) -> dict:
         sv.enum("kind", ("item",))
         item_id(sv, "itemId")
         sv.string("itemCode", pattern=ITEM_CODE_RE)
-        sv.string("label", min_len=1)
-        sv.string("description", nullable=True)
+        sv.string("label", min_len=1, max_len=NAME_MAX)
+        sv.string("description", nullable=True, max_len=DESCRIPTION_MAX)
         return sv.done()
 
     return discriminated("translation.target", value, "kind", {"list": _list, "item": _item})
@@ -374,6 +374,11 @@ def validate_seed_requested(p: Any) -> dict:
         raise v.fail("userId is required when scope is 'user'")
     if out["scope"] == "org" and out.get("userId") is not None:
         raise v.fail("userId must be omitted when scope is 'org'")
+    # Mirrors selectionListsSeedRequestedSchemaV1's superRefine: an app seed
+    # request may not create a platform (common) list.
+    for lst in out["lists"]:
+        if lst.get("visibility") == "platform":
+            raise v.fail("an app seed request cannot create a platform (common) list; use 'org' or 'private'")
     return out
 
 
