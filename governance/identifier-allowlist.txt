@@ -54,10 +54,10 @@ src backend/src/services/portalProvisioning.ts:249          # portal_provisionin
 # One-shot credential artifacts. Same family as the token/nonce/verifier targets
 # NON_ENTITY_ID_RE already excludes: they are consumed once, expire, and are
 # never referenced across a service boundary.
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:790   # email_verifications row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1276  # email_verifications row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1050   # mfa_recovery_codes row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1156   # password_resets row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:839   # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1418  # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1101   # mfa_recovery_codes row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1298   # password_resets row
 
 # In-memory only: a Map key for a pending tool confirmation, never persisted and
 # never leaving the process.
