@@ -14,8 +14,8 @@
 #
 # Per-product topology reference:
 #   izzywdev/FuzeAgent docs/a2a/per-product-pod.md
-ARG BASE_TAG=latest
-FROM ghcr.io/izzywdev/fuze-a2a:${BASE_TAG}
+ARG BASE_IMAGE=ghcr.io/izzywdev/fuze-a2a:latest
+FROM ${BASE_IMAGE}
 
 COPY agent-card.json /app/agent-card.json
 ENV AGENT_CARD_FILE=/app/agent-card.json

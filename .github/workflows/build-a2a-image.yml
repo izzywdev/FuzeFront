@@ -118,21 +118,34 @@ jobs:
         id: tag
         run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch latest shared-base tag
+      - name: Resolve shared-base digest
         id: base
-        # GHCR OCI v2 tag-list requires authentication even for public packages;
-        # unauthenticated requests return 401, which caused the SHA-selection
-        # logic to silently fall back to 'latest' on every run (dead code).
-        # Using :latest explicitly is the honest default until explicit base
-        # pinning is wired; the fuze-a2a base is a controlled internal image.
-        run: echo "tag=latest" >> "$GITHUB_OUTPUT"
+        # On master builds (after GHCR login), resolve the exact OCI digest so
+        # the published image pins its runtime and a future :latest retag cannot
+        # silently incorporate a compromised release (Codex P2 finding).
+        # PR builds are ephemeral and never published, so :latest is acceptable.
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" && \
+                "${{ github.ref }}" == "refs/heads/master" ]]; then
+            DIGEST=$(docker buildx imagetools inspect \
+              ghcr.io/izzywdev/fuze-a2a:latest \
+              --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+            if [[ -z "${DIGEST}" ]]; then
+              echo "::error::Failed to resolve ghcr.io/izzywdev/fuze-a2a:latest digest"
+              exit 1
+            fi
+            echo "image=ghcr.io/izzywdev/fuze-a2a@${DIGEST}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pinned base: ghcr.io/izzywdev/fuze-a2a@${DIGEST}"
+          else
+            echo "image=ghcr.io/izzywdev/fuze-a2a:latest" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build & push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: build/a2a
           file: build/a2a/Dockerfile
-          build-args: BASE_TAG=${{ steps.base.outputs.tag }}
+          build-args: BASE_IMAGE=${{ steps.base.outputs.image }}
           push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
           tags: |
             ghcr.io/izzywdev/fuzefront-a2a:${{ steps.tag.outputs.sha }}
@@ -147,7 +160,7 @@ jobs:
           echo "::notice::Published ghcr.io/izzywdev/fuzefront-a2a:${{ steps.tag.outputs.sha }}"
           echo "## A2A image published" >> "$GITHUB_STEP_SUMMARY"
           echo "- Tag: \`${{ steps.tag.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Base: \`ghcr.io/izzywdev/fuze-a2a:${{ steps.base.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Base: \`${{ steps.base.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
 
       # Upload the generated card so tag-update can consume it without
       # re-running FuzeAgent code in a job that holds GH_RELEASE_PAT.
