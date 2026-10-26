@@ -116,9 +116,23 @@ const MUTATION = /^\/v1\/selection-lists\/[^/]+\/(items|translations)/
 const forkRequired = (over: Record<string, unknown> = {}): ApiReply =>
   err(409, 'CONFLICT', { reason: 'fork_required', source_list_id: SRC, fork_url: `/v1/selection-lists/${SRC}/fork`, ...over })
 
-/** Stale-bookmark scenario of frame 04: the French workbench of a common list; Save is refused. */
+/**
+ * Stale-bookmark scenario of frame 04: the French workbench of a common list; Save is refused.
+ *
+ * The editor is genuinely STALE: the page was opened (or bookmarked) when the list's editability was
+ * unknown/true, so the list metadata carries NO `editable`/`visibility` hint (4.0.0 shape) and the 4.0.0
+ * editor renders its inputs. A fresh read of the same list with `editable: false` renders the READ-ONLY
+ * locale view instead (SL9-READ-033: no inputs, no Save) — the two states are mutually exclusive, so the
+ * refusal specs must not model a current read-only list and then demand an editable input.
+ */
 async function saveRefused(page: Page, reply: ApiReply, opts: { flag?: boolean; build?: (w: World) => void } = {}) {
-  const ctx = await setup(page, opts)
+  const ctx = await setup(page, {
+    flag: opts.flag,
+    build: w => {
+      addList(w, commonPriorityList({ editable: undefined, visibility: undefined }), commonPriorityItems())
+      opts.build?.(w)
+    },
+  })
   ctx.api.use(on('PUT', MUTATION, () => reply))
   await openRoute(page, WORKBENCH)
   const input = page.locator("[data-translation-input='item']").first().locator('input, textarea').first()
@@ -130,7 +144,8 @@ async function saveRefused(page: Page, reply: ApiReply, opts: { flag?: boolean; 
 
 test.describe('SL9 fork — frame 04-fork-required', () => {
   test('SL9-FORK-000 canary: the 4.0.0 French workbench renders from the same mocks (passes today)', async ({ page }) => {
-    await setup(page)
+    // A STALE editor (no editable/visibility hint) — a current `editable:false` list renders the read-only view (SL9-READ-033).
+    await setup(page, { build: w => addList(w, commonPriorityList({ editable: undefined, visibility: undefined }), commonPriorityItems()) })
     await openRoute(page, WORKBENCH)
     await expect(page.locator("[data-translation-input='item']").first()).toBeVisible()
   })
@@ -525,19 +540,20 @@ test.describe('SL9 fork — frame 06-fork-results (200 existing, archived → Re
 })
 
 test.describe('SL9 fork — frame 06-fork-results (refusals inside the dialog)', () => {
-  interface Case { id: string; reply: ApiReply; sel: string; text?: RegExp; notText?: RegExp }
+  interface Case { id: string; reply: ApiReply; sel: string; text?: RegExp; notText?: RegExp; dialogResult?: string }
   const CASES: Case[] = [
     { id: 'fork_exists', reply: err(409, 'CONFLICT', { reason: 'fork_exists' }), sel: "[data-error='CONFLICT'][data-reason='fork_exists']", text: /private draft|can.t see|owner/i, notText: /\badmin(istrator)?\b/i },
     { id: 'fork_not_applicable', reply: err(409, 'CONFLICT', { reason: 'fork_not_applicable' }), sel: "[data-reason='fork_not_applicable']", text: /already belongs to your organization/i },
-    { id: 'key-taken', reply: err(409, 'CONFLICT'), sel: "[data-result='key-conflict']", text: /already has a list with the key.*priority/i },
-    { id: 'key-taken-unknown-reason', reply: err(409, 'CONFLICT', { reason: 'some_future_reason' }), sel: "[data-result='key-conflict']", text: /already has a list with the key/i },
+    // frame 06: `data-result='key-conflict'` is on the DIALOG itself; the alert is its child (data-error=CONFLICT).
+    { id: 'key-taken', reply: err(409, 'CONFLICT'), sel: "[data-error='CONFLICT']", dialogResult: 'key-conflict', text: /already has a list with the key.*priority/i },
+    { id: 'key-taken-unknown-reason', reply: err(409, 'CONFLICT', { reason: 'some_future_reason' }), sel: "[data-error='CONFLICT']", dialogResult: 'key-conflict', text: /already has a list with the key/i },
     { id: 'quota-org_lists', reply: err(403, 'QUOTA_EXCEEDED', { scope: 'org_lists', limit: 100, current: 100 }), sel: "[data-error='QUOTA_EXCEEDED'][data-quota-scope='org_lists']", text: /100/ },
     { id: 'quota-user_lists', reply: err(403, 'QUOTA_EXCEEDED', { scope: 'user_lists', limit: 25, current: 25 }), sel: "[data-error='QUOTA_EXCEEDED'] [data-quota-scope='user_lists'], [data-quota-scope='user_lists']", text: /25/ },
     { id: 'quota-list_items', reply: err(403, 'QUOTA_EXCEEDED', { scope: 'list_items', limit: 250, current: 312 }), sel: "[data-error='QUOTA_EXCEEDED'] [data-quota-scope='list_items'], [data-quota-scope='list_items']", text: /312.*250|250.*312/ },
     { id: 'quota-unknown-scope', reply: err(403, 'QUOTA_EXCEEDED', { scope: 'something_new', limit: 1, current: 1 }), sel: "[data-error='QUOTA_EXCEEDED']", text: /a limit was reached/i },
     { id: 'size-cap', reply: err(400, 'VALIDATION_ERROR'), sel: "[data-error='VALIDATION_ERROR'][data-case='fork-size-cap']", text: /too large to fork.*5,?000/is },
     { id: 'forbidden', reply: err(403, 'FORBIDDEN'), sel: "[data-error='FORBIDDEN'][data-case='fork-no-create']", text: /can.t fork lists/i },
-    { id: 'not-found', reply: err(404, 'NOT_FOUND'), sel: "[data-result='not-found'] [data-error='NOT_FOUND'], [data-error='NOT_FOUND'][data-result='not-found'], [data-error='NOT_FOUND']", text: /no longer available/i },
+    { id: 'not-found', reply: err(404, 'NOT_FOUND'), sel: "[data-error='NOT_FOUND']", dialogResult: 'not-found', text: /no longer available/i },
   ]
   for (const c of CASES) {
     test(`SL9-FORK-040-${c.id} refusal renders inside the OPEN dialog; nothing navigates; the dialog is not retryable unless it is the network case`, async ({ page }) => {
@@ -545,9 +561,10 @@ test.describe('SL9 fork — frame 06-fork-results (refusals inside the dialog)',
       api.use(on('POST', FORK_PATH, () => c.reply))
       await openDialog(page)
       await press(confirm(page))
+      if (c.dialogResult) await expect(dialog(page), `the dialog itself carries data-result=${c.dialogResult}`).toHaveAttribute('data-result', c.dialogResult)
       const banner = dialog(page).locator(c.sel).first()
       await expect(banner).toBeVisible()
-      await expect(banner).toHaveAttribute('role', 'alert')
+      await expect(dialog(page).getByRole('alert').first(), 'the refusal is announced as an alert').toBeVisible()
       if (c.text) await expect(dialog(page)).toContainText(c.text)
       if (c.notText) await expect(banner).not.toContainText(c.notText)
       await expect(dialog(page), 'refusals never close the dialog').toBeVisible()
@@ -572,7 +589,8 @@ test.describe('SL9 fork — frame 06-fork-results (refusals inside the dialog)',
     await openDialog(page)
     const before = api.calls.filter(c => c.method === 'GET').length
     await press(confirm(page))
-    await expect(dialog(page).locator("[data-result='key-conflict']")).toBeVisible()
+    await expect(dialog(page)).toHaveAttribute('data-result', 'key-conflict')
+    await expect(dialog(page).locator("[data-error='CONFLICT']")).toBeVisible()
     await expect(dialog(page).locator("a:not([data-action='close'])")).toHaveCount(0)
     await page.waitForTimeout(400)
     expect(api.calls.filter(c => c.method === 'GET').length, 'no lookup after the refusal').toBe(before)

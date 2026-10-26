@@ -95,6 +95,12 @@ async function setup(page: Page, opts: { flag?: boolean; source?: Source; fork?:
 }
 
 const panel = (page: Page) => page.locator("[data-panel='fork-provenance']")
+/**
+ * Frame 07's main card puts `data-behind-state` on the status line INSIDE the panel; its state gallery and
+ * frame 13 put it on the panel itself. Accept both; read the recorded facts from `panel()`.
+ */
+const behind = (page: Page, state: string) =>
+  page.locator(`[data-panel='fork-provenance'][data-behind-state='${state}'], [data-panel='fork-provenance'] [data-behind-state='${state}']`).first()
 const sourceReads = (api: Api) => api.callsTo('GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}`)
 const revert = (page: Page) => page.locator("[data-action='revert-to-common']")
 const archiveFork = (page: Page) => page.locator("[data-action='archive-fork']")
@@ -129,79 +135,79 @@ test.describe('SL9 provenance — frame 07-fork-detail', () => {
     const { api } = await setup(page)
     api.use(hold('GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}`, gate.promise))
     await openRoute(page, detail(FORK_PRIORITY_ID))
-    const p = page.locator("[data-panel='fork-provenance'][data-behind-state='checking']")
+    const p = behind(page, 'checking')
     await expect(p).toBeVisible()
-    await expect(p).toHaveAttribute('aria-busy', 'true')
-    await expect(p.locator("[data-forked-revision='7']")).toBeVisible()
+    await expect(panel(page)).toHaveAttribute('aria-busy', 'true')
+    await expect(panel(page).locator("[data-forked-revision='7']")).toBeVisible()
     await expect(page.locator(`[data-item='${FORK_ITEM_IDS.low}']`), 'the editor does not wait').toBeVisible()
     await expect(revert(page)).toHaveCount(0)
     await expect(archiveFork(page)).toHaveCount(0)
     gate.resolve()
-    await expect(page.locator("[data-panel='fork-provenance'][data-behind-state='unknown']")).toBeVisible()
+    await expect(behind(page, 'unknown')).toBeVisible()
   })
 
   test('SL9-PROV-003 comparison unavailable (the ONLY state reachable under 4.1.0): source returns no revision; never inferred from updated_at', async ({ page }) => {
     await setup(page)
     await openRoute(page, detail(FORK_PRIORITY_ID))
-    const p = page.locator("[data-panel='fork-provenance'][data-behind-state='unknown']")
+    const p = behind(page, 'unknown')
     await expect(p).toBeVisible()
-    await expect(p).toContainText(/copied version 7/i)
-    await expect(p).toContainText(/not tracked/i)
+    await expect(panel(page)).toContainText(/copied version 7/i)
+    await expect(panel(page)).toContainText(/not tracked/i)
     await expect(page.locator("[data-behind-state='behind'], [data-behind-state='up-to-date']")).toHaveCount(0)
   })
 
   test('SL9-PROV-004 @needs-contract-revision behind: source revision 9 > copied 7 — informational only, no merge/sync action', async ({ page }) => {
     await setup(page, { source: { revision: 9 } })
     await openRoute(page, detail(FORK_PRIORITY_ID))
-    const p = page.locator("[data-panel='fork-provenance'][data-behind-state='behind']")
+    const p = behind(page, 'behind')
     await expect(p).toBeVisible()
-    await expect(p.locator("[data-source-revision='9']")).toHaveText('9')
-    await expect(p.locator("[data-forked-revision='7']")).toHaveText('7')
-    await expect(p).toContainText(/common list has changed since you forked/i)
+    await expect(panel(page).locator("[data-source-revision='9']")).toHaveText('9')
+    await expect(panel(page).locator("[data-forked-revision='7']")).toHaveText('7')
+    await expect(panel(page)).toContainText(/common list has changed since you forked/i)
     await expect(p.getByRole('button', { name: /merge|sync|update|pull/i })).toHaveCount(0)
   })
 
   test('SL9-PROV-005 @needs-contract-revision up to date: source revision = copied revision', async ({ page }) => {
     await setup(page, { source: { revision: 7 } })
     await openRoute(page, detail(FORK_PRIORITY_ID))
-    const p = page.locator("[data-panel='fork-provenance'][data-behind-state='up-to-date']")
+    const p = behind(page, 'up-to-date')
     await expect(p).toBeVisible()
-    await expect(p).toContainText(/same version as the common list/i)
+    await expect(panel(page)).toContainText(/same version as the common list/i)
   })
 
   test('SL9-PROV-006 source archived: "retired", no error colour, source link kept', async ({ page }) => {
     await setup(page, { source: 'archived' })
     await openRoute(page, detail(FORK_PRIORITY_ID))
-    const p = page.locator("[data-panel='fork-provenance'][data-behind-state='source-archived']")
+    const p = behind(page, 'source-archived')
     await expect(p).toBeVisible()
-    await expect(p).toContainText(/retired|archived/i)
-    await expect(p).toContainText(/your fork is unaffected/i)
+    await expect(panel(page)).toContainText(/retired|archived/i)
+    await expect(panel(page)).toContainText(/your fork is unaffected/i)
   })
 
   test('SL9-PROV-007 source gone (404: purged OR unreadable): "no longer available", NO link, NO alert/error colour', async ({ page }) => {
     await setup(page, { source: 'gone' })
     await openRoute(page, detail(FORK_PRIORITY_ID))
-    const p = page.locator("[data-panel='fork-provenance'][data-behind-state='source-gone']")
+    const p = behind(page, 'source-gone')
     await expect(p).toBeVisible()
-    await expect(p).toContainText(/no longer available/i)
-    await expect(p.locator("[data-action='view-source']")).toHaveCount(0)
-    await expect(p.locator('a')).toHaveCount(0)
-    await expect(p.locator("[role='alert']")).toHaveCount(0)
+    await expect(panel(page)).toContainText(/no longer available/i)
+    await expect(panel(page).locator("[data-action='view-source']")).toHaveCount(0)
+    await expect(panel(page).locator('a')).toHaveCount(0)
+    await expect(panel(page).locator("[role='alert']")).toHaveCount(0)
   })
 
   test('SL9-PROV-008 check failed (5xx / network): "Couldn\'t check", Retry re-runs the read', async ({ page }) => {
     const { api } = await setup(page)
     api.use(failTimes(1, 'GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}`, err(503, 'INTERNAL')))
     await openRoute(page, detail(FORK_PRIORITY_ID))
-    const p = page.locator("[data-panel='fork-provenance'][data-behind-state='error']")
+    const p = behind(page, 'error')
     await expect(p).toBeVisible()
-    await expect(p).toContainText(/couldn.t check/i)
+    await expect(panel(page)).toContainText(/couldn.t check/i)
     await expect(revert(page)).toHaveCount(0)
     await expect(archiveFork(page)).toHaveCount(0)
     const before = sourceReads(api).length
-    await press(p.locator("[data-action='retry']"), 'Retry')
+    await press(panel(page).locator("[data-action='retry']"), 'Retry')
     await expect.poll(() => sourceReads(api).length).toBeGreaterThan(before)
-    await expect(page.locator("[data-panel='fork-provenance'][data-behind-state='unknown']")).toBeVisible()
+    await expect(behind(page, 'unknown')).toBeVisible()
   })
 
   test('SL9-PROV-009 "Copied from" maps origin_item_id to the loaded source items; null origin = added in the fork', async ({ page }) => {
@@ -421,7 +427,8 @@ for (const loc of [{ tag: 'en-US', dir: 'ltr' }, { tag: 'he-IL', dir: 'rtl' }] a
       const { api } = await setup(page)
       api.use(failTimes(1, 'GET', `/v1/selection-lists/${COMMON_PRIORITY_ID}`, err(503, 'INTERNAL')))
       await openRoute(page, detail(FORK_PRIORITY_ID))
-      const retry = page.locator("[data-behind-state='error'] [data-action='retry']")
+      await expect(behind(page, 'error')).toBeVisible()
+      const retry = panel(page).locator("[data-action='retry']")
       await expect(retry).toBeVisible()
       await expectTouchTarget(retry, 'Retry')
     })
