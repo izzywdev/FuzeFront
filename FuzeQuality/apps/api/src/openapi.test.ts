@@ -228,6 +228,7 @@ describe('contract discovery', () => {
         expect(parameterRefs).toContain('#/components/parameters/ExecutionName')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceKind')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCollectionStatus')
+        expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCollectionErrorCode')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCheckedAfter')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceCheckedBefore')
         expect(parameterRefs).toContain('#/components/parameters/ExecutionEvidenceRequirement')
@@ -252,6 +253,14 @@ describe('contract discovery', () => {
         in: 'query',
         schema: { type: 'string', enum: ['complete', 'partial', 'unavailable', 'not-collected'] },
       })
+      expect(document.components.parameters.ExecutionEvidenceCollectionErrorCode).toMatchObject({
+        name: 'evidenceCollectionErrorCode',
+        in: 'query',
+        schema: {
+          type: 'string',
+          enum: ['PROVIDER_TIMEOUT', 'PROVIDER_UNAVAILABLE', 'PROVIDER_RESPONSE_INVALID', 'PROVIDER_RESULT_LIMIT_EXCEEDED'],
+        },
+      })
       expect(document.components.parameters.ExecutionEvidenceCheckedAfter).toMatchObject({
         name: 'evidenceCheckedAfter',
         in: 'query',
@@ -265,12 +274,22 @@ describe('contract discovery', () => {
       expect(document.components.parameters.ExecutionEvidenceRequirement).toMatchObject({
         name: 'evidenceRequirement',
         in: 'query',
-        schema: { type: 'string', enum: ['policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
+        schema: { type: 'string', enum: ['evidence-url-invalid', 'github-run-provenance-missing', 'policy-gate-outcome-missing', 'post-production-video-missing', 'performance-threshold-missing', 'terminal-timing-missing'] },
       })
+      expect(document.components.parameters.ExecutionEvidenceRequirement.description)
+        .toContain('GitHub run provenance')
       expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
         .toContain('exact tenant-scoped repository revision')
       expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
         .toContain('LiteLLM evidence IDs')
+      expect(document.paths['/api/v1/internal/repository-flow-candidates'].post.description)
+        .toContain('grounding counts')
+      expect(
+        document.components.schemas.RepositoryFlowAnalysisProvenance.properties.grounding
+          .properties.groundedArtifactCount.description
+      ).toContain('wireframe-target')
+      expect(document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description)
+        .toContain('model, prompt, and schema')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
         .toContain('no retained collection attempt')
       expect(document.paths['/api/v1/repositories/{repositoryId}/test-executions/evidence/refresh'].post.description)
@@ -348,7 +367,7 @@ describe('contract discovery', () => {
         ].schema
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.ExecutionOutcomeTrend.required).toEqual(
-        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount']
+        ['date', 'total', 'passed', 'failed', 'cancelled', 'running', 'passRate', 'durationSampleCount', 'averageDurationMs', 'maximumDurationMs', 'retryAttemptCount', 'successfulRetryCount', 'recoveredRunCount', 'evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount', 'gateEvaluationCount', 'gatePassedCount', 'gateFailedCount', 'gateCancelledCount', 'gateRunningCount', 'gateUnevaluatedExecutionCount', 'thresholdEvaluationCount', 'thresholdPassedCount', 'thresholdFailedCount', 'performanceExecutionWithoutThresholdCount']
       )
       expect(schemas.ExecutionOutcomeTrend.properties.passRate).toMatchObject({
         type: 'number', format: 'double', minimum: 0, maximum: 1,
@@ -359,6 +378,15 @@ describe('contract discovery', () => {
       expect(schemas.ExecutionOutcomeTrend.properties.maximumDurationMs).toMatchObject({
         type: 'integer', minimum: 0,
       })
+      for (const property of ['evidenceCompleteCount', 'evidencePartialCount', 'evidenceUnavailableCount', 'evidenceNotCollectedCount', 'invalidEvidenceUrlCount', 'githubRunProvenanceMissingCount', 'postProductionVideoMissingCount', 'terminalTimingMissingCount']) {
+        expect(schemas.ExecutionOutcomeTrend.properties[property]).toMatchObject({ type: 'integer', minimum: 0 })
+      }
+      for (const property of ['gateEvaluationCount', 'gatePassedCount', 'gateFailedCount', 'gateCancelledCount', 'gateRunningCount', 'gateUnevaluatedExecutionCount']) {
+        expect(schemas.ExecutionOutcomeTrend.properties[property]).toMatchObject({ type: 'integer', minimum: 0 })
+      }
+      for (const property of ['thresholdEvaluationCount', 'thresholdPassedCount', 'thresholdFailedCount', 'performanceExecutionWithoutThresholdCount']) {
+        expect(schemas.ExecutionOutcomeTrend.properties[property]).toMatchObject({ type: 'integer', minimum: 0 })
+      }
       expect(schemas.ExecutionOutcomeTrend.properties.successfulRetryCount).toMatchObject({
         type: 'integer', minimum: 0,
       })
@@ -411,6 +439,9 @@ describe('contract discovery', () => {
         document.paths['/api/v1/internal/policy-gate-evaluations'].post.description
       ).toContain('exact repository analysis revision')
       expect(
+        document.paths['/api/v1/internal/policy-gate-evaluations'].post.description
+      ).toContain('passage signal')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
@@ -421,6 +452,7 @@ describe('contract discovery', () => {
         'model',
         'promptVersion',
         'schemaVersion',
+        'analysisRisk',
         'minConfidence',
         'maxConfidence',
         'limit',
@@ -434,6 +466,10 @@ describe('contract discovery', () => {
         type: 'object',
         required: ['items', 'page'],
       })
+      const analysisRisk = document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters
+        .find((parameter: { name: string }) => parameter.name === 'analysisRisk')
+      expect(analysisRisk.schema.enum).toEqual(['grounding-gaps', 'prompt-truncated', 'provenance-missing'])
+      expect(analysisRisk.description).toContain('FuzeInfra LiteLLM')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}'].get.responses['200'].content[
           'application/json'
@@ -472,6 +508,9 @@ describe('contract discovery', () => {
       ).toContain('grounding gaps')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
+      ).toContain('reviewable wireframe')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
       ).toContain('exact repository revision')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['422'].description
@@ -496,6 +535,9 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['422'].description
       ).toContain('exact repository revision')
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['422'].description
+      ).toContain('passage signal')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.requestBody.content[
           'application/json'
         ].schema.properties.expectedReviewedAt
@@ -504,7 +546,7 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
-      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
+      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
           'application/json'
@@ -514,13 +556,15 @@ describe('contract discovery', () => {
         required: ['items', 'page'],
       })
       expect(schemas.RepositoryFlowCandidatePage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
+      expect(schemas.RepositoryFlowCandidate.properties.steps.minItems).toBe(1)
+      expect(schemas.FlowWireframe.properties.nodes.minItems).toBe(1)
       expect(schemas.PolicyGateEvaluationPage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
       expect(schemas.HistoryCursorPage.required).toEqual(['nextCursor', 'hasMore'])
       expect(schemas.HistoryCursorPage.properties.nextCursor.nullable).toBe(true)
       expect(
         document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters
           .map((parameter: { name: string }) => parameter.name)
-      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
+      ).toEqual(['kind', 'remediationAction', 'severity', 'reviewStatus', 'revision', 'subject', 'policyArtifactId', 'gateArtifactId', 'minConfidence', 'maxConfidence', 'limit', 'cursor'])
       expect(
         document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
           'application/json'
@@ -586,6 +630,15 @@ describe('contract discovery', () => {
       expect(schemas.TestSuiteDispatchAudit.properties.artifactLogicalId.description).toContain(
         'across repository scans'
       )
+      expect(schemas.TestSuiteDispatchAudit.properties.executionResult.$ref).toBe(
+        '#/components/schemas/TestSuiteDispatchExecutionResult'
+      )
+      expect(schemas.TestSuiteDispatchExecutionResult.required).toEqual(
+        ['id', 'provider', 'externalRunId', 'attempt', 'status']
+      )
+      expect(schemas.TestSuiteDispatchExecutionResult.properties.sourceUrl).toMatchObject({
+        type: 'string', format: 'uri', pattern: '^https://',
+      })
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.responses['200'].content[
           'application/json'
@@ -595,6 +648,9 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.parameters
           .map((parameter: { name: string }) => parameter.name)
       ).toEqual(['limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suite-dispatches/latest'].get.description
+      ).toContain('source revision, and dispatched ref all match exactly')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.responses['200'].content[
           'application/json'
@@ -607,6 +663,9 @@ describe('contract discovery', () => {
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
       ).toContain('bounded tenant-scoped dispatch lookup')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-suites/{artifactId}/dispatches'].get.description
+      ).toContain('source revision, and dispatched ref all match exactly')
       expect(schemas.TestSuiteDispatchAuditPage.properties.page.$ref).toBe(
         '#/components/schemas/HistoryCursorPage'
       )

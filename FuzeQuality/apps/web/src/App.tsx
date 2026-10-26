@@ -86,7 +86,7 @@ import {
 import { PolicyGateEvidence, policyGateArtifactReferenceProblems } from './components/governanceEvidence'
 import { GovernanceInspector } from './components/governanceInspector'
 import { ExecutionInspector } from './components/executionInspector'
-import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
+import { FlowInventoryFilters, type FlowAnalysisRisk, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector, flowArtifactTargetIds, unavailableFlowArtifactTargetIds } from './components/flowInspector'
 import { RepositoryAnalysisStatus } from './components/repositoryAnalysisStatus'
 import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
@@ -208,6 +208,24 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
       retryAttemptCount: 0,
       successfulRetryCount: 0,
       recoveredRunCount: 0,
+      evidenceCompleteCount: 0,
+      evidencePartialCount: 0,
+      evidenceUnavailableCount: 0,
+      evidenceNotCollectedCount: 0,
+      invalidEvidenceUrlCount: 0,
+      githubRunProvenanceMissingCount: 0,
+      postProductionVideoMissingCount: 0,
+      terminalTimingMissingCount: 0,
+      gateEvaluationCount: 0,
+      gatePassedCount: 0,
+      gateFailedCount: 0,
+      gateCancelledCount: 0,
+      gateRunningCount: 0,
+      gateUnevaluatedExecutionCount: 0,
+      thresholdEvaluationCount: 0,
+      thresholdPassedCount: 0,
+      thresholdFailedCount: 0,
+      performanceExecutionWithoutThresholdCount: 0,
     }
     const itemDurationSampleCount = item.durationSampleCount ?? 0
     const itemAverageDurationMs = item.averageDurationMs ?? 0
@@ -229,6 +247,24 @@ function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): Executi
     current.retryAttemptCount += item.retryAttemptCount ?? 0
     current.successfulRetryCount += item.successfulRetryCount ?? 0
     current.recoveredRunCount += item.recoveredRunCount ?? 0
+    current.evidenceCompleteCount = (current.evidenceCompleteCount ?? 0) + (item.evidenceCompleteCount ?? 0)
+    current.evidencePartialCount = (current.evidencePartialCount ?? 0) + (item.evidencePartialCount ?? 0)
+    current.evidenceUnavailableCount = (current.evidenceUnavailableCount ?? 0) + (item.evidenceUnavailableCount ?? 0)
+    current.evidenceNotCollectedCount = (current.evidenceNotCollectedCount ?? 0) + (item.evidenceNotCollectedCount ?? 0)
+    current.invalidEvidenceUrlCount = (current.invalidEvidenceUrlCount ?? 0) + (item.invalidEvidenceUrlCount ?? 0)
+    current.githubRunProvenanceMissingCount = (current.githubRunProvenanceMissingCount ?? 0) + (item.githubRunProvenanceMissingCount ?? 0)
+    current.postProductionVideoMissingCount = (current.postProductionVideoMissingCount ?? 0) + (item.postProductionVideoMissingCount ?? 0)
+    current.terminalTimingMissingCount = (current.terminalTimingMissingCount ?? 0) + (item.terminalTimingMissingCount ?? 0)
+    current.gateEvaluationCount = (current.gateEvaluationCount ?? 0) + (item.gateEvaluationCount ?? 0)
+    current.gatePassedCount = (current.gatePassedCount ?? 0) + (item.gatePassedCount ?? 0)
+    current.gateFailedCount = (current.gateFailedCount ?? 0) + (item.gateFailedCount ?? 0)
+    current.gateCancelledCount = (current.gateCancelledCount ?? 0) + (item.gateCancelledCount ?? 0)
+    current.gateRunningCount = (current.gateRunningCount ?? 0) + (item.gateRunningCount ?? 0)
+    current.gateUnevaluatedExecutionCount = (current.gateUnevaluatedExecutionCount ?? 0) + (item.gateUnevaluatedExecutionCount ?? 0)
+    current.thresholdEvaluationCount = (current.thresholdEvaluationCount ?? 0) + (item.thresholdEvaluationCount ?? 0)
+    current.thresholdPassedCount = (current.thresholdPassedCount ?? 0) + (item.thresholdPassedCount ?? 0)
+    current.thresholdFailedCount = (current.thresholdFailedCount ?? 0) + (item.thresholdFailedCount ?? 0)
+    current.performanceExecutionWithoutThresholdCount = (current.performanceExecutionWithoutThresholdCount ?? 0) + (item.performanceExecutionWithoutThresholdCount ?? 0)
     merged.set(item.date, current)
   }
   return [...merged.values()].sort((left, right) => left.date.localeCompare(right.date))
@@ -2873,10 +2909,12 @@ function FlowReviewHistory({
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const detailsRef = useRef<HTMLDetailsElement>(null)
   const historyRequestInFlight = useRef(false)
+  const initialHistoryLoaded = useRef(false)
   const historyRequest = useRef(0)
 
   const loadHistory = useCallback(async (cursor?: string) => {
     if (historyRequestInFlight.current) return
+    if (!cursor) initialHistoryLoaded.current = true
     const request = ++historyRequest.current
     historyRequestInFlight.current = true
     setLoading(true)
@@ -2892,6 +2930,7 @@ function FlowReviewHistory({
       setNextCursor(page.page.nextCursor)
     } catch (cause) {
       if (request === historyRequest.current) {
+        if (!cursor) initialHistoryLoaded.current = false
         setError(
           cause instanceof Error ? cause.message : 'Unable to load review history'
         )
@@ -2907,6 +2946,7 @@ function FlowReviewHistory({
   useEffect(() => {
     historyRequest.current++
     historyRequestInFlight.current = false
+    initialHistoryLoaded.current = false
     setHistory([])
     setNextCursor(null)
     setError(undefined)
@@ -2918,7 +2958,7 @@ function FlowReviewHistory({
       ref={detailsRef}
       className="policy-review-history"
       onToggle={event => {
-        if (event.currentTarget.open && !history.length && !loading)
+        if (event.currentTarget.open && !initialHistoryLoaded.current && !loading)
           void loadHistory()
       }}
     >
@@ -2961,6 +3001,34 @@ function FlowReviewHistory({
       )}
     </details>
   )
+}
+
+function DispatchExecutionResult({ dispatch }: { dispatch: TestSuiteDispatch }) {
+  if (dispatch.executionResult) {
+    const recordedVideo = dispatch.executionResult.evidenceLinks?.find(link => link.kind === 'video')
+    const evidenceCollection = dispatch.executionResult.evidenceCollection
+    return (
+      <p className="performance-inventory-only">
+        Observed execution · {dispatch.executionResult.status} · attempt {dispatch.executionResult.attempt}
+        {dispatch.executionResult.sourceUrl ? (
+          <> · <a href={dispatch.executionResult.sourceUrl} target="_blank" rel="noreferrer">Open CI run</a></>
+        ) : null}
+        {recordedVideo ? (
+          <> · <a href={recordedVideo.url} target="_blank" rel="noreferrer">Open recorded video</a></>
+        ) : null}
+        {evidenceCollection?.status === 'unavailable' ? (
+          <> · Evidence collection unavailable{evidenceCollection.errorCode ? ` · ${evidenceCollection.errorCode}` : ''}</>
+        ) : evidenceCollection?.status === 'partial' ? (
+          <> · Evidence collection partial</>
+        ) : dispatch.artifactKind === 'post-production-test' && evidenceCollection?.status === 'complete' && !recordedVideo ? (
+          <> · No recorded video retained</>
+        ) : null}
+      </p>
+    )
+  }
+  return dispatch.status === 'accepted' ? (
+    <p className="performance-inventory-only">Awaiting an execution for this exact revision and ref.</p>
+  ) : null
 }
 
 function TestSuiteDispatchHistory({
@@ -3053,6 +3121,7 @@ function TestSuiteDispatchHistory({
                     : ' · no workflow inputs'}
                   {dispatch.error ? ` · ${dispatch.error}` : ''}
                 </p>
+                <DispatchExecutionResult dispatch={dispatch} />
               </li>
             ))}
           </ol>
@@ -3073,11 +3142,13 @@ export function FlowReviewControls({
   flow,
   currentRevision,
   knownArtifactIds = [],
+  evidenceVerification,
   onReview,
 }: {
   flow: RepositoryFlowCandidate
   currentRevision?: string
   knownArtifactIds?: Iterable<string>
+  evidenceVerification?: 'loading' | 'ready' | 'unavailable'
   onReview: (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -3098,7 +3169,12 @@ export function FlowReviewControls({
       (grounding.rejectedArtifactCount > 0 || grounding.ungroundedStepCount > 0)
   )
   const groundingRationaleMissing = hasGroundingGaps && reason.trim().length < 3
-  const unavailableTargetIds = unavailableFlowArtifactTargetIds(flow, knownArtifactIds)
+  const analysisProvenanceMissing = flow.source === 'litellm' && !flow.analysis
+  const wireframeMissing = flow.wireframe.nodes.length === 0
+  const unavailableTargetIds = evidenceVerification !== 'loading' && evidenceVerification !== 'unavailable'
+    ? unavailableFlowArtifactTargetIds(flow, knownArtifactIds)
+    : []
+  const evidenceVerificationBlocked = evidenceVerification === 'loading' || evidenceVerification === 'unavailable'
 
   useEffect(() => {
     setStale(false)
@@ -3165,6 +3241,26 @@ export function FlowReviewControls({
             LiteLLM returned unverified repository references. Confirmation requires a reviewer rationale; rejection remains available.
           </p>
         )}
+        {analysisProvenanceMissing && (
+          <p className="form-error" role="alert">
+            Confirmation is blocked because this FuzeInfra LiteLLM proposal has no stored model, prompt, and schema provenance. Reject it or regenerate repository analysis.
+          </p>
+        )}
+        {wireframeMissing && (
+          <p className="form-error" role="alert">
+            Confirmation is blocked because this flow has no reviewable wireframe. Reject this proposal or regenerate repository analysis.
+          </p>
+        )}
+        {evidenceVerification === 'loading' && (
+          <p className="performance-inventory-only" role="status">
+            Verifying UX-flow evidence for this exact repository revision before confirmation.
+          </p>
+        )}
+        {evidenceVerification === 'unavailable' && (
+          <p className="form-error" role="alert">
+            Confirmation is blocked because exact-revision UX-flow evidence could not be verified. Reject this proposal or retry after repository evidence is available.
+          </p>
+        )}
         {unavailableTargetIds.length > 0 && (
           <p className="form-error" role="alert">
             Confirmation is blocked because {unavailableTargetIds.length} artifact reference {unavailableTargetIds.length === 1 ? 'is' : 'are'} unavailable in this exact repository revision. Reject this proposal or regenerate repository analysis.
@@ -3173,7 +3269,7 @@ export function FlowReviewControls({
         <div className="row-actions">
           <QualityAction
             intent="secondary"
-            disabled={busy || !isReviewable || groundingRationaleMissing || unavailableTargetIds.length > 0}
+            disabled={busy || !isReviewable || groundingRationaleMissing || analysisProvenanceMissing || wireframeMissing || evidenceVerificationBlocked || unavailableTargetIds.length > 0}
             onClick={() => void submit('confirmed')}
           >
             <Check size={14} /> Confirm
@@ -3305,11 +3401,13 @@ export function PolicyGateReviewControls({
   evaluation,
   currentRevision,
   evidenceArtifacts,
+  evidenceVerification,
   onReview,
 }: {
   evaluation: PolicyGateEvaluation
   currentRevision?: string
   evidenceArtifacts?: QualityArtifact[]
+  evidenceVerification?: 'loading' | 'ready' | 'unavailable'
   onReview: (
     evaluation: PolicyGateEvaluation,
     status: 'accepted' | 'dismissed',
@@ -3327,9 +3425,10 @@ export function PolicyGateReviewControls({
   const requiresAcceptanceRationale = evaluation.kind !== 'guarded-policy'
   const acceptanceRationaleMissing =
     requiresAcceptanceRationale && reason.trim().length < 3
-  const unavailableEvidenceIds = evidenceArtifacts
+  const unavailableEvidenceIds = evidenceVerification !== 'loading' && evidenceVerification !== 'unavailable' && evidenceArtifacts
     ? policyGateArtifactReferenceProblems(evaluation, evidenceArtifacts)
     : []
+  const evidenceVerificationBlocked = evidenceVerification === 'loading' || evidenceVerification === 'unavailable'
 
   useEffect(() => {
     setStale(false)
@@ -3389,6 +3488,16 @@ export function PolicyGateReviewControls({
               Accepting this anomaly creates reviewed remediation evidence and requires a rationale. Dismissal remains available.
             </p>
           )}
+          {evidenceVerification === 'loading' && (
+            <p className="flow-review-guidance" role="status">
+              Verifying policy and gate evidence for this exact repository revision before acceptance.
+            </p>
+          )}
+          {evidenceVerification === 'unavailable' && (
+            <p className="form-error" role="alert">
+              Acceptance is blocked because exact-revision policy and gate evidence could not be verified. Dismiss this recommendation or retry after repository evidence is available.
+            </p>
+          )}
           {unavailableEvidenceIds.length > 0 && (
             <p className="form-error" role="alert">
               Acceptance is blocked because {unavailableEvidenceIds.length} policy/gate evidence reference {unavailableEvidenceIds.length === 1 ? 'is' : 'are'} unavailable or mismatched in this exact repository revision. Dismiss this recommendation or regenerate repository analysis.
@@ -3397,7 +3506,7 @@ export function PolicyGateReviewControls({
           <div className="row-actions">
             <QualityAction
               intent="secondary"
-              disabled={busy || !isReviewable || acceptanceRationaleMissing || unavailableEvidenceIds.length > 0}
+              disabled={busy || !isReviewable || acceptanceRationaleMissing || evidenceVerificationBlocked || unavailableEvidenceIds.length > 0}
               onClick={() => void submit('accepted')}
             >
               <Check size={14} /> Accept recommendation
@@ -3429,6 +3538,7 @@ type FlowInventorySelection = {
   model: string
   promptVersion: string
   schemaVersion: string
+  analysisRisk: FlowAnalysisRisk | ''
   minimumConfidencePercent: string
   maximumConfidencePercent: string
 }
@@ -3440,6 +3550,8 @@ type PolicyGateInventorySelection = {
   reviewStatus: PolicyGateEvaluation['reviewStatus'] | ''
   revisionScope: FlowRevisionScope
   subject: string
+  policyArtifactId: string
+  gateArtifactId: string
   minimumConfidencePercent: string
   maximumConfidencePercent: string
 }
@@ -3625,6 +3737,8 @@ export function policyGateEvaluationMatchesInventory(
     )
   )
     return false
+  if (selection.policyArtifactId && !evaluation.policyArtifactIds.includes(selection.policyArtifactId)) return false
+  if (selection.gateArtifactId && !evaluation.gateArtifactIds.includes(selection.gateArtifactId)) return false
   if (selection.minimumConfidencePercent !== '' && evaluation.confidence < Number(selection.minimumConfidencePercent) / 100) return false
   if (selection.maximumConfidencePercent !== '' && evaluation.confidence > Number(selection.maximumConfidencePercent) / 100) return false
   if (selection.revisionScope === 'current') {
@@ -3675,6 +3789,18 @@ export function flowCandidateMatchesInventory(
     flow.analysis?.schemaVersion !== selection.schemaVersion
   )
     return false
+  if (selection.analysisRisk === 'grounding-gaps' && !(
+    flow.source === 'litellm' && flow.analysis?.grounding && (
+      flow.analysis.grounding.rejectedArtifactCount > 0 ||
+      flow.analysis.grounding.ungroundedStepCount > 0
+    )
+  )) return false
+  if (selection.analysisRisk === 'prompt-truncated' && !(
+    flow.source === 'litellm' && flow.analysis?.promptTruncated === true
+  )) return false
+  if (selection.analysisRisk === 'provenance-missing' && !(
+    flow.source === 'litellm' && !flow.analysis
+  )) return false
   if (selection.minimumConfidencePercent !== '' && flow.confidence < Number(selection.minimumConfidencePercent) / 100) return false
   if (selection.maximumConfidencePercent !== '' && flow.confidence > Number(selection.maximumConfidencePercent) / 100) return false
   if (selection.revisionScope === 'current') {
@@ -3697,9 +3823,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [repositoryFlowFailures, setRepositoryFlowFailures] = useState<string[]>([])
   const [governanceEvidenceFailures, setGovernanceEvidenceFailures] = useState<string[]>([])
   const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
+  const [governanceEvidenceLoading, setGovernanceEvidenceLoading] = useState(false)
   const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
   const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
-  const [flowEvidenceFailures, setFlowEvidenceFailures] = useState(0)
+  const [flowEvidenceFailureRepositories, setFlowEvidenceFailureRepositories] = useState<string[]>([])
+  const [flowEvidenceLoadingRepositories, setFlowEvidenceLoadingRepositories] = useState<string[]>([])
   const [flowEvidenceReloadKey, setFlowEvidenceReloadKey] = useState(0)
   const [omittedFlowEvidenceRevisions, setOmittedFlowEvidenceRevisions] = useState(0)
   const [flowCandidates, setFlowCandidates] = useState<
@@ -3714,6 +3842,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowModel, setFlowModel] = useState('')
   const [flowPromptVersion, setFlowPromptVersion] = useState('')
   const [flowSchemaVersion, setFlowSchemaVersion] = useState('')
+  const [flowAnalysisRisk, setFlowAnalysisRisk] = useState<FlowAnalysisRisk | ''>('')
   const [flowMinimumConfidencePercent, setFlowMinimumConfidencePercent] = useState('')
   const [flowMaximumConfidencePercent, setFlowMaximumConfidencePercent] = useState('')
   const invalidFlowConfidenceRange = Boolean(
@@ -3792,10 +3921,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionEvidenceCollectionStatus, setExecutionEvidenceCollectionStatus] = useState<
     NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected' | ''
   >('')
+  const [executionEvidenceCollectionErrorCode, setExecutionEvidenceCollectionErrorCode] = useState<
+    NonNullable<TestExecution['evidenceCollection']>['errorCode'] | ''
+  >('')
   const [executionEvidenceCheckedAfter, setExecutionEvidenceCheckedAfter] = useState('')
   const [executionEvidenceCheckedBefore, setExecutionEvidenceCheckedBefore] = useState('')
   const [executionEvidenceRequirement, setExecutionEvidenceRequirement] = useState<
-    'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+    'evidence-url-invalid' | 'github-run-provenance-missing' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
   >('')
   const [executionThresholdOutcome, setExecutionThresholdOutcome] = useState<
     'passed' | 'failed' | ''
@@ -3847,6 +3979,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateRevisionScope, setPolicyGateRevisionScope] =
     useState<FlowRevisionScope>('current')
   const [policyGateSubject, setPolicyGateSubject] = useState('')
+  const [policyGatePolicyArtifactId, setPolicyGatePolicyArtifactId] = useState('')
+  const [policyGateGateArtifactId, setPolicyGateGateArtifactId] = useState('')
   const [policyGateMinimumConfidencePercent, setPolicyGateMinimumConfidencePercent] = useState('')
   const [policyGateMaximumConfidencePercent, setPolicyGateMaximumConfidencePercent] = useState('')
   const invalidPolicyGateConfidenceRange = Boolean(
@@ -3861,6 +3995,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     reviewStatus: policyGateReviewStatus,
     revisionScope: policyGateRevisionScope,
     subject: policyGateSubject.trim(),
+    policyArtifactId: policyGatePolicyArtifactId.trim(),
+    gateArtifactId: policyGateGateArtifactId.trim(),
     minimumConfidencePercent: policyGateMinimumConfidencePercent,
     maximumConfidencePercent: policyGateMaximumConfidencePercent,
   }
@@ -3899,6 +4035,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     model: flowModel.trim(),
     promptVersion: flowPromptVersion.trim(),
     schemaVersion: flowSchemaVersion.trim(),
+    analysisRisk: flowAnalysisRisk,
     minimumConfidencePercent: flowMinimumConfidencePercent,
     maximumConfidencePercent: flowMaximumConfidencePercent,
   }
@@ -3916,6 +4053,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowModel.trim(),
     flowPromptVersion.trim(),
     flowSchemaVersion.trim(),
+    flowAnalysisRisk,
     flowMinimumConfidencePercent,
     flowMaximumConfidencePercent,
   ])
@@ -4219,6 +4357,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         provider: executionProvider,
         evidenceKind: executionEvidenceKind,
         evidenceCollectionStatus: executionEvidenceCollectionStatus,
+        evidenceCollectionErrorCode: executionEvidenceCollectionErrorCode,
         evidenceCheckedAfter: iso(executionEvidenceCheckedAfter),
         evidenceCheckedBefore: iso(executionEvidenceCheckedBefore),
         evidenceRequirement: executionEvidenceRequirement,
@@ -4242,7 +4381,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionEvidenceCheckedAfter, executionEvidenceCheckedBefore, executionEvidenceRequirement, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionEvidenceKind, executionEvidenceCollectionStatus, executionEvidenceCollectionErrorCode, executionEvidenceCheckedAfter, executionEvidenceCheckedBefore, executionEvidenceRequirement, executionThresholdOutcome, executionGateOutcome, executionExternalRunId, executionName, executionPolicyArtifactId, executionGateArtifactId, executionAttemptScope, executionBranch, executionRevision, executionWorkflowPath, executionMinimumDurationSeconds, executionMaximumDurationSeconds, executionFrom, executionUntil])
   const executionTrendQuery = JSON.stringify([
     data.repositories.map(repository => repository.id),
     executionRepositoryId,
@@ -4288,6 +4427,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         ? repository.lastScanRevision ?? ''
                         : '',
                     subject: policyGateSubject.trim(),
+                    policyArtifactId: policyGatePolicyArtifactId.trim(),
+                    gateArtifactId: policyGateGateArtifactId.trim(),
                     minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
                     maxConfidence: policyGateMaximumConfidencePercent === '' ? '' : String(Number(policyGateMaximumConfidencePercent) / 100),
                   }).filter(([, value]) => Boolean(value))
@@ -4351,6 +4492,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     policyGateReviewStatus,
     policyGateSeverity,
     policyGateSubject,
+    policyGatePolicyArtifactId,
+    policyGateGateArtifactId,
     policyGateMinimumConfidencePercent,
     policyGateMaximumConfidencePercent,
     invalidPolicyGateConfidenceRange,
@@ -4373,8 +4516,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     if (!batches.length) {
       setGovernanceEvidenceArtifacts([])
       setGovernanceEvidenceFailures([])
+      setGovernanceEvidenceLoading(false)
       return () => { active = false }
     }
+    setGovernanceEvidenceLoading(true)
     void Promise.allSettled(
       batches.map(batch => api.qualityArtifactsByIds(batch.repositoryId, batch.artifactIds, batch.revision))
     ).then(results => {
@@ -4385,6 +4530,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setGovernanceEvidenceFailures([...new Set(results.flatMap((result, index) =>
         result.status === 'rejected' ? [batches[index].repositoryId] : []
       ))])
+      setGovernanceEvidenceLoading(false)
     })
     return () => { active = false }
   }, [data.repositories, policyGateEvaluations, policyGateRevisionScope])
@@ -4461,6 +4607,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     model: flowModel.trim(),
                     promptVersion: flowPromptVersion.trim(),
                     schemaVersion: flowSchemaVersion.trim(),
+                    analysisRisk: flowAnalysisRisk,
                     minConfidence: flowMinimumConfidencePercent === '' ? '' : String(Number(flowMinimumConfidencePercent) / 100),
                     maxConfidence: flowMaximumConfidencePercent === '' ? '' : String(Number(flowMaximumConfidencePercent) / 100),
                   }).filter(([, value]) => Boolean(value))
@@ -4499,6 +4646,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowModel,
     flowPromptVersion,
     flowSchemaVersion,
+    flowAnalysisRisk,
     flowMinimumConfidencePercent,
     flowMaximumConfidencePercent,
     invalidFlowConfidenceRange,
@@ -4507,7 +4655,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     let active = true
     if (!flowResultsAreCurrent) {
       setFlowEvidenceArtifacts([])
-      setFlowEvidenceFailures(0)
+      setFlowEvidenceFailureRepositories([])
+      setFlowEvidenceLoadingRepositories([])
       setOmittedFlowEvidenceRevisions(0)
       return () => { active = false }
     }
@@ -4516,7 +4665,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       : { selected: [], omitted: 0 }
     setOmittedFlowEvidenceRevisions(selection.omitted)
     setFlowEvidenceArtifacts([])
-    setFlowEvidenceFailures(0)
+    setFlowEvidenceFailureRepositories([])
     const currentRevisions = new Map(
       data.repositories.map(repository => [repository.id, repository.lastScanRevision])
     )
@@ -4540,20 +4689,25 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     })
     const requests = [...evidenceIds.values()].flatMap(({ repositoryId, revision, ids }) => {
       const values = [...ids]
-      return Array.from({ length: Math.ceil(values.length / 100) }, (_, index) =>
-        api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100), revision)
+      return Array.from({ length: Math.ceil(values.length / 100) }, (_, index) => ({
+        repositoryId,
+        request: api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100), revision)
           .then(response => response.items.map(artifact => ({
             ...artifact,
             revision: artifact.revision ?? revision,
-          })))
-      )
+          }))),
+      }))
     })
-    void Promise.allSettled(requests).then(results => {
+    setFlowEvidenceLoadingRepositories([...new Set(requests.map(request => request.repositoryId))])
+    void Promise.allSettled(requests.map(request => request.request)).then(results => {
       if (!active) return
       setFlowEvidenceArtifacts(results.flatMap(result =>
         result.status === 'fulfilled' ? result.value : []
       ))
-      setFlowEvidenceFailures(results.filter(result => result.status === 'rejected').length)
+      setFlowEvidenceFailureRepositories([...new Set(results.flatMap((result, index) =>
+        result.status === 'rejected' ? [requests[index].repositoryId] : []
+      ))])
+      setFlowEvidenceLoadingRepositories([])
     })
     return () => { active = false }
   }, [artifacts, data.repositories, flowCandidates, flowEvidenceReloadKey, flowResultsAreCurrent, flowRevisionScope])
@@ -4851,6 +5005,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setPostProductionExecutions(replace)
       setInspectedExecution(current => current?.id === refreshed.id ? refreshed : current)
       setExecutionEvidenceRefreshVersion(version => version + 1)
+      try {
+        const dispatches = await loadLatestTestSuiteDispatches(execution.repositoryId)
+        setTestSuiteDispatches(current => [
+          ...current.filter(dispatch => dispatch.repositoryId !== execution.repositoryId),
+          ...dispatches,
+        ])
+        setTestSuiteDispatchAuditStatus(current => ({ ...current, [execution.repositoryId]: 'ready' }))
+      } catch {
+        setTestSuiteDispatchAuditStatus(current => ({ ...current, [execution.repositoryId]: 'error' }))
+      }
       if (refreshed.evidenceCollection?.status === 'unavailable') {
         setExecutionEvidenceRefreshError('Provider evidence is still unavailable. The failed lookup remains visible and can be retried.')
       }
@@ -4922,6 +5086,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             model: flowModel.trim(),
             promptVersion: flowPromptVersion.trim(),
             schemaVersion: flowSchemaVersion.trim(),
+            analysisRisk: flowAnalysisRisk,
             minConfidence: flowMinimumConfidencePercent === '' ? '' : String(Number(flowMinimumConfidencePercent) / 100),
             maxConfidence: flowMaximumConfidencePercent === '' ? '' : String(Number(flowMaximumConfidencePercent) / 100),
             cursor,
@@ -4977,6 +5142,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             reviewStatus: policyGateReviewStatus,
             revision: policyGateRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
             subject: policyGateSubject.trim(),
+            policyArtifactId: policyGatePolicyArtifactId.trim(),
+            gateArtifactId: policyGateGateArtifactId.trim(),
             minConfidence: policyGateMinimumConfidencePercent === '' ? '' : String(Number(policyGateMinimumConfidencePercent) / 100),
             maxConfidence: policyGateMaximumConfidencePercent === '' ? '' : String(Number(policyGateMaximumConfidencePercent) / 100),
             cursor,
@@ -5071,6 +5238,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       policyGateReviewStatus,
       policyGateRevisionScope,
       policyGateSubject,
+      policyGatePolicyArtifactId,
+      policyGateGateArtifactId,
       policyGateMinimumConfidencePercent,
       policyGateMaximumConfidencePercent,
     ]
@@ -5180,6 +5349,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           <PolicyGateReviewControls
             evaluation={inspectedPolicyGate}
             evidenceArtifacts={policyGateInspectorArtifacts}
+            evidenceVerification={policyGateInspectorLoading
+              ? 'loading'
+              : policyGateInspectorEvidenceError
+                ? 'unavailable'
+                : 'ready'}
             currentRevision={data.repositories.find(
               repository => repository.id === inspectedPolicyGate.repositoryId
             )?.lastScanRevision}
@@ -5247,6 +5421,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             model={flowModel}
             promptVersion={flowPromptVersion}
             schemaVersion={flowSchemaVersion}
+            analysisRisk={flowAnalysisRisk}
             minimumConfidencePercent={flowMinimumConfidencePercent}
             maximumConfidencePercent={flowMaximumConfidencePercent}
             invalidConfidenceRange={invalidFlowConfidenceRange}
@@ -5257,6 +5432,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             onModelChange={setFlowModel}
             onPromptVersionChange={setFlowPromptVersion}
             onSchemaVersionChange={setFlowSchemaVersion}
+            onAnalysisRiskChange={setFlowAnalysisRisk}
             onMinimumConfidencePercentChange={setFlowMinimumConfidencePercent}
             onMaximumConfidencePercentChange={setFlowMaximumConfidencePercent}
           />
@@ -5290,7 +5466,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               Some exact policy and gate evidence could not be loaded. Evidence from successful repositories remains visible.
             </p>
           )}
-          {flowEvidenceFailures > 0 && (
+          {flowEvidenceFailureRepositories.length > 0 && (
             <div className="form-error" role="alert">
               Some exact UX flow evidence could not be loaded. Evidence from successful requests remains visible.{' '}
               <QualityAction
@@ -5413,6 +5589,24 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               />
             </label>
             <label>
+              Policy artifact
+              <input
+                value={policyGatePolicyArtifactId}
+                maxLength={500}
+                placeholder="policy logical ID"
+                onChange={event => setPolicyGatePolicyArtifactId(event.target.value)}
+              />
+            </label>
+            <label>
+              Gate artifact
+              <input
+                value={policyGateGateArtifactId}
+                maxLength={500}
+                placeholder="gate logical ID"
+                onChange={event => setPolicyGateGateArtifactId(event.target.value)}
+              />
+            </label>
+            <label>
               Minimum governance confidence (%)
               <input
                 type="number"
@@ -5511,6 +5705,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             : ' · no workflow inputs'}
                           {dispatch.error ? ` · ${dispatch.error}` : ''}
                         </p>
+                        <DispatchExecutionResult dispatch={dispatch} />
                         <TestSuiteDispatchHistory
                           repositoryId={dispatch.repositoryId}
                           artifactReference={dispatch.artifactLogicalId}
@@ -5731,6 +5926,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   artifact.id,
                                   ...(artifact.logicalId ? [artifact.logicalId] : []),
                                 ])}
+                              evidenceVerification={flowEvidenceLoadingRepositories.includes(flow.repositoryId)
+                                ? 'loading'
+                                : flowEvidenceFailureRepositories.includes(flow.repositoryId)
+                                  ? 'unavailable'
+                                  : 'ready'}
                               currentRevision={
                                 data.repositories.find(
                                   repository => repository.id === flow.repositoryId
@@ -5776,6 +5976,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               />
                               <PolicyGateReviewControls
                                 evaluation={evaluation}
+                                evidenceArtifacts={evidenceArtifacts.filter(artifact =>
+                                  artifact.repositoryId === evaluation.repositoryId &&
+                                  (!artifact.revision || artifact.revision === evaluation.revision)
+                                )}
+                                evidenceVerification={governanceEvidenceLoading
+                                  ? 'loading'
+                                  : governanceEvidenceFailures.includes(evaluation.repositoryId)
+                                    ? 'unavailable'
+                                    : 'ready'}
                                 currentRevision={
                                   data.repositories.find(
                                     repository =>
@@ -5948,6 +6157,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   : ' · no workflow inputs'}
                                 {latestDispatch.error ? ` · ${latestDispatch.error}` : ''}
                               </small>
+                              <DispatchExecutionResult dispatch={latestDispatch} />
                               <TestSuiteDispatchHistory
                                 repositoryId={item.repositoryId}
                                 artifactReference={item.logicalId ?? item.id}
@@ -6208,7 +6418,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </select>
             </label>
             <label>
-              Evidence collection
+              Evidence collection state
               <select
                 value={executionEvidenceCollectionStatus}
                 onChange={event =>
@@ -6230,15 +6440,34 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 value={executionEvidenceRequirement}
                 onChange={event =>
                   setExecutionEvidenceRequirement(
-                    event.target.value as 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
+                    event.target.value as 'evidence-url-invalid' | 'github-run-provenance-missing' | 'policy-gate-outcome-missing' | 'post-production-video-missing' | 'performance-threshold-missing' | 'terminal-timing-missing' | ''
                   )
                 }
               >
                 <option value="">All requirements</option>
+                <option value="evidence-url-invalid">Invalid or non-HTTPS artifact URL</option>
+                <option value="github-run-provenance-missing">Missing GitHub run provenance</option>
                 <option value="policy-gate-outcome-missing">Missing policy–gate outcome</option>
                 <option value="post-production-video-missing">Missing post-production video</option>
                 <option value="performance-threshold-missing">Missing performance thresholds</option>
                 <option value="terminal-timing-missing">Missing terminal timing</option>
+              </select>
+            </label>
+            <label>
+              Evidence collection failure
+              <select
+                value={executionEvidenceCollectionErrorCode}
+                onChange={event =>
+                  setExecutionEvidenceCollectionErrorCode(
+                    event.target.value as NonNullable<TestExecution['evidenceCollection']>['errorCode'] | ''
+                  )
+                }
+              >
+                <option value="">All provider outcomes</option>
+                <option value="PROVIDER_TIMEOUT">Provider timeout</option>
+                <option value="PROVIDER_UNAVAILABLE">Provider service unavailable</option>
+                <option value="PROVIDER_RESPONSE_INVALID">Invalid provider response</option>
+                <option value="PROVIDER_RESULT_LIMIT_EXCEEDED">Provider result limit exceeded</option>
               </select>
             </label>
             <label>
@@ -6477,6 +6706,18 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <span>
                   {day.retryAttemptCount} retries · {day.successfulRetryCount} passed retries · {day.recoveredRunCount} recovered after failure
                 </span>
+                <span>
+                  Provider evidence: {day.evidenceCompleteCount ?? 0} complete · {day.evidencePartialCount ?? 0} partial · {day.evidenceUnavailableCount ?? 0} unavailable · {day.evidenceNotCollectedCount ?? 0} not collected
+                </span>
+                <span>
+                  Evidence gaps: {day.invalidEvidenceUrlCount ?? 0} invalid URLs · {day.githubRunProvenanceMissingCount ?? 0} GitHub runs missing provenance · {day.postProductionVideoMissingCount ?? 0} post-production runs missing video · {day.terminalTimingMissingCount ?? 0} terminal runs missing timing
+                </span>
+                <span>
+                  Policy gates: {day.gatePassedCount ?? 0} passed · {day.gateFailedCount ?? 0} failed · {day.gateCancelledCount ?? 0} cancelled · {day.gateRunningCount ?? 0} running · {day.gateEvaluationCount ?? 0} evaluated · {day.gateUnevaluatedExecutionCount ?? 0} executions without an attributable gate outcome
+                </span>
+                <span>
+                  Performance thresholds: {day.thresholdPassedCount ?? 0} passed · {day.thresholdFailedCount ?? 0} failed · {day.thresholdEvaluationCount ?? 0} evaluated · {day.performanceExecutionWithoutThresholdCount ?? 0} load/stress executions without threshold evidence
+                </span>
               </div>
             ))}
             {!outcomeTrend.length && (
@@ -6708,7 +6949,7 @@ export function App({
 } = {}) {
   const [view, setView] = useState<View>('overview')
   const [data, setData] = useState<Portfolio | null>(null)
-  const [error, setError] = useState<string>()
+  const [error, setError] = useState<Error>()
   const [organizations, setOrganizations] =
     useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
@@ -6750,7 +6991,7 @@ export function App({
       }
     } catch (value) {
       if (generation === reloadGeneration.current)
-        setError(value instanceof Error ? value.message : String(value))
+        setError(value instanceof Error ? value : new Error(String(value)))
     } finally {
       if (generation === reloadGeneration.current) setLoading(false)
     }
@@ -6829,12 +7070,22 @@ export function App({
             <div className="error-banner" role="alert">
               <AlertTriangle />{' '}
               <div>
-                <strong>Catalog API unavailable</strong>
-                <span>{error}</span>
+                <strong>{
+                  error instanceof CatalogApiError && ['TENANT_FORBIDDEN', 'TENANT_UNRESOLVED', 'TENANT_CONTEXT_MISMATCH'].includes(error.code ?? '')
+                    ? 'Workspace access unavailable'
+                    : 'Catalog API unavailable'
+                }</strong>
+                <span>{error.message}</span>
               </div>
-              <QualityAction intent="secondary" onClick={() => void reload()}>
-                Retry
-              </QualityAction>
+              {onSignOut && error instanceof CatalogApiError && ['TENANT_FORBIDDEN', 'TENANT_UNRESOLVED', 'TENANT_CONTEXT_MISMATCH'].includes(error.code ?? '') ? (
+                <QualityAction intent="secondary" onClick={onSignOut}>
+                  Choose another workspace
+                </QualityAction>
+              ) : (
+                <QualityAction intent="secondary" onClick={() => void reload()}>
+                  Retry
+                </QualityAction>
+              )}
             </div>
           )}
           {!data ? (

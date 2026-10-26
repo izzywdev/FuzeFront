@@ -57,11 +57,23 @@ const policyGateEvaluationSchema = z.object({
     ...evaluation.policyArtifactIds,
     ...evaluation.gateArtifactIds,
   ])
+  const policyArtifactIds = new Set(evaluation.policyArtifactIds)
+  const gateArtifactIds = new Set(evaluation.gateArtifactIds)
   for (const [index, passage] of evaluation.evidencePassages.entries()) {
     if (!artifactIds.has(passage.artifactId)) context.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Evidence passage must reference a policy or gate artifact in this evaluation',
       path: ['evidencePassages', index, 'artifactId'],
+    })
+    if (passage.signal === 'gate' && !gateArtifactIds.has(passage.artifactId)) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Gate evidence passages must reference a gate artifact in this evaluation',
+      path: ['evidencePassages', index, 'signal'],
+    })
+    if (passage.signal !== 'gate' && !policyArtifactIds.has(passage.artifactId)) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Policy evidence passages must reference a policy artifact in this evaluation',
+      path: ['evidencePassages', index, 'signal'],
     })
   }
 })
@@ -118,6 +130,17 @@ export function policyGateArtifactReferenceConflict(
       expectedSourcePath: passage.sourcePath,
       actualSourcePath: artifact?.sourcePath ?? null,
       reason: artifact ? 'source-path-mismatch' : 'unavailable',
+    } as const
+    const expectedKind = passage.signal === 'gate' ? 'gate' : 'policy'
+    if (artifact.kind !== expectedKind) return {
+      evaluationId: evaluation.id,
+      repositoryId: evaluation.repositoryId,
+      revision: evaluation.revision,
+      artifactId: passage.artifactId,
+      signal: passage.signal,
+      expectedKind,
+      actualKind: artifact.kind,
+      reason: 'signal-kind-mismatch',
     } as const
   }
   return undefined

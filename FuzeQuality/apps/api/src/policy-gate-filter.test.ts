@@ -42,6 +42,8 @@ describe('policy-gate inventory filter', () => {
         severity: 'medium',
         reviewStatus: 'accepted',
         revision: 'def',
+        policyArtifactIds: ['policy-2'],
+        gateArtifactIds: ['gate-2'],
       }),
       evaluation({
         id: 'evaluation-3',
@@ -59,6 +61,8 @@ describe('policy-gate inventory filter', () => {
       reviewStatus: 'accepted',
       revision: 'def',
       subject: 'DEPLOYMENT',
+      policyArtifactId: 'policy-2',
+      gateArtifactId: 'gate-2',
       minConfidence: '0.8',
       maxConfidence: '0.8',
     })
@@ -91,6 +95,8 @@ describe('policy-gate inventory filter', () => {
     expect(policyGateFilterSchema.safeParse({ minConfidence: -0.01 }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ maxConfidence: 1.01 }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ subject: '' }).success).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ policyArtifactId: '' }).success).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ gateArtifactId: 'x'.repeat(501) }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ subject: 'x'.repeat(201) }).success).toBe(false)
     const inverted = policyGateFilterSchema.safeParse({ minConfidence: 0.9, maxConfidence: 0.7 })
     expect(inverted.success).toBe(false)

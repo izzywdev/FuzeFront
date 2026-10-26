@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict } from './repository-flow-review'
+import { repositoryFlowAnalysisProvenanceConflict, repositoryFlowArtifactReferenceConflict, repositoryFlowGroundingRationaleConflict, repositoryFlowReviewConflict, repositoryFlowReviewStateConflict, repositoryFlowWireframeConflict } from './repository-flow-review'
 
 const repository = {
   id: 'repo-1',
@@ -40,6 +40,12 @@ const candidate = {
   },
   status: 'proposed',
   source: 'litellm',
+  analysis: {
+    provider: 'fuzeinfra-litellm',
+    model: 'quality-analysis',
+    promptVersion: 'v3',
+    schemaVersion: '1.0',
+  },
   createdAt: '2026-10-10T00:00:00.000Z',
 } satisfies RepositoryFlowCandidate
 
@@ -117,6 +123,39 @@ describe('repository UX-flow review revision guard', () => {
     })
     expect(repositoryFlowGroundingRationaleConflict(incomplete, 'rejected')).toBeUndefined()
     expect(repositoryFlowGroundingRationaleConflict(candidate, 'confirmed')).toBeUndefined()
+  })
+
+  it('blocks confirmation when a legacy LiteLLM candidate has no analysis provenance', () => {
+    const withoutProvenance = { ...candidate, analysis: undefined }
+
+    expect(repositoryFlowAnalysisProvenanceConflict(withoutProvenance, 'confirmed')).toEqual({
+      error: 'This FuzeInfra LiteLLM flow has no stored model, prompt, and schema provenance. Regenerate the repository analysis before confirming it.',
+      code: 'FLOW_ANALYSIS_PROVENANCE_REQUIRED',
+      candidateId: candidate.id,
+      revision: candidate.revision,
+    })
+    expect(repositoryFlowAnalysisProvenanceConflict(withoutProvenance, 'rejected')).toBeUndefined()
+    expect(repositoryFlowAnalysisProvenanceConflict(candidate, 'confirmed')).toBeUndefined()
+    expect(repositoryFlowAnalysisProvenanceConflict({
+      ...withoutProvenance,
+      source: 'deterministic',
+    }, 'confirmed')).toBeUndefined()
+  })
+
+  it('blocks confirmation when a legacy candidate has no reviewable wireframe', () => {
+    const withoutWireframe = {
+      ...candidate,
+      wireframe: { kind: 'sequence' as const, nodes: [] },
+    }
+
+    expect(repositoryFlowWireframeConflict(withoutWireframe, 'confirmed')).toEqual({
+      error: 'This UX-flow candidate has no reviewable wireframe. Regenerate the repository analysis before confirming it.',
+      code: 'FLOW_WIREFRAME_REQUIRED',
+      candidateId: candidate.id,
+      revision: candidate.revision,
+    })
+    expect(repositoryFlowWireframeConflict(withoutWireframe, 'rejected')).toBeUndefined()
+    expect(repositoryFlowWireframeConflict(candidate, 'confirmed')).toBeUndefined()
   })
 
   it('blocks confirmation when an exact-revision target is unavailable but preserves rejection', () => {

@@ -1,5 +1,5 @@
 import type { QualityArtifact, TestExecution, TestSuiteDispatch } from '@fuzequality/contracts'
-import { artifactWorkflowExecutionKind } from '@fuzequality/contracts/workflow-execution'
+import { artifactWorkflowExecutionKind, safeExecutionEvidenceUrl } from '@fuzequality/contracts/workflow-execution'
 import { ExternalLink } from 'lucide-react'
 import { QualityAction } from './primitives'
 
@@ -39,13 +39,7 @@ function currentExecutionScope(
 
 /** Defensive boundary for legacy rows written before the HTTPS ingestion contract. */
 export function safeExecutionHref(value?: string): string | undefined {
-  if (!value) return undefined
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' ? url.toString() : undefined
-  } catch {
-    return undefined
-  }
+  return safeExecutionEvidenceUrl(value)
 }
 
 function evidenceLinkAction(link: TestExecution['evidenceLinks'][number]) {
@@ -425,8 +419,10 @@ export function ExecutionEvidenceCoverage({
   refreshing?: boolean
 }) {
   const thresholds = execution.thresholds?.length ?? 0
-  const links = (execution.evidenceLinks ?? []).filter(link => !(execution.provider === 'github-actions' && link.kind === 'report' && link.name === 'GitHub Actions artifacts' && link.url.endsWith('#artifacts'))).length
-  const hasVideo = (execution.evidenceLinks ?? []).some(link => link.kind === 'video')
+  const usableLinks = (execution.evidenceLinks ?? []).filter(link => safeExecutionHref(link.url))
+  const withheldLinks = (execution.evidenceLinks?.length ?? 0) - usableLinks.length
+  const links = usableLinks.filter(link => !(execution.provider === 'github-actions' && link.kind === 'report' && link.name === 'GitHub Actions artifacts' && link.url.endsWith('#artifacts'))).length
+  const hasVideo = usableLinks.some(link => link.kind === 'video')
   const gatePairs = execution.gateEvaluations?.length ?? 0
   const missingThresholds = ['load', 'stress'].includes(execution.kind) && !thresholds
   const collection = execution.evidenceCollection
@@ -451,6 +447,11 @@ export function ExecutionEvidenceCoverage({
     <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
       <strong>Evidence coverage</strong>
       <small>{thresholds} thresholds · {links} artifacts · {gatePairs} policy–gate outcomes</small>
+      {withheldLinks > 0 && (
+        <span className="status-pill status-failed">
+          {withheldLinks} invalid or non-HTTPS artifact {withheldLinks === 1 ? 'link was' : 'links were'} withheld
+        </span>
+      )}
       {collection && (
         <small>
           Provider evidence checked{' '}

@@ -1,6 +1,7 @@
 import type { Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
 
 export type FlowRevisionScope = 'all' | 'current'
+export type FlowAnalysisRisk = 'grounding-gaps' | 'prompt-truncated' | 'provenance-missing'
 
 export function FlowInventoryFilters({
   repositories,
@@ -11,6 +12,7 @@ export function FlowInventoryFilters({
   model,
   promptVersion,
   schemaVersion,
+  analysisRisk,
   minimumConfidencePercent,
   maximumConfidencePercent,
   invalidConfidenceRange,
@@ -21,6 +23,7 @@ export function FlowInventoryFilters({
   onModelChange,
   onPromptVersionChange,
   onSchemaVersionChange,
+  onAnalysisRiskChange,
   onMinimumConfidencePercentChange,
   onMaximumConfidencePercentChange,
 }: {
@@ -32,6 +35,7 @@ export function FlowInventoryFilters({
   model: string
   promptVersion: string
   schemaVersion: string
+  analysisRisk: FlowAnalysisRisk | ''
   minimumConfidencePercent: string
   maximumConfidencePercent: string
   invalidConfidenceRange: boolean
@@ -42,6 +46,7 @@ export function FlowInventoryFilters({
   onModelChange: (value: string) => void
   onPromptVersionChange: (value: string) => void
   onSchemaVersionChange: (value: string) => void
+  onAnalysisRiskChange: (value: FlowAnalysisRisk | '') => void
   onMinimumConfidencePercentChange: (value: string) => void
   onMaximumConfidencePercentChange: (value: string) => void
 }) {
@@ -93,6 +98,15 @@ export function FlowInventoryFilters({
       <label>
         Schema version
         <input value={schemaVersion} placeholder="All schema versions" onChange={event => onSchemaVersionChange(event.target.value)} />
+      </label>
+      <label>
+        Analysis review risk
+        <select value={analysisRisk} onChange={event => onAnalysisRiskChange(event.target.value as FlowAnalysisRisk | '')}>
+          <option value="">All analysis states</option>
+          <option value="grounding-gaps">Unverified grounding</option>
+          <option value="prompt-truncated">Bounded prompt evidence</option>
+          <option value="provenance-missing">Missing model provenance</option>
+        </select>
       </label>
       <label>
         Minimum confidence (%)

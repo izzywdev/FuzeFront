@@ -9,6 +9,17 @@ const executableTestKinds: QualityArtifact['kind'][] = [
 
 export type WorkflowExecutionKind = 'stress' | 'load' | 'post-production' | 'integration'
 
+/** Defensive boundary for execution evidence retained before HTTPS validation was enforced. */
+export function safeExecutionEvidenceUrl(value?: string): string | undefined {
+  if (!value) return undefined
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && Boolean(url.hostname) ? url.toString() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 const workflowExecutionPrecedence: ReadonlyArray<{
   artifactKind: QualityArtifact['kind']
   executionKind: WorkflowExecutionKind
