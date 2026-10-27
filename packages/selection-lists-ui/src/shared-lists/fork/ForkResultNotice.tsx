@@ -22,7 +22,7 @@
  */
 
 import { Button, StatusCallout, Toast } from '@fuzefront/design-system'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   editableStateOf,
   useRestoreList,
@@ -102,6 +102,15 @@ function Notice({
   const [dismissed, setDismissed] = useState(false)
   const restore = useRestoreList()
   const [restoredKey, setRestoredKey] = useState<string | null>(null)
+  // The restore write is never cancelled on unmount, but its continuation must
+  // not touch the router (clearing the state would navigate back to this list).
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   if (dismissed || restoredKey === list.id) return null
 
   const org = <span style={ISOLATE}>{organization}</span>
@@ -161,7 +170,7 @@ function Notice({
 
   const onRestore = async () => {
     const result = await restore.run(list.id)
-    if (result.kind === 'restored') {
+    if (result.kind === 'restored' && mounted.current) {
       setRestoredKey(list.id)
       onRestored?.(result.list)
       onDismiss()

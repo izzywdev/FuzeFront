@@ -1263,6 +1263,7 @@ function SelectionListDetail(props: {
       // A common list's read-only detail: the fork flow's "Fork to edit…". The slot is only
       // invoked once the effective-list lookup said THIS list is the effective one, so the
       // flow is handed that answer instead of asking again.
+      renderReadOnlyArrival={list => <ForkResultNotice list={list} onRestored={reload} />}
       forkAction={list => (
         <ForkListFlow
           list={list}

@@ -21,7 +21,7 @@ import {
 } from '../../test/sharedListsFixtures'
 import { SharedListsFeatureProvider } from '../core'
 import { CommonAccessGuard, ForkListFlow, isSharedByOthers } from './ForkListFlow'
-import { resetForkSession } from './session'
+import { hasForkForbidden, markForkForbidden, resetForkSession } from './session'
 
 const LISTS = '/api/v1/selection-lists'
 const FORK_PATH = `${LISTS}/${COMMON_ID}/fork`
@@ -413,6 +413,46 @@ describe('CommonAccessGuard (frame 04: access management of a common list)', () 
     routeFetch({})
     const { container } = renderFork(<CommonAccessGuard listId={COMMON_ID} />, { flag: false })
     expect(container.querySelector('[data-case]')).toBeNull()
+  })
+})
+
+describe('organization identity across renderings (UUID vs org_ TypeID)', () => {
+  const UUID = '0195a8f2-7c3e-7b1a-9d2e-3f4a5b6c7d8e'
+  const TYPE_ID = 'org_01jpmf4z1yfcd9tbhz99dprzce'
+
+  it('isSharedByOthers: the org\'s own list is never "shared", in both directions', () => {
+    const storedAsTypeId = makeSharedList({ organization_id: TYPE_ID, visibility: 'org' })
+    const storedAsUuid = makeSharedList({ organization_id: UUID, visibility: 'org' })
+    expect(isSharedByOthers(storedAsTypeId, UUID)).toBe(false)
+    expect(isSharedByOthers(storedAsUuid, TYPE_ID)).toBe(false)
+    expect(isSharedByOthers(storedAsTypeId, TYPE_ID)).toBe(false)
+    // …and another organization still is.
+    expect(isSharedByOthers(storedAsTypeId, '1d6b3e2a-9c4f-4a8e-b5d7-0e1f2a3b4c5d')).toBe(true)
+  })
+
+  it.each([
+    ['claim is a UUID, list stores the TypeID', UUID, TYPE_ID],
+    ['claim is a TypeID, list stores the UUID', TYPE_ID, UUID],
+  ])('a 403 on the org\'s own list keeps the 4.0.0 message when the %s', async (_, claim, stored) => {
+    routeFetch({})
+    renderFork(
+      <ForkListFlow
+        refusal={{ kind: 'forbidden' }}
+        list={makeSharedList({ organization_id: stored, visibility: 'org' })}
+        fallback={<p>plain 403</p>}
+      />,
+      { organizationId: claim }
+    )
+    expect(screen.getByText('plain 403')).toBeVisible()
+    expect(document.querySelector('[data-case="common-no-create"]')).toBeNull()
+  })
+
+  it('the refusal memory treats both renderings of one org as one', () => {
+    resetForkSession()
+    markForkForbidden(UUID)
+    expect(hasForkForbidden(TYPE_ID)).toBe(true)
+    expect(hasForkForbidden('org_7zzzzzzzzzzzzzzzzzzzzzzzzz')).toBe(false)
+    resetForkSession()
   })
 })
 

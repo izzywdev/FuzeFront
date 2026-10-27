@@ -127,6 +127,18 @@ describe('200 existing, archived -> Restore', () => {
     expect(onDismiss).toHaveBeenCalled()
   })
 
+  it('leaving while Restore is pending lets the write finish but never touches the router afterwards', async () => {
+    const gate = deferred<Response>()
+    const mock = routeFetch({ [PATCH]: () => gate.promise })
+    const { onRestored, onDismiss, unmount } = setup(archived(), 'existing')
+    await userEvent.click(document.querySelector('[data-action="restore-fork"]')!)
+    unmount()
+    await act(async () => gate.resolve(jsonResponse(makeForkList({ status: 'active' }), 200)))
+    expect(mock).toHaveBeenCalledTimes(1)
+    expect(onRestored).not.toHaveBeenCalled()
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
   const REFUSALS = [
     ['org_lists', errorResponse(403, 'QUOTA_EXCEEDED', { scope: 'org_lists', limit: 100, current: 100 }), '[data-case="restore-quota"][data-error="QUOTA_EXCEEDED"][data-quota-scope="org_lists"]', /100 of 100/],
     ['user_lists', errorResponse(403, 'QUOTA_EXCEEDED', { scope: 'user_lists', limit: 25, current: 25 }), '[data-case="restore-quota"][data-quota-scope="user_lists"]', /25 of 25/],

@@ -5,10 +5,12 @@
  * and keyed by organization, because the caller's role differs per organization.
  */
 
+import { canonicalOrganizationId } from '../core'
+
 const forbidden = new Set<string>()
 
 const keyOf = (organizationId: string | undefined): string =>
-  organizationId ?? ''
+  organizationId === undefined ? '' : canonicalOrganizationId(organizationId)
 
 export function hasForkForbidden(organizationId: string | undefined): boolean {
   return forbidden.has(keyOf(organizationId))

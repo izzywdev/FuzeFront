@@ -306,6 +306,31 @@ describe('read-only common detail (forkAction slot) and arrival at the fork', ()
     expect(q('[data-dialog="fork"]')).toBeNull()
   })
 
+  it('arrival at an existing fork the caller can only READ still shows the notice (archived: no Restore)', async () => {
+    const readOnlyFork = makeForkList({ id: 'front_sl_fork', name: 'Priority', editable: false, status: 'archived' })
+    routeFetch({
+      [`GET /api/v1/selection-lists/front_sl_fork`]: () => jsonResponse(readOnlyFork),
+    })
+    render(
+      <MemoryRouter
+        initialEntries={[{ pathname: '/settings/selection-lists/front_sl_fork', state: forkNoticeState({ kind: 'existing' }) }]}
+      >
+        {on(
+          <Routes>
+            <Route path={DETAIL} element={<SelectionListManagementFlow />} />
+          </Routes>
+        )}
+      </MemoryRouter>
+    )
+    const note = await waitFor(() => {
+      const el = q('[data-result="existing-archived"]')
+      expect(el).not.toBeNull()
+      return el as HTMLElement
+    })
+    expect(note).toHaveTextContent(/Forms use the common list while it.s archived/)
+    expect(q('[data-action="restore-fork"]')).toBeNull()
+  })
+
   it('arrival at the fork shows the "Forked." notice above the editor; dismissing clears it', async () => {
     routeFetch({
       [`GET /api/v1/selection-lists/front_sl_fork`]: () =>

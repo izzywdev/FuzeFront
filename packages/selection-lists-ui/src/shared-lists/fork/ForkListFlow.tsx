@@ -29,6 +29,7 @@ import {
   editableStateOf,
   forkCtaFor,
   isCommonList,
+  sameOrganization,
   useEffectiveList,
   useSharedList,
   useSharedLists,
@@ -380,7 +381,9 @@ function ForbiddenOnMutation({
 /**
  * Whether the caller reads this list WITHOUT owning it: a common list, or (when
  * the host passed its organization id) any list owned by another organization —
- * which the service only ever shows a caller if it is common.
+ * which the service only ever shows a caller if it is common. Organizations are
+ * compared by identity, not by string: the claim and the stored id may be the
+ * `org_…` TypeID and the bare UUID of the SAME organization.
  */
 export function isSharedByOthers(
   list: SharedList,
@@ -388,7 +391,8 @@ export function isSharedByOthers(
 ): boolean {
   return (
     isCommonList(list) ||
-    (organizationId !== undefined && list.organization_id !== organizationId)
+    (organizationId !== undefined &&
+      !sameOrganization(list.organization_id, organizationId))
   )
 }
 
