@@ -505,7 +505,7 @@ function VisibilityControlForList({
       value: 'private',
       label: (
         <>
-          {MSG.privateTitle} <VisibilityBadge visibility="private" />
+          <span>{MSG.privateTitle}</span> <VisibilityBadge visibility="private" />
           {current === 'private' && <CurrentPill />}
         </>
       ),
@@ -516,7 +516,10 @@ function VisibilityControlForList({
       value: 'org',
       label: (
         <>
-          Everyone in <bdi>{orgName}</bdi> <VisibilityBadge visibility="org" />
+          <span>
+            Everyone in <bdi>{orgName}</bdi>
+          </span>{' '}
+          <VisibilityBadge visibility="org" />
           {current === 'org' && <CurrentPill />}
         </>
       ),
@@ -529,7 +532,8 @@ function VisibilityControlForList({
             value: 'platform',
             label: (
               <>
-                {MSG.platformTitle} <VisibilityBadge visibility="platform" />
+                <span>{MSG.platformTitle}</span>{' '}
+                <VisibilityBadge visibility="platform" />
               </>
             ),
             description:
