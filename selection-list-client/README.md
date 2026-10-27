@@ -2,7 +2,7 @@
 
 Typed client for the FuzeFront **selection-list-service**. Zero runtime dependencies; uses the platform `fetch`.
 
-Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v4.1.0**. The spec wins any disagreement.
+Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v4.2.0**. The spec wins any disagreement.
 
 ```ts
 import { SelectionListClient, isSelectionListApiError } from '@fuzeone/selection-list-client'
@@ -83,18 +83,28 @@ try {
 }
 ```
 
+`getEffectiveList` follows the cursor of its own query (2.2.0): the service cuts
+a page before it drops rows the caller cannot read, so a key lookup can get an
+**empty page that still has a `nextCursor`**. It walks on until a row for the
+key or the last page (`null`), at most `MAX_EFFECTIVE_LOOKUP_PAGES` (10) pages;
+exhausting the bound throws `EffectiveLookupIncompleteError` (never `null`), a
+failed page throws, and an aborted `signal` stops the walk. The same applies to
+any listing you walk by hand: a short or empty page is not the end — only
+`hasMore === false` is (`paginate` already does this).
+
 `getLists({ include_shared: true })` adds lists readable through visibility
 (the default is unchanged).
 
 **Pages can be shorter than `limit`, even empty, and still not be the last.**
 The service filters unreadable lists *after* it paginates, so follow
 `page.nextCursor` until `page.hasMore` is `false` (`paginate()` does) and never
-stop on a short or empty page. `getEffectiveList` asks for `limit: 1` and
-therefore returns `null` when the first row in database order for the key is
-one the caller cannot read (for example a colleague's `private` fork) although
-the common list is on the next page; until it follows the cursor, look the key
-up with `paginate((p) => client.getLists({ ...p, key, include_shared: true }))`
-and take the first item.
+stop on a short or empty page. `getEffectiveList` asks for `limit: 1`, so the
+first row in database order for the key can be one the caller cannot read (for
+example a colleague's `private` fork) while the common list is on the next page;
+since 2.2.0 it follows the cursor for that reason (above). On 2.1.x it returned
+`null` there — look the key up with
+`paginate((p) => client.getLists({ ...p, key, include_shared: true }))` and take
+the first item instead.
 
 `forkList` answers `201` (`created: true`) or `200` (the org already holds a
 fork you can read); a fork you cannot read is `409` `reason: 'fork_exists'`,
@@ -104,6 +114,24 @@ by a different list is a plain `409`, over 5000 items is `400`, and quota is
 `reason: 'visibility_locked'`. `resolveIds` resolves common-list ids in every org
 and, where the org holds an `org`-visible fork, answers from the fork item with
 `effective_item_id` set.
+
+## Is a fork behind its source? (2.2.0, contract 4.2.0)
+
+Lists carry a read-only `revision` — the per-list counter the events carry as
+`listRevision` (`1` at creation, `+1` per committed change event about the list
+or anything inside it, never decreasing). A fork's `forked_from.revision` is the
+source's revision at copy time. `compareForkToSource(fork, source)` compares
+them: `'behind'` / `'up-to-date'` / `'unknown'`.
+
+```ts
+const source = await client.getList(fork.forked_from!.list_id)
+const state = compareForkToSource(fork, source) // never looks at updated_at
+```
+
+`revision?` is **optional** at 4.2.0: the service does not emit it until its
+implementation ships, and **absent means unknown** (`'unknown'` → show
+"comparison unavailable"). Archived (`status`) and gone (`404`) sources are
+yours to render; the helper answers only the revision question.
 
 ## Install
 
@@ -119,7 +147,7 @@ unpublished build:
 
 ```bash
 cd selection-list-client && npm install && npm run build && npm pack
-npm install /path/to/fuzeone-selection-list-client-2.1.1.tgz
+npm install /path/to/fuzeone-selection-list-client-2.2.0.tgz
 ```
 
 See `docs/guides/SELECTION_LIST_SERVICE.md` for the registry `.npmrc` and the

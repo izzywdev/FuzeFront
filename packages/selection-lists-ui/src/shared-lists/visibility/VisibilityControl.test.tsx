@@ -479,6 +479,17 @@ describe('platform operators: publish a common list (frame 08)', () => {
     expect(opt('platform')).toHaveAttribute('aria-checked', 'false')
   })
 
+  it.each([
+    ['list stores the TypeID, claim is the UUID', 'org_01jpmf4z1yfcd9tbhz99dprzce', '0195a8f2-7c3e-7b1a-9d2e-3f4a5b6c7d8e'],
+    ['list stores the UUID, claim is the TypeID', '0195a8f2-7c3e-7b1a-9d2e-3f4a5b6c7d8e', 'org_01jpmf4z1yfcd9tbhz99dprzce'],
+  ])('the third option still renders when the %s (one organization, two renderings)', async (_, stored, claim) => {
+    const w = world(platformOwned({ organization_id: stored }))
+    routedFetch(w.routes)
+    renderControl(w.state.list, { platformOrg: true, activeOrganizationId: claim })
+    await ready()
+    expect(opt('platform')).not.toBeNull()
+  })
+
   it('never for a customer org, even with the right list', async () => {
     const w = world(platformOwned())
     routedFetch(w.routes)

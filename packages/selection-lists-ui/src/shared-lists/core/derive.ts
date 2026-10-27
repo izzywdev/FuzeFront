@@ -236,3 +236,61 @@ export function canOfferPlatformPublish(input: {
 export function isSameOriginPath(value: unknown): value is string {
   return typeof value === 'string' && /^\/(?![/\\])/.test(value)
 }
+
+// ── Organization identity ─────────────────────────────────────────────────────
+
+const ORG_ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz'
+const ORG_WIRE = /^org_([0-9a-z]{26})$/
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** The 26-char TypeID suffix as a canonical UUID, or `null` for anything the codec rejects. */
+function suffixToUuid(suffix: string): string | null {
+  const bytes: number[] = []
+  let acc = 0
+  let bits = 0
+  for (let i = 0; i < suffix.length; i++) {
+    const value = ORG_ALPHABET.indexOf(suffix[i])
+    if (value < 0) return null
+    if (i === 0) {
+      // The leading character carries 3 significant bits; a larger value overflows 128 bits.
+      if (value > 7) return null
+      acc = value
+      bits = 3
+      continue
+    }
+    acc = (acc << 5) | value
+    bits += 5
+    if (bits >= 8) {
+      bits -= 8
+      bytes.push((acc >>> bits) & 0xff)
+      acc &= (1 << bits) - 1
+    }
+  }
+  const hex = bytes.map(b => b.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/**
+ * One organization id in its canonical rendering (a lowercase UUID). The same
+ * organization appears on the wire as an `org_…` TypeID or as a bare UUID
+ * depending on who minted the claim, and the service stores and returns
+ * whichever it was given; identity is therefore never a string comparison.
+ * `@izzywdev/fuzefront-identity` is the codec of record (server-side, imports
+ * `node:crypto`), so this mirrors its suffix decode for the browser; the tests
+ * pin vectors produced by that package. An id neither form recognises is kept
+ * as-is (so two identical unknown ids still compare equal, never as another org).
+ */
+export function canonicalOrganizationId(id: string): string {
+  const wire = ORG_WIRE.exec(id)
+  if (wire) return suffixToUuid(wire[1]) ?? id
+  return UUID.test(id) ? id.toLowerCase() : id
+}
+
+/** Whether two organization ids name the same organization, whichever rendering each uses. */
+export function sameOrganization(
+  a: string | null | undefined,
+  b: string | null | undefined
+): boolean {
+  if (!a || !b) return false
+  return a === b || canonicalOrganizationId(a) === canonicalOrganizationId(b)
+}

@@ -34,6 +34,12 @@ export interface SharedListDetailProps {
   renderEditor: (context: { header: ReactNode | undefined; list: SharedList }) => ReactNode
   /** The fork flow's "Fork to edit…" button. */
   forkAction?: (list: SharedList) => ReactNode
+  /**
+   * Rendered above the READ-ONLY detail (the editor gets the same through its
+   * `header`): the fork flow's arrival notice, so a fork the caller can read but
+   * not edit still says what happened.
+   */
+  renderReadOnlyArrival?: (list: SharedList) => ReactNode
   hrefForList: (list: SharedList) => string
   onOpenList: (list: SharedList) => void
   onOpenTranslations: () => void
@@ -61,6 +67,7 @@ export function SharedListDetail({
   listId,
   renderEditor,
   forkAction,
+  renderReadOnlyArrival,
   hrefForList,
   onOpenList,
   onOpenTranslations,
@@ -126,16 +133,21 @@ export function SharedListDetail({
   const editable = editableStateOf(list)
 
   if (editable === 'read-only') {
+    const arrival = renderReadOnlyArrival?.(list)
     return (
-      <ReadOnlyListDetail
-        list={list}
-        forkAction={forkAction}
-        hrefForList={hrefForList}
-        onOpenList={onOpenList}
-        onOpenTranslations={onOpenTranslations}
-        onBackToIndex={onBackToIndex}
-        indexHref={indexHref}
-      />
+      <>
+        {/* inline padding only: an arrival that renders nothing adds no height */}
+        {arrival ? <div style={{ paddingInline: 'var(--space-4)' }}>{arrival}</div> : null}
+        <ReadOnlyListDetail
+          list={list}
+          forkAction={forkAction}
+          hrefForList={hrefForList}
+          onOpenList={onOpenList}
+          onOpenTranslations={onOpenTranslations}
+          onBackToIndex={onBackToIndex}
+          indexHref={indexHref}
+        />
+      </>
     )
   }
 
