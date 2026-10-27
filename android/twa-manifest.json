@@ -29,7 +29,7 @@
   "isChromeOSOnly": false,
   "isMetaQuest": false,
   "fullScopeUrl": "https://app.fuzefront.com/",
-  "minSdkVersion": 21,
+  "minSdkVersion": 24,
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://app.fuzefront.com/manifest.webmanifest",
   "fallbackType": "customtabs",

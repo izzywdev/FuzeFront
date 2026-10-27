@@ -58,6 +58,99 @@ export interface PermitSchema {
 
 const action = (name: string) => ({ name })
 
+// ---------------------------------------------------------------------------
+// Tenant-role hierarchy (FFRNT-376). The platform's org roles form a strict
+// inclusion chain — a higher role carries every permission of the one below
+// it: owner/admin ⊇ member/editor ⊇ viewer. Rather than hand-maintaining three
+// overlapping permission lists (which silently drift), each higher role is
+// COMPOSED as the lower role's set plus its own additions, so the inclusion is
+// true by construction. The emitted permission sets are byte-identical to the
+// prior hand-written lists; permit-role-hierarchy.test.ts fails CI if the chain
+// is ever broken.
+//
+// `developer` is deliberately OUTSIDE this chain (developers-portal.md §5.3): a
+// root-org developer gets catalog + sandbox only and must NOT inherit viewer's
+// Organization/App/UserManagement/Docs/Chat reads.
+// ---------------------------------------------------------------------------
+
+const uniq = (perms: string[]): string[] => Array.from(new Set(perms))
+
+// Lowest tier.
+const viewerPermissions = uniq([
+  'Organization:read',
+  'App:read',
+  'UserManagement:view_members',
+  'Docs:read',
+  'Chat:stream',
+  'SelectionListCatalog:list',
+  'SelectionListCatalog:resolve',
+  'SelectionListCatalog:read_shared',
+])
+
+// member → editor: everything a viewer can do, plus authoring apps and lists.
+const editorPermissions = uniq([
+  ...viewerPermissions,
+  'App:create',
+  'App:update',
+  'App:install',
+  'App:uninstall',
+  'SelectionListCatalog:create',
+])
+
+// owner/admin → admin: everything an editor can do, plus org lifecycle, member
+// management, app deletion, chat management, and platform catalog ops.
+const adminPermissions = uniq([
+  ...editorPermissions,
+  'Organization:create',
+  'Organization:update',
+  'Organization:delete',
+  'Organization:manage',
+  'App:delete',
+  'UserManagement:invite',
+  'UserManagement:remove',
+  'UserManagement:update_role',
+  'Chat:manage',
+  'SelectionListCatalog:read_quota',
+  'SelectionListCatalog:publish_platform',
+])
+
+// developer: orthogonal to the chain above (NOT a superset of viewer).
+const developerPermissions = uniq([
+  'DevPortalCatalog:read',
+  'DevPortalPlayground:use',
+  'DevPortalPlayground:view_history',
+])
+
+/**
+ * Canonical DB-membership-role → Permit-tenant-role mapping. One source of
+ * truth for utils/permit/role-assignment.ts (which previously inlined this
+ * three times). Encodes the hierarchy's top collapse: a DB `owner` and a DB
+ * `admin` both receive the Permit `admin` role — an org owner is implicitly the
+ * top role and needs no separate lower-role assignment to hold lower-role
+ * access, because `admin` already includes it. `member` → `editor`,
+ * `viewer` → `viewer`, `developer` → `developer` (orthogonal).
+ */
+export const MEMBERSHIP_TO_PERMIT_ROLE: Record<
+  'owner' | 'admin' | 'member' | 'viewer' | 'developer',
+  string
+> = {
+  owner: 'admin',
+  admin: 'admin',
+  member: 'editor',
+  viewer: 'viewer',
+  developer: 'developer',
+}
+
+/** Fallback Permit role for an unknown membership role (least privilege). */
+export const DEFAULT_PERMIT_ROLE = 'viewer'
+
+/**
+ * The tenant-role inclusion chain, lowest → highest. Each entry's permission
+ * set must be a superset of the previous entry's — asserted by the drift test.
+ * `developer` is intentionally absent (orthogonal).
+ */
+export const PERMIT_TENANT_ROLE_CHAIN = ['viewer', 'editor', 'admin'] as const
+
 export const permitSchema: PermitSchema = {
   resources: [
     {
@@ -225,6 +318,17 @@ export const permitSchema: PermitSchema = {
         create: action('Create'),
         read_quota: action('Read Quota'),
         resolve: action('Resolve'),
+        // Contract 4.1.0 (docs/planning/selection-lists-shared-and-fork.md).
+        // read_shared: the membership proof behind list `visibility` — the
+        // service admits a read of an `org` list (same org) or a `platform`
+        // common list without an instance grant only when the caller holds
+        // this IN ITS OWN TENANT. Confers no SelectionList:* action.
+        read_shared: action('Read Shared Lists'),
+        // publish_platform: create / promote / purge a `platform` common list.
+        // Granted via tenant `admin`, but the service evaluates it in the
+        // PLATFORM organization's tenant and requires the caller to act there,
+        // so a customer-org admin holding it in its own tenant cannot publish.
+        publish_platform: action('Publish Platform Lists'),
       },
     },
     {
@@ -257,53 +361,15 @@ export const permitSchema: PermitSchema = {
     },
   ],
   roles: [
-    {
-      key: 'admin',
-      name: 'Admin',
-      permissions: [
-        'Organization:create', 'Organization:read', 'Organization:update',
-        'Organization:delete', 'Organization:manage',
-        'App:create', 'App:read', 'App:update', 'App:delete', 'App:install', 'App:uninstall',
-        'UserManagement:invite', 'UserManagement:remove',
-        'UserManagement:update_role', 'UserManagement:view_members',
-        'Docs:read',
-        'Chat:stream', 'Chat:manage',
-        'SelectionListCatalog:list', 'SelectionListCatalog:create',
-        'SelectionListCatalog:read_quota', 'SelectionListCatalog:resolve',
-      ],
-    },
-    {
-      key: 'editor',
-      name: 'Editor',
-      permissions: [
-        'Organization:read',
-        'App:create', 'App:read', 'App:update', 'App:install', 'App:uninstall',
-        'UserManagement:view_members',
-        'Docs:read',
-        'Chat:stream',
-        'SelectionListCatalog:list', 'SelectionListCatalog:create', 'SelectionListCatalog:resolve',
-      ],
-    },
-    {
-      key: 'viewer',
-      name: 'Viewer',
-      permissions: [
-        'Organization:read',
-        'App:read',
-        'UserManagement:view_members',
-        'Docs:read',
-        'Chat:stream',
-        'SelectionListCatalog:list', 'SelectionListCatalog:resolve',
-      ],
-    },
-    {
-      key: 'developer',
-      name: 'Developer',
-      // docs/planning/developers-portal.md §5.3 — deliberately narrower than
-      // `viewer`: catalog + sandbox access only, nothing about the rest of
-      // the platform's tenant data. A root-org `developer` membership must
-      // NOT be able to read Organization/App/UserManagement/Docs/Chat.
-      permissions: ['DevPortalCatalog:read', 'DevPortalPlayground:use', 'DevPortalPlayground:view_history'],
-    },
+    // owner/admin → admin ⊇ member/editor ⊇ viewer. Each list is composed from
+    // the one below it (see the hierarchy block above) so the inclusion is
+    // drift-proof; the emitted sets are identical to the prior hand-written lists.
+    { key: 'admin', name: 'Admin', permissions: adminPermissions },
+    { key: 'editor', name: 'Editor', permissions: editorPermissions },
+    { key: 'viewer', name: 'Viewer', permissions: viewerPermissions },
+    // Orthogonal to the chain above — NOT a superset of viewer
+    // (docs/planning/developers-portal.md §5.3): catalog + sandbox only, never
+    // Organization/App/UserManagement/Docs/Chat.
+    { key: 'developer', name: 'Developer', permissions: developerPermissions },
   ],
 }

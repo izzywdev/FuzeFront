@@ -9,6 +9,7 @@ export declare const SELECTION_LIST_ITEM_UPDATABLE_FIELDS: readonly ["label", "d
 export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
+    listRevision: z.ZodNumber;
     eventId: z.ZodString;
     actor: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
         type: z.ZodLiteral<"user">;
@@ -33,7 +34,6 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     }>]>;
     listKey: z.ZodString;
-    listRevision: z.ZodNumber;
     item: z.ZodObject<{
         itemId: z.ZodString;
         code: z.ZodString;
@@ -57,6 +57,7 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
             packVersion: number;
             userModified: boolean;
         }>>;
+        originItemId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
@@ -74,6 +75,7 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     }, {
         status: "active" | "archived";
         code: string;
@@ -89,11 +91,13 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     }>;
     changedFields: z.ZodArray<z.ZodEnum<["label", "description", "sortOrder", "status"]>, "many">;
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -104,7 +108,6 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     changedFields: ("status" | "description" | "label" | "sortOrder")[];
     item: {
         status: "active" | "archived";
@@ -121,10 +124,12 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     };
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -135,7 +140,6 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     changedFields: ("status" | "description" | "label" | "sortOrder")[];
     item: {
         status: "active" | "archived";
@@ -152,6 +156,7 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     };
 }>;
 export type SelectionListsItemUpdatedPayloadV1 = z.infer<typeof selectionListsItemUpdatedSchemaV1>;

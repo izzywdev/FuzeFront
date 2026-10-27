@@ -1,0 +1,22 @@
+tools:
+  # PUT /v1/config — applies set/unset/lock/unlock to one scope as ONE
+  # transaction. Every operation has a compensating one (unset <-> set,
+  # lock <-> unlock) and the prior value is recorded in GET /v1/config/history,
+  # so a write is reversible from the caller's side. Still mutates: true.
+  writeConfigValues:
+    mutates: true
+    reversibility: reversible
+    reason: "Atomic batch of set/unset/lock/unlock on one scope; each op has an inverse and is audited in config history."
+
+  # PUT /v1/namespaces/{namespace}/keys — idempotent upsert of key definitions
+  # (catalog metadata, not values).
+  registerKeyDefinitions:
+    mutates: true
+    reversibility: reversible
+    reason: "Idempotent upsert of key definitions; re-registering the prior definition restores it."
+
+# DELIBERATELY ABSENT: revealSecret (POST /v1/config/secrets/reveal). It returns
+# raw secret plaintext, which would land in LLM session transcripts. The chart's
+# mounted spec (files/config-service-openapi.yaml) omits that path so the gateway
+# cannot derive a tool for it; scripts/check-mcp-spec-drift.sh enforces the
+# omission. Exposing it is an owner/exposure-policy decision, not a wiring one.

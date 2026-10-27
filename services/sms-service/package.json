@@ -14,6 +14,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@fuzefront/telemetry": "file:../../packages/telemetry",
     "express": "4.19.2",
     "twilio": "^5.3.0",
     "zod": "3.22.4"
@@ -32,6 +33,7 @@
   "overrides": {
     "body-parser": ">=1.20.6 <2",
     "brace-expansion": ">=5.0.9",
-    "qs": ">=6.16.0 <7"
+    "qs": ">=6.16.0 <7",
+    "axios": ">=1.20.0 <2"
   }
 }

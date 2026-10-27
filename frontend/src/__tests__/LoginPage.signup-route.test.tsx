@@ -72,7 +72,7 @@ describe('#283 — /signup must open the sign-up form', () => {
   // The "First name" field is rendered ONLY under `mode === 'signup'`
   // (LoginPage.tsx), so its presence is an unambiguous discriminator between the
   // two modes — unlike button text, which routes through the t() mock.
-  const firstName = () => screen.queryByLabelText(/first name/i)
+  const firstName = () => screen.queryByLabelText(/full name/i)
 
   it('opens SIGN-UP mode on /signup', async () => {
     setPath('/signup')

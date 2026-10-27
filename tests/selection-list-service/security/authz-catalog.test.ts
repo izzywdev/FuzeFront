@@ -29,13 +29,14 @@ import { mintTestToken } from '../helpers/auth';
 import { createTestListWithItems, purgeList } from '../helpers/factories';
 import { closeDb, dbQuery } from '../helpers/db';
 import type { SelectionListId, SelectionListItemId } from '../helpers/factories';
+import { testOrg, testUser } from '../helpers/ids';
 
-const ORG_ID = 'org_01test0000000catalog000000';
-const USER_ADMIN = 'usr_01test0000000catalogadmin0';
-const USER_EDITOR = 'usr_01test0000000catalogeditor';
-const USER_VIEWER = 'usr_01test0000000catalogviewer';
-const USER_DEVELOPER = 'usr_01test0000000catalogdevelop';
-const USER_LIST_EDITOR = 'usr_01test0000000cataloglisted0';
+const ORG_ID = testOrg('catalog');
+const USER_ADMIN = testUser('catalogadmin');
+const USER_EDITOR = testUser('catalogeditor');
+const USER_VIEWER = testUser('catalogviewer');
+const USER_DEVELOPER = testUser('catalogdevelop');
+const USER_LIST_EDITOR = testUser('cataloglisted');
 
 const token = (userId: string, role: string) =>
   mintTestToken({ userId, organizationId: ORG_ID, roles: [role] });

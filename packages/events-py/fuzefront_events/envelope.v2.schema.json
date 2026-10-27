@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/izzywdev/FuzeFront/contracts/events/envelope.v2.schema.json",
+  "title": "FuzeEnvelopeV2",
+  "description": "Event envelope v2 (FuzeSDLC governance/data-consistency-standard.md section 3). Language-neutral twin of EnvelopeV2Schema in shared/src/kafka/envelope.ts; the two are pinned to each other by packages/conformance-vectors/events/envelopes.*.json. Kafka partition key = aggregateId. `payload` is validated separately against the topic's own schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "topic",
+    "schemaVersion",
+    "aggregateType",
+    "aggregateId",
+    "aggregateVersion",
+    "producer",
+    "occurredAt",
+    "correlationId",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "description": "TypeID evt_..., minted at enqueue. Consumer dedupe key.",
+      "type": "string",
+      "pattern": "^evt_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "topic": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$"
+    },
+    "schemaVersion": {
+      "description": "Version of the topic's payload contract.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "aggregateType": {
+      "description": "Entity type the event is about.",
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,62}$"
+    },
+    "aggregateId": {
+      "description": "Typed id (TypeID) of the entity. Kafka partition key.",
+      "type": "string",
+      "pattern": "^[a-z][a-z_]{1,62}_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "aggregateVersion": {
+      "description": "Monotonic per aggregate; bumped by the owner in the same transaction as the change. Ordering guard.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "producer": {
+      "description": "Owning service name.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "occurredAt": {
+      "description": "RFC 3339 timestamp with a mandatory Z or numeric offset (the pattern enforces the offset; some format validators accept offset-less date-times).",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "correlationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "causationId": {
+      "description": "eventId of the event that caused this one, if any.",
+      "type": "string",
+      "pattern": "^evt_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "payload": {
+      "description": "Topic-specific, schema-validated elsewhere. Any JSON value except absent."
+    }
+  }
+}

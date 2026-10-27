@@ -8,7 +8,7 @@ Quick start::
     from fuzefront_selection_list_client import SelectionListClient
 
     client = SelectionListClient(
-        base_url="http://fuzefront-selection-list-service:3011",
+        base_url="http://fuzefront-selection-list-service:3008",
         token="<bearer-token>",
     )
     page = client.get_lists()
@@ -16,7 +16,11 @@ Quick start::
 
 from ._paginator import paginate
 from .client import SelectionListClient, TokenProvider
-from .errors import SelectionListApiError
+from .errors import (
+    MAX_EFFECTIVE_LOOKUP_PAGES,
+    EffectiveLookupIncompleteError,
+    SelectionListApiError,
+)
 from .seed import (
     SEED_COMPLETED_TOPIC,
     SEED_FAILED_TOPIC,
@@ -40,6 +44,8 @@ from .types import (
     AutofillResult,
     CreateItemRequest,
     CreateListRequest,
+    ForkProvenance,
+    ForkSourceComparison,
     ItemTranslationLocaleStatus,
     # Enums
     LifecycleStatus,
@@ -57,10 +63,12 @@ from .types import (
     SelectionList,
     SelectionListAccessRole,
     SelectionListErrorCode,
+    SelectionListErrorReason,
     # Items
     SelectionListItem,
     SelectionListItemTranslation,
     SelectionListQuotaStatus,
+    SelectionListVisibility,
     StatusFilter,
     # Translations
     Translation,
@@ -70,11 +78,13 @@ from .types import (
     UpsertItemTranslationRequest,
     UpsertListTranslationRequest,
     author_principal_kind,
+    compare_fork_to_source,
     is_user_author,
 )
 
 __all__ = [
     "DELETED_USER_SENTINEL",
+    "MAX_EFFECTIVE_LOOKUP_PAGES",
     # Seed requests (Kafka contract: selection-lists.seed.requested)
     "SEED_COMPLETED_TOPIC",
     "SEED_FAILED_TOPIC",
@@ -89,6 +99,9 @@ __all__ = [
     "AutofillResult",
     "CreateItemRequest",
     "CreateListRequest",
+    "EffectiveLookupIncompleteError",
+    "ForkProvenance",
+    "ForkSourceComparison",
     "ItemTranslationLocaleStatus",
     # Enums
     "LifecycleStatus",
@@ -108,9 +121,11 @@ __all__ = [
     # Client
     "SelectionListClient",
     "SelectionListErrorCode",
+    "SelectionListErrorReason",
     "SelectionListItem",
     "SelectionListItemTranslation",
     "SelectionListQuotaStatus",
+    "SelectionListVisibility",
     "StatusFilter",
     "TokenProvider",
     "Translation",
@@ -122,6 +137,7 @@ __all__ = [
     "author_principal_kind",
     "build_seed_request",
     "build_seed_request_envelope",
+    "compare_fork_to_source",
     "is_user_author",
     # Paginator
     "paginate",

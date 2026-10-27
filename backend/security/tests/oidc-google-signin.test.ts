@@ -664,7 +664,7 @@ describe('Route GET /api/auth/oidc/callback', () => {
       .mockResolvedValue(MOCK_USER)
 
     // db('sessions').insert(...) called by the route on happy path
-    const sessionQb = { insert: jest.fn().mockResolvedValue([]) }
+    const sessionQb = { insert: jest.fn().mockResolvedValue([]), where: () => ({ first: async () => undefined }) }
     dbFn.mockReturnValue(sessionQb)
   })
 
@@ -712,7 +712,7 @@ describe('Route GET /api/auth/oidc/callback', () => {
 
   it('happy path: a session row is inserted in the DB for the authenticated user', async () => {
     const insertMock = jest.fn().mockResolvedValue([])
-    dbFn.mockReturnValue({ insert: insertMock })
+    dbFn.mockReturnValue({ insert: insertMock, where: () => ({ first: async () => undefined }) })
 
     const STATE = 'session-insert-state-xyz'
     await request(app)
@@ -785,7 +785,7 @@ describe('Route POST /api/auth/token-exchange', () => {
     handleCallbackSpy = jest
       .spyOn(oidcService, 'handleCallback')
       .mockResolvedValue(MOCK_USER)
-    dbFn.mockReturnValue({ insert: jest.fn().mockResolvedValue([]) })
+    dbFn.mockReturnValue({ insert: jest.fn().mockResolvedValue([]), where: () => ({ first: async () => undefined }) })
   })
 
   afterAll(() => {

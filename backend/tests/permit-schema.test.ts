@@ -125,9 +125,9 @@ describe('permit schema IaC', () => {
       }
     })
 
-    it('SelectionListCatalog declares the four tenant-level actions', () => {
+    it('SelectionListCatalog declares the six tenant-level actions (4.1.0: + read_shared, publish_platform)', () => {
       const cat = permitSchema.resources.find(r => r.key === 'SelectionListCatalog')!
-      expect(Object.keys(cat.actions).sort()).toEqual(['create', 'list', 'read_quota', 'resolve'])
+      expect(Object.keys(cat.actions).sort()).toEqual(['create', 'list', 'publish_platform', 'read_quota', 'read_shared', 'resolve'])
       expect(cat.roles).toBeUndefined()
     })
 
@@ -141,9 +141,9 @@ describe('permit schema IaC', () => {
       const catalog = (key: string) =>
         permitSchema.roles.find(r => r.key === key)!.permissions
           .filter(p => p.startsWith('SelectionListCatalog:')).map(p => p.split(':')[1]).sort()
-      expect(catalog('admin')).toEqual(['create', 'list', 'read_quota', 'resolve'])
-      expect(catalog('editor')).toEqual(['create', 'list', 'resolve'])
-      expect(catalog('viewer')).toEqual(['list', 'resolve'])
+      expect(catalog('admin')).toEqual(['create', 'list', 'publish_platform', 'read_quota', 'read_shared', 'resolve'])
+      expect(catalog('editor')).toEqual(['create', 'list', 'read_shared', 'resolve'])
+      expect(catalog('viewer')).toEqual(['list', 'read_shared', 'resolve'])
       expect(catalog('developer')).toEqual([])
     })
 

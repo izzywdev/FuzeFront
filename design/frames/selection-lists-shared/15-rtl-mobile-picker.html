@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Picker: the effective list at 375 px, LTR and RTL (he / ar)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<link rel="stylesheet" href="mobile.css" />
+</head>
+<body>
+<div class="content" data-frame="15-rtl-mobile-picker" style="padding-top: var(--space-12);">
+
+  <h1 class="page-title">Picker — the effective list, 375 px, English · עברית · العربية</h1>
+  <p class="page-sub">Frames 5a–5b at a phone width, inside a consuming product's form. Nothing about which list a key means changes with the
+    width; only the layout does — the approved 375 px picker of <a href="../selection-lists/18-mobile-picker.html">selection-lists frame 4d</a>, plus the opt-in source caption.</p>
+
+  <div class="sl-devices">
+
+    <!-- ===== 1 · EN · fork wins ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · org fork wins</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><span class="wordmark">Helpdesk</span><span class="spacer"></span></div>
+        <div class="sl-device__screen sl-device__screen--host">
+          <div class="sl-host" data-panel="picker" data-mode="single" data-state="ready" data-effective-source="own">
+            <h2 class="sl-host__title">New support ticket</h2>
+            <p class="sl-host__sub">Acme Logistics · viewer: Sam Ortiz (member)</p>
+            <div class="sl-field" data-picker="priority" style="margin-bottom: 0;">
+              <label class="sl-field__label" for="m1">Priority</label>
+              <div class="sl-combo">
+                <div class="sl-combo__control sl-combo__control--open" role="combobox" aria-expanded="true" aria-controls="m1-menu" id="m1" tabindex="0" data-combo-control>
+                  <span class="sl-combo__value" data-selected-label>Medium</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+                </div>
+                <div class="sl-combo__menu" id="m1-menu" role="listbox" data-combo-menu data-menu-placement="inline">
+                  <div class="sl-combo__list">
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jfq3w8z6y5x4c3b2a1n9m8b1"><span>Low</span></div>
+                    <div class="sl-opt" role="option" aria-selected="true" data-item="front_sli_01jfq3w8z6y5x4c3b2a1n9m8b2"><span>Medium</span><span class="sl-opt__check" aria-hidden="true">✓</span></div>
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jfq3w8z6y5x4c3b2a1n9m8b3"><span>High</span></div>
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jfq3w8z6y5x4c3b2a1n9m8b6"><span>Blocker</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="sl-source" data-effective-source-caption="own"><span class="sl-fork" data-badge="fork">⑂ Your organization's version</span><span>of the common list <b>Priority</b></span></div>
+              <p class="sl-field__hint">Caption only with the opt-in <code class="sl-code">showSource</code>; it wraps under the control, never beside it.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 2 · HE · RTL · common list ===== -->
+    <div>
+      <p class="sl-device__label">he · rtl · 375 · no fork → common list</p>
+      <div class="sl-device" dir="rtl" lang="he" data-device="375" data-locale="he" data-dir="rtl">
+        <div class="sl-device__bar"><span class="wordmark" dir="ltr">Helpdesk</span><span class="spacer"></span></div>
+        <div class="sl-device__screen sl-device__screen--host">
+          <div class="sl-host" data-panel="picker" data-mode="single" data-state="ready" data-effective-source="platform">
+            <h2 class="sl-host__title">קריאת שירות חדשה</h2>
+            <p class="sl-host__sub"><bdi>Initech</bdi> · אין עותק</p>
+            <div class="sl-field" data-picker="priority" style="margin-bottom: 0;">
+              <label class="sl-field__label" for="m2">עדיפות</label>
+              <div class="sl-combo">
+                <div class="sl-combo__control sl-combo__control--open" role="combobox" aria-expanded="true" aria-controls="m2-menu" id="m2" tabindex="0" data-combo-control>
+                  <span class="sl-combo__value" data-selected-label>רגילה</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+                </div>
+                <div class="sl-combo__menu" id="m2-menu" role="listbox" data-combo-menu data-menu-placement="inline">
+                  <div class="sl-combo__list">
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa1"><span>נמוכה</span></div>
+                    <div class="sl-opt" role="option" aria-selected="true" data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa2"><span>רגילה</span><span class="sl-opt__check" aria-hidden="true">✓</span></div>
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa3"><span>גבוהה</span></div>
+                    <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa4"><span>דחופה</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="sl-source" data-effective-source-caption="platform"><span class="sl-vis sl-vis--platform" data-badge="common">◎ רשימה משותפת</span><span>מסופקת על ידי <bdi>FuzeFront</bdi></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 3 · EN · stored value redirected ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · stored value across a fork</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><span class="wordmark">Helpdesk</span><span class="spacer"></span></div>
+        <div class="sl-device__screen sl-device__screen--host">
+          <div class="sl-host" data-panel="picker" data-mode="single" data-state="redirected">
+            <h2 class="sl-host__title">Ticket #4182</h2>
+            <p class="sl-host__sub">Saved before Acme forked Priority</p>
+            <div class="sl-field" data-picker="priority" style="margin-bottom: 0;">
+              <label class="sl-field__label" for="m3">Priority</label>
+              <div class="sl-combo__control" id="m3" role="combobox" aria-expanded="false" tabindex="0" data-combo-control>
+                <span class="sl-combo__value" data-selected-label data-redirected="true">Medium</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+              </div>
+              <p class="sl-field__hint">The fork's label, with no badge, notice or dirty marker.</p>
+            </div>
+            <div class="sl-persist" data-persisted>
+              <div class="sl-persist__label">Stored vs submitted</div>
+              <code>stored    …v0wa2 (common “Normal”)</code><br />
+              <code>effective …m8b2 (fork “Medium”)</code><br />
+              <code>submits   …v0wa2 unless the user picks</code>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 4 · AR · RTL · no effective list ===== -->
+    <div>
+      <p class="sl-device__label">ar · rtl · 375 · no effective list</p>
+      <div class="sl-device" dir="rtl" lang="ar" data-device="375" data-locale="ar" data-dir="rtl">
+        <div class="sl-device__bar"><span class="wordmark" dir="ltr">Helpdesk</span><span class="spacer"></span></div>
+        <div class="sl-device__screen sl-device__screen--host">
+          <div class="sl-host" data-panel="picker" data-state="not-found">
+            <h2 class="sl-host__title">تذكرة دعم جديدة</h2>
+            <p class="sl-host__sub">نموذج منتج مستهلك</p>
+            <label class="sl-field__label">الأولوية</label>
+            <div class="sl-combo__control" aria-disabled="true"><span class="sl-combo__value sl-combo__value--ph">القائمة غير متاحة</span></div>
+            <p class="sl-field__err" data-error="NOT_FOUND"><span aria-hidden="true">⚠</span><span>لا توجد قائمة نشطة بالمفتاح <span class="sl-key" dir="ltr">priority</span> في هذه المؤسسة.</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section">
+    <h2>States at 375 px</h2>
+    <p class="sl-caption">Same states as frames 5a–5b.</p>
+    <div class="sl-devices">
+      <div>
+        <p class="sl-device__label">loading</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short sl-device__screen--host" data-panel="picker" data-state="loading">
+          <label class="sl-field__label">Priority</label>
+          <div class="sl-combo__control" aria-busy="true"><span class="sl-skel" style="width: 45%;"></span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
+          <p class="sl-field__hint">One skeleton for both requests; the caption appears with the options.</p>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">error</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short sl-device__screen--host" data-panel="picker" data-state="error">
+          <label class="sl-field__label">Priority</label>
+          <div class="sl-combo__control sl-combo__control--invalid"><span class="sl-combo__value sl-combo__value--ph">Couldn't load options</span></div>
+          <button class="btn btn-ghost" data-action="retry" style="margin-top: var(--space-2);">Retry</button>
+          <p class="sl-field__err" data-error="load-failed"><span aria-hidden="true">⚠</span><span>Never falls back to a second, different list.</span></p>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">resolving a stored value</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short sl-device__screen--host" data-panel="picker" data-state="resolving">
+          <label class="sl-field__label">Priority</label>
+          <div class="sl-combo__control" aria-busy="true"><span class="sl-skel" style="width: 30%;"></span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section">
+    <h2>Rules the implementation must keep</h2>
+    <ul class="sl-caption sl-list" data-rules="rtl-mobile-picker">
+      <li><b>One lookup, one list, at every width</b> — the effective list for the key is decided by the service; the phone layout never fetches or
+        shows a second list.</li>
+      <li><b>Layout is the approved 375 px picker</b> (selection-lists frame 4d): full field width, menu inline under the control, options ≥ 44 px.</li>
+      <li><b>The opt-in source caption wraps under the control</b> and never widens the field; it is absent unless <code class="sl-code">showSource</code> is set.</li>
+      <li><b>A redirected stored value shows no visible change</b> at phone width either — no badge, notice or flicker; the value submitted is unchanged unless the user picks.</li>
+      <li><b>RTL</b>: the host's <code class="sl-code">dir</code> drives the picker; keys and organization names are bidi-isolated; the common/fork glyphs are not mirrored.</li>
+    </ul>
+  </div>
+
+  <p class="sl-notes">
+    <b>Test hooks:</b> <code>[data-frame='15-rtl-mobile-picker']</code> · <code>[data-device='375']</code> · <code>[data-locale='he'][data-dir='rtl']</code> · <code>[data-locale='ar'][data-dir='rtl']</code> · <code>[data-panel='picker']</code> · <code>[data-effective-source='own']</code> · <code>[data-effective-source='platform']</code> · <code>[data-effective-source-caption='own']</code> · <code>[data-effective-source-caption='platform']</code> · <code>[data-combo-menu][data-menu-placement='inline']</code> · <code>[data-redirected='true']</code> · <code>[data-persisted]</code> · <code>[data-state='not-found']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-state='resolving']</code> · <code>[data-rules='rtl-mobile-picker']</code><br />
+    Playwright mounts the harness at <code>{ viewport: 375×812, locale: en | he-IL | ar }</code>: no horizontal scroll, the caption box lies below the control
+    and inside the viewport, and a redirected value submits the stored id.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code> / <code>mobile.css</code>.
+  </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="14-rtl-mobile-visibility.html" data-nav="prev">← RTL + mobile: visibility</a>
+  <span class="caption"><b>(5c) RTL + mobile — picker</b> · Flow 5 · Picker — the effective list · frame 15 of 15</span>
+  <a class="btn btn-primary" href="index.html" data-nav="next">All frames →</a>
+</nav>
+</body>
+</html>

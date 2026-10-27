@@ -34,6 +34,7 @@
  * `ServiceEndpoint:invoke` permission via `grantServiceInvoke`.
  */
 
+import axios from 'axios'
 import { registerS2SClient } from './provision-s2s-clients'
 import { parseArgs, writeCredentialsEnvFile } from './s2s-credentials-file'
 
@@ -90,6 +91,15 @@ async function main(): Promise<void> {
 }
 
 main().catch(err => {
-  console.error('[register-s2s] Registration failed:', err instanceof Error ? err.message : err)
+  // Surface the Authentik response body — a bare "Request failed with status
+  // code 400" hid the real validation error behind the 2026-10-25 sync wedge.
+  if (axios.isAxiosError(err) && err.response) {
+    console.error(
+      `[register-s2s] Registration failed: HTTP ${err.response.status} ` +
+        JSON.stringify(err.response.data)
+    )
+  } else {
+    console.error('[register-s2s] Registration failed:', err instanceof Error ? err.message : err)
+  }
   process.exit(1)
 })
