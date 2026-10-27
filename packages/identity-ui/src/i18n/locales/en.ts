@@ -1,4 +1,5 @@
 import type { IdentityMessages } from '../messages'
+import { invitationsV2En } from '../invitationsV2'
 
 export const en: IdentityMessages = {
   common: {
@@ -65,6 +66,7 @@ export const en: IdentityMessages = {
     skipped: 'skipped',
     errors: 'errors',
   },
+  invitationsV2: invitationsV2En,
   tokens: {
     title: 'API Tokens',
     name: 'Name',

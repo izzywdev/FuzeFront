@@ -1,4 +1,5 @@
 import type { IdentityMessages } from '../messages'
+import { invitationsV2He } from '../invitationsV2'
 
 /** Hebrew (RTL) locale. */
 export const he: IdentityMessages = {
@@ -66,6 +67,7 @@ export const he: IdentityMessages = {
     skipped: 'דולגו',
     errors: 'שגיאות',
   },
+  invitationsV2: invitationsV2He,
   tokens: {
     title: 'אסימוני API',
     name: 'שם',

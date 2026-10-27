@@ -44,6 +44,15 @@
 
 .fzf-auth-panel__social {
   margin-block-start: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.fzf-auth-panel__email-hint {
+  margin-block: calc(-1 * var(--space-2)) 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
 }
 
 .fzf-auth-panel__divider {
@@ -58,7 +67,7 @@
   font-size: var(--text-sm);
 }
 
-.fzf-auth-panel__google-button {
+.fzf-auth-panel__social-button {
   width: 100%;
   display: flex;
   align-items: center;
@@ -75,15 +84,15 @@
   cursor: pointer;
 }
 
-.fzf-auth-panel__google-button:hover:not(:disabled) {
+.fzf-auth-panel__social-button:hover:not(:disabled) {
   background-color: var(--bg-secondary);
 }
 
-.fzf-auth-panel__google-button:active:not(:disabled) {
+.fzf-auth-panel__social-button:active:not(:disabled) {
   background-color: var(--bg-tertiary, var(--bg-secondary));
 }
 
-.fzf-auth-panel__google-button:disabled {
+.fzf-auth-panel__social-button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }

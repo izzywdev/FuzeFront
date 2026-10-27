@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Alert, Button, CenteredCard } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { getInvitation, acceptInvitation } from '../services/api'
+import { useInviteV2Enabled } from '../lib/inviteV2Flag'
+import AcceptInvitePageV2 from './AcceptInvitePageV2'
 
 interface InvitationDetails {
   id: string
@@ -44,11 +46,24 @@ function safeRedirectUrl(raw: unknown, fallback = '/login'): string {
 /**
  * AcceptInvitePage — handles /invitations/:token
  *
- * Resolves the token server-side, shows org + role info, then:
- * - If authenticated with matching email: lets user accept immediately.
- * - If unauthenticated or wrong email: directs to enroll/login.
+ * Flag `fuzefront.identity.invite-v2` (default OFF): ON renders the v2 accept ->
+ * sign up -> auto-bind flow (`AcceptInvitePageV2`, design/frames/org-invitations-v2),
+ * OFF renders today's page below completely unchanged.
  */
 function AcceptInvitePage() {
+  const inviteV2 = useInviteV2Enabled()
+  return inviteV2 ? <AcceptInvitePageV2 /> : <LegacyAcceptInvitePage />
+}
+
+/**
+ * LegacyAcceptInvitePage (v1) — resolves the token server-side, shows org + role
+ * info, then:
+ * - If authenticated with matching email: lets user accept immediately.
+ * - If unauthenticated or wrong email: directs to enroll/login.
+ *
+ * Retired together with the flag (see flag-registry.yaml removal_criterion).
+ */
+function LegacyAcceptInvitePage() {
   const { token } = useParams<{ token: string }>()
   const navigate = useNavigate()
   const { isAuthenticated, user } = useCurrentUser()

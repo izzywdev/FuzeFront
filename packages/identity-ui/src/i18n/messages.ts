@@ -1,3 +1,5 @@
+import type { InvitationsV2Messages } from './invitationsV2'
+
 /**
  * Identity-UI message catalogue shape. Every user-facing string in the package
  * is keyed here so components never hard-code English. Locales (en, he) must
@@ -68,6 +70,7 @@ export interface IdentityMessages {
     skipped: string
     errors: string
   }
+  invitationsV2: InvitationsV2Messages
   tokens: {
     title: string
     name: string

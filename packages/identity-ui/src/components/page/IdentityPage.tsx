@@ -5,6 +5,10 @@ import { createIdentityClient } from '../../api/identityClient'
 import { MembersTable } from '../members/MembersTable'
 import { PendingInvitesList } from '../invites/PendingInvitesList'
 import { InviteModal } from '../invites/InviteModal'
+import { OrgInviteFlow } from '../invitations/invite/OrgInviteFlow'
+import { OrgInviteButton } from '../invitations/invite/OrgInviteButton'
+import type { AccountOption } from '../invitations/invite/InviteFields'
+import type { InvitationsApiClient } from '../../api/invitationsClient'
 import { TokenList } from '../tokens/TokenList'
 import { TokenCreateModal } from '../tokens/TokenCreateModal'
 import { RolesPermissionsPanel } from '../permissions/RolesPermissionsPanel'
@@ -24,6 +28,20 @@ export interface IdentityPageProps {
   locale?: IdentityLocale
   /** Notifies the host after a membership change so it can re-sync. */
   onMembersChange?: () => void
+  /**
+   * Org invitations v2 (FFRNT-309) — the host reads the Unleash flag
+   * `fuzefront.identity.invite-v2` (default OFF) and passes it here. OFF keeps the
+   * v1 invite modal + pending list byte-for-byte; ON swaps in the v2 invite
+   * dialog (invitee kind · channel · role · member type) and the cursor-paginated
+   * pending panel.
+   */
+  invitationsV2?: boolean
+  /** Org display name for the v2 dialog title. */
+  organizationName?: string
+  /** Server-side account search for the v2 "existing account-holder" kind. */
+  searchAccounts?: (query: string) => Promise<AccountOption[]>
+  /** Override the v2 invitations client (tests / custom transport). */
+  invitationsClient?: InvitationsApiClient
 }
 
 type TabKey = 'members' | 'permissions' | 'pending' | 'tokens'
@@ -48,6 +66,10 @@ function IdentityPageInner({
   apiClient,
   getToken,
   onMembersChange,
+  invitationsV2 = false,
+  organizationName,
+  searchAccounts,
+  invitationsClient,
 }: IdentityPageProps) {
   const { messages, dir } = useIdentityI18n()
   const client = useMemo(() => apiClient ?? createIdentityClient({ getToken }), [apiClient, getToken])
@@ -124,10 +146,11 @@ function IdentityPageInner({
 
   useEffect(() => {
     loadMembers()
-    loadInvites()
+    // v2 owns its own (cursor-paginated) invitation fetching; the v1 list shape differs.
+    if (!invitationsV2) loadInvites()
     loadTokens()
     loadRoles()
-  }, [loadMembers, loadInvites, loadTokens, loadRoles])
+  }, [loadMembers, loadInvites, loadTokens, loadRoles, invitationsV2])
 
   const tabButton = (key: TabKey, label: string) => (
     <button
@@ -170,9 +193,12 @@ function IdentityPageInner({
           {tabButton('pending', messages.invitations.title)}
           {tabButton('tokens', messages.tokens.title)}
         </div>
-        {tab === 'members' && (userRole === 'owner' || userRole === 'admin') && (
-          <Button variant="primary" onClick={() => setInviteOpen(true)}>{messages.members.invite}</Button>
-        )}
+        {tab === 'members' && (userRole === 'owner' || userRole === 'admin') &&
+          (invitationsV2 ? (
+            <OrgInviteButton onClick={() => setInviteOpen(true)} />
+          ) : (
+            <Button variant="primary" onClick={() => setInviteOpen(true)}>{messages.members.invite}</Button>
+          ))}
         {tab === 'tokens' && canManageTokens && (
           <Button variant="primary" onClick={() => setTokenModalOpen(true)}>{messages.tokens.newToken}</Button>
         )}
@@ -206,7 +232,26 @@ function IdentityPageInner({
         <RolesPermissionsPanel catalog={rolesCatalog} loading={rolesLoading} error={rolesError} onRetry={loadRoles} />
       )}
 
-      {tab === 'pending' && (
+      {invitationsV2 && (
+        <OrgInviteFlow
+          organizationId={organizationId}
+          orgName={organizationName}
+          userRole={userRole}
+          userId={userId}
+          client={invitationsClient}
+          getToken={getToken}
+          inviteOpen={inviteOpen}
+          onInviteOpenChange={setInviteOpen}
+          showPending={tab === 'pending'}
+          searchAccounts={searchAccounts}
+          onChanged={() => {
+            loadMembers()
+            onMembersChange?.()
+          }}
+        />
+      )}
+
+      {!invitationsV2 && tab === 'pending' && (
         <PendingInvitesList
           invitations={invites}
           loading={invitesLoading}
@@ -235,16 +280,18 @@ function IdentityPageInner({
         />
       )}
 
-      <InviteModal
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        onInvite={(email, role) => client.invite(organizationId, email, role)}
-        onBulkInvite={(invitations) => client.bulkInvite(organizationId, invitations)}
-        onSuccess={() => {
-          loadInvites()
-          loadMembers()
-        }}
-      />
+      {!invitationsV2 && (
+        <InviteModal
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          onInvite={(email, role) => client.invite(organizationId, email, role)}
+          onBulkInvite={(invitations) => client.bulkInvite(organizationId, invitations)}
+          onSuccess={() => {
+            loadInvites()
+            loadMembers()
+          }}
+        />
+      )}
 
       <TokenCreateModal
         open={tokenModalOpen}

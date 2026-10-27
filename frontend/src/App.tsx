@@ -54,6 +54,8 @@ import EmployeeOrgDrilldownPage from './pages/EmployeeOrgDrilldownPage'
 import MasterAdminPortalsPage from './pages/MasterAdminPortalsPage'
 import PortalAdminConsolePage from './pages/PortalAdminConsolePage'
 import MemberDirectoryPage from './pages/MemberDirectoryPage'
+import RootCustomersPage from './pages/RootCustomersPage'
+import { INVITE_V2_FLAG } from './lib/inviteV2Flag'
 import ConfigPage from './pages/ConfigPage'
 import ConfigCatalogPage from './pages/ConfigCatalogPage'
 import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
@@ -466,6 +468,7 @@ function AppContent() {
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
             <Route path="/portals" element={<PortalsDirectory />} />
+            <Route path="/root/customers" element={<RootCustomersRoute />} />
             <Route path="/staff" element={<EmployeeConsolePage />} />
             <Route path="/staff/orgs/:id" element={<EmployeeOrgDrilldownPage />} />
             <Route path="/admin/portals" element={<MasterAdminPortalsPage />} />
@@ -545,6 +548,31 @@ function MemberDirectoryRoute() {
   ) : (
     <Navigate to={id ? `/organizations/${id}` : '/organizations'} replace />
   )
+}
+
+/**
+ * `/root/customers` — the root-org owner's customer-invite surface (FFRNT-309,
+ * design/frames/org-invitations-v2 flow `root-customer-invite`), flag
+ * `fuzefront.identity.invite-v2` (default OFF). Net-new route, so OFF redirects
+ * to /dashboard. Waits for `/api/flags` to settle (`useFlagState`) before
+ * deciding, so a hard load / refresh / bookmark of the URL is not bounced on the
+ * pre-fetch fallback (see {@link useSelectionListsGate}).
+ */
+function RootCustomersRoute() {
+  const { enabled, ready } = useFlagState(INVITE_V2_FLAG, false)
+  if (!ready) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="root-customers-flag-loading"
+        style={{ padding: 'var(--space-6)', color: 'var(--text-secondary)' }}
+      >
+        Loading...
+      </div>
+    )
+  }
+  return enabled ? <RootCustomersPage /> : <Navigate to="/dashboard" replace />
 }
 
 /**
