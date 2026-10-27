@@ -6,7 +6,9 @@
     "paths": [
       "packages/auth-experience-ui/**",
       "packages/auth-ui/src/**",
-      "frontend/src/pages/LoginPage.tsx"
+      "frontend/src/pages/LoginPage.tsx",
+      "frontend/src/pages/AuthExperiencePages.tsx",
+      "frontend/src/pages/authI18n.ts"
     ]
   },
   "approved": false,
@@ -252,5 +254,5 @@
       ]
     }
   ],
-  "stamp": "1bc0a7ab03474b744cea45da96283f4c4a73accef8b34619b73251f80d56d0de"
+  "stamp": "e39e999cd75c41a5e0d37d4bac0e47673c9209efcccc36562af55d5047b713e3"
 }

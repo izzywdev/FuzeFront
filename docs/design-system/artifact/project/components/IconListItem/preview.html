@@ -1,0 +1,28 @@
+<!-- @dsCard group="Layout" height=432 static -->
+<style>@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");</style>
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">IconListItem · usage</span>
+<pre><code>&lt;ListStack gap="sm"&gt;
+  {challenges.map((c) =&gt; (
+    &lt;IconListItem key={c} icon={CheckCircle2} className="text-sm text-gray-600"&gt;
+      {c}
+    &lt;/IconListItem&gt;
+  ))}
+&lt;/ListStack&gt;
+
+&lt;IconListItem icon={Check} tone="success"&gt;
+  &lt;span className="text-gray-700"&gt;{feature}&lt;/span&gt;
+&lt;/IconListItem&gt;
+&lt;IconListItem icon={X} tone="muted"&gt;
+  &lt;span className="text-gray-600"&gt;{feature}&lt;/span&gt;
+&lt;/IconListItem&gt;
+
+&lt;IconListItem as="div" icon={CheckCircle2} size={18} gap="md" className="bg-white rounded-xl border border-gray-100 p-5"&gt;
+  &lt;p className="text-sm text-gray-700 leading-relaxed"&gt;{useCase}&lt;/p&gt;
+&lt;/IconListItem&gt;</code></pre>

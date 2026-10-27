@@ -211,7 +211,8 @@
         "[data-component='signup-progress'][data-email-step='omitted']",
         "[data-step='phone'][aria-current='step']",
         "[data-step-sr]"
-      ]
+      ],
+      "viewport": "responsive"
     },
     {
       "id": "03-enter-code",
@@ -240,7 +241,8 @@
         "[data-action='resend'][data-resend-state='sending'][disabled][aria-busy='true']",
         "[data-panel='confirm-contact'][data-state='verifying'] [data-action='change-number'][disabled]",
         "[data-panel='confirm-contact'][data-resend='sending'] [data-action='change-number'][disabled]"
-      ]
+      ],
+      "viewport": "responsive"
     },
     {
       "id": "04-verified",
@@ -259,7 +261,8 @@
         "[data-action='continue'][data-next='verify-email']",
         "[data-action='continue'][data-next='app']",
         "[data-next-resolved='app']"
-      ]
+      ],
+      "viewport": "responsive"
     },
     {
       "id": "05-code-errors",
@@ -286,7 +289,8 @@
         "[data-panel='confirm-contact'][data-state='error-confirm-unavailable'][data-policy='required'] [data-action='continue-without-phone']",
         "[data-state='error-invalid'] [data-component='otp-input'][aria-describedby]",
         "[data-state='error-expired'] [data-component='otp-input'][aria-describedby]"
-      ]
+      ],
+      "viewport": "responsive"
     },
     {
       "id": "06-send-errors",
@@ -313,7 +317,8 @@
         "[data-panel='confirm-contact'][data-state='error-rate-limited'][data-pending='false'][data-policy='required'] [data-action='continue-without-phone']",
         "[data-validation='server-invalid'] [data-field='national-number'][aria-invalid='true'][aria-describedby]",
         "[data-panel='confirm-contact'][data-state='error-number-unavailable'][data-policy='required'] [data-action='continue-without-phone']"
-      ]
+      ],
+      "viewport": "responsive"
     },
     {
       "id": "07-skip-policy",
@@ -335,7 +340,8 @@
         "[data-panel='confirm-contact'][data-policy='required'][data-state='enter-phone']",
         "[data-policy-note='required']",
         "[data-panel='confirm-contact'][data-policy='required'][data-state='error-unavailable']"
-      ]
+      ],
+      "viewport": "responsive"
     },
     {
       "id": "08-states",
@@ -359,8 +365,9 @@
         "[data-panel='confirm-contact'][data-state='error-generic'][data-policy='optional'] [data-action='skip']",
         "[data-action='sign-in-again'][data-return-to]",
         "[data-panel='confirm-contact'][data-resumed='true'] [data-action='resend'][data-resend-via='session']"
-      ]
+      ],
+      "viewport": "responsive"
     }
   ],
-  "stamp": "5b97763f83cffcabfff40397db41c5e20f993f9335d8462c84a534a4c8760836"
+  "stamp": "c717a31b02e04b26e3b5bf800c1d53015edae74ea3ce2e25ec6a5635a9cde621"
 }
