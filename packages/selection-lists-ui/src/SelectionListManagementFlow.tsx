@@ -34,6 +34,7 @@ import {
   SharedListDetail,
   SharedListIndexPanel,
 } from './shared-lists/browse'
+import { PanelSkeleton } from './shared-lists/browse/PanelState'
 import {
   ForkProvenanceBoundary,
   useForkProvenanceContext,
@@ -1317,6 +1318,11 @@ export function SelectionListManagementFlow() {
   const { listId } = useParams<{ listId?: string }>()
   const navigate = useNavigate()
   const [showNewList, setShowNewList] = useState(false)
+  const { ready } = useSharedLists()
+
+  // The host's shared-lists flag has not settled: neither the 4.0.0 nor the shared
+  // screens may mount (each would issue its own requests). Settles to one of them.
+  if (!ready) return <PanelSkeleton label="Loading" />
 
   if (listId) {
     return (
