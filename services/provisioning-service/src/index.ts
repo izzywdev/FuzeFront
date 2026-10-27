@@ -148,115 +148,119 @@ async function main() {
       membershipAddedConsumer,
       membershipRemovedConsumer,
     ];
-    const starters: Array<{ consumer: TypedConsumer; start: () => Promise<void> }> = [
+    const starters: Array<{
+      consumer: TypedConsumer;
+      subscribe: () => Promise<void>;
+      run: () => Promise<void>;
+    }> = [
       {
         consumer: userConsumer,
-        start: async () => {
-          await userConsumer.subscribe(TOPICS.IDENTITY_USER_CREATED);
-          await userConsumer.run(
+        subscribe: () => userConsumer.subscribe(TOPICS.IDENTITY_USER_CREATED),
+        run: () =>
+          userConsumer.run(
             withDlq<IdentityUserCreatedPayloadV1>(TOPICS.IDENTITY_USER_CREATED, event =>
               handleUserCreated(event, handlerDeps)
             ),
             identityUserCreatedSchemaV1,
             dlqProducer
-          );
-        },
+          ),
       },
       {
         consumer: orgConsumer,
-        start: async () => {
-          await orgConsumer.subscribe(TOPICS.IDENTITY_ORG_CREATED);
-          await orgConsumer.run(
+        subscribe: () => orgConsumer.subscribe(TOPICS.IDENTITY_ORG_CREATED),
+        run: () =>
+          orgConsumer.run(
             withDlq<IdentityOrgCreatedPayloadV1>(TOPICS.IDENTITY_ORG_CREATED, event =>
               handleOrgCreated(event, handlerDeps)
             ),
             identityOrgCreatedSchemaV1,
             dlqProducer
-          );
-        },
+          ),
       },
       {
         consumer: orgUpdatedConsumer,
-        start: async () => {
-          await orgUpdatedConsumer.subscribe(TOPICS.IDENTITY_ORG_UPDATED);
-          await orgUpdatedConsumer.run(
+        subscribe: () => orgUpdatedConsumer.subscribe(TOPICS.IDENTITY_ORG_UPDATED),
+        run: () =>
+          orgUpdatedConsumer.run(
             withDlq<IdentityOrgUpdatedPayloadV1>(TOPICS.IDENTITY_ORG_UPDATED, event =>
               handleOrgUpdated(event, handlerDeps)
             ),
             identityOrgUpdatedSchemaV1,
             dlqProducer
-          );
-        },
+          ),
       },
       {
         consumer: orgDeletedConsumer,
-        start: async () => {
-          await orgDeletedConsumer.subscribe(TOPICS.IDENTITY_ORG_DELETED);
-          await orgDeletedConsumer.run(
+        subscribe: () => orgDeletedConsumer.subscribe(TOPICS.IDENTITY_ORG_DELETED),
+        run: () =>
+          orgDeletedConsumer.run(
             withDlq<IdentityOrgDeletedPayloadV1>(TOPICS.IDENTITY_ORG_DELETED, event =>
               handleOrgDeleted(event, handlerDeps)
             ),
             identityOrgDeletedSchemaV1,
             dlqProducer
-          );
-        },
+          ),
       },
       {
         consumer: userUpdatedConsumer,
-        start: async () => {
-          await userUpdatedConsumer.subscribe(TOPICS.IDENTITY_USER_UPDATED);
-          await userUpdatedConsumer.run(
+        subscribe: () => userUpdatedConsumer.subscribe(TOPICS.IDENTITY_USER_UPDATED),
+        run: () =>
+          userUpdatedConsumer.run(
             withDlq<IdentityUserUpdatedPayloadV1>(TOPICS.IDENTITY_USER_UPDATED, event =>
               handleUserUpdated(event, handlerDeps)
             ),
             identityUserUpdatedSchemaV1,
             dlqProducer
-          );
-        },
+          ),
       },
       {
         consumer: userDeletedConsumer,
-        start: async () => {
-          await userDeletedConsumer.subscribe(TOPICS.IDENTITY_USER_DELETED);
-          await userDeletedConsumer.run(
+        subscribe: () => userDeletedConsumer.subscribe(TOPICS.IDENTITY_USER_DELETED),
+        run: () =>
+          userDeletedConsumer.run(
             withDlq<IdentityUserDeletedPayloadV1>(TOPICS.IDENTITY_USER_DELETED, event =>
               handleUserDeleted(event, handlerDeps)
             ),
             identityUserDeletedSchemaV1,
             dlqProducer
-          );
-        },
+          ),
       },
       {
         consumer: membershipAddedConsumer,
-        start: async () => {
-          await membershipAddedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_ADDED);
-          await membershipAddedConsumer.run(
+        subscribe: () => membershipAddedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_ADDED),
+        run: () =>
+          membershipAddedConsumer.run(
             withDlq<IdentityMembershipAddedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_ADDED, event =>
               handleMembershipAdded(event, handlerDeps)
             ),
             identityMembershipAddedSchemaV1,
             dlqProducer
-          );
-        },
+          ),
       },
       {
         consumer: membershipRemovedConsumer,
-        start: async () => {
-          await membershipRemovedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED);
-          await membershipRemovedConsumer.run(
+        subscribe: () => membershipRemovedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED),
+        run: () =>
+          membershipRemovedConsumer.run(
             withDlq<IdentityMembershipRemovedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_REMOVED, event =>
               handleMembershipRemoved(event, handlerDeps)
             ),
             identityMembershipRemovedSchemaV1,
             dlqProducer
-          );
-        },
+          ),
       },
     ];
 
+    // connect, subscribe and run are three independently tracked phases: a
+    // failure in any one resumes only the unfinished work on the next retry.
+    // An already-connected client is never re-connected, an already-subscribed
+    // consumer never re-subscribed, an already-running consumer never re-run —
+    // each of which KafkaJS rejects and would otherwise wedge the loop. (The
+    // subscribe/run split is why a subscribe-ok/run-fail no longer re-subscribes
+    // on retry.)
     const connected = new Set<{ connect(): Promise<void> }>();
-    const started = new Set<TypedConsumer>();
+    const subscribed = new Set<TypedConsumer>();
+    const running = new Set<TypedConsumer>();
     for (;;) {
       try {
         for (const client of connectables) {
@@ -266,9 +270,15 @@ async function main() {
           }
         }
         for (const s of starters) {
-          if (!started.has(s.consumer)) {
-            await s.start();
-            started.add(s.consumer);
+          if (!subscribed.has(s.consumer)) {
+            await s.subscribe();
+            subscribed.add(s.consumer);
+          }
+        }
+        for (const s of starters) {
+          if (!running.has(s.consumer)) {
+            await s.run();
+            running.add(s.consumer);
           }
         }
         console.log('[provisioning-service] Kafka consumers running');
