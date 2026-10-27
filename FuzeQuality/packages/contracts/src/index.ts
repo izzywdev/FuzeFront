@@ -61,7 +61,7 @@ export type RepositoryAnalysisStatus = {
   finishedAt?: string
   counts?: { deterministic: number; evaluations: number; proposed: number }
   /** Stable, non-sensitive failure classification; raw provider errors are never exposed. */
-  errorCode?: 'INTELLIGENCE_UNAVAILABLE' | 'INTELLIGENCE_TIMEOUT'
+  errorCode?: 'INTELLIGENCE_UNAVAILABLE' | 'INTELLIGENCE_TIMEOUT' | 'INTELLIGENCE_INVALID_RESPONSE'
 }
 
 export type RepositoryProcessingStatus = Pick<Repository,
@@ -359,7 +359,8 @@ export type SyncCursor = {
   sourceKey: string
   cursor?: string
   lastSuccessAt?: string
-  freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'
+  freshnessStatus: 'unknown' | 'queued' | 'fresh' | 'stale' | 'failed'
+  failureCode?: 'JIRA_UNAVAILABLE' | 'INTELLIGENCE_UNAVAILABLE' | 'INTELLIGENCE_TIMEOUT' | 'INTELLIGENCE_INVALID_RESPONSE' | 'SEMANTIC_INDEX_UNAVAILABLE'
 }
 
 export type RequirementSyncResult = {

@@ -3,6 +3,7 @@ import type { PolicyGateEvaluation } from '@fuzequality/contracts'
 import {
   filterPolicyGateEvaluations,
   policyGateFilterSchema,
+  policyGateStoreQuery,
 } from './policy-gate-filter'
 
 const evaluation = (
@@ -31,7 +32,7 @@ const evaluation = (
 })
 
 describe('policy-gate inventory filter', () => {
-  it('filters anomaly, remediation, severity, review status, exact revision, subject, and confidence together', () => {
+  it('filters anomaly, remediation, severity, review status, exact revision, subject, source path, and confidence together', () => {
     const evaluations = [
       evaluation(),
       evaluation({
@@ -61,6 +62,7 @@ describe('policy-gate inventory filter', () => {
       reviewStatus: 'accepted',
       revision: 'def',
       subject: 'DEPLOYMENT',
+      sourcePath: 'governance/deployment.md',
       policyArtifactId: 'policy-2',
       gateArtifactId: 'gate-2',
       minConfidence: '0.8',
@@ -95,6 +97,8 @@ describe('policy-gate inventory filter', () => {
     expect(policyGateFilterSchema.safeParse({ minConfidence: -0.01 }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ maxConfidence: 1.01 }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ subject: '' }).success).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ sourcePath: '' }).success).toBe(false)
+    expect(policyGateFilterSchema.safeParse({ sourcePath: 'x'.repeat(1001) }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ policyArtifactId: '' }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ gateArtifactId: 'x'.repeat(501) }).success).toBe(false)
     expect(policyGateFilterSchema.safeParse({ subject: 'x'.repeat(201) }).success).toBe(false)
@@ -112,10 +116,33 @@ describe('policy-gate inventory filter', () => {
     expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ subject: 'deploy' }))).toEqual([])
   })
 
+  it('requires an exact repository-relative source path match', () => {
+    expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ sourcePath: 'governance/deployment.md' }))).toHaveLength(1)
+    expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ sourcePath: 'deployment.md' }))).toEqual([])
+    expect(filterPolicyGateEvaluations([evaluation()], policyGateFilterSchema.parse({ sourcePath: 'Governance/deployment.md' }))).toEqual([])
+  })
+
   it('defaults bounded pagination and accepts an opaque continuation cursor', () => {
     expect(policyGateFilterSchema.parse({ cursor: 'opaque' })).toMatchObject({
       cursor: 'opaque',
       limit: 50,
+    })
+  })
+
+  it('forwards every validated internal filter, including exact source path, with lookahead pagination', () => {
+    const filter = policyGateFilterSchema.parse({
+      sourcePath: 'governance/deployment.md',
+      subject: 'deployment',
+      cursor: 'opaque',
+      limit: 20,
+    })
+    const after = { createdAt: '2026-10-10T00:00:00.000Z', id: 'evaluation-1' }
+
+    expect(policyGateStoreQuery(filter, after)).toEqual({
+      sourcePath: 'governance/deployment.md',
+      subject: 'deployment',
+      after,
+      limit: 21,
     })
   })
 })

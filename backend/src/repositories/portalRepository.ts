@@ -179,7 +179,7 @@ export function getPortalIdentityPolicy(row: { identity_policy?: unknown }): Por
  * New portals minted from this point forward store a bare UUID directly —
  * consistent with the identifier standard (governance/identifier-standard.md
  * §2) and with every other entity type. The `prt_` prefix appears only on the
- * wire via `toWireId` when `fuzefront.identity.prefixed-ids` is ON.
+ * wire via `toWireId` (the TypeID wire form is unconditional since FFRNT-185).
  */
 export function generatePortalId(): string {
   return uuidv4()

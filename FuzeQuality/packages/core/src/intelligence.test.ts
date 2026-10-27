@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FLOW_PROMPT_VERSION, FLOW_SCHEMA_VERSION, LiteLlmFlowAnalyzer, adfToText, suggestionsFromAnalysis } from './intelligence'
+import { FlowAnalysisInvalidResponseError, FlowAnalysisTimeoutError, FLOW_PROMPT_VERSION, FLOW_SCHEMA_VERSION, LiteLlmFlowAnalyzer, adfToText, suggestionsFromAnalysis } from './intelligence'
 
 describe('Jira intelligence', () => {
   it('normalizes Atlassian document format without executing embedded instructions', () => {
@@ -91,5 +91,41 @@ describe('Jira intelligence', () => {
       schemaVersion: FLOW_SCHEMA_VERSION,
       model: 'quality-analysis',
     })
+  })
+
+  it.each([
+    ['null envelope', 'null'],
+    ['array envelope', '[]'],
+    ['missing choices', '{}'],
+    ['empty content', JSON.stringify({ choices: [{ message: { content: '' } }] })],
+    ['malformed content', JSON.stringify({ choices: [{ message: { content: '{' } }] })],
+    ['schema-invalid content', JSON.stringify({ choices: [{ message: { content: '{}' } }] })],
+  ])('classifies a %s as an invalid LiteLLM response', async (_name, body) => {
+    const analyzer = new LiteLlmFlowAnalyzer(
+      'http://litellm/v1',
+      'quality-analysis',
+      undefined,
+      (async () => new Response(body, { status: 200 })) as typeof fetch,
+    )
+
+    await expect(analyzer.analyze({
+      id: 'requirement-3', jiraKey: 'FQ-3', issueType: 'Story', summary: 'Safe response',
+      description: 'Validate the provider response.', status: 'To Do', project: 'FQ', updatedAt: '2026-01-01T00:00:00Z',
+    }, { operations: [], surfaces: [] })).rejects.toBeInstanceOf(FlowAnalysisInvalidResponseError)
+  })
+
+  it('classifies an aborted LiteLLM request as a timeout', async () => {
+    const fetchImpl = ((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+    })) as typeof fetch
+    const analyzer = new LiteLlmFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl, 5)
+
+    await expect(analyzer.analyze({
+      id: 'requirement-4', jiraKey: 'FQ-4', issueType: 'Story', summary: 'Bounded analysis',
+      description: 'Do not wait forever.', status: 'To Do', project: 'FQ', updatedAt: '2026-01-01T00:00:00Z',
+    }, { operations: [], surfaces: [] })).rejects.toMatchObject({
+      name: 'FlowAnalysisTimeoutError',
+      timeoutMs: 5,
+    } satisfies Partial<FlowAnalysisTimeoutError>)
   })
 })

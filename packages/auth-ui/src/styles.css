@@ -254,6 +254,25 @@
   color: var(--text-primary);
 }
 
+/* The signup card title is the page's <h1> (frame `.auth-title`): display face at the h1 step. */
+.fzf-su-title {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-tight);
+}
+
+/*
+ * Show/hide-password toggle target size. The DS `Input` renders the reveal button with
+ * inline `padding: 0` (an 18x18 hit area, below WCAG 2.2 AA 2.5.8's 24x24 minimum). The
+ * approved frame's `.pw-toggle` is 18px icon + `--space-1` padding = 26px. Scoped to the
+ * signup flow with `!important` because the primitive styles inline; the proper home for
+ * this is the DS `Input` itself (tracked as a design-system follow-up).
+ */
+.fzf-su button[aria-controls][aria-pressed] {
+  padding: var(--space-1) !important;
+}
+
 .fzf-su-field {
   display: flex;
   flex-direction: column;

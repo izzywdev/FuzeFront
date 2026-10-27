@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container, Text, Button } from '@fuzefront/design-system'
+import { Wrap, Container, Text, Button, IconTile, GroupLabel, IconListItem } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -160,7 +160,7 @@ function IndustrySection({ industry }: { industry: Industry }) {
       <div className="p-8">
         <div className="flex items-start gap-4 mb-5">
           <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${industry.gradient} flex items-center justify-center flex-shrink-0 shadow-sm`}>
-            <Icon size={22} className="text-white" />
+            <IconTile tone="inverse" variant="plain"><Icon size={22} /></IconTile>
           </div>
           <div>
             <h3 className="text-xl font-bold text-gray-900 mb-1">{industry.name}</h3>
@@ -171,19 +171,18 @@ function IndustrySection({ industry }: { industry: Industry }) {
         <Text as="p" tone="secondary" size="sm" leading="relaxed" spacing="lg">{industry.description}</Text>
 
         <div className="mb-6">
-          <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">Key challenges addressed</h4>
+          <GroupLabel spacing="md">Key challenges addressed</GroupLabel>
           <ul className="space-y-2">
             {industry.challenges.map((challenge) => (
-              <li key={challenge} className="flex items-start gap-2 text-sm text-gray-600">
-                <CheckCircle2 size={14} className="text-success-500 flex-shrink-0 mt-0.5" />
+              <IconListItem key={challenge} icon={CheckCircle2} className="text-sm text-gray-600">
                 {challenge}
-              </li>
+              </IconListItem>
             ))}
           </ul>
         </div>
 
         <div>
-          <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Recommended products</h4>
+          <GroupLabel>Recommended products</GroupLabel>
           <Wrap gap={2}>
             {industry.products.map((product) => (
               <span key={product} className="px-3 py-1 bg-secondary-100 text-secondary-700 rounded-full text-xs font-medium">

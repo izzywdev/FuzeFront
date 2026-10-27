@@ -6,6 +6,7 @@ export const repositoryFlowFilterSchema = z.object({
   source: z.enum(['deterministic', 'litellm']).optional(),
   status: z.enum(['proposed', 'confirmed', 'rejected']).optional(),
   revision: z.string().trim().min(1).max(500).optional(),
+  targetId: z.string().trim().min(1).max(500).optional(),
   model: z.string().trim().min(1).max(200).optional(),
   promptVersion: z.string().trim().min(1).max(100).optional(),
   schemaVersion: z.string().trim().min(1).max(100).optional(),
@@ -27,6 +28,9 @@ export function filterRepositoryFlowCandidates(
     (!filter.source || candidate.source === filter.source) &&
     (!filter.status || candidate.status === filter.status) &&
     (!filter.revision || candidate.revision === filter.revision) &&
+    (!filter.targetId || candidate.evidence.includes(filter.targetId) ||
+      candidate.steps.some(step => step.targetIds.includes(filter.targetId!)) ||
+      candidate.wireframe.nodes.some(node => node.targetIds.includes(filter.targetId!))) &&
     (!filter.model || candidate.analysis?.model === filter.model) &&
     (!filter.promptVersion || candidate.analysis?.promptVersion === filter.promptVersion) &&
     (!filter.schemaVersion || candidate.analysis?.schemaVersion === filter.schemaVersion) &&

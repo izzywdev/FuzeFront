@@ -1,5 +1,5 @@
 // App wire-shape serializer. Centralizes two concerns the routes used to inline:
-//   1. organizationId prefixing (fuzefront.identity.prefixed-ids, unchanged);
+//   1. organizationId prefixing (TypeID wire form, unconditional since FFRNT-185);
 //   2. the creator-ownership surface (fuzefront.apps.creator-ownership).
 //
 // Creator-ownership ("org-held, user-originated"): the owner of record is the
@@ -68,7 +68,6 @@ export interface DtoCaller {
 }
 
 export interface AppDtoOptions {
-  prefixed: boolean
   creatorOwnership: boolean
   /**
    * The requesting principal. Gates `creator.contactEmail` ONLY (displayName /
@@ -111,12 +110,12 @@ export async function toAppDtos(apps: AppRecord[], opts: AppDtoOptions): Promise
       ]) {
         delete (rest as Record<string, unknown>)[k]
       }
-      const dto: any = prefixDtoIds(rest as any, opts.prefixed, { organizationId: 'organization' })
+      const dto: any = prefixDtoIds(rest as any, { organizationId: 'organization' })
       if (!opts.creatorOwnership) return dto
       if (!createdByUserId) {
         return { ...dto, createdBy: null, creator: null }
       }
-      const userWire = toWireId('user', createdByUserId, true)
+      const userWire = toWireId('user', createdByUserId)
       let info: CreatorInfo = { isCurrentMember: false, displayName: null }
       if (app.organizationId) {
         const key = `${createdByUserId}|${app.organizationId}`
