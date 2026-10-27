@@ -53,12 +53,29 @@ async function main() {
   });
 
   // --- Kafka consumer (background, retried) ---
+  // Each step is guarded by a flag so that a failure partway through (e.g.
+  // connect() succeeds but subscribe()/run() then throws) does not re-invoke
+  // connect()/subscribe() on an already-initialized KafkaJS client on the next
+  // retry. KafkaJS throws on a double-connect, which would otherwise wedge the
+  // loop in a permanent failure state that no broker recovery could clear.
   const startKafka = async (): Promise<void> => {
+    let producerConnected = false;
+    let consumerConnected = false;
+    let subscribed = false;
     for (;;) {
       try {
-        await statusProducer.connect();
-        await consumer.connect();
-        await consumer.subscribe(TOPICS.NOTIFY_EMAIL_REQUESTED);
+        if (!producerConnected) {
+          await statusProducer.connect();
+          producerConnected = true;
+        }
+        if (!consumerConnected) {
+          await consumer.connect();
+          consumerConnected = true;
+        }
+        if (!subscribed) {
+          await consumer.subscribe(TOPICS.NOTIFY_EMAIL_REQUESTED);
+          subscribed = true;
+        }
         await consumer.run(
           (event) => handleEmailRequested(event as any, { provider, statusProducer, from: config.email.from }),
           notifyEmailRequestedSchemaV1,
@@ -72,7 +89,9 @@ async function main() {
       }
     }
   };
-  void startKafka();
+  startKafka().catch((err) =>
+    console.error('[email-service] Kafka startup aborted:', err),
+  );
 
   // --- Graceful shutdown ---
   const shutdown = async () => {

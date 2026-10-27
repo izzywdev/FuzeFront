@@ -130,18 +130,31 @@ async function main() {
 
   // --- Kafka consumers (background; broker connect retried) ---
   const startConsumers = async (): Promise<void> => {
-    // Retry only the broker connection: once connected, subscribe/run succeed.
+    // Connect each client at most once. If a later connect fails, the retry
+    // must NOT re-invoke connect() on an already-initialized KafkaJS client —
+    // KafkaJS throws 'already initialized', which would wedge the loop in a
+    // permanent failure state that no broker recovery could clear. Tracking
+    // the connected set keeps the retry resuming from where it left off.
+    const connectables: Array<{ connect(): Promise<void> }> = [
+      dlqProducer,
+      userConsumer,
+      orgConsumer,
+      orgUpdatedConsumer,
+      orgDeletedConsumer,
+      userUpdatedConsumer,
+      userDeletedConsumer,
+      membershipAddedConsumer,
+      membershipRemovedConsumer,
+    ];
+    const connected = new Set<{ connect(): Promise<void> }>();
     for (;;) {
       try {
-        await dlqProducer.connect();
-        await userConsumer.connect();
-        await orgConsumer.connect();
-        await orgUpdatedConsumer.connect();
-        await orgDeletedConsumer.connect();
-        await userUpdatedConsumer.connect();
-        await userDeletedConsumer.connect();
-        await membershipAddedConsumer.connect();
-        await membershipRemovedConsumer.connect();
+        for (const client of connectables) {
+          if (!connected.has(client)) {
+            await client.connect();
+            connected.add(client);
+          }
+        }
         break;
       } catch (err) {
         console.error('[provisioning-service] Kafka connect failed; retrying in 5s:', err);
@@ -223,7 +236,9 @@ async function main() {
 
     console.log('[provisioning-service] Kafka consumers running');
   };
-  void startConsumers();
+  startConsumers().catch((err) =>
+    console.error('[provisioning-service] Kafka startup aborted:', err),
+  );
 
   // --- Graceful shutdown ---
   const shutdown = async () => {
