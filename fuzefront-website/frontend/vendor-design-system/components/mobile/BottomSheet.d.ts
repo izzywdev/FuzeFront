@@ -7,7 +7,8 @@ import * as React from "react";
  *
  * Use on xs/sm screens (<768px). Prefer Modal on md+.
  */
-export interface BottomSheetProps {
+export interface BottomSheetProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "title" | "children" | "style" | "role"> {
   /** When false the sheet is unmounted entirely. */
   open: boolean;
   /** Called when user taps the backdrop or presses Escape. */
@@ -18,6 +19,11 @@ export interface BottomSheetProps {
   children?: React.ReactNode;
   /** Extra inline styles applied to the sheet panel. */
   style?: React.CSSProperties;
+  /**
+   * Any other attribute (`data-*`, `aria-describedby`, `aria-busy`, `aria-label`,
+   * `id`…) is forwarded to the `role="dialog"` element.
+   */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
 }
 
 export function BottomSheet(props: BottomSheetProps): React.JSX.Element | null;

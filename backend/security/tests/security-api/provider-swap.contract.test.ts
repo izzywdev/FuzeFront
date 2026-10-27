@@ -38,7 +38,7 @@ import {
 } from '../../src/providers/IdentityProvider'
 import { ProviderError } from './mockIdentityProvider'
 import { randomUUID } from 'crypto'
-import { TokenError } from '../../src/providers/errors'
+import { TokenError, ChallengeNotActiveError, RecoveryCodeInvalidError } from '../../src/providers/errors'
 
 /** A deliberately different second implementation of the SAME swap contract. */
 class AltIdentityProvider implements IdentityProvider {
@@ -139,6 +139,14 @@ class AltIdentityProvider implements IdentityProvider {
   }
   async verifyMfa(): Promise<BrokeredSession> {
     throw new ProviderError('INVALID_CODE', 'n/a', 401)
+  }
+  async verifyMfaRecovery(challengeId: string): Promise<BrokeredSession> {
+    // Alt has no challenge store: 'live-*' ids are live, everything else is not.
+    if (!challengeId.startsWith('live-')) throw new ChallengeNotActiveError()
+    throw new RecoveryCodeInvalidError()
+  }
+  async getRecoveryCodesStatus(): Promise<{ remaining: number; total: number }> {
+    return { remaining: 0, total: 0 }
   }
   async startEmailVerification(): Promise<void> {}
   async confirmEmailVerification(i: { token?: string; code?: string }): Promise<VerificationStatus> {

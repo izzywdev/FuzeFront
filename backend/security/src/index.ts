@@ -2,6 +2,7 @@
 // Permit. Runs the original 001-009 migration chain against the existing
 // `knex_migrations` table (002/006 are no-op tombstones; applications-service
 // owns apps DDL). Dual-serves alongside the old monolith until Phase 3 cutover.
+import { resolveTrustProxyHops } from './config/trustProxy'
 import dotenv from 'dotenv'
 import { createServer } from 'http'
 import {
@@ -67,8 +68,9 @@ const PORT = process.env.PORT || 3002
 const app = createExpressApp({ serviceName: 'security-service', preMiddleware: [tracingMiddleware()] })
 // Behind the k8s ingress every request otherwise carries the ingress IP —
 // trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
-// the real client from X-Forwarded-For.
-app.set('trust proxy', 1)
+// the real client from X-Forwarded-For. The hop count is explicit config
+// (src/config/trustProxy.ts); client-supplied left-hand XFF entries are ignored.
+app.set('trust proxy', resolveTrustProxyHops())
 const httpServer = createServer(app)
 const startTime = Date.now()
 

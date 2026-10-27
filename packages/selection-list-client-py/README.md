@@ -95,17 +95,28 @@ except SelectionListApiError as exc:
         raise
 ```
 
+`get_effective_list` follows the cursor of its own query (2.2.0): the service
+cuts a page before it drops rows the caller cannot read, so a key lookup can
+get an **empty page that still has a next cursor**. It walks on until a row for
+the key or the last page (`None`), at most `MAX_EFFECTIVE_LOOKUP_PAGES` (10)
+pages; exhausting the bound raises `EffectiveLookupIncompleteError` (never
+`None`) and a failed page raises `SelectionListApiError`. The same holds for
+any listing walked by hand: a short or empty page is not the end — only
+`has_more` false is (`paginate` already does this).
+
 `get_lists(include_shared=True)` also returns lists readable through
 visibility; the default is unchanged.
 
 **Pages can be shorter than `limit`, even empty, and still not be the last.**
 The service filters unreadable lists *after* it paginates, so follow
 `page.next_cursor` until `page.has_more` is false (`paginate()` does) and never
-stop on a short or empty page. `get_effective_list` asks for `limit=1` and
-therefore returns `None` when the first row in database order for the key is
-one the caller cannot read (for example a colleague's `private` fork) although
-the common list is on the next page; until it follows the cursor, look the key
-up with `next(client.paginate(client.get_lists, key=key, include_shared=True), None)`.
+stop on a short or empty page. `get_effective_list` asks for `limit=1`, so the
+first row in database order for the key can be one the caller cannot read (for
+example a colleague's `private` fork) while the common list is on the next
+page; since 2.2.0 it follows the cursor for that reason (above). On 2.1.x it
+returned `None` there — look the key up with
+`next(client.paginate(client.get_lists, key=key, include_shared=True), None)`
+instead.
 
 `fork_list` returns `(list, created)`: `created` is true for a new fork (`201`),
 false when the org already holds one you can read (`200`). A fork you cannot
@@ -115,6 +126,26 @@ read is `409` with `exc.reason == "fork_exists"`, your own org's list is `409`
 `platform` list is never demoted: `409` `"visibility_locked"`. `resolve_ids` resolves common-list item
 ids everywhere and, inside an org holding an `org`-visible fork, returns the
 fork item's label with `effective_item_id` set.
+
+## Is a fork behind its source? (2.2.0, contract 4.2.0)
+
+`SelectionList.revision` is the per-list counter the events carry as
+`listRevision` (`1` at creation, +1 per committed change event about the list
+or anything inside it, never decreasing). A fork's `forked_from.revision` is the
+source's revision at copy time.
+
+```python
+from fuzefront_selection_list_client import ForkSourceComparison, compare_fork_to_source
+
+source = client.get_list(fork.forked_from.list_id)
+if compare_fork_to_source(fork, source) is ForkSourceComparison.BEHIND:
+    ...  # informational: no merge/sync operation exists
+```
+
+`revision` is optional on the wire at 4.2.0 (the service emits it once its
+implementation ships); the parser maps absence to `None`, which compares as
+`ForkSourceComparison.UNKNOWN` ("comparison unavailable"). The helper never
+looks at `updated_at`.
 
 ## Token provider
 

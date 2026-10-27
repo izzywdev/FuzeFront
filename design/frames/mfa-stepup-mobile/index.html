@@ -81,14 +81,14 @@
       <div class="step">Frame 01 · /login/mfa</div>
       <h3>Choose a factor</h3>
       <p>Mobile factor picker (authenticator / email / SMS / recovery), plus the loading, load-error, and zero-factors states the desktop frame doesn't show.</p>
-      <div class="states"><span class="tag">default</span><span class="tag warn">loading</span><span class="tag err">load error</span><span class="tag err">empty / no factors</span></div>
+      <div class="states"><span class="tag">default</span><span class="tag">recovery not offered</span><span class="tag warn">loading</span><span class="tag err">load error</span><span class="tag err">empty / no factors</span></div>
     </a>
     <a href="02-enter-code.html" class="frame-link" data-nav="02-enter-code">
       <div class="seam"></div>
       <div class="step">Frame 02 · /login/mfa</div>
       <h3>Enter code</h3>
       <p>Touch-sized OTP entry, verifying in-flight, expiry countdown + resend cooldown, delivery failure. Fail-closed: wrong/expired code stays on screen.</p>
-      <div class="states"><span class="tag">default</span><span class="tag">verifying</span><span class="tag err">invalid / expired</span><span class="tag err">delivery failed</span></div>
+      <div class="states"><span class="tag">default</span><span class="tag">verifying</span><span class="tag err">invalid / expired</span><span class="tag err">too many attempts (429)</span><span class="tag err">delivery failed</span></div>
     </a>
     <a href="03-confirm-contact.html" class="frame-link" data-nav="03-confirm-contact">
       <div class="seam"></div>
@@ -103,6 +103,13 @@
       <h3>Security status (profile)</h3>
       <p>Combined 2FA + contact-verification chips for the TWA shell. Additive to the desktop hub, not a replacement. Fail-closed 409 on removing your only factor.</p>
       <div class="states"><span class="tag">default</span><span class="tag warn">loading</span><span class="tag err">load error</span><span class="tag err">remove-last blocked (409)</span></div>
+    </a>
+    <a href="05-recovery-code.html" class="frame-link" data-nav="05-recovery-code">
+      <div class="seam"></div>
+      <div class="step">Frame 05 · /login/mfa (from frame 01)</div>
+      <h3>Use a recovery code</h3>
+      <p>Full-width text field for an opaque recovery code (not OTP cells). Offered only when <code>recoveryAvailable</code> is true. Part of the step-up flow, same as frames 01–02.</p>
+      <div class="states"><span class="tag">entry</span><span class="tag">verifying</span><span class="tag err">code didn't work (401)</span><span class="tag err">too many attempts (429)</span><span class="tag err">sign-in expired</span><span class="tag err">couldn't check</span></div>
     </a>
   </div>
 
@@ -121,6 +128,10 @@
         <span class="chip">ContactVerifyPanel</span><span class="chip">SecurityStatusList</span>
         <span class="chip">SecurityStatusRow</span><span class="chip">RemoveFactorDialog</span>
       </dd>
+      <dt>Revision note</dt>
+      <dd>Recovery-code redemption (contract 1.3.0, #1660) <b>does not change this inventory</b>: frame 05 is a state of
+        <span class="chip">MfaChallengeCard</span> in <span class="chip flow">MfaStepUpMobileFlow</span>, built from the DS
+        <code>CodeField</code> + <code>StatusCallout</code>.</dd>
       <dt>Packages</dt>
       <dd>
         <span class="chip pkg">@fuzefront/account-security-ui</span>
@@ -150,6 +161,15 @@
         <li>Should frame 04 become the TWA's canonical security entry point, or stay secondary to the desktop hub? Assumed <b>secondary/additive</b> pending a ruling.</li>
       </ul>
     </div>
+  </div>
+
+  <div class="inv" data-open-questions>
+    <h3>Recovery-code revision — open question for the owner</h3>
+    <dl>
+      <dt>After a recovery sign-in</dt>
+      <dd>Not framed: a “you used a recovery code — N left” prompt after signing in. Assumed <b>not in scope</b>. The
+        count is already visible under Security → Recovery codes.</dd>
+    </dl>
   </div>
 
   <span class="pending" data-approval-status="pending">● Awaiting approval</span>

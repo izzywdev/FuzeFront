@@ -63,7 +63,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         fsGroup: 10001
-      {{- if .Values.a2a.tenants }}
+      {{- if and .Values.a2a.tenants (not .Values.a2aDeploy.skipRepoSync) }}
       # Repo checkout: the server's LocalRepoResolver reads each tenant's
       # projection inputs (.fuze/manifest.json + agent-templates/roles/) from
       # A2A_REPOS_DIR/<tenant>. Cloned anonymously unless
@@ -71,6 +71,10 @@ spec:
       # PRIVATE tenant repo — FuzeFront itself is public, so prod leaves it
       # unset). GitOps: `ref` is the source of truth, never live-mutated in
       # /repos.
+      #
+      # Skipped when a2aDeploy.skipRepoSync=true (static-card topology): the
+      # product image bakes in agent-card.json (build/a2a/Dockerfile) so the
+      # server needs no repo clone — no init container, no GitHub access.
       initContainers:
         - name: repo-sync
           image: {{ .Values.a2aDeploy.gitImage }}
