@@ -1,7 +1,7 @@
 """
 Wire types for the selection-list-service.
 
-Hand-authored from ``services/selection-list-service/openapi.yaml`` v4.1.0.
+Hand-authored from ``services/selection-list-service/openapi.yaml`` v4.2.0.
 The spec is the source of truth: when it changes, the spec is amended first
 and this file updated in the same PR.
 
@@ -266,6 +266,58 @@ class SelectionList:
     so behave as at 4.0.0 and let each mutation's own authorization decide --
     never treat ``None`` as ``False``.
     """
+    revision: int | None = None
+    """
+    The list's current revision (4.2.0): the same per-list counter the event
+    contract carries as ``listRevision`` -- ``1`` at creation, +1 per change
+    event the service commits about the list or anything inside it, never
+    decreasing. Compare a fork's ``forked_from.revision`` with its source's
+    ``revision`` (see :func:`compare_fork_to_source`). ``None`` when the
+    service omitted it (optional on the wire until the implementation ships):
+    unknown -- never infer a revision from ``updated_at``.
+    """
+
+
+class ForkSourceComparison(str, enum.Enum):
+    """
+    Whether a fork is behind its source (contract 4.2.0).
+
+    ``behind`` -- the source's current ``revision`` is greater than the
+    ``forked_from.revision`` captured at copy time (informational; there is no
+    merge or sync operation). ``up-to-date`` -- the two are equal.
+    ``unknown`` -- either side has no usable revision, the first list is not a
+    fork, or the second is not its source: render "comparison unavailable".
+    """
+
+    BEHIND = "behind"
+    UP_TO_DATE = "up-to-date"
+    UNKNOWN = "unknown"
+
+
+def _is_revision(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def compare_fork_to_source(fork: SelectionList, source: SelectionList) -> ForkSourceComparison:
+    """
+    Compare a fork with a fresh read of its source (``get_list(fork.forked_from.list_id)``).
+
+    Only revisions are compared -- never ``updated_at``. Whether the source is
+    archived (``status``) or gone (404) is the caller's to render; this answers
+    the revision question alone.
+    """
+    provenance = fork.forked_from
+    if provenance is None or provenance.list_id != source.id:
+        return ForkSourceComparison.UNKNOWN
+    now, then = source.revision, provenance.revision
+    if not isinstance(now, int) or not _is_revision(now) or not _is_revision(then):
+        return ForkSourceComparison.UNKNOWN
+    if now > then:
+        return ForkSourceComparison.BEHIND
+    if now == then:
+        return ForkSourceComparison.UP_TO_DATE
+    # A revision never decreases, so this is not a state the contract allows; do not guess.
+    return ForkSourceComparison.UNKNOWN
 
 
 @dataclass

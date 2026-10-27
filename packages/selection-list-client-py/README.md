@@ -68,10 +68,17 @@ readable by every org — read-only for anyone without an instance role
 (`editable` is `False`). Look a list up by key the way a picker should, and
 fork a common list before changing it.
 
+The service implements all of this, **dark behind the default-OFF release
+flag `fuzefront.selection-lists.shared-lists`** (it also needs
+`fuzefront.selection-lists.service`). While the flag is OFF `include_shared` /
+`visibility` are ignored, `fork_list` answers `404`, a non-`private`
+`visibility` on create/update is a `400`, and every list reads `PRIVATE`, with
+no `editable`. The shared-lists UI is not built yet.
+
 At contract 4.1.0 `visibility`, `forked_from`, `editable` and
-`origin_item_id` are **optional on the wire**: the service implementation
-ships later behind the default-OFF flag `fuzefront.selection-lists.shared-lists`
-and, until then, omits them. The parser maps absence to the 4.0.0 meaning —
+`origin_item_id` are still typed **optional on the wire** (the service always
+emits the first, second and fourth, and `editable` while the flag is ON). The
+parser maps absence to the 4.0.0 meaning —
 `visibility` → `PRIVATE`, `forked_from` / `origin_item_id` → `None`, and
 `editable` → `None` (unknown: behave as at 4.0.0 and let each mutation's own
 authorization decide; never read `None` as `False`).
@@ -88,10 +95,57 @@ except SelectionListApiError as exc:
         raise
 ```
 
+`get_effective_list` follows the cursor of its own query (2.2.0): the service
+cuts a page before it drops rows the caller cannot read, so a key lookup can
+get an **empty page that still has a next cursor**. It walks on until a row for
+the key or the last page (`None`), at most `MAX_EFFECTIVE_LOOKUP_PAGES` (10)
+pages; exhausting the bound raises `EffectiveLookupIncompleteError` (never
+`None`) and a failed page raises `SelectionListApiError`. The same holds for
+any listing walked by hand: a short or empty page is not the end — only
+`has_more` false is (`paginate` already does this).
+
 `get_lists(include_shared=True)` also returns lists readable through
-visibility; the default is unchanged. `resolve_ids` resolves common-list item
+visibility; the default is unchanged.
+
+**Pages can be shorter than `limit`, even empty, and still not be the last.**
+The service filters unreadable lists *after* it paginates, so follow
+`page.next_cursor` until `page.has_more` is false (`paginate()` does) and never
+stop on a short or empty page. `get_effective_list` asks for `limit=1`, so the
+first row in database order for the key can be one the caller cannot read (for
+example a colleague's `private` fork) while the common list is on the next
+page; since 2.2.0 it follows the cursor for that reason (above). On 2.1.x it
+returned `None` there — look the key up with
+`next(client.paginate(client.get_lists, key=key, include_shared=True), None)`
+instead.
+
+`fork_list` returns `(list, created)`: `created` is true for a new fork (`201`),
+false when the org already holds one you can read (`200`). A fork you cannot
+read is `409` with `exc.reason == "fork_exists"`, your own org's list is `409`
+`"fork_not_applicable"`, a key already used by a different list is a plain
+`409`, more than 5000 items is `400`, and quota is `403` `QUOTA_EXCEEDED`. A
+`platform` list is never demoted: `409` `"visibility_locked"`. `resolve_ids` resolves common-list item
 ids everywhere and, inside an org holding an `org`-visible fork, returns the
 fork item's label with `effective_item_id` set.
+
+## Is a fork behind its source? (2.2.0, contract 4.2.0)
+
+`SelectionList.revision` is the per-list counter the events carry as
+`listRevision` (`1` at creation, +1 per committed change event about the list
+or anything inside it, never decreasing). A fork's `forked_from.revision` is the
+source's revision at copy time.
+
+```python
+from fuzefront_selection_list_client import ForkSourceComparison, compare_fork_to_source
+
+source = client.get_list(fork.forked_from.list_id)
+if compare_fork_to_source(fork, source) is ForkSourceComparison.BEHIND:
+    ...  # informational: no merge/sync operation exists
+```
+
+`revision` is optional on the wire at 4.2.0 (the service emits it once its
+implementation ships); the parser maps absence to `None`, which compares as
+`ForkSourceComparison.UNKNOWN` ("comparison unavailable"). The helper never
+looks at `updated_at`.
 
 ## Token provider
 
