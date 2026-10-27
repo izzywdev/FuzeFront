@@ -324,8 +324,8 @@ function TranslationIndex({
                 </div>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
                   {pct}% ({entry.translated}/{entry.total})
-                  {hasMachine && ` · ${entry.machine_count}M`}
-                  {hasStale && ` · ${entry.stale_count} stale`}
+                  {hasMachine && ' · M'}
+                  {hasStale && ' · stale'}
                 </div>
                 {/* Progress bar */}
                 <div style={{ height: 4, background: 'var(--bg-muted)', borderRadius: 'var(--radius-sm)', marginTop: 'var(--space-1)', overflow: 'hidden' }}>
