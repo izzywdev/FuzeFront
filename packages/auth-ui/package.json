@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/auth-ui",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -34,12 +34,12 @@
     "@marsidev/react-turnstile": "1.6.1"
   },
   "peerDependencies": {
-    "@fuzefront/design-system": "^1.5.0",
+    "@fuzefront/design-system": "1.11.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@fuzefront/design-system": "1.10.0",
+    "@fuzefront/design-system": "1.11.0",
     "@fuzefront/security-client": "1.5.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.3.2",

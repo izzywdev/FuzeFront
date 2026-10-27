@@ -859,22 +859,38 @@ export interface StatusPillProps extends React.HTMLAttributes<HTMLSpanElement> {
 export function StatusPill(props: StatusPillProps): React.JSX.Element;
 
 // ----- Stepper (feedback) -----
+export type StepperStatus = "done" | "current" | "failed" | "cancelled" | "pending";
+
 export interface StepperStep {
   id?: string;
   title: React.ReactNode;
   description?: React.ReactNode;
-  /** @default "pending" */
-  status?: "done" | "current" | "pending";
+  /** @default "pending" (also used for any unrecognised value) */
+  status?: StepperStatus;
 }
 
 export interface StepperProps extends React.HTMLAttributes<HTMLOListElement> {
   steps: StepperStep[];
+  /**
+   * `vertical` — a card list (onboarding checklist). `horizontal` — equal-width
+   * status-coloured bars over their titles (pipeline / wizard header), wrapping
+   * on narrow screens.
+   * @default "vertical"
+   */
+  orientation?: "vertical" | "horizontal";
+  /**
+   * Visually-hidden status words read by assistive tech. Override any subset to
+   * localise; defaults are English: Completed / Current step / Failed /
+   * Cancelled / Not started.
+   */
+  statusLabels?: Partial<Record<StepperStatus, string>>;
 }
 
 /**
- * A vertical, ordered progress list (onboarding / setup checklist) — numbered
- * steps with `done` / `current` / `pending` state. The current step carries
- * `aria-current="step"`.
+ * An ordered progress indicator with `done` / `current` / `failed` /
+ * `cancelled` / `pending` steps, in a vertical card list or a horizontal
+ * segmented bar. The current step carries `aria-current="step"`; every step's
+ * status is also exposed as visually-hidden text.
  */
 export function Stepper(props: StepperProps): React.JSX.Element;
 
@@ -1266,6 +1282,12 @@ export interface TextareaProps
    * Accepts any node (see {@link InputProps.label}).
    */
   label?: React.ReactNode;
+  /**
+   * Node shown on the label row at the inline-end edge (e.g. a character
+   * counter). Rendered outside the `<label>`, so it is not part of the
+   * field's accessible name.
+   */
+  labelAccessory?: React.ReactNode;
   /** Validation message; when present, borders red and renders below. */
   error?: string;
   /** Number of visible text rows. Default 4. */
@@ -1273,6 +1295,68 @@ export interface TextareaProps
 }
 
 export function Textarea(props: TextareaProps): React.JSX.Element;
+
+// ----- TextareaWithCounter (forms) -----
+export interface TextareaCounterState {
+  /** Current length in Unicode code points. */
+  count: number;
+  /** The configured limit. */
+  max: number;
+  /** `max - count`; negative when over the limit. */
+  remaining: number;
+  /** `count > max`. */
+  over: boolean;
+}
+
+export interface TextareaWithCounterProps
+  extends Omit<TextareaProps, "maxLength" | "value" | "defaultValue" | "onChange" | "labelAccessory"> {
+  /** The character limit. Counted in Unicode code points (what OpenAPI `maxLength` counts). */
+  maxLength: number;
+  /**
+   * Truncate input to `maxLength` code points as the user types or pastes.
+   * Default `false`: a soft limit — the user can exceed it and sees the
+   * overflow flagged. (The native `maxlength` attribute is never used: it
+   * counts UTF-16 units and would cut an emoji off mid-surrogate, so the
+   * advertised limit would be unreachable.)
+   */
+  strict?: boolean;
+  /** Controlled value. */
+  value?: string;
+  /** Initial value when uncontrolled. */
+  defaultValue?: string;
+  onChange?: React.ChangeEventHandler<HTMLTextAreaElement>;
+  /**
+   * Validation message. Always wins over the built-in over-limit message. Note
+   * it renders in a `role="alert"` region: a message that changes on every
+   * keystroke (e.g. "127 over") re-announces each time — prefer a stable string.
+   */
+  error?: string;
+  /** BCP 47 locale for number formatting (`1,234` vs `1.234`). Defaults to the runtime locale. */
+  locale?: string;
+  /**
+   * Builds the screen-reader message ("N of M characters remaining" /
+   * "N characters over the limit"). Supply it to localise; the default is English.
+   */
+  formatMessage?: (state: TextareaCounterState) => string;
+  /** Visible error shown while over the limit (when no `error` is given). Default is English. */
+  overLimitMessage?: string;
+  /**
+   * Milliseconds of typing pause before the live region announces the new
+   * count. `0` announces immediately. @default 1000
+   */
+  announceDelay?: number;
+  /** Extra attributes for the visible counter element (e.g. `data-counter="brief"`). */
+  counterProps?: React.HTMLAttributes<HTMLSpanElement> & {
+    [dataAttribute: `data-${string}`]: string | undefined;
+  };
+}
+
+/**
+ * A `Textarea` with a live character counter on the label row. Soft limit by
+ * default; accessible (described by remaining count, debounced live
+ * announcements, `aria-invalid` + stable error when over).
+ */
+export function TextareaWithCounter(props: TextareaWithCounterProps): React.JSX.Element;
 
 // ----- Toggle (forms) -----
 export interface ToggleProps {

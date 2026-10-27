@@ -1,11 +1,11 @@
 {
   "name": "@fuzefront/design-system",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
   },
-  "description": "FuzeFront \"fuse seam\" design system \u2014 token-driven React components",
+  "description": "FuzeFront \"fuse seam\" design system — token-driven React components",
   "type": "module",
   "main": "index.js",
   "module": "index.js",
