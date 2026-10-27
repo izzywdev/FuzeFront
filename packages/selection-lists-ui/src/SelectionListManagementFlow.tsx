@@ -725,7 +725,7 @@ function SortableItemList({
               </span>
             )}
             {provenance && (
-              <span style={{ marginInlineStart: 'var(--space-2)' }}>{provenance.copiedFrom(item)}</span>
+              <span style={{ display: 'block', marginBlockStart: 'var(--space-1)' }}>{provenance.copiedFrom(item)}</span>
             )}
           </div>
           {/* Actions */}
