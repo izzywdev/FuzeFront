@@ -27,7 +27,6 @@ import {
   getQuota,
   unwrapItems,
   unwrapCursor,
-  probeReorderPermission,
 } from './api'
 import { useSharedLists } from './shared-lists/core'
 import {
@@ -576,11 +575,14 @@ function SortableItemList({
   onPurge,
   onReordered,
   onReloadRequested,
+  onReorderForbidden,
 }: {
   items: SelectionListItem[]
   listId: string
   canReorder: boolean
   forbidden: boolean
+  /** The reorder PUT answered 403: the caller cannot reorder (no `update_value`). */
+  onReorderForbidden: () => void
   onItemClick: (item: SelectionListItem) => void
   onArchive: (item: SelectionListItem) => void
   onPurge: (item: SelectionListItem) => void
@@ -639,10 +641,16 @@ function SortableItemList({
             setOrderedItems(items)
             return
           }
-          setReorderError(e.message ?? 'Reorder failed')
-          setReorderErrorCode(e.code ?? 'reorder-failed')
           // Restore original order on error
           setOrderedItems(items)
+          // A role without update_value learns it from the answer: fail closed — the
+          // handles go and the notice says why (no pre-flight probe exists).
+          if (e.code === 'FORBIDDEN' || (e as unknown as { status?: number }).status === 403) {
+            onReorderForbidden()
+            return
+          }
+          setReorderError(e.message ?? 'Reorder failed')
+          setReorderErrorCode(e.code ?? 'reorder-failed')
           // The list changed under the user (not a full permutation): show the
           // server's current order (frame 05) without unmounting this panel, so
           // the error message stays visible.
@@ -831,8 +839,11 @@ function LegacyListDetail({
       setList(listData)
       const its = unwrapItems(itemsResp).sort((a, b) => a.sort_order - b.sort_order)
       setItems(its)
-      // Probe reorder permission
-      const allowed = await probeReorderPermission(listId)
+      // Reorder permission: the list's own `editable` hint (contract 4.1.0: `false` = read only
+      // through visibility). Absent = unknown, never inferred `false`; the reorder itself then
+      // decides (a 403 removes the affordance). No `HEAD …/items/reorder` probe: it is not a
+      // contract operation and 404s on every editable list.
+      const allowed = listData.editable !== false
       setCanReorder(allowed)
       if (!allowed) setForbidden(true)
     } catch (err) {
@@ -940,6 +951,10 @@ function LegacyListDetail({
             listId={listId}
             canReorder={canReorder}
             forbidden={forbidden}
+            onReorderForbidden={() => {
+              setCanReorder(false)
+              setForbidden(true)
+            }}
             onItemClick={item => setValueModal({ mode: 'edit', item })}
             onArchive={async (item) => {
               try {

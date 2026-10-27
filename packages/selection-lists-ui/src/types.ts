@@ -8,6 +8,12 @@ export interface SelectionList {
   status: 'active' | 'archived'
   item_count: number
   source_locale: string
+  /**
+   * Contract 4.1.0 caller-relative hint (a service behind the shared-lists flag
+   * omits it): `false` = the caller reads this list only through visibility.
+   * Absent = unknown — never inferred `false`.
+   */
+  editable?: boolean
   created_at: string
   updated_at: string
 }

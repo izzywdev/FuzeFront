@@ -469,6 +469,13 @@ export async function searchUsers(
 
 // ── Probe reorder permission (HEAD) ──────────────────────────────────────────
 
+/**
+ * @deprecated `HEAD …/items/reorder` is not an operation in the contract: the
+ * service answers 404, which the browser logs as a console error on every
+ * editable list. The workbench no longer calls it — reorder permission comes
+ * from the list's `editable` hint and from the reorder's own 403. Kept
+ * exported so a host that imported it still compiles; do not call it.
+ */
 export async function probeReorderPermission(listId: string): Promise<boolean> {
   try {
     const token = await bearerFor('org')
