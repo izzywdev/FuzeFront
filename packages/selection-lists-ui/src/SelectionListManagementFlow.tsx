@@ -564,6 +564,30 @@ function PurgeModal({
   )
 }
 
+// ── A fork's value table (frame 07): column cells shared by the header and the rows ──
+const tableCell = {
+  value: { flex: 1, display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minInlineSize: 0 },
+  copied: { flex: '0 0 28%', minInlineSize: 0 },
+  actions: { flex: '0 0 22%', display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-1)', flexWrap: 'wrap' },
+} as const satisfies Record<string, React.CSSProperties>
+const tableHeaderRow: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--space-3)',
+  padding: 'var(--space-2) var(--space-3)',
+  color: 'var(--text-secondary)',
+  fontSize: 'var(--text-xs)',
+  fontWeight: 'var(--weight-semibold)',
+}
+const visuallyHidden: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  overflow: 'hidden',
+  clip: 'rect(0,0,0,0)',
+  whiteSpace: 'nowrap',
+}
+
 // ── Sortable Item List with keyboard reorder (frame 05) ────────────────────────
 function SortableItemList({
   items,
@@ -725,22 +749,9 @@ function SortableItemList({
       {forbidden && (
         <div data-error="FORBIDDEN" style={s.errorBox}>You do not have permission to reorder items.</div>
       )}
-      {orderedItems.map((item, idx) => (
-        <div
-          key={item.id}
-          data-item={item.id}
-          data-archived={item.status === 'archived' ? 'true' : undefined}
-          {...provenance?.originAttributes(item)}
-          data-dragging={dragIdx === idx ? 'true' : undefined}
-          data-drop-target={dragIdx !== null && dragIdx !== idx ? 'true' : undefined}
-          style={{
-            ...s.row,
-            opacity: item.status === 'archived' ? 0.6 : 1,
-            outline: dragIdx === idx ? '2px solid var(--accent)' : undefined,
-          }}
-        >
-          {/* Drag handle — only rendered when reorder is permitted */}
-          {canReorder && (
+      {(() => {
+        const rows = orderedItems.map((item, idx) => {
+          const handle = canReorder ? (
             <div
               data-drag-handle
               tabIndex={0}
@@ -756,48 +767,105 @@ function SortableItemList({
             >
               ⠿
             </div>
-          )}
-          {/* Item info */}
-          <div
-            style={{ flex: 1, cursor: 'pointer' }}
-            onClick={() => onItemClick(item)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onItemClick(item) }}
-          >
-            <span style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-sm)' }}>{item.code}</span>
-            <span style={{ marginLeft: 'var(--space-2)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>{item.label}</span>
-            {item.is_machine && (
-              <span style={{ ...s.badge, marginLeft: 'var(--space-2)' }}>M</span>
-            )}
-            {item.status === 'archived' && (
-              <span style={{ ...s.badge, marginLeft: 'var(--space-2)', background: 'var(--bg-muted)', color: 'var(--text-secondary)' }}>
-                Archived
-              </span>
-            )}
-            {provenance && (
-              <span style={{ display: 'block', marginBlockStart: 'var(--space-1)' }}>{provenance.copiedFrom(item)}</span>
-            )}
-          </div>
-          {/* Actions */}
-          {item.status !== 'archived' && (
-            <button
-              data-action="archive-value"
-              style={s.btnGhost}
-              onClick={() => onArchive(item)}
+          ) : null
+          const info = (
+            <div
+              style={{ flex: 1, cursor: 'pointer' }}
+              onClick={() => onItemClick(item)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onItemClick(item) }}
             >
-              Archive
-            </button>
-          )}
-          <button
-            data-action="purge-value"
-            style={{ ...s.btnGhost, color: 'var(--error)' }}
-            onClick={() => onPurge(item)}
-          >
-            Purge
-          </button>
-        </div>
-      ))}
+              <span style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-sm)' }}>{item.code}</span>
+              <span style={{ marginLeft: 'var(--space-2)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>{item.label}</span>
+              {item.is_machine && (
+                <span style={{ ...s.badge, marginLeft: 'var(--space-2)' }}>M</span>
+              )}
+              {item.status === 'archived' && (
+                <span style={{ ...s.badge, marginLeft: 'var(--space-2)', background: 'var(--bg-muted)', color: 'var(--text-secondary)' }}>
+                  Archived
+                </span>
+              )}
+            </div>
+          )
+          const actions = (
+            <>
+              {item.status !== 'archived' && (
+                <button
+                  data-action="archive-value"
+                  style={s.btnGhost}
+                  onClick={() => onArchive(item)}
+                >
+                  Archive
+                </button>
+              )}
+              <button
+                data-action="purge-value"
+                style={{ ...s.btnGhost, color: 'var(--error)' }}
+                onClick={() => onPurge(item)}
+              >
+                Purge
+              </button>
+            </>
+          )
+          return (
+            <div
+              key={item.id}
+              data-item={item.id}
+              data-archived={item.status === 'archived' ? 'true' : undefined}
+              {...provenance?.originAttributes(item)}
+              data-dragging={dragIdx === idx ? 'true' : undefined}
+              data-drop-target={dragIdx !== null && dragIdx !== idx ? 'true' : undefined}
+              role={provenance ? 'row' : undefined}
+              style={{
+                ...s.row,
+                opacity: item.status === 'archived' ? 0.6 : 1,
+                outline: dragIdx === idx ? '2px solid var(--accent)' : undefined,
+              }}
+            >
+              {provenance ? (
+                <>
+                  <div role="cell" style={tableCell.value}>
+                    {handle}
+                    {info}
+                  </div>
+                  <div role="cell" style={tableCell.copied}>
+                    {provenance.copiedFrom(item)}
+                  </div>
+                  <div role="cell" style={tableCell.actions}>
+                    {actions}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Drag handle — only rendered when reorder is permitted */}
+                  {handle}
+                  {/* Item info */}
+                  {info}
+                  {/* Actions */}
+                  {actions}
+                </>
+              )}
+            </div>
+          )
+        })
+        if (!provenance) return rows
+        // Frame 07 draws a fork's value editor as a table with a "Copied from" column: ARIA
+        // table semantics over the same rows, so drag/keyboard reorder and the row buttons are
+        // untouched. Only a fork with provenance gets it; every other list keeps the 4.0.0 DOM.
+        return (
+          <div role="table" aria-label="Values">
+            <div role="row" style={tableHeaderRow}>
+              <div role="columnheader" style={tableCell.value}>Value</div>
+              <div role="columnheader" style={tableCell.copied}>Copied from</div>
+              <div role="columnheader" style={tableCell.actions}>
+                <span style={visuallyHidden}>Actions</span>
+              </div>
+            </div>
+            {rows}
+          </div>
+        )
+      })()}
     </div>
   )
 }
