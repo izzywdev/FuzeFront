@@ -66,6 +66,7 @@ export type {
 export {
   appendUnique,
   canOfferPlatformPublish,
+  canonicalOrganizationId,
   createdByKind,
   editableStateOf,
   effectiveSourceOf,
@@ -78,6 +79,7 @@ export {
   isFork,
   isSameOriginPath,
   redirectsOf,
+  sameOrganization,
   toListParams,
   visibilityOf,
 } from './derive'

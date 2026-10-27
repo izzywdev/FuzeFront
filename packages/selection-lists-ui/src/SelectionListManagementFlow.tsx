@@ -7,6 +7,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef, useId } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { ForkListFlow, ForkResultNotice, useMutationRefusal } from './shared-lists/fork'
 import type {
   SelectionList,
   SelectionListItem,
@@ -343,11 +344,13 @@ function ValueModal({
   const [label, setLabel] = useState(item?.label ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [apiError, setApiError] = useState<ApiError | null>(null)
+  const { refusal, capture, clear } = useMutationRefusal()
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
     setApiError(null)
+    clear()
     try {
       let saved: SelectionListItem
       if (mode === 'add') {
@@ -357,6 +360,9 @@ function ValueModal({
       }
       onSaved(saved)
     } catch (err) {
+      // SL9: a refusal on a common list (fork_required / 404) belongs to the fork flow.
+      const refused = capture(err)
+      if (refused && refused.kind !== 'forbidden') return
       const e = err as ApiError & { status?: number }
       setApiError(e)
       if (e.code === 'FORBIDDEN') {
@@ -403,7 +409,19 @@ function ValueModal({
             Quota exceeded for {apiError.scope}: {apiError.current}/{apiError.limit}
           </div>
         )}
-        {apiError?.code === 'FORBIDDEN' && (
+        {refusal && (
+          <ForkListFlow
+            refusal={refusal}
+            listId={listId}
+            onBack={onClose}
+            fallback={
+              apiError?.code === 'FORBIDDEN' ? (
+                <div data-error="FORBIDDEN" style={s.errorBox}>You do not have permission to modify values.</div>
+              ) : null
+            }
+          />
+        )}
+        {!refusal && apiError?.code === 'FORBIDDEN' && (
           <div data-error="FORBIDDEN" style={s.errorBox}>You do not have permission to modify values.</div>
         )}
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -567,6 +585,7 @@ function SortableItemList({
   const [saving, setSaving] = useState(false)
   const [reorderError, setReorderError] = useState<string | null>(null)
   const [reorderErrorCode, setReorderErrorCode] = useState<string | null>(null)
+  const { refusal: reorderRefusal, capture: captureReorder, clear: clearReorder } = useMutationRefusal()
   const a11yRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -596,6 +615,7 @@ function SortableItemList({
         setSaving(true)
         setReorderError(null)
         setReorderErrorCode(null)
+        clearReorder()
         try {
           // Contract SelectionListItemReorder: item_ids is the full set of
           // NON-ARCHIVED items only — archived ids make the request invalid.
@@ -604,6 +624,11 @@ function SortableItemList({
           onReordered(newOrder)
         } catch (err) {
           const e = err as ApiError
+          // SL9: the failed order is restored either way; a fork_required refusal is the fork flow's.
+          if (captureReorder(err)?.kind === 'fork_required') {
+            setOrderedItems(items)
+            return
+          }
           setReorderError(e.message ?? 'Reorder failed')
           setReorderErrorCode(e.code ?? 'reorder-failed')
           // Restore original order on error
@@ -669,6 +694,9 @@ function SortableItemList({
         <div data-state="saving" style={{ marginBottom: 'var(--space-2)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
           Saving order…
         </div>
+      )}
+      {reorderRefusal?.kind === 'fork_required' && (
+        <ForkListFlow refusal={reorderRefusal} listId={listId} />
       )}
       {reorderError && reorderErrorCode !== 'VALIDATION_ERROR' && (
         <div data-error="reorder-failed" style={s.errorBox}>{reorderError}</div>
@@ -1225,11 +1253,37 @@ function SelectionListDetail(props: {
 }) {
   const { enabled } = useSharedLists()
   const navigate = useNavigate()
+  // Bumped to re-read the list after a stale fork answer or a restore.
+  const [revision, setRevision] = useState(0)
+  const reload = useCallback(() => setRevision(n => n + 1), [])
   if (!enabled) return <LegacyListDetail {...props} />
   return (
     <SharedListDetail
+      key={revision}
       listId={props.listId}
-      renderEditor={({ header }) => <LegacyListDetail {...props} headerExtra={header} />}
+      renderEditor={({ header, list }) => (
+        <LegacyListDetail
+          {...props}
+          headerExtra={
+            <>
+              {/* Arrival at a fork: "Forked." / "existing version" / "Restore your version". */}
+              <ForkResultNotice list={list} onRestored={reload} />
+              {header}
+            </>
+          }
+        />
+      )}
+      // A common list's read-only detail: the fork flow's "Fork to edit…". The slot is only
+      // invoked once the effective-list lookup said THIS list is the effective one, so the
+      // flow is handed that answer instead of asking again.
+      renderReadOnlyArrival={list => <ForkResultNotice list={list} onRestored={reload} />}
+      forkAction={list => (
+        <ForkListFlow
+          list={list}
+          effective={{ status: 'ready', list, source: { kind: 'common' } }}
+          onStale={reload}
+        />
+      )}
       hrefForList={listPath}
       onOpenList={list => navigate(listPath(list))}
       onOpenTranslations={props.onNavigateToTranslations}
@@ -1248,6 +1302,9 @@ export function SelectionListManagementFlow() {
   if (listId) {
     return (
       <SelectionListDetail
+        // Keyed by list: the host reuses this element across :listId changes (e.g. after a
+        // fork), and its open modals / pending targets hold items of the PREVIOUS list.
+        key={listId}
         listId={listId}
         onNavigateToTranslations={() => navigate(`/settings/selection-lists/${listId}/translations`)}
         onNavigateToAccess={() => navigate(`/settings/selection-lists/${listId}/access`)}

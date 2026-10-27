@@ -6,6 +6,8 @@
  */
 import React, { useState, useEffect, useCallback, useRef, useId } from 'react'
 import { useParams } from 'react-router-dom'
+import { CommonAccessGuard } from './shared-lists/fork'
+import { useSharedLists } from './shared-lists/core'
 import type { AccessGrant, ApiError } from './types'
 import {
   getAccessGrants,
@@ -401,6 +403,8 @@ function AccessPanel({ listId, organizationName, activeOrganizationId }: AccessP
   const [accessProbe, setAccessProbe] = useState<AccessObservation>('loading')
   // Panel-level FORBIDDEN: set after any 403, locks down all controls
   const [panelForbidden, setPanelForbidden] = useState(false)
+  // The grants read itself was refused 403 (SL9: on a common list, "managed by the platform")
+  const [loadForbidden, setLoadForbidden] = useState(false)
   // Per-row UI state (keyed by userId)
   const [rowUIs, setRowUIs] = useState<Map<string, RowUI>>(new Map())
   const [showModal, setShowModal] = useState(false)
@@ -409,6 +413,7 @@ function AccessPanel({ listId, organizationName, activeOrganizationId }: AccessP
     setLoadState('loading')
     setAccessProbe(prev => (prev === 'granted' ? prev : 'loading'))
     setPanelForbidden(false)
+    setLoadForbidden(false)
     try {
       const data = await getAccessGrants(listId)
       setAccessProbe('granted')
@@ -419,8 +424,9 @@ function AccessPanel({ listId, organizationName, activeOrganizationId }: AccessP
       setRowUIs(map)
       setLoadState('loaded')
     } catch (err) {
-      const status = (err as { status?: number } | null)?.status
-      setAccessProbe(status === 403 ? 'forbidden' : 'error')
+      const apiErr = err as ApiError & { status?: number }
+      setLoadForbidden(apiErr.status === 403 || apiErr.code === 'FORBIDDEN')
+      setAccessProbe(apiErr.status === 403 ? 'forbidden' : 'error')
       setLoadState('error')
     }
   }, [listId])
@@ -536,14 +542,18 @@ function AccessPanel({ listId, organizationName, activeOrganizationId }: AccessP
         {loadState === 'loading' && (
           <div style={{ padding: 'var(--space-4)', color: 'var(--text-tertiary)' }}>Loading access grants...</div>
         )}
-        {loadState === 'error' && (
-          <div data-state="error" style={{ padding: 'var(--space-4)', color: 'var(--danger)' }}>
-            Failed to load access grants.
-            <button onClick={loadGrants} style={{ ...s.btn, marginLeft: 'var(--space-3)' }}>
-              Retry
-            </button>
-          </div>
-        )}
+        {loadState === 'error' && (() => {
+          const loadFailed = (
+            <div data-state="error" style={{ padding: 'var(--space-4)', color: 'var(--danger)' }}>
+              Failed to load access grants.
+              <button onClick={loadGrants} style={{ ...s.btn, marginLeft: 'var(--space-3)' }}>
+                Retry
+              </button>
+            </div>
+          )
+          // SL9: a 403 on a common list is "managed by the platform"; any other list keeps the 4.0.0 error.
+          return loadForbidden ? <CommonAccessGuard listId={listId} fallback={loadFailed} /> : loadFailed
+        })()}
         {loadState === 'loaded' && grants.length === 0 && (
           <div data-state="empty" style={{ padding: 'var(--space-4)', color: 'var(--text-tertiary)', textAlign: 'center' }}>
             No access grants. Click "Add Access" to grant access.
@@ -676,6 +686,7 @@ export function SelectionListAccessFlow({
   activeOrganizationId,
 }: SelectionListAccessFlowProps = {}) {
   const { listId } = useParams<{ listId: string }>()
+  const shared = useSharedLists()
 
   if (!listId) {
     return (
@@ -689,8 +700,9 @@ export function SelectionListAccessFlow({
     <AccessPanel
       key={listId}
       listId={listId}
-      organizationName={organizationName}
-      activeOrganizationId={activeOrganizationId}
+      // Props override; otherwise the host's SharedListsFeatureProvider supplies the active org.
+      organizationName={organizationName ?? shared.organizationName}
+      activeOrganizationId={activeOrganizationId ?? shared.organizationId}
     />
   )
 }

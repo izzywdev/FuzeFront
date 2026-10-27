@@ -31,6 +31,7 @@ import {
 } from '@fuzefront/design-system'
 import {
   canOfferPlatformPublish,
+  sameOrganization,
   isFork,
   useChangeVisibility,
   useSharedList,
@@ -498,7 +499,7 @@ function VisibilityControlForList({
   const showPlatform =
     canOfferPlatformPublish({ sharedLists: enabled, isPlatformOrg, list }) &&
     (activeOrganizationId === undefined ||
-      list.organization_id === activeOrganizationId)
+      sameOrganization(list.organization_id, activeOrganizationId))
 
   const options = [
     {
