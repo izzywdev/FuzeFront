@@ -554,6 +554,11 @@ export interface ProgressMeterProps extends React.HTMLAttributes<HTMLDivElement>
   label?: React.ReactNode;
   valueLabel?: React.ReactNode;
   tone?: ProgressMeterTone;
+  /**
+   * ARIA role of the track. `progressbar` (default) for task progress; `meter`
+   * for a scalar gauge within a known range (quota used / limit).
+   */
+  role?: "progressbar" | "meter";
 }
 
 export function ProgressMeter(props: ProgressMeterProps): React.JSX.Element;
@@ -1535,7 +1540,8 @@ export function BottomNav(props: BottomNavProps): React.JSX.Element;
  *
  * Use on xs/sm screens (<768px). Prefer Modal on md+.
  */
-export interface BottomSheetProps {
+export interface BottomSheetProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "title" | "children" | "style" | "role"> {
   /** When false the sheet is unmounted entirely. */
   open: boolean;
   /** Called when user taps the backdrop or presses Escape. */
@@ -1546,6 +1552,11 @@ export interface BottomSheetProps {
   children?: React.ReactNode;
   /** Extra inline styles applied to the sheet panel. */
   style?: React.CSSProperties;
+  /**
+   * Any other attribute (`data-*`, `aria-describedby`, `aria-busy`, `aria-label`,
+   * `id`…) is forwarded to the `role="dialog"` element.
+   */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
 }
 
 export function BottomSheet(props: BottomSheetProps): React.JSX.Element | null;
@@ -1625,7 +1636,8 @@ export declare function Pagination(props: PaginationProps): JSX.Element;
  * Generic accessible modal shell — backdrop, centered dialog card with the
  * fuse-seam top bar, focus trap, Escape close, and backdrop close.
  */
-export interface ModalProps {
+export interface ModalProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "title" | "children" | "style" | "role"> {
   /** When false the modal is unmounted entirely (render null). */
   open: boolean;
   /** Called when the user presses Escape or clicks the backdrop. */
@@ -1641,6 +1653,11 @@ export interface ModalProps {
   size?: "md" | "lg";
   /** Extra inline styles applied to the dialog card. */
   style?: React.CSSProperties;
+  /**
+   * Any other attribute (`data-*`, `aria-describedby`, `aria-busy`, `aria-label`,
+   * `id`…) is forwarded to the `role="dialog"` element.
+   */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
 }
 
 export function Modal(props: ModalProps): React.JSX.Element | null;

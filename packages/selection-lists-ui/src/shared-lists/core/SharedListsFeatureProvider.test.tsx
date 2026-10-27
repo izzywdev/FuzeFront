@@ -96,6 +96,38 @@ describe('isPlatformOrg', () => {
   })
 })
 
+describe('active organization (id + display name)', () => {
+  it('carries the id and name while the flag is ON', () => {
+    const value = render({
+      sharedLists: true,
+      organizationId: 'org_globex',
+      organizationName: 'Globex Freight',
+    }).result.current
+    expect(value.organizationId).toBe('org_globex')
+    expect(value.organizationName).toBe('Globex Freight')
+  })
+
+  it('is absent when the host passes nothing, an empty name or a non-string', () => {
+    const value = render({
+      sharedLists: true,
+      organizationId: 7 as unknown as string,
+      organizationName: '',
+    }).result.current
+    expect(value.organizationId).toBeUndefined()
+    expect(value.organizationName).toBeUndefined()
+  })
+
+  it('is never exposed while the flag is OFF', () => {
+    const value = render({
+      sharedLists: false,
+      organizationId: 'org_globex',
+      organizationName: 'Globex Freight',
+    }).result.current
+    expect(value.organizationId).toBeUndefined()
+    expect(value.organizationName).toBeUndefined()
+  })
+})
+
 describe('context identity', () => {
   it('keeps one stable value while the inputs are unchanged', () => {
     const { result, rerender } = render({

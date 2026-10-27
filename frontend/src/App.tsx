@@ -341,6 +341,8 @@ function SharedListsHost({ children }: { children: ReactNode }) {
     <SharedListsFeatureProvider
       sharedLists={sharedLists}
       isPlatformOrg={activeOrganization?.type === 'platform'}
+      organizationId={activeOrganization?.id}
+      organizationName={activeOrganization?.name}
     >
       {children}
     </SharedListsFeatureProvider>

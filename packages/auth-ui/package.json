@@ -5,7 +5,7 @@
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
   },
-  "description": "Reusable sign-in / sign-up AuthPanel UI for FuzeFront, on the fuse-seam design system — React component + zero-dep vanilla mount",
+  "description": "Reusable sign-in / sign-up AuthPanel UI for FuzeFront, on the fuse-seam design system \u2014 React component + zero-dep vanilla mount",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
