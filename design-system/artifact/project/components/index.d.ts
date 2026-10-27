@@ -52,6 +52,29 @@ export interface PricingCardProps
 
 export function PricingCard(props: PricingCardProps): React.JSX.Element;
 
+// ----- AmbientGlow (brand) -----
+/**
+ * The soft, blurred background "glow orb" used for marketing/hero
+ * backdrops and empty-state decoration. Purely decorative — renders
+ * `pointer-events: none` and `aria-hidden` by default.
+ */
+export interface AmbientGlowProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Which brand token paints the glow. `primary` -> `--accent-color` (indigo), `accent` -> `--accent-2` (cyan). */
+  tone?: "primary" | "accent";
+  /** Square side length in px, used when `width`/`height` are not given. */
+  size?: number;
+  /** Width in px — overrides `size` for a non-square glow. */
+  width?: number;
+  /** Height in px — overrides `size` for a non-square glow. */
+  height?: number;
+  /** Gaussian blur radius in px. */
+  blur?: number;
+  /** Fill opacity, 0–1. */
+  opacity?: number;
+}
+
+export function AmbientGlow(props: AmbientGlowProps): React.JSX.Element;
+
 // ----- BrandMark (brand) -----
 /**
  * The FuzeFront wordmark — "Fuze" in the --seam gradient + "Front" in solid text,
@@ -329,6 +352,52 @@ export interface ExternalLinkProps
 
 export function ExternalLink(props: ExternalLinkProps): React.JSX.Element;
 
+// ----- GradientText (core) -----
+/**
+ * Inline (or block) text painted with a brand gradient via
+ * `background-clip: text`.
+ */
+export interface GradientTextProps extends React.HTMLAttributes<HTMLElement> {
+  /** Rendered element. @default "span" */
+  as?: "span" | "div" | "h1" | "h2" | "h3" | "p";
+  /**
+   * CSS `<gradient>` value (or `var(--custom-gradient)` reference) painted
+   * across the text. Defaults to the DS "fuse seam" token.
+   * @default "var(--seam)"
+   */
+  gradient?: string;
+  children?: React.ReactNode;
+}
+
+export function GradientText(props: GradientTextProps): React.JSX.Element;
+
+// ----- GroupLabel (core) -----
+/**
+ * A small uppercase heading that introduces a labelled group of content
+ * inside a card or section (e.g. "Responsibilities", "Recommended
+ * products"). Not `Eyebrow` — no pill, no accent dot, no accent color.
+ */
+export interface GroupLabelProps extends React.HTMLAttributes<HTMLElement> {
+  /** Rendered element. @default "h4" */
+  as?: "h4" | "h5" | "h6" | "p" | "span" | "div";
+  /**
+   * Semantic tone, delegated to `Text`'s tone scale: `primary` (gray-900
+   * equivalent), `secondary` (gray-600 equivalent), `muted` (lowest
+   * emphasis).
+   * @default "secondary"
+   */
+  tone?: "primary" | "secondary" | "muted";
+  /**
+   * Bottom-margin gap, from the DS spacing scale: `sm` (`--space-2`) or
+   * `md` (`--space-3`).
+   * @default "sm"
+   */
+  spacing?: "sm" | "md";
+  children?: React.ReactNode;
+}
+
+export function GroupLabel(props: GroupLabelProps): React.JSX.Element;
+
 // ----- IconButton (core) -----
 /**
  * Icon-only ghost button — the host shell's quiet square control
@@ -358,7 +427,12 @@ export function IconButton(props: IconButtonProps): React.JSX.Element;
  */
 export interface IconTileProps extends React.HTMLAttributes<HTMLSpanElement> {
   children?: React.ReactNode;
-  tone?: "accent" | "info" | "success" | "warning" | "error" | "neutral";
+  /**
+   * `inverse` tints the icon `--primary-foreground` (flat white in both
+   * themes) instead of a hue tone, for an icon on a caller-owned colored or
+   * gradient surface — pair with `variant="plain"`.
+   */
+  tone?: "accent" | "info" | "success" | "warning" | "error" | "neutral" | "inverse";
   size?: "sm" | "md" | "lg";
   /**
    * `soft` (default): fixed box, tone-tinted background, solid-tone icon.
@@ -372,6 +446,42 @@ export interface IconTileProps extends React.HTMLAttributes<HTMLSpanElement> {
 }
 
 export function IconTile(props: IconTileProps): React.JSX.Element;
+
+// ----- InlineLink (core) -----
+/**
+ * A quiet accent-colored link that sits INSIDE a sentence or paragraph (a
+ * `mailto:` contact address, an in-text reference) — no forced new-tab
+ * navigation and no external-arrow glyph. For a link to another host that
+ * should open in a new tab, use `ExternalLink` instead.
+ */
+export interface InlineLinkProps
+  extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
+  /** Bolds the link text (`font-weight: var(--weight-medium)`). Default false. */
+  emphasis?: boolean;
+}
+
+export function InlineLink(props: InlineLinkProps): React.JSX.Element;
+
+// ----- SectionIcon (core) -----
+/**
+ * A tone-colored decorative icon, centered on its own line above a heading,
+ * with a token-driven bottom gap. `children` is the icon element itself
+ * (e.g. `<Crown size={40} />`) — SectionIcon only centers, colors, and
+ * spaces it, never the icon glyph.
+ */
+export interface SectionIconProps extends React.HTMLAttributes<HTMLSpanElement> {
+  children?: React.ReactNode;
+  tone?: "accent" | "info" | "success" | "warning" | "error" | "neutral";
+  /**
+   * Bottom gap to whatever follows (the heading). `md` (`--space-4`, 16px)
+   * or `lg` (default, `--space-6`, 24px).
+   */
+  gap?: "md" | "lg";
+  /** Accessible name, if the icon is not purely decorative (default: `aria-hidden`). */
+  label?: string;
+}
+
+export function SectionIcon(props: SectionIconProps): React.JSX.Element;
 
 // ----- Subheading (core) -----
 /**
@@ -1310,6 +1420,20 @@ export interface AuthCardProps extends HTMLAttributes<HTMLDivElement> {
 
 export declare function AuthCard(props: AuthCardProps): JSX.Element;
 
+// ----- BulletList (layout) -----
+export interface BulletListProps extends HTMLAttributes<HTMLElement> {
+  /** Element to render as. Defaults to `ul` (disc marker); `ol` renders a decimal marker. */
+  as?: "ul" | "ol";
+  /** Gap between items, mapped to the DS spacing scale. Defaults to `sm` (--space-2, 8px). */
+  gap?: "xs" | "sm" | "md" | "lg";
+  /** Top margin separating the list from preceding content. Defaults to `none`. */
+  space?: "none" | "sm" | "md";
+  children?: ReactNode;
+  style?: CSSProperties;
+}
+
+export declare function BulletList(props: BulletListProps): JSX.Element;
+
 // ----- Center (layout) -----
 export type CenterProps<E extends React.ElementType = "div"> = {
   /** Element/component to render as (e.g. `"div"`, `"section"`, or an
@@ -1538,6 +1662,33 @@ export interface HeroSectionProps {
 
 export declare function HeroSection(props: HeroSectionProps): JSX.Element;
 
+// ----- IconListItem (layout) -----
+/**
+ * A row with a tone-colored leading icon, top-aligned (not centered) beside
+ * its text — the icon itself is passed as `icon` (a component, e.g. `CheckCircle2`
+ * from `lucide-react`), `children` is whatever text/content follows it. Only
+ * the row layout and the icon's tone/size/alignment are owned by this
+ * component; callers keep full control of the icon glyph and their own text
+ * styling.
+ */
+export interface IconListItemProps
+  extends React.HTMLAttributes<HTMLElement> {
+  /** Element to render the row as. `li` (default, for a ListStack/`<ul>`) or `div`. */
+  as?: "li" | "div";
+  /** Icon component to render leading the row, e.g. `CheckCircle2`. Omit for no icon. */
+  icon?: React.ComponentType<{ size?: number; className?: string; style?: React.CSSProperties }>;
+  /** Tone applied to the icon color. Defaults to `success`. */
+  tone?: "success" | "warning" | "error" | "accent" | "neutral" | "muted";
+  /** Icon pixel size, passed straight to `icon`. Defaults to `14`. */
+  size?: number;
+  /** Gap between the icon and the content, mapped to the DS spacing scale. Defaults to `sm`. */
+  gap?: "xs" | "sm" | "md" | "lg";
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+}
+
+export function IconListItem(props: IconListItemProps): React.JSX.Element;
+
 // ----- InfoRow (layout) -----
 export interface InfoRowProps {
   label?: string;
@@ -1640,6 +1791,37 @@ export interface PageHeroTitleProps extends React.HTMLAttributes<HTMLHeadingElem
 }
 
 export function PageHeroTitle(props: PageHeroTitleProps): React.JSX.Element;
+
+// ----- PageSection (layout) -----
+export type PageSectionSpacing = "sm" | "md" | "lg";
+export type PageSectionBackground = "white" | "muted" | "transparent";
+
+export interface PageSectionProps {
+  /** Element/component to render as. Default "section". */
+  as?: ElementType;
+  /** Block (top+bottom) padding, from the DS --space-16/20/24 scale. Default "lg". */
+  spacing?: PageSectionSpacing;
+  /** Background surface token. Default "white" (var(--paper)). */
+  background?: PageSectionBackground;
+  className?: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+export declare function PageSection(props: PageSectionProps): JSX.Element;
+
+// ----- PageShell (layout) -----
+export interface PageShellProps {
+  /** Element/component to render as. Default "div". */
+  as?: ElementType;
+  className?: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+export declare function PageShell(props: PageShellProps): JSX.Element;
 
 // ----- Panel (layout) -----
 export interface PanelProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
@@ -1799,6 +1981,12 @@ export interface StackProps extends HTMLAttributes<HTMLDivElement> {
   justify?: "start" | "center" | "end" | "between" | "around";
   /** Gap between children, mapped to the spacing scale. Defaults to `sm` (--space-2, 8px). */
   gap?: "xs" | "sm" | "md" | "lg" | "xl";
+  /**
+   * Optional trailing margin-bottom, same spacing scale as `gap`. Omitted by
+   * default (no margin set). For a Stack used as a heading row sitting above
+   * following body copy (icon + title, title + subtitle).
+   */
+  mb?: "xs" | "sm" | "md" | "lg" | "xl";
   /** Allow children to wrap onto multiple lines. */
   wrap?: boolean;
   style?: CSSProperties;
