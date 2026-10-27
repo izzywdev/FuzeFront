@@ -39,7 +39,6 @@ import {
   err,
   fault,
   grantQuotaRead,
-  LEGACY_WORKBENCH_READS,
   expectInViewport,
   expectLtrIsland,
   expectRuntimeClean,
@@ -136,7 +135,7 @@ async function saveRefused(page: Page, reply: ApiReply, opts: { flag?: boolean; 
       opts.build?.(w)
     },
   })
-  ctx.api.use(on('PUT', MUTATION, () => reply), ...LEGACY_WORKBENCH_READS)
+  ctx.api.use(on('PUT', MUTATION, () => reply))
   await openRoute(page, WORKBENCH)
   const input = page.locator("[data-translation-input='item']").first().locator('input, textarea').first()
   await expect(input, 'the 4.0.0 workbench loads').toBeVisible()
@@ -148,8 +147,7 @@ async function saveRefused(page: Page, reply: ApiReply, opts: { flag?: boolean; 
 test.describe('SL9 fork — frame 04-fork-required', () => {
   test('SL9-FORK-000 canary: the 4.0.0 French workbench renders from the same mocks (passes today)', async ({ page }) => {
     // A STALE editor (no editable/visibility hint) — a current `editable:false` list renders the read-only view (SL9-READ-033).
-    const { api } = await setup(page, { build: w => addList(w, commonPriorityList({ editable: undefined, visibility: undefined }), commonPriorityItems()) })
-    api.use(...LEGACY_WORKBENCH_READS)
+    await setup(page, { build: w => addList(w, commonPriorityList({ editable: undefined, visibility: undefined }), commonPriorityItems()) })
     await openRoute(page, WORKBENCH)
     await expect(page.locator("[data-translation-input='item']").first()).toBeVisible()
   })
@@ -260,15 +258,9 @@ test.describe('SL9 fork — frame 04-fork-required', () => {
 
   test('SL9-FORK-010 …translation auto-fill', async ({ page }) => {
     const { api } = await setup(page, { build: w => addList(w, commonPriorityList({ editable: undefined, visibility: undefined }), commonPriorityItems()) })
-    // This drives the WRITABLE 4.0.0 workbench, whose client reads `{ locales: [{ locale, is_source, … }] }` (the shape the green
-    // selection-lists-translation-workbench spec injects). The service answers a top-level array of `TranslationLocaleStatus`
-    // (openapi 4.2.0), which that client does not read: a 4.0.0 client/service gap reported in
-    // docs/planning/selection-lists-shared-ui-red-specs.md, outside the shared-lists flows. The harness default is the real shape.
+    // The 4.0.0 workbench reads the service's real shapes (top-level TranslationLocaleStatus[]; text via items?locale=),
+    // which are the harness defaults: the index lists the source plus every supported locale, `es` untranslated.
     api.use(
-      on('GET', /\/translations$/, () => json(200, { locales: [
-        { locale: 'en', is_source: true, translated: 5, total: 5, machine_count: 0, stale_count: 0 },
-        { locale: 'es', is_source: false, translated: 0, total: 5, machine_count: 0, stale_count: 0 },
-      ] })),
       on('POST', /\/translations\/es\/autofill$/, () => forkRequired()),
     )
     await openRoute(page, `${detail(COMMON_PRIORITY_ID)}/translations`)

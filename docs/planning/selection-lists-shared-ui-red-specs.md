@@ -2,7 +2,7 @@
 
 > **Status (2026-10-27):** the specs landed RED (TDD, 2026-10-26); all six UI stages have since merged behind the release flag
 > `fuzefront.selection-lists.shared-lists` (default OFF) and the specs were run against a production build of the host
-> (`vite preview`): **199 of 212 pass, 13 fail** — see [Verification against the built UI](#verification-against-the-built-ui-2026-10-27).
+> (`vite preview`): **212 of 212 pass** (after the picker / workbench / reorder / provenance fixes of #1750; 199 of 212 before) — see [Verification against the built UI](#verification-against-the-built-ui-2026-10-27).
 > The files keep the `*.red.spec.ts` name until every spec of a flow passes (the rename + the `ci.yml` list change are a separate,
 > human-merged follow-up). Implementation: `packages/selection-lists-ui/src/shared-lists/**` (design-record task 14). Source of truth:
 > `design/frames/selection-lists-shared/` (approved per flow 2026-10-20) and
@@ -101,16 +101,16 @@ Two kinds, both deliberate and labelled in their titles:
 
 Run: production build of the host at `master` 6eccf4a0 (+ this PR), `vite preview`, Node 24.21, Playwright 1.61 driving the
 environment's Chromium 141 (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`; CI installs Playwright's own Chromium, a run on that build is still to be seen in CI), `--project=chromium --workers=4`, no retries:
-`npx playwright test tests/selection-lists-shared-*.red.spec.ts` → **212 tests: first run 188 pass / 24 fail; after the triage below 199 pass / 13 fail.**
+`npx playwright test tests/selection-lists-shared-*.red.spec.ts` → **212 tests: first run 188 pass / 24 fail; after the triage below 199 pass / 13 fail; after the UI fixes of #1750 (picker waits for the flag, PROV-009 table, workbench on the real shapes) 212 pass / 0 fail.**
 
 | Flow | Tests | Pass before triage | Pass after | Still red |
 |---|---:|---:|---:|---|
 | `shared-read` | 42 | 35 | **42** | – |
 | `fork` | 57 | 57 | **57** | – |
-| `fork-provenance` | 32 | 27 | **31** | PROV-009 |
+| `fork-provenance` | 32 | 27 | **31** | PROV-009 (fixed by #1750: the fork's value editor is an ARIA table) |
 | `visibility` | 37 | 37 | **37** | – |
-| `effective-picker` | 44 | 32 | **32** | PICK-001, 011, 020, 022, 030, 036, 060 ×3, 063 ×3 |
-| **total** | **212** | **188** | **199** | **13** |
+| `effective-picker` | 44 | 32 | **32** | PICK-001, 011, 020, 022, 030, 036, 060 ×3, 063 ×3 (fixed by #1750: the picker waits for the flag) |
+| **total** | **212** | **188** | **199** | **13** (all fixed by #1750 → 212 / 212) |
 
 ### Triage of every one of the 24 first-run failures
 
@@ -132,32 +132,20 @@ Buckets: (a) spec/mock bug · (b) real UI defect · (c) frame/spec disagreement 
 Bucket totals over the 24 failing tests: **(a) 8** (READ-021, 032, 033, 037; PROV-020 ×2, 023a ×2) · **(b) 16** (READ-040 ×3 — fixed; PROV-009 — open; the 12 picker specs — open) · **(c) 0** · **(d) 0**.
 After the triage: 8 (a) fixed in the specs/harness, 3 (b) fixed in the UI, 13 (b) still red.
 
-**Picker — verified, not fixed:** applying the 7-line host gate below (render the harness only when `useFlagState(SHARED_LISTS_FLAG_KEY).ready`, which settles even with no token or on failure) makes all 12 picker specs pass (211/212 in that run). It lives in `frontend/src/App.tsx` (host wiring), outside the `shared-lists/**` boundary this PR was allowed to change, and a real host that embeds `SelectionListPicker` before its own flags settle has the same problem — the durable fix is a package-level "flag not ready yet" state in `SharedListsFeatureProvider` (picker defers its data path until ready). Owner: `frontend-engineer`.
-
-```diff
---- a/frontend/src/App.tsx   (NOT applied — verified patch for frontend-engineer)
-+function PickerHarnessRoute() {
-+  const { ready } = useFlagState(SHARED_LISTS_FLAG_KEY, false)
-+  if (!ready) return null
-+  return <SelectionListPickerHarness />
-+}
-@@ if (currentPath.startsWith('/embed/selection-list-picker')) {
--    return <SelectionListPickerHarness />
-+    return <PickerHarnessRoute />
-```
+**Picker — fixed in #1750 (package level, not the host gate):** `SharedListsFeatureProvider` takes `ready` (the host passes `useFlagState(SHARED_LISTS_FLAG_KEY).ready`, which settles — OFF — even with no token or on failure, so an unauthenticated embed renders the 4.0.0 picker). `useSharedLists().ready` is `false` until then and the picker, `useEffectiveList`, `useStoredValues`, `useSharedListIndex` and the management / workbench / access flows issue no request, then one set. The 7-line `App.tsx` gate verified at triage time (render the harness only when ready) was the diagnosis aid and is not shipped; a real host that embeds `SelectionListPicker` before its own flags settle gets the same behaviour from the package.
 
 ### Harness fidelity changes made while triaging (no assertion was removed or loosened)
 
 * `GET …/items?status=` follows the implemented service (`active` | `archived`, else 400).
 * `GET …/translations` answers the contract array; `GET …/translations/{locale}` is no longer mocked (it is not an operation); item text per locale comes from `items?locale=` with `is_machine`.
 * `GET /quota` answers the real `{organization_id, quotas}` envelope **by default** (the 4.0.0 client reads it since #1719; `SL9-READ-018` is now a regression guard). The `quota read refused (default world)` entry of `EXPECTED_REFUSALS` and the 403 default were deleted, as the TODO asked; `SL9-FORK-024b` still sets the 403 explicitly.
-* The fork specs that drive the **writable 4.0.0 workbench** to its refused Save (FORK-000…011 via `saveRefused`, FORK-010) opt in to `LEGACY_WORKBENCH_READS`: the 4.0.0 client reads `{locales:[…]}` from `GET …/translations` and `GET …/translations/{locale}` — shapes/routes the service does not provide (finding 8).
+* The `LEGACY_WORKBENCH_READS` opt-in (the 4.0.0 workbench's `{locales:[…]}` / `GET …/translations/{locale}` shapes) is **deleted** (#1750): the writable workbench now reads the service's real shapes (finding 11), so the fork specs (FORK-000…011 via `saveRefused`, FORK-010) run on the harness defaults.
 * PROV-004 / PROV-005 are no longer tagged `@needs-contract-revision`: contract 4.2.0 has `SelectionList.revision` and the UI reads it. Both pass against the mock; the service does not emit `revision` yet, so against the real service the UI shows "comparison unavailable" (PROV-003 pins that).
 
 ### Console / network gate
 
 Every ready-state spec ends with `expectRuntimeClean` (0 uncaught exceptions, 0 console errors, same-origin API); all of those pass. A separate sweep (throw-away spec, not committed) of the index (toggle + filter), common detail, read-only translations + locale view, fork dialog, fork detail, visibility/Access tab and the picker, each at desktop and 375 px, logged every console message of any level and every ≥400 / failed request: after removing the backend-less preview's own noise (service-worker registration blocked by Playwright, `/socket.io` websocket, `/api/v1/notifications/stream` 404) the residue was exactly two items, both mock-answered refusals the UI is not at fault for:
-`HEAD …/items/reorder` → 404 on every editable list detail (the **4.0.0** value editor's `probeReorderPermission`; HEAD is not a contract operation — a console error in the real product, finding 10) and `GET …/access` → 403 on the Access tab (the default world's caller holds no `manage_access`). The picker was clean at both widths. The Chrome DevTools MCP was not available in this environment; the Playwright runtime tracker (console / pageerror / request origin) plus the sweep above stand in for it and should be repeated with the MCP when the flag is switched on in a real environment.
+`HEAD …/items/reorder` → 404 on every editable list detail (the **4.0.0** value editor's `probeReorderPermission`; HEAD is not a contract operation — a console error in the real product, finding 10; **gone with #1750**, the editor no longer probes) and `GET …/access` → 403 on the Access tab (the default world's caller holds no `manage_access`). The picker was clean at both widths. The Chrome DevTools MCP was not available in this environment; the Playwright runtime tracker (console / pageerror / request origin) plus the sweep above stand in for it and should be repeated with the MCP when the flag is switched on in a real environment.
 
 ## Inventory — per flow: spec file → test ids → frame states
 
@@ -289,7 +277,7 @@ Test ids are the `SL9-<FLOW>-<nnn>` prefix in each test title (`playwright test 
    editor's `HEAD …/items/reorder` permission probe (the service — and the mock — answer 404; HEAD is not a contract operation) would fail an unqualified console check
    although the UI is right. `expectRuntimeClean` therefore tolerates exactly the named `EXPECTED_REFUSALS` (status + request path; quota 403, reorder-probe 404) and nothing else —
    any other console error, uncaught exception, CSP/mixed-content message or other failed request still fails. A spec that injects more refusals on a success path passes its own
-   `expected` list. Delete the quota entry together with the 403 default once the client reads the real envelope (TODO tied to `SL9-READ-018`); the reorder-probe entry goes when the probe stops 404-ing.
+   `expected` list. `EXPECTED_REFUSALS` is now **empty**: the quota entry went with the 403 default (the client reads the real envelope), and the reorder-probe entry went with the probe (#1750).
    **5xx:** the contract defines no 5xx body and no `INTERNAL` code, so server failures are `fault(5xx)` (`{error:'boom'}`, the precedent of the green specs), never an `Error`-shaped body.
    A few specs send out-of-contract values **on purpose** to probe tolerance the contract demands or implies: `reason: some_future_reason` ("treat an unknown value as a plain CONFLICT"),
    `scope: something_new`, and an absolute `fork_url` (SL9-FORK-003).
@@ -302,8 +290,8 @@ Test ids are the `SL9-<FLOW>-<nnn>` prefix in each test title (`playwright test 
 8. **Frame copy asserted verbatim** only where the frame makes it a contract (source-neutral shadow note, `fork_exists` owner-only wording,
    conditional archive copy, "List unavailable", "Unknown value"). Everything else is asserted by hook/role, not by copy.
 9. **Service vs contract: `GET …/items?status=all`.** openapi 4.2.0 lists `all` for this parameter; the implemented route (`services/selection-list-service/src/routes/items.ts`) answers `400 VALIDATION_ERROR` for it (the *list* route does accept `all`). Clients (`useListValues`) work around it by reading `active` and `archived` separately. Owner: `backend-engineer` / `contract-designer` — either implement `all` or remove it from the contract (breaking-change rules apply).
-10. **4.0.0 console error on every editable list detail:** the value editor probes reorder permission with `HEAD …/items/reorder` (`probeReorderPermission`), which is not a contract operation and answers 404, logged by the browser as a console error. Owner: `frontend-engineer` (use the list's `editable`/a real permission read instead of a probe). The console-clean gate tolerates it by name in `EXPECTED_REFUSALS` until then.
-11. **4.0.0 translation workbench vs the service:** `getLocaleIndex` reads `{locales:[…]}` (service: a top-level array) and `getLocaleEditor` calls `GET …/translations/{locale}` (not an operation). Against the real service the writable workbench shows "No locales to translate". The shared-lists read-only views already use the contract-defined reads. Owner: `frontend-engineer`.
+10. **4.0.0 console error on every editable list detail:** the value editor probes reorder permission with `HEAD …/items/reorder` (`probeReorderPermission`), which is not a contract operation and answers 404, logged by the browser as a console error. **Fixed in #1750:** the probe is removed; reorder permission comes from the list's `editable` hint and the reorder PUT's own 403 (handles removed, FORBIDDEN notice). Remaining gap: the contract has no exact `update_value` signal (`editable` is a `translate` check, emitted only behind the shared-lists flag); a boolean `can_reorder` on `SelectionList` would close it.
+11. **4.0.0 translation workbench vs the service:** `getLocaleIndex` reads `{locales:[…]}` (service: a top-level array) and `getLocaleEditor` calls `GET …/translations/{locale}` (not an operation). Against the real service the writable workbench showed "No locales to translate". **Fixed in #1750:** the index is built from the status array + the list + `GET /quota`, the editor reads `GET …/items?locale=`. Row-level staleness is no longer shown in the writable editor (the items read carries no `source_hash`); the index still shows a locale's `source_changed`.
 
 ## Not covered here (named so nobody assumes it is)
 
