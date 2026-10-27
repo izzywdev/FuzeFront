@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import jwt from 'jsonwebtoken'
 import authRoutes from '../src/routes/auth'
 import { initializeDatabase, db } from '../src/config/database'
+import { toUuid } from '@izzywdev/fuzefront-identity'
 
 // JWT shape used by the runtime matcher (registered in tests/setup.ts).
 const JWT_REGEX = /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$/
@@ -70,13 +71,14 @@ describe('Authentication Routes', () => {
 
       // Side effect: a session row must exist for the returned sessionId.
       const session = await db('sessions')
-        .where('id', response.body.sessionId)
+        .where('id', toUuid(response.body.sessionId))
         .first()
       expect(session).toBeDefined()
-      expect(session.user_id).toBe(response.body.user.id)
+      // Wire ids are TypeIDs; the column stores the native uuid.
+      expect(session.user_id).toBe(toUuid(response.body.user.id))
 
       // Clean up the session we created.
-      await db('sessions').where('id', response.body.sessionId).del()
+      await db('sessions').where('id', toUuid(response.body.sessionId)).del()
     })
 
     it('returns a 401 application/json response for invalid credentials', async () => {
@@ -150,7 +152,7 @@ describe('Authentication Routes', () => {
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
       authToken = loginResponse.body.token
-      sessionId = loginResponse.body.sessionId
+      sessionId = toUuid(loginResponse.body.sessionId)
     })
 
     afterEach(async () => {
@@ -217,7 +219,7 @@ describe('Authentication Routes', () => {
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
       authToken = loginResponse.body.token
-      userId = loginResponse.body.user.id
+      userId = toUuid(loginResponse.body.user.id)
     })
 
     afterEach(async () => {
@@ -231,7 +233,7 @@ describe('Authentication Routes', () => {
       const second = await request(app)
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
-      const otherSessionId = second.body.sessionId
+      const otherSessionId = toUuid(second.body.sessionId)
       const currentSessionId = (
         jwt.verify(authToken, process.env.JWT_SECRET!) as { sessionId: string }
       ).sessionId
@@ -274,7 +276,7 @@ describe('Authentication Routes', () => {
       expect(response.headers).toHaveProperty('x-frame-options')
 
       if (response.body.sessionId) {
-        await db('sessions').where('id', response.body.sessionId).del()
+        await db('sessions').where('id', toUuid(response.body.sessionId)).del()
       }
     })
   })
@@ -309,7 +311,7 @@ describe('Authentication Routes', () => {
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
       authToken = loginResponse.body.token
-      sessionId = loginResponse.body.sessionId
+      sessionId = toUuid(loginResponse.body.sessionId)
     })
 
     afterAll(async () => {

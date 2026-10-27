@@ -84,19 +84,19 @@ drawer, bottom nav or sheet in feature code.
 
 ## Components
 
-76 primitives across 13 groups, each styled entirely with tokens — no raw hex, px or font outside the token set. Guideline docs are generated from each component's source `.prompt.md` / `.d.ts`; a curated set carries a rich visual preview (the rest show a usage specimen). The authoritative implementations ship as the private npm package `@fuzefront/design-system`.
+103 primitives across 13 groups, each styled entirely with tokens — no raw hex, px or font outside the token set. Guideline docs are generated from each component's source `.prompt.md` / `.d.ts`; a curated set carries a rich visual preview (the rest show a usage specimen). The authoritative implementations ship as the private npm package `@fuzefront/design-system`.
 
 | Group | Primitives |
 |---|---|
 | Access | `RoleBadge` |
 | Billing | `PricingCard` |
-| Brand | `BrandMark`, `BrandTokenScope`, `Logo`, `SeamDivider` |
-| Core | `Avatar`, `Badge`, `Button`, `Caption`, `ExternalLink`, `IconButton`, `IconTile`, `Text`, `TextLink` |
+| Brand | `AmbientGlow`, `BrandMark`, `BrandTokenScope`, `Logo`, `SeamDivider` |
+| Core | `Avatar`, `Badge`, `BlockHeading`, `Button`, `Caption`, `CardTitle`, `ExternalLink`, `GradientText`, `GroupLabel`, `IconButton`, `IconTile`, `InlineLink`, `SectionIcon`, `Subheading`, `SubsectionHeading`, `Text`, `TextLink` |
 | Data | `DataTable`, `SortableList`, `StatCard`, `StatGroup` |
 | Feedback | `Alert`, `EmptyState`, `ProgressMeter`, `Rating`, `Skeleton`, `Spinner`, `StatusCallout`, `StatusPill`, `Stepper`, `StrengthMeter`, `Toast` |
 | Forms | `CodeField`, `FieldLabel`, `FieldStatus`, `FileDropZone`, `InlineValidatedInput`, `Input`, `PasswordChecklist`, `RadioCardGroup`, `SearchField`, `SegmentedControl`, `Select`, `Textarea`, `TextareaWithCounter`, `Toggle`, `TurnstileContainer` |
 | Launcher | `AppCard`, `AppTile`, `HealthDot`, `IntegrationBadge` |
-| Layout | `AuthCard`, `Center`, `CenteredCard`, `Container`, `Eyebrow`, `HeroPatternOverlay`, `InfoRow`, `ListStack`, `Panel`, `ResponsiveGrid`, `Section`, `SectionHead`, `Stack`, `Wrap` |
+| Layout | `AuthCard`, `BulletList`, `Center`, `CenteredCard`, `Container`, `CtaBand`, `CtaHeading`, `Eyebrow`, `HeroBand`, `HeroContent`, `HeroHeading`, `HeroLead`, `HeroPatternOverlay`, `HeroSection`, `IconListItem`, `InfoRow`, `InverseHeading`, `Lead`, `ListStack`, `PageHeroBand`, `PageHeroTitle`, `PageSection`, `PageShell`, `Panel`, `ResponsiveGrid`, `Section`, `SectionHead`, `SectionIntro`, `SectionLede`, `SectionTitle`, `Stack`, `Wrap` |
 | Mobile | `BottomNav`, `BottomSheet`, `Drawer` |
 | Navigation | `Breadcrumb`, `Pagination` |
 | Overlay | `Modal` |

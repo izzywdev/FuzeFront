@@ -17,7 +17,7 @@
  * service implementation.
  */
 import { mintTestToken } from '../helpers/auth';
-import { declarePlatformOrg, FAKE_SECURITY_URL, newCodecOrg, newOrg, newUser, orgUuidOf, permitPublishAnywhere, PLATFORM_ORG_ID } from '../helpers/shared-lists';
+import { declarePlatformOrg, denyCatalogAction, FAKE_SECURITY_URL, newCodecOrg, newOrg, newUser, orgUuidOf, permitPublishAnywhere, PLATFORM_ORG_ID } from '../helpers/shared-lists';
 
 type Role = 'admin' | 'editor' | 'viewer' | 'developer';
 
@@ -114,5 +114,22 @@ describe('publish_platform (D5): admin only, effective only in the platform org 
     expect(await check(u, lenient, 'admin', lenient, catalog, 'publish_platform')).toBe(true);
     expect(await check(u, lenient, 'editor', lenient, catalog, 'publish_platform')).toBe(false); // still admin-only
     expect(await check(u, strict, 'admin', strict, catalog, 'publish_platform')).toBe(false);
+  });
+});
+
+describe('deny-catalog-action: withdraws ONE catalog action from ONE subject in ONE tenant (harness fixture)', () => {
+  it('the subject loses exactly that action, in that tenant, in either id rendering; everybody else and every other action are untouched', async () => {
+    const o = newCodecOrg();
+    const other = newOrg('denyother');
+    const victim = newUser('fkdeny');
+    const bystander = newUser('fkdeny');
+    // positive control first: an editor holds read_shared, resolve and create
+    for (const action of ['read_shared', 'resolve', 'create']) expect(await check(victim, o.wire, 'editor', o.wire, catalog, action)).toBe(true);
+    await denyCatalogAction(o.uuid, victim, 'read_shared'); // named by the OTHER rendering of the tenant
+    expect(await check(victim, o.wire, 'editor', o.wire, catalog, 'read_shared')).toBe(false);
+    expect(await check(victim, o.uuid, 'editor', o.uuid, catalog, 'read_shared')).toBe(false);
+    for (const action of ['resolve', 'create', 'list']) expect(await check(victim, o.wire, 'editor', o.wire, catalog, action)).toBe(true);
+    expect(await check(bystander, o.wire, 'editor', o.wire, catalog, 'read_shared')).toBe(true);
+    expect(await check(victim, other, 'editor', other, catalog, 'read_shared')).toBe(true); // another tenant
   });
 });

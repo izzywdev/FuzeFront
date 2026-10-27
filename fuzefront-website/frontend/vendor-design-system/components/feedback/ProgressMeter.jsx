@@ -4,10 +4,14 @@ import React from "react";
  * Horizontal progress / usage meter — a labelled track + fill keyed to a
  * fraction of a limit. The runtime fabric uses it for usage-based billing
  * (seats, metered units) and quota displays. Token-only, RTL-safe (the fill
- * grows from the inline-start edge), accessible via role="progressbar".
+ * grows from the inline-start edge), accessible via role="progressbar" (or "meter", see `role`).
  *
  * `tone` overrides the fill: default uses the fuse seam; near/over the limit
  * the consumer can pass "warning"/"danger" (e.g. >80% / >=100%).
+ *
+ * `role` — "progressbar" (default, task progress) or "meter" (a scalar gauge
+ * within a known range, e.g. quota used / limit). Both carry the same
+ * aria-valuenow/min/max.
  */
 const TONE_FILL = {
   seam: "var(--seam)",
@@ -21,6 +25,7 @@ export function ProgressMeter({
   label,
   valueLabel,
   tone = "seam",
+  role = "progressbar",
   style,
   ...rest
 }) {
@@ -64,7 +69,7 @@ export function ProgressMeter({
         </div>
       )}
       <div
-        role="progressbar"
+        role={role === "meter" ? "meter" : "progressbar"}
         aria-valuenow={Math.round(value)}
         aria-valuemin={0}
         aria-valuemax={Math.round(safeMax)}

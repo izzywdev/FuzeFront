@@ -2,6 +2,7 @@ import express from 'express'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
+import { toUuid } from '@izzywdev/fuzefront-identity'
 
 jest.mock('../src/config/permit', () => ({
   __esModule: true,
@@ -170,8 +171,8 @@ describe('GET /api/users — cross-tenant no-leak suite (FF-EPIC-11-S2/S6)', () 
         .set('Host', 'tenant-a.fuzefront.test')
       expect(res.status).toBe(200)
       for (const item of res.body.items) {
-        expect(bUserIds).not.toContain(item.id) // NEVER portal B, at any page
-        seen.add(item.id)
+        expect(bUserIds).not.toContain(toUuid(item.id)) // NEVER portal B, at any page
+        seen.add(toUuid(item.id))
       }
       cursor = res.body.page.nextCursor ?? undefined
       pages++
@@ -244,7 +245,7 @@ describe('GET /api/users — cross-tenant no-leak suite (FF-EPIC-11-S2/S6)', () 
       .set('Host', 'tenant-a4.fuzefront.test')
 
     expect(res.status).toBe(200)
-    expect(res.body.items.map((u: any) => u.id)).not.toContain(bTargetId)
+    expect(res.body.items.map((u: any) => toUuid(u.id))).not.toContain(bTargetId)
   })
 
   it('platform-admin bypass returns the FULL cross-portal view — a distinct path, not the default', async () => {
@@ -264,7 +265,7 @@ describe('GET /api/users — cross-tenant no-leak suite (FF-EPIC-11-S2/S6)', () 
       .set('Host', 'tenant-a5.fuzefront.test')
 
     expect(res.status).toBe(200)
-    const ids = res.body.items.map((u: any) => u.id)
+    const ids = res.body.items.map((u: any) => toUuid(u.id))
     expect(ids).toEqual(expect.arrayContaining([userA, userB]))
   })
 
@@ -316,7 +317,7 @@ describe('GET /api/users — flag OFF: BYTE-IDENTICAL unscoped global behavior (
       .set('Host', 'tenant-a8.fuzefront.test')
 
     expect(res.status).toBe(200)
-    expect(res.body.items.map((u: any) => u.id)).toContain(targetB)
+    expect(res.body.items.map((u: any) => toUuid(u.id))).toContain(targetB)
   })
 
   it('flag OFF: direct profile lookup of a portal-B user succeeds (200, unchanged)', async () => {
@@ -333,7 +334,7 @@ describe('GET /api/users — flag OFF: BYTE-IDENTICAL unscoped global behavior (
       .set('Host', 'tenant-a9.fuzefront.test')
 
     expect(res.status).toBe(200)
-    expect(res.body.id).toBe(targetB)
+    expect(toUuid(res.body.id)).toBe(targetB)
   })
 })
 
@@ -379,7 +380,7 @@ describe('GET /api/users — pagination envelope + limit clamp (governance/pagin
         .set('Authorization', `Bearer ${token}`)
         .set('Host', 'tenant-walk.fuzefront.test')
       expect(res.status).toBe(200)
-      seen.push(...res.body.items.map((u: any) => u.id))
+      seen.push(...res.body.items.map((u: any) => toUuid(u.id)))
       cursor = res.body.page.nextCursor ?? undefined
     } while (cursor)
 
@@ -433,7 +434,7 @@ describe('GET /api/organizations/:id/members — portal-scoped membership listin
       .set('Host', 'tenant-mem-a.fuzefront.test')
 
     expect(res.status).toBe(200)
-    const ids = res.body.items.map((m: any) => m.user.id)
+    const ids = res.body.items.map((m: any) => toUuid(m.user.id))
     expect(ids).toContain(legitMember)
     expect(ids).not.toContain(strayMember)
   })

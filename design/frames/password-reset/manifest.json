@@ -43,7 +43,7 @@
         "route": "/account/security/password",
         "approved": true,
         "approvedBy": "izzywdev",
-        "approvedAt": "2026-10-21T06:49:48.085Z"
+        "approvedAt": "2026-10-27T00:35:29.293Z"
       },
       {
         "id": "set-password",
@@ -162,8 +162,8 @@
       "label": "States & errors",
       "route": "/account/security/password",
       "flow": "change-password",
-      "summary": "Submitting, expired/invalid token, password-policy rejection, generic failure + retry, set-password-when-one-exists (409), wrong current password.",
-      "acceptanceNotes": "Each state carries data-state; policy/token/409 use the StatusCallout or field-error. Expired token routes back to request; 409 routes to change/reset; wrong-current shows an inline field error.",
+      "summary": "Submitting, expired/invalid token, password-policy rejection, definite failure + retry, change outcome unknown (indeterminate, no retry), set-password-when-one-exists (409), wrong current password.",
+      "acceptanceNotes": "Each state carries data-state; policy/token/409 use the StatusCallout or field-error. Expired token routes back to request; 409 routes to change/reset; wrong-current shows an inline field error. 'Your password is unchanged — try again' (data-state='error', with retry) is ONLY for definite failures: the server answered with a 4xx rejection (e.g. 429 RATE_LIMITED); policy and wrong-current keep their own states. A network error or 5xx after a change-password submit means the outcome is unknown (the server may have committed the change and lost the reply): render data-state='indeterminate' with title 'We couldn't confirm the change.' and body 'Try signing in with your new password. If that doesn't work, your old password still does.'. No retry button; the only action is 'Back to security' (data-action='back-to-security'). The copy must never say the password is unchanged, and both password fields are cleared.",
       "testHooks": [
         "[data-frame='06-states']",
         "[data-state='submitting']",
@@ -175,9 +175,12 @@
         "[data-action='retry']",
         "[data-state='already-has-password']",
         "[data-error='password-exists']",
-        "[data-state='wrong-current']"
+        "[data-state='wrong-current']",
+        "[data-state='indeterminate']",
+        "[data-error='change-indeterminate']",
+        "[data-action='back-to-security']"
       ]
     }
   ],
-  "stamp": "1205e18d7825717ba88ad389546e38e06963cbb534a3f8da365abe3b02151422"
+  "stamp": "f929c065fcddc3690a6c72d1ae0c3b5c540a7e029f0205806a8f34acfdc37621"
 }

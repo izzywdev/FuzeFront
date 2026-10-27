@@ -9,6 +9,7 @@ export function FlowInventoryFilters({
   source,
   status,
   revisionScope,
+  targetId,
   model,
   promptVersion,
   schemaVersion,
@@ -20,6 +21,7 @@ export function FlowInventoryFilters({
   onSourceChange,
   onStatusChange,
   onRevisionScopeChange,
+  onTargetIdChange,
   onModelChange,
   onPromptVersionChange,
   onSchemaVersionChange,
@@ -32,6 +34,7 @@ export function FlowInventoryFilters({
   source: RepositoryFlowCandidate['source'] | ''
   status: RepositoryFlowCandidate['status'] | ''
   revisionScope: FlowRevisionScope
+  targetId: string
   model: string
   promptVersion: string
   schemaVersion: string
@@ -43,6 +46,7 @@ export function FlowInventoryFilters({
   onSourceChange: (value: RepositoryFlowCandidate['source'] | '') => void
   onStatusChange: (value: RepositoryFlowCandidate['status'] | '') => void
   onRevisionScopeChange: (value: FlowRevisionScope) => void
+  onTargetIdChange: (value: string) => void
   onModelChange: (value: string) => void
   onPromptVersionChange: (value: string) => void
   onSchemaVersionChange: (value: string) => void
@@ -86,6 +90,10 @@ export function FlowInventoryFilters({
           <option value="all">All revisions</option>
           <option value="current">Current repository revision</option>
         </select>
+      </label>
+      <label>
+        Target artifact ID
+        <input value={targetId} maxLength={500} placeholder="Exact route or component artifact ID" onChange={event => onTargetIdChange(event.target.value)} />
       </label>
       <label>
         Analysis model
