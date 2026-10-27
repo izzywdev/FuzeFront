@@ -46,7 +46,7 @@ import {
   ListNotFoundNotice,
 } from './ForkRefusalNotice'
 import { ForkToEditButton } from './ForkToEditButton'
-import { forkNoticeState, listRoute } from './notice'
+import { SELECTION_LISTS_ROUTE, forkNoticeState, listRoute } from './notice'
 import { hasForkForbidden, markForkForbidden } from './session'
 
 export interface ForkListFlowProps {
@@ -112,6 +112,9 @@ function useForkDialog(opts: {
       setForbidden(true)
     }
     if (outcome?.kind === 'fork_not_applicable') opts.onStale?.()
+    // "Back to lists": the source is gone, or the key belongs to a list we must not name.
+    if (outcome?.kind === 'key_taken' || outcome?.kind === 'not_found')
+      navigate(SELECTION_LISTS_ROUTE)
   }
   return { sourceId, open: setSourceId, forbidden, onForked, onClose }
 }
