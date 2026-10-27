@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
-import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
+import { mintId, parseId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
@@ -681,7 +681,7 @@ router.patch('/session/active-organization', authenticateToken, async (req: any,
   }
   if (!req.user?.sessionId) return res.status(401).json({ error: 'Session context is required' })
   try {
-    const organizationId = supplied === null ? null : toUuid('organization', supplied)
+    const organizationId = supplied === null ? null : toUuid(parseId('organization', supplied))
     if (organizationId && !await isActiveOrgMember(req.user.id, organizationId)) {
       return res.status(403).json({ error: 'Active organization membership required' })
     }
