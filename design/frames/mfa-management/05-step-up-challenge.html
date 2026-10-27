@@ -29,6 +29,17 @@
   .actions { margin-top: var(--space-5); display: grid; gap: var(--space-3); }
   .switch { text-align: center; margin-top: var(--space-4); font-size: var(--text-sm); }
   .switch a { color: var(--accent-color); }
+  /* Rate-limited callout (DS StatusCallout, tone warning) + designer notes */
+  .rl-callout { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-4);
+    margin-bottom: var(--space-5); border-radius: var(--radius-md); border: 1px solid var(--warning-color);
+    background: var(--warning-soft); color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+  .rl-callout b { display: block; color: var(--text-primary); font-size: var(--text-md); margin-bottom: var(--space-1); }
+  .rl-wait { display: inline; margin: 0; font-size: inherit; font-variant-numeric: tabular-nums; }
+  .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+  .rl-callout__ico { flex: none; color: var(--warning-color); }
+  .rl-note { margin: var(--space-4) 0 0; padding: var(--space-3); border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-md); color: var(--text-tertiary); font-size: var(--text-sm); line-height: 1.5; }
+  .rl-note code, .state-label code { font-family: var(--font-mono); }
   /* FactorPicker */
   .picker { display: grid; gap: var(--space-3); }
   .picker button { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-4); align-items: center;
@@ -67,8 +78,8 @@
     </div>
 
     <!-- ═══ Choose a factor ═══ -->
-    <div class="state-label">State · choose a factor</div>
-    <div class="card" data-component="mfa-challenge" data-state="choose-factor">
+    <div class="state-label">State · choose a factor · <code>recoveryAvailable: true</code> (recovery offered → frame 07)</div>
+    <div class="card" data-component="mfa-challenge" data-state="choose-factor" data-recovery-available="true">
       <div class="card__seam"></div>
       <div class="card__body">
         <h2>Verify it's you</h2>
@@ -84,7 +95,7 @@
             <span>Text message<small>Send a code to •••• •• 4471</small></span>
             <span aria-hidden="true">›</span>
           </button>
-          <button data-factor="recovery" data-action="use-recovery">
+          <button data-factor="recovery" data-action="use-recovery" onclick="location.href='07-recovery-code-entry.html'">
             <span class="ico" aria-hidden="true">🗝️</span>
             <span>Recovery code<small>Use one of your saved backup codes</small></span>
             <span aria-hidden="true">›</span>
@@ -116,6 +127,61 @@
       </div>
     </div>
 
+    <!-- ═══ Choose a factor — recovery NOT offered (recoveryAvailable false / absent) ═══ -->
+    <div class="state-label">State · choose a factor · <code>recoveryAvailable</code> false or absent (fail-closed: no recovery choice)</div>
+    <div class="card" data-component="mfa-challenge" data-state="choose-factor" data-recovery-available="false">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Verify it's you</h2>
+        <p class="sub">Choose how to get your code.</p>
+        <div class="picker" data-component="factor-picker">
+          <button data-factor="totp" data-factor-id="fct_totp_1" data-action="challenge">
+            <span class="ico" aria-hidden="true">🔑</span>
+            <span>Authenticator app<small>Enter a code from your app</small></span>
+            <span aria-hidden="true">›</span>
+          </button>
+          <button data-factor="sms" data-factor-id="fct_sms_1" data-action="challenge">
+            <span class="ico" aria-hidden="true">💬</span>
+            <span>Text message<small>Send a code to •••• •• 4471</small></span>
+            <span aria-hidden="true">›</span>
+          </button>
+        </div>
+        <p class="rl-note">No “Recovery code” row at all — not a disabled one. <code>recoveryAvailable</code> is
+          <code>false</code> (no unused codes) or missing (older server), and both mean “don't offer it”.</p>
+      </div>
+    </div>
+
+    <!-- ═══ Rate limited (429 RATE_LIMITED — shared limiter for factor + recovery codes) ═══ -->
+    <div class="state-label">State · too many attempts (429 RATE_LIMITED, fail-closed)</div>
+    <div class="card" data-component="mfa-challenge" data-state="rate-limited" data-http-status="429" data-factor="totp">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Enter your code</h2>
+        <div class="rl-callout" role="alert" data-error="rate-limited">
+          <span class="rl-callout__ico" aria-hidden="true">⏳</span>
+          <span><b>Too many attempts</b>
+            For your security we've paused verification. Try again in <b class="rl-wait" data-value="retry-after">4:59</b>.
+            Switching to another method won't skip the wait.</span>
+        </div>
+        <div class="otp" data-component="otp-input" role="group" aria-label="One-time code">
+          <input inputmode="numeric" maxlength="1" value="4" aria-label="digit 1" />
+          <input inputmode="numeric" maxlength="1" value="2" aria-label="digit 2" />
+          <input inputmode="numeric" maxlength="1" value="8" aria-label="digit 3" />
+          <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 4" />
+          <input inputmode="numeric" maxlength="1" value="5" aria-label="digit 5" />
+          <input inputmode="numeric" maxlength="1" value="9" aria-label="digit 6" />
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="verify-mfa" data-state="cooldown" disabled aria-disabled="true">Try again in 4:59</button>
+        </div>
+        <div class="switch"><a href="#" data-action="back-to-sign-in">Back to sign in</a></div>
+        <p class="rl-note">Wait comes from the 429's <code>Retry-After</code> header (seconds): show a live m:ss countdown in the
+          callout and on the disabled button, and enable “Try again” when it reaches zero. If the header is missing or not a
+          positive integer, show “Wait a few minutes, then try again.” with the button enabled. The entered code is kept
+          and not marked red (it wasn't judged wrong). A retry that still gets 429 restarts the countdown from the new header.</p>
+      </div>
+    </div>
+
     <!-- ═══ Delivery failed (SMS challenge couldn't send) ═══ -->
     <div class="state-label">State · couldn't send the text</div>
     <div class="card" data-component="mfa-challenge" data-state="error-delivery" data-factor="sms">
@@ -132,7 +198,7 @@
   </div>
   <div class="frame-nav">
     <span class="caption">Frame <b>05 / 06</b> · Step-up challenge · <b>/login/mfa</b></span>
-    <span><a class="btn btn-ghost" href="04-recovery-codes.html">← Recovery codes</a> <a class="btn btn-primary" href="06-remove-factor.html" style="text-decoration:none">Next: remove method →</a></span>
+    <span><a class="btn btn-ghost" href="04-recovery-codes.html">← Recovery codes</a> <a class="btn btn-ghost" href="07-recovery-code-entry.html">Recovery-code entry →</a> <a class="btn btn-primary" href="06-remove-factor.html" style="text-decoration:none">Next: remove method →</a></span>
   </div>
 </div>
 </body>

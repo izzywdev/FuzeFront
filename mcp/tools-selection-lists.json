@@ -6,7 +6,7 @@
   "tools": [
     {
       "name": "listSelectionLists",
-      "description": "[READ-ONLY] List selection lists in the caller's organization (GET /v1/selection-lists). Cursor-paginated. With include_shared=true also returns shared org/platform lists readable through visibility.",
+      "description": "[READ-ONLY] List selection lists in the caller's organization (GET /v1/selection-lists). Cursor-paginated; pages may be shorter than limit — even empty — while hasMore is true (rows the caller cannot read are filtered out after the page is cut). Always follow nextCursor until hasMore is false; an empty page does NOT mean no results. With include_shared=true also returns shared org/platform lists readable through visibility.",
       "mutates": false,
       "inputSchema": {
         "type": "object",

@@ -126,3 +126,32 @@ function statusToCode(status: number): SelectionListApiErrorCode {
       return 'UNKNOWN'
   }
 }
+
+/**
+ * Upper bound on pages {@link SelectionListClient.getEffectiveList} walks. The
+ * service paginates BEFORE it drops rows the caller cannot read, so a key
+ * lookup can meet a few empty, non-terminal pages; this stops a pathological or
+ * misbehaving service from being walked forever. Same bound as
+ * `@fuzeone/selection-lists-ui`.
+ */
+export const MAX_EFFECTIVE_LOOKUP_PAGES = 10
+
+/**
+ * Thrown by `getEffectiveList` when it followed {@link MAX_EFFECTIVE_LOOKUP_PAGES}
+ * empty, non-terminal pages without finding the list or reaching the end. It is
+ * never resolved as `null`: an exhausted walk is an unknown answer, not "no list".
+ */
+export class EffectiveLookupIncompleteError extends Error {
+  readonly incomplete = true as const
+  constructor(readonly pages: number) {
+    super(`Effective list lookup incomplete after ${pages} pages`)
+    this.name = 'EffectiveLookupIncompleteError'
+  }
+}
+
+/** Type guard for {@link EffectiveLookupIncompleteError}. */
+export function isEffectiveLookupIncompleteError(
+  err: unknown
+): err is EffectiveLookupIncompleteError {
+  return err instanceof EffectiveLookupIncompleteError
+}

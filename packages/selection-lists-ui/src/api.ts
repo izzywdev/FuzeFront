@@ -6,6 +6,7 @@
 import type {
   SelectionList,
   SelectionListItem,
+  QuotaScope,
   QuotaStatus,
   LocaleIndexResponse,
   LocaleEditorResponse,
@@ -19,6 +20,13 @@ import type {
 } from './types'
 
 const BASE = '/api/v1/selection-lists'
+
+/**
+ * The same-origin list collection path. Exported (not from the package index) for
+ * `shared-lists/core/api`, so the shared-lists wrappers build their URLs from the
+ * one constant and can never drift to a different base.
+ */
+export const SELECTION_LISTS_API_BASE = BASE
 
 // ── Authentication ────────────────────────────────────────────────────────────
 //
@@ -76,7 +84,12 @@ async function bearerFor(kind: TokenKind): Promise<string | null> {
   }
 }
 
-async function request<T>(
+/**
+ * The one authenticated, same-origin request path (org-scoped bearer, error
+ * decoration). Exported (not from the package index) so `shared-lists/core/api`
+ * rides the SAME auth wiring instead of growing a second one.
+ */
+export async function request<T>(
   url: string,
   options: RequestInit = {},
   tokenKind: TokenKind = 'org',
@@ -151,12 +164,30 @@ export async function getSelectionList(listId: string): Promise<SelectionList> {
 
 export async function listItems(
   listId: string,
-  params: { cursor?: string | null } = {},
+  params: {
+    cursor?: string | null
+    /**
+     * The service accepts `active` (the default) and `archived`; anything else,
+     * including the openapi's documented `all`, is a 400 (routes/items.ts). A
+     * caller wanting both reads the two statuses and combines them.
+     */
+    status?: 'active' | 'archived'
+    /** Page size (service default 50, max 200). */
+    limit?: number
+    /** Resolve labels in this locale (falls back along the service's chain). */
+    locale?: string
+    signal?: AbortSignal
+  } = {},
 ): Promise<PagedResponse<SelectionListItem>> {
   const qs = new URLSearchParams()
+  if (params.limit !== undefined) qs.set('limit', String(params.limit))
   if (params.cursor) qs.set('cursor', params.cursor)
+  if (params.status) qs.set('status', params.status)
+  if (params.locale) qs.set('locale', params.locale)
   const url = `${BASE}/${listId}/items${qs.toString() ? '?' + qs.toString() : ''}`
-  const { data } = await request<PagedResponse<SelectionListItem>>(url)
+  const { data } = await request<PagedResponse<SelectionListItem>>(url, {
+    signal: params.signal,
+  })
   return data
 }
 
@@ -203,9 +234,25 @@ export async function reorderItems(
 
 // ── Quota ─────────────────────────────────────────────────────────────────────
 
+/**
+ * `GET /v1/selection-lists/quota` as the service sends it
+ * (`SelectionListQuotaStatus`: `{ organization_id, quotas: [{ scope,
+ * applies_to, limit, current }] }`). The 4.0.0 UI read `scopes`, which the
+ * service has never sent, so the index threw a TypeError on the first 200; this
+ * accepts the wire `quotas` (and the legacy `scopes`) and always returns
+ * `{ scopes }`, dropping the fields the UI does not use.
+ */
+interface QuotaWire {
+  scopes?: QuotaScope[]
+  quotas?: QuotaScope[]
+}
+
 export async function getQuota(): Promise<QuotaStatus> {
-  const { data } = await request<QuotaStatus>(`${BASE}/quota`)
-  return data
+  const { data } = await request<QuotaWire>(`${BASE}/quota`)
+  const entries = data?.quotas ?? data?.scopes ?? []
+  return {
+    scopes: entries.map(({ scope, current, limit }) => ({ scope, current, limit })),
+  }
 }
 
 // ── Translations ──────────────────────────────────────────────────────────────
