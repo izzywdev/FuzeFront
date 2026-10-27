@@ -62,12 +62,16 @@ describe('isSwitcherContextOrg', () => {
 })
 
 describe('isProvisionedMembership', () => {
-  it('uses user_role when present', () => {
-    expect(isProvisionedMembership(org({ user_role: 'owner' }))).toBe(true)
-    expect(isProvisionedMembership(org({ user_role: null }))).toBe(false)
+  it('uses user_role when present — an explicit null beats type', () => {
+    // user_role !== undefined, so the user_role branch is taken and the type
+    // check is never reached: null != null is false → not a member. Fixtures
+    // carry an explicit type to make it unambiguous that user_role wins over it.
+    expect(isProvisionedMembership(org({ type: 'platform', user_role: 'owner' }))).toBe(true)
+    expect(isProvisionedMembership(org({ type: 'organization', user_role: null }))).toBe(false)
   })
 
-  it('falls back to excluding platform orgs when user_role is absent', () => {
+  it('falls back to excluding platform orgs when user_role is absent (undefined)', () => {
+    // No user_role key at all → user_role === undefined → type branch.
     expect(isProvisionedMembership(org({ type: 'platform' }))).toBe(false)
     expect(isProvisionedMembership(org({ type: 'organization' }))).toBe(true)
   })
