@@ -68,7 +68,11 @@
         "frames": [
           "01-app-list",
           "05-app-list-states"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "The App Management Console registry list at /apps (searchable / filterable / paginated table of every registered app) is a platform-administration surface with wide management tables; no end-user mobile flow."
+        }
       },
       {
         "id": "app-detail",
@@ -96,7 +100,11 @@
           "02-app-detail",
           "03-app-settings",
           "06-editor-states"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "App detail / settings editing at /apps/:appId is a platform-admin configuration surface (manifest, integration, registration settings); a dense editor with no end-user mobile layout."
+        }
       },
       {
         "id": "installations",
@@ -121,7 +129,11 @@
         "frames": [
           "04-installations",
           "07-installation-states"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Installation management at /apps/:appId/installations is a platform-admin console surface; no end-user mobile flow."
+        }
       }
     ],
     "components": [
@@ -318,5 +330,5 @@
       ]
     }
   ],
-  "stamp": "92c4bcf22ff5ccbd1af53ed8ea6e239f7cf55a43da04b01972343b53fab7b32f"
+  "stamp": "157b835e73c163659275eec9028c958eddb66cc55ba14c787872e41dbb2aa993"
 }

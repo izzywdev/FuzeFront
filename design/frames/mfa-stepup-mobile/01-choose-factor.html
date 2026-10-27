@@ -30,6 +30,7 @@
   .degrade-note { margin-top: 14px; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; }
   .state-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-wide);
     text-transform: uppercase; color: var(--text-tertiary); margin: 28px 0 10px; text-align: center; }
+  .recovery-note { margin-top: var(--space-4); font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.5; }
   /* loading skeleton rows */
   .sk-row { display: flex; align-items: center; gap: 14px; min-height: 56px; padding: 12px 14px;
     background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
@@ -57,10 +58,10 @@
 </head>
 <body>
 
-<div class="state-label">Default · choose a factor (mfa_required.factors)</div>
+<div class="state-label">Default · choose a factor (mfa_required.factors) · recoveryAvailable: true → frame 05</div>
 <div class="phone" data-frame="01-choose-factor" data-state="default" data-route="/login/mfa" data-viewport="375">
   <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Verify it's you</span></header>
-  <main class="m-body" data-panel="choose-factor" data-state="loaded">
+  <main class="m-body" data-panel="choose-factor" data-state="loaded" data-recovery-available="true">
     <p class="m-sub">Choose how you'd like to get your verification code.</p>
     <div class="picker" data-component="factor-picker">
       <button data-factor="totp" data-factor-id="fct_totp_1" data-action="challenge">
@@ -78,7 +79,7 @@
         <span><b>Text message</b><small>Send a code to •••• •• 4471</small></span>
         <span class="chevron" aria-hidden="true">›</span>
       </button>
-      <button data-factor="recovery" data-action="use-recovery">
+      <button data-factor="recovery" data-action="use-recovery" onclick="location.href='05-recovery-code.html'">
         <span class="ico" aria-hidden="true">🗝️</span>
         <span><b>Recovery code</b><small>Use one of your saved backup codes</small></span>
         <span class="chevron" aria-hidden="true">›</span>
@@ -86,6 +87,28 @@
     </div>
     <p class="degrade-note" data-honest-degrade>Only factors enrolled on this account are shown. Text message is offered
       only when <code class="mono">mfa.types</code> includes <code class="mono">sms</code> — never a button that can't deliver.</p>
+  </main>
+</div>
+
+<div class="state-label">Recovery not offered · recoveryAvailable false or absent (fail-closed)</div>
+<div class="phone" data-frame="01-choose-factor" data-state="no-recovery" data-route="/login/mfa">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Verify it's you</span></header>
+  <main class="m-body" data-panel="choose-factor" data-state="loaded" data-recovery-available="false">
+    <p class="m-sub">Choose how you'd like to get your verification code.</p>
+    <div class="picker" data-component="factor-picker">
+      <button data-factor="totp" data-factor-id="fct_totp_1" data-action="challenge">
+        <span class="ico" aria-hidden="true">🔑</span>
+        <span><b>Authenticator app</b><small>Enter a code from your app</small></span>
+        <span class="chevron" aria-hidden="true">›</span>
+      </button>
+      <button data-factor="sms" data-factor-id="fct_sms_1" data-action="challenge">
+        <span class="ico" aria-hidden="true">💬</span>
+        <span><b>Text message</b><small>Send a code to •••• •• 4471</small></span>
+        <span class="chevron" aria-hidden="true">›</span>
+      </button>
+    </div>
+    <p class="recovery-note">No “Recovery code” row, not even a disabled one. <code class="mono">recoveryAvailable</code>
+      is false (no unused codes) or missing (older server) — both mean don't offer it.</p>
   </main>
 </div>
 

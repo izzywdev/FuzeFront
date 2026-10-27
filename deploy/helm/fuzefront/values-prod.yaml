@@ -108,6 +108,13 @@ frontend:
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
 # the Phase 3 cutover. tag "" is rewritten by CI's release sed.
 securityService:
+  # Prod path: Cloudflare edge -> cloudflared tunnel -> ingress -> pod. Cloudflare
+  # records the true peer in X-Forwarded-For and the ingress appends the cloudflared
+  # pod, so the client is the 2nd entry from the right: 2 trusted hops. (Derived
+  # from the documented topology, NOT measured from this repo: confirm with one
+  # request through app.fuzefront.com that req.ip logs the real client; a value of
+  # 1 here would put every user in one bucket.)
+  trustProxyHops: 2
   enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
   # Synthetic account for post-prod e2e smoke (POST_PROD_EMAIL/POST_PROD_PASSWORD).
   # Fresh address (absent in prod) so the idempotent seed-admin hook does a clean
@@ -341,24 +348,16 @@ configMcp:
 a2a:
   enabled: true
   image:
-    # CORRECTED 2026-09-02: ghcr.io/izzywdev/fuzeagent-a2a (this pin's prior
-    # value) is a stale/abandoned image — last pushed 2026-08-24, still
-    # anonymously pullable but no longer built by anything. FuzeAgent's own
-    # release.yml ("Build & push a2a-shared" step) builds
-    # agent-templates/a2a/Dockerfile — the ONE shared A2A runtime — and
-    # publishes it ONLY as ghcr.io/izzywdev/fuze-a2a:{sha,latest}; that is
-    # also what FuzeAgent's own deploy/helm/a2a-shared/values-prod.yaml points
-    # at. (gate-a2a's own I1 default + the runtime standard doc still name
-    # `fuzeagent-a2a`; that is already-flagged gate/doc staleness, FuzeAgent
-    # PR #257 — an I1 finding against this file is that, not a new fork.)
-    repository: ghcr.io/izzywdev/fuze-a2a
-    # Plain CI-built SHA tag. Verified anonymously pullable 2026-09-09
-    # (anonymous GHCR token + manifest GET → HTTP 200 with OCI image index
-    # media type). Re-pin when FuzeAgent's CI publishes a new build.
-    # Previous tag `624956d8983b` returned HTTP 404 from GHCR on 2026-09-09
-    # (likely purged from the registry on a retention policy); replaced with
-    # the most recent tag that resolves clean.
-    tag: "98b9b314bb0d"
+    # Interim: shared FuzeAgent A2A runtime. The first build-a2a-image.yml run
+    # on master (triggered by merging this PR) publishes the product image
+    # ghcr.io/izzywdev/fuzefront-a2a and opens a tag-bump PR that migrates
+    # this field to fuzefront-a2a:<sha> in one atomic step. Using the base
+    # image here avoids an ImagePullBackOff during the ~10-20 min build window.
+    repository: ghcr.io/izzywdev/fuzefront-a2a
+    # Plain CI-built SHA tag. Verified anonymously pullable 2026-09-09.
+    # Re-pinned automatically by the tag-bump PR from build-a2a-image.yml
+    # (first run migrates to fuzefront-a2a, subsequent runs bump the sha).
+    tag: "dd5ef9838b06"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -407,8 +406,6 @@ a2a:
     keyId: a2a-v1
   tenants:
     - tenant: FuzeFront
-      repo: izzywdev/FuzeFront
-      ref: master   # NOT main — FuzeFront's default branch is master
       enabled: true
       entryRole: app-shell-platform
       external: false
@@ -418,7 +415,10 @@ a2a:
 
 a2aDeploy:
   replicas: 1
-  reposGitTokenSecretRef: null   # public repo — anonymous clone
+  # Static-card topology: skip the repo-sync init container.
+  # The product image bakes in agent-card.json at build time.
+  skipRepoSync: true
+  reposGitTokenSecretRef: null   # unused with skipRepoSync
   providerApiKeySecretRef: { name: fuzefront-secrets, key: LITELLM_MASTER_KEY }
   providerBaseUrl: http://litellm.fuzeinfra.svc.cluster.local:4000
   gitImage: alpine/git:latest

@@ -8,11 +8,14 @@
 # argue with it.
 #
 # Tool names are the operationId from services/selection-list-service/openapi.yaml
-# — use the exact operationId string or the entry is silently ignored.
+# — use the exact operationId string. The gateway REFUSES TO BOOT on a key that
+# matches no operation (packages/mcp-gateway/src/spec.ts), and
+# packages/mcp-gateway/test/overrides-conformance.test.ts fails CI on it, so a
+# stale or misspelled key can no longer be silently ignored.
 #
 # NOTHING HERE CHANGES A DERIVED CLASSIFICATION. Every entry restates the value
 # the gateway would have derived anyway, and adds the contract citation that
-# justifies it. That is the intended use of this file for an API whose methods
+# justifies it. (Contract 4.1.0 adds forkSelectionList, a plain write.) That is the intended use of this file for an API whose methods
 # already tell the truth — it documents the reasoning without moving a tool
 # between the read and write halves of the surface.
 # =============================================================================
@@ -40,6 +43,34 @@ tools:
       Sets item status=archived; data is retained. The sibling DELETE supports
       purge=true which is irreversible — this endpoint does not.
 
+  # --- FORK (4.1.0, copy-on-write) --------------------------------------------
+
+  # POST /v1/selection-lists/{listId}/fork — copies a `platform` (common) list
+  # into the caller's organization under the SAME key (design record D6,
+  # docs/planning/selection-lists-shared-and-fork.md). A write: it creates a
+  # list, its items and translations, an owner grant and outbox events. The
+  # method-derived classification (POST, not a /resolve-style path) is already
+  # mutates:true / reversible; restated so the reasoning is pinned.
+  #
+  # Reversible: archiving the fork (POST .../archive) reverts the org to the
+  # common list, and a repeat call is idempotent per (organization, source) —
+  # 201 for the new fork, 200 for the existing one, nothing re-copied. Purging
+  # the fork is a different operation (deleteSelectionList) and carries its own
+  # irreversible classification.
+  #
+  # No authorization is declared or weakened here. The service enforces Permit
+  # (SelectionListCatalog:create + source SelectionList:read / read_shared, per
+  # the spec's x-permit-* extensions) against the caller's forwarded org-scoped
+  # bearer token; the gateway holds no credential of its own.
+  forkSelectionList:
+    mutates: true
+    reversibility: reversible
+    reason: >-
+      Creates an org-owned copy of a common list under the same key. Idempotent
+      per (organization, source): a repeat call returns the existing fork.
+      Reversible by archiving the fork, which reverts the organization to the
+      common list; purging the fork is the separate irreversible DELETE.
+
   # --- POST-AS-READ (body-as-query) ------------------------------------------
 
   # POST /v1/resolve — bulk-resolves item ids to labels. POST because the id
@@ -57,7 +88,7 @@ tools:
 
   # --- IRREVERSIBLE REVOKE ---------------------------------------------------
 
-  # DELETE /v1/selection-lists/{listId}/access/{grantId} — permanently removes
+  # DELETE /v1/selection-lists/{listId}/access/{userId} — permanently removes
   # the access grant. A new grant must be created separately to restore access;
   # there is no unrevoke endpoint.
   revokeSelectionListAccess:

@@ -37,7 +37,7 @@ FuzeFront is open to developers, platform engineers, architects, engineering lea
 | **An enterprise architect / CTO** | Review the [Architecture & Governance Guardrails](docs/SOFTWARE_FACTORY.md) and join the [Architecture Review](https://github.com/izzywdev/FuzeFront/issues/1015). |
 | **A software house / agency** | Become a [Design Partner](https://github.com/izzywdev/FuzeFront/issues/1016) to test agentic client delivery against production workloads. |
 | **A solo developer / founder** | Run the [Adoption Quickstart](docs/ADOPTION_QUICKSTART.md) and spin up a federated application in minutes. |
-| **A platform / DevOps engineer** | Test the Kubernetes path (kind/k3s/cloud) and challenge our runtime and infrastructure assumptions. |
+| **A platform / DevOps engineer** | Test the Kubernetes path (kind/k3s/cloud), work through the [Production Readiness Checklist](docs/PRODUCTION_READINESS_CHECKLIST.md), and challenge our runtime and infrastructure assumptions. |
 | **A contributor** | Read [COMMUNITY.md](COMMUNITY.md), pick a focused issue, and submit a PR. |
 
 ### We actively want criticism
@@ -233,7 +233,7 @@ sequenceDiagram
 docker compose -f docker-compose.e2e.yml up -d --build
 ```
 
-This boots the platform shell, backend API, security service and Authentik. Open http://localhost:4173 and create an account. To sign in and run the federated sample application (`clock-app`), follow the [Adoption Quickstart](docs/ADOPTION_QUICKSTART.md#1-developer-run-the-platform-locally), which also covers Windows troubleshooting.
+This boots the platform shell, backend API, security service and Authentik. Open http://localhost:4173 and create an account. To sign in and run the federated sample application (`clock-app`), follow the [Adoption Quickstart](docs/ADOPTION_QUICKSTART.md#1-developer-run-the-platform-locally), which also covers Windows troubleshooting. For the full onboarding contract behind that sample app — registration, auth/routing assumptions, and health/heartbeat — see the [reference app onboarding walkthrough](docs/guides/reference-app-onboarding.md).
 
 ### Local Kubernetes
 
@@ -288,7 +288,12 @@ Configure the federation contract, register with the FuzeFront API, and begin pu
 
 Production deployments leverage Kubernetes and GitOps practices. Current deployment assets support k3s and managed Kubernetes clusters orchestrated through Argo CD, with GHCR images and automated TLS via cert-manager.
 
-See:
+Evaluating FuzeFront for a real workload? Start with the
+[Production Readiness Checklist](docs/PRODUCTION_READINESS_CHECKLIST.md) —
+required vs. recommended items across auth, secrets, ingress/TLS, backups,
+and GitOps, plus what FuzeFront does **not** guarantee for you.
+
+See also:
 - `docs/PRODUCTION_DEPLOYMENT.md`
 - `deploy/contabo/README.md`
 - `deploy/helm/fuzefront/README.md`
