@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { useForm } from 'react-hook-form'
 import { Mail, Phone, MapPin, Send } from 'lucide-react'
-import { Center, IconTile, Container, FieldLabel } from '@fuzefront/design-system'
+import { Center, IconTile, Container, FieldLabel, Text, GradientText, PageShell } from '@fuzefront/design-system'
 import { useNotifications } from '../contexts/NotificationContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
@@ -77,7 +77,7 @@ export const ContactPage: React.FC = () => {
   }
 
   return (
-    <div className="bg-white pt-16">
+    <PageShell>
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
         <Container size="7xl">
           <Center
@@ -87,7 +87,7 @@ export const ContactPage: React.FC = () => {
             transition={{ duration: 0.8 }}
           >
             <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
-              Get in <span className="gradient-text">Touch</span>
+              Get in <GradientText gradient="var(--primary-gradient)">Touch</GradientText>
             </h1>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
               Ready to build something amazing? Let's discuss how FuzeFront can help.
@@ -115,7 +115,7 @@ export const ContactPage: React.FC = () => {
                     <Mail size={24} />
                   </IconTile>
                   <div>
-                    <h3 className="font-medium text-gray-900">Email</h3>
+                    <Text as="h3" weight="medium">Email</Text>
                     <p className="text-gray-600">contact@fuzefront.com</p>
                   </div>
                 </div>
@@ -125,7 +125,7 @@ export const ContactPage: React.FC = () => {
                     <Phone size={24} />
                   </IconTile>
                   <div>
-                    <h3 className="font-medium text-gray-900">Phone</h3>
+                    <Text as="h3" weight="medium">Phone</Text>
                     <a href="tel:+16502763313" className="text-gray-600 hover:text-primary-600 transition-colors">
                       (650) 276-3313
                     </a>
@@ -137,7 +137,7 @@ export const ContactPage: React.FC = () => {
                     <MapPin size={24} />
                   </IconTile>
                   <div>
-                    <h3 className="font-medium text-gray-900">Office</h3>
+                    <Text as="h3" weight="medium">Office</Text>
                     <p className="text-gray-600">San Francisco, CA</p>
                   </div>
                 </div>
@@ -227,7 +227,7 @@ export const ContactPage: React.FC = () => {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   >
                     <option value="">Select your interest</option>
-                    <option value="platform">FuzeFront Platform</option>
+                    <option value="platform">FuzeFront</option>
                     <option value="infrastructure">FuzeInfra</option>
                     <option value="consultation">Consultation</option>
                     <option value="partnership">Partnership</option>
@@ -288,6 +288,6 @@ export const ContactPage: React.FC = () => {
           </div>
         </Container>
       </section>
-    </div>
+    </PageShell>
   )
 }

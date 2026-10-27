@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@fuzefront/shared/kafka": ["../../../shared/src/kafka/index.ts"],
+      "@izzywdev/fuzefront-identity": ["../../identity/src/index.ts"]
+    },
+    "resolveJsonModule": true,
+    "types": ["node", "jest"]
+  },
+  "include": ["../src/**/*", "./**/*"]
+}

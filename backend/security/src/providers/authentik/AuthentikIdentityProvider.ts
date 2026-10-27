@@ -24,7 +24,8 @@ import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db as defaultDb } from '../../config/database'
 import { logger } from '../../lib/logger'
 import { getOidcService, type OIDCServiceLike } from '../../services/oidc'
-import { currentTenant } from './tenants'
+import { currentTenant, currentTenantOrUndefined } from './tenants'
+import { TokenError } from '../errors'
 import { assertAmbientTenant, sessionTenantId } from '../../middleware/tenant-context'
 import { authentikPasswordLogin as defaultPasswordLogin } from '../../services/authentikPassword'
 import { runInternalProvision } from '../../services/organizationProvisioning'
@@ -34,8 +35,10 @@ import {
   authentikSetPassword as defaultSetPassword,
 } from '../../services/authentikPassword'
 import { putBrokerCode, takeBrokerCode } from '../../services/brokerCodes'
+import { ORG_SESSION_KIND } from '../../services/orgSessionToken'
 import type {
   IdentityProvider,
+  SessionTokenOptions,
   BrokeredSession,
   BrokeredUser,
   NormalizedIdentity,
@@ -82,6 +85,7 @@ import {
   type NotificationClient,
 } from './notifications'
 import * as totp from './totp'
+import { ChallengeNotActiveError, RecoveryCodeInvalidError } from '../errors'
 import {
   idpProxyPrefix,
   jwtSecret,
@@ -93,11 +97,43 @@ import {
 export class MfaRequiredError extends Error {
   constructor(
     public challengeId: string,
-    public factors: { factorId: string; type: MfaFactorType }[]
+    public factors: { factorId: string; type: MfaFactorType }[],
+    /** True when the user holds >=1 unused recovery code (contract 1.3.0). */
+    public recoveryAvailable: boolean = false
   ) {
     super('mfa_required')
     this.name = 'MfaRequiredError'
   }
+}
+
+/**
+ * Canonical form of a user-typed recovery code: trim, drop spaces/hyphens,
+ * case-fold. Codes are stored as sha256 of this canonical form.
+ */
+/** Scheme 2: >= 80 bits (10 random bytes). Scheme 1 (legacy, 40 bit) is never redeemable. */
+export const RECOVERY_SCHEME_CURRENT = 2
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+
+/** 10 random bytes (80 bits) as 16 Crockford-base32 chars, grouped XXXX-XXXX-XXXX-XXXX. */
+export function generateRecoveryCode(): string {
+  const bytes = crypto.randomBytes(10)
+  let bits = 0
+  let acc = 0
+  let out = ''
+  for (const b of bytes) {
+    acc = (acc << 8) | b
+    bits += 8
+    while (bits >= 5) {
+      out += CROCKFORD[(acc >>> (bits - 5)) & 31]
+      bits -= 5
+    }
+    acc &= (1 << bits) - 1
+  }
+  return out.match(/.{4}/g)!.join('-')
+}
+
+export function normalizeRecoveryCode(raw: string): string {
+  return String(raw ?? '').replace(/[\s-]+/g, '').toLowerCase()
 }
 
 /** Thrown when an email already has an account (signup conflict). */
@@ -124,6 +160,9 @@ export class UnauthorizedError extends Error {
   }
 }
 
+// TokenError lives in the provider-neutral layer; re-exported for existing importers.
+export { TokenError }
+
 /**
  * Thrown when an addressed resource does not exist for the CALLER (maps to 404).
  *
@@ -135,6 +174,42 @@ export class NotFoundError extends Error {
   constructor(message = 'Not found') {
     super(message)
     this.name = 'NotFoundError'
+  }
+}
+
+/**
+ * Thrown when removing a factor would leave a user who has MFA enabled (>=1
+ * ACTIVE factor) with none (maps to 409 LAST_FACTOR). Removing the last active
+ * factor would silently turn two-factor off for the account.
+ */
+export class LastFactorError extends Error {
+  constructor(message = 'Two-factor is required for this account; add another method before removing your last one') {
+    super(message)
+    this.name = 'LastFactorError'
+  }
+}
+
+/** Thrown by changePassword when the account has no password to change (maps to 409 NO_PASSWORD). */
+export class NoPasswordError extends Error {
+  constructor(message = 'This account has no password; set one first') {
+    super(message)
+    this.name = 'NoPasswordError'
+  }
+}
+
+/** Thrown by changePassword when the supplied current password is wrong (maps to 400 INVALID_CREDENTIALS). */
+export class CurrentPasswordInvalidError extends Error {
+  constructor(message = 'Current password is incorrect') {
+    super(message)
+    this.name = 'CurrentPasswordInvalidError'
+  }
+}
+
+/** Thrown by changePassword when the new password fails policy (maps to 422 PASSWORD_POLICY). */
+export class PasswordPolicyRejectedError extends Error {
+  constructor(message = 'New password does not meet the password policy') {
+    super(message)
+    this.name = 'PasswordPolicyRejectedError'
   }
 }
 
@@ -161,6 +236,8 @@ interface SocialState {
 interface MfaChallenge {
   userId: string
   expiresAt: number
+  /** Set synchronously while a recovery redemption is in flight (single-flight). */
+  inFlight?: boolean
 }
 /** An in-flight LINK handshake, bound to the account that started it. */
 interface SocialLinkState {
@@ -188,6 +265,35 @@ const CHALLENGE_TTL_MS = 5 * 60_000
 const EMAIL_VERIFY_TTL_MS = 30 * 60_000
 /** Reset tokens are short-lived — they are a credential-change capability. */
 const PASSWORD_RESET_TTL_MS = 30 * 60_000
+
+/**
+ * Per-address resend cooldown for the PUBLIC send endpoints. A repeat request
+ * inside this window coalesces into the live challenge and sends nothing, so
+ * the endpoints cannot be used to mail-bomb an account or burn provider quota.
+ * Derived from the live row's expiry (created = expires_at - TTL), so it needs
+ * no schema change and holds across pods.
+ */
+function resendCooldownMs(): number {
+  const n = Number(process.env.EMAIL_RESEND_COOLDOWN_SEC)
+  return (Number.isFinite(n) && n >= 0 ? n : 60) * 1000
+}
+
+/**
+ * The CURRENT tenant's public origin for links in outbound mail. Taken from the
+ * server-side tenant registry only (never client input); `undefined` when there
+ * is no tenant context or the value is not an http(s) origin, in which case
+ * email-service falls back to its own APP_BASE_URL.
+ */
+function tenantMailOrigin(): string | undefined {
+  const raw = currentTenantOrUndefined()?.appBaseUrl
+  if (!raw) return undefined
+  try {
+    const u = new URL(raw)
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.origin : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * Password reset needs only a deliverable email channel — unlike registration
@@ -309,8 +415,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
         const user = await defaultSignup({
           email: input.email,
           password: input.password,
-          firstName: input.firstName,
-          lastName: input.lastName,
+          name: input.name,
         })
         return { ...user, roles: user.roles ?? [] } as BrokeredUser
       })
@@ -332,13 +437,18 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       (async (identity, provider) => {
         // Provision/link IN the identity store so the IdP stays system-of-record
         // and password+Google de-dupe to ONE account by email.
-        const pk = await findOrCreateUserPk(identity.email, identity.firstName, identity.lastName)
+        const pk = await findOrCreateUserPk(
+          identity.email,
+          // Prefer the IdP's own single display name; only if it sent none fall
+          // back to joining the parts it did send (Google always sends `name`).
+          identity.name ?? ([identity.firstName, identity.lastName].filter(Boolean).join(' ') || undefined)
+        )
         await ensureOAuthConnection(pk, provider, identity.sub)
       })
   }
 
   // ── Session minting ───────────────────────────────────────────────────────
-  private async mintSession(user: BrokeredUser, ctx?: SessionContext): Promise<BrokeredSession> {
+  private async mintSession(user: BrokeredUser, ctx?: SessionContext, trx?: any): Promise<BrokeredSession> {
     const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(this.now() + SESSION_TTL_MS)
     // `tid` binds the session to the tenant that minted it. Without it a token
@@ -354,7 +464,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     const token = jwt.sign({ userId: user.id, sessionId, tid: sessionTenantId() }, jwtSecret(), {
       expiresIn: '24h',
     })
-    await this.db('sessions').insert({
+    await (trx ?? this.db)('sessions').insert({
       id: sessionId,
       user_id: user.id,
       expires_at: expiresAt,
@@ -385,6 +495,19 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return rows.map(rowToFactor)
   }
 
+  /** Fail-safe: any lookup error means "not available" and never blocks login. */
+  private async hasUnusedRecoveryCode(userId: string): Promise<boolean> {
+    try {
+      const rows = await this.db('mfa_recovery_codes')
+        .where({ user_id: userId, used: false, scheme_version: RECOVERY_SCHEME_CURRENT })
+        .select('id')
+      return rows.length > 0
+    } catch (err) {
+      logger.warn({ userId, err }, 'authentik: recovery-code availability lookup failed')
+      return false
+    }
+  }
+
   /** Gate a freshly-authenticated user through MFA step-up when factors exist. */
   private async sessionOrChallenge(
     user: BrokeredUser,
@@ -399,7 +522,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       })
       throw new MfaRequiredError(
         challengeId,
-        factors.map(f => ({ factorId: f.factorId, type: f.type }))
+        factors.map(f => ({ factorId: f.factorId, type: f.type })),
+        await this.hasUnusedRecoveryCode(user.id)
       )
     }
     return this.mintSession(user, ctx)
@@ -575,10 +699,23 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       )) as BrokeredUser
     }
 
-    // Mint the session now and hand back a single-use opaque code (never a token
-    // in the URL). Social sign-in does not re-gate MFA at the browser hop.
-    const session = await this.mintSession(user, ctx)
+    // Hand back a single-use opaque code (never a token in the URL). Social
+    // sign-in MUST honour MFA exactly like password login: a user with an active
+    // factor gets NO session here. The code carries only the user, and redemption
+    // (`exchangeCode`) answers with an `mfa_required` challenge bound to that
+    // user. Otherwise a linked social account would bypass the second factor.
     const code = crypto.randomBytes(32).toString('hex')
+    const activeFactors = await this.loadActiveFactors(user.id)
+    if (activeFactors.length > 0) {
+      putBrokerCode(code, {
+        mfaPendingUser: user,
+        ctx: ctx ? { ip: ctx.ip ?? null, userAgent: ctx.userAgent ?? null } : undefined,
+        expiresAt: this.now() + CODE_TTL_MS,
+      })
+      console.warn(`[security] social sign-in for user ${user.id} deferred to MFA step-up`)
+      return { code, redirectTo: st.redirectTo || '/', returnOrigin: st.returnOrigin }
+    }
+    const session = await this.mintSession(user, ctx)
     // Shared store: a code minted here OR by the legacy /api/auth/oidc/callback
     // is redeemable by the SPA's /api/v1/security/session/exchange.
     putBrokerCode(code, {
@@ -606,7 +743,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     if (!entry) {
       throw new UnauthorizedError('invalid or expired code')
     }
-    return { token: entry.token, sessionId: entry.sessionId, user: entry.user }
+    if (entry.mfaPendingUser) {
+      // Re-checks factors at redemption: throws MfaRequiredError (challenge
+      // bound to this user) or mints a session if the factors were since removed.
+      return this.sessionOrChallenge(entry.mfaPendingUser, entry.ctx)
+    }
+    return { token: entry.token!, sessionId: entry.sessionId!, user: entry.user! }
   }
 
   // ── Signup (server-brokered against Authentik enrollment) ─────────────────
@@ -706,12 +848,27 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   }
 
   // ── Identity / session inspection ─────────────────────────────────────────
-  private verifySessionToken(token: string): { userId: string; sessionId?: string; tid?: string; iat?: number; exp?: number } {
-    let decoded: { userId: string; sessionId?: string; tid?: string }
+  private verifySessionToken(
+    token: string,
+    opts: SessionTokenOptions = {}
+  ): { userId: string; sessionId?: string; tid?: string; iat?: number; exp?: number } {
+    let decoded: { userId: string; sessionId?: string; tid?: string; kind?: unknown }
     try {
-      decoded = jwt.verify(token, jwtSecret()) as any
+      // HS256 pinned: every platform session is minted HS256.
+      decoded = jwt.verify(token, jwtSecret(), { algorithms: ['HS256'] }) as any
     } catch {
       throw new UnauthorizedError('invalid token')
+    }
+    // Only a PLAIN session (no `kind`) is an account credential. The org-scoped
+    // token from POST /api/organizations/:id/session-token shares JWT_SECRET and
+    // carries the same userId/sessionId, so without this check a 15-minute token
+    // handed to an org-scoped service (selection-list-service) could set a
+    // password, link a social login, regenerate MFA recovery codes or revoke the
+    // user's other sessions here. It is accepted ONLY where a caller opts in
+    // (the authz decision API, which org-scoped services call WITH that token).
+    if (decoded.kind !== undefined) {
+      const orgSessionAllowed = opts.allowOrgSession === true && decoded.kind === ORG_SESSION_KIND
+      if (!orgSessionAllowed) throw new UnauthorizedError('invalid token')
     }
     // A valid SIGNATURE is not enough: every tenant's sessions are signed with
     // the same secret, so a token minted in one directory would otherwise be
@@ -725,8 +882,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return decoded as any
   }
 
-  private async loadUser(userId: string): Promise<BrokeredUser> {
-    const row = await this.db('users').where('id', userId).first()
+  private async loadUser(userId: string, trx?: any): Promise<BrokeredUser> {
+    const row = await (trx ?? this.db)('users').where('id', userId).first()
     if (!row) throw new UnauthorizedError('user not found')
     return {
       id: row.id,
@@ -738,8 +895,11 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     }
   }
 
-  async getUserInfo(token: string): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }> {
-    const decoded = this.verifySessionToken(token)
+  async getUserInfo(
+    token: string,
+    opts: SessionTokenOptions = {}
+  ): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }> {
+    const decoded = this.verifySessionToken(token, opts)
     // Session must still exist (revocation is authoritative).
     if (decoded.sessionId) {
       const session = await this.db('sessions').where('id', decoded.sessionId).first()
@@ -906,20 +1066,55 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
   async removeFactor(token: string, factorId: string): Promise<void> {
     const { user } = await this.getUserInfo(token)
-    await this.db('mfa_factors').where({ id: factorId, user_id: user.id }).del()
+    // Atomic last-factor guard. The user row is locked FOR UPDATE for the
+    // duration of the transaction, so two concurrent removals for the same user
+    // serialize: the second re-counts AFTER the first commits and is refused.
+    // Without the lock, two parallel deletes of the last two factors could each
+    // see "2 active" and both succeed, leaving MFA silently disabled.
+    await this.db.transaction(async (trx: any) => {
+      await trx('users').where({ id: user.id }).forUpdate().first()
+      const target = await trx('mfa_factors').where({ id: factorId, user_id: user.id }).first()
+      if (!target) return // idempotent
+      if (target.status === 'active') {
+        const rows = await trx('mfa_factors').where({ user_id: user.id, status: 'active' }).select('id')
+        if (rows.length <= 1) {
+          console.warn(
+            `[security] removeFactor blocked (LAST_FACTOR) for user ${user.id}: factor ${factorId} is the last active factor`
+          )
+          throw new LastFactorError()
+        }
+      }
+      await trx('mfa_factors').where({ id: factorId, user_id: user.id }).del()
+    })
   }
 
   async regenerateRecoveryCodes(token: string): Promise<string[]> {
     const { user } = await this.getUserInfo(token)
-    await this.db('mfa_recovery_codes').where({ user_id: user.id }).del()
-    const codes: string[] = []
-    for (let i = 0; i < 10; i++) {
-      codes.push(crypto.randomBytes(5).toString('hex'))
-    }
-    await this.db('mfa_recovery_codes').insert(
-      codes.map(c => ({ id: uuidv4(), user_id: user.id, code_hash: sha256(c), used: false }))
-    )
+    const codes = Array.from({ length: 10 }, () => generateRecoveryCode())
+    // One transaction under a per-user row lock: two overlapping regenerations
+    // serialize, so exactly one 10-code set survives (never 20 live codes).
+    await this.db.transaction(async (trx: any) => {
+      await trx('users').where({ id: user.id }).forUpdate().first()
+      await trx('mfa_recovery_codes').where({ user_id: user.id }).del()
+      await trx('mfa_recovery_codes').insert(
+        codes.map(c => ({
+          id: uuidv4(),
+          user_id: user.id,
+          code_hash: sha256(normalizeRecoveryCode(c)),
+          used: false,
+          scheme_version: RECOVERY_SCHEME_CURRENT,
+        }))
+      )
+    })
     return codes
+  }
+
+  async getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }> {
+    const { user } = await this.getUserInfo(token)
+    const rows: Array<{ used: boolean }> = await this.db('mfa_recovery_codes')
+      .where({ user_id: user.id, scheme_version: RECOVERY_SCHEME_CURRENT })
+      .select('used')
+    return { remaining: rows.filter(r => !r.used).length, total: rows.length }
   }
 
   // ── MFA login step-up ─────────────────────────────────────────────────────
@@ -948,26 +1143,103 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return { challengeId, factorId, delivered: false }
   }
 
+  /**
+   * Synchronously claim a challenge for ONE in-flight proof (factor OR recovery).
+   * No await between the check and the flag, so concurrent proofs on the same
+   * challenge cannot both proceed. Always pair with releaseChallenge in finally.
+   */
+  private claimChallenge(challengeId: string): MfaChallenge {
+    const ch = this.mfaChallenges.get(challengeId)
+    if (!ch || ch.expiresAt < this.now() || ch.inFlight) {
+      if (ch && ch.expiresAt < this.now()) this.mfaChallenges.delete(challengeId)
+      throw new ChallengeNotActiveError()
+    }
+    ch.inFlight = true
+    return ch
+  }
+
+  private releaseChallenge(ch: MfaChallenge): void {
+    ch.inFlight = false
+  }
+
+  /** After an await: the claimed challenge must still be the live one. */
+  private assertStillClaimed(challengeId: string, ch: MfaChallenge): void {
+    if (this.mfaChallenges.get(challengeId) !== ch || ch.expiresAt < this.now()) {
+      throw new ChallengeNotActiveError()
+    }
+  }
+
   async verifyMfa(
     challengeId: string,
     factorId: string,
     code: string,
     ctx?: SessionContext
   ): Promise<BrokeredSession> {
-    const ch = this.mfaChallenges.get(challengeId)
-    if (!ch || ch.expiresAt < this.now()) {
+    const ch = this.claimChallenge(challengeId)
+    try {
+      const factor = await this.db('mfa_factors')
+        .where({ id: factorId, user_id: ch.userId, status: 'active' })
+        .first()
+      if (!factor) throw new UnauthorizedError('factor not found')
+      const ok = await this.verifyFactorCode(factor, code)
+      if (!ok) throw new UnauthorizedError('invalid code')
+      this.assertStillClaimed(challengeId, ch)
+      const user = await this.loadUser(ch.userId)
+      const session = await this.mintSession(user, ctx)
       this.mfaChallenges.delete(challengeId)
-      throw new UnauthorizedError('invalid or expired challenge')
+      return session
+    } finally {
+      this.releaseChallenge(ch)
     }
-    const factor = await this.db('mfa_factors')
-      .where({ id: factorId, user_id: ch.userId, status: 'active' })
-      .first()
-    if (!factor) throw new UnauthorizedError('factor not found')
-    const ok = await this.verifyFactorCode(factor, code)
-    if (!ok) throw new UnauthorizedError('invalid code')
-    this.mfaChallenges.delete(challengeId)
-    const user = await this.loadUser(ch.userId)
-    return this.mintSession(user, ctx)
+  }
+
+  /**
+   * Redeem a single-use recovery code against a login challenge.
+   *
+   * Atomicity: the code is burned by one conditional UPDATE
+   * (`used=false` -> `true`, rowcount checked) inside a transaction that also
+   * mints the session (same connection), so two concurrent redemptions of the
+   * same code succeed at most once and a later failure rolls the burn back. The
+   * challenge is claimed synchronously (shared with the factor path) so no two
+   * proofs can complete one challenge. A failed attempt consumes nothing and
+   * leaves the challenge usable. The code is never logged.
+   */
+  async verifyMfaRecovery(
+    challengeId: string,
+    recoveryCode: string,
+    ctx?: SessionContext
+  ): Promise<BrokeredSession> {
+    const ch = this.claimChallenge(challengeId)
+    try {
+      const normalized = normalizeRecoveryCode(recoveryCode)
+      if (!normalized) throw new RecoveryCodeInvalidError()
+      const codeHash = sha256(normalized)
+      const session = await this.db.transaction(async (trx: any) => {
+        this.assertStillClaimed(challengeId, ch)
+        // Lock order is user -> codes -> sessions on EVERY path (regeneration
+        // locks the users row first too). Taking the codes row first and then the
+        // session insert's FK key-share lock on users deadlocks against it.
+        await trx('users').where({ id: ch.userId }).forUpdate().first()
+        const burned = await trx('mfa_recovery_codes')
+          .where({ user_id: ch.userId, code_hash: codeHash, used: false, scheme_version: RECOVERY_SCHEME_CURRENT })
+          .update({ used: true })
+        if (!burned) throw new RecoveryCodeInvalidError()
+        // Reads + session insert ride the transaction connection (no second
+        // pool connection; the session rolls back with the code burn).
+        const user = await this.loadUser(ch.userId, trx)
+        return this.mintSession(user, ctx, trx)
+      })
+      this.mfaChallenges.delete(challengeId)
+      logger.info({ userId: ch.userId, outcome: 'redeemed' }, 'authentik: recovery code redeemed')
+      return session
+    } catch (err) {
+      if (err instanceof RecoveryCodeInvalidError) {
+        logger.info({ userId: ch.userId, outcome: 'invalid_code' }, 'authentik: recovery redeem failed')
+      }
+      throw err
+    } finally {
+      this.releaseChallenge(ch)
+    }
   }
 
   // ── Self-service password reset ───────────────────────────────────────────
@@ -1000,6 +1272,21 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       return
     }
 
+    // Cooldown: a live challenge minted inside the window coalesces this request
+    // (nothing sent, nothing minted). Silent, so the caller's 202 is identical.
+    const live = await this.db('password_resets')
+      .where({ user_id: user.id, consumed: false })
+      .first()
+    if (
+      live &&
+      new Date(live.expires_at).getTime() > this.now() + PASSWORD_RESET_TTL_MS - resendCooldownMs()
+    ) {
+      logger.info({ contact: maskContact(user.email) }, 'authentik: password reset coalesced (cooldown)')
+      return
+    }
+
+    const mailOrigin = tenantMailOrigin()
+
     // Invalidate any outstanding challenge for this user, so a reset request
     // supersedes its predecessors rather than leaving several live tokens.
     await this.db('password_resets')
@@ -1017,7 +1304,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     })
 
     try {
-      await this.notifications.sendPasswordReset(user.email, resetToken)
+      await this.notifications.sendPasswordReset(user.email, resetToken, mailOrigin)
     } catch (err) {
       // Dispatch failure must not become an enumeration oracle (a 5xx for real
       // accounts only). Burn the token and resolve; the user can retry.
@@ -1025,7 +1312,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
         .where({ token_hash: sha256(resetToken) })
         .update({ consumed: true })
       logger.error(
-        { contact: maskContact(user.email), err },
+        { contact: maskContact(user.email), userId: user.id, err: (err as Error)?.message },
         'authentik: password reset dispatch failed'
       )
     }
@@ -1046,15 +1333,16 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     }
 
     const row = await this.db('password_resets')
-      .where({ token_hash: sha256(token), consumed: false })
+      .where({ token_hash: sha256(token) })
       .first()
-    // Unknown, already-consumed, and expired all fail identically.
-    if (!row || new Date(row.expires_at).getTime() < this.now()) {
-      throw new InvalidInputError('invalid or expired reset token')
+    if (!row) throw new TokenError('TOKEN_INVALID', 'invalid reset token')
+    // Already-consumed and expired share a remedy for the user: request a new link.
+    if (row.consumed || new Date(row.expires_at).getTime() < this.now()) {
+      throw new TokenError('TOKEN_EXPIRED', 'reset token expired or already used')
     }
 
     const user = await this.db('users').where({ id: row.user_id }).first()
-    if (!user) throw new InvalidInputError('invalid or expired reset token')
+    if (!user) throw new TokenError('TOKEN_INVALID', 'invalid reset token')
 
     // Set the credential in the identity store FIRST. If this throws (policy
     // rejection / store unavailable) the token stays live so a valid retry with
@@ -1074,31 +1362,33 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
   // ── Contact-ownership verification ────────────────────────────────────────
   async startEmailVerification(token: string | null, email?: string): Promise<void> {
-    let userId: string | null = null
-    let target = email
+    // The verification TARGET is never client-chosen. With a bearer it is the
+    // authenticated account's own email (a body `email` is ignored — otherwise a
+    // user could "verify" their account through any mailbox they control). With
+    // no bearer the user is resolved server-side from the supplied address; an
+    // unknown address is a silent no-op so the 202 leaks nothing (no enumeration).
+    let user: { id: string; email: string } | undefined
     if (token) {
-      const { user } = await this.getUserInfo(token)
-      userId = user.id
-      target = target || user.email
+      user = (await this.getUserInfo(token)).user
+    } else {
+      if (!email || typeof email !== 'string') throw new InvalidInputError('email is required')
+      user = await this.db('users').whereRaw('LOWER(email) = ?', [email.trim().toLowerCase()]).first()
+      if (!user) {
+        logger.warn(
+          { contact: maskContact(email) },
+          'authentik: email verification requested for unknown address — no-op',
+        )
+        return
+      }
     }
-    if (!target) throw new InvalidInputError('email is required')
+    const target = user.email
+    if (!target) throw new InvalidInputError('account has no email')
 
     // Degrade mode: verification not required (flag off) or no email-service
     // wired — auto-verify the local projection and log. Never strand the user on
     // an undeliverable challenge.
     if (!emailVerificationEnabled()) {
-      // Resolve by EMAIL when there is no token: the signup path calls this with
-      // an address and no session, so `userId` is null there. Gating the update
-      // on `userId` meant that path updated NOTHING while still logging
-      // "auto-verified" — the account stayed unverified and the log said
-      // otherwise. Harmless while the flag is off, but it strands exactly those
-      // accounts the moment REQUIRE_EMAIL_VERIFICATION is switched on.
-      const updated = userId
-        ? await this.db('users').where({ id: userId }).update({ email_verified: true })
-        : await this.db('users').where({ email: target }).update({ email_verified: true })
-
-      // Log what actually happened. `updated === 0` is legitimate (the user row
-      // may not be synced yet mid-signup) but it must not read as success.
+      const updated = await this.db('users').where({ id: user.id }).update({ email_verified: true })
       console.warn(
         updated
           ? `[security] email verification degraded (auto-verified ${maskContact(
@@ -1106,37 +1396,83 @@ export class AuthentikIdentityProvider implements IdentityProvider {
             )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`
           : `[security] email verification degraded and NO user row matched ${maskContact(
               target,
-            )} — left unverified; it will be promoted on first login via the OIDC email_verified claim.`,
+            )} — left unverified.`,
       )
       return
     }
 
+    // Cooldown: coalesce a repeat request into the live challenge (send nothing).
+    const liveRows = await this.db('email_verifications').where({ user_id: user.id, consumed: false })
+    const cooling = (liveRows as any[]).some(
+      r => new Date(r.expires_at).getTime() > this.now() + EMAIL_VERIFY_TTL_MS - resendCooldownMs(),
+    )
+    if (cooling) {
+      logger.info({ contact: maskContact(target) }, 'authentik: email verification coalesced (cooldown)')
+      return
+    }
+
+    const mailOrigin = tenantMailOrigin() // captured before any async hop (ALS context)
     const linkToken = crypto.randomBytes(32).toString('hex')
     const code = ('' + crypto.randomInt(0, 1_000_000)).padStart(6, '0')
     await this.db('email_verifications').insert({
       id: uuidv4(),
-      user_id: userId,
+      user_id: user.id,
       email: target,
       token_hash: sha256(linkToken),
       code_hash: sha256(code),
       expires_at: new Date(this.now() + EMAIL_VERIFY_TTL_MS),
       consumed: false,
     })
-    await this.notifications.sendEmailVerification(target, linkToken, code)
+    const logFailure = (err: unknown) =>
+      logger.error(
+        { contact: maskContact(target), userId: user!.id, err: (err as Error)?.message },
+        'authentik: email verification dispatch failed',
+      )
+    if (token) {
+      // An authenticated caller owns the account and may be told about a failure.
+      try {
+        await this.notifications.sendEmailVerification(target, linkToken, code, mailOrigin)
+      } catch (err) {
+        logFailure(err)
+        throw err
+      }
+    } else {
+      // Anonymous: dispatch is fire-and-forget so a known address does not wait
+      // on the mail send while an unknown one returns at once (timing oracle),
+      // and a failure cannot become a 5xx-for-real-accounts oracle.
+      void this.notifications
+        .sendEmailVerification(target, linkToken, code, mailOrigin)
+        .catch(logFailure)
+    }
   }
 
   async confirmEmailVerification(input: { token?: string; code?: string }): Promise<VerificationStatus> {
     if (!input.token && !input.code) throw new InvalidInputError('token or code is required')
-    const q = this.db('email_verifications').where({ consumed: false })
-    if (input.token) q.andWhere({ token_hash: sha256(input.token) })
-    else q.andWhere({ code_hash: sha256(input.code as string) })
-    const row = await q.first()
-    if (!row || new Date(row.expires_at).getTime() < this.now()) {
-      throw new UnauthorizedError('invalid or expired verification')
+    const hash = input.token ? sha256(input.token) : sha256(input.code as string)
+    const matches = (await this.db('email_verifications').where(
+      input.token ? { token_hash: hash } : { code_hash: hash },
+    )) as any[]
+    // Prefer a LIVE (unconsumed, unexpired) row: a spent row with the same OTP
+    // must not shadow it. Only when none is live do we pick the error.
+    const row = matches.find(r => !r.consumed && new Date(r.expires_at).getTime() >= this.now())
+    if (!row) {
+      if (matches.length === 0) throw new TokenError('TOKEN_INVALID', 'invalid verification token')
+      throw new TokenError('TOKEN_EXPIRED', 'verification expired or already used')
     }
+    // A challenge with no owning user can never verify anyone.
+    if (!row.user_id) throw new TokenError('TOKEN_INVALID', 'invalid verification token')
+
     await this.db('email_verifications').where({ id: row.id }).update({ consumed: true })
-    if (row.user_id) {
-      await this.db('users').where({ id: row.user_id }).update({ email_verified: true })
+
+    // Only verify if the challenge's target is STILL the account's email: the
+    // address that received the link must be the one being marked verified.
+    const updated = await this.db('users')
+      .where({ id: row.user_id })
+      .whereRaw('LOWER(email) = ?', [String(row.email).toLowerCase()])
+      .update({ email_verified: true })
+    if (!updated) {
+      logger.warn({ userId: row.user_id }, 'authentik: email verification target no longer matches account — not verified')
+      throw new TokenError('TOKEN_INVALID', 'invalid verification token')
     }
     return { emailVerified: true, phoneVerified: false }
   }
@@ -1144,14 +1480,32 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   async startPhoneVerification(token: string, phone: string): Promise<void> {
     if (!phone) throw new InvalidInputError('phone is required')
     const { user } = await this.getUserInfo(token)
-    await this.db('users').where({ id: user.id }).update({ phone })
+    // Changing the number invalidates any prior verification of the old one.
+    const current = await this.db('users').where({ id: user.id }).first()
+    const changed = !current || current.phone !== phone
+    await this.db('users')
+      .where({ id: user.id })
+      .update(changed ? { phone, phone_verified: false } : { phone })
     await this.notifications.sendSmsOtp(phone)
   }
 
-  async confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus> {
+  async confirmPhoneVerification(token: string, phone: string, code: string): Promise<VerificationStatus> {
+    if (!phone || !code) throw new InvalidInputError('phone and code are required')
+    // Bind to the caller's session — never to "whoever holds this number".
+    const { user } = await this.getUserInfo(token)
+    const row = await this.db('users').where({ id: user.id }).first()
+    if (!row || row.phone !== phone) {
+      // Fail closed without revealing whether another account holds the number.
+      throw new UnauthorizedError('invalid or expired code')
+    }
     const ok = await this.notifications.checkSmsOtp(phone, code)
     if (!ok) throw new UnauthorizedError('invalid or expired code')
-    await this.db('users').where({ phone }).update({ phone_verified: true })
+    // Re-assert the phone in the write: a concurrent /start for a new number
+    // may have changed users.phone while the OTP check was in flight.
+    const updated = await this.db('users')
+      .where({ id: user.id, phone })
+      .update({ phone_verified: true })
+    if (!updated) throw new UnauthorizedError('invalid or expired code')
     return { emailVerified: false, phoneVerified: true, phone }
   }
 
@@ -1230,6 +1584,32 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       q.whereNot({ id: decoded.sessionId })
     }
     await q.del()
+  }
+
+  async isSessionActive(userId: string, sessionId: string, tenantId?: string): Promise<boolean> {
+    // `sessions.id` and `sessions.user_id` are uuid columns: Postgres rejects a
+    // non-uuid operand with a syntax ERROR, which would surface as a 500/503 for
+    // what is simply a session that cannot exist. Answer "not active" instead, so
+    // a malformed id is indistinguishable from an unknown one. (Declared here, not
+    // at module level: the identifier allowlist pins `uuidv4` sites by line number,
+    // so nothing may be inserted above them.)
+    const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidShape.test(userId) || !uuidShape.test(sessionId)) return false
+    // Tenant boundary, the same check getUserInfo applies to a presented token:
+    // all tenants share one signing secret and `sessions` rows carry no tenant,
+    // so without this a tenant-A session would read as active on a tenant-B host.
+    // Fail-closed: a token with no `tid` passes only in single-tenant mode.
+    if (!assertAmbientTenant(tenantId).ok) return false
+    // Scoping the lookup to `user_id` is the binding check: a session only counts
+    // as active for the user it belongs to. A DB failure is deliberately NOT
+    // caught; the route maps it to a retryable 503, never to a boolean.
+    const row = await this.db('sessions')
+      .where({ id: sessionId, user_id: userId })
+      .first('expires_at')
+    if (!row) return false // unknown or revoked (revocation deletes the row)
+    // Same expiry rule getUserInfo enforces on a presented token.
+    if (row.expires_at && new Date(row.expires_at).getTime() < this.now()) return false
+    return true
   }
 
   // ── Account sign-in connections ───────────────────────────────────────────
@@ -1444,6 +1824,49 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     }
     await this.markHasPassword(user.id, true)
     return this.connectionsForUser(user)
+  }
+
+  // ── Change password (account already has one) ─────────────────────────────
+  //
+  // Verifies the CURRENT password against the identity store (the sole
+  // credential authority) before setting the new one, then signs out every
+  // other session — same posture as reset-confirm, but the caller keeps the
+  // session they changed it from.
+  async changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+    if (!currentPassword || typeof currentPassword !== 'string') {
+      throw new InvalidInputError('currentPassword is required')
+    }
+    if (!newPassword || typeof newPassword !== 'string') {
+      throw new InvalidInputError('newPassword is required')
+    }
+    const { user } = await this.getUserInfo(token)
+    const row = await this.db('users').where({ id: user.id }).first()
+    // Fail-closed: only a PROVEN password can be changed. Unknown (NULL) is
+    // treated like absent, matching how hasPassword is reported to the UI.
+    if (row?.has_password !== true) {
+      throw new NoPasswordError()
+    }
+
+    try {
+      const verified = await this.passwordLoginFn(user.email, currentPassword)
+      // Fail closed: a resolved value with no id (or someone else's) is not proof of the current password.
+      if (!verified?.id || verified.id !== user.id) throw new CurrentPasswordInvalidError()
+    } catch (err) {
+      if (err instanceof CurrentPasswordInvalidError) throw err
+      if ((err as Error)?.name === 'InvalidCredentialsError') throw new CurrentPasswordInvalidError()
+      throw err // provider outage etc. -> 503 via sendError, never a false "wrong password"
+    }
+
+    try {
+      await this.setPasswordFn(user.email, newPassword)
+    } catch (err) {
+      if ((err as Error)?.name === 'PasswordPolicyError' || err instanceof PasswordPolicyError) {
+        throw new PasswordPolicyRejectedError((err as Error).message)
+      }
+      throw err
+    }
+    await this.markHasPassword(user.id, true)
+    await this.revokeOtherSessions(token)
   }
 }
 

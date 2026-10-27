@@ -1,0 +1,364 @@
+{
+  "description": "Aggregate version guard (standard section 4.2). Per aggregateId the consumer keeps {version, deleted, data}. An event is applied iff aggregateVersion > stored version (strictly); otherwise ignored. `created`/`updated` set data to the event snapshot; `deleted` sets deleted=true and data=null and KEEPS the version as a tombstone, so a late lower-version event can never resurrect it. Events are delivered in array order. All eventIds are distinct (dedupe is a separate vector set).",
+  "semantics": {
+    "outcomes": [
+      "applied",
+      "ignored"
+    ],
+    "initialState": "no row (version 0)"
+  },
+  "cases": [
+    {
+      "name": "in-order",
+      "description": "created v1, updated v2, updated v3",
+      "events": [
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 1,
+          "kind": "created",
+          "data": {
+            "name": "a"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn03q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 2,
+          "kind": "updated",
+          "data": {
+            "name": "b"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn04q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 3,
+          "kind": "updated",
+          "data": {
+            "name": "c"
+          }
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "applied",
+        "applied"
+      ],
+      "expectedFinalState": {
+        "org_01h455vb4pex5vsknk084sn02q": {
+          "version": 3,
+          "deleted": false,
+          "data": {
+            "name": "c"
+          }
+        }
+      }
+    },
+    {
+      "name": "older-ignored",
+      "description": "an updated v2 arriving after v3 is ignored",
+      "events": [
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 1,
+          "kind": "created",
+          "data": {
+            "name": "a"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn04q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 3,
+          "kind": "updated",
+          "data": {
+            "name": "c"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn03q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 2,
+          "kind": "updated",
+          "data": {
+            "name": "b"
+          }
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "applied",
+        "ignored"
+      ],
+      "expectedFinalState": {
+        "org_01h455vb4pex5vsknk084sn02q": {
+          "version": 3,
+          "deleted": false,
+          "data": {
+            "name": "c"
+          }
+        }
+      }
+    },
+    {
+      "name": "equal-ignored",
+      "description": "a different event carrying an already-applied version is ignored",
+      "events": [
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 1,
+          "kind": "created",
+          "data": {
+            "name": "a"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn03q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 2,
+          "kind": "updated",
+          "data": {
+            "name": "b"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn04q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 2,
+          "kind": "updated",
+          "data": {
+            "name": "x"
+          }
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "applied",
+        "ignored"
+      ],
+      "expectedFinalState": {
+        "org_01h455vb4pex5vsknk084sn02q": {
+          "version": 2,
+          "deleted": false,
+          "data": {
+            "name": "b"
+          }
+        }
+      }
+    },
+    {
+      "name": "newer-applied-with-gap",
+      "description": "a gap in versions is fine: newer wins",
+      "events": [
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 1,
+          "kind": "created",
+          "data": {
+            "name": "a"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn05q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 5,
+          "kind": "updated",
+          "data": {
+            "name": "e"
+          }
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "applied"
+      ],
+      "expectedFinalState": {
+        "org_01h455vb4pex5vsknk084sn02q": {
+          "version": 5,
+          "deleted": false,
+          "data": {
+            "name": "e"
+          }
+        }
+      }
+    },
+    {
+      "name": "late-created-after-tombstone",
+      "description": "tombstone then a late created stays deleted",
+      "events": [
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn03q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 2,
+          "kind": "deleted",
+          "data": null
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 1,
+          "kind": "created",
+          "data": {
+            "name": "a"
+          }
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "ignored"
+      ],
+      "expectedFinalState": {
+        "org_01h455vb4pex5vsknk084sn02q": {
+          "version": 2,
+          "deleted": true,
+          "data": null
+        }
+      }
+    },
+    {
+      "name": "late-updated-after-tombstone",
+      "description": "a late updated below the tombstone version stays deleted",
+      "events": [
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 1,
+          "kind": "created",
+          "data": {
+            "name": "a"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn04q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 3,
+          "kind": "deleted",
+          "data": null
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn03q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 2,
+          "kind": "updated",
+          "data": {
+            "name": "b"
+          }
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "applied",
+        "ignored"
+      ],
+      "expectedFinalState": {
+        "org_01h455vb4pex5vsknk084sn02q": {
+          "version": 3,
+          "deleted": true,
+          "data": null
+        }
+      }
+    },
+    {
+      "name": "delete-first-no-prior-row",
+      "description": "a tombstone with no prior row is recorded so earlier events cannot resurrect",
+      "events": [
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn04q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 3,
+          "kind": "deleted",
+          "data": null
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 1,
+          "kind": "created",
+          "data": {
+            "name": "a"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn03q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 2,
+          "kind": "updated",
+          "data": {
+            "name": "b"
+          }
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "ignored",
+        "ignored"
+      ],
+      "expectedFinalState": {
+        "org_01h455vb4pex5vsknk084sn02q": {
+          "version": 3,
+          "deleted": true,
+          "data": null
+        }
+      }
+    },
+    {
+      "name": "independent-aggregates",
+      "description": "versions are tracked per aggregateId, not globally",
+      "events": [
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+          "aggregateVersion": 5,
+          "kind": "created",
+          "data": {
+            "name": "a"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn03q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02r",
+          "aggregateVersion": 1,
+          "kind": "created",
+          "data": {
+            "name": "b"
+          }
+        },
+        {
+          "eventId": "evt_01h455vb4pex5vsknk084sn04q",
+          "aggregateId": "org_01h455vb4pex5vsknk084sn02r",
+          "aggregateVersion": 2,
+          "kind": "updated",
+          "data": {
+            "name": "b2"
+          }
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "applied",
+        "applied"
+      ],
+      "expectedFinalState": {
+        "org_01h455vb4pex5vsknk084sn02q": {
+          "version": 5,
+          "deleted": false,
+          "data": {
+            "name": "a"
+          }
+        },
+        "org_01h455vb4pex5vsknk084sn02r": {
+          "version": 2,
+          "deleted": false,
+          "data": {
+            "name": "b2"
+          }
+        }
+      }
+    }
+  ]
+}
+

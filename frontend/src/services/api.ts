@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { App } from '../lib/shared'
 import {
+  getAccountValue,
   getActiveAccountId,
   getActiveAuthToken,
   setActiveValue,
@@ -11,11 +12,20 @@ import type {
   AuthMethods,
   SessionResult,
   SocialProvider,
+  BrokerClient,
+  BrokerHandoffRequest,
+  BrokerHandoffResult,
+  components,
 } from '@fuzefront/security-client'
+
+// Generated contract schemas (the client only re-exports the hand-authored subset
+// at the top level; the request/response bodies live under `components`).
+type SignupRequest = components['schemas']['SignupRequest']
+export type SignupEmailAvailability = components['schemas']['SignupEmailAvailability']
 
 // Re-export the provider-neutral contract types so existing consumers can keep
 // importing them from this module (e.g. `import { AuthMethods } from '../services/api'`).
-export type { AuthMethods, SessionResult, SocialProvider }
+export type { AuthMethods, SessionResult, SocialProvider, BrokerClient, BrokerHandoffResult }
 
 // Default to the same origin the app is served from (the in-pod / ingress nginx
 // proxies /api/ to the backend). Same-origin keeps the protocol correct — http
@@ -205,7 +215,9 @@ api.interceptors.request.use(
       console.groupEnd()
     }
 
-    if (token) {
+    // An explicit Authorization (e.g. startEmailVerification targeting a chosen
+    // signed-in account) wins over the active account's token.
+    if (token && !config.headers.Authorization) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
@@ -226,7 +238,7 @@ api.interceptors.request.use(
  * not redirect away from them. Keep this the single source of truth: LoginPage
  * derives sign-in vs sign-up from the path, so silently rewriting it loses intent.
  */
-const AUTH_ROUTE_RE = /^\/(login|signup)\b/
+const AUTH_ROUTE_RE = /^\/(login|signup|reset|verify)\b/
 
 // Enhanced response logging with timing
 api.interceptors.response.use(
@@ -296,7 +308,13 @@ api.interceptors.response.use(
     }
     console.groupEnd()
 
-    if (error.response?.status === 401) {
+    // A 401 from a TOKEN-redemption call (an expired/used verify link or reset
+    // token, 401 NOT_ACTIVE) says nothing about the caller's SESSION — it must
+    // not sign a signed-in user out. The auth-ui flows render it as "expired".
+    const failedUrl = String(error.config?.url ?? '')
+    const isTokenRedemption = /\/(verify\/email\/confirm|session\/password\/reset-confirm)$/.test(failedUrl)
+
+    if (error.response?.status === 401 && !isTokenRedemption) {
       console.log('🔐 Unauthorized - clearing the active account session')
       // Clear only the ACTIVE account. Other signed-in accounts keep their
       // sessions — one expiring must not sign the user out of the rest.
@@ -343,25 +361,15 @@ export interface LoginResponse {
   sessionId: string
 }
 
-// Account-creation payload for the server-brokered signup endpoint. Mirrors the
-// contract `SignupRequest` (see @fuzefront/security-client / openapi.yaml).
-export interface SignupCredentials {
-  email: string
-  password: string
-  firstName?: string
-  lastName?: string
-  tenantName?: string
-}
-
-// Result of the signup email-availability probe. `available: null` means the
-// check could not be resolved (endpoint missing / network / server error) —
-// the UI shows no signal and MUST NOT block submit on it (fail-open). This
-// shape is not yet in the frozen security contract; move it to
-// @fuzefront/security-client once the endpoint is added there.
-export interface EmailAvailability {
-  email: string
-  available: boolean | null
-}
+// Account-creation payload for the server-brokered signup endpoint — DERIVED from
+// the frozen contract `SignupRequest` (@fuzefront/security-client 1.0.0), never
+// hand-redefined: `{ email, password, name?, turnstileToken?, tenantName? }`.
+// A single optional `name` replaced `firstName`/`lastName`, which the contract now
+// rejects (additionalProperties:false).
+export type SignupCredentials = Pick<
+  SignupRequest,
+  'email' | 'password' | 'name' | 'turnstileToken' | 'tenantName'
+>
 
 // Persist a freshly authenticated session so it survives the post-login page
 // reload and is attached to subsequent requests by the axios interceptor.
@@ -432,33 +440,21 @@ export const authAPI = {
     return response.data
   },
 
-  // Inline email-availability check for the signup form. Hits the same-origin
-  // Security API; returns `{ available, email }`. Built defensively: this is a
-  // convenience hint, NOT an authz gate, and the endpoint may not be deployed
-  // yet — so ANY failure (404, network, 5xx) FAILS OPEN by returning
-  // `available: null`, meaning "unknown, don't block submit". The UI treats
-  // `null` as no-signal (idle) and never disables the form on it.
-  async checkEmailAvailability(
+  // Inline email-availability check for the signup form:
+  // GET /v1/security/signup/email-available?email= -> { available }.
+  // Same-origin Security API. A UX hint, NOT a gate: this REJECTS on any failure
+  // (timeout, 429 rate limit, 5xx, network) and the caller (the signup form's
+  // InlineAvailabilityField) treats a rejection as "couldn't check" and NEVER
+  // blocks submit on it — the authoritative duplicate check is POST /signup -> 409.
+  async checkSignupEmailAvailable(
     email: string,
     signal?: AbortSignal
-  ): Promise<EmailAvailability> {
-    try {
-      const response = await api.get<EmailAvailability>(
-        `${SECURITY_BASE}/email-available`,
-        { params: { email }, signal }
-      )
-      const data = response.data
-      return {
-        email: data?.email ?? email,
-        available: typeof data?.available === 'boolean' ? data.available : null,
-      }
-    } catch (err: any) {
-      // A cancelled request is not a failure — propagate so the caller ignores it.
-      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError')
-        throw err
-      // Fail open: unknown availability, never block the user.
-      return { email, available: null }
-    }
+  ): Promise<SignupEmailAvailability> {
+    const response = await api.get<SignupEmailAvailability>(
+      `${SECURITY_BASE}/signup/email-available`,
+      { params: { email }, signal }
+    )
+    return response.data
   },
 
   // Begin a server-brokered social login. 302-redirects the browser to the
@@ -466,6 +462,89 @@ export const authAPI = {
   // path; on completion the app is returned to with `?code=` for exchange.
   async startSocialLogin(provider: SocialProvider = 'google'): Promise<void> {
     window.location.href = `${API_URL}${SECURITY_BASE}/social/${provider}/start`
+  },
+
+  // ── Broker (consumer-product sign-in handoff, #238) ──────────────────────
+  //
+  // Public, unauthenticated branding lookup for a registered broker client
+  // (`?client=` on the sign-in URL). Fails OPEN to `null` on ANY error
+  // (unknown client -> 404, network, etc.) — this is a convenience branding
+  // read, never a gate: the sign-in page must still render with default
+  // FuzeFront branding rather than block or error out.
+  async getBrokerClient(client: string): Promise<BrokerClient | null> {
+    try {
+      const response = await api.get<BrokerClient>(
+        `${SECURITY_BASE}/broker/clients/${encodeURIComponent(client)}`
+      )
+      return response.data
+    } catch {
+      return null
+    }
+  },
+
+  // Mint a one-time handoff code back to the broker client's redirect_uri.
+  // Requires the bearer session just established by login()/signup() — the
+  // request interceptor attaches it from the active account automatically.
+  // Propagates a rejected redirectUri / unknown client / dead session as a
+  // thrown error; the caller decides how to surface it (never navigates on
+  // a failed handoff).
+  async brokerHandoff(input: BrokerHandoffRequest): Promise<BrokerHandoffResult> {
+    const response = await api.post<BrokerHandoffResult>(`${SECURITY_BASE}/broker/handoff`, input)
+    return response.data
+  },
+
+  // ── Email verification + self-service password reset (FFRNT-360) ───────────
+  // Thin 1:1 wrappers over the frozen contract; the auth-ui flows classify the
+  // axios error shapes themselves (429 / EXPIRED / INVALID_CODE / 400).
+
+  // POST /verify/email/start → 202. Needs a session (the interceptor adds the bearer).
+  async startEmailVerification(accountId?: string): Promise<void> {
+    // No body: the server derives the target address from the session. With
+    // several accounts signed in, `accountId` picks WHICH account's session
+    // (never an address) — omitted means the active account.
+    const token = accountId ? getAccountValue(accountId, 'authToken') : null
+    // A named account with no stored session must fail, not fall through to
+    // the ACTIVE account's token and verify the wrong address.
+    if (accountId && !token) throw new Error('That account is no longer signed in')
+    await api.post(
+      `${SECURITY_BASE}/verify/email/start`,
+      {},
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    )
+  },
+
+  // POST /verify/email/confirm → 200 VerificationStatus (idempotent for an
+  // already-verified token) | 400 EXPIRED / INVALID_CODE.
+  async confirmEmailVerification(req: {
+    token: string
+  }): Promise<{ emailVerified: boolean; phoneVerified: boolean; phone?: string }> {
+    const response = await api.post(`${SECURITY_BASE}/verify/email/confirm`, req)
+    return response.data
+  },
+
+  // GET /verify/status — authenticated; used right after signup to decide
+  // whether the user must verify their email before continuing.
+  // `token` pins the call to a specific session (e.g. the one a signup just
+  // returned) instead of whatever the vault currently resolves as active.
+  async getVerificationStatus(
+    token?: string
+  ): Promise<{ emailVerified: boolean; phoneVerified: boolean }> {
+    const response = await api.get(
+      `${SECURITY_BASE}/verify/status`,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    )
+    return response.data
+  },
+
+  // POST /session/password/reset-request → ALWAYS 202 (no account enumeration).
+  async requestPasswordReset(email: string): Promise<void> {
+    await api.post(`${SECURITY_BASE}/session/password/reset-request`, { email })
+  },
+
+  // POST /session/password/reset-confirm → 200 { reset: true } | 400 (invalid,
+  // expired or already-used token, or a policy-rejected password).
+  async confirmPasswordReset(req: { token: string; newPassword: string }): Promise<void> {
+    await api.post(`${SECURITY_BASE}/session/password/reset-confirm`, req)
   },
 
   // Current identity ("me"). The Security API returns `{ identity, user }`; the
@@ -551,6 +630,35 @@ export const organizationsAPI = {
   },
 }
 
+export interface SessionWorkspace {
+  id: string
+  name: string
+  type: 'personal' | 'organization'
+}
+
+/**
+ * Resolve the Security-owned tenant behind the portal's first-class Personal
+ * context. Discovery is deliberately followed by the membership-proof call;
+ * a workspace-list response alone is not authorization to use that tenant.
+ */
+export const securitySessionAPI = {
+  async resolvePersonalTenant(): Promise<string | null> {
+    const discovery = await api.get('/v1/security/session/workspaces')
+    const workspaces = (discovery.data?.workspaces ?? []) as SessionWorkspace[]
+    const personal = workspaces.find(workspace => workspace.type === 'personal')
+    if (!personal) return null
+
+    const proof = await api.get('/v1/security/session', {
+      params: { tenant: personal.id },
+    })
+    const tenantId = proof.data?.identity?.tenantId
+    if (typeof tenantId !== 'string' || tenantId.length === 0) {
+      throw new Error('Security did not return a tenant-scoped identity')
+    }
+    return tenantId
+  },
+}
+
 // ---------------------------------------------------------------------------
 // Backward-compatible standalone exports.
 // Components import these named functions/types directly. They wrap the *API
@@ -600,6 +708,10 @@ export const createApp = async (app: Partial<App>) => {
 }
 export const updateAppStatus = async (id: string, isActive: boolean) => {
   const res = await api.put(`/apps/${id}/activate`, { isActive })
+  return res.data
+}
+export const updateApp = async (id: string, app: Partial<App>) => {
+  const res = await api.put(`/apps/${id}`, app)
   return res.data
 }
 export const deleteApp = async (id: string) => {

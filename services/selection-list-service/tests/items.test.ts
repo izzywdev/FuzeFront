@@ -12,6 +12,7 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../src/app';
 import { setFlagClient } from '../src/flags';
+import { allFlagsExceptShared } from './helpers/flagClient';
 
 // ─── DB mock ─────────────────────────────────────────────────────────────────
 
@@ -22,11 +23,23 @@ const mockTrx = {
 };
 const mockTransaction = jest.fn(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
 
+// The platform-org suspension reads (a tiny projection query, see lib/sharedLists.suspendedOrgs) are out of scope
+// for this mocked 4.0.0 suite: nothing is suspended. Their real behaviour is pinned against Postgres in
+// shared-lists.platform-org-guard / suspension-race / suspension-owner.
+jest.mock('../src/lib/sharedLists', () => ({
+  ...jest.requireActual('../src/lib/sharedLists'),
+  suspendedOrgs: async () => [],
+  suspendedOrgsFor: async () => [],
+  orgWritesSuspended: async () => false,
+}));
+
+// `db('selection_lists').where(..).first(..)` is the purge guard's visibility lookup (listAccess.lookupList), which
+// runs whatever the shared-lists flag says; in these 4.0.0 suites no list is a common list.
 jest.mock('../src/db', () => ({
-  db: {
+  db: Object.assign(() => ({ where: () => ({ first: async () => undefined }) }), {
     raw: (...args: any[]) => mockRaw(...args),
     transaction: (...args: any[]) => mockTransaction(...args),
-  },
+  }),
 }));
 
 // ─── Identity mock (mintId) ───────────────────────────────────────────────────
@@ -55,10 +68,12 @@ jest.mock('../src/middleware/quota', () => ({
 
 const mockLockQuotaScope = jest.fn().mockResolvedValue(undefined);
 const mockCheckItemQuota = jest.fn().mockResolvedValue(undefined);
+const mockCheckActiveItemQuota = jest.fn().mockResolvedValue(undefined);
 jest.mock('../src/services/quota.service', () => ({
   ...jest.requireActual('../src/services/quota.service'),
   lockQuotaScope: (...args: any[]) => mockLockQuotaScope(...args),
   checkItemQuota: (...args: any[]) => mockCheckItemQuota(...args),
+  checkActiveItemQuota: (...args: any[]) => mockCheckActiveItemQuota(...args),
 }));
 
 // ─── Outbox emitters (events/*) ───────────────────────────────────────────────
@@ -108,7 +123,7 @@ let app: ReturnType<typeof createApp>;
 beforeAll(() => {
   process.env.JWT_SECRET = JWT_SECRET;
   // Inject a flag client that returns ON by default for all non-flag-OFF tests.
-  setFlagClient({ getBooleanValue: async () => true });
+  setFlagClient({ getBooleanValue: allFlagsExceptShared });
   app = createApp();
 });
 
@@ -127,14 +142,15 @@ beforeEach(() => {
   mockTransaction.mockImplementation(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
   mockLockQuotaScope.mockReset().mockResolvedValue(undefined);
   mockCheckItemQuota.mockReset().mockResolvedValue(undefined);
-  setFlagClient({ getBooleanValue: async () => true });
+  mockCheckActiveItemQuota.mockReset().mockResolvedValue(undefined);
+  setFlagClient({ getBooleanValue: allFlagsExceptShared });
 });
 
 // ─── Feature flag OFF ─────────────────────────────────────────────────────────
 
 describe('Feature flag OFF — items routes', () => {
   beforeEach(() => { setFlagClient({ getBooleanValue: async () => false }); });
-  afterEach(() => { setFlagClient({ getBooleanValue: async () => true }); });
+  afterEach(() => { setFlagClient({ getBooleanValue: allFlagsExceptShared }); });
 
   it('GET /:listId/items returns 404', async () => {
     const res = await request(app)
@@ -525,6 +541,47 @@ describe('PATCH /v1/selection-lists/:listId/items/:itemId', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.label).toBe('USA');
+  });
+
+  describe('un-archive (status archived -> active) is subject to list_items (review M-4)', () => {
+    const patchActive = () =>
+      request(app).patch(`/v1/selection-lists/${TEST_LIST_ID}/items/${TEST_ITEM_ID}`).set(authHeader()).send({ status: 'active' });
+
+    it('takes the per-list advisory lock and re-checks the ACTIVE ceiling for an archived item', async () => {
+      mockRaw
+        .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] })
+        .mockResolvedValueOnce({ rows: [{ ...ITEM_ROW, status: 'active' }] });
+      mockTrxRaw.mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID, status: 'archived' }] }).mockResolvedValue({ rows: [] });
+
+      const res = await patchActive();
+
+      expect(res.status).toBe(200);
+      expect(mockLockQuotaScope).toHaveBeenCalledWith(mockTrx, `list_items:${TEST_LIST_ID}`);
+      expect(mockCheckActiveItemQuota).toHaveBeenCalledWith(TEST_LIST_ID, TEST_ORG_ID, mockTrx);
+    });
+
+    it('refuses with 403 QUOTA_EXCEEDED (not 500) and updates nothing when the list is full', async () => {
+      const { QuotaExceededError } = jest.requireActual('../src/services/quota.service');
+      mockCheckActiveItemQuota.mockRejectedValueOnce(new QuotaExceededError('list_items', 5, 5, 'items'));
+      mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] });
+      mockTrxRaw.mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID, status: 'archived' }] }).mockResolvedValue({ rows: [] });
+
+      const res = await patchActive();
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_items', current: 5, limit: 5 });
+      expect(mockRaw).toHaveBeenCalledTimes(1); // only the list check; no post-commit fetch
+    });
+
+    it('does not re-check an item that is already active, nor when archiving', async () => {
+      mockRaw.mockResolvedValue({ rows: [{ source_locale: 'en' }] });
+      mockTrxRaw.mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID, status: 'active' }] }).mockResolvedValue({ rows: [] });
+      await patchActive();
+      mockTrxRaw.mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID, status: 'active' }] }).mockResolvedValue({ rows: [] });
+      await request(app).patch(`/v1/selection-lists/${TEST_LIST_ID}/items/${TEST_ITEM_ID}`).set(authHeader()).send({ status: 'archived' });
+
+      expect(mockCheckActiveItemQuota).not.toHaveBeenCalled();
+    });
   });
 
   it('rejects code in body (immutable field)', async () => {

@@ -59,10 +59,13 @@ function makeToken(payload: Record<string, unknown> = {}): string {
   );
 }
 
-/** An in-memory flag client that returns a fixed boolean value. */
+/**
+ * An in-memory flag client that returns a fixed boolean value for the master gate. The shared-lists release
+ * flag stays OFF: this suite pins the 4.0.0 behaviour (its own suites pin shared-lists ON).
+ */
 function flagClient(enabled: boolean) {
   return {
-    getBooleanValue: jest.fn().mockResolvedValue(enabled),
+    getBooleanValue: jest.fn().mockImplementation(async (key: string) => (key === 'fuzefront.selection-lists.shared-lists' ? false : enabled)),
   };
 }
 
@@ -312,7 +315,7 @@ describe('GET /v1/selection-lists/quota — flag ON, happy path', () => {
       .get('/v1/selection-lists/quota')
       .set('Authorization', `Bearer ${token}`);
 
-    expect(mockGetQuotaUsage).toHaveBeenCalledWith('org_myorg', 'usr_myuser');
+    expect(mockGetQuotaUsage).toHaveBeenCalledWith('org_myorg', 'usr_myuser', null);
   });
 
   it('returns 500 when getQuotaUsage throws unexpectedly', async () => {
@@ -373,7 +376,8 @@ describe('enforceListQuota middleware — flag ON', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    expect(mockCheckListQuota).toHaveBeenCalledWith('org_testorg');
+    // The fast-path pre-check carries the user too, so `user_lists` is refused before the insert.
+    expect(mockCheckListQuota).toHaveBeenCalledWith('org_testorg', undefined, 'usr_testuser');
   });
 
   it('returns 403 QUOTA_EXCEEDED when org_lists ceiling is reached', async () => {

@@ -41,12 +41,22 @@ const DotIcon = ({ met }) =>
  * Live password-policy checklist. Given the current password `value`, renders
  * each requirement and marks it met/unmet as the user types. Purely presentational
  * — the parent owns the value and the submit gate (via `passwordMeetsPolicy`).
- * Tokens only; announces politely for assistive tech.
+ * Tokens only; announces politely for assistive tech. Each row carries
+ * `data-req` (the rule id) + `data-met` ("true"/"false") and the list carries
+ * `data-pwreq`, so tests and analytics can address a rule without parsing copy.
+ * `highlightUnmet` tints the still-unmet rules with the error colour (use it
+ * after a rejected submit so the user can see what to fix). `columns` lays the
+ * rules out in N grid columns; `metLabel`/`unmetLabel` are the
+ * visually-hidden per-row suffixes (localize them with the rule labels).
  */
 export function PasswordChecklist({
   value = "",
   rules = DEFAULT_PASSWORD_RULES,
   title = "Your password needs:",
+  columns = 1,
+  highlightUnmet = false,
+  metLabel = " — met",
+  unmetLabel = " — not met",
   style,
   ...rest
 }) {
@@ -76,13 +86,14 @@ export function PasswordChecklist({
         </span>
       )}
       <ul
+        data-pwreq
         style={{
           listStyle: "none",
           margin: 0,
           padding: 0,
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-1)",
+          display: "grid",
+          gridTemplateColumns: `repeat(${columns}, 1fr)`,
+          gap: "var(--space-1) var(--space-3)",
         }}
       >
         {rules.map((rule) => {
@@ -90,6 +101,8 @@ export function PasswordChecklist({
           return (
             <li
               key={rule.id}
+              data-req={rule.id}
+              data-met={met ? "true" : "false"}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -97,13 +110,17 @@ export function PasswordChecklist({
                 fontSize: "var(--text-xs)",
                 fontWeight: "var(--weight-medium)",
                 lineHeight: 1.3,
-                color: met ? "var(--success-color)" : "var(--text-tertiary)",
+                color: met
+                  ? "var(--success-color)"
+                  : highlightUnmet
+                    ? "var(--error-color)"
+                    : "var(--text-tertiary)",
               }}
             >
               <DotIcon met={met} />
               <span>{rule.label}</span>
               <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
-                {met ? " — met" : " — not met"}
+                {met ? metLabel : unmetLabel}
               </span>
             </li>
           );

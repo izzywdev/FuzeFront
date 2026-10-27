@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test'
 import { seedMockSession } from '../../tests/support/account-vault'
 import { loginSyntheticViaApi } from '../../tests/support/post-prod-auth'
+import {
+  isFuzeQualityCatalogEntry,
+  type FuzeQualityCatalogEntry,
+} from '../../src/platform/fuzequalityCatalog'
 
 /**
  * Release evidence for FuzeQuality itself, not merely any healthy remote.
@@ -35,9 +39,9 @@ test.describe('FuzeQuality portal — live post-production', () => {
     })
     expect(registry.status(), `/api/apps -> ${registry.status()}`).toBe(200)
     const body = await registry.json()
-    const apps: Array<{ id: string; name: string; integrationType?: string; isHealthy?: boolean }> =
+    const apps: FuzeQualityCatalogEntry[] =
       Array.isArray(body) ? body : body?.apps ?? body?.data ?? []
-    const quality = apps.find(app => app.id === 'fuzequality')
+    const quality = apps.find(isFuzeQualityCatalogEntry)
     expect(quality, 'FuzeQuality must be registered in the production portal').toBeTruthy()
     expect(quality?.integrationType, 'FuzeQuality must be a federated portal app').toBe('module-federation')
     expect(quality?.isHealthy, 'FuzeQuality registration must be healthy').not.toBe(false)

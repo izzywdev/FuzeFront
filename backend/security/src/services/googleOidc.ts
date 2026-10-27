@@ -35,6 +35,8 @@ export interface GoogleIdentity {
   emailVerified: boolean
   firstName?: string
   lastName?: string
+  /** Google's single display-name claim (`name`) — preferred over joining the parts. */
+  name?: string
   /** Google's stable subject identifier (used as the source-connection identifier). */
   sub: string
 }
@@ -153,6 +155,7 @@ export class GoogleOidcService {
         emailVerified: claims.email_verified === true || (claims as any).email_verified === 'true',
         firstName: (claims.given_name as string | undefined) ?? undefined,
         lastName: (claims.family_name as string | undefined) ?? undefined,
+        name: (claims.name as string | undefined) ?? undefined,
         sub: claims.sub,
       }
     } catch (err) {

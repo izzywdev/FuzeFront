@@ -17,6 +17,7 @@ import { getLog } from '../lib/logger';
 import { getQuotaUsage } from '../services/quota.service';
 import { isSelectionListsEnabled } from '../flags';
 import { requireCatalogCheck } from '../middleware/authz';
+import { writeOrgs } from '../lib/sharedLists';
 
 const router = createRouter();
 
@@ -45,7 +46,7 @@ router.get('/quota', requireCatalogCheck('read_quota'), async (req: Request, res
   }
 
   try {
-    const usage = await getQuotaUsage(req.orgId, req.userId);
+    const usage = await getQuotaUsage(req.orgId, req.userId, await writeOrgs(req));
     res.status(200).json(usage);
   } catch (err) {
     getLog(req).error(

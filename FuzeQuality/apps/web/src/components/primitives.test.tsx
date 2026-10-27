@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
+import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { QualityAction, QualityIconAction } from './primitives'
+import { QualityAction, QualityDetailModal, QualityIconAction } from './primitives'
 
 describe('FuzeQuality design-system adapters', () => {
   it('maps product action intent onto the shared button primitive', () => {
@@ -21,5 +22,16 @@ describe('FuzeQuality design-system adapters', () => {
         .getByRole('button', { name: 'Close repository form' })
         .getAttribute('title')
     ).toBe('Close repository form')
+  })
+
+  it('uses the shared accessible modal for app-specific detail surfaces', () => {
+    render(
+      <QualityDetailModal open title="Flow inspector">
+        <p>Flow evidence</p>
+      </QualityDetailModal>
+    )
+
+    expect(screen.getByRole('dialog', { name: 'Flow inspector' })).toBeInTheDocument()
+    expect(screen.getByText('Flow evidence')).toBeVisible()
   })
 })
