@@ -5,6 +5,11 @@
 > Contabo **k3s** cluster. This document describes the current model. The old
 > `docker-compose.prod.yml` / `fuzefront-prod` network approach is legacy.
 
+> **Evaluating adoption?** See the
+> [Production Readiness Checklist](PRODUCTION_READINESS_CHECKLIST.md) for the
+> required-vs-recommended checklist version of this doc, plus what FuzeFront
+> explicitly does not guarantee for an external adopter.
+
 ## Overview
 
 Production runs FuzeFront on a single-node k3s cluster on a Contabo VPS:

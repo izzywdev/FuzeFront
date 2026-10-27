@@ -138,7 +138,9 @@ export async function syncFeature(slug, localDir, { sourceRepo } = {}) {
   const path = await import('node:path');
 
   const manifest = JSON.parse(await fs.readFile(path.join(localDir, 'manifest.json'), 'utf8'));
-  const resolvedSourceRepo = sourceRepo || manifest.sourceRepo || null;
+  // FuzeX matches import provenance to a database-managed repository
+  // connection. GitHub Actions supplies the canonical owner/repository value.
+  const resolvedSourceRepo = sourceRepo || manifest.sourceRepo || process.env.GITHUB_REPOSITORY || null;
 
   try {
     await createFeature(slug, {

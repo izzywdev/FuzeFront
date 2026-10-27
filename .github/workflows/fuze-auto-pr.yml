@@ -1,88 +1,322 @@
-# fuze:managed template=fuze-auto-pr.yml baseline=v1 digest=sha256:9e1b8bf046419838c9bbec8669e362b18cd290af4edf71944437793f7384097d
+# fuze:managed template=fuze-auto-pr.yml baseline=v1 digest=sha256:3ee3350f9679b2e7d896b905200a48b50086cc6b93c06f06ebdd9149e3f0e52d
 name: Auto-PR from agent branches
 
 # RENAMED from `claude-auto-pr.yml` (and `name:` from "Auto-PR from claude branches") for
 # naming consistency with the `@fuze` entrypoint (`fuze.yml`). NAMING ONLY — this workflow
-# makes NO LLM call of any kind: it is `gh pr create` and nothing else, so there is nothing
-# here to route through the LiteLLM gateway and nothing was added. Anyone reading the rename
-# as "this now goes through fuze-code-action" is reading it wrong.
+# makes NO LLM call of any kind: it opens a pull request and nothing else, so there is nothing
+# here to route through the LiteLLM gateway.
 #
 # Closes the issue->PR autonomy gap: `anthropics/claude-code-action` (in `claude.yml` and
 # `fuze.yml`) pushes a branch and only posts a "Create PR" link — it does not open the PR
-# itself. This workflow opens a DRAFT PR from any pushed agent branch when one doesn't
-# already exist (draft = a human still reviews before merge).
+# itself. This workflow opens a DRAFT PR from an agent branch when one doesn't already exist
+# (draft = a human still reviews before merge).
 #
 # BOTH PREFIXES, deliberately. `claude/**` is what claude-code-action actually names its
 # branches today and MUST stay — dropping it would silently stop every agent PR in the
-# fleet. `fuze/**` is added because after the rename the filename promises fuze branches,
-# and a repo whose `@fuze` handler pushes that prefix (FuzeInfra's cluster-capable variant
-# does) would otherwise be covered by the name and not by the trigger. Strictly additive:
-# nothing that worked before stops working.
+# fleet. `fuze/**` is added because a repo whose `@fuze` handler pushes that prefix
+# (FuzeInfra's cluster-capable variant does) would otherwise be covered by the name and not
+# by the trigger.
+#
+# ---------------------------------------------------------------------------------------
+# SECURITY — WHY THIS NO LONGER TRIGGERS ON `push`, AND WHERE THE TRUST BOUNDARY IS NOW.
+#
+# This file used to be `on: push: branches: [claude/**, fuze/**]` and held the long-lived
+# coder PAT (FUZEONEAGENT_TOKEN), the bot PAT (GH_RELEASE_PAT) and the fuze-agent App private
+# key. A `push` workflow is defined by THE PUSHED REF: GitHub runs the copy of this file that
+# exists at the pushed commit, not the default branch's. So anyone who could push a
+# `claude/**` or `fuze/**` branch could edit this file on that branch (or add any new
+# `on: push` workflow) and read every credential above before a single review happened.
+# `permissions:` does not help — it only limits GITHUB_TOKEN, never a repository secret.
+#
+# The trigger is now `workflow_run` (+ `schedule` / `workflow_dispatch`). GitHub ALWAYS runs
+# the DEFAULT BRANCH's definition of a `workflow_run`, `schedule` or `workflow_dispatch`
+# workflow, so the credential-bearing job below is defined by reviewed, merged code and cannot
+# be rewritten by a pusher. The secret-LESS half that still reacts to the push is the separate
+# `fuze-agent-push.yml` (`permissions: {}`, no secrets, does nothing).
+#
+# What that does and does NOT buy — read before relying on it:
+#   * It closes "edit THIS workflow on a pushed ref to exfiltrate the PAT".
+#   * It does NOT, by itself, stop a writer from adding a NEW workflow on their branch that
+#     references `secrets.FUZEONEAGENT_TOKEN`: repo-level secrets are readable by every
+#     workflow in the repo, on every branch. The structural fix is an Actions ENVIRONMENT
+#     with a deployment-branch policy (default branch only) holding the credentials — this
+#     job opts into one via the `FUZE_CODER_ENVIRONMENT` repository variable (below). Until
+#     the owner creates that environment and moves the secrets into it, the credentials stay
+#     repo-level and that residual path stays open. See governance/hardening-convention.md §8.1.
+#
+# UNTRUSTED DATA, NEVER CODE. Nothing in this job checks out, builds, sources or executes
+# anything from the pushed branch — there is deliberately NO `actions/checkout` here. The
+# branch name and commit messages are attacker-influenced strings that only ever travel
+# through `env:` and are passed to `gh` as quoted arguments:
+#   * the branch name is validated against ^(claude|fuze)/ + a conservative charset before
+#     it is used for anything, and is never echoed to the log unvalidated (an unvalidated
+#     name could carry `::` workflow commands);
+#   * commit headlines become the PR title/body as DATA via the REST API, never via a shell.
+#
+# THREE WAYS IN, because no single one is reliable:
+#   1. `workflow_run` of the secret-less companion: the fast path for pushes made with a real
+#      identity (the fuze-agent App token fuze.yml / claude.yml push with, a human, a cloud
+#      session);
+#   2. an hourly `schedule` sweep: the net for a repo that has this file but not yet the
+#      companion, and for pushes that fire NO push event at all — a push authenticated with
+#      GITHUB_TOKEN (what fuze.yml / claude.yml fall back to when the App secrets are unset)
+#      starts no workflow, so path 1 never sees that branch;
+#   3. `workflow_dispatch`, for a human who wants the sweep now.
+#
+# FLOOD GUARD. The sweep (2 and 3) only considers branches whose tip commit is at most 6 hours
+# old (and, for the cron, at least 5 minutes old) and that have NEVER had a PR in any state, so
+# it cannot resurrect abandoned branches or reopen a PR somebody deliberately closed.
+# ---------------------------------------------------------------------------------------
 on:
-  push:
+  workflow_run:
+    workflows: ['Fuze agent branch push']
+    types: [completed]
     branches:
       - 'claude/**'
       - 'fuze/**'
+  schedule:
+    - cron: '17 * * * *'   # fuze:cron-minute-spread — hourly safety net; minute is derived per repo at install time so the fleet does not fire together
+  workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  # One run per branch at a time, never cancelled mid-flight: cancelling a run half-way
+  # through `POST /pulls` is how duplicate-or-missing PRs happen. Queued runs find the PR
+  # the first one opened and exit.
+  group: fuze-auto-pr-${{ github.event.workflow_run.head_branch || 'sweep' }}
+  cancel-in-progress: false
+
 jobs:
   open-draft-pr:
+    # Only act on a SUCCESSFUL push-triggered run of the companion, from THIS repository.
+    # (head_repository can differ for a fork-PR-triggered run of a same-named workflow.)
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # OPTIONAL, and the point of defence in depth. When the repository variable
+    # FUZE_CODER_ENVIRONMENT names an Actions environment (e.g. `fuze-coder`) whose
+    # deployment-branch policy allows only the default branch, the credentials below can be
+    # stored as ENVIRONMENT secrets there and no workflow on any other branch can read them.
+    # Unset (the default) => no environment => repo-level secrets, exactly as before.
+    environment: ${{ vars.FUZE_CODER_ENVIRONMENT || null }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          fetch-depth: 0
-
       # Agent-PR identity (governance/hardening-convention.md §8): open the PR under a
       # collaborator-backed identity so its head actually gets CI. A PR opened by the default
       # GITHUB_TOKEN is frozen as action_required (public) or gets no runs at all (private).
-      # Mint a fuze-agent App installation token; fall back App -> bot PAT -> GITHUB_TOKEN,
-      # the last emitting a ::warning:: so a repo lacking the App secrets degrades, not breaks.
-      - name: Mint fuze-agent App token
+      # The coder is the org-wide `fuze-agent` App (docs/identity-and-roles.md) — the retired
+      # `fuzeoneagent` user account (suspended by GitHub 2026-10-14) is no longer the coder.
+      # The App installation token is short-lived (~1h) and scoped to THIS repository with
+      # only the two permissions this job uses. The App bot authoring the PR keeps
+      # author != reviewer intact.
+      # fuze:secret-sourcing FUZE_AGENT_APP_ID=fleet — provision-secrets.yml (FLEET_SOURCED); durable coder identity
+      # fuze:secret-sourcing FUZE_AGENT_APP_PRIVATE_KEY=fleet — provision-secrets.yml (FLEET_SOURCED); durable coder identity
+      # fuze:secret-sourcing FUZEONEAGENT_TOKEN=fleet — provision-secrets.yml (FLEET_SOURCED); least-privilege coder (validated fallback)
+      - name: Mint fuze-agent App token (coder identity)
         id: app_token
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
-      - name: Resolve agent-PR identity
+          permission-contents: read
+          permission-pull-requests: write
+
+      # IDENTITY LADDER — and every rung is VALIDATED before it is chosen.
+      #
+      # It used to select FUZEONEAGENT_TOKEN by PRESENCE ALONE. A revoked, expired or
+      # mis-scoped PAT therefore won the ladder, every later `gh` call failed with an auth
+      # error (gh exits 4), and the `|| true` / `|| echo` wrappers swallowed it: a GREEN run
+      # that opened no PR. Each candidate is now probed with an authenticated read of this
+      # repository (`GET /repos/{repo}` — works for a user PAT, an App installation token and
+      # GITHUB_TOKEN alike, unlike `GET /user`, which an installation token cannot call).
+      # It deliberately does NOT require write access to the repo: PR creation needs
+      # pull-requests:write, not contents:write, and the rungs here are legitimately
+      # contents:read (the App token minted above, and this workflow's GITHUB_TOKEN), for
+      # which `permissions.push` is false. No cheap check expresses pull-requests:write for
+      # every rung, so a token that authenticates but cannot create PRs surfaces as a loud
+      # `POST /pulls` failure below instead. A failing rung is skipped with a visible ::warning:: naming it, and the ladder falls through; if NO
+      # rung validates, the job FAILS LOUDLY.
+      #
+      # Order: fuze-agent App (the durable coder) -> fuzeoneagent PAT -> GH_RELEASE_PAT bot PAT
+      # -> GITHUB_TOKEN. The PAT rungs are fallbacks now; a suspended or revoked one (the
+      # fuzeoneagent account was suspended 2026-10-14) fails validation and is skipped.
+      - name: Resolve and validate agent-PR identity
         id: identity
         env:
+          CODER_TOKEN: ${{ secrets.FUZEONEAGENT_TOKEN }}
           APP_TOKEN: ${{ steps.app_token.outputs.token }}
           BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
           GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          if [ -n "${APP_TOKEN:-}" ]; then
-            tok="$APP_TOKEN"; who="fuze-agent (App installation token)"
-          elif [ -n "${BOT_PAT:-}" ]; then
-            tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"
+          set -uo pipefail
+          # BEGIN fuze:identity-ladder
+          PROBE_WHY=""
+          probe() {
+            local tok="$1" out rc i
+            for i in 1 2; do
+              out=$(GH_TOKEN="$tok" gh api "repos/${REPO}" --jq '.full_name' 2>&1); rc=$?
+              if [ "$rc" -eq 0 ]; then return 0; fi
+              case "$out" in
+                *"HTTP 401"*|*"Bad credentials"*) PROBE_WHY="GitHub rejected it (HTTP 401 bad credentials — revoked or expired)" ;;
+                *"HTTP 403"*) PROBE_WHY="GitHub refused it (HTTP 403 — suspended account, SSO not authorized, or insufficient scope)" ;;
+                *"HTTP 404"*) PROBE_WHY="it cannot see ${REPO} (HTTP 404 — no access to this repository)" ;;
+                *) PROBE_WHY="the repo-read probe failed (gh exit ${rc})" ;;
+              esac
+              if [ "$i" -lt 2 ]; then sleep 2; fi
+            done
+            return 1
+          }
+          CHOSEN_TOKEN=""; CHOSEN_LABEL=""
+          pick() {
+            [ -n "$2" ] || return 1
+            echo "::add-mask::$2"
+            if probe "$2"; then CHOSEN_LABEL="$1"; CHOSEN_TOKEN="$2"; return 0; fi
+            echo "::warning title=agent-identity::$1 is set but FAILED validation — ${PROBE_WHY}. Skipping it and falling through the identity ladder; repair or rotate the credential."
+            return 1
+          }
+          # END fuze:identity-ladder
+          if pick "fuze-agent[bot] (fuze-agent App installation token — durable coder)" "${APP_TOKEN:-}"; then
+            :
+          elif pick "fuzeoneagent (FUZEONEAGENT_TOKEN — least-privilege coder, validated fallback)" "${CODER_TOKEN:-}"; then
+            :
+          elif pick "GH_RELEASE_PAT (deprecated bot PAT fallback)" "${BOT_PAT:-}"; then
+            echo "::warning title=agent-identity::fuze-agent App secrets unset (or the App token could not be minted) and FUZEONEAGENT_TOKEN unset or rejected — opening this PR as GH_RELEASE_PAT (deprecated fallback). Set FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY to author agent PRs as fuze-agent[bot] (docs/identity-and-roles.md)."
+          elif pick "GITHUB_TOKEN" "${GH_DEFAULT:-}"; then
+            echo "::warning title=agent-identity::No fuze-agent App secrets, no working FUZEONEAGENT_TOKEN, and no working GH_RELEASE_PAT on this repo — opening this PR as GITHUB_TOKEN, whose head gets NO CI (hardening-convention.md §8). Set the fuze-agent App secrets (docs/identity-and-roles.md) to fix."
           else
-            tok="$GH_DEFAULT"; who="GITHUB_TOKEN"
-            echo "::warning title=agent-identity::No FUZE_AGENT_APP_* App secrets and no GH_RELEASE_PAT on this repo — opening this PR as GITHUB_TOKEN, whose head gets NO CI (hardening-convention.md §8). Set the fuze-agent App secrets to fix."
+            echo "::error title=agent-identity::NO usable credential: every identity-ladder rung that was set failed validation (see the warnings above) or was unset. Failing loudly instead of reporting a green run that opened no PR."
+            exit 1
           fi
-          echo "::add-mask::$tok"
-          echo "token=$tok" >> "$GITHUB_OUTPUT"
-          echo "Agent-PR identity: $who"
+          echo "token=$CHOSEN_TOKEN" >> "$GITHUB_OUTPUT"
+          echo "Agent-PR identity: $CHOSEN_LABEL"
 
-      - name: Open draft PR if none exists
+      - name: Open draft PR for each agent branch that needs one
         env:
           GH_TOKEN: ${{ steps.identity.outputs.token }}
-          BRANCH: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
           BASE: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          # UNTRUSTED. Attacker-chosen string. Used only after validation below.
+          TRIGGER_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
-          if [ -n "$existing" ]; then
-            echo "PR #$existing already open for $BRANCH — nothing to do."
-            exit 0
+          set -uo pipefail
+          MIN_AGE=300      # seconds: let the pusher finish / let the companion path win the race
+          MAX_AGE=21600    # seconds: 6h — older unPR'd branches are somebody's, not ours to open
+          # A manual dispatch is "now": the human wants the PR immediately. Only the hourly cron
+          # keeps the delay (it must not race a pusher that is still mid-push).
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then MIN_AGE=0; fi
+
+          valid_branch() {
+            local b="$1"
+            [[ "$b" =~ ^(claude|fuze)/[A-Za-z0-9._/-]+$ ]] || return 1
+            [ "${#b}" -le 200 ] || return 1
+            case "$b" in *..*|*//*|*/|*.lock|*/.*) return 1 ;; esac
+            return 0
+          }
+          valid_base() { [[ "$1" =~ ^[A-Za-z0-9._/-]+$ ]] && [ "${#1}" -le 200 ]; }
+          clean() { printf '%s' "$1" | tr -d '\000-\010\013-\037\177' | cut -c1-"$2"; }
+          # Text that came from an API error body can echo attacker-chosen commit text; break
+          # any `::` so it can never be parsed as a workflow command in the log.
+          logsafe() { clean "$1" "$2" | sed 's/::/: :/g'; }
+
+          if ! valid_base "$BASE"; then
+            echo "::error title=auto-pr::unexpected default-branch name; refusing to continue."; exit 1
           fi
-          # Only open a PR if the branch actually diverges from base.
-          if git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
-            gh pr create --draft --base "$BASE" --head "$BRANCH" --fill \
-              || echo "gh pr create failed (no diff or transient) — skipping."
+
+          # --- candidate branches ---------------------------------------------------------
+          candidates=()
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if valid_branch "$TRIGGER_BRANCH"; then
+              candidates+=("$TRIGGER_BRANCH")
+            else
+              echo "::notice title=auto-pr::triggering branch is not an agent branch name (^(claude|fuze)/ + safe charset); nothing to do."
+            fi
           else
-            echo "No commits on $BRANCH ahead of $BASE — no PR opened."
+            owner="${REPO%%/*}"; name="${REPO##*/}"
+            for prefix in claude fuze; do
+              # shellcheck disable=SC2016  # `$owner` etc. are GraphQL variables, not shell expansions
+              list=$(gh api graphql --paginate \
+                -f query='query($owner:String!,$name:String!,$prefix:String!,$endCursor:String){repository(owner:$owner,name:$name){refs(refPrefix:$prefix,first:100,after:$endCursor){nodes{name target{... on Commit{committedDate}}} pageInfo{hasNextPage endCursor}}}}' \
+                -f owner="$owner" -f name="$name" -f prefix="refs/heads/${prefix}/" \
+                --jq ".data.repository.refs.nodes[] | select(.target.committedDate != null) | select((now - (.target.committedDate | fromdateiso8601)) as \$a | \$a > ${MIN_AGE} and \$a < ${MAX_AGE}) | .name") || {
+                echo "::error title=auto-pr::could not list ${prefix}/* branches (gh api graphql failed) — failing loudly rather than reporting a green run that opened nothing."
+                exit 1
+              }
+              while IFS= read -r rest; do
+                # GraphQL returns the name relative to refPrefix; tolerate either shape.
+                rest="${rest#refs/heads/}"; rest="${rest#"${prefix}"/}"
+                if [ -n "$rest" ]; then candidates+=("${prefix}/${rest}"); fi
+              done <<< "$list"
+            done
           fi
+
+          # --- per branch ----------------------------------------------------------------
+          failed=0
+          for b in "${candidates[@]}"; do
+            if ! valid_branch "$b"; then
+              echo "::warning title=auto-pr::skipping a branch whose name failed validation."
+              continue
+            fi
+
+            # Push path: only an OPEN PR counts (a push to a branch whose PR was closed opens
+            # a new one, as before). Sweep path: a PR in ANY state counts, so it can never
+            # resurrect a PR somebody closed on purpose.
+            state=open
+            if [ "$EVENT_NAME" != "workflow_run" ]; then state=all; fi
+            if ! existing=$(gh pr list --repo "$REPO" --head "$b" --state "$state" --limit 1 --json number --jq '.[0].number // empty'); then
+              echo "::error title=auto-pr::'gh pr list' failed for ${b} — failing loudly (a dead credential must not look like 'no PR needed')."
+              failed=1
+              continue
+            fi
+            if [ -n "$existing" ]; then
+              echo "PR #${existing} already exists for ${b} — nothing to do."
+              continue
+            fi
+
+            err=$(mktemp)
+            if ! cmp=$(gh api "repos/${REPO}/compare/${BASE}...${b}" --jq '{ahead: .ahead_by, headline: ((.commits[0].commit.message // "") | split("\n") | .[0]), list: ([.commits[] | .commit.message | split("\n") | .[0]] | .[0:20] | map("- " + .) | join("\n"))}' 2>"$err"); then
+              if grep -q "HTTP 404" "$err"; then
+                echo "Branch ${b} no longer exists (or has no common history with ${BASE}) — nothing to do."
+              else
+                echo "::error title=auto-pr::comparing ${b} with ${BASE} failed — failing loudly."
+                failed=1
+              fi
+              continue
+            fi
+            ahead=$(printf '%s' "$cmp" | jq -r '.ahead')
+            if [ "${ahead:-0}" = "0" ]; then
+              echo "No commits on ${b} ahead of ${BASE} — no PR opened."
+              continue
+            fi
+
+            if [ "$ahead" = "1" ]; then
+              title=$(clean "$(printf '%s' "$cmp" | jq -r '.headline')" 200)
+            else
+              title=$(clean "$(printf '%s' "${b#*/}" | tr '_-' '  ')" 200)
+            fi
+            if [ -z "$title" ]; then title="Agent branch ${b#*/}"; fi
+            commits=$(clean "$(printf '%s' "$cmp" | jq -r '.list')" 4000)
+            # shellcheck disable=SC2016  # the backticks are literal Markdown, not command substitution
+            body=$(printf '%s\n\n%s\n\n---\nOpened automatically as a **draft** from the agent branch by `fuze-auto-pr.yml`; a human reviews before merge.' "Commits on this branch:" "$commits")
+
+            if num=$(gh api -X POST "repos/${REPO}/pulls" -f title="$title" -f head="$b" -f base="$BASE" -f body="$body" -F draft=true --jq .number 2>"$err"); then
+              echo "Opened draft PR #${num} for ${b}."
+            else
+              raced=$(gh pr list --repo "$REPO" --head "$b" --state open --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null || true)
+              if [ -n "$raced" ]; then
+                echo "PR #${raced} appeared concurrently for ${b} — nothing to do."
+              else
+                echo "::error title=auto-pr::creating the PR for ${b} FAILED: $(logsafe "$(head -c 300 "$err")" 300)"
+                failed=1
+              fi
+            fi
+          done
+          exit "$failed"

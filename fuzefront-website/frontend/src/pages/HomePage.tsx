@@ -6,18 +6,17 @@ import {
   ArrowRight,
   Shield,
   Zap,
-  CreditCard,
+  Server,
   Bot,
-  BarChart3,
+  Rocket,
   Layers,
-  Key,
+  Palette,
   CheckCircle2,
   Users,
-  Globe,
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, ResponsiveGrid, HeroPatternOverlay, Wrap, Text, Button, AmbientGlow, GradientText, IconTile, SectionIcon, PageSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -27,9 +26,9 @@ const products = [
   {
     slug: 'fuzefront',
     icon: Layers,
-    name: 'FuzeFront Platform',
-    tagline: 'Module Federation host shell',
-    description: 'Enterprise auth, RBAC, billing, plugin system, and AI assistant. The core platform everything runs on.',
+    name: 'FuzeFront',
+    tagline: 'The portal for your software factory',
+    description: 'The Module-Federation host shell and portal for the whole family — auth, RBAC, and governance built in.',
     color: 'from-blue-500 to-cyan-500',
     bg: 'bg-blue-50',
   },
@@ -37,45 +36,45 @@ const products = [
     slug: 'fuzeagent',
     icon: Bot,
     name: 'FuzeAgent',
-    tagline: 'AI team orchestration',
-    description: 'Autonomous agent workflows, multi-agent pipelines, and human-in-the-loop approval.',
+    tagline: 'Agent orchestration',
+    description: 'Orchestrates the fleet of specialized AI agents that build, test, and ship every product.',
     color: 'from-violet-500 to-purple-600',
     bg: 'bg-violet-50',
   },
   {
-    slug: 'fuzesocial',
-    icon: Globe,
-    name: 'FuzeSocial',
-    tagline: 'Social media automation',
-    description: 'Schedule and publish to Facebook, Instagram, TikTok, YouTube, X, and more from one dashboard.',
-    color: 'from-pink-500 to-rose-500',
+    slug: 'fuzeinfra',
+    icon: Server,
+    name: 'FuzeInfra',
+    tagline: 'The infrastructure layer',
+    description: 'Shared data stores, event streaming, and observability, deployed the same way everywhere.',
+    color: 'from-cyan-600 to-blue-700',
+    bg: 'bg-cyan-50',
+  },
+  {
+    slug: 'fuzex',
+    icon: Palette,
+    name: 'FuzeX',
+    tagline: 'UX/UI design & flow approvals',
+    description: 'Navigable design frames and per-flow approval — nothing ships without a signed-off design.',
+    color: 'from-fuchsia-500 to-pink-600',
     bg: 'bg-pink-50',
   },
   {
-    slug: 'fuzefinance',
-    icon: CreditCard,
-    name: 'FuzeFinance',
-    tagline: 'Enterprise finance & accounting',
-    description: 'Invoices, GL, payouts, multi-entity, multi-currency — full financial operations.',
-    color: 'from-green-500 to-emerald-600',
+    slug: 'fuzequality',
+    icon: CheckCircle2,
+    name: 'FuzeQuality',
+    tagline: 'Automated UI/UX test coverage',
+    description: 'Playwright-driven visual regression, accessibility, and console-clean runtime validation.',
+    color: 'from-lime-500 to-green-600',
     bg: 'bg-green-50',
   },
   {
-    slug: 'fuzekeys',
-    icon: Key,
-    name: 'FuzeKeys',
-    tagline: 'AI-powered credential management',
-    description: 'Secrets vault, PII tokenization, API key rotation, and complete audit trail.',
-    color: 'from-orange-500 to-amber-500',
-    bg: 'bg-orange-50',
-  },
-  {
-    slug: 'fuzebi',
-    icon: BarChart3,
-    name: 'FuzeBI',
-    tagline: 'Business intelligence',
-    description: 'Real-time dashboards, custom reports, data connectors, and embedded analytics.',
-    color: 'from-indigo-500 to-blue-600',
+    slug: 'fuzedeploy',
+    icon: Rocket,
+    name: 'FuzeDeploy',
+    tagline: 'Multi-cloud CI/CD automation',
+    description: 'Signed, gated release pipelines that deploy the same way across every cloud.',
+    color: 'from-indigo-500 to-purple-700',
     bg: 'bg-indigo-50',
   },
 ]
@@ -165,16 +164,10 @@ export const HomePage: React.FC = () => {
     <div className="overflow-x-hidden">
       {/* ── Hero ── */}
       <section className="relative min-h-screen flex items-center bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden">
-        {/* `hero-pattern` sets `background-image` too — combining it with the
-            gradient classes above on one element makes the browser drop the
-            gradient entirely (last background-image wins, they don't layer),
-            leaving the section transparent and the white/light hero text
-            unreadable. Rendered as its own overlay div instead, exactly like
-            the Pricing Teaser section below does it. */}
-        <div className="absolute inset-0 hero-pattern pointer-events-none" />
+        <HeroPatternOverlay />
         {/* Background orbs */}
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-20 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="primary" size={384} style={{ top: '5rem', left: '25%' }} />
+        <AmbientGlow tone="accent" size={320} opacity={0.15} style={{ bottom: '5rem', right: '25%' }} />
 
         <Container size="7xl" className="relative pt-24 pb-20">
           <div className="text-center max-w-4xl mx-auto">
@@ -196,7 +189,9 @@ export const HomePage: React.FC = () => {
               className="text-5xl sm:text-6xl lg:text-7xl font-heading font-extrabold text-white leading-tight mb-6"
             >
               The Software Factory
-              <span className="block gradient-text mt-2">for your SaaS</span>
+              <GradientText as="span" gradient="var(--primary-gradient)" className="block mt-2">
+                for your SaaS
+              </GradientText>
             </motion.h1>
 
             <motion.p
@@ -259,7 +254,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Value Props ── */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-16">
@@ -271,23 +266,23 @@ export const HomePage: React.FC = () => {
               </p>
             </motion.div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <ResponsiveGrid columns={4} gap="xl">
               {valueProps.map((prop) => {
                 const Icon = prop.icon
                 return (
                   <motion.div key={prop.title} variants={fadeUpVariants} className="group">
                     <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${prop.gradient} flex items-center justify-center mb-5 shadow-medium group-hover:scale-110 transition-transform duration-300`}>
-                      <Icon size={22} className="text-white" />
+                      <IconTile tone="inverse" variant="plain"><Icon size={22} /></IconTile>
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">{prop.title}</h3>
-                    <p className="text-gray-600 text-sm leading-relaxed">{prop.description}</p>
+                    <Text as="p" tone="secondary" size="sm" leading="relaxed">{prop.description}</Text>
                   </motion.div>
                 )
               })}
-            </div>
+            </ResponsiveGrid>
           </SectionWrapper>
         </Container>
-      </section>
+      </PageSection>
 
       {/* ── Products Grid ── */}
       <section className="py-24 bg-secondary-50">
@@ -313,7 +308,7 @@ export const HomePage: React.FC = () => {
                       onClick={() => trackEvent('product_card_click', { product: product.slug })}
                     >
                       <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${product.color} flex items-center justify-center mb-4 shadow-sm group-hover:scale-110 transition-transform duration-300`}>
-                        <Icon size={20} className="text-white" />
+                        <IconTile tone="inverse" variant="plain"><Icon size={20} /></IconTile>
                       </div>
                       <p className="text-xs font-medium text-primary-700 uppercase tracking-wider mb-1">{product.tagline}</p>
                       <h3 className="text-lg font-semibold text-gray-900 mb-2 group-hover:text-primary-700 transition-colors">{product.name}</h3>
@@ -341,7 +336,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Industries ── */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-12">
@@ -369,14 +364,14 @@ export const HomePage: React.FC = () => {
             <motion.div variants={fadeUpVariants} className="text-center mt-8">
               <Link
                 to="/industries"
-                className="inline-flex items-center gap-1 text-primary-700 hover:text-primary-800 font-medium text-sm"
+                className="inline-flex items-center gap-1 text-primary-800 hover:text-primary-900 font-medium text-sm"
               >
                 See industry solutions <ChevronRight size={14} />
               </Link>
             </motion.div>
           </SectionWrapper>
         </Container>
-      </section>
+      </PageSection>
 
       {/* ── Pricing Teaser ── */}
       <section className="py-24 bg-gradient-to-br from-primary-900 via-secondary-900 to-accent-900 relative overflow-hidden">
@@ -411,7 +406,7 @@ export const HomePage: React.FC = () => {
                   </div>
                 ))}
               </div>
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <Wrap gap={4} justify="center">
                 <Link
                   to="/pricing"
                   className="btn-primary flex items-center justify-center gap-2"
@@ -419,31 +414,34 @@ export const HomePage: React.FC = () => {
                 >
                   See all plans <ArrowRight size={16} />
                 </Link>
-                <Link
+                <Button
+                  as={Link}
                   to="/contact"
-                  className="btn-ghost flex items-center justify-center gap-2"
+                  variant="ghost-inverse"
                   onClick={() => trackEvent('cta_click', { button: 'talk_sales', location: 'pricing_teaser' })}
                 >
                   Talk to sales
-                </Link>
-              </div>
+                </Button>
+              </Wrap>
             </motion.div>
           </SectionWrapper>
         </Container>
       </section>
 
       {/* ── Newsletter ── */}
-      <section className="py-20 bg-white">
+      <PageSection spacing="md">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
-              <Users size={32} className="text-primary-500 mx-auto mb-4" />
+              <SectionIcon tone="accent" gap="md">
+                <Users size={32} />
+              </SectionIcon>
               <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-3">
                 Stay in the loop
               </h2>
-              <p className="text-gray-600 mb-8">
+              <Text tone="secondary" spacing="xl">
                 Product updates, engineering deep-dives, and launch announcements. No spam.
-              </p>
+              </Text>
 
               {newsletterSuccess ? (
                 <div className="flex items-center justify-center gap-2 text-success-600 font-medium">
@@ -475,7 +473,7 @@ export const HomePage: React.FC = () => {
             </motion.div>
           </SectionWrapper>
         </div>
-      </section>
+      </PageSection>
 
       {/* ── Final CTA ── */}
       <section className="py-20 bg-secondary-50 border-t border-secondary-100">
@@ -488,7 +486,7 @@ export const HomePage: React.FC = () => {
               <p className="text-lg text-gray-600 mb-8">
                 Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
               </p>
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <Wrap gap={4} justify="center">
                 <a
                   href="https://app.fuzefront.com/signup"
                   className="btn-primary flex items-center justify-center gap-2 text-base"
@@ -503,7 +501,7 @@ export const HomePage: React.FC = () => {
                 >
                   Talk to sales
                 </Link>
-              </div>
+              </Wrap>
               <Caption space="lg" tone="primary">
                 No credit card required &middot; Free for 14 days &middot; Scales as you grow
               </Caption>

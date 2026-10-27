@@ -16,6 +16,7 @@ exports.TOPICS = {
     IDENTITY_ORG_DELETED: 'identity.org.deleted',
     IDENTITY_MEMBERSHIP_ADDED: 'identity.membership.added',
     IDENTITY_MEMBERSHIP_REMOVED: 'identity.membership.removed',
+    IDENTITY_AUTHORIZATION_CHANGED: 'identity.authorization.changed',
     NOTIFY_EMAIL_REQUESTED: 'notify.email.requested',
     NOTIFY_EMAIL_STATUS: 'notify.email.status',
     BILLING_USAGE_RECORDED: 'billing.usage.recorded',
@@ -27,6 +28,7 @@ exports.TOPICS = {
     BILLING_PAYMENT_METHOD_UPDATED: 'billing.payment_method.updated',
     PORTAL_CREATED: 'portal.created',
     CHAT_RESPONSE_CHUNK: 'chat.response.chunk',
+    CONFIG_CHANGED: 'config.changed',
     // selection-list-service (docs/planning/selection-lists-events.md). Produced
     // ONLY by selection-list-service, except SEED_REQUESTED, which allowlisted
     // services produce and selection-list-service consumes.
@@ -34,6 +36,9 @@ exports.TOPICS = {
     SELECTION_LISTS_LIST_UPDATED: 'selection-lists.list.updated',
     SELECTION_LISTS_LIST_ARCHIVED: 'selection-lists.list.archived',
     SELECTION_LISTS_LIST_DELETED: 'selection-lists.list.deleted',
+    // shared 1.3.0 / HTTP contract 4.1.0 (docs/planning/selection-lists-shared-and-fork.md)
+    SELECTION_LISTS_LIST_FORKED: 'selection-lists.list.forked',
+    SELECTION_LISTS_VISIBILITY_CHANGED: 'selection-lists.visibility.changed',
     SELECTION_LISTS_ITEM_CREATED: 'selection-lists.item.created',
     SELECTION_LISTS_ITEM_UPDATED: 'selection-lists.item.updated',
     SELECTION_LISTS_ITEM_ARCHIVED: 'selection-lists.item.archived',

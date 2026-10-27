@@ -1,5 +1,6 @@
 import permit from '../../config/permit'
 import { logger } from '../../lib/logger'
+import { MEMBERSHIP_TO_PERMIT_ROLE, DEFAULT_PERMIT_ROLE } from '../../permit/schema'
 
 export interface RoleAssignment {
   user: string
@@ -94,6 +95,41 @@ export async function getUserRoleAssignments(
   }
 }
 
+/** Permit's role-assignment page size; one request per page, bounded by MAX_ASSIGNMENT_PAGES. */
+const ASSIGNMENT_PAGE_SIZE = 100
+const MAX_ASSIGNMENT_PAGES = 100
+
+/**
+ * The keys of every tenant in which `userId` holds ANY role assignment (a tenant
+ * role or an instance-scoped one: either way the user is "in" that tenant).
+ * Walks Permit's pages so a user with many assignments (e.g. an owner of
+ * hundreds of resource instances) is not silently truncated to the first page.
+ *
+ * Fails CLOSED: any error returns an EMPTY set (the caller then sees no
+ * tenants), never a partial or an unfiltered one.
+ */
+export async function listUserTenantKeys(userId: string): Promise<Set<string>> {
+  const keys = new Set<string>()
+  try {
+    for (let page = 1; page <= MAX_ASSIGNMENT_PAGES; page++) {
+      const rows = (await permit.api.roleAssignments.list({
+        user: userId,
+        page,
+        perPage: ASSIGNMENT_PAGE_SIZE,
+      } as any)) as any[]
+      for (const r of rows ?? []) {
+        const t = r?.tenant
+        if (typeof t === 'string' && t) keys.add(t)
+      }
+      if (!rows || rows.length < ASSIGNMENT_PAGE_SIZE) break
+    }
+    return keys
+  } catch (error) {
+    logger.error({ err: error, user: userId }, 'error listing tenants of user — returning none (fail closed)')
+    return new Set()
+  }
+}
+
 /**
  * Lists all role assignments in a tenant
  */
@@ -144,16 +180,8 @@ export async function assignOrganizationRole(
   membershipRole: 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
 ): Promise<boolean> {
   try {
-    // Map membership roles to Permit roles
-    const roleMapping: Record<string, string> = {
-      owner: 'admin', // Organization owners get admin permissions
-      admin: 'admin', // Admins get admin permissions
-      member: 'editor', // Members get editor permissions
-      viewer: 'viewer', // Viewers get view-only permissions
-      developer: 'developer', // docs/planning/developers-portal.md §5.3 — catalog + sandbox only
-    }
-
-    const permitRole = roleMapping[membershipRole] || 'viewer'
+    // Canonical mapping lives in permit/schema.ts (single source of truth).
+    const permitRole = MEMBERSHIP_TO_PERMIT_ROLE[membershipRole] || DEFAULT_PERMIT_ROLE
 
     return await assignRoleInPermit({
       user: userId,
@@ -180,16 +208,8 @@ export async function unassignOrganizationRole(
   membershipRole: 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
 ): Promise<boolean> {
   try {
-    // Same mapping as assignOrganizationRole.
-    const roleMapping: Record<string, string> = {
-      owner: 'admin',
-      admin: 'admin',
-      member: 'editor',
-      viewer: 'viewer',
-      developer: 'developer',
-    }
-
-    const permitRole = roleMapping[membershipRole] || 'viewer'
+    // Same canonical mapping as assignOrganizationRole (permit/schema.ts).
+    const permitRole = MEMBERSHIP_TO_PERMIT_ROLE[membershipRole] || DEFAULT_PERMIT_ROLE
 
     return await unassignRoleInPermit({
       user: userId,
@@ -215,17 +235,11 @@ export async function updateOrganizationRole(
   newRole: string
 ): Promise<boolean> {
   try {
-    // First unassign the old role
-    const roleMapping: Record<string, string> = {
-      owner: 'admin',
-      admin: 'admin',
-      member: 'editor',
-      viewer: 'viewer',
-      developer: 'developer',
-    }
-
-    const oldPermitRole = roleMapping[oldRole] || 'viewer'
-    const newPermitRole = roleMapping[newRole] || 'viewer'
+    // Canonical mapping lives in permit/schema.ts (single source of truth).
+    const toPermitRole = (r: string): string =>
+      MEMBERSHIP_TO_PERMIT_ROLE[r as keyof typeof MEMBERSHIP_TO_PERMIT_ROLE] || DEFAULT_PERMIT_ROLE
+    const oldPermitRole = toPermitRole(oldRole)
+    const newPermitRole = toPermitRole(newRole)
 
     if (oldPermitRole !== newPermitRole) {
       await unassignRoleInPermit({

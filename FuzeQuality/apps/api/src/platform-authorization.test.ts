@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NextFunction, Request, Response } from 'express'
+import { fromUuid } from '@izzywdev/fuzefront-identity'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 
 function responseDouble() {
@@ -9,6 +10,12 @@ function responseDouble() {
   response.status.mockReturnValue(response)
   response.json.mockReturnValue(response)
   return response as unknown as Response
+}
+
+function authenticatedRequest(token = 'caller-token') {
+  return {
+    header: vi.fn((name: string) => name === 'authorization' ? `Bearer ${token}` : undefined),
+  } as unknown as Request
 }
 
 describe('FQ-69 platform authorization', () => {
@@ -23,27 +30,99 @@ describe('FQ-69 platform authorization', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId: 'tenant-1' } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
-    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const request = authenticatedRequest()
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'onboard')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'onboard')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(requestIdentity(request)?.tenantId).toBe('tenant-1')
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
-      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'quality_Repository' }, action: 'onboard',
+      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'fuzequality_Repository' }, action: 'onboard',
+    })
+  })
+
+  it('asks FuzeFront to prove the portal-selected tenant before authorizing', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const tenantId = '0195a8f2-1234-7abc-8def-0123456789ab'
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = {
+      header: vi.fn((name: string) => name === 'authorization'
+        ? 'Bearer caller-token'
+        : name === 'x-fuzefront-tenant-id' ? tenantId : undefined),
+    } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][0].toString()).toBe(`https://security.example/api/v1/security/session?tenant=${tenantId}`)
+    expect(requestIdentity(request)?.tenantId).toBe(tenantId)
+  })
+
+  it('accepts a prefixed portal organization when Security returns its canonical UUID', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const tenantUuid = '0195a8f2-1234-7abc-8def-0123456789ab'
+    const tenantWireId = fromUuid('organization', tenantUuid)
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId: tenantUuid } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = {
+      header: vi.fn((name: string) => name === 'authorization'
+        ? 'Bearer caller-token'
+        : name === 'x-fuzefront-tenant-id' ? tenantWireId : undefined),
+    } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][0].toString()).toBe(
+      `https://security.example/api/v1/security/session?tenant=${tenantWireId}`,
+    )
+    expect(requestIdentity(request)?.tenantId).toBe(tenantUuid)
+  })
+
+  it('rejects a resolved tenant that does not match the active portal workspace', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      identity: { userId: 'user-1', tenantId: '0195a8f2-1234-7abc-8def-0123456789ab' },
+    }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = {
+      header: vi.fn((name: string) => name === 'authorization'
+        ? 'Bearer caller-token'
+        : name === 'x-fuzefront-tenant-id' ? '0195a8f2-1234-7abc-8def-0123456789ac' : undefined),
+    } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(response.status).toHaveBeenCalledWith(409)
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'The resolved tenant does not match the active portal workspace',
+      code: 'TENANT_CONTEXT_MISMATCH',
     })
   })
 
   it('fails closed when the security service is unavailable', async () => {
     process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('contains sensitive upstream detail')))
-    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const request = authenticatedRequest()
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'onboard')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'onboard')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(503)
@@ -56,7 +135,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(401)
@@ -67,16 +146,56 @@ describe('FQ-69 platform authorization', () => {
     process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }))
     vi.stubGlobal('fetch', fetchMock)
-    const request = { header: vi.fn().mockReturnValue('Bearer revoked-session') } as unknown as Request
+    const request = authenticatedRequest('revoked-session')
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(response.status).toHaveBeenCalledWith(401)
     expect(response.json).toHaveBeenCalledWith({ error: 'Authentication required', code: 'IDENTITY_INVALID' })
+  })
+
+  it('preserves a failed selected-tenant membership proof as a forbidden response', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 403 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = {
+      header: vi.fn((name: string) => name === 'authorization'
+        ? 'Bearer caller-token'
+        : name === 'x-fuzefront-tenant-id' ? 'tenant-without-membership' : undefined),
+    } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(response.status).toHaveBeenCalledWith(403)
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'Active tenant membership required',
+      code: 'TENANT_FORBIDDEN',
+    })
+  })
+
+  it('reports tenant proof service outages without downgrading them to invalid authentication', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
+    const request = authenticatedRequest()
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(response.status).toHaveBeenCalledWith(503)
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'Platform security is unavailable',
+      code: 'SECURITY_UNAVAILABLE',
+    })
   })
 
   it('uses the tenant resolved by FuzeFront and never a caller-supplied tenant header', async () => {
@@ -92,7 +211,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ tenant: 'tenant-from-session' })
@@ -103,11 +222,11 @@ describe('FQ-69 platform authorization', () => {
     process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ identity: { userId: 'user-without-tenant' } }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
-    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const request = authenticatedRequest()
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledOnce()
@@ -120,11 +239,11 @@ describe('FQ-69 platform authorization', () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId: 'tenant-1' } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(null, { status: 503 })))
-    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const request = authenticatedRequest()
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(403)
@@ -136,11 +255,11 @@ describe('FQ-69 platform authorization', () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'admin-1', tenantId: 'tenant-1', roles: ['admin'] } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 })))
-    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const request = authenticatedRequest()
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformAdminPermission('quality_PlatformAdministration', 'read')(request, response, next)
+    await requirePlatformAdminPermission('fuzequality_PlatformAdministration', 'read')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(requestIdentity(request)?.roles).toContain('admin')
@@ -151,11 +270,11 @@ describe('FQ-69 platform authorization', () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'tenant-admin', tenantId: 'tenant-1', roles: ['owner'] } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 })))
-    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const request = authenticatedRequest()
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformAdminPermission('quality_PlatformAdministration', 'read')(request, response, next)
+    await requirePlatformAdminPermission('fuzequality_PlatformAdministration', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(403)

@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceProvisioningGate } from '../WorkspaceProvisioningGate'
@@ -7,6 +7,14 @@ import { AppProvider, useAppContext } from '../../lib/shared'
 import * as shared from '../../lib/shared'
 import { LanguageProvider } from '../../contexts/LanguageContext'
 import * as api from '../../services/api'
+
+// `fuzefront.identity.personal-context`. Default OFF keeps every pre-existing
+// case on the legacy branch; the flag-ON cases below flip it.
+let personalContextFlag = false
+vi.mock('../../platform/featureFlags', () => ({
+  useFlag: (key: string, fallback: boolean) =>
+    key === 'fuzefront.identity.personal-context' ? personalContextFlag : fallback,
+}))
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 //
@@ -66,6 +74,11 @@ function ActiveOrgProbe() {
   return <div data-testid="active-org">{state.activeOrganizationId ?? ''}</div>
 }
 
+function PersonalTenantProbe() {
+  const { state } = useAppContext()
+  return <div data-testid="personal-tenant">{state.personalTenantId ?? ''}</div>
+}
+
 function renderGate(
   children: React.ReactNode = (
     <>
@@ -87,10 +100,15 @@ function renderGate(
 
 describe('WorkspaceProvisioningGate', () => {
   afterEach(() => {
+    personalContextFlag = false
     vi.restoreAllMocks()
     vi.useRealTimers()
     sessionStorage.clear()
     localStorage.clear()
+  })
+
+  beforeEach(() => {
+    vi.spyOn(api.securitySessionAPI, 'resolvePersonalTenant').mockResolvedValue(null)
   })
 
   it('renders children immediately when a personal org is present', async () => {
@@ -153,6 +171,160 @@ describe('WorkspaceProvisioningGate', () => {
     }, { timeout: 3000 })
     expect(screen.getByRole('status')).toBeInTheDocument()
     expect(screen.queryByText('App content')).not.toBeInTheDocument()
+  })
+
+  it('proves and exposes the canonical personal tenant before mounting the shell', async () => {
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+      platformOrg,
+    ])
+    vi.mocked(api.securitySessionAPI.resolvePersonalTenant).mockResolvedValue(
+      '0195a8f2-1234-7abc-8def-0123456789ab'
+    )
+
+    renderGate(
+      <>
+        <div>App content</div>
+        <PersonalTenantProbe />
+      </>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('personal-tenant')).toHaveTextContent(
+      '0195a8f2-1234-7abc-8def-0123456789ab'
+    )
+    expect(api.securitySessionAPI.resolvePersonalTenant).toHaveBeenCalledOnce()
+  })
+
+  it('resolves and retains Personal for a user who also belongs to an organization', async () => {
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+      reclassifiedOrg,
+    ])
+    vi.mocked(api.securitySessionAPI.resolvePersonalTenant).mockResolvedValue(
+      '0195a8f2-1234-7abc-8def-0123456789ab'
+    )
+
+    renderGate(
+      <>
+        <div>App content</div>
+        <ActiveOrgProbe />
+        <PersonalTenantProbe />
+      </>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-1')
+    expect(screen.getByTestId('personal-tenant')).toHaveTextContent(
+      '0195a8f2-1234-7abc-8def-0123456789ab'
+    )
+  })
+
+  it('keeps the newer workspace when an older personal resolution finishes late', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const companyOrg = {
+      id: 'org-company',
+      name: 'Company',
+      type: 'organization',
+      user_role: 'member',
+    }
+    let organizationCalls = 0
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockImplementation(
+      async () => {
+        organizationCalls += 1
+        return organizationCalls < 3 ? [platformOrg] : [companyOrg]
+      }
+    )
+
+    let finishStaleResolution!: (tenantId: string) => void
+    vi.mocked(api.securitySessionAPI.resolvePersonalTenant)
+      .mockResolvedValueOnce(null)
+      .mockReturnValueOnce(
+        new Promise(resolve => { finishStaleResolution = resolve })
+      )
+      .mockResolvedValueOnce('personal-current')
+
+    renderGate()
+    await flushMicrotasks()
+
+    await act(async () => {
+      vi.advanceTimersByTime(1750)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(1750)
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-company')
+
+    await act(async () => finishStaleResolution('personal-stale'))
+
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-company')
+  })
+
+  it('restores a ready Personal workspace without blocking on refresh requests', async () => {
+    sessionStorage.setItem('ff.workspaceReady', '1')
+    sessionStorage.setItem('ff.activeAccountId', 'user-1')
+    localStorage.setItem(
+      'ff.accounts',
+      JSON.stringify([
+        {
+          id: 'user-1',
+          email: 'person@example.com',
+          displayName: 'Person',
+          addedAt: '2026-10-24T00:00:00.000Z',
+        },
+      ])
+    )
+    localStorage.setItem('ff.acct.user-1.personalTenantId', 'personal-cached')
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockRejectedValue(
+      new Error('temporary network failure')
+    )
+
+    renderGate(
+      <>
+        <div>App content</div>
+        <PersonalTenantProbe />
+      </>
+    )
+
+    expect(screen.getByText('App content')).toBeInTheDocument()
+    expect(screen.getByTestId('personal-tenant')).toHaveTextContent(
+      'personal-cached'
+    )
+    await flushMicrotasks()
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument()
+  })
+
+  it('does not trust a cached ready flag until a personal tenant is proven', async () => {
+    sessionStorage.setItem('ff.workspaceReady', '1')
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+      platformOrg,
+    ])
+    let finishProof!: (tenantId: string) => void
+    vi.mocked(api.securitySessionAPI.resolvePersonalTenant).mockReturnValue(
+      new Promise(resolve => { finishProof = resolve })
+    )
+
+    renderGate()
+
+    await waitFor(() => {
+      expect(api.securitySessionAPI.resolvePersonalTenant).toHaveBeenCalledOnce()
+    })
+    expect(screen.queryByText('App content')).not.toBeInTheDocument()
+    expect(screen.getByText('Loading your workspace…')).toBeInTheDocument()
+
+    await act(async () => finishProof('0195a8f2-1234-7abc-8def-0123456789ab'))
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
   })
 
   it('unblocks when a real membership arrives on a subsequent poll', async () => {
@@ -326,5 +498,56 @@ describe('WorkspaceProvisioningGate', () => {
     })
     // Never the platform org — only a real membership is eligible as active.
     expect(screen.getByTestId('active-org')).toHaveTextContent('org-2')
+  })
+
+  describe('flag ON: fuzefront.identity.personal-context', () => {
+    const acme = { id: 'org-2', name: 'ACME Corp', type: 'organization', user_role: 'member' }
+
+    it('defaults to the Personal (null) context, not the legacy type=personal org', async () => {
+      personalContextFlag = true
+      vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+        personalOrg,
+        acme,
+        platformOrg,
+      ])
+
+      renderGate()
+
+      await waitFor(() => {
+        expect(screen.getByText('App content')).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('active-org')).toHaveTextContent(/^$/)
+    })
+
+    it('maps a persisted legacy personal-org selection to Personal', async () => {
+      personalContextFlag = true
+      vi.spyOn(shared, 'getPersistedActiveOrganizationId').mockReturnValue('org-1')
+      vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+        personalOrg,
+        acme,
+      ])
+
+      renderGate()
+
+      await waitFor(() => {
+        expect(screen.getByText('App content')).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('active-org')).toHaveTextContent(/^$/)
+    })
+
+    it('keeps a persisted real organization across reloads', async () => {
+      personalContextFlag = true
+      vi.spyOn(shared, 'getPersistedActiveOrganizationId').mockReturnValue('org-2')
+      vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+        personalOrg,
+        acme,
+      ])
+
+      renderGate()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('active-org')).toHaveTextContent('org-2')
+      })
+    })
   })
 })

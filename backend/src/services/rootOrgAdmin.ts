@@ -1,6 +1,9 @@
 import { db as defaultDb } from '../config/database'
 import type { Knex } from 'knex'
-import { assignOrgAdminRebac } from '../utils/permit/resource-instances'
+import {
+  assignOrgAdminRebac,
+  createOrganizationResourceInstance,
+} from '../utils/permit/resource-instances'
 import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 import { EMPLOYEE_USER_ROLE } from './employeeRole'
@@ -160,6 +163,10 @@ export async function adoptRootOrganizationOwner(
 export interface RootOrgAdminDeps {
   db: Knex
   assignOrgAdmin: (userId: string, organizationId: string) => Promise<boolean>
+  /** Ensures an Organization exists as a Permit resource INSTANCE before a role
+   * is assigned on it. Defaults to createOrganizationResourceInstance.
+   * Injectable so tests never hit Permit. */
+  ensureOrgInstance: (organizationId: string) => Promise<boolean>
   /** Defaults to the real `fuzefront.identity.employee-console` flag read.
    * Injectable so tests never need the flags package. */
   isEmployeeTriggerEnabled: () => Promise<boolean>
@@ -171,6 +178,8 @@ function getDeps(overrides?: Partial<RootOrgAdminDeps>): RootOrgAdminDeps {
   return {
     db: overrides?.db ?? defaultDb,
     assignOrgAdmin: overrides?.assignOrgAdmin ?? assignOrgAdminRebac,
+    ensureOrgInstance:
+      overrides?.ensureOrgInstance ?? createOrganizationResourceInstance,
     isEmployeeTriggerEnabled:
       overrides?.isEmployeeTriggerEnabled ??
       (() => isEmployeeConsoleEnabled()),
@@ -185,13 +194,22 @@ function getDeps(overrides?: Partial<RootOrgAdminDeps>): RootOrgAdminDeps {
 export async function ensureRootOrgAdmins(
   overrides?: Partial<RootOrgAdminDeps>
 ): Promise<string[]> {
-  const { db, assignOrgAdmin, isEmployeeTriggerEnabled, rootAdminEmails } =
+  const { db, assignOrgAdmin, ensureOrgInstance, isEmployeeTriggerEnabled, rootAdminEmails } =
     getDeps(overrides)
 
   // No root org yet (fresh install before any user exists) — nothing to grant
   // on. Self-heals on a later boot once migration 015 / ensureRootPortal seeds it.
   const rootOrg = await db('organizations').where({ id: ROOT_ORG_ID }).first()
   if (!rootOrg) return []
+
+  // Seed the root org into Permit as a resource INSTANCE before granting any
+  // role on it. Migration 015 seeds the root org in Postgres only; child orgs
+  // get their Permit instance at provisioning (organizationProvisioning), but
+  // nothing ever created the ROOT org's — so `assignOrgAdminRebac` targeted a
+  // nonexistent `Organization:<root>` instance and platform admins never derived
+  // `manage`, leaving them read-only on the portals directory. Idempotent
+  // (already-exists is a benign success), so safe on every boot.
+  await ensureOrgInstance(ROOT_ORG_ID)
 
   // Configured human root admins gain `admin` first, so the query below grants
   // them `org-admin` in the same pass.
@@ -241,8 +259,12 @@ export async function ensureRootOrgAdmins(
 export async function ensureConfiguredRootAdmins(
   overrides?: Partial<RootOrgAdminDeps>
 ): Promise<string[]> {
-  const { db, assignOrgAdmin, rootAdminEmails } = getDeps(overrides)
+  const { db, assignOrgAdmin, ensureOrgInstance, rootAdminEmails } = getDeps(overrides)
   const ids = await promoteConfiguredRootAdmins(db, rootAdminEmails)
+  // Ensure the root Permit Organization instance exists before granting on it
+  // (same reason as ensureRootOrgAdmins). Only when there is something to grant,
+  // so the 5-minute interval does not call Permit on every empty pass.
+  if (ids.length > 0) await ensureOrgInstance(ROOT_ORG_ID)
   const granted: string[] = []
   for (const id of ids) {
     try {
