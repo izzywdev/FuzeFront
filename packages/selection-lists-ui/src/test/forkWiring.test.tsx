@@ -25,6 +25,7 @@ vi.mock('../api', async () => {
     getSelectionList: vi.fn(),
     listItems: vi.fn(),
     createItem: vi.fn(),
+    updateItem: vi.fn(),
     reorderItems: vi.fn(),
     getQuota: vi.fn(),
     probeReorderPermission: vi.fn(),
@@ -212,6 +213,29 @@ describe('management flow', () => {
     await userEvent.click(q('[data-action="save-value"]', modal)!)
     expect(await screen.findByText('You do not have permission to modify values.')).toBeVisible()
     expect(q('[data-case]')).toBeNull()
+  })
+
+  it('edit-value refused with fork_required, then a successful fork: the edit modal is gone and no PATCH is sent for the mismatched list/item pair', async () => {
+    const forkId = 'front_sl_fork'
+    m.updateItem.mockRejectedValue(forkRequired())
+    routeFetch({
+      [`GET /api/v1/selection-lists/${COMMON_ID}`]: () => jsonResponse(makeCommonList({ name: 'Priority' })),
+      [`POST /api/v1/selection-lists/${COMMON_ID}/fork`]: () =>
+        jsonResponse(makeCommonList({ id: forkId, organization_id: 'org_globex', visibility: 'org', editable: true, name: 'Priority' }), 201),
+    })
+    renderFlow(on(<SelectionListManagementFlow />), `/settings/selection-lists/${COMMON_ID}`, [DETAIL])
+    await userEvent.click(await screen.findByText('AT'))
+    const modal = q('[data-modal="edit-value"]') as HTMLElement
+    await userEvent.click(q('[data-action="save-value"]', modal)!)
+    await userEvent.click(await within(modal).findByRole('button', { name: 'Fork to edit…' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Fork list' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent(`/settings/selection-lists/${forkId}`)
+    )
+    await waitFor(() => expect(q('[data-modal="edit-value"]')).toBeNull())
+    expect(q('[data-modal]')).toBeNull()
+    expect(m.updateItem).toHaveBeenCalledTimes(1)
+    expect(m.getSelectionList).toHaveBeenLastCalledWith(forkId)
   })
 
   it('reorder refused with fork_required: the failed order is restored and the banner sits by the list', async () => {

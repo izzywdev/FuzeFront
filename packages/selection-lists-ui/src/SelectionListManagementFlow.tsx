@@ -1152,6 +1152,9 @@ export function SelectionListManagementFlow() {
   if (listId) {
     return (
       <SelectionListDetail
+        // Keyed by list: the host reuses this element across :listId changes (e.g. after a
+        // fork), and its open modals / pending targets hold items of the PREVIOUS list.
+        key={listId}
         listId={listId}
         onNavigateToTranslations={() => navigate(`/settings/selection-lists/${listId}/translations`)}
         onNavigateToAccess={() => navigate(`/settings/selection-lists/${listId}/access`)}
