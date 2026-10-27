@@ -6,6 +6,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef, useId } from 'react'
 import { useParams } from 'react-router-dom'
+import { CommonAccessGuard } from './shared-lists/fork'
 import type { AccessGrant, ApiError } from './types'
 import {
   getAccessGrants,
@@ -392,6 +393,8 @@ function AccessPanel({ listId }: AccessPanelProps) {
   const [loadState, setLoadState] = useState<'loading' | 'error' | 'loaded'>('loading')
   // Panel-level FORBIDDEN: set after any 403, locks down all controls
   const [panelForbidden, setPanelForbidden] = useState(false)
+  // The grants read itself was refused 403 (SL9: on a common list, "managed by the platform")
+  const [loadForbidden, setLoadForbidden] = useState(false)
   // Per-row UI state (keyed by userId)
   const [rowUIs, setRowUIs] = useState<Map<string, RowUI>>(new Map())
   const [showModal, setShowModal] = useState(false)
@@ -399,6 +402,7 @@ function AccessPanel({ listId }: AccessPanelProps) {
   const loadGrants = useCallback(async () => {
     setLoadState('loading')
     setPanelForbidden(false)
+    setLoadForbidden(false)
     try {
       const data = await getAccessGrants(listId)
       setGrants(data)
@@ -407,7 +411,9 @@ function AccessPanel({ listId }: AccessPanelProps) {
       data.forEach(g => map.set(g.user_id, { role: g.role, saving: false, error: null, errorCase: null }))
       setRowUIs(map)
       setLoadState('loaded')
-    } catch {
+    } catch (err) {
+      const apiErr = err as ApiError & { status?: number }
+      setLoadForbidden(apiErr.status === 403 || apiErr.code === 'FORBIDDEN')
       setLoadState('error')
     }
   }, [listId])
@@ -514,14 +520,18 @@ function AccessPanel({ listId }: AccessPanelProps) {
         {loadState === 'loading' && (
           <div style={{ padding: 'var(--space-4)', color: 'var(--text-tertiary)' }}>Loading access grants...</div>
         )}
-        {loadState === 'error' && (
-          <div data-state="error" style={{ padding: 'var(--space-4)', color: 'var(--danger)' }}>
-            Failed to load access grants.
-            <button onClick={loadGrants} style={{ ...s.btn, marginLeft: 'var(--space-3)' }}>
-              Retry
-            </button>
-          </div>
-        )}
+        {loadState === 'error' && (() => {
+          const loadFailed = (
+            <div data-state="error" style={{ padding: 'var(--space-4)', color: 'var(--danger)' }}>
+              Failed to load access grants.
+              <button onClick={loadGrants} style={{ ...s.btn, marginLeft: 'var(--space-3)' }}>
+                Retry
+              </button>
+            </div>
+          )
+          // SL9: a 403 on a common list is "managed by the platform"; any other list keeps the 4.0.0 error.
+          return loadForbidden ? <CommonAccessGuard listId={listId} fallback={loadFailed} /> : loadFailed
+        })()}
         {loadState === 'loaded' && grants.length === 0 && (
           <div data-state="empty" style={{ padding: 'var(--space-4)', color: 'var(--text-tertiary)', textAlign: 'center' }}>
             No access grants. Click "Add Access" to grant access.

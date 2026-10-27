@@ -6,7 +6,7 @@
  * the refusal notices) and the fork's detail (ForkResultNotice).
  */
 
-export { ForkListFlow, isSharedByOthers } from './ForkListFlow'
+export { CommonAccessGuard, ForkListFlow, isSharedByOthers } from './ForkListFlow'
 export type { ForkListFlowProps } from './ForkListFlow'
 export { ForkListDialog } from './ForkListDialog'
 export type {
@@ -37,3 +37,5 @@ export {
 } from './notice'
 export type { ForkNotice } from './notice'
 export { hasForkForbidden, markForkForbidden, resetForkSession } from './session'
+export { useMutationRefusal } from './useMutationRefusal'
+export type { MutationRefusal } from './useMutationRefusal'

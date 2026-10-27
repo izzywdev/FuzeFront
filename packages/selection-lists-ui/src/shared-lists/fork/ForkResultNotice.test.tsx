@@ -177,6 +177,38 @@ describe('router state and flag', () => {
     expect(document.querySelector('[data-toast]')).toBeNull()
   })
 
+  it('with an explicit notice it needs NO Router (and the flag guard comes first)', () => {
+    const W = withSharedLists(true)
+    render(
+      <W>
+        <ForkResultNotice
+          list={makeForkList({ name: 'Priority' })}
+          notice={{ kind: 'created' }}
+          onDismiss={() => undefined}
+        />
+      </W>
+    )
+    expect(document.querySelector('[data-toast="forked"]')).toBeVisible()
+    const Off = withSharedLists(false)
+    render(
+      <Off>
+        <ForkResultNotice list={makeForkList()} />
+      </Off>
+    )
+    // flag OFF + no notice: returns before touching the router (would throw otherwise)
+  })
+
+  it('dismissing an explicit notice without a handler is harmless', async () => {
+    const W = withSharedLists(true)
+    render(
+      <W>
+        <ForkResultNotice list={makeForkList({ name: 'Priority' })} notice={{ kind: 'created' }} />
+      </W>
+    )
+    await userEvent.click(screen.getByRole('button'))
+    expect(document.querySelector('[data-toast]')).toBeNull()
+  })
+
   it('renders nothing without a notice', () => {
     setup(makeForkList(), null)
     expect(document.body.querySelector('[data-result]')).toBeNull()

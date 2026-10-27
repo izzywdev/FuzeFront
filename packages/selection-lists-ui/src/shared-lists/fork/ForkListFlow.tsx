@@ -23,7 +23,7 @@
  * Flag OFF: only `fallback` renders; no dialog, CTA or banner is ever mounted.
  */
 
-import { useState, type ReactNode } from 'react'
+import { useReducer, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   editableStateOf,
@@ -42,6 +42,7 @@ import type { ValueCounts } from './copy'
 import { ForkListDialog, type ForkSuccess } from './ForkListDialog'
 import { ForkRequiredBanner } from './ForkRequiredBanner'
 import {
+  CommonAccessNotice,
   CommonNoCreateNotice,
   ListNotFoundNotice,
 } from './ForkRefusalNotice'
@@ -81,7 +82,7 @@ export function ForkListFlow(props: ForkListFlowProps) {
   return props.refusal ? (
     <RefusalFlow {...props} refusal={props.refusal} />
   ) : props.list ? (
-    <DetailFlow {...props} list={props.list} />
+    <DetailFlow key={props.list.id} {...props} list={props.list} />
   ) : (
     <>{props.fallback ?? null}</>
   )
@@ -95,12 +96,17 @@ function useForkDialog(opts: {
 }) {
   const navigate = useNavigate()
   const [sourceId, setSourceId] = useState<SelectionListId | null>(null)
-  const [forbidden, setForbidden] = useState(() =>
-    hasForkForbidden(opts.organizationId)
-  )
+  // The refusal memory is per organization and lives in `session.ts`; this only
+  // re-renders. Reading it on every render keeps it right when the active
+  // organization changes while the flow stays mounted.
+  const [, rerender] = useReducer((n: number) => n + 1, 0)
+  const forbidden = hasForkForbidden(opts.organizationId)
 
   const onForked = (outcome: ForkSuccess) => {
-    // The fork now exists: leave the source behind and land on it.
+    // The fork now exists: close the dialog (so a host that keeps this component
+    // across :listId changes does not keep a busy dialog for the old source),
+    // leave the source behind and land on it.
+    setSourceId(null)
     navigate(listRoute(outcome.list.id), {
       state: forkNoticeState({ kind: outcome.kind }),
     })
@@ -109,14 +115,16 @@ function useForkDialog(opts: {
     setSourceId(null)
     if (outcome?.kind === 'forbidden') {
       markForkForbidden(opts.organizationId)
-      setForbidden(true)
+      rerender()
     }
     if (outcome?.kind === 'fork_not_applicable') opts.onStale?.()
-    // "Back to lists": the source is gone, or the key belongs to a list we must not name.
-    if (outcome?.kind === 'key_taken' || outcome?.kind === 'not_found')
-      navigate(SELECTION_LISTS_ROUTE)
   }
-  return { sourceId, open: setSourceId, forbidden, onForked, onClose }
+  // "Back to lists" (key taken / source gone): the index, not just a dismissal.
+  const onBackToLists = () => {
+    setSourceId(null)
+    navigate(SELECTION_LISTS_ROUTE)
+  }
+  return { sourceId, open: setSourceId, forbidden, onForked, onClose, onBackToLists }
 }
 
 /** The dialog for `sourceId`, using the loaded list when it is the source, else reading it. */
@@ -128,6 +136,7 @@ function SourceDialog({
   organizationName,
   onForked,
   onClose,
+  onBackToLists,
 }: {
   sourceId: SelectionListId
   known?: SharedList
@@ -136,6 +145,7 @@ function SourceDialog({
   organizationName?: string
   onForked: (outcome: ForkSuccess) => void
   onClose: (outcome?: ForkOutcome) => void
+  onBackToLists: () => void
 }) {
   return known && known.id === sourceId ? (
     <ForkListDialog
@@ -145,6 +155,7 @@ function SourceDialog({
       organizationName={organizationName}
       onForked={onForked}
       onClose={onClose}
+      onBackToLists={onBackToLists}
     />
   ) : (
     <LoadedSourceDialog
@@ -153,6 +164,7 @@ function SourceDialog({
       organizationName={organizationName}
       onForked={onForked}
       onClose={onClose}
+      onBackToLists={onBackToLists}
     />
   )
 }
@@ -168,12 +180,14 @@ function LoadedSourceDialog({
   organizationName,
   onForked,
   onClose,
+  onBackToLists,
 }: {
   sourceId: SelectionListId
   localeCount?: number
   organizationName?: string
   onForked: (outcome: ForkSuccess) => void
   onClose: (outcome?: ForkOutcome) => void
+  onBackToLists: () => void
 }) {
   const source = useSharedList(sourceId)
   return (
@@ -183,6 +197,7 @@ function LoadedSourceDialog({
       organizationName={organizationName}
       onForked={onForked}
       onClose={onClose}
+      onBackToLists={onBackToLists}
     />
   )
 }
@@ -230,6 +245,7 @@ function DetailFlow({
           organizationName={organizationName}
           onForked={dialog.onForked}
           onClose={dialog.onClose}
+          onBackToLists={dialog.onBackToLists}
         />
       )}
     </>
@@ -276,6 +292,7 @@ function RefusalFlow({
               organizationName={organizationName}
               onForked={dialog.onForked}
               onClose={dialog.onClose}
+              onBackToLists={dialog.onBackToLists}
             />
           )}
         </>
@@ -340,4 +357,27 @@ export function isSharedByOthers(
     isCommonList(list) ||
     (organizationId !== undefined && list.organization_id !== organizationId)
   )
+}
+
+/**
+ * A 403 on ACCESS management (frame 04): on a COMMON list it is "managed by the
+ * platform" (never forkable, so the 409 path does not apply); on any other list
+ * it is the caller's own 4.0.0 handling, rendered as `fallback`. The list is read
+ * to tell the two apart; `fallback` shows meanwhile and when the flag is OFF.
+ */
+export function CommonAccessGuard({
+  listId,
+  list,
+  fallback,
+}: {
+  listId: SelectionListId
+  list?: SharedList
+  fallback?: ReactNode
+}) {
+  const shared = useSharedLists()
+  const loaded = useSharedList(shared.enabled && !list ? listId : null)
+  const known = list ?? (loaded.phase === 'ready' ? loaded.list : undefined)
+  if (!shared.enabled || !known || !isSharedByOthers(known, shared.organizationId))
+    return <>{fallback ?? null}</>
+  return <CommonAccessNotice />
 }

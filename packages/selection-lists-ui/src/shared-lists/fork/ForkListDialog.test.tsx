@@ -459,6 +459,17 @@ describe('ForkListDialog — refusals stay inside the open dialog (frame 06)', (
     expect(dialog()).toHaveTextContent('already has a list with the key')
   })
 
+  it('"Back to lists" calls onBackToLists when given (not onClose); other closes stay ordinary', async () => {
+    routeFetch({ [`POST ${FORK_PATH}`]: () => errorResponse(404, 'NOT_FOUND') })
+    const onBackToLists = vi.fn()
+    const { onClose } = setup({ onBackToLists })
+    await userEvent.click(confirmBtn())
+    await waitFor(() => expect(dialog()).toHaveAttribute('data-result', 'not-found'))
+    await userEvent.click(dialog().querySelector('[data-action="close"]')!)
+    expect(onBackToLists).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('forbidden / fork_exists without a name say "this list"', async () => {
     routeFetch({ [`POST ${FORK_PATH}`]: () => errorResponse(403, 'FORBIDDEN') })
     setup({ source: { id: COMMON_ID } })

@@ -76,6 +76,11 @@ export interface ForkListDialogProps {
   onForked: (outcome: ForkSuccess) => void
   /** Dismissed (Esc / scrim / Cancel / Close). `outcome` is the refusal being closed, if any. */
   onClose: (outcome?: ForkOutcome) => void
+  /**
+   * The "Back to lists" button shown after a `key_taken` / `not_found` refusal
+   * (frame 06 links it to the index). Without it the button is an ordinary close.
+   */
+  onBackToLists?: () => void
 }
 
 type Refusal = Exclude<ForkOutcome, ForkSuccess>
@@ -105,6 +110,7 @@ function ForkDialogBody({
   localeCount,
   onForked,
   onClose,
+  onBackToLists,
 }: ForkListDialogProps & { organization: string }) {
   const wide = useIsWide()
   const [visibility, setVisibility] = useState<ForkVisibility>(
@@ -181,6 +187,7 @@ function ForkDialogBody({
       listName={name}
       onRetry={confirm}
       onClose={dismiss}
+      onBackToLists={onBackToLists}
       wide={wide}
     />
   ) : (
@@ -580,6 +587,7 @@ interface RefusalContentProps {
   wide: boolean
   onRetry: () => void
   onClose: () => void
+  onBackToLists?: () => void
 }
 
 function RefusalContent({
@@ -590,13 +598,12 @@ function RefusalContent({
   wide,
   onRetry,
   onClose,
+  onBackToLists,
 }: RefusalContentProps) {
   const org = <span style={ISOLATE}>{organization}</span>
   const name = listName ? <b>{listName}</b> : 'this list'
-  const closeLabel =
-    refusal.kind === 'key_taken' || refusal.kind === 'not_found'
-      ? 'Back to lists'
-      : 'Close'
+  const toIndex = refusal.kind === 'key_taken' || refusal.kind === 'not_found'
+  const closeLabel = toIndex ? 'Back to lists' : 'Close'
 
   let alert: ReactNode
   switch (refusal.kind) {
@@ -756,7 +763,7 @@ function RefusalContent({
             style={TOUCH_TARGET}
             fullWidth={!wide}
             data-action="close"
-            onClick={onClose}
+            onClick={toIndex && onBackToLists ? onBackToLists : onClose}
           >
             {closeLabel}
           </Button>

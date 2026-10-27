@@ -49,8 +49,31 @@ export interface ForkResultNoticeProps {
 }
 
 export function ForkResultNotice(props: ForkResultNoticeProps) {
-  const fromRoute = useForkNotice()
-  const notice = props.notice !== undefined ? props.notice : fromRoute.notice
+  // An explicit `notice` needs no Router; only the route-backed form reads location state.
+  return props.notice !== undefined ? (
+    <ExplicitNotice {...props} notice={props.notice} />
+  ) : (
+    <RouteNotice {...props} />
+  )
+}
+
+function RouteNotice(props: ForkResultNoticeProps) {
+  const shared = useSharedLists()
+  if (!shared.enabled) return null
+  return <RouteBackedNotice {...props} />
+}
+
+function RouteBackedNotice(props: ForkResultNoticeProps) {
+  const { notice, clear } = useForkNotice()
+  return (
+    <ExplicitNotice {...props} notice={notice} onDismiss={props.onDismiss ?? clear} />
+  )
+}
+
+function ExplicitNotice({
+  notice,
+  ...props
+}: ForkResultNoticeProps & { notice: ForkNotice | null }) {
   const shared = useSharedLists()
   if (!shared.enabled || !notice) return null
   return (
@@ -60,7 +83,7 @@ export function ForkResultNotice(props: ForkResultNoticeProps) {
       organization={
         props.organizationName ?? shared.organizationName ?? GENERIC_ORGANIZATION
       }
-      onDismiss={props.onDismiss ?? fromRoute.clear}
+      onDismiss={props.onDismiss ?? (() => undefined)}
     />
   )
 }
