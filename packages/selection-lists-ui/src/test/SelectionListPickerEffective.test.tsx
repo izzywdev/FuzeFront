@@ -478,6 +478,28 @@ describe('multi mode with the effective list', () => {
     expect(q(`[data-chip='${STORED}']`)).toBeNull()
   })
 
+  it('an option held BOTH directly and through a redirected stored id: one click removes both', async () => {
+    const onChange = vi.fn()
+    const { user } = mount(forkWorld({ resolve: redirect }), {
+      mode: 'multi',
+      initialValue: [STORED, FORK_ITEMS.medium, FORK_ITEMS.low],
+      onChange,
+    })
+    await waitFor(() => expect(q(`[data-chip='${STORED}']`)).not.toBeNull())
+    await user.click(control())
+    const medium = screen.getByRole('option', { name: /Medium/ })
+    expect(medium).toHaveAttribute('aria-selected', 'true')
+    await user.click(medium)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenLastCalledWith([FORK_ITEMS.low])
+    expect(q(`[data-chip='${STORED}']`)).toBeNull()
+    expect(q(`[data-chip='${FORK_ITEMS.medium}']`)).toBeNull()
+    expect(screen.getByRole('option', { name: /Medium/ })).toHaveAttribute('aria-selected', 'false')
+    // and selecting it again adds only its own id
+    await user.click(screen.getByRole('option', { name: /Medium/ }))
+    expect(onChange).toHaveBeenLastCalledWith([FORK_ITEMS.low, FORK_ITEMS.medium])
+  })
+
   it('keeps archived and missing chips, and picks add to the set', async () => {
     const onChange = vi.fn()
     const { user } = mount(

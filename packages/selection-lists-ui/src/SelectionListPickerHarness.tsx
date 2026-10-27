@@ -545,18 +545,14 @@ export function SelectionListPicker(props: SelectionListPickerProps) {
       return
     }
 
-    // Multi: toggle
-    if (selectedIds.includes(item.id)) {
-      const next = selectedIds.filter(id => id !== item.id)
-      setSelectedIds(next)
-      emit(next, storedValues)
-      return
-    }
-    // Shared lists: an option marked selected only because a stored id was
-    // redirected to it — deselecting it removes that stored id.
-    if (effectiveSelected.has(item.id)) {
+    // Multi: toggle. An option can be selected directly (its own id) AND through a
+    // stored id the service redirected to it (shared lists); one deselection
+    // removes EVERY id that represents the option, so it cannot stay checked.
+    if (isSelected(item.id)) {
       const next = selectedIds.filter(
-        id => !storedValues.some(v => v.id === id && v.effectiveId === item.id),
+        id =>
+          id !== item.id &&
+          !storedValues.some(v => v.id === id && v.effectiveId === item.id),
       )
       setSelectedIds(next)
       emit(next, storedValues)
