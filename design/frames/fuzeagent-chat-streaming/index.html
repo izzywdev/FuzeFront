@@ -13,7 +13,7 @@
     margin: 0;
     padding: 0;
   }
-  .wrap { max-width: 920px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
   .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
     text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); display: flex; align-items: center; gap: var(--space-2); }
   .badge-fuzex {
@@ -25,9 +25,9 @@
     font-weight: 700;
   }
   h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
-  .lead { color: var(--text-secondary); margin: 0; max-width: 68ch; line-height: 1.6; }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 72ch; line-height: 1.6; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-8); }
-  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 680px){ .grid { grid-template-columns: 1fr; } }
   .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
     border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
     position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
@@ -41,7 +41,7 @@
     border-radius: var(--radius-lg); padding: var(--space-6); position: relative; overflow: hidden; }
   .build::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
   .build h2 { font-family: var(--font-display); font-size: var(--text-lg); margin: 0 0 var(--space-2); }
-  .build p.note { margin: 0 0 var(--space-4); color: var(--text-tertiary); font-size: var(--text-sm); max-width: 68ch; }
+  .build p.note { margin: 0 0 var(--space-4); color: var(--text-tertiary); font-size: var(--text-sm); max-width: 72ch; }
   .build dt { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
     letter-spacing: var(--tracking-wide); color: var(--cyan-400); margin-top: var(--space-4); }
   .build dd { margin: var(--space-2) 0 0; }
@@ -76,11 +76,11 @@
     <span>Contract-Freeze · UX Approval</span>
     <span class="badge-fuzex">FuzeX Planning Suite</span>
   </div>
-  <h1>FuzeAgent — Design System & Chat Streaming Frames</h1>
+  <h1>FuzeAgent — Design System & UX Flows</h1>
   <p class="lead">
-    These approval frames define the visual and behavioral contracts for FuzeAgent's redesigned UX/UI.
-    Includes real-time token streaming for timezone queries (LA time), contextual light/dark theme adaptation
-    matching FuzeFront shell portal selections, and sandbox container lifecycle management.
+    Approval frames defining visual and behavioral contracts for FuzeAgent's redesigned UX/UI.
+    Enforces Fuse Seam design tokens, modal dialog positioning without layout collapse, high-contrast blueprint catalogs,
+    real-time token streaming for timezone queries (LA time), light/dark contextual theme adaptation, and sandbox container lifecycle management.
     Published for approval via GitHub Pages and tracked in FuzeX SaaS flow manager.
   </p>
 
@@ -115,6 +115,27 @@
       <h3>Active Sandboxes & Teardown</h3>
       <p>Isolated Kubernetes agent sandbox pods, telemetry, terminal streaming, and graceful teardown.</p>
     </a>
+
+    <a href="04-deploy-agent-modal.html" class="frame-link" data-frame-link="04-deploy-agent-modal">
+      <div class="seam"></div>
+      <div class="step">Frame (d) · Flow 04</div>
+      <h3>Deploy New Agent Modal Dialog</h3>
+      <p>Rigid 2-column blueprint selection modal, isolation indicators, and specification inspector preventing layout collapse.</p>
+    </a>
+
+    <a href="05-templates-blueprints-hub.html" class="frame-link" data-frame-link="05-templates-blueprints-hub">
+      <div class="seam"></div>
+      <div class="step">Frame (e) · Flow 05</div>
+      <h3>Agent Blueprints & Templates Hub</h3>
+      <p>High-contrast catalog with verified badges, rating stars, category filters, and instant launch CTAs.</p>
+    </a>
+
+    <a href="06-task-assignment-orchestration.html" class="frame-link" data-frame-link="06-task-assignment-orchestration">
+      <div class="seam"></div>
+      <div class="step">Frame (f) · Flow 06</div>
+      <h3>Multi-Agent Task Orchestration</h3>
+      <p>Workload task assignment across deployed agent pods, priority tiering, memory scopes, and live step stream.</p>
+    </a>
   </div>
 
   <!-- Build inventory approved with frames -->
@@ -130,6 +151,9 @@
         <span class="chip" data-build-flow="01-chat-streaming-la-time">AgentChatWorkspace → /chat</span>
         <span class="chip" data-build-flow="02-contextual-theme">FuzeAgentDashboard → /theme</span>
         <span class="chip" data-build-flow="03-active-sandboxes-teardown">SandboxesView → /sandboxes</span>
+        <span class="chip" data-build-flow="04-deploy-agent-modal">CreateAgentModal → /deploy</span>
+        <span class="chip" data-build-flow="05-templates-blueprints-hub">TemplatesHub → /templates</span>
+        <span class="chip" data-build-flow="06-task-assignment-orchestration">MultiAgentOrchestration → /tasks</span>
       </dd>
       <dt>Components</dt>
       <dd>
@@ -139,6 +163,9 @@
         <span class="chip" data-build-component>StreamingThoughtIndicator</span>
         <span class="chip" data-build-component>SandboxStatusBadge</span>
         <span class="chip" data-build-component>TerminalLogWindow</span>
+        <span class="chip" data-build-component>CreateAgentModal</span>
+        <span class="chip" data-build-component>TemplatesHub</span>
+        <span class="chip" data-build-component>AssignTaskModal</span>
       </dd>
       <dt>Design System Packages</dt>
       <dd>

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FuzeAgent — 06 Multi-Agent Task Assignment & Orchestration</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+  }
+  .wrap {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-6) var(--space-16);
+  }
+  .crumb {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-4);
+  }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  .crumb a:hover { text-decoration: underline; }
+  h1 {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    letter-spacing: var(--tracking-display);
+    margin: 0 0 var(--space-2);
+  }
+  .lead {
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-8);
+    max-width: 72ch;
+    line-height: 1.6;
+  }
+
+  .stage-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+  }
+  @media (max-width: 840px) {
+    .stage-grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+  }
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: var(--seam);
+  }
+  .panel-header {
+    padding: var(--space-4) var(--space-6);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    margin: 0;
+  }
+  .panel-body {
+    padding: var(--space-5) var(--space-6);
+  }
+
+  /* Form Elements */
+  .form-group {
+    margin-bottom: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .form-label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+  .form-select, .form-input, .form-textarea {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-family: var(--font-sans);
+  }
+  .form-textarea {
+    min-height: 80px;
+    resize: vertical;
+  }
+  .form-select:focus, .form-input:focus, .form-textarea:focus {
+    outline: none;
+    border-color: var(--indigo-500);
+    box-shadow: 0 0 0 2px rgba(110, 92, 255, 0.25);
+  }
+
+  /* Priority Selector */
+  .priority-pills {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .p-pill {
+    flex: 1;
+    text-align: center;
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.15s ease;
+  }
+  .p-pill.selected-high {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.12);
+    color: #fbbf24;
+    font-weight: 700;
+  }
+
+  .btn-dispatch {
+    background: var(--seam);
+    color: #fff;
+    border: none;
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    width: 100%;
+    margin-top: var(--space-3);
+    box-shadow: var(--shadow-accent);
+  }
+
+  /* Live Stream Panel */
+  .agent-card-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .agent-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    background: var(--seam);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 11px;
+    color: #fff;
+  }
+  .agent-meta {
+    flex: 1;
+  }
+  .agent-title { font-size: var(--text-xs); font-weight: 600; margin: 0; }
+  .agent-status { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success-color);
+    display: inline-block;
+    box-shadow: 0 0 6px var(--success-color);
+  }
+
+  .terminal-box {
+    margin-top: var(--space-4);
+    background: #080a0e;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--cyan-400);
+    max-height: 200px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="06-task-assignment-orchestration">
+  <div class="crumb">
+    <a href="index.html">← FuzeAgent Frames</a> / Frame (f) · Flow 06
+  </div>
+  <h1>Multi-Agent Task Assignment & Orchestration</h1>
+  <p class="lead">
+    Contract for assigning autonomous work tasks across deployed agent pods. Defines priority weighting,
+    shared memory scopes, capability entitlements, and real-time step streaming.
+  </p>
+
+  <div class="stage-grid">
+    <!-- Task Assignment Form -->
+    <div class="panel" data-assign-task-modal>
+      <div class="panel-header">
+        <h2 class="panel-title">Assign Workload Task</h2>
+        <span class="badge" style="font-family: var(--font-mono); font-size: 10px; color: var(--cyan-400);">Orchestrator v2</span>
+      </div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label" for="target-agent">Target Agent Instance</label>
+          <select class="form-select" id="target-agent" data-select-agent>
+            <option>fastapi-ml-agent-prod (Python FastAPI & ML Specialist)</option>
+            <option>k8s-sre-lead-01 (Kubernetes Platform & SRE Lead)</option>
+            <option>qa-regression-01 (QA & Test Automation Specialist)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="task-title">Task Objective *</label>
+          <input class="form-input" id="task-title" data-input-task type="text" value="Run e2e API contract regression & check Los Angeles timezone stream" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Priority Tier</label>
+          <div class="priority-pills">
+            <div class="p-pill" data-priority="low">Low</div>
+            <div class="p-pill" data-priority="medium">Medium</div>
+            <div class="p-pill selected-high" data-priority="high">High</div>
+            <div class="p-pill" data-priority="critical">Critical</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="task-details">Detailed Execution Directives</label>
+          <textarea class="form-textarea" id="task-details">Inspect orchestrator /api/ws/multi-agent streaming latency. Verify token chunk throughput and validate JSON payload format for client-side TimeInZoneCard rendering.</textarea>
+        </div>
+
+        <button class="btn-dispatch" data-action="dispatch-task">Dispatch Task to Agent Pod</button>
+      </div>
+    </div>
+
+    <!-- Active Agents & Execution Stream -->
+    <div class="panel" data-orchestration-canvas>
+      <div class="panel-header">
+        <h2 class="panel-title">Active Execution Stream</h2>
+        <span style="font-family: var(--font-mono); font-size: 11px; color: var(--success-color);">
+          <span class="status-dot"></span> 3 Pods Ready
+        </span>
+      </div>
+      <div class="panel-body">
+        <div class="agent-card-item">
+          <div class="agent-avatar">ML</div>
+          <div class="agent-meta">
+            <p class="agent-title">fastapi-ml-agent-prod</p>
+            <span class="agent-status">State: EXECUTING · Task #1042</span>
+          </div>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--warning-color);">Step 2/4</span>
+        </div>
+
+        <div class="agent-card-item">
+          <div class="agent-avatar">SRE</div>
+          <div class="agent-meta">
+            <p class="agent-title">k8s-sre-lead-01</p>
+            <span class="agent-status">State: IDLE · Awaiting tasks</span>
+          </div>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary);">Idle</span>
+        </div>
+
+        <div class="terminal-box" data-terminal-output>
+[12:20:04.102] [DISPATCH] Task #1042 queued for fastapi-ml-agent-prod
+[12:20:04.281] [SANDBOX] Pod agent-sandbox-f892b1 alive in fuzeagent ns
+[12:20:04.450] [CONNECT] Attached memory context: 2 knowledge collections
+[12:20:05.110] [STREAM] Opening websocket to /api/ws/multi-agent
+[12:20:05.340] [TOKEN] Emitting chunk 1/14: "The current time in Los Angeles..."
+[12:20:05.610] [VERIFY] TimeInZoneCard contract matched (PDT / UTC-7)
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

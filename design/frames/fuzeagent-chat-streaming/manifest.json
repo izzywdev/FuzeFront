@@ -1,6 +1,6 @@
 {
   "name": "FuzeAgent Chat Streaming & Fuse Seam Design System",
-  "description": "Redesign of FuzeAgent UX/UI in accordance with FuzeFront Design System tokens, inherited components, live streaming chat, and contextual portal dark/light theme switching. Managed and planned via FuzeX SaaS product workflow.",
+  "description": "Redesign of FuzeAgent UX/UI in accordance with FuzeFront Design System tokens, inherited components, live streaming chat, modal dialog layout stability, high-contrast blueprint catalogs, and contextual portal dark/light theme switching. Managed and planned via FuzeX SaaS product workflow.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
   "fuzex": {
     "project": "fuzeagent",
@@ -19,7 +19,10 @@
       "TimeInZoneCard",
       "StreamingThoughtIndicator",
       "SandboxStatusBadge",
-      "TerminalLogWindow"
+      "TerminalLogWindow",
+      "CreateAgentModal",
+      "TemplatesHub",
+      "AssignTaskModal"
     ],
     "featureFlag": "fuzeagent.chat.streaming-fuse-seam"
   },
@@ -42,6 +45,24 @@
         "orchestrator": "SandboxesView",
         "route": "/sandboxes",
         "approved": true
+      },
+      {
+        "id": "04-deploy-agent-modal",
+        "orchestrator": "CreateAgentModal",
+        "route": "/deploy",
+        "approved": true
+      },
+      {
+        "id": "05-templates-blueprints-hub",
+        "orchestrator": "TemplatesHub",
+        "route": "/templates",
+        "approved": true
+      },
+      {
+        "id": "06-task-assignment-orchestration",
+        "orchestrator": "MultiAgentOrchestration",
+        "route": "/tasks",
+        "approved": true
       }
     ],
     "components": [
@@ -50,7 +71,10 @@
       "TimeInZoneCard",
       "StreamingThoughtIndicator",
       "SandboxStatusBadge",
-      "TerminalLogWindow"
+      "TerminalLogWindow",
+      "CreateAgentModal",
+      "TemplatesHub",
+      "AssignTaskModal"
     ],
     "packages": [
       "@fuzefront/design-system",
@@ -103,7 +127,62 @@
         "[data-sandboxes-panel]",
         "[data-action='terminate-sandbox']"
       ]
+    },
+    {
+      "id": "04-deploy-agent-modal",
+      "file": "04-deploy-agent-modal.html",
+      "label": "(d) Deploy New Agent Modal & Blueprint Selection",
+      "route": "/deploy",
+      "flow": "04-deploy-agent-modal",
+      "summary": "Prevents layout collapse by enforcing modal-overlay backdrop and modal-dialog panel with 2-column blueprint specifications.",
+      "acceptanceNotes": "Modal opens centered with backdrop blur, displays categorized blueprints, allows instance naming, and handles submit without collapsing into slivers.",
+      "testHooks": [
+        "[data-frame='04-deploy-agent-modal']",
+        "[data-modal-overlay]",
+        "[data-modal-dialog]",
+        "[data-blueprint-card]",
+        "[data-blueprint-specs]",
+        "[data-input-name]",
+        "[data-action='deploy-agent']",
+        "[data-action='cancel']"
+      ]
+    },
+    {
+      "id": "05-templates-blueprints-hub",
+      "file": "05-templates-blueprints-hub.html",
+      "label": "(e) Agent Blueprints & Templates Catalog",
+      "route": "/templates",
+      "flow": "05-templates-blueprints-hub",
+      "summary": "High-contrast catalog for discovering, inspecting, and deploying verified agent blueprints with category filters.",
+      "acceptanceNotes": "Luminous typography on hero banner, pill filters for role categories, and one-click launch CTAs.",
+      "testHooks": [
+        "[data-frame='05-templates-blueprints-hub']",
+        "[data-hero-banner]",
+        "[data-search-input]",
+        "[data-filter-strip]",
+        "[data-catalog-grid]",
+        "[data-blueprint-card]",
+        "[data-action='launch-blueprint']"
+      ]
+    },
+    {
+      "id": "06-task-assignment-orchestration",
+      "file": "06-task-assignment-orchestration.html",
+      "label": "(f) Multi-Agent Task Assignment & Orchestration",
+      "route": "/tasks",
+      "flow": "06-task-assignment-orchestration",
+      "summary": "Workload task assignment across deployed agent pods with priority tiers, memory context scopes, and real-time step streaming.",
+      "acceptanceNotes": "Task submission dispatches work across agent sandboxes and displays terminal progress telemetry in real time.",
+      "testHooks": [
+        "[data-frame='06-task-assignment-orchestration']",
+        "[data-assign-task-modal]",
+        "[data-select-agent]",
+        "[data-input-task]",
+        "[data-action='dispatch-task']",
+        "[data-orchestration-canvas]",
+        "[data-terminal-output]"
+      ]
     }
   ],
-  "stamp": "49a785a9cebccfed86d5aa529cb7de48346001e3c9eb7013c90dcebeffa9f9be"
+  "stamp": "792931bd2a265e84bedec1f7d9e875bc1aea488c7c7630e87249bbabc939aea0"
 }
