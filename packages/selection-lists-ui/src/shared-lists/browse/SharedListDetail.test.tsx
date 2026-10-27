@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   onGet,
+  onItems,
   page,
   renderShared,
   stubApi,
@@ -79,7 +80,7 @@ describe('common list, read-only (frame 02)', () => {
   const setup = () =>
     stubApi(
       onGet(`${LISTS}/${COMMON_ID}`, common),
-      onGet(`${LISTS}/${COMMON_ID}/items`, page(items)),
+      onItems(`${LISTS}/${COMMON_ID}/items`, items),
       effective([common])
     )
 
@@ -99,7 +100,9 @@ describe('common list, read-only (frame 02)', () => {
     expect(archived).toHaveTextContent(/archived/i)
     expect(container.querySelector('[data-item="sli2"] [data-machine="true"]')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Fork priority' })).toHaveAttribute('data-action', 'fork-to-edit')
-    expect(itemsOf(api, COMMON_ID)[0].query.get('status')).toBe('all')
+    // the service accepts active|archived only (status=all is a 400): both are read
+    expect(itemsOf(api, COMMON_ID).map(c => c.query.get('status')).sort()).toEqual(['active', 'archived'])
+    expect(itemsOf(api, COMMON_ID).every(c => c.query.get('status') !== 'all')).toBe(true)
     const lookup = api.callsTo('GET', LISTS).find(c => c.query.get('key') === 'priority')!
     expect(lookup.query.get('include_shared')).toBe('true')
     expect(lookup.query.get('limit')).toBe('1')
@@ -130,12 +133,14 @@ describe('common list, read-only (frame 02)', () => {
     const gate = new Promise<void>(r => (release = r))
     stubApi(
       onGet(`${LISTS}/${COMMON_ID}`, common),
-      onGet(`${LISTS}/${COMMON_ID}/items`, page(items)),
+      onItems(`${LISTS}/${COMMON_ID}/items`, items),
       onGet(LISTS, req => (req.query.get('key') ? gate.then(() => ({ body: page([common]) })) : undefined))
     )
     const { container } = mount(COMMON_ID, { forkAction: true })
     await waitFor(() => expect(container.querySelector('[data-panel="value-table"]')).toHaveAttribute('data-state', 'loading'))
-    await new Promise(r => setTimeout(r, 30))
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 30))
+    })
     expect(container.querySelector('[data-action="fork-to-edit"]')).toBeNull()
     expect(container.querySelector('[data-readonly-notice]')).toBeNull()
     expect(container.querySelector('[data-badge]')).toBeNull()
@@ -147,7 +152,7 @@ describe('common list, read-only (frame 02)', () => {
     let fail = true
     stubApi(
       onGet(`${LISTS}/${COMMON_ID}`, common),
-      onGet(`${LISTS}/${COMMON_ID}/items`, page(items)),
+      onItems(`${LISTS}/${COMMON_ID}/items`, items),
       onGet(LISTS, req => (req.query.get('key') ? (fail ? { status: 500, body: {} } : { body: page([common]) }) : undefined))
     )
     const { container } = mount(COMMON_ID, { forkAction: true })
@@ -159,7 +164,7 @@ describe('common list, read-only (frame 02)', () => {
   })
 
   it('the lookup answering "no list" gives the plain notice and no CTA', async () => {
-    stubApi(onGet(`${LISTS}/${COMMON_ID}`, common), onGet(`${LISTS}/${COMMON_ID}/items`, page(items)), effective([]))
+    stubApi(onGet(`${LISTS}/${COMMON_ID}`, common), onItems(`${LISTS}/${COMMON_ID}/items`, items), effective([]))
     const { container } = mount(COMMON_ID, { forkAction: true })
     await waitFor(() => expect(container.querySelector('[data-readonly-notice="platform"]')).not.toBeNull())
     expect(container.querySelector('[data-action="fork-to-edit"]')).toBeNull()
@@ -167,7 +172,7 @@ describe('common list, read-only (frame 02)', () => {
 
   it('already replaced: the shadowed notice with "Open your version"; no Fork CTA', async () => {
     const mine = makeForkList({ id: FORK_ID })
-    stubApi(onGet(`${LISTS}/${COMMON_ID}`, common), onGet(`${LISTS}/${COMMON_ID}/items`, page(items)), effective([mine]))
+    stubApi(onGet(`${LISTS}/${COMMON_ID}`, common), onItems(`${LISTS}/${COMMON_ID}/items`, items), effective([mine]))
     const { container } = mount(COMMON_ID, { forkAction: true })
     const notice = await waitFor(() => {
       const el = container.querySelector('[data-readonly-notice="shadowed"]')
@@ -211,7 +216,7 @@ describe('value table states (frame 03)', () => {
 
   it('error: Retry in place, the badge and notice are kept', async () => {
     let fail = true
-    stubApi(onGet(`${LISTS}/lead`, lead), onGet(`${LISTS}/lead/items`, () => (fail ? { status: 500, body: {} } : { body: page(items) })))
+    stubApi(onGet(`${LISTS}/lead`, lead), onGet(`${LISTS}/lead/items`, req => (fail ? { status: 500, body: {} } : { body: page(items.filter(i => i.status === (req.query.get('status') ?? 'active'))) })))
     const { container } = mount('lead')
     await waitFor(() => expect(container.querySelector('[data-panel="value-table"][data-state="error"]')).not.toBeNull())
     expect(container.querySelector('[data-readonly-notice="org"]')).not.toBeNull()
@@ -226,6 +231,7 @@ describe('value table states (frame 03)', () => {
     const api = stubApi(
       onGet(`${LISTS}/lead`, lead),
       onGet(`${LISTS}/lead/items`, req => {
+        if (req.query.get('status') === 'archived') return { body: page([items[2]]) }
         if (req.query.get('cursor') !== 'n1') return { body: page([items[0]], 'n1') }
         return fail ? { status: 500, body: {} } : { body: page([items[1]]) }
       })
@@ -239,7 +245,9 @@ describe('value table states (frame 03)', () => {
     await userEvent.click(container.querySelector('[data-action="load-more-values"]')!)
     await waitFor(() => expect(container.querySelector('[data-item="sli2"]')).not.toBeNull())
     expect(container.querySelector('[data-action="load-more-values"]')).toBeNull()
-    expect(itemsOf(api, 'lead').map(c => c.query.get('cursor'))).toEqual([null, 'n1', 'n1'])
+    // active values first, archived after
+    expect(Array.from(container.querySelectorAll('[data-item]')).map(n => n.getAttribute('data-item'))).toEqual(['sli1', 'sli2', 'sli3'])
+    expect(itemsOf(api, 'lead').filter(c => c.query.get('status') === 'active').map(c => c.query.get('cursor'))).toEqual([null, 'n1', 'n1'])
   })
 })
 
@@ -308,7 +316,7 @@ describe('list-level states', () => {
 describe('navigation', () => {
   it('the Translations tab and the breadcrumb call back', async () => {
     const common = makeCommonList()
-    stubApi(onGet(`${LISTS}/${COMMON_ID}`, common), onGet(`${LISTS}/${COMMON_ID}/items`, page(items)), effective([common]))
+    stubApi(onGet(`${LISTS}/${COMMON_ID}`, common), onItems(`${LISTS}/${COMMON_ID}/items`, items), effective([common]))
     const { onOpenTranslations } = mount(COMMON_ID)
     await userEvent.click(await screen.findByRole('tab', { name: 'Translations' }))
     expect(onOpenTranslations).toHaveBeenCalled()

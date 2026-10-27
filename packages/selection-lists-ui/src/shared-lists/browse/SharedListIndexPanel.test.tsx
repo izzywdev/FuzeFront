@@ -42,7 +42,7 @@ function mount(path = '/settings/selection-lists', props = {}) {
   )
   return { ...utils, onOpenList, onNewList }
 }
-const lastList = (api: ApiStub) => api.callsTo('GET', LISTS).at(-1)!
+const lastList = (api: ApiStub) => api.callsTo('GET', LISTS).slice(-1)[0]
 const rowKeys = (container: HTMLElement) =>
   Array.from(container.querySelectorAll('[data-list]')).map(n => n.getAttribute('data-list'))
 

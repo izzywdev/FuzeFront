@@ -10,17 +10,15 @@
  * badge; a right-to-left locale's target cell carries `dir="rtl"`.
  */
 
-import { useMemo, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Badge, Button } from '@fuzefront/design-system'
-import { getLocaleEditor, getLocaleIndex } from '../../api'
-import type { LocaleIndexEntry, TranslationEntry } from '../../types'
-import { classifyApiError, type SharedList } from '../core'
+import type { SharedList } from '../core'
 import { useResource } from '../core/useResource'
 import { TRANSLATIONS_COPY as COPY } from './copy'
 import { PanelSkeleton, PanelStateBlock } from './PanelState'
 import { ReadOnlyListShell } from './ReadOnlyListShell'
 import * as css from './styles'
-import { useListValues } from './useListValues'
+import { fetchAllItems, fetchLocaleStatuses, type LocaleStatus } from './readApi'
 
 const RTL_LANGUAGES = new Set(['ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd', 'ug', 'dv'])
 
@@ -76,16 +74,16 @@ function Frame({
 }
 
 function LocaleIndex({
-  listId,
+  list,
   hrefForLocale,
   onOpenLocale,
 }: {
-  listId: string
+  list: SharedList
   hrefForLocale: (locale: string) => string
   onOpenLocale: (locale: string) => void
 }) {
-  const { settled, reload } = useResource(`locales|${listId}`, () =>
-    getLocaleIndex(listId)
+  const { settled, reload } = useResource(`locales|${list.id}`, signal =>
+    fetchLocaleStatuses(list.id, signal)
   )
 
   if (settled.status !== 'done' && settled.status !== 'failed') {
@@ -112,14 +110,8 @@ function LocaleIndex({
       </Frame>
     )
   }
-  const locales: LocaleIndexEntry[] = settled.value.locales ?? []
-  if (locales.length === 0) {
-    return (
-      <Frame readOnlyPanel="locale-index" state="empty">
-        <PanelStateBlock icon="☰" title={COPY.emptyTitle} body={COPY.emptyBody} />
-      </Frame>
-    )
-  }
+  // The service never lists the source locale; it is shown first, by definition complete.
+  const translated: LocaleStatus[] = settled.value
   return (
     <Frame readOnlyPanel="locale-index" state="ready">
       <div className="fz-sl-scroll">
@@ -132,48 +124,48 @@ function LocaleIndex({
             </tr>
           </thead>
           <tbody>
-            {locales.map(entry => (
+            <tr data-locale={list.source_locale}>
+              <td style={css.tdName} lang={list.source_locale}>
+                {languageName(list.source_locale)}{' '}
+                <span style={css.mutedText}>{COPY.source}</span>
+              </td>
+              <td style={{ ...css.td, ...css.numeric }}>100%</td>
+              <td style={css.td}>
+                <span style={css.mutedText}>—</span>
+              </td>
+            </tr>
+            {translated.map(entry => (
               <tr key={entry.locale} data-locale={entry.locale}>
                 <td style={css.tdName} lang={entry.locale}>
-                  {entry.is_source ? (
-                    <>
-                      {languageName(entry.locale)}{' '}
-                      <span style={css.mutedText}>{COPY.source}</span>
-                    </>
-                  ) : (
-                    <a
-                      className="fz-sl-link"
-                      href={hrefForLocale(entry.locale)}
-                      data-action="open-locale-readonly"
-                      data-locale-link={entry.locale}
-                      onClick={event => {
-                        if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
-                          event.preventDefault()
-                          onOpenLocale(entry.locale)
-                        }
-                      }}
-                    >
-                      {languageName(entry.locale)}
-                    </a>
-                  )}
+                  <a
+                    className="fz-sl-link"
+                    href={hrefForLocale(entry.locale)}
+                    data-action="open-locale-readonly"
+                    data-locale-link={entry.locale}
+                    onClick={event => {
+                      if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                        event.preventDefault()
+                        onOpenLocale(entry.locale)
+                      }
+                    }}
+                  >
+                    {languageName(entry.locale)}
+                  </a>
                 </td>
-                <td style={{ ...css.td, ...css.numeric }}>
-                  {entry.translated} / {entry.total}
-                </td>
+                <td style={{ ...css.td, ...css.numeric }}>{entry.completeness_pct}%</td>
                 <td style={css.td}>
-                  {!entry.is_source && entry.machine_count > 0 && (
+                  {entry.machine_translated && (
                     <>
                       <span data-machine="true">
                         <Badge tone="info" size="sm">{COPY.machine}</Badge>
                       </span>{' '}
-                      {COPY.machineCount(entry.machine_count)}
+                      {COPY.machineNote}
                     </>
                   )}
-                  {!entry.is_source && entry.stale_count > 0 && (
-                    <span style={css.mutedText}> {COPY.staleCount(entry.stale_count)}</span>
+                  {entry.source_changed && (
+                    <span style={css.mutedText}> {COPY.sourceChanged}</span>
                   )}
-                  {(entry.is_source ||
-                    (entry.machine_count === 0 && entry.stale_count === 0)) && (
+                  {!entry.machine_translated && !entry.source_changed && (
                     <span style={css.mutedText}>—</span>
                   )}
                 </td>
@@ -195,15 +187,18 @@ function LocaleView({
   locale: string
   onBackToLocales: () => void
 }) {
-  const { settled, reload } = useResource(`locale|${list.id}|${locale}`, () =>
-    getLocaleEditor(list.id, locale)
-  )
-  const values = useListValues(list.id)
-  const codeOf = useMemo(
-    () => new Map(values.rows.map(item => [item.id, item.code])),
-    [values.rows]
-  )
+  // A locale's text is read through the items endpoint (`?locale=`): once in the
+  // requested locale, once in the source locale for the reference column. Both
+  // follow the cursor envelope to its end.
+  const { settled, reload } = useResource(`locale|${list.id}|${locale}`, async signal => {
+    const [target, source] = await Promise.all([
+      fetchAllItems(list.id, { status: 'active', locale, signal }),
+      fetchAllItems(list.id, { status: 'active', locale: list.source_locale, signal }),
+    ])
+    return { target, source }
+  })
   const rtl = isRtlLocale(locale)
+  const sourceRtl = isRtlLocale(list.source_locale)
 
   if (settled.status !== 'done' && settled.status !== 'failed') {
     return (
@@ -213,13 +208,12 @@ function LocaleView({
     )
   }
   if (settled.status === 'failed') {
-    const failure = classifyApiError(settled.error, { sharedLists: true })
     return (
       <Frame readOnlyPanel="locale-editor" state="error" locale={locale}>
         <PanelStateBlock
           icon="⚠"
-          title={failure.kind === 'not_found' ? COPY.localeEmptyTitle : COPY.errorTitle}
-          body={failure.kind === 'not_found' ? COPY.localeEmptyBody : COPY.errorBody}
+          title={COPY.errorTitle}
+          body={COPY.errorBody}
           role="alert"
           action={
             <Button variant="secondary" size="sm" data-action="retry" onClick={reload}>
@@ -230,7 +224,8 @@ function LocaleView({
       </Frame>
     )
   }
-  const rows: TranslationEntry[] = settled.value.translations ?? []
+  const { target, source } = settled.value
+  const sourceLabel = new Map(source.map(item => [item.id, item.label]))
   return (
     <>
       <div style={{ marginBlockEnd: 'var(--space-3)' }}>
@@ -238,8 +233,8 @@ function LocaleView({
           {COPY.back}
         </Button>
       </div>
-      <Frame readOnlyPanel="locale-editor" state={rows.length === 0 ? 'empty' : 'ready'} locale={locale}>
-        {rows.length === 0 ? (
+      <Frame readOnlyPanel="locale-editor" state={target.length === 0 ? 'empty' : 'ready'} locale={locale}>
+        {target.length === 0 ? (
           <PanelStateBlock icon="☰" title={COPY.localeEmptyTitle} body={COPY.localeEmptyBody} />
         ) : (
           <div className="fz-sl-scroll">
@@ -247,35 +242,45 @@ function LocaleView({
               <thead>
                 <tr>
                   <th scope="col" style={css.th}>{COPY.code}</th>
+                  <th scope="col" style={css.th}>
+                    {languageName(list.source_locale)} {COPY.source}
+                  </th>
                   <th scope="col" style={css.th}>{languageName(locale)}</th>
                   <th scope="col" style={css.th}>{COPY.notes}</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map(row => {
-                  const stale = row.source_hash !== row.source_hash_current
-                  const missing = !row.label
+                {target.map(item => {
+                  // The service falls back along its chain when this locale has no text.
+                  const fallback =
+                    item.resolved_locale !== undefined && item.resolved_locale !== locale
                   return (
-                    <tr key={row.item_id} data-translation={row.item_id}>
+                    <tr key={item.id} data-translation={item.id}>
                       <td style={css.td}>
-                        <span style={css.keyChip}>{codeOf.get(row.item_id) ?? row.item_id}</span>
+                        <span style={css.keyChip}>{item.code}</span>
+                      </td>
+                      <td
+                        style={{ ...css.td, textAlign: 'start' }}
+                        dir={sourceRtl ? 'rtl' : 'ltr'}
+                        lang={list.source_locale}
+                      >
+                        {sourceLabel.get(item.id) ?? ''}
                       </td>
                       <td
                         style={{ ...css.tdName, textAlign: 'start' }}
                         dir={rtl ? 'rtl' : 'ltr'}
                         lang={locale}
                       >
-                        {row.label}
+                        {item.label}
                       </td>
                       <td style={css.td}>
-                        {row.is_machine && (
+                        {item.is_machine && !fallback && (
                           <span data-machine="true">
                             <Badge tone="info" size="sm">{COPY.machine}</Badge>
                           </span>
                         )}
-                        {stale && <span style={css.mutedText}> {COPY.sourceChanged}</span>}
-                        {missing && <span style={css.mutedText}> {COPY.fallback}</span>}
-                        {!row.is_machine && !stale && !missing && (
+                        {fallback && <span style={css.mutedText}>{COPY.fallback}</span>}
+                        {!item.is_machine && !fallback && (
                           <span style={css.mutedText}>—</span>
                         )}
                       </td>
@@ -315,7 +320,7 @@ export function ReadOnlyTranslations({
         <LocaleView list={list} locale={locale} onBackToLocales={onBackToLocales} />
       ) : (
         <LocaleIndex
-          listId={list.id}
+          list={list}
           hrefForLocale={hrefForLocale}
           onOpenLocale={onOpenLocale}
         />

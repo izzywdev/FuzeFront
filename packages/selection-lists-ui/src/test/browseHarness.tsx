@@ -68,7 +68,7 @@ export function stubApi(...handlers: ApiHandler[]): ApiStub {
 /** Reply `body` to GET `path`. */
 export function onGet(
   path: string | RegExp,
-  reply: unknown | ((req: ApiRequest) => ApiReply | undefined)
+  reply: object | ((req: ApiRequest) => ApiReply | undefined)
 ): ApiHandler {
   return req => {
     if (req.method !== 'GET') return undefined
@@ -81,6 +81,28 @@ export function onGet(
 }
 
 export { page }
+
+/**
+ * `GET …/items` as the service answers it: `status` is `active` (default) or
+ * `archived` — anything else, including the openapi's `all`, is a 400.
+ */
+export function onItems(
+  path: string,
+  rows: Array<{ status: string }>,
+  resolve?: (row: never, locale: string | null) => object
+): ApiHandler {
+  return onGet(path, req => {
+    const status = req.query.get('status') ?? 'active'
+    if (status !== 'active' && status !== 'archived')
+      return { status: 400, body: { code: 'VALIDATION_ERROR' } }
+    const mine = rows.filter(row => row.status === status)
+    return {
+      body: page(
+        resolve ? mine.map(row => resolve(row as never, req.query.get('locale'))) : mine
+      ),
+    }
+  })
+}
 
 export function LocationProbe() {
   const loc = useLocation()

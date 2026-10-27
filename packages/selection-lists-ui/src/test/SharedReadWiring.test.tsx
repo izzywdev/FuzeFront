@@ -155,7 +155,9 @@ describe('detail', () => {
 describe('translation workbench', () => {
   const T_INDEX = `${INDEX}/:listId/translations`
   const T_LOCALE = `${INDEX}/:listId/translations/:locale`
-  const locales = {
+  // The service answers an array of TranslationLocaleStatus (no source locale).
+  const locales = [{ locale: 'fr', completeness_pct: 100, machine_translated: false, source_changed: false }]
+  const legacyLocales = {
     locales: [
       { locale: 'en', is_source: true, translated: 1, total: 1, machine_count: 0, stale_count: 0 },
       { locale: 'fr', is_source: false, translated: 1, total: 1, machine_count: 0, stale_count: 0 },
@@ -166,19 +168,19 @@ describe('translation workbench', () => {
     stubApi(
       onGet(`${LISTS}/${COMMON_ID}`, makeCommonList()),
       onGet(`${LISTS}/${COMMON_ID}/translations`, locales),
-      onGet(`${LISTS}/${COMMON_ID}/translations/fr`, { locale: 'fr', translations: [] })
+      onGet(`${LISTS}/${COMMON_ID}/items`, page([]))
     )
     const { container } = renderShared(<TranslationWorkbenchFlow />, `${INDEX}/${COMMON_ID}/translations`, {
       routePaths: [T_INDEX, T_LOCALE],
     })
-    await waitFor(() => expect(container.querySelector('[data-panel="locale-index"][data-readonly="true"]')).not.toBeNull())
+    await waitFor(() => expect(container.querySelector('[data-panel="locale-index"][data-readonly="true"][data-state="ready"]')).not.toBeNull())
     await userEvent.click(container.querySelector('[data-locale-link="fr"]')!)
-    expect(screen.getByTestId('location')).toHaveTextContent(`${INDEX}/${COMMON_ID}/translations/fr`)
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(`${INDEX}/${COMMON_ID}/translations/fr`))
     await waitFor(() => expect(container.querySelector('[data-panel="locale-editor"][data-readonly="true"]')).not.toBeNull())
     await userEvent.click(screen.getByRole('button', { name: '← All languages' }))
-    expect(screen.getByTestId('location')).toHaveTextContent(new RegExp(`${COMMON_ID}/translations$`))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(new RegExp(`${COMMON_ID}/translations$`)))
     await userEvent.click(await screen.findByRole('tab', { name: 'Values' }))
-    expect(screen.getByTestId('location')).toHaveTextContent(new RegExp(`${INDEX}/${COMMON_ID}$`))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(new RegExp(`${INDEX}/${COMMON_ID}$`)))
   })
 
   it('flag ON, back to the list index from the breadcrumb', async () => {
@@ -194,7 +196,7 @@ describe('translation workbench', () => {
   ])('flag ON, %s: the 4.0.0 workbench (index and locale editor)', async (_name, list) => {
     stubApi(
       onGet(`${LISTS}/${COMMON_ID}`, list),
-      onGet(`${LISTS}/${COMMON_ID}/translations`, locales),
+      onGet(`${LISTS}/${COMMON_ID}/translations`, legacyLocales),
       onGet(`${LISTS}/${COMMON_ID}/translations/fr`, { locale: 'fr', translations: [{ item_id: 'sli1', locale: 'fr', label: 'Basse', is_machine: false, source_hash: 'h', source_hash_current: 'h' }] })
     )
     const first = renderShared(<TranslationWorkbenchFlow />, `${INDEX}/${COMMON_ID}/translations`, { routePaths: [T_INDEX, T_LOCALE] })
@@ -205,7 +207,7 @@ describe('translation workbench', () => {
   })
 
   it('flag OFF: the 4.0.0 workbench with no list read at all', async () => {
-    const api = stubApi(onGet(`${LISTS}/${COMMON_ID}/translations`, locales))
+    const api = stubApi(onGet(`${LISTS}/${COMMON_ID}/translations`, legacyLocales))
     const { container } = renderShared(<TranslationWorkbenchFlow />, `${INDEX}/${COMMON_ID}/translations`, {
       routePaths: [T_INDEX, T_LOCALE],
       sharedLists: false,

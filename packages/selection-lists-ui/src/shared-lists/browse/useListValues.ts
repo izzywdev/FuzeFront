@@ -1,11 +1,14 @@
 /**
- * useListValues — every value of one list, archived included (`status=all`),
- * following the cursor envelope (`page.nextCursor` until `hasMore` is false) —
- * the read-only value table (frames 02, 03).
+ * useListValues — every value of one list, archived included, following the
+ * cursor envelope (`page.nextCursor` until `hasMore` is false) — the read-only
+ * value table (frames 02, 03).
  *
- * ONE endpoint, the owning service's: `GET /v1/selection-lists/{id}/items`.
- * Archived values are listed (and badged by the table) so stored values can
- * still be recognised. A failed LOAD MORE keeps every row already shown
+ * ONE endpoint, the owning service's: `GET /v1/selection-lists/{id}/items`. The
+ * service accepts `status=active` (default) and `status=archived` — NOT the
+ * openapi's `all` (it answers 400) — so the hook reads the two statuses and
+ * lists active values first, then archived ones (badged by the table, so stored
+ * values can still be recognised). "Load more" continues the active stream
+ * before the archived one. A failed LOAD MORE keeps every row already shown
  * (`loadMoreFailed`); `loadMore` retries the same cursor.
  */
 
@@ -27,33 +30,57 @@ export interface ListValues {
   reload: () => void
 }
 
-interface MoreState {
-  token: string
+type Status = 'active' | 'archived'
+
+interface Stream {
   rows: SelectionListItem[]
   nextCursor: string | null
   hasMore: boolean
+}
+
+type Streams = Record<Status, Stream>
+
+interface MoreState {
+  token: string
+  streams: Streams
   loading: boolean
   failed: boolean
+}
+
+async function firstPage(
+  listId: string,
+  status: Status,
+  signal: AbortSignal
+): Promise<Stream> {
+  const response = await listItems(listId, { status, signal })
+  const nextCursor = unwrapCursor(response)
+  return {
+    rows: unwrapItems(response),
+    nextCursor,
+    hasMore: response.page?.hasMore ?? nextCursor !== null,
+  }
 }
 
 function byOrder(a: SelectionListItem, b: SelectionListItem): number {
   return a.sort_order - b.sort_order
 }
 
+function merge(stream: Stream): SelectionListItem[] {
+  const seen = new Set<string>()
+  return stream.rows
+    .filter(row => (seen.has(row.id) ? false : (seen.add(row.id), true)))
+    .sort(byOrder)
+}
+
 export function useListValues(listId: string | null): ListValues {
   const { settled, reload, token } = useResource(
     listId ? `values|${listId}` : null,
     async signal => {
-      const response = await listItems(listId as string, {
-        status: 'all',
-        signal,
-      })
-      return {
-        rows: unwrapItems(response),
-        nextCursor: unwrapCursor(response),
-        hasMore:
-          response.page?.hasMore ?? unwrapCursor(response) !== null,
-      }
+      const [active, archived] = await Promise.all([
+        firstPage(listId as string, 'active', signal),
+        firstPage(listId as string, 'archived', signal),
+      ])
+      return { active, archived } satisfies Streams
     }
   )
 
@@ -69,46 +96,40 @@ export function useListValues(listId: string | null): ListValues {
 
   const first = settled.status === 'done' ? settled.value : null
   const mine = more !== null && more.token === token ? more : null
-  const rows = useMemo(() => {
-    if (!first) return []
-    const seen = new Set(first.rows.map(row => row.id))
-    const extra = (mine?.rows ?? []).filter(row => !seen.has(row.id))
-    return [...first.rows, ...extra].sort(byOrder)
-  }, [first, mine])
-  const nextCursor = mine ? mine.nextCursor : (first?.nextCursor ?? null)
-  const hasMore = mine ? mine.hasMore : (first?.hasMore ?? false)
+  const streams: Streams | null = mine ? mine.streams : first
+  const rows = useMemo(
+    () => (streams ? [...merge(streams.active), ...merge(streams.archived)] : []),
+    [streams]
+  )
+  const next: Status | null = !streams
+    ? null
+    : streams.active.hasMore
+      ? 'active'
+      : streams.archived.hasMore
+        ? 'archived'
+        : null
 
   const loadMore = useCallback(() => {
-    if (
-      token === null ||
-      listId === null ||
-      !first ||
-      !hasMore ||
-      nextCursor === null ||
-      inFlight.current === token
-    )
-      return
+    if (token === null || listId === null || !streams || next === null) return
+    if (inFlight.current === token) return
+    const cursor = streams[next].nextCursor
+    if (cursor === null) return
     const startedFor = token
     inFlight.current = startedFor
-    const kept = mine?.rows ?? []
-    setMore({
-      token: startedFor,
-      rows: kept,
-      nextCursor,
-      hasMore,
-      loading: true,
-      failed: false,
-    })
-    listItems(listId, { status: 'all', cursor: nextCursor }).then(
+    setMore({ token: startedFor, streams, loading: true, failed: false })
+    listItems(listId, { status: next, cursor }).then(
       response => {
         if (inFlight.current === startedFor) inFlight.current = null
         if (tokenRef.current !== startedFor) return
-        const cursor = unwrapCursor(response)
+        const nextCursor = unwrapCursor(response)
+        const grown: Stream = {
+          rows: [...streams[next].rows, ...unwrapItems(response)],
+          nextCursor,
+          hasMore: response.page?.hasMore ?? nextCursor !== null,
+        }
         setMore({
           token: startedFor,
-          rows: [...kept, ...unwrapItems(response)],
-          nextCursor: cursor,
-          hasMore: response.page?.hasMore ?? cursor !== null,
+          streams: { ...streams, [next]: grown },
           loading: false,
           failed: false,
         })
@@ -116,17 +137,10 @@ export function useListValues(listId: string | null): ListValues {
       (err: unknown) => {
         if (inFlight.current === startedFor) inFlight.current = null
         if (isAbortError(err) || tokenRef.current !== startedFor) return
-        setMore({
-          token: startedFor,
-          rows: kept,
-          nextCursor,
-          hasMore,
-          loading: false,
-          failed: true,
-        })
+        setMore({ token: startedFor, streams, loading: false, failed: true })
       }
     )
-  }, [token, listId, first, hasMore, nextCursor, mine])
+  }, [token, listId, streams, next])
 
   const error = useMemo<ApiFailure | null>(
     () =>
@@ -146,7 +160,7 @@ export function useListValues(listId: string | null): ListValues {
     phase,
     rows,
     isEmpty: phase === 'ready' && rows.length === 0,
-    hasMore: phase === 'ready' && hasMore,
+    hasMore: phase === 'ready' && next !== null,
     loadingMore: mine?.loading ?? false,
     loadMoreFailed: mine?.failed ?? false,
     error,
