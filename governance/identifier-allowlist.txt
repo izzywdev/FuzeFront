@@ -41,7 +41,7 @@
 # drifting line number is an exemption nobody granted.
 
 # Outbox rows: infrastructure records of an event, not entities.
-src backend/core/src/events/outbox.ts:34                    # event_outbox row id
+src backend/core/src/events/outbox.ts:39                    # event_outbox row id
 src backend/src/services/organizationProvisioning.ts:378    # event_outbox row id
 src backend/src/services/portalProvisioning.ts:590          # event_outbox row id
 src backend/security/src/services/organizationProvisioning.ts:338  # event_outbox row id
