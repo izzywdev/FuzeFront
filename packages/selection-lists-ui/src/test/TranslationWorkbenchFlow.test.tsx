@@ -91,7 +91,7 @@ describe('frame 07 — locale index', () => {
     expect(q('[data-note="fallback"]')).toHaveTextContent(/never renders blank/i)
   })
 
-  it('shows translated/total + percentage, M count and stale count per locale', async () => {
+  it('shows translated/total + percentage, and the M and stale flags per locale', async () => {
     m.getLocaleIndex.mockResolvedValue({
       locales: [
         SOURCE,
@@ -104,8 +104,8 @@ describe('frame 07 — locale index', () => {
 
     const de = q('[data-locale="de"]') as HTMLElement
     expect(de).toHaveTextContent('75% (3/4)')
-    expect(de).toHaveTextContent('2M')
-    expect(de).toHaveTextContent('1 stale')
+    expect(de).toHaveTextContent('· M')
+    expect(de).toHaveTextContent('· stale')
     expect(de).toHaveAttribute('data-machine', 'true')
     expect(de).toHaveAttribute('data-stale', 'true')
     expect(de).not.toHaveAttribute('data-untranslated')
