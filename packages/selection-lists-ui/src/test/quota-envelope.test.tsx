@@ -20,6 +20,7 @@ import type { SelectionListQuotaEntry, SelectionListQuotaStatus } from '@fuzeone
 import { SelectionListManagementFlow } from '../SelectionListManagementFlow'
 import { getQuota } from '../api'
 import type { QuotaStatus } from '../types'
+import { SharedListsFeatureProvider } from '../shared-lists/core'
 import { renderFlow } from './helpers'
 
 // ── Contract-typed fixtures ───────────────────────────────────────────────────
@@ -76,6 +77,15 @@ const q = (sel: string) => document.querySelector(sel)
 const qa = (sel: string) => Array.from(document.querySelectorAll(sel))
 const renderIndex = () =>
   renderFlow(<SelectionListManagementFlow />, INDEX, [INDEX, `${INDEX}/:listId`])
+/** The flag-ON (shared-lists) variant of the same index reads the same envelope. */
+const renderSharedIndex = () =>
+  renderFlow(
+    <SharedListsFeatureProvider sharedLists organizationId="org_01h455vb4pex5vsknk084sn02q" organizationName="Globex Freight">
+      <SelectionListManagementFlow />
+    </SharedListsFeatureProvider>,
+    INDEX,
+    [INDEX, `${INDEX}/:listId`],
+  )
 
 beforeEach(() => {
   fetchMock.mockReset()
@@ -172,6 +182,37 @@ describe('quota read failures stay fail-OPEN (the server is the authority)', () 
     expect(screen.getByRole('heading', { name: 'Selection Lists' })).toBeInTheDocument()
     expect(qa('[data-quota-scope]')).toHaveLength(0)
     // fail-open: an unreadable envelope must never lock the user out
+    expect(screen.getByRole('button', { name: 'New list' })).toBeEnabled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('shared-lists index (flag ON) reads the same envelope', () => {
+  it('renders the four meters and keeps the CTA enabled', async () => {
+    serve(() => res(contractQuota()))
+    renderSharedIndex()
+    await waitFor(() => expect(q('[data-quota-scope="org_lists"]')).not.toBeNull())
+    expect(q('[data-quota-scope="org_lists"]')).toHaveTextContent('2 / 50')
+    expect(qa('[data-quota-scope]')).toHaveLength(4)
+    expect(screen.getByRole('button', { name: 'New list' })).toBeEnabled()
+  })
+
+  it('at the ceiling disables the CTA', async () => {
+    serve(() => res(contractQuota({ org_lists: 50 })))
+    renderSharedIndex()
+    await waitFor(() => expect(q('[data-banner="quota-at"]')).not.toBeNull())
+    expect(screen.getByRole('button', { name: 'New list' })).toBeDisabled()
+  })
+
+  it.each([
+    ['the retired { scopes } shape', { scopes: [{ scope: 'org_lists', current: 50, limit: 50 }] }],
+    ['a null body', null],
+  ])('a 200 with %s is an unavailable read: no crash, CTA stays enabled', async (_label, body) => {
+    serve(() => res(body))
+    renderSharedIndex()
+    await waitFor(() => expect(q('[data-panel="quota"] [data-state="error"]')).not.toBeNull())
+    expect(q('[data-panel="quota"]')).toHaveTextContent('Quota information unavailable')
+    expect(qa('[data-quota-scope]')).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'New list' })).toBeEnabled()
   })
 })

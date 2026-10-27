@@ -21,6 +21,8 @@ export interface SelectionListItem {
   status: 'active' | 'archived'
   sort_order: number
   source_hash: string
+  /** The locale `label` was resolved in (4.1.0 service); absent from older mocks. */
+  resolved_locale?: string
 }
 
 /**
