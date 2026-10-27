@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type KeyboardEvent, type ChangeEvent } from 'react';
+import { useState, useRef, type KeyboardEvent, type ChangeEvent } from 'react';
 import { useChatI18n } from '../i18n';
 
 export interface MentionCandidate {
