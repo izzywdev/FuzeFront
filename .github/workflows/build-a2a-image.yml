@@ -1,0 +1,361 @@
+name: Build FuzeFront A2A image
+
+# Builds and publishes ghcr.io/izzywdev/fuzefront-a2a — the product-specific
+# A2A image that bakes in a pre-generated agent-card.json so the pod needs no
+# GitHub access at startup (no init container, no git token).
+#
+# Topology reference:
+#   izzywdev/FuzeAgent docs/a2a/per-product-pod.md
+#   build/a2a/Dockerfile  — extends ghcr.io/izzywdev/fuze-a2a + COPY card
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'build/a2a/**'
+      - 'agent-templates/roles/app-shell-platform/**'
+      - '.fuze/manifest.json'
+      - '.github/workflows/build-a2a-image.yml'
+  pull_request:
+    paths:
+      - 'build/a2a/**'
+      - 'agent-templates/roles/app-shell-platform/**'
+      - '.fuze/manifest.json'
+      - '.github/workflows/build-a2a-image.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Extra tag (e.g. 1.0.0). :sha and :latest are always published on master.'
+        required: false
+        type: string
+
+jobs:
+  image:
+    name: Build & publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      actions: write  # upload-artifact
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Do not persist the token in .git/config. The image job does no git
+          # push, so credentials in git config serve no purpose and would
+          # allow a PR's own generate-card.py to read them (Codex P1 finding).
+          persist-credentials: false
+
+      # Regenerate the agent-card.json from the current manifest + role so the
+      # baked card is always fresh. Uses a sparse checkout of FuzeAgent's
+      # agent-templates to run card_generator.py — the generator itself is in
+      # FuzeAgent because every product image uses it, not just FuzeFront.
+      - name: Sparse-clone FuzeAgent card_generator
+        # Pinned to a known-good master SHA — this job holds packages:write, so
+        # executing code from an unpinned HEAD is a supply-chain injection vector.
+        # Bump the SHA when a generator or contract update from FuzeAgent is needed.
+        run: |
+          mkdir /tmp/fuzeagent-gen
+          git -C /tmp/fuzeagent-gen init
+          git -C /tmp/fuzeagent-gen remote add origin https://github.com/izzywdev/FuzeAgent.git
+          git -C /tmp/fuzeagent-gen sparse-checkout init
+          git -C /tmp/fuzeagent-gen sparse-checkout set \
+            agent-templates/a2a agent-templates/contracts/a2a/v1
+          git -C /tmp/fuzeagent-gen fetch --depth 1 origin \
+            3f342219d448db3dd78d5c3a56d1cba6c2f4fc35
+          git -C /tmp/fuzeagent-gen checkout FETCH_HEAD
+
+      - name: Install card-generator dependencies
+        # Pin all transitive deps with hashes so a compromised PyPI package
+        # cannot rewrite the Dockerfile inside this packages:write job.
+        # Hashes cover cp312 (github-actions ubuntu-latest) and cp313 (local dev).
+        run: pip install --require-hashes -r build/a2a/requirements.txt
+
+      - name: Regenerate agent-card.json
+        run: python3 build/a2a/generate-card.py --fuzeagent-src /tmp/fuzeagent-gen
+
+      - name: Verify card is schema-valid
+        run: |
+          python3 - <<'EOF'
+          import json, sys
+          card = json.loads(open('build/a2a/agent-card.json').read())
+          required = {'name', 'description', 'version', 'supportedInterfaces',
+                      'capabilities', 'skills', 'signatures'}
+          missing = required - card.keys()
+          if missing:
+              print(f'::error title=agent-card::Missing required fields: {missing}')
+              sys.exit(1)
+          if not card['skills']:
+              print('::error title=agent-card::skills[] is empty')
+              sys.exit(1)
+          if not card['supportedInterfaces']:
+              print('::error title=agent-card::supportedInterfaces[] is empty')
+              sys.exit(1)
+          tenant = card['supportedInterfaces'][0].get('tenant')
+          if tenant != 'FuzeFront':
+              print(f'::error title=agent-card::wrong tenant: expected FuzeFront, got {tenant!r}')
+              sys.exit(1)
+          # The baked card carries a placeholder JWS signature (sign=True in
+          # generate-card.py).  The fuze-a2a runtime re-signs at pod startup via
+          # well_known_card() before serving /.well-known/agent-card.json — see
+          # FuzeAgent PR #2088.  Assert the field exists and is non-empty so the
+          # schema contract is met; cryptographic validity is the server's job.
+          sigs = card.get('signatures', [])
+          if not sigs:
+              print('::error title=agent-card::signatures[] is empty — placeholder required')
+              sys.exit(1)
+          print(f'Card OK — {len(card["skills"])} skill(s), tenant={tenant!r}, '
+                f'{len(sigs)} placeholder signature(s)')
+          EOF
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        id: tag
+        run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve shared-base digest
+        id: base
+        # On master builds (after GHCR login), resolve the exact OCI digest so
+        # the published image pins its runtime and a future :latest retag cannot
+        # silently incorporate a compromised release (Codex P2 finding).
+        # PR builds are ephemeral and never published, so :latest is acceptable.
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_REF: ${{ github.ref }}
+        run: |
+          if [[ "${GH_EVENT_NAME}" != "pull_request" && \
+                "${GH_REF}" == "refs/heads/master" ]]; then
+            DIGEST=$(docker buildx imagetools inspect \
+              ghcr.io/izzywdev/fuze-a2a:latest \
+              --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+            if [[ -z "${DIGEST}" ]]; then
+              echo "::error::Failed to resolve ghcr.io/izzywdev/fuze-a2a:latest digest"
+              exit 1
+            fi
+            echo "image=ghcr.io/izzywdev/fuze-a2a@${DIGEST}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pinned base: ghcr.io/izzywdev/fuze-a2a@${DIGEST}"
+          else
+            echo "image=ghcr.io/izzywdev/fuze-a2a:latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate extra tag input
+        if: inputs.tag != ''
+        env:
+          EXTRA_TAG: ${{ inputs.tag }}
+        run: |
+          if ! [[ "${EXTRA_TAG}" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "::error::inputs.tag must be a single OCI tag component (alphanumeric, dot, hyphen, underscore only — no commas, slashes, or colons)."
+            exit 1
+          fi
+
+      - name: Build & push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: build/a2a
+          file: build/a2a/Dockerfile
+          build-args: BASE_IMAGE=${{ steps.base.outputs.image }}
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
+          tags: |
+            ghcr.io/izzywdev/fuzefront-a2a:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-a2a:latest
+            ${{ inputs.tag && format('ghcr.io/izzywdev/fuzefront-a2a:{0}', inputs.tag) || '' }}
+          cache-from: type=gha,scope=fuzefront-a2a
+          cache-to: type=gha,mode=max,scope=fuzefront-a2a
+
+      - name: Report
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        run: |
+          echo "::notice::Published ghcr.io/izzywdev/fuzefront-a2a:${{ steps.tag.outputs.sha }}"
+          echo "## A2A image published" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`${{ steps.tag.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Base: \`${{ steps.base.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Upload the generated card so tag-update can consume it without
+      # re-running FuzeAgent code in a job that holds GH_RELEASE_PAT.
+      - name: Upload agent-card artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agent-card-${{ github.sha }}
+          path: build/a2a/agent-card.json
+          retention-days: 1
+
+  # After each successful master-push build, open a PR that:
+  # 1. Pins the new :sha tag in values-prod.yaml
+  # 2. Commits the fresh agent-card.json (card may have changed if manifest/role changed)
+  # The PR carries auto-merge so it self-resolves once CI gates pass.
+  tag-update:
+    name: Bump helm image tag
+    needs: image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read  # download-artifact
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Download the card generated (and schema-verified) by the image job.
+      # This avoids cloning FuzeAgent — and running its Python — in a job
+      # that later holds GH_RELEASE_PAT, closing the supply-chain injection
+      # vector identified in Codex Security Review on 2026-10-26.
+      - name: Download agent-card from image job
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4.6.2
+        with:
+          name: agent-card-${{ github.sha }}
+          path: build/a2a/
+
+      - name: Compute image tag
+        id: tag
+        run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Update a2a image tag in Helm values
+        env:
+          NEW_SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, re, sys
+          sha = os.environ['NEW_SHA']
+          for path in [
+              'deploy/helm/fuzefront/values-prod.yaml',
+          ]:
+              content = open(path).read()
+              # Subsequent runs: bump the fuzefront-a2a tag in place.
+              updated = re.sub(
+                  r'(repository: ghcr\.io/izzywdev/fuzefront-a2a\n(?:[ \t]*#[^\n]*\n)*[ \t]+tag: )"[^"]*"',
+                  f'\\g<1>"{sha}"',
+                  content,
+              )
+              first_run = updated == content
+              if first_run:
+                  # First run: values-prod.yaml still points at the base fuze-a2a
+                  # image (this PR's interim placeholder to avoid ImagePullBackOff).
+                  # Migrate the repository field to fuzefront-a2a and pin the tag.
+                  updated = re.sub(
+                      r'repository: ghcr\.io/izzywdev/fuze-a2a(\n(?:[ \t]*#[^\n]*\n)*[ \t]+tag: )"[^"]*"',
+                      f'repository: ghcr.io/izzywdev/fuzefront-a2a\\g<1>"{sha}"',
+                      content,
+                  )
+              if updated == content:
+                  print(f'::error::tag regex did not match in {path} — '
+                        f'values file may have been reformatted; update the regex in the tag-update step')
+                  sys.exit(1)
+              if first_run:
+                  # Also atomically migrate to static-card topology:
+                  # remove interim tenant repo/ref + comment block, flip skipRepoSync.
+                  # The fuze-a2a interim state preserved dynamic projection (clone); the
+                  # product image no longer needs it (card is baked in).
+                  prev = updated
+                  updated = re.sub(
+                      r'[ \t]+# Interim \(feat/a2a-static-card\)[^\n]*\n(?:[ \t]+#[^\n]*\n)*'
+                      r'[ \t]+repo: izzywdev/FuzeFront\n[ \t]+ref: master\n',
+                      '',
+                      updated,
+                  )
+                  if updated == prev:
+                      print(f'::warning::first-run migration: repo/ref cleanup regex did not match in {path} — check for reformatting; residual interim fields are harmless')
+                  prev = updated
+                  updated = re.sub(
+                      r'(skipRepoSync: )false',
+                      r'\g<1>true',
+                      updated,
+                  )
+                  if updated == prev:
+                      print(f'::error::first-run migration: skipRepoSync regex did not match in {path} — init container will run against product image without clone config; check for reformatting')
+                      sys.exit(1)
+                  prev = updated
+                  updated = re.sub(
+                      r'(reposGitTokenSecretRef: null\s+# public repo — anonymous clone)',
+                      r'reposGitTokenSecretRef: null   # unused with skipRepoSync',
+                      updated,
+                  )
+                  if updated == prev:
+                      print(f'::warning::first-run migration: reposGitTokenSecretRef comment regex did not match in {path} — comment not updated, functionally harmless')
+                  # Replace the interim comment block above skipRepoSync (3 lines).
+                  prev = updated
+                  updated = re.sub(
+                      r'  # Interim: keep clone-based projection[^\n]*\n'
+                      r'(?:  #[^\n]*\n)+',
+                      '  # Static-card topology: skip the repo-sync init container.\n'
+                      '  # The product image bakes in agent-card.json at build time.\n',
+                      updated,
+                  )
+                  if updated == prev:
+                      print(f'::warning::first-run migration: interim comment block regex did not match in {path} — comment not updated, functionally harmless')
+              open(path, 'w').write(updated)
+
+          # On first run, also update governance/a2a-policy.json to track the
+          # product-specific image.  gate_a2a.py check I1 compares values-prod.yaml
+          # image.repository against the policy's expected repository — if they
+          # diverge after the fuze-a2a → fuzefront-a2a switch the tag-update PR
+          # would fail the gate.  Update the policy atomically with the values file.
+          if first_run:
+              policy_path = 'governance/a2a-policy.json'
+              policy_content = open(policy_path).read()
+              policy_updated = re.sub(
+                  r'"repository": "ghcr\.io/izzywdev/fuze-a2a"',
+                  '"repository": "ghcr.io/izzywdev/fuzefront-a2a"',
+                  policy_content,
+                  count=1,
+              )
+              if policy_updated != policy_content:
+                  open(policy_path, 'w').write(policy_updated)
+                  print(f'Updated {policy_path}: image.repository → ghcr.io/izzywdev/fuzefront-a2a')
+              else:
+                  print(f'::warning::first-run migration: a2a-policy.json regex did not match — '
+                        f'gate_a2a.py I1 will fail on the tag-update PR; a2a-maintainer will fix it')
+          PYEOF
+
+      - name: Open tag-bump PR
+        env:
+          # GH_RELEASE_PAT, not GITHUB_TOKEN: PRs opened with GITHUB_TOKEN do
+          # not trigger pull_request workflows (GitHub's recursion guard), so
+          # auto-merge.yml never runs and the auto-merge label does nothing.
+          # Pattern from claude-auto-pr.yml:93-111 — the PAT raises an ordinary
+          # user event that triggers CI normally. Falls back to GITHUB_TOKEN so
+          # the job does not fail if the PAT is absent (the PR will exist but
+          # may need a manual CI kick).
+          GH_TOKEN: ${{ secrets.GH_RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          NEW_SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy/helm/fuzefront/values-prod.yaml build/a2a/agent-card.json governance/a2a-policy.json
+          if git diff --cached --quiet; then
+            echo "::notice::a2a image tag already ${NEW_SHA} and card unchanged; no PR needed"
+            exit 0
+          fi
+          BRANCH="fuzefront-a2a-image/tag-${NEW_SHA}"
+          git commit -m "chore(a2a): pin fuzefront-a2a image to ${NEW_SHA}
+
+          Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01WEuriU3M9tXxBbzYNr5FZW"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+          gh pr create \
+            --title "chore(a2a): pin fuzefront-a2a image to ${NEW_SHA}" \
+            --body "Auto-update from \`build-a2a-image.yml\` after the product A2A image was built and published to GHCR.
+
+          Image: \`ghcr.io/izzywdev/fuzefront-a2a:${NEW_SHA}\`
+          Built from commit: \`${GITHUB_SHA}\`
+
+          Updates:
+          - \`values-prod.yaml\` — pins the new \`:sha\` tag so Argo syncs the new image on merge
+          - \`build/a2a/agent-card.json\` — fresh card projection from current manifest + role
+          - \`governance/a2a-policy.json\` — (first run only) migrates expected A2A image to \`fuzefront-a2a\` so \`gate_a2a.py\` I1 stays green after the image switch
+
+          ---
+          _Generated by [Claude Code](https://claude.ai/code)_
+
+          https://claude.ai/code/session_01WEuriU3M9tXxBbzYNr5FZW" \
+            --label auto-merge \
+            --head "${BRANCH}" \
+            --base master

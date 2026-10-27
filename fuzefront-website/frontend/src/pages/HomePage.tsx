@@ -364,7 +364,7 @@ export const HomePage: React.FC = () => {
             <motion.div variants={fadeUpVariants} className="text-center mt-8">
               <Link
                 to="/industries"
-                className="inline-flex items-center gap-1 text-primary-700 hover:text-primary-800 font-medium text-sm"
+                className="inline-flex items-center gap-1 text-primary-800 hover:text-primary-900 font-medium text-sm"
               >
                 See industry solutions <ChevronRight size={14} />
               </Link>

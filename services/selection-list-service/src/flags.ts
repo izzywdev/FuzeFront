@@ -86,9 +86,9 @@ export const FLAGS = {
    * Gates the shared/common-lists + copy-on-write-fork feature (HTTP contract 4.1.0). Release flag,
    * default OFF. Server-side here; the shell UI reads it through the web catalog. See module doc above.
    */
-  // TODO(#1461): the flag-chart PR registers this key in @fuzefront/feature-flags (flag-registry.yaml / FLAG_KEYS,
-  // package 1.3.0, NOT on master yet). This service reads it by its literal key through the shared OpenFeature
-  // client like the other two keys (it depends on no package constant); switch to FLAG_KEYS.* once #1461 merges.
+  // Registered in @fuzefront/feature-flags (`FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS`, flag-registry.yaml). Like the
+  // other two keys, this service mirrors the literal key rather than importing the package constant: the package is
+  // lazy-required (see resolveClient) so the service degrades to fail-safe defaults when it is absent.
   SELECTION_LISTS_SHARED_LISTS: 'fuzefront.selection-lists.shared-lists',
 } as const
 
