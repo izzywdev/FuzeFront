@@ -33,6 +33,10 @@ import {
   SharedListDetail,
   SharedListIndexPanel,
 } from './shared-lists/browse'
+import {
+  ForkProvenanceBoundary,
+  useForkProvenanceContext,
+} from './shared-lists/provenance'
 
 // ── Regex for the key validation: ^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$ ─────────
 const KEY_REGEX = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/
@@ -555,6 +559,9 @@ function SortableItemList({
   onReordered: (newOrder: SelectionListItem[]) => void
   onReloadRequested: () => void
 }) {
+  // Fork provenance (SL9, flag ON and the list is a fork): `null` otherwise, and
+  // a row then carries nothing extra.
+  const provenance = useForkProvenanceContext()
   const [orderedItems, setOrderedItems] = useState(items)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -677,6 +684,7 @@ function SortableItemList({
           key={item.id}
           data-item={item.id}
           data-archived={item.status === 'archived' ? 'true' : undefined}
+          {...provenance?.originAttributes(item)}
           data-dragging={dragIdx === idx ? 'true' : undefined}
           data-drop-target={dragIdx !== null && dragIdx !== idx ? 'true' : undefined}
           style={{
@@ -720,6 +728,9 @@ function SortableItemList({
               <span style={{ ...s.badge, marginLeft: 'var(--space-2)', background: 'var(--bg-muted)', color: 'var(--text-secondary)' }}>
                 Archived
               </span>
+            )}
+            {provenance && (
+              <span style={{ display: 'block', marginBlockStart: 'var(--space-1)' }}>{provenance.copiedFrom(item)}</span>
             )}
           </div>
           {/* Actions */}
@@ -851,6 +862,7 @@ function LegacyListDetail({
         {headerExtra}
       </div>
 
+      <ForkProvenanceBoundary listId={listId} onChangeVisibility={onNavigateToAccess} onArchived={loadData}>
       {/* Tab strip */}
       <div data-tabs="list-detail" style={{ display: 'flex', gap: 'var(--space-2)', borderBottom: '2px solid var(--border-color)', marginBottom: 'var(--space-4)' }}>
         <button data-tab="translations" style={{ ...s.btnGhost, borderBottom: '2px solid var(--accent)', borderRadius: 0 }} onClick={onNavigateToTranslations}>
@@ -906,6 +918,7 @@ function LegacyListDetail({
           />
         )}
       </div>
+      </ForkProvenanceBoundary>
 
       {/* Value modal */}
       {valueModal && (
