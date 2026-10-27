@@ -353,11 +353,11 @@ a2a:
     # ghcr.io/izzywdev/fuzefront-a2a and opens a tag-bump PR that migrates
     # this field to fuzefront-a2a:<sha> in one atomic step. Using the base
     # image here avoids an ImagePullBackOff during the ~10-20 min build window.
-    repository: ghcr.io/izzywdev/fuze-a2a
+    repository: ghcr.io/izzywdev/fuzefront-a2a
     # Plain CI-built SHA tag. Verified anonymously pullable 2026-09-09.
     # Re-pinned automatically by the tag-bump PR from build-a2a-image.yml
     # (first run migrates to fuzefront-a2a, subsequent runs bump the sha).
-    tag: "98b9b314bb0d"
+    tag: "dd5ef9838b06"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -406,13 +406,6 @@ a2a:
     keyId: a2a-v1
   tenants:
     - tenant: FuzeFront
-      # Interim (feat/a2a-static-card): the tag-update PR that merges after the
-      # first build-a2a-image.yml run on master will atomically switch the image
-      # to ghcr.io/izzywdev/fuzefront-a2a, remove repo/ref, and set
-      # skipRepoSync: true. Until then, dynamic projection from the clone is
-      # preserved so card discovery is never broken.
-      repo: izzywdev/FuzeFront
-      ref: master
       enabled: true
       entryRole: app-shell-platform
       external: false
@@ -422,11 +415,10 @@ a2a:
 
 a2aDeploy:
   replicas: 1
-  # Interim: keep clone-based projection while using the fuze-a2a base image.
-  # The tag-update PR (from build-a2a-image.yml first run on master) sets
-  # skipRepoSync: true atomically with the image switch to fuzefront-a2a.
-  skipRepoSync: false
-  reposGitTokenSecretRef: null   # public repo — anonymous clone
+  # Static-card topology: skip the repo-sync init container.
+  # The product image bakes in agent-card.json at build time.
+  skipRepoSync: true
+  reposGitTokenSecretRef: null   # unused with skipRepoSync
   providerApiKeySecretRef: { name: fuzefront-secrets, key: LITELLM_MASTER_KEY }
   providerBaseUrl: http://litellm.fuzeinfra.svc.cluster.local:4000
   gitImage: alpine/git:latest
