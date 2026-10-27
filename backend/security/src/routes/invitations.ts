@@ -178,7 +178,7 @@ router.get('/:token', async (req: any, res) => {
 
     // FFRNT-307: contract-shaped masked resolve behind the release flag (default OFF).
     if (await isInviteV2Enabled({ organizationId: invitation.organization_id })) {
-      return resolveV2(req, res, invitation)
+      return await resolveV2(req, res, invitation)
     }
 
     // Expired by status or by time
@@ -228,7 +228,7 @@ router.post('/:token/accept', optionalAuthForAcceptV2, async (req: any, res) => 
 
     // FFRNT-307: Org invitations v2 (bindToken signup flow) behind the release flag, default OFF.
     if (await isInviteV2Enabled({ userId: req.user?.id, organizationId: invitation.organization_id })) {
-      return acceptV2(req, res, invitation)
+      return await acceptV2(req, res, invitation)
     }
 
     // Not authenticated: direct to enroll

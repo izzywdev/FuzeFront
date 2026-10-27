@@ -33,6 +33,7 @@ import {
 } from '@fuzefront/shared/kafka'
 import { assignOrganizationRole } from '../src/utils/permit/role-assignment'
 import { isInviteV2Enabled } from '../src/utils/inviteV2Flag'
+import { isPrefixedIdsEnabled } from '../src/identity/flags'
 import invitationsRouter from '../src/routes/invitations'
 import { hashBindToken, redeemBindToken } from '../src/services/invitationsV2'
 import { fakeDb, outbox, ROOT } from './helpers/fakeDb'
@@ -317,6 +318,24 @@ describe('POST /:token/accept — authenticated (200 bound)', () => {
     expect(res.body).toMatchObject({ message: expect.any(String), organizationId: ORG_A, role: 'viewer' })
     expect(res.body).not.toHaveProperty('memberType')
     expect(outbox(TOPICS.IDENTITY_INVITATION_ACCEPTED)).toHaveLength(0)
+  })
+})
+
+describe('error propagation — async rejections reach the route catch block', () => {
+  const prefixFlag = isPrefixedIdsEnabled as jest.Mock
+
+  it('GET /:token: a DB error inside resolveV2 yields 500, not a hanging request', async () => {
+    prefixFlag.mockRejectedValueOnce(new Error('db connection lost'))
+    const res = await request(appAs(null)).get(`/api/invitations/${TOKEN}`)
+    expect(res.status).toBe(500)
+  })
+
+  it('POST /:token/accept: a DB error inside acceptV2 yields 500, not a hanging request', async () => {
+    prefixFlag.mockRejectedValueOnce(new Error('db connection lost'))
+    const res = await request(appAs(U_NEW))
+      .post(`/api/invitations/${TOKEN}/accept`)
+      .set('Authorization', 'Bearer t')
+    expect(res.status).toBe(500)
   })
 })
 
