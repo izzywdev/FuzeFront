@@ -29,7 +29,7 @@
   "isChromeOSOnly": false,
   "isMetaQuest": false,
   "fullScopeUrl": "https://nav.velogearpremium.com/",
-  "minSdkVersion": 21,
+  "minSdkVersion": 24,
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://nav.velogearpremium.com/manifest.webmanifest",
   "fallbackType": "customtabs",
