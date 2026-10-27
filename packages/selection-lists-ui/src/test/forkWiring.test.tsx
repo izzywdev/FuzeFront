@@ -292,6 +292,8 @@ describe('read-only common detail (forkAction slot) and arrival at the fork', ()
     open()
     const cta = await screen.findByRole('button', { name: 'Fork to edit…' })
     expect(cta).toHaveAttribute('data-action', 'fork-to-edit')
+    // A common list is not a fork: the CTA is here, the provenance card is not.
+    expect(q('[data-panel="fork-provenance"]')).toBeNull()
     await userEvent.click(cta)
     await waitFor(() =>
       expect(q('[data-dialog="fork"] [data-fork-copied]')).toHaveTextContent('3 values (2 active, 1 archived)')
@@ -335,6 +337,7 @@ describe('read-only common detail (forkAction slot) and arrival at the fork', ()
     routeFetch({
       [`GET /api/v1/selection-lists/front_sl_fork`]: () =>
         jsonResponse(makeForkList({ id: 'front_sl_fork', name: 'Priority', editable: true })),
+      [`GET /api/v1/selection-lists/${COMMON_ID}`]: () => jsonResponse(makeCommonList({ name: 'Priority' })),
     })
     function Where() {
       const l = useLocation()
@@ -360,7 +363,18 @@ describe('read-only common detail (forkAction slot) and arrival at the fork', ()
       return el as HTMLElement
     })
     expect(toast).toHaveTextContent('Forked.')
+    // The provenance card (fork-provenance flow) coexists with the arrival notice, and a
+    // brand-new fork is never shown "up to date" (a 201 carries no source revision).
+    const card = await waitFor(() => {
+      const el = q('[data-panel="fork-provenance"][data-behind-state="unknown"]')
+      expect(el).not.toBeNull()
+      return el as HTMLElement
+    })
+    expect(card).toBeVisible()
+    expect(q('[data-behind-state="up-to-date"]')).toBeNull()
+    expect(q('[data-action="fork-to-edit"]')).toBeNull()
     await userEvent.click(within(toast).getByRole('button'))
+    expect(q('[data-panel="fork-provenance"]')).not.toBeNull()
     expect(q('[data-toast]')).toBeNull()
     expect(screen.getByTestId('has-state')).toHaveTextContent('false')
   })
