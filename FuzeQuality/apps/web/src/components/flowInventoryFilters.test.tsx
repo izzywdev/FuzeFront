@@ -16,6 +16,7 @@ describe('FlowInventoryFilters', () => {
     const onSourceChange = vi.fn()
     const onStatusChange = vi.fn()
     const onRevisionScopeChange = vi.fn()
+    const onTargetIdChange = vi.fn()
     const onModelChange = vi.fn()
     const onPromptVersionChange = vi.fn()
     const onSchemaVersionChange = vi.fn()
@@ -28,6 +29,7 @@ describe('FlowInventoryFilters', () => {
       source=""
       status=""
       revisionScope="all"
+      targetId=""
       model=""
       promptVersion=""
       schemaVersion=""
@@ -39,6 +41,7 @@ describe('FlowInventoryFilters', () => {
       onSourceChange={onSourceChange}
       onStatusChange={onStatusChange}
       onRevisionScopeChange={onRevisionScopeChange}
+      onTargetIdChange={onTargetIdChange}
       onModelChange={onModelChange}
       onPromptVersionChange={onPromptVersionChange}
       onSchemaVersionChange={onSchemaVersionChange}
@@ -51,6 +54,7 @@ describe('FlowInventoryFilters', () => {
     fireEvent.change(screen.getByLabelText('Origin'), { target: { value: 'litellm' } })
     fireEvent.change(screen.getByLabelText('Review state'), { target: { value: 'confirmed' } })
     fireEvent.change(screen.getByLabelText('Analysis revision'), { target: { value: 'current' } })
+    fireEvent.change(screen.getByLabelText('Target artifact ID'), { target: { value: 'route-checkout' } })
     fireEvent.change(screen.getByLabelText('Analysis model'), { target: { value: 'quality-analysis' } })
     fireEvent.change(screen.getByLabelText('Prompt version'), { target: { value: 'flow-v2' } })
     fireEvent.change(screen.getByLabelText('Schema version'), { target: { value: '2.0' } })
@@ -62,6 +66,7 @@ describe('FlowInventoryFilters', () => {
     expect(onSourceChange).toHaveBeenCalledWith('litellm')
     expect(onStatusChange).toHaveBeenCalledWith('confirmed')
     expect(onRevisionScopeChange).toHaveBeenCalledWith('current')
+    expect(onTargetIdChange).toHaveBeenCalledWith('route-checkout')
     expect(onModelChange).toHaveBeenCalledWith('quality-analysis')
     expect(onPromptVersionChange).toHaveBeenCalledWith('flow-v2')
     expect(onSchemaVersionChange).toHaveBeenCalledWith('2.0')

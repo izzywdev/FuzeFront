@@ -10,13 +10,13 @@ const candidate = (overrides: Partial<RepositoryFlowCandidate> = {}): Repository
 })
 
 describe('repository flow inventory filter', () => {
-  it('filters source, review status, revision, and exact LiteLLM provenance together', () => {
+  it('filters source, review status, revision, target, and exact LiteLLM provenance together', () => {
     const candidates = [
       candidate(),
       candidate({ id: 'flow-2', confidence: 0.8, source: 'litellm', status: 'confirmed', revision: 'def', analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0' } }),
       candidate({ id: 'flow-3', confidence: 0.7, source: 'litellm', status: 'confirmed', revision: 'def', analysis: { provider: 'fuzeinfra-litellm', model: 'legacy-analysis', promptVersion: 'flow-v1', schemaVersion: '1.0' } }),
     ]
-    const filter = repositoryFlowFilterSchema.parse({ source: 'litellm', status: 'confirmed', revision: 'def', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0', minConfidence: '0.8', maxConfidence: '0.8' })
+    const filter = repositoryFlowFilterSchema.parse({ source: 'litellm', status: 'confirmed', revision: 'def', targetId: 'route-1', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0', minConfidence: '0.8', maxConfidence: '0.8' })
     expect(filterRepositoryFlowCandidates(candidates, filter)).toEqual([candidates[1]])
   })
 
@@ -49,6 +49,8 @@ describe('repository flow inventory filter', () => {
     expect(repositoryFlowFilterSchema.safeParse({ source: 'direct-llm' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ status: 'published' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ model: '' }).success).toBe(false)
+    expect(repositoryFlowFilterSchema.safeParse({ targetId: '' }).success).toBe(false)
+    expect(repositoryFlowFilterSchema.safeParse({ targetId: 'x'.repeat(501) }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ analysisRisk: 'low-confidence' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ unexpected: 'value' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ minConfidence: -0.01 }).success).toBe(false)
@@ -60,6 +62,17 @@ describe('repository flow inventory filter', () => {
       message: 'maxConfidence must be greater than or equal to minConfidence',
     })
     expect(repositoryFlowFilterSchema.parse({ limit: 101 }).limit).toBe(100)
+  })
+
+  it('matches exact revision-grounded evidence, step, and wireframe target IDs', () => {
+    const evidenceOnly = candidate({ id: 'evidence-only', evidence: ['route-evidence'], steps: [{ ...candidate().steps[0], targetIds: [] }], wireframe: { kind: 'sequence', nodes: [{ label: 'Evidence', targetIds: [] }] } })
+    const stepOnly = candidate({ id: 'step-only', evidence: [], steps: [{ ...candidate().steps[0], targetIds: ['route-step'] }], wireframe: { kind: 'sequence', nodes: [{ label: 'Step', targetIds: [] }] } })
+    const wireframeOnly = candidate({ id: 'wireframe-only', evidence: [], steps: [{ ...candidate().steps[0], targetIds: [] }], wireframe: { kind: 'sequence', nodes: [{ label: 'Wireframe', targetIds: ['component-wireframe'] }] } })
+
+    expect(filterRepositoryFlowCandidates([evidenceOnly, stepOnly, wireframeOnly], repositoryFlowFilterSchema.parse({ targetId: 'route-evidence' }))).toEqual([evidenceOnly])
+    expect(filterRepositoryFlowCandidates([evidenceOnly, stepOnly, wireframeOnly], repositoryFlowFilterSchema.parse({ targetId: 'route-step' }))).toEqual([stepOnly])
+    expect(filterRepositoryFlowCandidates([evidenceOnly, stepOnly, wireframeOnly], repositoryFlowFilterSchema.parse({ targetId: 'component-wireframe' }))).toEqual([wireframeOnly])
+    expect(filterRepositoryFlowCandidates([evidenceOnly, stepOnly, wireframeOnly], repositoryFlowFilterSchema.parse({ targetId: 'route' }))).toEqual([])
   })
 
   it('defaults bounded pagination and accepts an opaque continuation cursor', () => {

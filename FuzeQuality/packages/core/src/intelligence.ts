@@ -31,8 +31,30 @@ const flowAnalysisSchema = z.object({
   evidence: z.array(z.string()),
 })
 
+const liteLlmEnvelopeSchema = z.object({
+  choices: z.array(z.object({
+    message: z.object({ content: z.string().min(1) }).passthrough(),
+  }).passthrough()).min(1),
+}).passthrough()
+
 export const FLOW_PROMPT_VERSION = 'fuzequality-flow-v1'
 export const FLOW_SCHEMA_VERSION = '1.0'
+export const FLOW_ANALYSIS_TIMEOUT_MS = 120_000
+
+export class FlowAnalysisTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`FuzeInfra LiteLLM requirement analysis timed out after ${timeoutMs}ms`)
+    this.name = 'FlowAnalysisTimeoutError'
+  }
+}
+
+/** Safe classification for a successful LiteLLM request whose body cannot satisfy the reviewed response contract. */
+export class FlowAnalysisInvalidResponseError extends Error {
+  constructor() {
+    super('FuzeInfra LiteLLM requirement analysis returned an invalid response')
+    this.name = 'FlowAnalysisInvalidResponseError'
+  }
+}
 
 export type FlowAnalysis = z.infer<typeof flowAnalysisSchema> & {
   provenance: {
@@ -43,12 +65,19 @@ export type FlowAnalysis = z.infer<typeof flowAnalysisSchema> & {
 }
 
 export class LiteLlmFlowAnalyzer {
+  private readonly timeoutMs: number
+
   constructor(
     private readonly baseUrl: string,
     private readonly model: string,
     private readonly apiKey?: string,
-    private readonly fetchImpl: typeof fetch = fetch
-  ) {}
+    private readonly fetchImpl: typeof fetch = fetch,
+    timeoutMs = FLOW_ANALYSIS_TIMEOUT_MS,
+  ) {
+    this.timeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? timeoutMs
+      : FLOW_ANALYSIS_TIMEOUT_MS
+  }
 
   async analyze(
     requirement: Requirement,
@@ -72,13 +101,17 @@ export class LiteLlmFlowAnalyzer {
         text: item.text,
       })),
     }
-    const response = await this.fetchImpl(`${this.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
+    const signal = AbortSignal.timeout(this.timeoutMs)
+    let response: Response
+    try {
+      response = await this.fetchImpl(`${this.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
+        },
+        signal,
+        body: JSON.stringify({
         model: this.model,
         temperature: 0,
         response_format: { type: 'json_object' },
@@ -124,13 +157,28 @@ export class LiteLlmFlowAnalyzer {
             }),
           },
         ],
-      }),
-    })
+        }),
+      })
+    } catch (error) {
+      if (signal.aborted) throw new FlowAnalysisTimeoutError(this.timeoutMs)
+      throw error
+    }
     if (!response.ok) throw new Error(`LiteLLM returned ${response.status}`)
-    const body = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    const content = body.choices?.[0]?.message?.content
-    if (!content) throw new Error('LiteLLM returned no analysis content')
-    const parsed = flowAnalysisSchema.parse(JSON.parse(content))
+    let payload: unknown
+    try {
+      payload = await response.json()
+    } catch {
+      if (signal.aborted) throw new FlowAnalysisTimeoutError(this.timeoutMs)
+      throw new FlowAnalysisInvalidResponseError()
+    }
+    const envelope = liteLlmEnvelopeSchema.safeParse(payload)
+    if (!envelope.success) throw new FlowAnalysisInvalidResponseError()
+    let parsed: z.infer<typeof flowAnalysisSchema>
+    try {
+      parsed = flowAnalysisSchema.parse(JSON.parse(envelope.data.choices[0].message.content))
+    } catch {
+      throw new FlowAnalysisInvalidResponseError()
+    }
     const allowedTargetIds = new Set([
       ...candidatePayload.operations.map(item => item.id),
       ...candidatePayload.surfaces.map(item => item.id),
