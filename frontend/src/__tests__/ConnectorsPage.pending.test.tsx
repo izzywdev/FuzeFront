@@ -1,7 +1,10 @@
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import ConnectorsPage from '../pages/ConnectorsPage'
-vi.mock('../lib/accounts', () => ({getActiveAuthToken: () => 'synthetic'}))
+vi.mock('../lib/accounts', () => ({
+  getActiveAuthToken: () => 'synthetic',
+  getActiveValue: () => null,
+}))
 const staged = () => ({ok:true,status:202,json:async()=>({status:'authorization_pending',provider:'stripe',retry_after_authorization:true})})
 function mockFetch() { vi.stubGlobal('fetch',vi.fn(async (url:string, init?:RequestInit) => {
  if(url.endsWith('/catalog'))return {ok:true,json:async()=>({connectors:[{id:'stripe',name:'Stripe',authentication:'api-key',configured:true}]})}

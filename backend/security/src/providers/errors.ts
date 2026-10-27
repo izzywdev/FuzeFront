@@ -20,3 +20,27 @@ export class TokenError extends Error {
     this.name = 'TokenError'
   }
 }
+
+/**
+ * A login step-up challenge is unknown, expired, already completed, or has a
+ * proof in flight. Maps to 401 NOT_ACTIVE and counts against the caller's IP
+ * limiter only (never a per-challenge key: the id is attacker-chosen).
+ */
+export class ChallengeNotActiveError extends Error {
+  constructor(message = 'invalid or expired challenge') {
+    super(message)
+    this.name = 'ChallengeNotActiveError'
+  }
+}
+
+/**
+ * A submitted recovery code was wrong, already used, from a replaced set, or
+ * from a legacy (pre-v2) set. The causes are deliberately indistinguishable
+ * (contract 1.3.0). Maps to 401 RECOVERY_CODE_INVALID.
+ */
+export class RecoveryCodeInvalidError extends Error {
+  constructor() {
+    super('invalid recovery code')
+    this.name = 'RecoveryCodeInvalidError'
+  }
+}
