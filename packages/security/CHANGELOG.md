@@ -1,5 +1,40 @@
 # Changelog — @fuzefront/security-client
 
+## 1.5.0 — Session validation is bound to the request tenant (additive, unreleased)
+
+`info.version` 1.4.0 -> 1.5.0, `SECURITY_CONTRACT_VERSION` 1.4.0 -> 1.5.0,
+package `version` 1.4.0 -> 1.5.0. MINOR — adds one optional request field.
+Existing operations, required fields and response shapes are unchanged.
+
+### Added
+
+- `SessionValidateRequest.tenantId` (optional, 1-128 chars): the session token's
+  `tid` claim, for `POST /v1/security/sessions/validate`.
+
+### Behaviour
+
+- When multi-tenant identity is enabled, a session is active only for the tenant
+  that minted it: the answer is `{ active: false }` unless `tenantId` equals the
+  tenant serving the request (selected by the request `Host`). A token with no
+  `tid` is active only in single-tenant mode, where `tenantId` may be omitted.
+- Nothing changes for a single-tenant deployment (production today): an omitted
+  `tenantId` is still accepted.
+
+### Why
+
+Every tenant's sessions are signed with one secret, the `sessions` row records no
+tenant, and the consumer packages (`@izzywdev/fuzefront-auth`, `fuzefront-auth`)
+do not check `tid`. Without this, a live tenant-A session would read as active
+when asked about on a tenant-B host. This endpoint is the one place the boundary
+can be enforced for those consumers. Found by the Codex security review of #1676;
+`securityService.tenants` is still `[]` in production, so it was not reachable
+there, but multi-tenant is staged for the Mendys tenant.
+
+### Migration
+
+None. Additive and optional. A multi-tenant consumer should send its token's `tid`
+as `tenantId` and call the host of its own tenant.
+
 ## 1.4.0 — MFA recovery-code redemption at sign-in (additive, unreleased)
 
 `info.version` 1.3.1 -> 1.4.0, `SECURITY_CONTRACT_VERSION` 1.3.1 -> 1.4.0,

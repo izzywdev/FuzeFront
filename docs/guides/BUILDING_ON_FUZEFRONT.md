@@ -413,11 +413,20 @@ you supply a `sessionValidator` (`session_validator` in Python). Build it on
 - **Caller:** a service, not a user. Send a workload token (see
   `@izzywdev/fuzefront-service-auth`) whose scope includes `sessions:validate`.
   A user session token is rejected (401), and a token without the scope is 403.
-- **Body:** `{ "userId": "...", "sessionId": "..." }`, taken from the token's
-  claims after you have verified its signature. Nothing else is accepted.
+- **Body:** `{ "userId": "...", "sessionId": "...", "tenantId": "..." }`, taken
+  from the token's `userId`, `sessionId` and `tid` claims after you have verified
+  its signature. Nothing else is accepted. `tenantId` may be omitted only for a
+  token with no `tid` (single-tenant deployments).
 - **Answer:** `200 { "active": true }` only for a live session that belongs to
   that user. An unknown, revoked, expired or wrong-user session is the same
   `200 { "active": false }`, with no reason.
+- **Tenants.** Every tenant's sessions share one signing secret and the package
+  verifiers do not look at `tid`, so this call is where the tenant boundary is
+  enforced for you. When multi-tenant identity is on, a session is active only
+  for the tenant that minted it: call the security service on **the host that
+  belongs to your own tenant** (the tenant is chosen from the request `Host`), and
+  send the token's `tid` as `tenantId`. A token minted for another tenant, or
+  one with no `tid`, comes back inactive.
 - **An outage must throw, not return `false`.** A `503` (or any non-2xx, or a
   network error) means "could not check", not "revoked". Let the validator raise;
   the auth package turns that into a retryable 503 for your caller. Returning
@@ -425,11 +434,11 @@ you supply a `sessionValidator` (`session_validator` in Python). Build it on
   Treat anything other than a strict `active === true` as inactive.
 
 ```ts
-const sessionValidator = async (userId: string, sessionId: string) => {
+const sessionValidator = async (userId: string, sessionId: string, claims: Record<string, unknown>) => {
   const res = await fetch(`${SECURITY_SERVICE_URL}/api/v1/security/sessions/validate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${await auth.getToken()}` },
-    body: JSON.stringify({ userId, sessionId }),
+    body: JSON.stringify({ userId, sessionId, tenantId: claims.tid }), // undefined is omitted
   })
   if (!res.ok) throw new Error(`session validity check failed: ${res.status}`) // outage or misconfig: throw
   return (await res.json()).active === true
@@ -438,9 +447,12 @@ const sessionValidator = async (userId: string, sessionId: string) => {
 
 ```python
 def session_validator(user_id, session_id, claims):
+    body = {"userId": user_id, "sessionId": session_id}
+    if claims.get("tid"):  # omit it rather than send null, which is a 400
+        body["tenantId"] = claims["tid"]
     r = httpx.post(
         f"{SECURITY_SERVICE_URL}/api/v1/security/sessions/validate",
-        json={"userId": user_id, "sessionId": session_id},
+        json=body,
         headers={"Authorization": f"Bearer {service_token()}"},
         timeout=3,
     )
