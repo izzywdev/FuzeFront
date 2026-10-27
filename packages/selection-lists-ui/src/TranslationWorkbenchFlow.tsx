@@ -21,6 +21,8 @@ import {
   saveTranslation,
   autofillTranslations,
 } from './api'
+import { useSharedLists } from './shared-lists/core'
+import { SharedTranslationsGate } from './shared-lists/browse'
 
 const RTL_LOCALES = new Set(['ar', 'he'])
 
@@ -572,26 +574,45 @@ function LocaleEditor({
 }
 
 // ── TranslationWorkbenchFlow (orchestrator) ───────────────────────────────────
+const INDEX_PATH = '/settings/selection-lists'
+
 export function TranslationWorkbenchFlow() {
   const { listId, locale } = useParams<{ listId: string; locale?: string }>()
   const navigate = useNavigate()
+  const { enabled: sharedLists } = useSharedLists()
 
   if (!listId) return null
 
-  if (locale) {
-    return (
+  const workbench = () =>
+    locale ? (
       <LocaleEditor
         listId={listId}
         locale={locale}
-        onBack={() => navigate(`/settings/selection-lists/${listId}/translations`)}
+        onBack={() => navigate(`${INDEX_PATH}/${listId}/translations`)}
+      />
+    ) : (
+      <TranslationIndex
+        listId={listId}
+        onEditLocale={loc => navigate(`${INDEX_PATH}/${listId}/translations/${loc}`)}
       />
     )
-  }
+
+  // Release flag ON: a list the caller can only read gets the read-only
+  // locale index / locale view (flow `shared-read`); every other list keeps
+  // the approved 4.0.0 workbench. Flag OFF: the 4.0.0 workbench, unchanged.
+  if (!sharedLists) return workbench()
 
   return (
-    <TranslationIndex
+    <SharedTranslationsGate
       listId={listId}
-      onEditLocale={loc => navigate(`/settings/selection-lists/${listId}/translations/${loc}`)}
+      locale={locale}
+      renderWorkbench={workbench}
+      hrefForLocale={loc => `${INDEX_PATH}/${listId}/translations/${loc}`}
+      onOpenLocale={loc => navigate(`${INDEX_PATH}/${listId}/translations/${loc}`)}
+      onBackToLocales={() => navigate(`${INDEX_PATH}/${listId}/translations`)}
+      onOpenValues={() => navigate(`${INDEX_PATH}/${listId}`)}
+      onBackToIndex={() => navigate(INDEX_PATH)}
+      indexHref={INDEX_PATH}
     />
   )
 }
