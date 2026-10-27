@@ -17,7 +17,6 @@ import { Request, Response } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
 import { withReqId } from '../lib/logger'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { defaultEventPublisher } from '../services/eventPublisher'
 import {
   InviteError,
@@ -62,8 +61,9 @@ function pathUuid(type: 'organization' | 'invitation', raw: unknown): string {
   }
 }
 
-async function wireFor(req: any, orgId: string) {
-  return wireIds(await isPrefixedIdsEnabled({ orgId, userId: req.user?.id }))
+async function wireFor(_req: any, _orgId: string) {
+  // TypeID wire form is unconditional since FFRNT-185 retired the prefixed-ids flag.
+  return wireIds(true)
 }
 
 /** Best-effort email dispatch (an email outage never un-creates the invite). */

@@ -73,7 +73,8 @@ async function resolveV2(req: any, res: any, invitation: any) {
     return res.status(410).json(errorBody(410, 'This invitation has expired or been revoked'))
   }
   const organization = await db('organizations').where('id', invitation.organization_id).first()
-  const wire = wireIds(await isPrefixedIdsEnabled({ orgId: invitation.organization_id }))
+  // TypeID wire form is unconditional since FFRNT-185 retired the prefixed-ids flag.
+  const wire = wireIds(true)
   return res.json({
     invitation: {
       id: wire('invitation', invitation.id),
@@ -152,7 +153,8 @@ async function acceptV2(req: any, res: any, invitation: any) {
     )
   }
 
-  const wire = wireIds(await isPrefixedIdsEnabled({ userId: req.user.id, orgId: invitation.organization_id }))
+  // TypeID wire form is unconditional since FFRNT-185 retired the prefixed-ids flag.
+  const wire = wireIds(true)
   return res.json({
     action: 'bound',
     organizationId: wire('organization', result.organizationId),
