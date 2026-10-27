@@ -1,9 +1,11 @@
 # Runbook — Selection Lists seeding: enabling it safely, watching it, backing out
 
-**Status: PREPARED, NOT APPLIED.** Seeding is OFF everywhere and nothing in this runbook has been
-executed. The selection-list-service is not even deployed in production yet
-(`selectionListService.enabled: false` in `deploy/helm/fuzefront/values-prod.yaml`). This page is
-the checklist to follow when that changes; it describes the code on `master` as read at the
+**Status (updated 2026-10-26): PREPARED, NOT APPLIED.** Seeding defaults OFF (both flags, fail
+closed) and nothing in this runbook has been executed. The selection-list-service workload is
+deployed in production (`selectionListService.enabled: true` in
+`deploy/helm/fuzefront/values-prod.yaml` since #1592) and the shipped allowlist holds only the
+internal `platform` source; the live flag state is not readable from this repo. This page is the
+checklist to follow before seeding is switched on; it describes the code on `master` as read at the
 commit noted in the footer, and marks every statement that could not be verified from this repo.
 
 Companions: the master-flag ramp is [`selection-lists-flag-rollout.md`](selection-lists-flag-rollout.md);
@@ -20,7 +22,7 @@ design is [`../planning/selection-lists-events.md`](../planning/selection-lists-
 
 | Piece | Where | Notes |
 |---|---|---|
-| Two release flags (both default OFF, fail closed) | Unleash | `fuzefront.selection-lists.service` (master) **and** `fuzefront.selection-lists.seed-defaults`. Seeding needs **both** ON **for the org**; evaluated **per message**. Both are created OFF in Unleash by dispatching `prod-unleash-ops` with `flags=selection-lists-create` (create-only; see §3). |
+| Two release flags (both default OFF, fail closed) | Unleash | `fuzefront.selection-lists.service` (master) **and** `fuzefront.selection-lists.seed-defaults`. Seeding needs **both** ON **for the org**; evaluated **per message**. Both are created OFF in Unleash by dispatching `prod-unleash-ops` with `flags=selection-lists-create` (create-only; see §3). That same dispatch also creates the third selection-lists flag `fuzefront.selection-lists.shared-lists` (SL9 shared/common lists + forks, OFF; it gates seed-list `visibility` being honoured, not seeding itself; see `selection-lists-flag-rollout.md`). |
 | Platform seeding | consumer of `identity.org.created` | Always records the org in the projection (`selection_list_ref_index`); seeds `platform-defaults` v1 (`yes-no`, `priority`, `work-status`) only if both flags are ON and the org is active and of type `organization`/`personal`. |
 | App seeding | consumer of `selection-lists.seed.requested` | Attested (token with scope `selection-lists:seed`), allowlisted (`seed-sources.json`), namespaced, capped, quota-checked, atomic. |
 | Outcomes | `selection-lists.seed.completed` / `.failed` | Published through the transactional outbox (`event_outbox`). |
@@ -340,8 +342,8 @@ workflow (`flags=selection-lists`). Record the owner decision (who, target orgs,
 **Two facts shape the ramp, both from code:**
 
 1. **`prod-unleash-ops` can now CREATE `fuzefront.selection-lists.seed-defaults`, but not enable it.**
-   Dispatch it with `flags=selection-lists-create`: that set creates **both** selection-list flags
-   as `release` flags, OFF (environment disabled, no strategy), and is idempotent (an existing flag is
+   Dispatch it with `flags=selection-lists-create`: that set creates **all three** selection-list flags (`service`, `seed-defaults`,
+   `shared-lists`) as `release` flags, OFF (environment disabled, no strategy), and is idempotent (an existing flag is
    left untouched). The `selection-lists` set (staged ramp, `rollout` / `action`) still covers only
    the master flag and is percentage-only, so **enabling `seed-defaults` still needs the raw
    per-org procedure in the `unleash-flag-enable` skill** (an `orgId IN [org_…]` constraint). Run the
@@ -371,7 +373,7 @@ Suggested order (each step: soak, run the §4 checks, then the next):
 | 5 | Add the first allowlisted **app** (PR + Authentik client), have it send one `seed.requested` for the pilot org | `seed.completed` with its `requestId`; a deliberately bad request (wrong key prefix) returns `NAMESPACE_VIOLATION` |
 | 6 | Widen to all orgs only after the owner accepts §6; the flag's removal criterion is 30 days at 100% with zero `seed.failed`, **and** a backfill (the SL7 reconciler, `SEED_RECONCILER_ENABLED=true`) | — |
 
-Enabling the flag does **not** seed existing orgs (no reconciler). A pilot org must either be
+Enabling the flag does **not** seed existing orgs unless the reconciler runs (`SEED_RECONCILER_ENABLED=true`; the chart does not set it). A pilot org must either be
 created after the flag is ON, or have its `identity.org.created` re-delivered — a replay is
 **not a supported operation** and is untested; the handler is idempotent (projection upsert +
 ledger), so it is expected to be safe, but treat that as **inferred**.
@@ -500,7 +502,8 @@ against the SL8 branch (`claude/sl8-fixes`) and stay in the table as a record, n
 | ~~**Request bodies looser than the spec; `limit=0` accepted; resolve accepted non-`front_sli_` ids**~~ **FIXED (SL8)** | `acceptOnlyBodyProps` / `parseLimitParam` in `src/middleware/validateInput.ts`; `POST /v1/resolve` validates `ids`; tests `routes.request-validation.db.test.ts` + the acceptance suite | Undeclared body properties, `limit<1`, cross-type/duplicate/empty resolve ids and an unsupported locale are `400 VALIDATION_ERROR`. **Behaviour change for callers:** `POST /v1/resolve` with `ids: []` is now `400` (spec `minItems: 1`), not an empty `200` | done |
 | ~~**Port mismatch (service default 3011 vs chart 3008)**~~ **FIXED service-side (SL8)** | `src/index.ts` default, `Dockerfile` `ENV PORT`/`EXPOSE` and the docs now say `3008` (the chart already set `PORT` from `selectionListService.port`, so the deployed pod was never affected) | Local runs / the image default agree with the chart. **Contract 4.1.0** moved the OpenAPI `servers` example (and its byte-identical Helm copy) and the `fuzefront-selection-list-client` Python README/docstring base URL to `3008` too. **Still `3011`:** only CI's explicit `PORT: '3011'` (harmless — it sets the port it then calls) | `contract-designer` (spec), `docs-maintainer` (py README) |
 | ~~**Prod topic pre-creation is disabled**~~ **RESOLVED** | `kafkaTopics.enabled: true` in `values-prod.yaml` (non-hook Job) | verify the Job completed on the cluster; change-event DLQs remain undeclared (rely on auto-create) | `devops-engineer` |
-| **Service not deployed; secrets not sealed** | `selectionListService.enabled: false`; no `selection-list-secrets.yaml` under `deploy/contabo/sealed/` | nothing above can run in prod yet | `devops-engineer` |
+| ~~**Service not deployed; secrets not sealed**~~ **RESOLVED at chart level** | `selectionListService.enabled: true` in `values-prod.yaml` (#1592); `deploy/contabo/sealed/selection-list-secrets.yaml` exists | The workload is deployed and the flags gate visibility; pod health, Synced secret and flag state are not verifiable from the repo | `devops-engineer` |
+| **Seed-list `visibility` (SL9) only works with the third flag, and nothing ships it** | `src/seed/apply.ts` `applyVisibilityRules` honours `visibility` only when `fuzefront.selection-lists.shared-lists` is ON for the org (app: `private`/`org`, `platform` refused as `VALIDATION_ERROR`; platform pack: `platform` created only in the platform org, skipped elsewhere); `seed-packs/platform/platform-defaults.v1.json` declares none; no pack v2, no data migration for already-seeded lists | Seeded lists are still `private`, so members still see none until granted; the member-visibility fix needs a pack/app that declares `org`, the flag ON, and (for existing orgs) a version bump | `backend-engineer` |
 | **Allowlist has no app sources; no seed clients exist** | `seed-sources.json` lists only `platform`; seed-clients runbook is scaffolding | every app request is `SOURCE_NOT_ALLOWED` | per onboarding PR |
 | **Platform pack translations are machine-translated, LLM-reviewed, not native-reviewed** | the pack says `"translationProvenance": "machine"`; the service writes `is_machine: true` for every non-English row; two-pass LLM review recorded 2026-10-05 (§2.5), owner-approved in place of native review | marked honestly (clients can badge them); if a human ever reviews them that ships as `platform-defaults.v2.json` — checklist in §2.5 | owner |
 | **`selection_list_access` mirror lags self-grants** | a Security-API-only grant is not mirrored until the service reconciles | the roster (`GET …/access`) can omit an admin's self-granted owner | `backend-engineer` |
@@ -525,4 +528,4 @@ against the SL8 branch (`claude/sl8-fixes`) and stay in the table as a record, n
 *Verified against `origin/master` @ `0e70bcee` (2026-10-04): service code under
 `services/selection-list-service/src/{events,seed}`, `seed-sources.json`, `seed-packs/`,
 `deploy/helm/fuzefront/values{,-prod}.yaml`, `.github/workflows/prod-unleash-ops.yml`,
-`backend/src/permit/schema.ts`. Not verifiable from this repo: live Unleash/Permit/Kafka state.*
+`backend/src/permit/schema.ts`. The "Service not deployed" and SL9 seed-visibility rows of §6 and the §3 reconciler sentence were re-verified against `origin/master` @ `bac173471` (2026-10-26). Not verifiable from this repo: live Unleash/Permit/Kafka state.*

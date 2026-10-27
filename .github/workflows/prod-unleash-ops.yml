@@ -25,13 +25,16 @@ on:
             billing-portal      — fuzefront.billing.invoice-history (100%)
             portals-directory   — fuzefront.platform.portals-directory + multi-tenant-portals (100%)
             portal-console      — fuzefront.identity.portal-scoped-users + fuzefront.apps.portal-catalog + fuzefront.billing.reseller-connect (100%)
-            org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
+            org-context-gating  — fuzefront.apps.org-context-disabled (100%) + fuzefront.apps.org-context-hidden (100%; owner decision 2026-10-19: HIDE org apps in personal context)
             selection-lists     — fuzefront.selection-lists.service (staged ramp via `rollout`; rollback via `action: disable`)
             app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
             authz-enabled       — fuzefront.billing.authz-enabled (100%) — run AFTER prod-billing-s2s-provision succeeds
             root-membership     — fuzefront.identity.root-membership (100%): new signups take the root-membership path instead of a personal org (FF-EPIC-17-S1/S2; the S2 backfill is #1095, deployed)
-            selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + fuzefront.selection-lists.seed-defaults, left OFF
+            selection-lists-create — CREATE ONLY (never enables): fuzefront.selection-lists.service + seed-defaults + shared-lists, left OFF
+            devportal           — fuzefront.devportal.enabled (100%): gates developers.fuzefront.com sign-in; GA per owner decision 2026-10-18
             config-management   — fuzefront.config.management-console + .key-catalog + .secrets-audit (100%): Configuration Management Console UI (EPIC-19). Web-exposed; requires the catalog-registering build (#1571) deployed.
+            account-security    — fuzefront.account-security.hub (100%): the Account Security hub UI (profile menu → Settings: password, MFA, devices/sessions, connected accounts). Web-exposed; consumes the existing security-service APIs.
+            all-flags           — owner-directed bulk GA: 28 flags to 100% = 26 release flags (incl. the 3 config-management flags) + 2 ops-kill-switches (created as type=kill-switch; ON = healthy). Excludes per-org / env-driven / unverified flags (billing authz-enabled + plan-flag-sync, selection-lists.shared-lists, auth.experience, billing plan-tier permission flags).
         required: true
         default: billing-portal
         type: choice
@@ -45,8 +48,11 @@ on:
           - authz-enabled
           - root-membership
           - selection-lists-create
+          - devportal
           - billing-plan-flag-sync
           - config-management
+          - account-security
+          - all-flags
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
         required: false
@@ -105,25 +111,31 @@ jobs:
           # enables the production environment, and upserts a 100% flexibleRollout
           # strategy (skips adding a duplicate if one already exists).
           enable_ga() {
-            local FLAG="$1" DESC="$2"
-            echo "=== $FLAG ==="
+            local FLAG="$1" DESC="$2" TYPE="${3:-release}"
+            echo "=== $FLAG ($TYPE) ==="
 
-            # 1. Create (idempotent — 409 is fine)
+            # 1. Create (idempotent — 409 is fine). TYPE defaults to release;
+            #    pass kill-switch for ops kill-switches so a create (only taken
+            #    when the flag is ABSENT) records the correct Unleash type.
             STATUS=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST \
               "$UNLEASH/api/admin/projects/$PROJECT/features" \
               -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-              -d "{\"name\":\"$FLAG\",\"type\":\"release\",\"description\":\"$DESC\"}")
+              -d "{\"name\":\"$FLAG\",\"type\":\"$TYPE\",\"description\":\"$DESC\"}")
             if echo "$STATUS" | grep -qE '^(201|409)$'; then
               echo "  create: ok ($STATUS)"
             else
               echo "  create: FAILED ($STATUS)"; cat /tmp/resp.json; return 1
             fi
 
-            # 2. Enable the production environment
-            curl -sfX POST \
+            # 2. Enable the production environment (fail loudly — a 5xx/network
+            #    error here must not be swallowed, or the flag reports success
+            #    while staying OFF).
+            if ! curl -sfX POST \
               "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/on" \
-              -H "Authorization: $TOKEN" \
-              && echo "  environment on: ok"
+              -H "Authorization: $TOKEN"; then
+              echo "::error title=prod-unleash-ops::environment enable FAILED for $FLAG"; return 1
+            fi
+            echo "  environment on: ok"
 
             # 3. Add 100% flexibleRollout only if one does not already exist.
             #    (Re-POSTing creates a duplicate strategy; PATCH the existing one instead.)
@@ -144,11 +156,13 @@ jobs:
             if [ "$EXISTING" = "exists" ]; then
               echo "  100% strategy: already present, skipping"
             else
-              curl -sfX POST \
+              if ! curl -sfX POST \
                 "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/strategies" \
                 -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-                -d "{\"name\":\"flexibleRollout\",\"parameters\":{\"rollout\":\"100\",\"stickiness\":\"default\",\"groupId\":\"$FLAG\"}}" \
-                && echo "  100% strategy added: ok"
+                -d "{\"name\":\"flexibleRollout\",\"parameters\":{\"rollout\":\"100\",\"stickiness\":\"default\",\"groupId\":\"$FLAG\"}}"; then
+                echo "::error title=prod-unleash-ops::strategy add FAILED for $FLAG"; return 1
+              fi
+              echo "  100% strategy added: ok"
             fi
             echo ""
           }
@@ -190,20 +204,16 @@ jobs:
 
           # ── Org context gating flags ───────────────────────────────────────
           apply_org_context_gating() {
+            # Owner decision 2026-10-19: org-only apps are HIDDEN in personal
+            # context, not shown-disabled. In frontend/src/components/SidePanel.tsx
+            # org-context-hidden takes precedence over org-context-disabled (gated
+            # apps return null before the disabled check), so enabling hidden is
+            # the operative "hide" switch; disabled stays ON as its healthy default
+            # (dead code for gated apps once hidden wins, harmless otherwise).
             enable_ga "fuzefront.apps.org-context-disabled" \
               "Release flag. Gates showing org-context required apps as disabled in non-org personal context. Default ON in prod. Owner: frontend-engineer."
-
-            local FLAG="fuzefront.apps.org-context-hidden"
-            local DESC="Release flag. Gates completely hiding org-context required apps in non-org context. Default OFF in prod. Owner: frontend-engineer."
-            echo "=== $FLAG (Created, OFF in prod) ==="
-            curl -sS -o /tmp/resp_hidden.json -w '%{http_code}' -X POST \
-              "$UNLEASH/api/admin/projects/$PROJECT/features" \
-              -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-              -d "{\"name\":\"$FLAG\",\"type\":\"release\",\"description\":\"$DESC\"}" || true
-
-            curl -sfX POST \
-              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/off" \
-              -H "Authorization: $TOKEN" || true
+            enable_ga "fuzefront.apps.org-context-hidden" \
+              "Release flag. Completely hides org-context required apps in non-org personal context. ON in prod per owner decision 2026-10-19 (HIDE, not show-disabled); takes precedence over org-context-disabled in SidePanel.tsx. Owner: frontend-engineer."
           }
 
           # ── Selection Lists (staged ramp / rollback) ───────────────────────
@@ -289,6 +299,12 @@ jobs:
               "Release flag, default OFF. Gates the marketplace publication-request endpoints (submit/approve/reject/get) and the Publish to marketplace UI. Owner: backend-engineer. Removal: once the marketplace flow is rolled out and stable."
           }
 
+          # ── Developer Portal ──────────────────────────────────────────────────
+          apply_devportal() {
+            enable_ga "fuzefront.devportal.enabled" \
+              "Release flag. Gates developers.fuzefront.com sign-in (DevPortalFlow). GA per owner decision 2026-10-18 (izzy). Owner: feature-flags-engineer. Removal: once the devportal is GA and the OFF path is unused."
+          }
+
           # ── Billing authz-enabled (run AFTER prod-billing-s2s-provision) ──────
           apply_authz_enabled() {
             enable_ga "fuzefront.billing.authz-enabled" \
@@ -328,13 +344,27 @@ jobs:
               "Release flag (EPIC-19, web-exposed). ON surfaces the /admin/config/keys/:key/history secret + audit-history surface. Registered in #1571. GA per owner decision 2026-10-19 (izzy). Owner: feature-flags-engineer. Removal: console GA at 100% for 30 days."
           }
 
+          # ── Account Security hub (profile menu → Settings) ─────────────────
+          # Web-exposed release flag gating the @fuzefront/account-security-ui
+          # hub mounted at /account/security (the profile menu's Settings item):
+          # password, MFA factors, devices/sessions, connected accounts. It
+          # consumes the existing security-service APIs — no new service or authz
+          # tier. GA per owner decision 2026-10-26 (izzy): expose the Settings UI.
+          # Owner: feature-flags-engineer. Removal: once the hub is GA at 100%
+          # for 30 days and the OFF placeholder path is removed.
+          apply_account_security() {
+            enable_ga "fuzefront.account-security.hub" \
+              "Release flag (web-exposed). ON surfaces the Account Security hub at /account/security (profile menu → Settings): password, MFA, devices/sessions, connected accounts. Consumes existing security-service APIs. GA per owner decision 2026-10-26 (izzy). Owner: feature-flags-engineer. Removal: hub GA at 100% for 30 days."
+          }
+
           # ── Selection Lists (CREATE ONLY) ───────────────────────────────────
           # Release flags, default OFF (packages/feature-flags/flag-registry.yaml).
           # Reuses create_only: creates the flags if absent (409 = already exists,
           # left exactly as-is), and never turns the environment on, never adds a
           # strategy, never calls `off` -- so re-running it can't undo or alter a
           # later deliberate enablement or an existing ramp of the master flag.
-          # seed-defaults is evaluated with { orgId, app } and no userId, so when it
+          # shared-lists (SL9) is created the same way: OFF, no strategy, never touched
+          # again by this set. seed-defaults is evaluated with { orgId, app } and no userId, so when it
           # is enabled later use a per-org `orgId IN [org_...]` constraint (TypeID
           # form), not a percentage -- see the seeding-operations runbook.
           apply_selection_lists_create() {
@@ -342,6 +372,52 @@ jobs:
               "Release flag, default OFF. Gates ALL selection-list UI (shell nav + /settings/selection-lists routes) and the selection-list-service API (404 when OFF). Owner: platform team (feature-flags-engineer admin). Removal: when GA at 100% of orgs and stable for one release cycle; delete the flag, the SidePanel/App.tsx guards and services/selection-list-service/src/flags.ts gate."
             create_only "fuzefront.selection-lists.seed-defaults" \
               "Release flag, default OFF. Gates BOTH selection-list-service seeding consumers (identity.org.created seeding and the selection-lists.seed.requested handler) plus the reconciler/backfill; additionally requires fuzefront.selection-lists.service. Server-side only; fails closed. Evaluated with orgId (org_ TypeID) and no userId - target per org, not by percentage. Owner: izzywdev. Removal: seeding ON for all orgs for 30 consecutive days with zero selection-lists.seed.failed, reconciler backfill complete; delete the flag, FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS and isSeedDefaultsEnabled() in one cleanup PR."
+            create_only "fuzefront.selection-lists.shared-lists" \
+              "Release flag, default OFF. Gates shared/common selection lists (list visibility, shared read, include_shared, fork, resolve redirect, list.forked/visibility.changed events, seed-list visibility) in selection-list-service and the UI common badge/fork flow; additionally requires fuzefront.selection-lists.service. Real authorization stays in Permit. Owner: izzywdev. Removal: ON for all orgs for 30 consecutive days with no fork / shared-read incident; delete the flag, FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS, the WEB_EXPOSED_FLAGS entry, isSharedListsEnabled() and the off-path branches in one cleanup PR."
+          }
+
+          # ── ALL FLAGS — owner-directed bulk GA (2026-10-18) ────────────────
+          # Enables EVERY known production flag to 100%, requested explicitly by
+          # the owner with risks acknowledged. Notes:
+          #  - ON is the SAFE/normal state for the two ops-kill-switches
+          #    (apps.org-context-disabled, app-registry.kafka-events-kill-switch:
+          #    ON = events emitted), so enabling keeps them healthy.
+          #  - identity.prefixed-ids is safe to flip — the dual-accept window
+          #    (configureIdentity legacyUuidTypes) is in place per the registry.
+          #  - Side effects the owner accepted: incomplete app-builder surfaces
+          #    (build-with-agent / creator-ownership / marketplace-publishing)
+          #    activate; selection-lists.seed-defaults at 100% seeds default
+          #    lists into every org. All are reversible via the env `off` path.
+          # The 26 release flags (the two ops-kill-switches are handled
+          # separately below so their create records type=kill-switch).
+          # Swept in 2026-10-26 (owner: all flags ON in prod): the EPIC-19
+          # Configuration Management Console trio (config.management-console /
+          # key-catalog / secrets-audit) -- web-exposed release flags, already GA
+          # per owner decision 2026-10-19, registered in #1571.
+          # DELIBERATELY NOT in this set (held; see the PR that added the trio):
+          #  - billing.authz-enabled / billing.plan-flag-sync-enabled: billing-service
+          #    reads these from ENV (FUZEFRONT_BILLING_*), not Unleash, so an Unleash
+          #    flip is inert; plan-flag-sync also needs UNLEASH_ADMIN_TOKEN wired.
+          #  - selection-lists.shared-lists: docs/runbooks/selection-lists-rollout.md
+          #    section 10 pre-enable audit + platform-org confirmation must pass first.
+          #  - auth.experience: build-time VITE_FF_AUTH_EXPERIENCE, not Unleash.
+          #  - billing.plan-*/sso-enabled/api-access/custom-domain/module-federation:
+          #    per-org permission (entitlement) flags -- 100% would defeat tier gating.
+          ALL_FLAGS_RELEASE="fuzefront.apps.org-context-hidden fuzefront.apps.build-with-agent fuzefront.apps.creator-ownership fuzefront.apps.marketplace-publishing fuzefront.authz.chat-agent-security-api fuzefront.account-security.hub fuzefront.billing.invoice-history fuzefront.platform.multi-tenant-portals fuzefront.platform.portal-domains fuzefront.platform.portals-directory fuzefront.platform.config-management fuzefront.app-registry.v1-registry-write fuzefront.apps.portal-catalog fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.identity.root-membership fuzefront.identity.personal-context fuzefront.identity.member-directory fuzefront.identity.prefixed-ids fuzefront.identity.employee-console fuzefront.devportal.enabled fuzefront.identity.portal-scoped-users fuzefront.billing.reseller-connect fuzefront.config.management-console fuzefront.config.key-catalog fuzefront.config.secrets-audit"
+          apply_all_flags() {
+            # Two ops-kill-switches first, created with type=kill-switch. ON is
+            # their SAFE/normal state (org-context-disabled ON = normal gating;
+            # kafka-events-kill-switch ON = app-registry events emitted), so
+            # enabling them to 100% keeps them healthy.
+            enable_ga "fuzefront.apps.org-context-disabled" \
+              "Ops kill-switch. ON = normal org-context gating (SAFE/normal state). Bulk GA via all-flags set (owner-directed 2026-10-18)." \
+              "kill-switch"
+            enable_ga "fuzefront.app-registry.kafka-events-kill-switch" \
+              "Ops kill-switch. ON = app-registry Kafka events emitted (SAFE/normal state). Bulk GA via all-flags set (owner-directed 2026-10-18)." \
+              "kill-switch"
+            for F in $ALL_FLAGS_RELEASE; do
+              enable_ga "$F" "Bulk GA via all-flags set (owner-directed 2026-10-18): all production flags to 100%."
+            done
           }
 
           # ── Dispatch ──────────────────────────────────────────────────────
@@ -356,7 +432,10 @@ jobs:
             authz-enabled)       apply_authz_enabled ;;
             root-membership)     apply_root_membership ;;
             selection-lists-create) apply_selection_lists_create ;;
+            devportal)           apply_devportal ;;
             config-management)   apply_config_management ;;
+            account-security)    apply_account_security ;;
+            all-flags)           apply_all_flags ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
@@ -389,9 +468,15 @@ jobs:
           echo "=== Verification ==="
           check_flag() {
             local FLAG="$1"
-            curl -sf \
+            # curl -f leaves a previous run's output file intact on an HTTP error, so a
+            # flag that was never created would print the PRECEDING flag's state; remove
+            # it first, and treat a failed fetch as UNREACHABLE rather than a misread.
+            rm -f /tmp/flag_state.json
+            if ! curl -sf \
               "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT" \
-              -H "Authorization: $TOKEN" -o /tmp/flag_state.json 2>/dev/null || true
+              -H "Authorization: $TOKEN" -o /tmp/flag_state.json 2>/dev/null; then
+              echo "  $FLAG: UNREACHABLE (fetch failed)"; return 0
+            fi
             ENABLED=$(python3 -c "
           import json
           try:
@@ -426,14 +511,20 @@ jobs:
               check_flag "fuzefront.billing.authz-enabled" ;;
             root-membership)
               check_flag "fuzefront.identity.root-membership" ;;
+            devportal)
+              check_flag "fuzefront.devportal.enabled" ;;
             config-management)
               check_flag "fuzefront.config.management-console"
               check_flag "fuzefront.config.key-catalog"
               check_flag "fuzefront.config.secrets-audit" ;;
+            account-security)
+              check_flag "fuzefront.account-security.hub" ;;
             selection-lists-create)
               check_flag "fuzefront.selection-lists.service"
               check_flag "fuzefront.selection-lists.seed-defaults"
-              for F in fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults; do
+              check_flag "fuzefront.selection-lists.shared-lists"
+              for F in fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.selection-lists.shared-lists; do
+                rm -f /tmp/flag_meta.json
                 curl -sf "$UNLEASH/api/admin/projects/$PROJECT/features/$F" \
                   -H "Authorization: $TOKEN" -o /tmp/flag_meta.json 2>/dev/null || true
                 F="$F" python3 -c "
@@ -444,5 +535,9 @@ jobs:
           except Exception:
             print('  %s: type=ERROR' % os.environ['F'])
           "
+              done ;;
+            all-flags)
+              for F in fuzefront.apps.org-context-disabled fuzefront.apps.org-context-hidden fuzefront.apps.build-with-agent fuzefront.apps.creator-ownership fuzefront.apps.marketplace-publishing fuzefront.authz.chat-agent-security-api fuzefront.account-security.hub fuzefront.billing.invoice-history fuzefront.platform.multi-tenant-portals fuzefront.platform.portal-domains fuzefront.platform.portals-directory fuzefront.platform.config-management fuzefront.app-registry.v1-registry-write fuzefront.app-registry.kafka-events-kill-switch fuzefront.apps.portal-catalog fuzefront.selection-lists.service fuzefront.selection-lists.seed-defaults fuzefront.identity.root-membership fuzefront.identity.personal-context fuzefront.identity.member-directory fuzefront.identity.prefixed-ids fuzefront.identity.employee-console fuzefront.devportal.enabled fuzefront.identity.portal-scoped-users fuzefront.billing.reseller-connect fuzefront.config.management-console fuzefront.config.key-catalog fuzefront.config.secrets-audit; do
+                check_flag "$F"
               done ;;
           esac

@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams, useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@fuzefront/design-system'
 import {
   useCurrentUser,
   useAppContext,
+  useOrganizations,
   MenuItem,
   resetWorkspaceSessionIfUserChanged,
 } from './lib/shared'
@@ -17,6 +18,7 @@ import {
 import { AccountsProvider } from './contexts/AccountsContext'
 import { useT } from '@fuzefront/i18n'
 import { installBridge, bridge } from './platform/bridge'
+import { resolveFederatedTenantId } from './platform/tenantContext'
 import { AppRegistryProvider } from './platform/appRegistry'
 import { FeatureFlagProvider, useFlag, useFlagState } from './platform/featureFlags'
 import StandaloneAppSurface from './components/StandaloneAppSurface'
@@ -57,6 +59,7 @@ import ConfigCatalogPage from './pages/ConfigCatalogPage'
 import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
 import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
 import ConnectorsPage from './pages/ConnectorsPage'
+import ConnectorDetailPage from './pages/ConnectorDetailPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 import FuzePickerMentionsPage from './pages/FuzePickerMentionsPage'
 import {
@@ -64,6 +67,8 @@ import {
   TranslationWorkbenchFlow,
   SelectionListAccessFlow,
   SelectionListPickerHarness,
+  SharedListsFeatureProvider,
+  SHARED_LISTS_FLAG_KEY,
 } from '@fuzeone/selection-lists-ui'
 import { useSelectionListsAuth } from './lib/selectionListsAuth'
 
@@ -71,6 +76,7 @@ import { useSelectionListsAuth } from './lib/selectionListsAuth'
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { state, dispatch } = useAppContext()
   const { t } = useT()
+  const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(true)
   // Set when an "add account" sign-in succeeded but the roster was already at
   // MAX_PARALLEL_ACCOUNTS. The session is discarded and the user is told why,
@@ -199,6 +205,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
           payload: menuRef.current.filter(m => m.appId !== appId),
         })
       },
+      onNavigate: path => navigate(path),
       socket: {
         on: (event, handler) => websocketService.onServer(event, handler),
         off: (event, handler) => websocketService.offServer(event, handler),
@@ -206,10 +213,19 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         isConnected: () => websocketService.isConnected(),
       },
     })
-  }, [dispatch])
+  }, [dispatch, navigate])
 
   useEffect(() => {
     const activeOrg = state.organizations.find(o => o.id === state.activeOrganizationId)
+    // Personal is presented as `activeOrganizationId === null`, but it is
+    // persisted and authorized through the user's provisioned personal org.
+    // Federated products need that canonical tenant just as they need an
+    // explicitly selected organization.
+    const tenantId = resolveFederatedTenantId({
+      activeOrganizationId: state.activeOrganizationId,
+      organizations: state.organizations,
+      personalTenantId: state.personalTenantId,
+    })
     bridge.setContext({
       user: state.user
         ? {
@@ -222,12 +238,13 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
       activeApp: state.activeApp
         ? { id: state.activeApp.id, name: state.activeApp.name }
         : null,
+      tenantId,
       activeOrganization: activeOrg
         ? { id: activeOrg.id, name: activeOrg.name }
         : null,
       isPlatformMode: true,
     })
-  }, [state.user, state.apps, state.activeApp, state.activeOrganizationId, state.organizations])
+  }, [state.user, state.apps, state.activeApp, state.activeOrganizationId, state.organizations, state.personalTenantId])
 
   if (isLoading) {
     return (
@@ -287,10 +304,53 @@ function App() {
             below AuthWrapper so the provisional session has already been
             adopted and the roster reflects real accounts. */}
         <AccountsProvider>
-          <AppContent />
+          <SharedListsHost>
+            <AppContent />
+          </SharedListsHost>
         </AccountsProvider>
       </FeatureFlagProvider>
     </AuthWrapper>
+  )
+}
+
+/**
+ * Mounts `SharedListsFeatureProvider` (SL9 shared lists, frames manifest
+ * `selection-lists-shared` -> `hostMounting`) for every selection-list surface:
+ * the `/settings/selection-lists*` routes and the public
+ * `/embed/selection-list-picker` harness.
+ *
+ * Release flag `fuzefront.selection-lists.shared-lists` (default OFF). Read
+ * through the shell's `useFlagState` with an explicit OFF fallback, so it is OFF
+ * (and `ready` is false, which defers every request-issuing consumer) while
+ * `/api/flags` is loading, and OFF with `ready` true on any fetch failure, with no session token
+ * (the public embed), and when the key is absent. `/api/flags` evaluates the
+ * flag WITHOUT an org context, so it is global, not per organization; no org
+ * context is invented here. The provider treats anything but boolean `true` as
+ * OFF and, while OFF, renders no shared-lists element and sends no
+ * `include_shared` / `visibility` param, so the shell behaves as before.
+ *
+ * `isPlatformOrg` is only a UI hint for the "Every organization" option; the
+ * service still enforces `publish_platform` through Permit. The provider renders
+ * no DOM of its own.
+ */
+function SharedListsHost({ children }: { children: ReactNode }) {
+  // `ready` is false until `/api/flags` settles. The package defers every
+  // request-issuing consumer (the public embedded picker mounts before the flag
+  // does) until then, so no consumer runs the 4.0.0 path first and the shared
+  // path again when the flag flips ON. A flag that cannot be read (no session
+  // token on the public embed, 5xx, network) settles to OFF with ready=true.
+  const { enabled: sharedLists, ready } = useFlagState(SHARED_LISTS_FLAG_KEY, false)
+  const { activeOrganization } = useOrganizations()
+  return (
+    <SharedListsFeatureProvider
+      sharedLists={sharedLists}
+      ready={ready}
+      isPlatformOrg={activeOrganization?.type === 'platform'}
+      organizationId={activeOrganization?.id}
+      organizationName={activeOrganization?.name}
+    >
+      {children}
+    </SharedListsFeatureProvider>
   )
 }
 
@@ -401,6 +461,7 @@ function AppContent() {
             <Route path="/account/security" element={<AccountSecurityPage />} />
             <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
             <Route path="/connectors" element={<ConnectorsPage />} />
+            <Route path="/connectors/:connectorId" element={<ConnectorDetailPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />

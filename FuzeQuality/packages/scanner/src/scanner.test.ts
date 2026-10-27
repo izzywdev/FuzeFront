@@ -1,9 +1,17 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Repository } from '@fuzequality/contracts'
-import { isCredentialFreeRepositoryUrl, scanRepository } from './index'
+import {
+  MAX_QUALITY_EVIDENCE_SOURCE_BYTES,
+  MAX_SCAN_RESULT_BYTES,
+  SCANNER_VERSION,
+  ScanTransportLimitError,
+  boundQualityArtifactsForTransport,
+  isCredentialFreeRepositoryUrl,
+  scanRepository,
+} from './index'
 
 const repository: Repository = {
   id: 'b4908e35-8a57-4c13-9366-489ec59071fe',
@@ -21,17 +29,168 @@ const repository: Repository = {
 }
 
 describe('repository scanner', () => {
+  it('retains source governance evidence before regenerable projections at the transport bound', async () => {
+    const scanned = await scanRepository(repository, await mkdtemp(join(tmpdir(), 'fuzequality-priority-')))
+    const { qualityArtifacts: _qualityArtifacts, ...base } = scanned
+    const largeEvidence = 'x'.repeat(3_000_000)
+    const artifacts = [
+      {
+        id: 'route-artifact', repositoryId: repository.id, kind: 'route' as const,
+        title: 'Generated route', sourcePath: 'src/routes.ts', summary: largeEvidence, evidence: ['/generated'],
+      },
+      {
+        id: 'policy-artifact', repositoryId: repository.id, kind: 'policy' as const,
+        title: 'Release policy', sourcePath: 'governance/release.md', summary: largeEvidence,
+        evidence: ['Every release requires its gate.'],
+      },
+    ]
+
+    const bounded = boundQualityArtifactsForTransport(base, artifacts)
+
+    expect(bounded.qualityArtifacts?.map(item => item.id)).toEqual(['policy-artifact'])
+    expect(bounded.scanDetails.partial).toBe(true)
+    expect(bounded.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'quality-artifact-transport-bound',
+      severity: 'warning',
+    }))
+  })
+
+  it('bounds generated test-plan evidence below the scan transport limit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-large-test-inventory-'))
+    await mkdir(join(root, 'tests'), { recursive: true })
+    const testCount = 7_000
+    const tests = Array.from({ length: testCount }, (_, index) =>
+      `test('repository behavior ${index} ${'x'.repeat(180)}', async () => {})`
+    ).join('\n')
+    await writeFile(join(root, 'tests', 'inventory.test.ts'), tests)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.tests).toHaveLength(testCount)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'test-plan').length).toBeLessThan(testCount)
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'quality-artifact-transport-bound',
+      severity: 'warning',
+    }))
+    expect(result.scanDetails.partial).toBe(true)
+    expect(result.scanDetails.counts.diagnostics).toBe(result.diagnostics.length)
+    expect(Buffer.byteLength(JSON.stringify(result), 'utf8')).toBeLessThanOrEqual(4_500_000)
+  }, 30_000)
+
+  it('rejects an oversized canonical inventory before the worker attempts ingestion', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-transport-rejection-'))
+    const scanned = await scanRepository(repository, root)
+    const { qualityArtifacts: _qualityArtifacts, ...base } = scanned
+    base.tests = Array.from({ length: 18_000 }, (_, index) => ({
+      id: `test-${index}`,
+      repositoryId: repository.id,
+      framework: 'vitest',
+      level: 'integration' as const,
+      title: `canonical test ${index} ${'x'.repeat(240)}`,
+      sourcePath: 'tests/inventory.test.ts',
+      assertionCount: 1,
+      targets: [],
+    }))
+
+    expect(() => boundQualityArtifactsForTransport(base, [])).toThrow(ScanTransportLimitError)
+    try {
+      boundQualityArtifactsForTransport(base, [])
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: 'SCAN_TRANSPORT_LIMIT_EXCEEDED',
+        maxBytes: MAX_SCAN_RESULT_BYTES,
+      })
+      expect((error as ScanTransportLimitError).observedBytes).toBeGreaterThan(MAX_SCAN_RESULT_BYTES)
+    }
+  })
+
+  it('reports and omits repository evidence that exceeds the safe read limit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-oversized-evidence-'))
+    await writeFile(join(root, 'journey.md'), `# Oversized journey\n${'x'.repeat(5_000_001)}`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.qualityArtifacts?.some(item => item.sourcePath === 'journey.md')).toBe(false)
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      sourcePath: 'journey.md',
+      category: 'repository',
+      severity: 'error',
+      code: 'unreadable-quality-evidence',
+    }))
+    expect(result.scanDetails.partial).toBe(true)
+  })
+
+  it('bounds aggregate quality evidence sources before reviewed analysis', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-aggregate-evidence-'))
+    const fileCount = 7
+    const payload = `policy: every release requires its gate\n${'x'.repeat(Math.floor(MAX_QUALITY_EVIDENCE_SOURCE_BYTES / 6))}`
+    for (let index = 0; index < fileCount; index++) {
+      await writeFile(join(root, `policy-${index}.md`), payload)
+    }
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'policy')).toHaveLength(5)
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      sourcePath: '.',
+      category: 'repository',
+      severity: 'warning',
+      code: 'quality-evidence-source-budget',
+    }))
+    expect(result.scanDetails.partial).toBe(true)
+  })
+
+  it('does not follow policy or workflow symlinks outside the repository checkout', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-symlink-repository-'))
+    const outside = await mkdtemp(join(tmpdir(), 'fuzequality-symlink-host-'))
+    const outsidePolicy = join(outside, 'host-security.yml')
+    await writeFile(outsidePolicy, 'policy: never disclose this host credential\nrequired_gate: secret')
+    await symlink(outsidePolicy, join(root, 'security.yml'))
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.qualityArtifacts?.some(item => item.sourcePath === 'security.yml')).toBe(false)
+    expect(JSON.stringify(result)).not.toContain('never disclose this host credential')
+  })
+
   it('records deterministic policy, gate, and performance evidence for later reviewed analysis', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-governance-'))
     await mkdir(join(root, 'governance'), { recursive: true })
     await mkdir(join(root, 'load'), { recursive: true })
+    await mkdir(join(root, 'load-tests'), { recursive: true })
+    await mkdir(join(root, 'stress-tests'), { recursive: true })
+    await mkdir(join(root, 'stories'), { recursive: true })
+    await mkdir(join(root, 'tests'), { recursive: true })
+    await mkdir(join(root, 'src'), { recursive: true })
+    await mkdir(join(root, 'app'), { recursive: true })
     await mkdir(join(root, '.github', 'workflows'), { recursive: true })
     await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@fuze/governance' }))
     await writeFile(join(root, 'governance', 'security-policy.md'), '# Policy\nEvery release must pass the authentication gate.')
     await writeFile(join(root, 'governance', 'gate_platform_auth.py'), 'REQUIRED_CHECK = "authentication gate"')
     await writeFile(join(root, 'load', 'k6-test.js'), 'export const options = { thresholds: { http_req_failed: ["rate<0.01"] } }')
+    await writeFile(join(root, 'load-tests', 'scenario.js'), 'export const options = { vus: 10 }')
+    await writeFile(join(root, 'stress-tests', 'scenario.js'), 'export const options = { vus: 100 }')
+    await writeFile(join(root, 'performance.yml'), 'name: Load performance\non: workflow_dispatch')
+    await writeFile(join(root, 'journey.md'), '# Checkout journey\nThe user follows the checkout flow to the confirmation screen.')
+    await writeFile(join(root, 'stories', 'Checkout.stories.tsx'), `export default { title: 'Checkout' }; export const Complete = { play: async () => {} }; export const Empty = {}`)
+    await writeFile(join(root, 'tests', 'checkout.spec.ts'), `import { test } from '@playwright/test'; test('customer completes checkout', async () => {}); test('customer sees an empty basket', async () => {})`)
     await writeFile(join(root, '.github', 'workflows', 'ci.yml'), 'name: CI\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test')
-    await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
+    await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production integration\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
+    await writeFile(join(root, '.github', 'workflows', 'post-production-deploy.yml'), 'name: Post production deployment\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
+    await writeFile(join(root, '.github', 'workflows', 'verify-live.yml'), 'name: Verify live journeys\nenv:\n  FUZEQUALITY_STAGE: post-production\n  FUZEQUALITY_EXECUTION: dispatch\non:\n  workflow_dispatch:\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:live')
+    await writeFile(join(root, '.github', 'workflows', 'integration.yml'), 'name: Integration tests\njobs:\n  integration:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:integration')
+    await writeFile(join(root, '.github', 'workflows', 'integration_tests.yml'), 'jobs:\n  integration_tests:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:integration')
+    await writeFile(join(root, '.github', 'workflows', 'verify-system.yml'), 'name: Verify system\nenv:\n  FUZEQUALITY_STAGE: integration\n  FUZEQUALITY_EXECUTION: dispatch\non: [workflow_dispatch]\njobs:\n  integration:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:system')
+    await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
+    await writeFile(join(root, '.github', 'workflows', 'load-test.yml'), 'name: Invalid legacy marker\nx-fuzequality-performance: load\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
+    await writeFile(join(root, '.github', 'workflows', 'load_test.yml'), 'name: Inventory load test\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
+    await writeFile(join(root, '.github', 'workflows', 'stress.yml'), 'name: Stress test\nenv:\n  FUZEQUALITY_PERFORMANCE: stress\non: [workflow_dispatch]\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
+    await writeFile(join(root, '.github', 'workflows', 'stress_test.yaml'), 'name: Inventory stress test\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
+    await writeFile(join(root, '.github', 'workflows', 'nightly-benchmark.yml'), 'name: Nightly benchmark\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non: workflow_dispatch\njobs:\n  benchmark:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run benchmark')
+    await writeFile(join(root, '.github', 'workflows', 'parameterized-load.yml'), 'name: Parameterized load\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non:\n  workflow_dispatch:\n    inputs:\n      environment:\n        required: true\n        type: string\n      duration:\n        required: true\n        default: 5m\n        type: string\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
+    await writeFile(join(root, 'src', 'loader.ts'), 'export const loader = () => "production"')
+    await writeFile(join(root, 'src', 'performanceConfig.js'), 'export const budget = 100')
+    await writeFile(join(root, 'app', 'loading.ts'), 'export default function Loading() {}')
 
     const result = await scanRepository(repository, root)
 
@@ -40,8 +199,248 @@ describe('repository scanner', () => {
       expect.objectContaining({ kind: 'gate', sourcePath: 'governance/gate_platform_auth.py' }),
       expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/ci.yml' }),
       expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/post-prod.yml' }),
+      expect.objectContaining({ kind: 'post-production-test', sourcePath: '.github/workflows/post-prod.yml' }),
+      expect.objectContaining({
+        kind: 'post-production-test',
+        sourcePath: '.github/workflows/verify-live.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/verify-live.yml',
+          trigger: 'workflow_dispatch',
+        },
+      }),
+      expect.objectContaining({ kind: 'integration-test', sourcePath: '.github/workflows/integration.yml' }),
+      expect.objectContaining({ kind: 'integration-test', sourcePath: '.github/workflows/integration_tests.yml' }),
+      expect.objectContaining({
+        kind: 'integration-test',
+        sourcePath: '.github/workflows/verify-system.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/verify-system.yml',
+          trigger: 'workflow_dispatch',
+        },
+      }),
       expect.objectContaining({ kind: 'load-test', sourcePath: 'load/k6-test.js' }),
+      expect.objectContaining({ kind: 'load-test', sourcePath: 'load-tests/scenario.js' }),
+      expect.objectContaining({ kind: 'stress-test', sourcePath: 'stress-tests/scenario.js' }),
+      expect.objectContaining({ kind: 'load-test', sourcePath: 'performance.yml' }),
+      expect.objectContaining({ kind: 'load-test', sourcePath: '.github/workflows/load_test.yml', execution: undefined }),
+      expect.objectContaining({ kind: 'stress-test', sourcePath: '.github/workflows/stress_test.yaml', execution: undefined }),
+      expect.objectContaining({
+        kind: 'load-test',
+        sourcePath: '.github/workflows/load.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/load.yml',
+          trigger: 'workflow_dispatch',
+        },
+      }),
+      expect.objectContaining({
+        kind: 'stress-test',
+        sourcePath: '.github/workflows/stress.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/stress.yml',
+          trigger: 'workflow_dispatch',
+        },
+      }),
+      expect.objectContaining({ kind: 'documentation', sourcePath: 'journey.md' }),
+      expect.objectContaining({
+        kind: 'load-test',
+        sourcePath: '.github/workflows/nightly-benchmark.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/nightly-benchmark.yml',
+          trigger: 'workflow_dispatch',
+        },
+      }),
+      expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/nightly-benchmark.yml' }),
+      expect.objectContaining({
+        kind: 'load-test',
+        sourcePath: '.github/workflows/parameterized-load.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/parameterized-load.yml',
+          trigger: 'workflow_dispatch',
+          requiredInputs: ['environment'],
+        },
+      }),
+      expect.objectContaining({ kind: 'story', sourcePath: 'stories/Checkout.stories.tsx' }),
+      expect.objectContaining({ kind: 'test-plan', sourcePath: 'tests/checkout.spec.ts' }),
     ]))
+    expect(result.qualityArtifacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'load-test', sourcePath: '.github/workflows/load-test.yml', execution: undefined }),
+    ]))
+    expect(result.qualityArtifacts?.some(item =>
+      ['src/loader.ts', 'src/performanceConfig.js', 'app/loading.ts'].includes(item.sourcePath) &&
+      ['load-test', 'stress-test'].includes(item.kind)
+    )).toBe(false)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'post-production-test')).toHaveLength(2)
+    expect(result.qualityArtifacts?.some(item =>
+      item.kind === 'post-production-test' &&
+      item.sourcePath === '.github/workflows/post-production-deploy.yml'
+    )).toBe(false)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'integration-test')).toHaveLength(3)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'story' && item.sourcePath === 'stories/Checkout.stories.tsx')).toHaveLength(2)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'test-plan' && item.sourcePath === 'tests/checkout.spec.ts')).toHaveLength(2)
+
+    await writeFile(join(root, 'journey.md'), '# Checkout journey\nThe user follows a revised checkout flow to the receipt screen.')
+    const rescanned = await scanRepository(repository, root)
+    expect(rescanned.revision).not.toBe(result.revision)
+    expect(new Set(rescanned.qualityArtifacts?.map(item => item.id)).size).toBe(
+      rescanned.qualityArtifacts?.length
+    )
+    const originalIds = new Set(result.qualityArtifacts?.map(item => item.id))
+    expect(rescanned.qualityArtifacts?.every(item => !originalIds.has(item.id))).toBe(true)
+    const originalLogicalIds = new Set(result.qualityArtifacts?.map(item => item.logicalId))
+    expect(rescanned.qualityArtifacts?.every(item => originalLogicalIds.has(item.logicalId))).toBe(true)
+  })
+
+  it('marks capped quality and documentation discovery as partial', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-evidence-cap-'))
+    await mkdir(join(root, '.github', 'workflows'), { recursive: true })
+    await mkdir(join(root, 'docs'), { recursive: true })
+    await Promise.all(Array.from({ length: 101 }, async (_, index) => {
+      await Promise.all([
+        writeFile(
+          join(root, '.github', 'workflows', `workflow-${index}.yml`),
+          `name: Quality workflow ${index}\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test`,
+        ),
+        writeFile(
+          join(root, 'docs', `guide-${index}.md`),
+          `# Journey ${index}\nThe user completes flow step ${index}.`,
+        ),
+      ])
+    }))
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'quality-evidence-file-limit', severity: 'warning' }),
+      expect.objectContaining({ code: 'documentation-evidence-file-limit', severity: 'warning' }),
+    ]))
+    expect(result.scanDetails.partial).toBe(true)
+    expect(result.scanDetails.counts.diagnostics).toBe(result.diagnostics.length)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'gate')).toHaveLength(100)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'documentation')).toHaveLength(100)
+  })
+
+  it('keeps repeated test titles as distinct repository evidence', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-duplicate-tests-'))
+    await mkdir(join(root, 'tests'), { recursive: true })
+    await writeFile(
+      join(root, 'tests', 'authorization.spec.ts'),
+      `import { test, expect } from '@playwright/test'
+       test('rejects unauthorized access', async () => {
+         // @fuzequality target /organizations/first
+         expect(true).toBe(true)
+       })
+       test('rejects unauthorized access', async () => {
+         // @fuzequality target /organizations/second
+         expect(true).toBe(true)
+       })`,
+    )
+
+    const result = await scanRepository(repository, root)
+    const repeatedTests = result.tests.filter(item => item.title === 'rejects unauthorized access')
+    const repeatedPlans = result.qualityArtifacts?.filter(
+      item => item.kind === 'test-plan' && item.title === 'rejects unauthorized access'
+    ) ?? []
+
+    expect(repeatedTests).toHaveLength(2)
+    expect(new Set(repeatedTests.map(item => item.id)).size).toBe(2)
+    expect(repeatedTests.map(item => item.targets)).toEqual([
+      ['/organizations/first'],
+      ['/organizations/second'],
+    ])
+    expect(repeatedPlans).toHaveLength(2)
+    expect(new Set(repeatedPlans.map(item => item.id)).size).toBe(2)
+    expect(new Set(repeatedPlans.flatMap(item => item.evidence)).size).toBeGreaterThanOrEqual(2)
+  })
+
+  it('keeps routes declared in one source file as distinct catalog artifacts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-multi-route-'))
+    await mkdir(join(root, 'src'), { recursive: true })
+    await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@fuze/multi-route' }))
+    await writeFile(
+      join(root, 'src', 'routes.tsx'),
+      `export const routes = [
+        { path: '/quality/flows', element: 'Flows' },
+        { path: '/quality/policies', element: 'Policies' },
+      ]`,
+    )
+
+    const result = await scanRepository(repository, root)
+    const routes = result.qualityArtifacts?.filter(artifact =>
+      artifact.kind === 'route' && artifact.sourcePath === 'src/routes.tsx'
+    ) ?? []
+
+    expect(routes).toHaveLength(2)
+    expect(new Set(routes.map(artifact => artifact.id)).size).toBe(2)
+    expect(new Set(routes.map(artifact => artifact.logicalId)).size).toBe(2)
+    expect(routes.map(artifact => artifact.evidence[0]).sort()).toEqual([
+      '/quality/flows',
+      '/quality/policies',
+    ])
+  })
+
+  it('keeps unique test identities stable when unrelated source is inserted above them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-stable-test-ids-'))
+    await mkdir(join(root, 'tests'), { recursive: true })
+    const testPath = join(root, 'tests', 'checkout.spec.ts')
+    const testSource = `import { test, expect } from '@playwright/test'
+      test('submits checkout', async () => {
+        // @fuzequality target /checkout
+        expect(true).toBe(true)
+      })`
+    await writeFile(testPath, testSource)
+
+    const first = await scanRepository(repository, root)
+    const firstTest = first.tests.find(item => item.title === 'submits checkout')
+
+    await writeFile(testPath, `// routine setup comment\n${testSource}`)
+    const second = await scanRepository(repository, root)
+    const secondTest = second.tests.find(item => item.title === 'submits checkout')
+
+    expect(firstTest).toBeDefined()
+    expect(secondTest).toBeDefined()
+    expect(secondTest?.id).toBe(firstTest?.id)
+    expect(secondTest?.targets).toEqual(['/checkout'])
+  })
+
+  it('keeps duplicate-title discriminators stable when a different test is inserted first', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-stable-duplicate-test-ids-'))
+    await mkdir(join(root, 'tests'), { recursive: true })
+    const testPath = join(root, 'tests', 'authorization.spec.ts')
+    const repeatedTests = `
+      test('rejects unauthorized access', async () => {
+        // @fuzequality target /organizations/first
+        expect(true).toBe(true)
+      })
+      test('rejects unauthorized access', async () => {
+        // @fuzequality target /organizations/second
+        expect(true).toBe(true)
+      })`
+    const imports = `import { test, expect } from '@playwright/test'\n`
+    await writeFile(testPath, imports + repeatedTests)
+
+    const first = await scanRepository(repository, root)
+    const firstIds = first.tests
+      .filter(item => item.title === 'rejects unauthorized access')
+      .map(item => item.id)
+
+    await writeFile(testPath, `${imports}
+      test('loads the authorization screen', async () => {
+        expect(true).toBe(true)
+      })
+      ${repeatedTests}`)
+    const second = await scanRepository(repository, root)
+    const secondIds = second.tests
+      .filter(item => item.title === 'rejects unauthorized access')
+      .map(item => item.id)
+
+    expect(secondIds).toEqual(firstIds)
+    expect(new Set(secondIds).size).toBe(2)
   })
 
   it('builds API and frontend expectations from repository files', async () => {
@@ -87,7 +486,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.2.0',
+      scannerVersion: SCANNER_VERSION,
       partial: false,
       counts: {
         operations: 1,
@@ -231,6 +630,30 @@ async def test_get_user_missing_id_returns_404(client):
     await writeFile(spec, `openapi: 3.0.0\ninfo: { title: Sample, version: 1.0.1 }\npaths: {}`)
     const second = await scanRepository(repository, root)
     expect(second.revision).not.toBe(first.revision)
+  })
+
+  it('changes the catalog revision when repository scan configuration changes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-config-revision-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.0.0\ninfo: { title: Sample, version: 1.0.0 }\npaths: {}`)
+
+    const original = await scanRepository(repository, root)
+    const included = await scanRepository({
+      ...repository,
+      includeGlobs: ['openapi.yaml'],
+    }, root)
+    const excluded = await scanRepository({
+      ...repository,
+      excludeGlobs: ['docs/**'],
+    }, root)
+
+    expect(included.scanDetails.counts).toEqual(original.scanDetails.counts)
+    expect(excluded.scanDetails.counts).toEqual(original.scanDetails.counts)
+    expect(new Set([original.revision, included.revision, excluded.revision]).size).toBe(3)
+    expect(new Set([
+      original.scanDetails.configVersion,
+      included.scanDetails.configVersion,
+      excluded.scanDetails.configVersion,
+    ]).size).toBe(3)
   })
 
   it('reports malformed OpenAPI documents without aborting the repository scan', async () => {

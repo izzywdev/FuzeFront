@@ -29,6 +29,40 @@ describe('identity lifecycle projection', () => {
     await expect(store.deactivatePrincipal('user_1')).resolves.toBe(false)
   })
 
+  it('redacts principal PII idempotently when a soft deletion advances to hard deletion', async () => {
+    const store = new MemoryCatalogStore()
+    await store.upsertPrincipal({
+      id: 'user_1', email: 'person@example.com', firstName: 'Ada', lastName: 'Lovelace', active: true,
+    })
+
+    await expect(store.deactivatePrincipal('user_1', 'soft')).resolves.toBe(true)
+    await expect(store.deactivatePrincipal('user_1', 'hard')).resolves.toBe(true)
+    await expect(store.deactivatePrincipal('user_1', 'hard')).resolves.toBe(false)
+
+    const principal = (store as unknown as { principals: Map<string, { email: string; firstName?: string; lastName?: string; active: boolean }> })
+      .principals.get('user_1')
+    expect(principal).toEqual({
+      id: 'user_1', email: 'deleted+user_1@redacted.invalid', firstName: undefined, lastName: undefined, active: false,
+    })
+  })
+
+  it('redacts organization identity idempotently when a soft deletion advances to hard deletion', async () => {
+    const store = new MemoryCatalogStore()
+    await store.upsertTenant({
+      id: 'org_1', slug: 'customer-name', name: 'Customer Name', type: 'organization', ownerId: 'user_1', active: true,
+    })
+
+    await expect(store.deactivateTenant('org_1', 'soft')).resolves.toBe(true)
+    await expect(store.deactivateTenant('org_1', 'hard')).resolves.toBe(true)
+    await expect(store.deactivateTenant('org_1', 'hard')).resolves.toBe(false)
+
+    const tenant = (store as unknown as { tenants: Map<string, { slug: string; name: string; ownerId?: string; active: boolean }> })
+      .tenants.get('org_1')
+    expect(tenant).toEqual({
+      id: 'org_1', slug: 'deleted-org_1', name: 'Deleted organization', type: 'organization', ownerId: undefined, active: false,
+    })
+  })
+
   it('revokes local membership projections when an organization or user is deleted', async () => {
     const store = new MemoryCatalogStore()
     await store.upsertTenant({ id: 'org_1', slug: 'acme', name: 'Acme', type: 'organization', active: true })
@@ -138,6 +172,9 @@ describe('identity lifecycle projection', () => {
       { topic: 'fuzequality.tenant.seeded', key: 'org_1', payload: { tenantId: 'org_1' } },
     )).resolves.toBe(true)
 
+    const projectionSql = String(query.mock.calls.find(([sql]) => sql.includes('INSERT INTO fuzequality.tenants'))?.[0])
+    expect(projectionSql).toContain('tenant_type')
+    expect(projectionSql).not.toContain('name,type,')
     expect(query.mock.calls.map(([sql]) => sql.trim().split(/\s/)[0])).toEqual(['BEGIN', 'INSERT', 'INSERT', 'COMMIT'])
     expect(release).toHaveBeenCalledOnce()
   })
@@ -158,6 +195,54 @@ describe('identity lifecycle projection', () => {
     )).rejects.toThrow('outbox unavailable')
 
     expect(query).toHaveBeenLastCalledWith('ROLLBACK')
+    expect(release).toHaveBeenCalledOnce()
+  })
+
+  it('redacts Postgres principal PII and publishes cascade on hard deletion', async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('deactivated_principal')) return { rowCount: 1, rows: [{ changed: true }] }
+      return { rowCount: 0, rows: [] }
+    })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { connect: vi.fn().mockResolvedValue({ query, release }) }
+
+    await expect(store.projectIdentityLifecycle(
+      { type: 'user.deleted', principalId: 'user_1', cascade: 'hard' },
+      { topic: 'fuzequality.principal.deleted', key: 'user_1', payload: { userId: 'user_1', cascade: 'hard' } },
+    )).resolves.toBe(true)
+
+    const lifecycleCall = query.mock.calls.find(([sql]) => sql.includes('deactivated_principal'))
+    expect(lifecycleCall?.[0]).toContain("$2='hard'")
+    expect(lifecycleCall?.[1]).toEqual(['user_1', 'hard', 'deleted+user_1@redacted.invalid'])
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+      ['fuzequality.principal.deleted', 'user_1', JSON.stringify({ userId: 'user_1', cascade: 'hard' })],
+    )
+    expect(release).toHaveBeenCalledOnce()
+  })
+
+  it('redacts Postgres organization identity and publishes cascade on hard deletion', async () => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('deactivated_tenant')) return { rowCount: 1, rows: [{ changed: true }] }
+      return { rowCount: 0, rows: [] }
+    })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { connect: vi.fn().mockResolvedValue({ query, release }) }
+
+    await expect(store.projectIdentityLifecycle(
+      { type: 'organization.deleted', tenantId: 'org_1', cascade: 'hard' },
+      { topic: 'fuzequality.tenant.deleted', key: 'org_1', payload: { tenantId: 'org_1', cascade: 'hard' } },
+    )).resolves.toBe(true)
+
+    const lifecycleCall = query.mock.calls.find(([sql]) => sql.includes('deactivated_tenant'))
+    expect(lifecycleCall?.[0]).toContain("$2='hard'")
+    expect(lifecycleCall?.[1]).toEqual(['org_1', 'hard', 'deleted-org_1'])
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+      ['fuzequality.tenant.deleted', 'org_1', JSON.stringify({ tenantId: 'org_1', cascade: 'hard' })],
+    )
     expect(release).toHaveBeenCalledOnce()
   })
 })

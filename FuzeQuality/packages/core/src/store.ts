@@ -19,21 +19,229 @@ import type {
   RepositoryFlowCandidate,
   RepositoryFlowReviewHistoryEntry,
   PolicyGateEvaluation,
+  PolicyGateReviewHistoryEntry,
   TestExecution,
+  TestSuiteDispatch,
   QualityTenant,
   QualityPrincipal,
   QualityMembership,
 } from '@fuzequality/contracts'
+import { normalizeWorkflowPath, testExecutionEvidenceCollectionSchema, testExecutionEvidenceLinkSchema, TOPICS } from '@fuzequality/contracts'
+import { safeExecutionEvidenceUrl } from '@fuzequality/contracts/workflow-execution'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
-export type PolicyGateReviewHistoryEntry = { evaluationId: string; tenantId: string; status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string; createdAt: string }
+import { executionOutcomeTrend, executionPerformance, filterTestExecutions, normalizeExecutionArtifactIdentities, qualityArtifactLogicalIdentity, type ExecutionEvidenceRequirement, type ExecutionOutcomeTrend, type PolicyGatePerformance } from './execution-performance'
+
+export const currentQualityArtifactsSql = `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
+       FROM fuzequality.repository_quality_artifacts
+       WHERE repository_id=$1
+         AND revision=(SELECT last_scan_revision FROM fuzequality.repositories WHERE id=$1)
+       ORDER BY kind, source_path, title, id`
+export const revisionQualityArtifactsSql = `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
+       FROM fuzequality.repository_quality_artifacts
+       WHERE repository_id=$1 AND revision=$2
+       ORDER BY kind, source_path, title, id`
+export type HistoryCursor = { createdAt: string; id: string }
+export type ReviewHistoryQuery = { after?: HistoryCursor; limit?: number }
+export type TestSuiteDispatchHistoryQuery = { after?: HistoryCursor; limit?: number }
+export type RepositoryFlowCandidateQuery = {
+  id?: string
+  source?: RepositoryFlowCandidate['source']
+  status?: RepositoryFlowCandidate['status']
+  revision?: string
+  model?: string
+  promptVersion?: string
+  schemaVersion?: string
+  analysisRisk?: 'grounding-gaps' | 'prompt-truncated' | 'provenance-missing'
+  minConfidence?: number
+  maxConfidence?: number
+  after?: HistoryCursor
+  limit?: number
+}
+
+export type RepositoryFlowReview = {
+  status: 'confirmed' | 'rejected'
+  reviewedBy: string
+  reason?: string
+  /** Undefined keeps backwards compatibility; null asserts no prior decision. */
+  expectedReviewedAt?: string | null
+}
+export type PolicyGateReview = {
+  status: 'accepted' | 'dismissed'
+  reviewedBy: string
+  reason?: string
+  /** Undefined keeps backwards compatibility; null asserts no prior decision. */
+  expectedReviewedAt?: string | null
+}
+export type PolicyGateEvaluationQuery = {
+  id?: string
+  kind?: PolicyGateEvaluation['kind']
+  remediationAction?: PolicyGateEvaluation['remediationAction']
+  severity?: PolicyGateEvaluation['severity']
+  reviewStatus?: PolicyGateEvaluation['reviewStatus']
+  revision?: string
+  subject?: string
+  policyArtifactId?: string
+  gateArtifactId?: string
+  minConfidence?: number
+  maxConfidence?: number
+  after?: HistoryCursor
+  limit?: number
+}
+export type TestExecutionQuery = {
+  id?: string
+  kind?: TestExecution['kind']
+  status?: TestExecution['status']
+  provider?: TestExecution['provider']
+  name?: string
+  evidenceKind?: TestExecution['evidenceLinks'][number]['kind']; evidenceCollectionStatus?: NonNullable<TestExecution['evidenceCollection']>['status'] | 'not-collected'
+  evidenceCollectionErrorCode?: NonNullable<TestExecution['evidenceCollection']>['errorCode']
+  evidenceCheckedAfter?: string
+  evidenceCheckedBefore?: string
+  evidenceRequirement?: ExecutionEvidenceRequirement
+  thresholdOutcome?: 'passed' | 'failed'
+  gateOutcome?: TestExecution['status']
+  externalRunId?: string
+  policyArtifactId?: string
+  gateArtifactId?: string
+  branch?: string
+  /** Internal repository scope; API callers cannot override it. */
+  headRepository?: string
+  revision?: string
+  workflowPath?: string
+  attemptScope?: 'initial' | 'retry' | 'recovered'
+  minimumDurationMs?: number
+  maximumDurationMs?: number
+  from?: string
+  until?: string
+  after?: HistoryCursor
+  limit?: number
+}
+export type ExecutionOutcomeTrendQuery = Omit<TestExecutionQuery, 'after'> & {
+  beforeDate?: string
+  /** Immutable lifecycle high-water mark shared by every page in one trend snapshot. */
+  snapshotAt?: string
+}
+export type PolicyGatePerformanceCursor = Pick<PolicyGatePerformance, 'failed' | 'passed' | 'gateArtifactId' | 'policyArtifactId'>
+export type PolicyGatePerformanceQuery = Omit<TestExecutionQuery, 'after'> & {
+  after?: PolicyGatePerformanceCursor
+  /** Immutable ingestion high-water mark shared by every page in one snapshot. */
+  snapshotAt?: string
+}
+
+export function testExecutionOccurredAt(execution: TestExecution) {
+  return execution.completedAt ?? execution.startedAt ?? '1970-01-01T00:00:00.000Z'
+}
+
+const testExecutionCreatedAt = new WeakMap<TestExecution, string>()
+
+function withTestExecutionCreatedAt(execution: TestExecution, createdAt: string) {
+  testExecutionCreatedAt.set(execution, createdAt)
+  return execution
+}
+
+/** Immutable ingestion timestamp used only to continue execution history pages. */
+export function testExecutionCursorCreatedAt(execution: TestExecution) {
+  return testExecutionCreatedAt.get(execution) ?? testExecutionOccurredAt(execution)
+}
+
+function testExecutionCursorCreatedAtMillis(execution: TestExecution) {
+  const createdAt = Date.parse(testExecutionCursorCreatedAt(execution))
+  return Number.isFinite(createdAt) ? createdAt : 0
+}
+
+function testExecutionOccurredAtMillis(execution: TestExecution) {
+  const occurredAt = Date.parse(testExecutionOccurredAt(execution))
+  return Number.isFinite(occurredAt) ? occurredAt : 0
+}
+
+function latestTestExecutionAtMillis(execution: TestExecution) {
+  if (execution.completedAt || execution.startedAt) {
+    return testExecutionOccurredAtMillis(execution)
+  }
+  return testExecutionCursorCreatedAtMillis(execution)
+}
+
+function matchesCurrentOrAcceptedDispatch(
+  execution: TestExecution,
+  branch: string,
+  dispatches: TestSuiteDispatch[],
+) {
+  if (execution.branch === branch) return true
+  if (execution.provider !== 'github-actions' || !execution.branch || !execution.workflowPath) return false
+  return dispatches.some(dispatch =>
+    dispatch.repositoryId === execution.repositoryId &&
+    dispatch.tenantId === execution.tenantId &&
+    dispatch.status === 'accepted' &&
+    dispatch.ref === execution.branch &&
+    dispatch.sourceRevision.toLowerCase() === execution.revision.toLowerCase() &&
+    normalizeWorkflowPath(dispatch.workflowPath) === normalizeWorkflowPath(execution.workflowPath)
+  )
+}
+
+const executionKindForDispatch: Record<TestSuiteDispatch['artifactKind'], TestExecution['kind']> = {
+  'integration-test': 'integration',
+  'post-production-test': 'post-production',
+  'load-test': 'load',
+  'stress-test': 'stress',
+}
+
+function safeDispatchEvidenceLinks(value: unknown): TestExecution['evidenceLinks'] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap(candidate => {
+    const parsed = testExecutionEvidenceLinkSchema.safeParse(candidate)
+    if (!parsed.success) return []
+    const url = safeExecutionEvidenceUrl(parsed.data.url)
+    return url ? [{ ...parsed.data, url }] : []
+  }).slice(0, 100)
+}
+
+function safeDispatchEvidenceCollection(value: unknown) {
+  const parsed = testExecutionEvidenceCollectionSchema.safeParse(value)
+  return parsed.success ? { evidenceCollection: parsed.data } : {}
+}
+
+/** Links only an accepted receipt to the newest exact revision/ref/workflow execution. */
+export function withDispatchExecutionResult(
+  dispatch: TestSuiteDispatch,
+  executions: TestExecution[],
+): TestSuiteDispatch {
+  if (dispatch.status !== 'accepted') return structuredClone(dispatch)
+  const execution = executions
+    .filter(item =>
+      item.repositoryId === dispatch.repositoryId &&
+      item.tenantId === dispatch.tenantId &&
+      item.provider === 'github-actions' &&
+      item.kind === executionKindForDispatch[dispatch.artifactKind] &&
+      item.branch === dispatch.ref &&
+      item.revision.toLowerCase() === dispatch.sourceRevision.toLowerCase() &&
+      normalizeWorkflowPath(item.workflowPath) === normalizeWorkflowPath(dispatch.workflowPath)
+    )
+    .sort((left, right) => latestTestExecutionAtMillis(right) - latestTestExecutionAtMillis(left) || right.id.localeCompare(left.id))[0]
+  if (!execution) return structuredClone(dispatch)
+  return {
+    ...structuredClone(dispatch),
+    executionResult: {
+      id: execution.id,
+      provider: execution.provider,
+      externalRunId: execution.externalRunId,
+      attempt: execution.attempt,
+      status: execution.status,
+      ...(safeExecutionEvidenceUrl(execution.sourceUrl) ? { sourceUrl: execution.sourceUrl } : {}),
+      evidenceLinks: safeDispatchEvidenceLinks(execution.evidenceLinks),
+      ...safeDispatchEvidenceCollection(execution.evidenceCollection),
+      ...(execution.startedAt ? { startedAt: execution.startedAt } : {}),
+      ...(execution.completedAt ? { completedAt: execution.completedAt } : {}),
+    },
+  }
+}
 export type IdentityLifecycleProjection =
   | { type: 'organization.upsert'; tenant: QualityTenant }
-  | { type: 'organization.deleted'; tenantId: string }
+  | { type: 'organization.deleted'; tenantId: string; cascade?: 'soft' | 'hard' }
   | { type: 'user.upsert'; principal: QualityPrincipal }
-  | { type: 'user.deleted'; principalId: string }
+  | { type: 'user.deleted'; principalId: string; cascade?: 'soft' | 'hard' }
   | { type: 'membership.changed'; membership: QualityMembership }
 export type OutboxEventInput = { topic: string; key?: string; payload: unknown }
 export type OutboxEvent = OutboxEventInput & { id: string; attempts: number; createdAt: string }
@@ -47,28 +255,108 @@ export type DesignTestLinkProjection = {
   testCaseId: string
 }
 
+/** Merge lifecycle updates without erasing richer evidence for the same run attempt. */
+export function mergeTestExecutionEvidence(
+  existing: TestExecution,
+  incoming: TestExecution
+): TestExecution {
+  const existingEvidenceCheckedAt = Date.parse(existing.evidenceCollection?.checkedAt ?? '')
+  const incomingEvidenceCheckedAt = Date.parse(incoming.evidenceCollection?.checkedAt ?? '')
+  const incomingEvidenceIsStale = Number.isFinite(existingEvidenceCheckedAt) &&
+    Number.isFinite(incomingEvidenceCheckedAt) &&
+    incomingEvidenceCheckedAt < existingEvidenceCheckedAt
+  const retainedEvidence = incomingEvidenceIsStale
+    ? existing.evidenceLinks
+    : incoming.provider === 'github-actions' && incoming.evidenceCollection?.status === 'complete'
+    ? existing.evidenceLinks.filter(link => !/^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+\/artifacts\/\d+$/i.test(link.url))
+    : existing.evidenceLinks
+  const evidenceLinks = new Map(
+    [...retainedEvidence, ...(incomingEvidenceIsStale ? [] : incoming.evidenceLinks)].map(link => [
+      `${link.kind}:${link.url}`,
+      link,
+    ])
+  )
+  const richerSummary = (incoming.summary?.length ?? 0) > (existing.summary?.length ?? 0)
+    ? incoming.summary
+    : existing.summary
+  const gateEvaluations = incoming.gateEvaluations.length
+    ? incoming.gateEvaluations
+    : incoming.status === 'running'
+      ? existing.gateEvaluations
+      : existing.gateEvaluations.map(evaluation => evaluation.status === 'running'
+        ? { ...evaluation, status: incoming.status }
+        : evaluation)
+  const evidenceCollection = incomingEvidenceIsStale
+    ? existing.evidenceCollection
+    : incoming.evidenceCollection?.status === 'complete' || incoming.evidenceCollection?.status === 'partial'
+    ? incoming.evidenceCollection
+    : existing.evidenceCollection?.status === 'complete' || existing.evidenceCollection?.status === 'partial'
+      ? existing.evidenceCollection
+      : incoming.evidenceCollection ?? existing.evidenceCollection
+  return {
+    ...existing,
+    ...incoming,
+    id: existing.id,
+    branch: incoming.branch ?? existing.branch,
+    headRepository: incoming.headRepository ?? existing.headRepository,
+    workflowPath: incoming.workflowPath ?? existing.workflowPath,
+    sourceUrl: incoming.sourceUrl ?? existing.sourceUrl,
+    startedAt: incoming.startedAt ?? existing.startedAt,
+    completedAt: incoming.completedAt ?? existing.completedAt,
+    policyArtifactIds: incoming.policyArtifactIds.length
+      ? incoming.policyArtifactIds
+      : existing.policyArtifactIds,
+    gateArtifactIds: incoming.gateArtifactIds.length
+      ? incoming.gateArtifactIds
+      : existing.gateArtifactIds,
+    gateEvaluations,
+    thresholds: incoming.thresholds.length
+      ? incoming.thresholds
+      : existing.thresholds,
+    evidenceLinks: [...evidenceLinks.values()].slice(0, 100),
+    evidenceCollection,
+    summary: richerSummary,
+  }
+}
+
 export interface CatalogStore {
+  checkReadiness(): Promise<void>
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
-  repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]>
-  qualityArtifacts(repositoryId: string, tenantId: string): Promise<QualityArtifact[]>
-  repositoryFlowCandidates(repositoryId: string, tenantId: string): Promise<RepositoryFlowCandidate[]>
+  repositoryScanHistory(id: string, tenantId: string, query?: RepositoryScanHistoryQuery): Promise<RepositoryScanHistoryEntry[]>
+  catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string): Promise<string | undefined>
+  qualityArtifacts(repositoryId: string, tenantId: string, revision?: string, query?: QualityArtifactQuery): Promise<QualityArtifact[]>
+  qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[], revision?: string): Promise<QualityArtifact[]>
+  repositoryFlowCandidates(repositoryId: string, tenantId: string, query?: RepositoryFlowCandidateQuery): Promise<RepositoryFlowCandidate[]>
   saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]): Promise<void>
-  reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }): Promise<RepositoryFlowCandidate | undefined>
-  repositoryFlowReviewHistory(candidateId: string, tenantId: string): Promise<RepositoryFlowReviewHistoryEntry[]>
-  policyGateEvaluations(repositoryId: string, tenantId: string): Promise<PolicyGateEvaluation[]>
+  reviewRepositoryFlowCandidate(id: string, tenantId: string, review: RepositoryFlowReview, expectedRevision?: string): Promise<RepositoryFlowCandidate | undefined>
+  repositoryFlowReviewHistory(candidateId: string, tenantId: string, query?: ReviewHistoryQuery): Promise<RepositoryFlowReviewHistoryEntry[]>
+  policyGateEvaluations(repositoryId: string, tenantId: string, query?: PolicyGateEvaluationQuery): Promise<PolicyGateEvaluation[]>
   savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]): Promise<void>
-  reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }): Promise<PolicyGateEvaluation | undefined>
-  policyGateReviewHistory(evaluationId: string, tenantId: string): Promise<PolicyGateReviewHistoryEntry[]>
-  testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]>
+  reviewPolicyGateEvaluation(id: string, tenantId: string, review: PolicyGateReview, expectedRevision?: string): Promise<PolicyGateEvaluation | undefined>
+  policyGateReviewHistory(evaluationId: string, tenantId: string, query?: ReviewHistoryQuery): Promise<PolicyGateReviewHistoryEntry[]>
+  testExecutions(repositoryId: string, tenantId: string, query?: TestExecutionQuery): Promise<TestExecution[]>
+  latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]>
+  latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]>
+  latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]>
+  executionOutcomeTrend(repositoryId: string, tenantId: string, query?: ExecutionOutcomeTrendQuery): Promise<ExecutionOutcomeTrend[]>
+  policyGatePerformance(repositoryId: string, tenantId: string, query?: PolicyGatePerformanceQuery): Promise<PolicyGatePerformance[]>
   saveTestExecution(execution: TestExecution): Promise<void>
+  latestTestSuiteDispatches(repositoryId: string, tenantId: string, query?: TestSuiteDispatchHistoryQuery): Promise<TestSuiteDispatch[]>
+  testSuiteDispatchLogicalId(repositoryId: string, tenantId: string, artifactReference: string): Promise<string | undefined>
+  testSuiteDispatchHistory(repositoryId: string, tenantId: string, artifactLogicalId: string, query?: TestSuiteDispatchHistoryQuery): Promise<TestSuiteDispatch[]>
+  saveTestSuiteDispatch(dispatch: TestSuiteDispatch): Promise<void>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   updateRepositoryAdministration(
     id: string,
     tenantId: string,
-    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+    value: { ownership?: RepositoryInput['ownership'] | null; jiraBindings: RepositoryInput['jiraBindings']; storybookBaseUrl?: RepositoryInput['storybookBaseUrl'] | null }
   ): Promise<Repository | undefined>
+  setRepositoryDefaultBranch(id: string, defaultBranch: string): Promise<void>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
+  setRepositoryScanFailure(id: string, failure: NonNullable<Repository['lastScanFailure']>): Promise<void>
+  setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>): Promise<void>
+  queueRepositoryAnalysis(id: string, tenantId: string): Promise<Repository | undefined>
   saveScan(result: ScanResult): Promise<void>
   syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor | undefined>
   markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<void>
@@ -86,15 +374,25 @@ export interface CatalogStore {
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
   recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>): Promise<AdminContextAudit>
   upsertTenant(tenant: QualityTenant): Promise<boolean>
-  deactivateTenant(tenantId: string): Promise<boolean>
+  deactivateTenant(tenantId: string, cascade?: 'soft' | 'hard'): Promise<boolean>
   upsertPrincipal(principal: QualityPrincipal): Promise<boolean>
-  deactivatePrincipal(principalId: string): Promise<boolean>
+  deactivatePrincipal(principalId: string, cascade?: 'soft' | 'hard'): Promise<boolean>
   setOrganizationMembership(membership: QualityMembership): Promise<boolean>
   projectDesignTestLink(projection: DesignTestLinkProjection, outbound: OutboxEventInput): Promise<boolean>
   projectIdentityLifecycle(projection: IdentityLifecycleProjection, outbound: OutboxEventInput): Promise<boolean>
   claimOutboxEvents(limit?: number, leaseMs?: number): Promise<OutboxEvent[]>
   markOutboxPublished(id: string): Promise<void>
   releaseOutboxEvent(id: string, error: string): Promise<void>
+}
+
+export type RepositoryScanHistoryQuery = {
+  after?: { scannedAt: string | null; id: string }
+  limit?: number
+}
+
+export type QualityArtifactQuery = {
+  afterId?: string
+  limit?: number
 }
 
 const emptyPortfolio = (): Portfolio => ({
@@ -126,6 +424,13 @@ function flowWireframe(value: unknown, steps: unknown): RepositoryFlowCandidate[
   return { kind: 'sequence', nodes: nodes.length ? nodes : [{ label: 'Flow step', targetIds: [] }] }
 }
 
+/** Preserve decision order when multiple in-memory reviews land in one clock millisecond. */
+function nextReviewTimestamp(previous?: string): string {
+  const now = Date.now()
+  const previousMillis = previous ? Date.parse(previous) : Number.NaN
+  return new Date(Number.isFinite(previousMillis) ? Math.max(now, previousMillis + 1) : now).toISOString()
+}
+
 export class MemoryCatalogStore implements CatalogStore {
   private data = emptyPortfolio()
   private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
@@ -133,6 +438,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private adminContextAudits: AdminContextAudit[] = []
   private syncCursors: SyncCursor[] = []
   private scanHistory: Array<{ repositoryId: string; item: RepositoryScanHistoryEntry }> = []
+  private sourceCatalogRevisions = new Map<string, string>()
   private exclusions = new Map<string, ExpectationExclusionInput>()
   private artifacts: Array<QualityArtifact & { revision: string }> = []
   private flowCandidates: RepositoryFlowCandidate[] = []
@@ -140,6 +446,8 @@ export class MemoryCatalogStore implements CatalogStore {
   private policyGateResults: PolicyGateEvaluation[] = []
   private policyGateReviewAudits: PolicyGateReviewHistoryEntry[] = []
   private executions: TestExecution[] = []
+  private executionVersions: Array<{ execution: TestExecution; versionedAt: number }> = []
+  private testSuiteDispatches: TestSuiteDispatch[] = []
   private tenants = new Map<string, QualityTenant>()
   private principals = new Map<string, QualityPrincipal>()
   private memberships = new Map<string, QualityMembership>()
@@ -149,6 +457,8 @@ export class MemoryCatalogStore implements CatalogStore {
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
   }
+
+  async checkReadiness() {}
 
   async portfolio(tenantId?: string) {
     const result = structuredClone(this.data)
@@ -183,86 +493,388 @@ export class MemoryCatalogStore implements CatalogStore {
     return this.data.repositories.find(repository => repository.id === id && (!tenantId || repository.tenantId === tenantId))
   }
 
-  async repositoryScanHistory(id: string, tenantId: string) {
+  async repositoryScanHistory(id: string, tenantId: string, query: RepositoryScanHistoryQuery = {}) {
     if (!await this.repository(id, tenantId)) return []
-    return this.scanHistory.filter(item => item.repositoryId === id).map(item => item.item)
+    let items = this.scanHistory.filter(item => item.repositoryId === id).map(item => item.item)
+    if (query.after) {
+      const cursorIndex = items.findIndex(item => item.id === query.after!.id && (item.scannedAt ?? null) === query.after!.scannedAt)
+      items = cursorIndex >= 0 ? items.slice(cursorIndex + 1) : []
+    }
+    return items.slice(0, query.limit)
   }
 
-  async qualityArtifacts(repositoryId: string, tenantId: string) {
-    if (!await this.repository(repositoryId, tenantId)) return []
-    return this.artifacts.filter(item => item.repositoryId === repositoryId).map(({ revision: _revision, ...item }) => item)
+  async catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string) {
+    if (!await this.repository(repositoryId, tenantId)) return undefined
+    return this.sourceCatalogRevisions.get(`${repositoryId}:${sourceRevision}`)
   }
 
-  async repositoryFlowCandidates(repositoryId: string, tenantId: string) {
-    return this.flowCandidates.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+  async qualityArtifacts(repositoryId: string, tenantId: string, revision?: string, query?: QualityArtifactQuery) {
+    const repository = await this.repository(repositoryId, tenantId)
+    if (!repository) return []
+    const selectedRevision = revision ?? repository.lastScanRevision
+    const items = this.artifacts
+      .filter(item => item.repositoryId === repositoryId && (!selectedRevision || item.revision === selectedRevision))
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .filter(item => !query?.afterId || item.id > query.afterId)
+      .map(item => ({ ...item }))
+    return query?.limit === undefined ? items : items.slice(0, query.limit)
+  }
+
+  async qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[], revision?: string) {
+    const repository = await this.repository(repositoryId, tenantId), selected = new Set(ids)
+    if (!ids.length || !repository) return []
+    const selectedRevision = revision ?? repository.lastScanRevision
+    return this.artifacts
+      .filter(item =>
+        item.repositoryId === repositoryId &&
+        (!selectedRevision || item.revision === selectedRevision) &&
+        (selected.has(item.id) || selected.has(item.logicalId ?? item.id))
+      )
+      .map(item => ({ ...item }))
+  }
+
+  async repositoryFlowCandidates(repositoryId: string, tenantId: string, query: RepositoryFlowCandidateQuery = {}) {
+    const items = this.flowCandidates
+      .filter(item =>
+        item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        (!query.id || item.id === query.id) &&
+        (!query.source || item.source === query.source) &&
+        (!query.status || item.status === query.status) &&
+        (!query.revision || item.revision === query.revision) &&
+        (!query.model || item.analysis?.model === query.model) &&
+        (!query.promptVersion || item.analysis?.promptVersion === query.promptVersion) &&
+        (!query.schemaVersion || item.analysis?.schemaVersion === query.schemaVersion) &&
+        (!query.analysisRisk || (
+          query.analysisRisk === 'grounding-gaps'
+            ? item.source === 'litellm' && Boolean(item.analysis?.grounding && (
+                item.analysis.grounding.rejectedArtifactCount > 0 ||
+                item.analysis.grounding.ungroundedStepCount > 0
+              ))
+            : query.analysisRisk === 'prompt-truncated'
+              ? item.source === 'litellm' && item.analysis?.promptTruncated === true
+              : item.source === 'litellm' && !item.analysis
+        )) &&
+        (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
+        (query.maxConfidence === undefined || item.confidence <= query.maxConfidence)
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || item.createdAt < query.after.createdAt || (item.createdAt === query.after.createdAt && item.id < query.after.id))
+    return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
   async saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]) {
     for (const candidate of candidates) {
-      const index = this.flowCandidates.findIndex(item => item.repositoryId === candidate.repositoryId && item.revision === candidate.revision && item.title === candidate.title && item.source === candidate.source)
-      if (index >= 0) this.flowCandidates[index] = {
+      const index = this.flowCandidates.findIndex(item => item.id === candidate.id)
+      const existing = index >= 0 ? this.flowCandidates[index] : undefined
+      if (!existing) this.flowCandidates.push(candidate)
+      else if (
+        existing.repositoryId === candidate.repositoryId &&
+        existing.tenantId === candidate.tenantId &&
+        existing.revision === candidate.revision &&
+        existing.source === candidate.source
+      ) this.flowCandidates[index] = {
         ...candidate,
-        id: this.flowCandidates[index].id,
-        status: this.flowCandidates[index].status,
-        reviewedAt: this.flowCandidates[index].reviewedAt,
-        reviewedBy: this.flowCandidates[index].reviewedBy,
-        reviewReason: this.flowCandidates[index].reviewReason,
+        id: existing.id,
+        createdAt: existing.createdAt,
+        status: existing.status,
+        reviewedAt: existing.reviewedAt,
+        reviewedBy: existing.reviewedBy,
+        reviewReason: existing.reviewReason,
       }
-      else this.flowCandidates.push(candidate)
     }
   }
 
-  async reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }) {
+  async reviewRepositoryFlowCandidate(id: string, tenantId: string, review: RepositoryFlowReview, expectedRevision?: string) {
     const item = this.flowCandidates.find(candidate => candidate.id === id && candidate.tenantId === tenantId)
     if (!item) return undefined
+    const repository = this.data.repositories.find(candidate => candidate.id === item.repositoryId && candidate.tenantId === tenantId)
+    if (expectedRevision && (item.revision !== expectedRevision || repository?.lastScanRevision !== expectedRevision)) return undefined
+    if (review.expectedReviewedAt !== undefined && (item.reviewedAt ?? null) !== review.expectedReviewedAt) return undefined
     item.status = review.status
-    item.reviewedAt = new Date().toISOString()
+    item.reviewedAt = nextReviewTimestamp(item.reviewedAt)
     item.reviewedBy = review.reviewedBy
     item.reviewReason = review.reason
-    this.flowReviewAudits.unshift({ candidateId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
+    this.flowReviewAudits.unshift({ id: randomUUID(), candidateId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
     return item
   }
 
-  async repositoryFlowReviewHistory(candidateId: string, tenantId: string) {
-    return this.flowReviewAudits.filter(item => item.candidateId === candidateId && item.tenantId === tenantId)
+  async repositoryFlowReviewHistory(candidateId: string, tenantId: string, query: ReviewHistoryQuery = {}) {
+    const items = this.flowReviewAudits
+      .filter(item => item.candidateId === candidateId && item.tenantId === tenantId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || item.createdAt < query.after.createdAt || (item.createdAt === query.after.createdAt && item.id < query.after.id))
+    return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
-  async policyGateEvaluations(repositoryId: string, tenantId: string) {
-    return this.policyGateResults.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+  async policyGateEvaluations(repositoryId: string, tenantId: string, query: PolicyGateEvaluationQuery = {}) {
+    const normalizedSubject = query.subject?.toLowerCase()
+    const items = this.policyGateResults
+      .filter(item =>
+        item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        (!query.id || item.id === query.id) &&
+        (!query.kind || item.kind === query.kind) &&
+        (!query.remediationAction || item.remediationAction === query.remediationAction) &&
+        (!query.severity || item.severity === query.severity) &&
+        (!query.reviewStatus || item.reviewStatus === query.reviewStatus) &&
+        (!query.revision || item.revision === query.revision) &&
+        (!normalizedSubject || item.scope.subjects.some(subject => subject.toLowerCase() === normalizedSubject)) &&
+        (!query.policyArtifactId || item.policyArtifactIds.includes(query.policyArtifactId)) &&
+        (!query.gateArtifactId || item.gateArtifactIds.includes(query.gateArtifactId)) &&
+        (query.minConfidence === undefined || item.confidence >= query.minConfidence) &&
+        (query.maxConfidence === undefined || item.confidence <= query.maxConfidence)
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || item.createdAt < query.after.createdAt || (item.createdAt === query.after.createdAt && item.id < query.after.id))
+    return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
   async savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]) {
     for (const evaluation of evaluations) {
-      const index = this.policyGateResults.findIndex(item => item.repositoryId === evaluation.repositoryId && item.revision === evaluation.revision && item.kind === evaluation.kind && item.title === evaluation.title)
-      if (index >= 0) this.policyGateResults[index] = { ...evaluation, reviewStatus: this.policyGateResults[index].reviewStatus, reviewedAt: this.policyGateResults[index].reviewedAt, reviewedBy: this.policyGateResults[index].reviewedBy, reviewReason: this.policyGateResults[index].reviewReason }
+      const policyIdentity = JSON.stringify([...evaluation.policyArtifactIds].sort())
+      const gateIdentity = JSON.stringify([...evaluation.gateArtifactIds].sort())
+      const index = this.policyGateResults.findIndex(item =>
+        item.repositoryId === evaluation.repositoryId &&
+        item.tenantId === evaluation.tenantId &&
+        item.revision === evaluation.revision &&
+        item.kind === evaluation.kind &&
+        JSON.stringify([...item.policyArtifactIds].sort()) === policyIdentity &&
+        JSON.stringify([...item.gateArtifactIds].sort()) === gateIdentity
+      )
+      if (index >= 0) this.policyGateResults[index] = { ...evaluation, id: this.policyGateResults[index].id, createdAt: this.policyGateResults[index].createdAt, reviewStatus: this.policyGateResults[index].reviewStatus, reviewedAt: this.policyGateResults[index].reviewedAt, reviewedBy: this.policyGateResults[index].reviewedBy, reviewReason: this.policyGateResults[index].reviewReason }
       else this.policyGateResults.push(evaluation)
     }
   }
 
-  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }) {
+  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: PolicyGateReview, expectedRevision?: string) {
     const item = this.policyGateResults.find(evaluation => evaluation.id === id && evaluation.tenantId === tenantId)
     if (!item) return undefined
+    const repository = this.data.repositories.find(candidate => candidate.id === item.repositoryId && candidate.tenantId === tenantId)
+    if (expectedRevision && (item.revision !== expectedRevision || repository?.lastScanRevision !== expectedRevision)) return undefined
+    if (review.expectedReviewedAt !== undefined && (item.reviewedAt ?? null) !== review.expectedReviewedAt) return undefined
     item.reviewStatus = review.status
-    item.reviewedAt = new Date().toISOString()
+    item.reviewedAt = nextReviewTimestamp(item.reviewedAt)
     item.reviewedBy = review.reviewedBy
     item.reviewReason = review.reason
-    this.policyGateReviewAudits.unshift({ evaluationId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
+    this.policyGateReviewAudits.unshift({ id: randomUUID(), evaluationId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
     return item
   }
 
-  async policyGateReviewHistory(evaluationId: string, tenantId: string) { return this.policyGateReviewAudits.filter(item => item.evaluationId === evaluationId && item.tenantId === tenantId) }
+  async policyGateReviewHistory(evaluationId: string, tenantId: string, query: ReviewHistoryQuery = {}) {
+    const items = this.policyGateReviewAudits
+      .filter(item => item.evaluationId === evaluationId && item.tenantId === tenantId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || item.createdAt < query.after.createdAt || (item.createdAt === query.after.createdAt && item.id < query.after.id))
+    return query.limit === undefined ? items : items.slice(0, query.limit)
+  }
 
-  async testExecutions(repositoryId: string, tenantId: string) {
-    return this.executions.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+  async testExecutions(repositoryId: string, tenantId: string, query: TestExecutionQuery = {}) {
+    const after = query.after ? Date.parse(query.after.createdAt) : undefined
+    const snapshot = this.executions
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+    const artifacts = this.artifacts.filter(item => item.repositoryId === repositoryId)
+    const items = filterTestExecutions(snapshot, query, snapshot, artifacts)
+      .sort((left, right) => testExecutionCursorCreatedAtMillis(right) - testExecutionCursorCreatedAtMillis(left) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || testExecutionCursorCreatedAtMillis(item) < after! || (testExecutionCursorCreatedAtMillis(item) === after && item.id < query.after.id))
+    return query.limit === undefined ? items : items.slice(0, query.limit)
+  }
+
+  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string) {
+    const allowed = new Set(workflowPaths.map(path => normalizeWorkflowPath(path)))
+    const latest = new Map<string, TestExecution>()
+    for (const execution of this.executions
+      .filter(item =>
+        item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        matchesCurrentOrAcceptedDispatch(item, branch, this.testSuiteDispatches) &&
+        (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
+        (item.kind === 'load' || item.kind === 'stress') &&
+        Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
+      )
+      .sort((left, right) => latestTestExecutionAtMillis(right) - latestTestExecutionAtMillis(left) || right.id.localeCompare(left.id))) {
+      const workflowPath = normalizeWorkflowPath(execution.workflowPath)
+      if (workflowPath && !latest.has(workflowPath)) latest.set(workflowPath, execution)
+    }
+    return [...latest.values()]
+  }
+
+  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string) {
+    const allowed = new Set(workflowPaths.map(path => normalizeWorkflowPath(path)))
+    const latest = new Map<string, TestExecution>()
+    for (const execution of this.executions
+      .filter(item =>
+        item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        matchesCurrentOrAcceptedDispatch(item, branch, this.testSuiteDispatches) &&
+        (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
+        item.kind === 'post-production' &&
+        Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
+      )
+      .sort((left, right) => latestTestExecutionAtMillis(right) - latestTestExecutionAtMillis(left) || right.id.localeCompare(left.id))) {
+      const workflowPath = normalizeWorkflowPath(execution.workflowPath)
+      if (workflowPath && !latest.has(workflowPath)) latest.set(workflowPath, execution)
+    }
+    return [...latest.values()]
+  }
+
+  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string) {
+    const allowed = new Set(workflowPaths.map(path => normalizeWorkflowPath(path)))
+    const latest = new Map<string, TestExecution>()
+    for (const execution of this.executions
+      .filter(item =>
+        item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        matchesCurrentOrAcceptedDispatch(item, branch, this.testSuiteDispatches) &&
+        (item.provider !== 'github-actions' || item.headRepository?.toLowerCase() === headRepository.toLowerCase()) &&
+        item.kind === 'integration' &&
+        Boolean(item.workflowPath && allowed.has(normalizeWorkflowPath(item.workflowPath)))
+      )
+      .sort((left, right) => latestTestExecutionAtMillis(right) - latestTestExecutionAtMillis(left) || right.id.localeCompare(left.id))) {
+      const workflowPath = normalizeWorkflowPath(execution.workflowPath)
+      if (workflowPath && !latest.has(workflowPath)) latest.set(workflowPath, execution)
+    }
+    return [...latest.values()]
+  }
+
+  async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}) {
+    const snapshot = this.executionSnapshot(query.snapshotAt)
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+    const artifacts = this.artifacts.filter(item => item.repositoryId === repositoryId)
+    const items = executionOutcomeTrend(filterTestExecutions(snapshot, query, snapshot, artifacts), snapshot)
+      .sort((left, right) => right.date.localeCompare(left.date))
+      .filter(item => !query.beforeDate || item.date < query.beforeDate)
+    return query.limit === undefined ? items : items.slice(0, query.limit)
+  }
+
+  async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}) {
+    const snapshot = this.executionSnapshot(query.snapshotAt)
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
+    const artifacts = this.artifacts.filter(item => item.repositoryId === repositoryId)
+    const selectedPolicyArtifactId = qualityArtifactLogicalIdentity(repositoryId, query.policyArtifactId, artifacts)
+    const selectedGateArtifactId = qualityArtifactLogicalIdentity(repositoryId, query.gateArtifactId, artifacts)
+    const filteredExecutions = filterTestExecutions(snapshot, query, snapshot, artifacts).map(retainedExecution => {
+      const execution = normalizeExecutionArtifactIdentities(retainedExecution, artifacts)
+      return (
+      execution.gateEvaluations.length && (query.policyArtifactId || query.gateArtifactId)
+        ? {
+            ...execution,
+            gateEvaluations: execution.gateEvaluations.filter(evaluation =>
+              (!selectedPolicyArtifactId || evaluation.policyArtifactId === selectedPolicyArtifactId) &&
+              (!selectedGateArtifactId || evaluation.gateArtifactId === selectedGateArtifactId)
+            ),
+          }
+        : execution
+      )
+    })
+    const items = executionPerformance(filteredExecutions, artifacts, query.gateOutcome)
+      .map(item => ({
+        ...item,
+        revisionCount: item.revisions?.length ?? 0,
+        latestRevision: item.revisions?.[0],
+        revisions: undefined,
+      }))
+      .filter(item => !query.after ||
+        item.failed < query.after.failed ||
+        (item.failed === query.after.failed && item.passed < query.after.passed) ||
+        (item.failed === query.after.failed && item.passed === query.after.passed && item.gateArtifactId > query.after.gateArtifactId) ||
+        (item.failed === query.after.failed && item.passed === query.after.passed && item.gateArtifactId === query.after.gateArtifactId && item.policyArtifactId > query.after.policyArtifactId)
+      )
+    return query.limit === undefined ? items : items.slice(0, query.limit)
+  }
+
+  private executionSnapshot(snapshotAt?: string) {
+    if (!snapshotAt) return this.executions
+    const cutoff = Date.parse(snapshotAt)
+    if (!Number.isFinite(cutoff)) return []
+    const versionsByExecution = new Map<string, TestExecution>()
+    for (const version of this.executionVersions) {
+      if (version.versionedAt > cutoff) continue
+      const execution = version.execution
+      const key = `${execution.repositoryId}\u0000${execution.provider}\u0000${execution.externalRunId}\u0000${execution.attempt}`
+      versionsByExecution.set(key, execution)
+    }
+    return [...versionsByExecution.values()]
   }
 
   async saveTestExecution(execution: TestExecution) {
     const index = this.executions.findIndex(item => item.repositoryId === execution.repositoryId && item.provider === execution.provider && item.externalRunId === execution.externalRunId && item.attempt === execution.attempt)
-    // GitHub webhook delivery is not ordered. A delayed requested or
-    // in-progress event must not erase a terminal result for this attempt.
-    if (index >= 0 && this.executions[index].status !== 'running' && execution.status === 'running') return
-    if (index >= 0) this.executions[index] = execution
-    else this.executions.push(execution)
+    // Provider deliveries are not ordered. The first terminal outcome for an
+    // exact run attempt is immutable; corrections and reruns must use a new
+    // provider attempt so retained failure evidence cannot be rewritten.
+    if (
+      index >= 0 &&
+      this.executions[index].status !== 'running' &&
+      execution.status !== this.executions[index].status
+    ) return
+    if (index >= 0) {
+      const existing = this.executions[index]
+      const merged = withTestExecutionCreatedAt(
+        mergeTestExecutionEvidence(existing, execution),
+        testExecutionCursorCreatedAt(existing),
+      )
+      if (JSON.stringify(existing) === JSON.stringify(merged)) return
+      this.executions[index] = merged
+    } else {
+      this.executions.push(withTestExecutionCreatedAt(execution, new Date().toISOString()))
+    }
+    this.executionVersions.push({
+      execution: structuredClone(this.executions[index >= 0 ? index : this.executions.length - 1]),
+      versionedAt: Date.now(),
+    })
+  }
+
+  async latestTestSuiteDispatches(
+    repositoryId: string,
+    tenantId: string,
+    query: TestSuiteDispatchHistoryQuery = {},
+  ) {
+    const latest = new Map<string, TestSuiteDispatch>()
+    this.testSuiteDispatches
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+      .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
+      .forEach(item => {
+        if (!latest.has(item.artifactLogicalId)) latest.set(item.artifactLogicalId, structuredClone(item))
+      })
+    const result = [...latest.values()]
+      .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
+    const page = query.limit === undefined
+      ? result
+      : result.slice(0, Math.min(Math.max(query.limit, 1), 101))
+    return page.map(item => withDispatchExecutionResult(item, this.executions))
+  }
+
+  async testSuiteDispatchHistory(
+    repositoryId: string,
+    tenantId: string,
+    artifactLogicalId: string,
+    query: TestSuiteDispatchHistoryQuery = {},
+  ) {
+    const limit = Math.min(Math.max(query.limit ?? 50, 1), 101)
+    return this.testSuiteDispatches
+      .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId && item.artifactLogicalId === artifactLogicalId)
+      .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || item.requestedAt < query.after.createdAt || (item.requestedAt === query.after.createdAt && item.id < query.after.id))
+      .slice(0, limit)
+      .map(item => withDispatchExecutionResult(item, this.executions))
+  }
+
+  async testSuiteDispatchLogicalId(
+    repositoryId: string,
+    tenantId: string,
+    artifactReference: string,
+  ) {
+    return this.testSuiteDispatches
+      .filter(item =>
+        item.repositoryId === repositoryId &&
+        item.tenantId === tenantId &&
+        (item.artifactId === artifactReference || item.artifactLogicalId === artifactReference)
+      )
+      .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id))[0]
+      ?.artifactLogicalId
+  }
+
+  async saveTestSuiteDispatch(dispatch: TestSuiteDispatch) {
+    const index = this.testSuiteDispatches.findIndex(item => item.id === dispatch.id)
+    if (index >= 0) this.testSuiteDispatches[index] = structuredClone(dispatch)
+    else this.testSuiteDispatches.push(structuredClone(dispatch))
   }
 
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
@@ -288,28 +900,89 @@ export class MemoryCatalogStore implements CatalogStore {
   async updateRepositoryAdministration(
     id: string,
     tenantId: string,
-    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+    value: { ownership?: RepositoryInput['ownership'] | null; jiraBindings: RepositoryInput['jiraBindings']; storybookBaseUrl?: RepositoryInput['storybookBaseUrl'] | null }
   ) {
     const repository = await this.repository(id, tenantId)
     if (!repository) return undefined
-    Object.assign(repository, value)
+    Object.assign(repository, { ...value, ownership: value.ownership ?? undefined, storybookBaseUrl: value.storybookBaseUrl ?? undefined })
     return repository
   }
 
   async setRepositoryStatus(id: string, status: Repository['lastScanStatus']) {
     const repository = this.data.repositories.find(item => item.id === id)
-    if (repository) repository.lastScanStatus = status
+    if (repository) {
+      repository.lastScanStatus = status
+      if (status !== 'failed') repository.lastScanFailure = undefined
+    }
+  }
+
+  async setRepositoryDefaultBranch(id: string, defaultBranch: string) {
+    const repository = this.data.repositories.find(item => item.id === id)
+    if (repository) repository.defaultBranch = defaultBranch
+  }
+
+  async setRepositoryScanFailure(id: string, failure: NonNullable<Repository['lastScanFailure']>) {
+    const repository = this.data.repositories.find(item => item.id === id)
+    if (repository && ['queued', 'running'].includes(repository.lastScanStatus)) {
+      repository.lastScanStatus = 'failed'
+      repository.lastScanFailure = failure
+    }
+  }
+
+  async setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>) {
+    const repository = this.data.repositories.find(item => item.id === id)
+    if (repository?.lastScanRevision !== analysis.revision) return
+    const previousStatus = repository.lastAnalysis?.status
+    if (
+      repository.lastAnalysis?.revision === analysis.revision &&
+      previousStatus === 'complete' &&
+      analysis.status !== 'complete'
+    ) return
+    if (JSON.stringify(repository.lastAnalysis) === JSON.stringify(analysis)) return
+    repository.lastAnalysis = analysis
+    if (analysis.status === 'complete' && previousStatus !== 'complete') {
+      this.outboxEvents.push({
+        id: randomUUID(),
+        topic: TOPICS.ANALYSIS_COMPLETED,
+        key: id,
+        payload: { repositoryId: id, revision: analysis.revision },
+        attempts: 0,
+        createdAt: new Date().toISOString(),
+      })
+    }
+  }
+
+  async queueRepositoryAnalysis(id: string, tenantId: string) {
+    const repository = await this.repository(id, tenantId)
+    if (!repository?.lastScanRevision || repository.lastAnalysis?.status !== 'failed') return undefined
+    repository.lastAnalysis = { revision: repository.lastScanRevision, status: 'queued' }
+    this.outboxEvents.push({ id: randomUUID(), topic: TOPICS.ANALYSIS_REQUESTED, key: id,
+      payload: { repositoryId: id, revision: repository.lastScanRevision }, attempts: 0, createdAt: new Date().toISOString() })
+    return repository
   }
 
   async saveScan(result: ScanResult) {
     const repository = this.data.repositories.find(item => item.id === result.repository.id)
     if (repository) {
+      const retainedAnalysis = repository.lastScanRevision === result.revision &&
+        repository.lastAnalysis?.revision === result.revision &&
+        repository.lastAnalysis.status === 'complete'
+        ? repository.lastAnalysis
+        : { revision: result.revision, status: 'queued' as const }
       Object.assign(repository, result.repository, {
         lastScanAt: result.scannedAt,
         lastScanRevision: result.revision,
         lastScanStatus: 'complete',
         lastScanDetails: result.scanDetails,
+        lastScanFailure: undefined,
+        lastAnalysis: retainedAnalysis,
       })
+    }
+    if (result.scanDetails.sourceRevision) {
+      this.sourceCatalogRevisions.set(
+        `${result.repository.id}:${result.scanDetails.sourceRevision}`,
+        result.revision,
+      )
     }
     const rejectRepo = <T extends { repositoryId: string }>(items: T[]) =>
       items.filter(item => item.repositoryId !== result.repository.id)
@@ -333,16 +1006,20 @@ export class MemoryCatalogStore implements CatalogStore {
       ...result.diagnostics.map(item => ({ ...item, repositoryId: result.repository.id, revision: result.revision })),
     ]
     this.artifacts = [
-      ...this.artifacts.filter(item => item.repositoryId !== result.repository.id),
+      ...this.artifacts.filter(item =>
+        item.repositoryId !== result.repository.id || item.revision !== result.revision
+      ),
       ...(result.qualityArtifacts ?? []).map(item => ({ ...item, revision: result.revision })),
     ]
-    this.scanHistory.unshift({ repositoryId: result.repository.id, item: { revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
+    this.scanHistory.unshift({ repositoryId: result.repository.id, item: { id: randomUUID(), revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: result.trigger ?? 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
+    this.outboxEvents.push({ id: randomUUID(), topic: TOPICS.REPOSITORY_INVENTORY_CHANGED, key: result.repository.id,
+      payload: { repositoryId: result.repository.id, revision: result.revision }, attempts: 0, createdAt: new Date().toISOString() })
   }
 
   async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
     const suggestion = this.data.suggestions.find(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === input.tenantId))
     if (!suggestion || suggestion.state !== 'proposed') return undefined
-    const payload = input.editedPayload ?? suggestion.payload
+    const payload = structuredClone(input.editedPayload ?? suggestion.payload)
     const action = input.action
     suggestion.state = action === 'confirm' || action === 'merge' ? 'confirmed' : action === 'suppress' ? 'suppressed' : action === 'reject' ? 'rejected' : 'proposed'
     if ((action === 'confirm' || action === 'merge') && suggestion.type === 'flow') {
@@ -352,7 +1029,7 @@ export class MemoryCatalogStore implements CatalogStore {
       if (existing >= 0) this.data.flows[existing] = confirmed
       else this.data.flows.push(confirmed)
     }
-    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input })
+    this.decisions.unshift(structuredClone({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input }))
     if (action === 'edit') suggestion.payload = payload
     return suggestion
   }
@@ -363,7 +1040,7 @@ export class MemoryCatalogStore implements CatalogStore {
     const priority = suggestion.payload.priority === 'required' ? 'required' : 'recommended'
     this.data.expectations.push({ id: `expectation:ai:${id}`, subjectType: 'flow-step', subjectId: `requirement:${suggestion.requirementId}`, kind: 'ai-approved', label: suggestion.title, priority, rule: `ai-reviewed:${id}`, coverage: 'gap', evidenceIds: [] })
     suggestion.state = 'confirmed'
-    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input, action: 'confirm' })
+    this.decisions.unshift(structuredClone({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input, action: 'confirm' as const }))
     return suggestion
   }
 
@@ -376,7 +1053,7 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async suggestionDecisions(id: string, tenantId: string) {
     const visible = this.data.suggestions.some(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === tenantId))
-    return visible ? this.decisions.filter(item => item.suggestionId === id && item.tenantId === tenantId) : []
+    return visible ? structuredClone(this.decisions.filter(item => item.suggestionId === id && item.tenantId === tenantId)) : []
   }
 
   async rebuildCoverage() {
@@ -461,10 +1138,24 @@ export class MemoryCatalogStore implements CatalogStore {
     return changed
   }
 
-  async deactivateTenant(tenantId: string) {
+  async deactivateTenant(tenantId: string, cascade: 'soft' | 'hard' = 'soft') {
     const tenant = this.tenants.get(tenantId)
-    if (!tenant || !tenant.active) return false
-    tenant.active = false
+    if (!tenant) return false
+    const redactedSlug = `deleted-${tenantId}`
+    const changed = tenant.active || (
+      cascade === 'hard' && (
+        tenant.slug !== redactedSlug ||
+        tenant.name !== 'Deleted organization' ||
+        tenant.ownerId !== undefined
+      )
+    )
+    if (!changed) return false
+    Object.assign(tenant, {
+      active: false,
+      ...(cascade === 'hard'
+        ? { slug: redactedSlug, name: 'Deleted organization', ownerId: undefined }
+        : {}),
+    })
     for (const membership of this.memberships.values()) {
       if (membership.tenantId === tenantId) membership.active = false
     }
@@ -478,10 +1169,24 @@ export class MemoryCatalogStore implements CatalogStore {
     return changed
   }
 
-  async deactivatePrincipal(principalId: string) {
+  async deactivatePrincipal(principalId: string, cascade: 'soft' | 'hard' = 'soft') {
     const principal = this.principals.get(principalId)
-    if (!principal || !principal.active) return false
-    principal.active = false
+    if (!principal) return false
+    const redactedEmail = `deleted+${principalId}@redacted.invalid`
+    const changed = principal.active || (
+      cascade === 'hard' && (
+        principal.email !== redactedEmail ||
+        principal.firstName !== undefined ||
+        principal.lastName !== undefined
+      )
+    )
+    if (!changed) return false
+    Object.assign(principal, {
+      active: false,
+      ...(cascade === 'hard'
+        ? { email: redactedEmail, firstName: undefined, lastName: undefined }
+        : {}),
+    })
     for (const membership of this.memberships.values()) {
       if (membership.principalId === principalId) membership.active = false
     }
@@ -501,7 +1206,7 @@ export class MemoryCatalogStore implements CatalogStore {
     switch (projection.type) {
       case 'organization.upsert': changed = await this.upsertTenant(projection.tenant); break
       case 'organization.deleted': {
-        changed = await this.deactivateTenant(projection.tenantId)
+        changed = await this.deactivateTenant(projection.tenantId, projection.cascade)
         for (const membership of this.memberships.values()) {
           if (membership.tenantId === projection.tenantId && membership.active) {
             membership.active = false
@@ -512,7 +1217,7 @@ export class MemoryCatalogStore implements CatalogStore {
       }
       case 'user.upsert': changed = await this.upsertPrincipal(projection.principal); break
       case 'user.deleted': {
-        changed = await this.deactivatePrincipal(projection.principalId)
+        changed = await this.deactivatePrincipal(projection.principalId, projection.cascade)
         for (const membership of this.memberships.values()) {
           if (membership.principalId === projection.principalId && membership.active) {
             membership.active = false
@@ -566,7 +1271,21 @@ export class PostgresCatalogStore implements CatalogStore {
   private readonly pool: pg.Pool
 
   constructor(connectionString: string) {
-    this.pool = new pg.Pool({ connectionString })
+    this.pool = new pg.Pool({
+      connectionString,
+      // Readiness and API work must fail closed instead of accumulating forever
+      // behind an exhausted pool or an unresponsive database connection.
+      connectionTimeoutMillis: 5_000,
+      query_timeout: 5_000,
+    })
+  }
+
+  async checkReadiness() {
+    // Readiness must prove both connectivity and that the provisioned schema is
+    // available to the runtime role. Keep the probe bounded: an empty table is
+    // still ready, while a missing schema/table or missing SELECT grant fails
+    // closed before Kubernetes sends catalog traffic to this pod.
+    await this.pool.query('SELECT 1 FROM fuzequality.repositories LIMIT 1')
   }
 
   async portfolio(tenantId?: string): Promise<Portfolio> {
@@ -607,6 +1326,8 @@ export class PostgresCatalogStore implements CatalogStore {
         lastScanRevision: row.last_scan_revision ?? undefined,
         lastScanStatus: row.last_scan_status,
         lastScanDetails: row.last_scan_details ?? undefined,
+        lastScanFailure: row.last_scan_failure ?? undefined,
+        lastAnalysis: row.last_analysis ?? undefined,
       })),
       operations: operations.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, documentPath: row.document_path, operationId: row.operation_id ?? undefined, method: row.method, path: row.path, summary: row.summary, tags: row.tags, security: row.security, parameters: row.parameters, responses: row.responses, ...(row.details ?? {}) })),
       surfaces: surfaces.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, packageName: row.package_name, kind: row.kind, name: row.name, sourcePath: row.source_path, routePath: row.route_path ?? undefined, public: row.is_public, states: row.states, hasStory: row.has_story, stories: row.stories ?? [] })),
@@ -641,28 +1362,108 @@ export class PostgresCatalogStore implements CatalogStore {
     return (await this.portfolio(tenantId)).repositories.find(item => item.id === id)
   }
 
-  async repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]> {
+  async repositoryScanHistory(id: string, tenantId: string, query: RepositoryScanHistoryQuery = {}): Promise<RepositoryScanHistoryEntry[]> {
     if (!await this.repository(id, tenantId)) return []
-    const result = await this.pool.query(`SELECT r.commit_sha, r.branch, r.status AS revision_status, r.scanned_at, s.trigger, s.counts FROM fuzequality.repository_revisions r LEFT JOIN LATERAL (SELECT * FROM fuzequality.scan_runs WHERE revision_id=r.id ORDER BY started_at DESC LIMIT 1) s ON true WHERE r.repository_id=$1 ORDER BY r.scanned_at DESC NULLS LAST LIMIT 25`, [id])
-    return result.rows.map(row => ({ revision: row.commit_sha, branch: row.branch, status: row.revision_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
-  }
-
-  async qualityArtifacts(repositoryId: string, tenantId: string): Promise<QualityArtifact[]> {
-    if (!await this.repository(repositoryId, tenantId)) return []
+    const values: unknown[] = [id]
+    const after = query.after?.scannedAt
+      ? `AND (COALESCE(s.finished_at,s.started_at) < $2::timestamptz OR (COALESCE(s.finished_at,s.started_at) = $2::timestamptz AND s.id < $3::uuid))`
+      : query.after
+        ? `AND s.id < $2::uuid`
+        : ''
+    if (query.after?.scannedAt) values.push(query.after.scannedAt, query.after.id)
+    else if (query.after) values.push(query.after.id)
+    values.push(query.limit ?? 25)
+    const limitParameter = values.length
     const result = await this.pool.query(
-      `SELECT DISTINCT ON (kind, source_path) id, repository_id, kind, title, source_path, summary, evidence
-       FROM fuzequality.repository_quality_artifacts
-       WHERE repository_id=$1 ORDER BY kind, source_path, discovered_at DESC`,
-      [repositoryId],
+      `SELECT s.id, r.commit_sha, r.branch, s.status AS scan_status,
+              COALESCE(s.finished_at,s.started_at) AS scanned_at, s.trigger, s.counts
+       FROM fuzequality.scan_runs s
+       JOIN fuzequality.repository_revisions r ON r.id=s.revision_id
+       WHERE s.repository_id=$1 ${after}
+       ORDER BY COALESCE(s.finished_at,s.started_at) DESC, s.id DESC
+       LIMIT $${limitParameter}`,
+      values,
     )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence }))
+    return result.rows.map(row => ({ id: row.id, revision: row.commit_sha, branch: row.branch, status: row.scan_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
   }
 
-  async repositoryFlowCandidates(repositoryId: string, tenantId: string): Promise<RepositoryFlowCandidate[]> {
+  async catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string) {
+    if (!await this.repository(repositoryId, tenantId)) return undefined
+    const result = await this.pool.query(
+      `SELECT catalog_revision
+       FROM fuzequality.repository_revision_sources
+       WHERE repository_id=$1 AND source_revision=$2
+       ORDER BY scanned_at DESC NULLS LAST
+       LIMIT 1`,
+      [repositoryId, sourceRevision],
+    )
+    return result.rows[0]?.catalog_revision
+  }
+
+  async qualityArtifacts(repositoryId: string, tenantId: string, revision?: string, query?: QualityArtifactQuery): Promise<QualityArtifact[]> {
+    if (!await this.repository(repositoryId, tenantId)) return []
+    const result = query
+      ? await this.pool.query(
+          `SELECT id, logical_id, repository_id, revision, kind, title, source_path, summary, evidence, execution_target
+           FROM fuzequality.repository_quality_artifacts
+           WHERE repository_id=$1
+             AND revision=${revision ? '$2' : '(SELECT last_scan_revision FROM fuzequality.repositories WHERE id=$1)'}
+             AND id > $${revision ? 3 : 2}
+           ORDER BY id
+           LIMIT $${revision ? 4 : 3}`,
+          revision
+            ? [repositoryId, revision, query.afterId ?? '', query.limit ?? 100]
+            : [repositoryId, query.afterId ?? '', query.limit ?? 100],
+        )
+      : revision
+        ? await this.pool.query(revisionQualityArtifactsSql, [repositoryId, revision])
+        : await this.pool.query(currentQualityArtifactsSql, [repositoryId])
+    return result.rows.map(row => ({ id: row.id, logicalId: row.logical_id, revision: row.revision, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
+  }
+
+  async qualityArtifactsByIds(repositoryId: string, tenantId: string, ids: string[], revision?: string): Promise<QualityArtifact[]> {
+    if (!ids.length) return []
+    const result = await this.pool.query(
+      `WITH requested(id) AS (SELECT unnest($3::text[]))
+       SELECT DISTINCT ON (requested.id)
+              artifact.id,artifact.logical_id,artifact.repository_id,artifact.revision,artifact.kind,artifact.title,artifact.source_path,artifact.summary,artifact.evidence,artifact.execution_target
+       FROM fuzequality.repository_quality_artifacts AS artifact
+       JOIN fuzequality.repositories AS repository ON repository.id=artifact.repository_id
+       JOIN requested ON artifact.id=requested.id OR artifact.logical_id=requested.id
+       WHERE artifact.repository_id=$1 AND repository.tenant_id=$2
+         AND artifact.revision=COALESCE($4::text,repository.last_scan_revision)
+       ORDER BY requested.id,
+                (artifact.id=requested.id) DESC,
+                artifact.discovered_at DESC,
+                artifact.id DESC`,
+      [repositoryId, tenantId, ids, revision ?? null],
+    )
+    return result.rows.map(row => ({ id: row.id, logicalId: row.logical_id, revision: row.revision, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
+  }
+
+  async repositoryFlowCandidates(repositoryId: string, tenantId: string, query: RepositoryFlowCandidateQuery = {}): Promise<RepositoryFlowCandidate[]> {
     const result = await this.pool.query(
       `SELECT * FROM fuzequality.repository_flow_candidates
-       WHERE repository_id=$1 AND tenant_id=$2 ORDER BY created_at DESC`,
-      [repositoryId, tenantId],
+       WHERE repository_id=$1 AND tenant_id=$2
+         AND ($3::text IS NULL OR id=$3)
+         AND ($4::text IS NULL OR source=$4)
+         AND ($5::text IS NULL OR status=$5)
+         AND ($6::text IS NULL OR revision=$6)
+         AND ($7::text IS NULL OR analysis_provenance->>'model'=$7)
+         AND ($8::text IS NULL OR analysis_provenance->>'promptVersion'=$8)
+         AND ($9::text IS NULL OR analysis_provenance->>'schemaVersion'=$9)
+         AND ($10::double precision IS NULL OR confidence >= $10)
+         AND ($11::double precision IS NULL OR confidence <= $11)
+         AND ($12::text IS NULL
+           OR ($12='grounding-gaps' AND source='litellm' AND (
+             COALESCE((analysis_provenance->'grounding'->>'rejectedArtifactCount')::integer,0)>0
+             OR COALESCE((analysis_provenance->'grounding'->>'ungroundedStepCount')::integer,0)>0))
+           OR ($12='prompt-truncated' AND source='litellm' AND analysis_provenance->>'promptTruncated'='true')
+           OR ($12='provenance-missing' AND source='litellm' AND analysis_provenance IS NULL))
+         AND ($13::timestamptz IS NULL OR (created_at,id) < ($13::timestamptz,$14::text))
+       ORDER BY created_at DESC,id DESC
+       LIMIT COALESCE($15::integer, 2147483647)`,
+      [repositoryId, tenantId, query.id ?? null, query.source ?? null, query.status ?? null, query.revision ?? null, query.model ?? null, query.promptVersion ?? null, query.schemaVersion ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.analysisRisk ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, analysis: row.analysis_provenance ?? undefined, source: row.source, createdAt: row.created_at.toISOString() }))
   }
@@ -671,19 +1472,40 @@ export class PostgresCatalogStore implements CatalogStore {
     for (const item of candidates) await this.pool.query(
       `INSERT INTO fuzequality.repository_flow_candidates (id,repository_id,tenant_id,revision,title,confidence,evidence,steps,wireframe,status,source,analysis_provenance,created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT (repository_id,revision,title,source) DO UPDATE SET confidence=EXCLUDED.confidence,evidence=EXCLUDED.evidence,steps=EXCLUDED.steps,wireframe=EXCLUDED.wireframe,analysis_provenance=EXCLUDED.analysis_provenance,created_at=EXCLUDED.created_at`,
+       ON CONFLICT (id) DO UPDATE SET confidence=EXCLUDED.confidence,evidence=EXCLUDED.evidence,steps=EXCLUDED.steps,wireframe=EXCLUDED.wireframe,analysis_provenance=EXCLUDED.analysis_provenance
+       WHERE repository_flow_candidates.repository_id=EXCLUDED.repository_id
+         AND repository_flow_candidates.tenant_id=EXCLUDED.tenant_id
+         AND repository_flow_candidates.revision=EXCLUDED.revision
+         AND repository_flow_candidates.source=EXCLUDED.source`,
       [item.id,item.repositoryId,item.tenantId,item.revision,item.title,item.confidence,JSON.stringify(item.evidence),JSON.stringify(item.steps),JSON.stringify(item.wireframe ?? { kind: 'sequence', nodes: [] }),item.status,item.source,item.analysis ? JSON.stringify(item.analysis) : null,item.createdAt],
     )
   }
 
-  async reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }) {
+  async reviewRepositoryFlowCandidate(id: string, tenantId: string, review: RepositoryFlowReview, expectedRevision?: string) {
     const client = await this.pool.connect()
     let result: pg.QueryResult
     try {
       await client.query('BEGIN')
       result = await client.query(
-        'UPDATE fuzequality.repository_flow_candidates SET status=$3,reviewed_at=now(),reviewed_by=$4,review_reason=$5 WHERE id=$1 AND tenant_id=$2 RETURNING *',
-        [id, tenantId, review.status, review.reviewedBy, review.reason ?? null],
+        `UPDATE fuzequality.repository_flow_candidates AS candidate
+         SET status=$3,reviewed_at=now(),reviewed_by=$4,review_reason=$5
+         WHERE candidate.id=$1 AND candidate.tenant_id=$2
+           AND ($6::text IS NULL OR (
+             candidate.revision=$6
+             AND EXISTS (
+               SELECT 1 FROM fuzequality.repositories AS repository
+               WHERE repository.id=candidate.repository_id
+                 AND repository.tenant_id=candidate.tenant_id
+                 AND repository.last_scan_revision=$6
+               FOR UPDATE
+             )
+           ))
+           AND ($7::boolean = false OR
+             date_trunc('milliseconds', candidate.reviewed_at)
+               IS NOT DISTINCT FROM date_trunc('milliseconds', $8::timestamptz)
+           )
+         RETURNING candidate.*`,
+        [id, tenantId, review.status, review.reviewedBy, review.reason ?? null, expectedRevision ?? null, review.expectedReviewedAt !== undefined, review.expectedReviewedAt ?? null],
       )
       if (result.rows[0]) await client.query(
         'INSERT INTO fuzequality.repository_flow_review_history (id,candidate_id,tenant_id,status,reviewed_by,reason) VALUES ($1,$2,$3,$4,$5,$6)',
@@ -700,61 +1522,1089 @@ export class PostgresCatalogStore implements CatalogStore {
     return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, analysis: row.analysis_provenance ?? undefined, source: row.source, createdAt: row.created_at.toISOString() } : undefined
   }
 
-  async repositoryFlowReviewHistory(candidateId: string, tenantId: string): Promise<RepositoryFlowReviewHistoryEntry[]> {
+  async repositoryFlowReviewHistory(candidateId: string, tenantId: string, query: ReviewHistoryQuery = {}): Promise<RepositoryFlowReviewHistoryEntry[]> {
     const result = await this.pool.query(
-      'SELECT candidate_id,tenant_id,status,reviewed_by,reason,created_at FROM fuzequality.repository_flow_review_history WHERE candidate_id=$1 AND tenant_id=$2 ORDER BY created_at DESC',
-      [candidateId, tenantId],
+      `SELECT id,candidate_id,tenant_id,status,reviewed_by,reason,created_at
+       FROM fuzequality.repository_flow_review_history
+       WHERE candidate_id=$1 AND tenant_id=$2
+         AND ($3::timestamptz IS NULL OR (created_at,id) < ($3::timestamptz,$4::uuid))
+       ORDER BY created_at DESC,id DESC
+       LIMIT COALESCE($5::integer, 2147483647)`,
+      [candidateId, tenantId, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
     )
-    return result.rows.map(row => ({ candidateId: row.candidate_id, tenantId: row.tenant_id, status: row.status, reviewedBy: row.reviewed_by, reason: row.reason ?? undefined, createdAt: row.created_at.toISOString() }))
+    return result.rows.map(row => ({ id: row.id, candidateId: row.candidate_id, tenantId: row.tenant_id, status: row.status, reviewedBy: row.reviewed_by, reason: row.reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
 
-  async policyGateEvaluations(repositoryId: string, tenantId: string): Promise<PolicyGateEvaluation[]> {
+  async policyGateEvaluations(repositoryId: string, tenantId: string, query: PolicyGateEvaluationQuery = {}): Promise<PolicyGateEvaluation[]> {
     const result = await this.pool.query(
-      'SELECT * FROM fuzequality.policy_gate_evaluations WHERE repository_id=$1 AND tenant_id=$2 ORDER BY created_at DESC',
-      [repositoryId, tenantId],
+      `SELECT * FROM fuzequality.policy_gate_evaluations
+       WHERE repository_id=$1 AND tenant_id=$2
+         AND ($3::text IS NULL OR id=$3)
+         AND ($4::text IS NULL OR kind=$4)
+         AND ($5::text IS NULL OR severity=$5)
+         AND ($6::text IS NULL OR review_status=$6)
+         AND ($7::text IS NULL OR revision=$7)
+         AND ($8::double precision IS NULL OR confidence >= $8)
+         AND ($9::double precision IS NULL OR confidence <= $9)
+         AND ($10::timestamptz IS NULL OR (created_at,id) < ($10::timestamptz,$11::text))
+         AND ($13::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(scope->'subjects', '[]'::jsonb)) AS scoped_subject(value)
+           WHERE lower(scoped_subject.value)=lower($13)
+         ))
+         AND ($14::text IS NULL OR remediation_action=$14)
+         AND ($15::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(policy_artifact_ids, '[]'::jsonb)) AS policy_artifact(value)
+           WHERE policy_artifact.value=$15
+         ))
+         AND ($16::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(gate_artifact_ids, '[]'::jsonb)) AS gate_artifact(value)
+           WHERE gate_artifact.value=$16
+         ))
+       ORDER BY created_at DESC,id DESC
+       LIMIT COALESCE($12::integer, 2147483647)`,
+      [repositoryId, tenantId, query.id ?? null, query.kind ?? null, query.severity ?? null, query.reviewStatus ?? null, query.revision ?? null, query.minConfidence ?? null, query.maxConfidence ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.subject ?? null, query.remediationAction ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null],
     )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], remediationAction: row.remediation_action, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
 
   async savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]): Promise<void> {
     for (const item of evaluations) await this.pool.query(
-      `INSERT INTO fuzequality.policy_gate_evaluations (id,repository_id,tenant_id,revision,kind,severity,title,detail,policy_artifact_ids,gate_artifact_ids,confidence,scope,recommendation,review_status,reviewed_at,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-       ON CONFLICT (repository_id,revision,kind,title) DO UPDATE SET severity=EXCLUDED.severity,detail=EXCLUDED.detail,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,confidence=EXCLUDED.confidence,scope=EXCLUDED.scope,recommendation=EXCLUDED.recommendation,created_at=EXCLUDED.created_at`,
-      [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.severity,item.title,item.detail,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),item.confidence,JSON.stringify(item.scope),item.recommendation,item.reviewStatus,item.reviewedAt ?? null,item.createdAt],
+      `INSERT INTO fuzequality.policy_gate_evaluations (id,repository_id,tenant_id,revision,kind,severity,title,detail,policy_artifact_ids,gate_artifact_ids,confidence,scope,evidence_passages,remediation_action,recommendation,review_status,reviewed_at,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       ON CONFLICT ON CONSTRAINT policy_gate_evaluations_artifact_identity_key DO UPDATE SET title=EXCLUDED.title,severity=EXCLUDED.severity,detail=EXCLUDED.detail,confidence=EXCLUDED.confidence,scope=EXCLUDED.scope,evidence_passages=EXCLUDED.evidence_passages,remediation_action=EXCLUDED.remediation_action,recommendation=EXCLUDED.recommendation`,
+      [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.severity,item.title,item.detail,JSON.stringify([...item.policyArtifactIds].sort()),JSON.stringify([...item.gateArtifactIds].sort()),item.confidence,JSON.stringify(item.scope),JSON.stringify(item.evidencePassages ?? []),item.remediationAction,item.recommendation,item.reviewStatus,item.reviewedAt ?? null,item.createdAt],
     )
   }
 
-  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }) {
+  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: PolicyGateReview, expectedRevision?: string) {
     const client = await this.pool.connect()
     let result: pg.QueryResult
     try {
       await client.query('BEGIN')
-      result = await client.query('UPDATE fuzequality.policy_gate_evaluations SET review_status=$3, reviewed_at=now(), reviewed_by=$4, review_reason=$5 WHERE id=$1 AND tenant_id=$2 RETURNING *', [id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
+      result = await client.query(
+        `UPDATE fuzequality.policy_gate_evaluations AS evaluation
+         SET review_status=$3, reviewed_at=now(), reviewed_by=$4, review_reason=$5
+         WHERE evaluation.id=$1 AND evaluation.tenant_id=$2
+           AND ($6::text IS NULL OR (
+             evaluation.revision=$6
+             AND EXISTS (
+               SELECT 1 FROM fuzequality.repositories AS repository
+               WHERE repository.id=evaluation.repository_id
+                 AND repository.tenant_id=evaluation.tenant_id
+                 AND repository.last_scan_revision=$6
+               FOR UPDATE
+             )
+           ))
+           AND ($7::boolean = false OR
+             date_trunc('milliseconds', evaluation.reviewed_at)
+               IS NOT DISTINCT FROM date_trunc('milliseconds', $8::timestamptz)
+           )
+         RETURNING evaluation.*`,
+        [id, tenantId, review.status, review.reviewedBy, review.reason ?? null, expectedRevision ?? null, review.expectedReviewedAt !== undefined, review.expectedReviewedAt ?? null],
+      )
       if (result.rows[0]) await client.query('INSERT INTO fuzequality.policy_gate_review_history (id,evaluation_id,tenant_id,status,reviewed_by,reason) VALUES ($1,$2,$3,$4,$5,$6)', [randomUUID(), id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
     const row = result.rows[0]
-    return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() } : undefined
+    return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], remediationAction: row.remediation_action, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() } : undefined
   }
 
-  async policyGateReviewHistory(evaluationId: string, tenantId: string): Promise<PolicyGateReviewHistoryEntry[]> {
-    const result = await this.pool.query('SELECT evaluation_id,tenant_id,status,reviewed_by,reason,created_at FROM fuzequality.policy_gate_review_history WHERE evaluation_id=$1 AND tenant_id=$2 ORDER BY created_at DESC', [evaluationId, tenantId])
-    return result.rows.map(row => ({ evaluationId: row.evaluation_id, tenantId: row.tenant_id, status: row.status, reviewedBy: row.reviewed_by, reason: row.reason ?? undefined, createdAt: row.created_at.toISOString() }))
+  async policyGateReviewHistory(evaluationId: string, tenantId: string, query: ReviewHistoryQuery = {}): Promise<PolicyGateReviewHistoryEntry[]> {
+    const result = await this.pool.query(
+      `SELECT id,evaluation_id,tenant_id,status,reviewed_by,reason,created_at
+       FROM fuzequality.policy_gate_review_history
+       WHERE evaluation_id=$1 AND tenant_id=$2
+         AND ($3::timestamptz IS NULL OR (created_at,id) < ($3::timestamptz,$4::uuid))
+       ORDER BY created_at DESC,id DESC
+       LIMIT COALESCE($5::integer, 2147483647)`,
+      [evaluationId, tenantId, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+    )
+    return result.rows.map(row => ({ id: row.id, evaluationId: row.evaluation_id, tenantId: row.tenant_id, status: row.status, reviewedBy: row.reviewed_by, reason: row.reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
 
-  async testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]> {
-    const result = await this.pool.query('SELECT * FROM fuzequality.test_executions WHERE repository_id=$1 AND tenant_id=$2 ORDER BY completed_at DESC NULLS LAST, created_at DESC', [repositoryId, tenantId])
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
+  async testExecutions(repositoryId: string, tenantId: string, query: TestExecutionQuery = {}): Promise<TestExecution[]> {
+    const result = await this.pool.query(
+      `SELECT executions.* FROM fuzequality.test_executions executions
+       WHERE executions.repository_id=$1 AND executions.tenant_id=$2
+         AND ($3::text IS NULL OR executions.kind=$3)
+         AND ($4::text IS NULL OR executions.status=$4)
+         AND ($5::text IS NULL OR executions.provider=$5)
+         AND ($6::text IS NULL OR executions.revision=$6)
+         AND ($7::text IS NULL OR executions.workflow_path=$7)
+         AND ($8::text IS NULL
+           OR ($8='initial' AND executions.attempt=1)
+           OR ($8='retry' AND executions.attempt>1)
+           OR ($8='recovered' AND executions.attempt>1 AND executions.status='passed' AND EXISTS (
+             SELECT 1 FROM fuzequality.test_executions previous
+             WHERE previous.repository_id=executions.repository_id
+               AND previous.tenant_id=executions.tenant_id
+               AND previous.provider=executions.provider
+               AND previous.external_run_id=executions.external_run_id
+               AND previous.attempt<executions.attempt
+               AND previous.status='failed'
+           )))
+         AND ($9::bigint IS NULL OR (
+           executions.started_at IS NOT NULL
+           AND executions.completed_at IS NOT NULL
+           AND executions.completed_at >= executions.started_at
+           AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9
+         ))
+         AND ($10::bigint IS NULL OR (
+           executions.started_at IS NOT NULL
+           AND executions.completed_at IS NOT NULL
+           AND executions.completed_at >= executions.started_at
+           AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 <= $10
+         ))
+         AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) >= $11)
+         AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $12)
+         AND ($13::timestamptz IS NULL OR (executions.created_at,executions.id) < ($13::timestamptz,$14::text))
+         AND ($16::text IS NULL OR executions.external_run_id=$16)
+         AND ($17::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(executions.policy_artifact_ids,'[]'::jsonb)) AS policy_id(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,policy_id.value)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+         ) OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'policyArtifactId')
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+         ))
+         AND ($18::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(executions.gate_artifact_ids,'[]'::jsonb)) AS gate_id(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,gate_id.value)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ) OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ))
+         AND ($17::text IS NULL OR $18::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'policyArtifactId')
+               =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+             AND fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')
+               =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ) OR (
+           jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
+           AND jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+           AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
+           AND fuzequality.quality_artifact_logical_id(executions.repository_id,executions.policy_artifact_ids->>0)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+           AND fuzequality.quality_artifact_logical_id(executions.repository_id,executions.gate_artifact_ids->>0)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ))
+         AND ($19::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS evidence(value)
+           WHERE evidence.value->>'kind'=$19
+             AND evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
+         ))
+         AND ($20::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.thresholds,'[]'::jsonb)) AS threshold(value)
+           WHERE threshold.value->>'passed'=CASE $20 WHEN 'passed' THEN 'true' ELSE 'false' END
+         ))
+         AND ($21::text IS NULL OR executions.name=$21)
+         AND ($22::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(
+             CASE
+               WHEN jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))>0
+                 THEN executions.gate_evaluations
+               WHEN jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+                 AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
+                 THEN jsonb_build_array(jsonb_build_object(
+                   'policyArtifactId',executions.policy_artifact_ids->>0,
+                   'gateArtifactId',executions.gate_artifact_ids->>0,
+                   'status',executions.status
+                 ))
+               ELSE '[]'::jsonb
+             END
+           ) AS gate_evaluation(value)
+           WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
+             AND ($17::text IS NULL OR fuzequality.quality_artifact_logical_id(
+               executions.repository_id,gate_evaluation.value->>'policyArtifactId'
+             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$17))
+             AND ($18::text IS NULL OR fuzequality.quality_artifact_logical_id(
+               executions.repository_id,gate_evaluation.value->>'gateArtifactId'
+             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$18))
+         ))
+         AND ($23::text IS NULL OR executions.branch=$23)
+         AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
+         AND ($25::text IS NULL
+           OR ($25='evidence-url-invalid'
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
+               WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
+             ))
+           OR ($25='github-run-provenance-missing'
+             AND executions.provider='github-actions'
+             AND (executions.head_repository IS NULL
+               OR executions.workflow_path IS NULL
+               OR executions.source_url IS NULL
+               OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
+           OR ($25='post-production-video-missing'
+             AND executions.kind='post-production'
+             AND NOT EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
+               WHERE required_evidence.value->>'kind'='video'
+                 AND required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
+             ))
+           OR ($25='terminal-timing-missing'
+             AND executions.status<>'running'
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+           OR ($25='performance-threshold-missing'
+             AND executions.kind IN ('load','stress')
+             AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
+           OR ($25='policy-gate-outcome-missing'
+             AND jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
+             AND NOT (
+               jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+               AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1)))
+         AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
+         AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
+         AND ($28::text IS NULL OR executions.id=$28)
+         AND ($29::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($29)
+           OR ($25='github-run-provenance-missing' AND executions.head_repository IS NULL))
+         AND ($30::text IS NULL OR executions.evidence_collection->>'errorCode'=$30)
+       ORDER BY executions.created_at DESC,executions.id DESC
+       LIMIT COALESCE($15::integer, 2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.id ?? null, query.headRepository ?? null, query.evidenceCollectionErrorCode ?? null],
+    )
+    return result.rows.map(row => withTestExecutionCreatedAt(
+      { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined },
+      row.created_at.toISOString(),
+    ))
+  }
+
+  async latestPerformanceExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
+    if (!workflowPaths.length) return []
+    const result = await this.pool.query(
+      `SELECT DISTINCT ON (execution.workflow_path) execution.*
+       FROM fuzequality.test_executions AS execution
+       WHERE execution.repository_id=$1 AND execution.tenant_id=$2
+         AND execution.kind IN ('load','stress')
+         AND execution.workflow_path=ANY($3::text[])
+         AND (
+           execution.branch=$4 OR (
+             execution.provider='github-actions' AND EXISTS (
+               SELECT 1
+               FROM fuzequality.test_suite_dispatches AS dispatch
+               WHERE dispatch.repository_id=execution.repository_id
+                 AND dispatch.tenant_id=execution.tenant_id
+                 AND dispatch.status='accepted'
+                 AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
+                 AND lower(dispatch.source_revision)=lower(execution.revision)
+                 AND dispatch.source_ref=execution.branch
+             )
+           )
+         )
+         AND (execution.provider<>'github-actions' OR lower(execution.head_repository)=lower($5))
+       ORDER BY execution.workflow_path,COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC,execution.id DESC`,
+      [repositoryId, tenantId, workflowPaths, branch, headRepository],
+    )
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))
+  }
+
+  async latestPostProductionExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
+    if (!workflowPaths.length) return []
+    const result = await this.pool.query(
+      `SELECT DISTINCT ON (execution.workflow_path) execution.*
+       FROM fuzequality.test_executions AS execution
+       WHERE execution.repository_id=$1 AND execution.tenant_id=$2
+         AND execution.kind='post-production'
+         AND execution.workflow_path=ANY($3::text[])
+         AND (
+           execution.branch=$4 OR (
+             execution.provider='github-actions' AND EXISTS (
+               SELECT 1
+               FROM fuzequality.test_suite_dispatches AS dispatch
+               WHERE dispatch.repository_id=execution.repository_id
+                 AND dispatch.tenant_id=execution.tenant_id
+                 AND dispatch.status='accepted'
+                 AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
+                 AND lower(dispatch.source_revision)=lower(execution.revision)
+                 AND dispatch.source_ref=execution.branch
+             )
+           )
+         )
+         AND (execution.provider<>'github-actions' OR lower(execution.head_repository)=lower($5))
+       ORDER BY execution.workflow_path,COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC,execution.id DESC`,
+      [repositoryId, tenantId, workflowPaths, branch, headRepository],
+    )
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))
+  }
+
+  async latestIntegrationExecutions(repositoryId: string, tenantId: string, workflowPaths: string[], branch: string, headRepository: string): Promise<TestExecution[]> {
+    if (!workflowPaths.length) return []
+    const result = await this.pool.query(
+      `SELECT DISTINCT ON (execution.workflow_path) execution.*
+       FROM fuzequality.test_executions AS execution
+       WHERE execution.repository_id=$1 AND execution.tenant_id=$2
+         AND execution.kind='integration'
+         AND execution.workflow_path=ANY($3::text[])
+         AND (
+           execution.branch=$4 OR (
+             execution.provider='github-actions' AND EXISTS (
+               SELECT 1
+               FROM fuzequality.test_suite_dispatches AS dispatch
+               WHERE dispatch.repository_id=execution.repository_id
+                 AND dispatch.tenant_id=execution.tenant_id
+                 AND dispatch.status='accepted'
+                 AND dispatch.workflow_path=split_part(execution.workflow_path,'@',1)
+                 AND lower(dispatch.source_revision)=lower(execution.revision)
+                 AND dispatch.source_ref=execution.branch
+             )
+           )
+         )
+         AND (execution.provider<>'github-actions' OR lower(execution.head_repository)=lower($5))
+       ORDER BY execution.workflow_path,COALESCE(execution.completed_at,execution.started_at,execution.created_at) DESC,execution.id DESC`,
+      [repositoryId, tenantId, workflowPaths, branch, headRepository],
+    )
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, branch: row.branch ?? undefined, headRepository: row.head_repository ?? undefined, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], evidenceCollection: row.evidence_collection ?? undefined, summary: row.summary ?? undefined }))
+  }
+
+  async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}): Promise<ExecutionOutcomeTrend[]> {
+    const result = await this.pool.query(
+      `WITH snapshot_executions AS (
+         SELECT DISTINCT ON (repository_id,provider,external_run_id,attempt)
+                repository_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,source_url,started_at,completed_at,
+                policy_artifact_ids,gate_artifact_ids,gate_evaluations,evidence_links,evidence_collection,thresholds
+         FROM fuzequality.test_execution_versions
+         WHERE repository_id=$1 AND tenant_id=$2
+           AND ($14::timestamptz IS NULL OR versioned_at <= $14)
+         ORDER BY repository_id,provider,external_run_id,attempt,versioned_at DESC,version_id DESC
+       )
+       , normalized_executions AS (
+         SELECT snapshot_executions.*,
+                CASE
+                  WHEN jsonb_array_length(COALESCE(gate_evaluations,'[]'::jsonb))>0
+                    THEN gate_evaluations
+                  WHEN jsonb_array_length(COALESCE(policy_artifact_ids,'[]'::jsonb))=1
+                    AND jsonb_array_length(COALESCE(gate_artifact_ids,'[]'::jsonb))=1
+                    THEN jsonb_build_array(jsonb_build_object(
+                      'policyArtifactId',policy_artifact_ids->>0,
+                      'gateArtifactId',gate_artifact_ids->>0,
+                      'status',status
+                    ))
+                  ELSE '[]'::jsonb
+                END AS effective_gate_evaluations
+         FROM snapshot_executions
+       )
+       SELECT to_char((COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS date,
+              count(*)::integer AS total,
+              count(*) FILTER (WHERE status='passed')::integer AS passed,
+              count(*) FILTER (WHERE status='failed')::integer AS failed,
+              count(*) FILTER (WHERE status='cancelled')::integer AS cancelled,
+              count(*) FILTER (WHERE status='running')::integer AS running,
+              CASE
+                WHEN count(*) FILTER (WHERE status<>'running')=0 THEN 0
+                ELSE (count(*) FILTER (WHERE status='passed'))::double precision /
+                     (count(*) FILTER (WHERE status<>'running'))
+              END AS pass_rate,
+              count(*) FILTER (
+                WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
+              )::integer AS duration_sample_count,
+              COALESCE(round(avg(EXTRACT(EPOCH FROM (completed_at-started_at))*1000) FILTER (
+                WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
+              )),0)::bigint AS average_duration_ms,
+              COALESCE(max(EXTRACT(EPOCH FROM (completed_at-started_at))*1000) FILTER (
+                WHERE started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at
+              ),0)::bigint AS maximum_duration_ms,
+              count(*) FILTER (WHERE attempt>1)::integer AS retry_attempt_count,
+              count(*) FILTER (WHERE executions.attempt>1 AND executions.status='passed')::integer AS successful_retry_count,
+              count(*) FILTER (
+                WHERE executions.attempt>1 AND executions.status='passed' AND EXISTS (
+                  SELECT 1 FROM snapshot_executions previous
+                  WHERE previous.provider=executions.provider
+                    AND previous.external_run_id=executions.external_run_id
+                    AND previous.attempt<executions.attempt
+                    AND previous.status='failed'
+                )
+              )::integer AS recovered_run_count,
+              count(*) FILTER (WHERE evidence_collection->>'status'='complete')::integer AS evidence_complete_count,
+              count(*) FILTER (WHERE evidence_collection->>'status'='partial')::integer AS evidence_partial_count,
+              count(*) FILTER (WHERE evidence_collection->>'status'='unavailable')::integer AS evidence_unavailable_count,
+              count(*) FILTER (WHERE evidence_collection IS NULL)::integer AS evidence_not_collected_count,
+              count(*) FILTER (WHERE EXISTS (
+                SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
+                WHERE COALESCE(evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
+              ))::integer AS invalid_evidence_url_count,
+              count(*) FILTER (
+                WHERE provider='github-actions'
+                  AND (head_repository IS NULL OR workflow_path IS NULL OR source_url IS NULL
+                    OR source_url !~* '^https://[^/?#[:space:]]+')
+              )::integer AS github_run_provenance_missing_count,
+              count(*) FILTER (
+                WHERE kind='post-production' AND NOT EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(COALESCE(evidence_links,'[]'::jsonb)) AS evidence(value)
+                  WHERE evidence.value->>'kind'='video'
+                    AND evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
+                )
+              )::integer AS post_production_video_missing_count,
+              count(*) FILTER (
+                WHERE status<>'running'
+                  AND (started_at IS NULL OR completed_at IS NULL OR completed_at < started_at)
+              )::integer AS terminal_timing_missing_count,
+              COALESCE(sum(jsonb_array_length(effective_gate_evaluations)),0)::integer AS gate_evaluation_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
+                WHERE gate.value->>'status'='passed'
+              )),0)::integer AS gate_passed_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
+                WHERE gate.value->>'status'='failed'
+              )),0)::integer AS gate_failed_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
+                WHERE gate.value->>'status'='cancelled'
+              )),0)::integer AS gate_cancelled_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(effective_gate_evaluations) AS gate(value)
+                WHERE gate.value->>'status'='running'
+              )),0)::integer AS gate_running_count,
+              count(*) FILTER (WHERE jsonb_array_length(effective_gate_evaluations)=0)::integer AS gate_unevaluated_execution_count,
+              COALESCE(sum(jsonb_array_length(COALESCE(thresholds,'[]'::jsonb))),0)::integer AS threshold_evaluation_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(COALESCE(thresholds,'[]'::jsonb)) AS threshold(value)
+                WHERE threshold.value->>'passed'='true'
+              )),0)::integer AS threshold_passed_count,
+              COALESCE(sum((
+                SELECT count(*) FROM jsonb_array_elements(COALESCE(thresholds,'[]'::jsonb)) AS threshold(value)
+                WHERE threshold.value->>'passed'='false'
+              )),0)::integer AS threshold_failed_count,
+              count(*) FILTER (
+                WHERE kind IN ('load','stress')
+                  AND jsonb_array_length(COALESCE(thresholds,'[]'::jsonb))=0
+              )::integer AS performance_execution_without_threshold_count
+       FROM normalized_executions executions
+       WHERE COALESCE(executions.completed_at,executions.started_at) IS NOT NULL
+         AND ($3::text IS NULL OR executions.kind=$3)
+         AND ($4::text IS NULL OR executions.status=$4)
+         AND ($5::text IS NULL OR executions.provider=$5)
+         AND ($6::text IS NULL OR executions.revision=$6)
+         AND ($7::text IS NULL OR executions.workflow_path=$7)
+         AND ($8::text IS NULL
+           OR ($8='initial' AND executions.attempt=1)
+           OR ($8='retry' AND executions.attempt>1)
+           OR ($8='recovered' AND executions.attempt>1 AND executions.status='passed' AND EXISTS (
+             SELECT 1 FROM snapshot_executions previous
+             WHERE previous.provider=executions.provider
+               AND previous.external_run_id=executions.external_run_id
+               AND previous.attempt<executions.attempt
+               AND previous.status='failed'
+           )))
+         AND ($9::bigint IS NULL OR (
+           executions.started_at IS NOT NULL
+           AND executions.completed_at IS NOT NULL
+           AND executions.completed_at >= executions.started_at
+           AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9
+         ))
+         AND ($10::bigint IS NULL OR (
+           executions.started_at IS NOT NULL
+           AND executions.completed_at IS NOT NULL
+           AND executions.completed_at >= executions.started_at
+           AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 <= $10
+         ))
+         AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) >= $11)
+         AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $12)
+         AND ($13::date IS NULL OR (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date < $13)
+         AND ($16::text IS NULL OR executions.external_run_id=$16)
+         AND ($17::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(executions.policy_artifact_ids,'[]'::jsonb)) AS policy_id(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,policy_id.value)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+         ) OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'policyArtifactId')
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+         ))
+         AND ($18::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(executions.gate_artifact_ids,'[]'::jsonb)) AS gate_id(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,gate_id.value)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ) OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ))
+         AND ($17::text IS NULL OR $18::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.gate_evaluations,'[]'::jsonb)) AS pair(value)
+           WHERE fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'policyArtifactId')
+               =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+             AND fuzequality.quality_artifact_logical_id(executions.repository_id,pair.value->>'gateArtifactId')
+               =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ) OR (
+           jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
+           AND jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+           AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
+           AND fuzequality.quality_artifact_logical_id(executions.repository_id,executions.policy_artifact_ids->>0)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$17)
+           AND fuzequality.quality_artifact_logical_id(executions.repository_id,executions.gate_artifact_ids->>0)
+             =fuzequality.quality_artifact_logical_id(executions.repository_id,$18)
+         ))
+         AND ($19::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS evidence(value)
+           WHERE evidence.value->>'kind'=$19
+             AND evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
+         ))
+         AND ($20::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(executions.thresholds,'[]'::jsonb)) AS threshold(value)
+           WHERE threshold.value->>'passed'=CASE $20 WHEN 'passed' THEN 'true' ELSE 'false' END
+         ))
+         AND ($21::text IS NULL OR executions.name=$21)
+         AND ($22::text IS NULL OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(
+             CASE
+               WHEN jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))>0
+                 THEN executions.gate_evaluations
+               WHEN jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+                 AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1
+                 THEN jsonb_build_array(jsonb_build_object(
+                   'policyArtifactId',executions.policy_artifact_ids->>0,
+                   'gateArtifactId',executions.gate_artifact_ids->>0,
+                   'status',executions.status
+                 ))
+               ELSE '[]'::jsonb
+             END
+           ) AS gate_evaluation(value)
+           WHERE COALESCE(gate_evaluation.value->>'status',executions.status)=$22
+             AND ($17::text IS NULL OR fuzequality.quality_artifact_logical_id(
+               executions.repository_id,gate_evaluation.value->>'policyArtifactId'
+             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$17))
+             AND ($18::text IS NULL OR fuzequality.quality_artifact_logical_id(
+               executions.repository_id,gate_evaluation.value->>'gateArtifactId'
+             )=fuzequality.quality_artifact_logical_id(executions.repository_id,$18))
+         ))
+         AND ($23::text IS NULL OR executions.branch=$23)
+         AND ($24::text IS NULL OR ($24='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$24)
+         AND ($25::text IS NULL
+           OR ($25='evidence-url-invalid'
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
+               WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
+             ))
+           OR ($25='github-run-provenance-missing'
+             AND executions.provider='github-actions'
+             AND (executions.head_repository IS NULL
+               OR executions.workflow_path IS NULL
+               OR executions.source_url IS NULL
+               OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
+           OR ($25='post-production-video-missing'
+             AND executions.kind='post-production'
+             AND NOT EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
+               WHERE required_evidence.value->>'kind'='video'
+                 AND required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
+             ))
+           OR ($25='terminal-timing-missing'
+             AND executions.status<>'running'
+             AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+           OR ($25='performance-threshold-missing'
+             AND executions.kind IN ('load','stress')
+             AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
+           OR ($25='policy-gate-outcome-missing'
+             AND jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
+             AND NOT (
+               jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+               AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1)))
+         AND ($26::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $26)
+         AND ($27::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $27)
+         AND ($28::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($28)
+           OR ($25='github-run-provenance-missing' AND executions.head_repository IS NULL))
+         AND ($29::text IS NULL OR executions.evidence_collection->>'errorCode'=$29)
+       GROUP BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date
+       ORDER BY (COALESCE(executions.completed_at,executions.started_at) AT TIME ZONE 'UTC')::date DESC
+       LIMIT COALESCE($15::integer, 2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.headRepository ?? null, query.evidenceCollectionErrorCode ?? null],
+    )
+    return result.rows.map(row => ({
+      date: row.date,
+      total: row.total,
+      passed: row.passed,
+      failed: row.failed,
+      cancelled: row.cancelled,
+      running: row.running,
+      passRate: row.pass_rate,
+      durationSampleCount: row.duration_sample_count,
+      averageDurationMs: Number(row.average_duration_ms),
+      maximumDurationMs: Number(row.maximum_duration_ms),
+      retryAttemptCount: row.retry_attempt_count,
+      successfulRetryCount: row.successful_retry_count,
+      recoveredRunCount: row.recovered_run_count,
+      evidenceCompleteCount: row.evidence_complete_count,
+      evidencePartialCount: row.evidence_partial_count,
+      evidenceUnavailableCount: row.evidence_unavailable_count,
+      evidenceNotCollectedCount: row.evidence_not_collected_count,
+      invalidEvidenceUrlCount: row.invalid_evidence_url_count,
+      githubRunProvenanceMissingCount: row.github_run_provenance_missing_count,
+      postProductionVideoMissingCount: row.post_production_video_missing_count,
+      terminalTimingMissingCount: row.terminal_timing_missing_count,
+      gateEvaluationCount: row.gate_evaluation_count,
+      gatePassedCount: row.gate_passed_count,
+      gateFailedCount: row.gate_failed_count,
+      gateCancelledCount: row.gate_cancelled_count,
+      gateRunningCount: row.gate_running_count,
+      gateUnevaluatedExecutionCount: row.gate_unevaluated_execution_count,
+      thresholdEvaluationCount: row.threshold_evaluation_count,
+      thresholdPassedCount: row.threshold_passed_count,
+      thresholdFailedCount: row.threshold_failed_count,
+      performanceExecutionWithoutThresholdCount: row.performance_execution_without_threshold_count,
+    }))
+  }
+
+  async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}): Promise<PolicyGatePerformance[]> {
+    const result = await this.pool.query(
+      `WITH snapshot_executions AS (
+         SELECT DISTINCT ON (repository_id,provider,external_run_id,attempt)
+                repository_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,started_at,completed_at,
+                policy_artifact_ids,gate_artifact_ids,gate_evaluations,evidence_links,evidence_collection,thresholds
+         FROM fuzequality.test_execution_versions
+         WHERE repository_id=$1 AND tenant_id=$2
+           AND ($13::timestamptz IS NULL OR versioned_at <= $13)
+         ORDER BY repository_id,provider,external_run_id,attempt,versioned_at DESC,version_id DESC
+       ), filtered_executions AS (
+         SELECT repository_id,revision,status,completed_at,
+                COALESCE(completed_at,started_at,'epoch'::timestamptz) AS occurred_at,
+                gate_evaluations,policy_artifact_ids,gate_artifact_ids
+         FROM snapshot_executions executions
+         WHERE ($3::text IS NULL OR executions.kind=$3)
+           AND ($4::text IS NULL OR executions.status=$4)
+           AND ($5::text IS NULL OR executions.provider=$5)
+           AND ($6::text IS NULL OR executions.revision=$6)
+           AND ($7::text IS NULL OR executions.workflow_path=$7)
+           AND ($8::text IS NULL
+             OR ($8='initial' AND executions.attempt=1)
+             OR ($8='retry' AND executions.attempt>1)
+             OR ($8='recovered' AND executions.attempt>1 AND executions.status='passed' AND EXISTS (
+               SELECT 1 FROM snapshot_executions previous
+               WHERE previous.provider=executions.provider
+                 AND previous.external_run_id=executions.external_run_id
+                 AND previous.attempt<executions.attempt
+                 AND previous.status='failed'
+             )))
+           AND ($9::bigint IS NULL OR (
+             executions.started_at IS NOT NULL
+             AND executions.completed_at IS NOT NULL
+             AND executions.completed_at >= executions.started_at
+             AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 >= $9
+           ))
+           AND ($10::bigint IS NULL OR (
+             executions.started_at IS NOT NULL
+             AND executions.completed_at IS NOT NULL
+             AND executions.completed_at >= executions.started_at
+             AND EXTRACT(EPOCH FROM (executions.completed_at-executions.started_at))*1000 <= $10
+           ))
+           AND ($11::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) >= $11)
+           AND ($12::timestamptz IS NULL OR COALESCE(executions.completed_at,executions.started_at) <= $12)
+           AND ($19::text IS NULL OR executions.external_run_id=$19)
+           AND ($22::text IS NULL OR EXISTS (
+             SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS evidence(value)
+             WHERE evidence.value->>'kind'=$22
+               AND evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
+           ))
+           AND ($23::text IS NULL OR EXISTS (
+             SELECT 1 FROM jsonb_array_elements(COALESCE(executions.thresholds,'[]'::jsonb)) AS threshold(value)
+             WHERE threshold.value->>'passed'=CASE $23 WHEN 'passed' THEN 'true' ELSE 'false' END
+           ))
+           AND ($24::text IS NULL OR executions.name=$24)
+           AND ($26::text IS NULL OR executions.branch=$26)
+           AND ($27::text IS NULL OR ($27='not-collected' AND executions.evidence_collection IS NULL) OR executions.evidence_collection->>'status'=$27)
+           AND ($28::text IS NULL
+             OR ($28='evidence-url-invalid'
+               AND EXISTS (
+                 SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS invalid_evidence(value)
+                 WHERE COALESCE(invalid_evidence.value->>'url','') !~* '^https://[^/?#[:space:]]+'
+               ))
+             OR ($28='github-run-provenance-missing'
+               AND executions.provider='github-actions'
+               AND (executions.head_repository IS NULL
+                 OR executions.workflow_path IS NULL
+                 OR executions.source_url IS NULL
+                 OR executions.source_url !~* '^https://[^/?#[:space:]]+'))
+             OR ($28='post-production-video-missing'
+               AND executions.kind='post-production'
+               AND NOT EXISTS (
+                 SELECT 1 FROM jsonb_array_elements(COALESCE(executions.evidence_links,'[]'::jsonb)) AS required_evidence(value)
+                 WHERE required_evidence.value->>'kind'='video'
+                   AND required_evidence.value->>'url' ~* '^https://[^/?#[:space:]]+'
+               ))
+             OR ($28='terminal-timing-missing'
+               AND executions.status<>'running'
+               AND (executions.started_at IS NULL OR executions.completed_at IS NULL))
+             OR ($28='performance-threshold-missing'
+               AND executions.kind IN ('load','stress')
+               AND jsonb_array_length(COALESCE(executions.thresholds,'[]'::jsonb))=0)
+             OR ($28='policy-gate-outcome-missing'
+               AND jsonb_array_length(COALESCE(executions.gate_evaluations,'[]'::jsonb))=0
+               AND NOT (
+                 jsonb_array_length(COALESCE(executions.policy_artifact_ids,'[]'::jsonb))=1
+                 AND jsonb_array_length(COALESCE(executions.gate_artifact_ids,'[]'::jsonb))=1)))
+           AND ($29::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz <= $29)
+           AND ($30::timestamptz IS NULL OR (executions.evidence_collection->>'checkedAt')::timestamptz >= $30)
+           AND ($31::text IS NULL OR executions.provider<>'github-actions' OR lower(executions.head_repository)=lower($31)
+             OR ($28='github-run-provenance-missing' AND executions.head_repository IS NULL))
+           AND ($32::text IS NULL OR executions.evidence_collection->>'errorCode'=$32)
+       ), explicit_pairs AS (
+         SELECT execution.repository_id,execution.revision,execution.completed_at,execution.occurred_at,
+                fuzequality.quality_artifact_logical_id(
+                  execution.repository_id,pair.value->>'policyArtifactId'
+                ) AS policy_artifact_id,
+                fuzequality.quality_artifact_logical_id(
+                  execution.repository_id,pair.value->>'gateArtifactId'
+                ) AS gate_artifact_id,
+                COALESCE(pair.value->>'status',execution.status) AS outcome
+         FROM filtered_executions AS execution
+         CROSS JOIN LATERAL jsonb_array_elements(
+           CASE
+             WHEN jsonb_array_length(execution.gate_evaluations)>0 THEN execution.gate_evaluations
+             WHEN jsonb_array_length(execution.policy_artifact_ids)=1 AND jsonb_array_length(execution.gate_artifact_ids)=1
+               THEN jsonb_build_array(jsonb_build_object(
+                 'policyArtifactId',execution.policy_artifact_ids->>0,
+                 'gateArtifactId',execution.gate_artifact_ids->>0,
+                 'status',execution.status
+               ))
+             ELSE '[]'::jsonb
+           END
+         ) AS pair(value)
+         WHERE pair.value->>'policyArtifactId' IS NOT NULL
+           AND pair.value->>'gateArtifactId' IS NOT NULL
+           AND ($20::text IS NULL OR fuzequality.quality_artifact_logical_id(
+             execution.repository_id,pair.value->>'policyArtifactId'
+           )=fuzequality.quality_artifact_logical_id(execution.repository_id,$20))
+           AND ($21::text IS NULL OR fuzequality.quality_artifact_logical_id(
+             execution.repository_id,pair.value->>'gateArtifactId'
+           )=fuzequality.quality_artifact_logical_id(execution.repository_id,$21))
+           AND ($25::text IS NULL OR COALESCE(pair.value->>'status',execution.status)=$25)
+       ), aggregates AS (
+         SELECT repository_id,policy_artifact_id,gate_artifact_id,
+                count(*)::integer AS total,
+                (count(*) FILTER (WHERE outcome='passed'))::integer AS passed,
+                (count(*) FILTER (WHERE outcome='failed'))::integer AS failed,
+                (count(*) FILTER (WHERE outcome='cancelled'))::integer AS cancelled,
+                (count(*) FILTER (WHERE outcome='running'))::integer AS running,
+                CASE
+                  WHEN count(*) FILTER (WHERE outcome<>'running')=0 THEN 0
+                  ELSE (count(*) FILTER (WHERE outcome='passed'))::double precision /
+                       (count(*) FILTER (WHERE outcome<>'running'))
+                END AS pass_rate,
+                count(DISTINCT revision)::integer AS revision_count,
+                (array_agg(revision ORDER BY occurred_at DESC,revision DESC))[1] AS latest_revision,
+                max(completed_at) AS latest_completed_at
+         FROM explicit_pairs
+         WHERE policy_artifact_id IS NOT NULL AND gate_artifact_id IS NOT NULL
+         GROUP BY repository_id,policy_artifact_id,gate_artifact_id
+       )
+       SELECT * FROM aggregates
+       WHERE $14::integer IS NULL
+          OR failed < $14
+          OR (failed=$14 AND passed < $15)
+          OR (failed=$14 AND passed=$15 AND gate_artifact_id > $16)
+          OR (failed=$14 AND passed=$15 AND gate_artifact_id=$16 AND policy_artifact_id > $17)
+       ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id
+       LIMIT COALESCE($18::integer,2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.attemptScope ?? null, query.minimumDurationMs ?? null, query.maximumDurationMs ?? null, query.from ?? null, query.until ?? null, query.snapshotAt ?? null, query.after?.failed ?? null, query.after?.passed ?? null, query.after?.gateArtifactId ?? null, query.after?.policyArtifactId ?? null, query.limit ?? null, query.externalRunId ?? null, query.policyArtifactId ?? null, query.gateArtifactId ?? null, query.evidenceKind ?? null, query.thresholdOutcome ?? null, query.name ?? null, query.gateOutcome ?? null, query.branch ?? null, query.evidenceCollectionStatus ?? null, query.evidenceRequirement ?? null, query.evidenceCheckedBefore ?? null, query.evidenceCheckedAfter ?? null, query.headRepository ?? null, query.evidenceCollectionErrorCode ?? null],
+    )
+    return result.rows.map(row => ({
+      repositoryId: row.repository_id,
+      policyArtifactId: row.policy_artifact_id,
+      gateArtifactId: row.gate_artifact_id,
+      total: row.total,
+      passed: row.passed,
+      failed: row.failed,
+      cancelled: row.cancelled,
+      running: row.running,
+      passRate: row.pass_rate,
+      revisionCount: row.revision_count,
+      latestRevision: row.latest_revision,
+      latestCompletedAt: row.latest_completed_at?.toISOString(),
+    }))
   }
 
   async saveTestExecution(item: TestExecution): Promise<void> {
     await this.pool.query(
-      `INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,name,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,summary)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,source_url=EXCLUDED.source_url,started_at=EXCLUDED.started_at,completed_at=EXCLUDED.completed_at,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,gate_evaluations=EXCLUDED.gate_evaluations,thresholds=EXCLUDED.thresholds,evidence_links=EXCLUDED.evidence_links,summary=EXCLUDED.summary
-       WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'`,
-      [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.kind,item.status,item.name,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.summary ?? null],
+      `WITH existing AS MATERIALIZED (
+       SELECT id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
+              started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection
+       FROM fuzequality.test_executions
+       WHERE repository_id=$2 AND provider=$4 AND external_run_id=$5 AND attempt=$6
+       FOR UPDATE
+       ), upserted AS (
+       INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection,summary)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET
+         revision=EXCLUDED.revision,
+         branch=COALESCE(EXCLUDED.branch,fuzequality.test_executions.branch),
+         head_repository=COALESCE(EXCLUDED.head_repository,fuzequality.test_executions.head_repository),
+         kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,
+         workflow_path=COALESCE(EXCLUDED.workflow_path,fuzequality.test_executions.workflow_path),
+         source_url=COALESCE(EXCLUDED.source_url,fuzequality.test_executions.source_url),
+         started_at=COALESCE(EXCLUDED.started_at,fuzequality.test_executions.started_at),
+         completed_at=COALESCE(EXCLUDED.completed_at,fuzequality.test_executions.completed_at),
+         policy_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.policy_artifact_ids)>0 THEN EXCLUDED.policy_artifact_ids ELSE fuzequality.test_executions.policy_artifact_ids END,
+         gate_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.gate_artifact_ids)>0 THEN EXCLUDED.gate_artifact_ids ELSE fuzequality.test_executions.gate_artifact_ids END,
+         gate_evaluations=CASE WHEN jsonb_array_length(EXCLUDED.gate_evaluations)>0 THEN EXCLUDED.gate_evaluations WHEN EXCLUDED.status<>'running' THEN (SELECT COALESCE(jsonb_agg(CASE WHEN evaluation->>'status'='running' THEN jsonb_set(evaluation,'{status}',to_jsonb(EXCLUDED.status)) ELSE evaluation END),'[]'::jsonb) FROM jsonb_array_elements(fuzequality.test_executions.gate_evaluations) AS gate(evaluation)) ELSE fuzequality.test_executions.gate_evaluations END,
+         thresholds=CASE WHEN jsonb_array_length(EXCLUDED.thresholds)>0 THEN EXCLUDED.thresholds ELSE fuzequality.test_executions.thresholds END,
+         evidence_links=CASE
+           WHEN (fuzequality.test_executions.evidence_collection->>'checkedAt') IS NOT NULL
+             AND (EXCLUDED.evidence_collection->>'checkedAt') IS NOT NULL
+             AND (EXCLUDED.evidence_collection->>'checkedAt')::timestamptz < (fuzequality.test_executions.evidence_collection->>'checkedAt')::timestamptz
+           THEN fuzequality.test_executions.evidence_links
+           ELSE (SELECT COALESCE(jsonb_agg(link ORDER BY ordinal),'[]'::jsonb)
+           FROM (SELECT link,ordinal
+             FROM (SELECT DISTINCT ON (link->>'kind',link->>'url') link,ordinal
+               FROM jsonb_array_elements(
+                 CASE WHEN EXCLUDED.provider='github-actions' AND EXCLUDED.evidence_collection->>'status'='complete'
+                   THEN (SELECT COALESCE(jsonb_agg(existing_link),'[]'::jsonb)
+                     FROM jsonb_array_elements(fuzequality.test_executions.evidence_links) AS retained(existing_link)
+                     WHERE existing_link->>'url' !~* '^https://github\\.com/[^/]+/[^/]+/actions/runs/[0-9]+/artifacts/[0-9]+$') || EXCLUDED.evidence_links
+                   ELSE fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links
+                 END
+               ) WITH ORDINALITY AS evidence(link,ordinal)
+               ORDER BY link->>'kind',link->>'url',ordinal DESC
+             ) AS deduplicated_links ORDER BY ordinal LIMIT 100
+           ) AS bounded_links)
+         END,
+         evidence_collection=CASE
+           WHEN (fuzequality.test_executions.evidence_collection->>'checkedAt') IS NOT NULL
+             AND (EXCLUDED.evidence_collection->>'checkedAt') IS NOT NULL
+             AND (EXCLUDED.evidence_collection->>'checkedAt')::timestamptz < (fuzequality.test_executions.evidence_collection->>'checkedAt')::timestamptz
+           THEN fuzequality.test_executions.evidence_collection
+           WHEN EXCLUDED.evidence_collection->>'status' IN ('complete','partial') THEN EXCLUDED.evidence_collection
+           WHEN fuzequality.test_executions.evidence_collection->>'status' IN ('complete','partial') THEN fuzequality.test_executions.evidence_collection
+           ELSE COALESCE(EXCLUDED.evidence_collection,fuzequality.test_executions.evidence_collection)
+         END,
+         summary=CASE WHEN length(COALESCE(EXCLUDED.summary,''))>length(COALESCE(fuzequality.test_executions.summary,'')) THEN EXCLUDED.summary ELSE fuzequality.test_executions.summary END
+       WHERE fuzequality.test_executions.status = 'running' OR fuzequality.test_executions.status = EXCLUDED.status
+       RETURNING id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
+                 started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection
+       ), changed AS (
+       SELECT merged.*
+       FROM upserted AS merged
+       LEFT JOIN existing AS prior ON true
+       WHERE prior.id IS NULL OR to_jsonb(merged) IS DISTINCT FROM to_jsonb(prior)
+       )
+       INSERT INTO fuzequality.test_execution_versions
+         (execution_id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
+          started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection)
+       SELECT id,repository_id,tenant_id,provider,external_run_id,attempt,revision,branch,head_repository,kind,status,name,workflow_path,
+              started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,evidence_collection
+       FROM changed`,
+      [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.branch ?? null,item.headRepository ?? null,item.kind,item.status,item.name,item.workflowPath ?? null,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.evidenceCollection ? JSON.stringify(item.evidenceCollection) : null,item.summary ?? null],
+    )
+  }
+
+  async latestTestSuiteDispatches(
+    repositoryId: string,
+    tenantId: string,
+    query: TestSuiteDispatchHistoryQuery = {},
+  ): Promise<TestSuiteDispatch[]> {
+    const values: unknown[] = [repositoryId, tenantId]
+    const clauses: string[] = []
+    if (query.after) {
+      values.push(query.after.createdAt, query.after.id)
+      clauses.push(`(latest.requested_at,latest.id) < ($${values.length - 1}::timestamptz,$${values.length}::uuid)`)
+    }
+    if (query.limit !== undefined) values.push(Math.min(Math.max(query.limit, 1), 101))
+    const result = await this.pool.query(
+      `WITH latest AS (
+         SELECT DISTINCT ON (artifact_logical_id)
+           id,repository_id,tenant_id,artifact_id,artifact_logical_id,artifact_kind,workflow_path,source_ref,
+           source_revision,requested_by,input_names,status,error,requested_at,completed_at
+         FROM fuzequality.test_suite_dispatches
+         WHERE repository_id=$1 AND tenant_id=$2
+         ORDER BY artifact_logical_id,requested_at DESC,id DESC
+       )
+       SELECT latest.id,latest.repository_id,latest.tenant_id,latest.artifact_id,latest.artifact_logical_id,
+              latest.artifact_kind,latest.workflow_path,latest.source_ref,latest.source_revision,latest.requested_by,
+              latest.input_names,latest.status,latest.error,latest.requested_at,latest.completed_at,
+              execution.id AS result_id,execution.provider AS result_provider,execution.external_run_id AS result_external_run_id,
+              execution.attempt AS result_attempt,execution.status AS result_status,execution.source_url AS result_source_url,
+              execution.evidence_links AS result_evidence_links,
+              execution.evidence_collection AS result_evidence_collection,
+              execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
+       FROM latest
+       LEFT JOIN LATERAL (
+         SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
+                candidate.source_url,candidate.evidence_links,candidate.evidence_collection,candidate.started_at,candidate.completed_at
+         FROM fuzequality.test_executions AS candidate
+         WHERE latest.status='accepted'
+           AND candidate.repository_id=latest.repository_id
+           AND candidate.tenant_id=latest.tenant_id
+           AND candidate.provider='github-actions'
+           AND candidate.kind=CASE latest.artifact_kind
+             WHEN 'integration-test' THEN 'integration'
+             WHEN 'post-production-test' THEN 'post-production'
+             WHEN 'load-test' THEN 'load'
+             WHEN 'stress-test' THEN 'stress'
+           END
+           AND candidate.branch=latest.source_ref
+           AND lower(candidate.revision)=lower(latest.source_revision)
+           AND split_part(candidate.workflow_path,'@',1)=latest.workflow_path
+         ORDER BY COALESCE(candidate.completed_at,candidate.started_at,candidate.created_at) DESC,candidate.id DESC
+         LIMIT 1
+       ) AS execution ON true
+       ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+       ORDER BY latest.requested_at DESC,latest.id DESC
+       ${query.limit === undefined ? '' : `LIMIT $${values.length}`}`,
+      values,
+    )
+    return result.rows.map(row => ({
+      id: row.id,
+      repositoryId: row.repository_id,
+      tenantId: row.tenant_id,
+      artifactId: row.artifact_id,
+      artifactLogicalId: row.artifact_logical_id,
+      artifactKind: row.artifact_kind,
+      workflowPath: row.workflow_path,
+      ref: row.source_ref,
+      sourceRevision: row.source_revision,
+      requestedBy: row.requested_by,
+      inputNames: row.input_names,
+      status: row.status,
+      error: row.error ?? undefined,
+      requestedAt: row.requested_at.toISOString(),
+      completedAt: row.completed_at?.toISOString(),
+      ...(row.result_id ? {
+        executionResult: {
+          id: row.result_id,
+          provider: row.result_provider,
+          externalRunId: row.result_external_run_id,
+          attempt: row.result_attempt,
+          status: row.result_status,
+          ...(safeExecutionEvidenceUrl(row.result_source_url) ? { sourceUrl: row.result_source_url } : {}),
+          evidenceLinks: safeDispatchEvidenceLinks(row.result_evidence_links),
+          ...safeDispatchEvidenceCollection(row.result_evidence_collection),
+          ...(row.result_started_at ? { startedAt: row.result_started_at.toISOString() } : {}),
+          ...(row.result_completed_at ? { completedAt: row.result_completed_at.toISOString() } : {}),
+        },
+      } : {}),
+    }))
+  }
+
+  async testSuiteDispatchHistory(
+    repositoryId: string,
+    tenantId: string,
+    artifactLogicalId: string,
+    query: TestSuiteDispatchHistoryQuery = {},
+  ): Promise<TestSuiteDispatch[]> {
+    const values: unknown[] = [repositoryId, tenantId, artifactLogicalId]
+    const clauses = ['dispatch.repository_id=$1', 'dispatch.tenant_id=$2', 'dispatch.artifact_logical_id=$3']
+    if (query.after) {
+      values.push(query.after.createdAt, query.after.id)
+      clauses.push(`(dispatch.requested_at,dispatch.id) < ($${values.length - 1}::timestamptz,$${values.length}::uuid)`)
+    }
+    values.push(Math.min(Math.max(query.limit ?? 50, 1), 101))
+    const result = await this.pool.query(
+      `SELECT dispatch.id,dispatch.repository_id,dispatch.tenant_id,dispatch.artifact_id,dispatch.artifact_logical_id,
+         dispatch.artifact_kind,dispatch.workflow_path,dispatch.source_ref,dispatch.source_revision,dispatch.requested_by,
+         dispatch.input_names,dispatch.status,dispatch.error,dispatch.requested_at,dispatch.completed_at,
+         execution.id AS result_id,execution.provider AS result_provider,execution.external_run_id AS result_external_run_id,
+         execution.attempt AS result_attempt,execution.status AS result_status,execution.source_url AS result_source_url,
+         execution.evidence_links AS result_evidence_links,
+         execution.evidence_collection AS result_evidence_collection,
+         execution.started_at AS result_started_at,execution.completed_at AS result_completed_at
+       FROM fuzequality.test_suite_dispatches AS dispatch
+       LEFT JOIN LATERAL (
+         SELECT candidate.id,candidate.provider,candidate.external_run_id,candidate.attempt,candidate.status,
+                candidate.source_url,candidate.evidence_links,candidate.evidence_collection,candidate.started_at,candidate.completed_at
+         FROM fuzequality.test_executions AS candidate
+         WHERE dispatch.status='accepted'
+           AND candidate.repository_id=dispatch.repository_id
+           AND candidate.tenant_id=dispatch.tenant_id
+           AND candidate.provider='github-actions'
+           AND candidate.kind=CASE dispatch.artifact_kind
+             WHEN 'integration-test' THEN 'integration'
+             WHEN 'post-production-test' THEN 'post-production'
+             WHEN 'load-test' THEN 'load'
+             WHEN 'stress-test' THEN 'stress'
+           END
+           AND candidate.branch=dispatch.source_ref
+           AND lower(candidate.revision)=lower(dispatch.source_revision)
+           AND split_part(candidate.workflow_path,'@',1)=dispatch.workflow_path
+         ORDER BY COALESCE(candidate.completed_at,candidate.started_at,candidate.created_at) DESC,candidate.id DESC
+         LIMIT 1
+       ) AS execution ON true
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY dispatch.requested_at DESC,dispatch.id DESC
+       LIMIT $${values.length}`,
+      values,
+    )
+    return result.rows.map(row => ({
+      id: row.id,
+      repositoryId: row.repository_id,
+      tenantId: row.tenant_id,
+      artifactId: row.artifact_id,
+      artifactLogicalId: row.artifact_logical_id,
+      artifactKind: row.artifact_kind,
+      workflowPath: row.workflow_path,
+      ref: row.source_ref,
+      sourceRevision: row.source_revision,
+      requestedBy: row.requested_by,
+      inputNames: row.input_names,
+      status: row.status,
+      error: row.error ?? undefined,
+      requestedAt: row.requested_at.toISOString(),
+      completedAt: row.completed_at?.toISOString(),
+      ...(row.result_id ? {
+        executionResult: {
+          id: row.result_id,
+          provider: row.result_provider,
+          externalRunId: row.result_external_run_id,
+          attempt: row.result_attempt,
+          status: row.result_status,
+          ...(safeExecutionEvidenceUrl(row.result_source_url) ? { sourceUrl: row.result_source_url } : {}),
+          evidenceLinks: safeDispatchEvidenceLinks(row.result_evidence_links),
+          ...safeDispatchEvidenceCollection(row.result_evidence_collection),
+          ...(row.result_started_at ? { startedAt: row.result_started_at.toISOString() } : {}),
+          ...(row.result_completed_at ? { completedAt: row.result_completed_at.toISOString() } : {}),
+        },
+      } : {}),
+    }))
+  }
+
+  async testSuiteDispatchLogicalId(
+    repositoryId: string,
+    tenantId: string,
+    artifactReference: string,
+  ): Promise<string | undefined> {
+    const result = await this.pool.query(
+      `SELECT artifact_logical_id
+       FROM fuzequality.test_suite_dispatches
+       WHERE repository_id=$1 AND tenant_id=$2
+         AND (artifact_logical_id=$3 OR artifact_id=$3)
+       ORDER BY requested_at DESC,id DESC
+       LIMIT 1`,
+      [repositoryId, tenantId, artifactReference],
+    )
+    return result.rows[0]?.artifact_logical_id
+  }
+
+  async saveTestSuiteDispatch(dispatch: TestSuiteDispatch): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO fuzequality.test_suite_dispatches
+         (id,repository_id,tenant_id,artifact_id,artifact_logical_id,artifact_kind,workflow_path,source_ref,
+          source_revision,requested_by,input_names,status,error,requested_at,completed_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       ON CONFLICT (id) DO UPDATE SET
+         source_ref=EXCLUDED.source_ref,
+         source_revision=EXCLUDED.source_revision,
+         status=EXCLUDED.status,
+         error=EXCLUDED.error,
+         completed_at=EXCLUDED.completed_at`,
+      [
+        dispatch.id,
+        dispatch.repositoryId,
+        dispatch.tenantId,
+        dispatch.artifactId,
+        dispatch.artifactLogicalId,
+        dispatch.artifactKind,
+        dispatch.workflowPath,
+        dispatch.ref,
+        dispatch.sourceRevision,
+        dispatch.requestedBy,
+        JSON.stringify(dispatch.inputNames),
+        dispatch.status,
+        dispatch.error ?? null,
+        dispatch.requestedAt,
+        dispatch.completedAt ?? null,
+      ],
     )
   }
 
@@ -774,11 +2624,21 @@ export class PostgresCatalogStore implements CatalogStore {
     return Boolean(result.rowCount)
   }
 
-  async deactivateTenant(tenantId: string): Promise<boolean> {
-    const result = await this.pool.query(
-      'UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
-      [tenantId],
-    )
+  async deactivateTenant(tenantId: string, cascade: 'soft' | 'hard' = 'soft'): Promise<boolean> {
+    const result = cascade === 'hard'
+      ? await this.pool.query(
+          `UPDATE fuzequality.tenants
+           SET slug=$2,name='Deleted organization',owner_id=NULL,active=false,
+               deleted_at=COALESCE(deleted_at,now()),updated_at=now()
+           WHERE id=$1 AND (
+             active=true OR slug IS DISTINCT FROM $2 OR name IS DISTINCT FROM 'Deleted organization' OR owner_id IS NOT NULL
+           ) RETURNING id`,
+          [tenantId, `deleted-${tenantId}`],
+        )
+      : await this.pool.query(
+          'UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+          [tenantId],
+        )
     return Boolean(result.rowCount)
   }
 
@@ -796,11 +2656,20 @@ export class PostgresCatalogStore implements CatalogStore {
     return Boolean(result.rowCount)
   }
 
-  async deactivatePrincipal(principalId: string): Promise<boolean> {
-    const result = await this.pool.query(
-      'UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
-      [principalId],
-    )
+  async deactivatePrincipal(principalId: string, cascade: 'soft' | 'hard' = 'soft'): Promise<boolean> {
+    const redactedEmail = `deleted+${principalId}@redacted.invalid`
+    const result = cascade === 'hard'
+      ? await this.pool.query(
+          `UPDATE fuzequality.principals
+           SET email=$2,first_name=NULL,last_name=NULL,active=false,deleted_at=COALESCE(deleted_at,now()),updated_at=now()
+           WHERE id=$1 AND (active=true OR email IS DISTINCT FROM $2 OR first_name IS NOT NULL OR last_name IS NOT NULL)
+           RETURNING id`,
+          [principalId, redactedEmail],
+        )
+      : await this.pool.query(
+          'UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+          [principalId],
+        )
     return Boolean(result.rowCount)
   }
 
@@ -826,12 +2695,12 @@ export class PostgresCatalogStore implements CatalogStore {
         case 'organization.upsert': {
           const tenant = projection.tenant
           result = await client.query(
-            `INSERT INTO fuzequality.tenants (id,slug,name,type,owner_id,active,deleted_at,updated_at)
+            `INSERT INTO fuzequality.tenants (id,slug,name,tenant_type,owner_id,active,deleted_at,updated_at)
              VALUES ($1,$2,$3,$4,$5,$6,CASE WHEN $6 THEN NULL ELSE now() END,now())
-             ON CONFLICT (id) DO UPDATE SET slug=EXCLUDED.slug,name=EXCLUDED.name,type=EXCLUDED.type,
+             ON CONFLICT (id) DO UPDATE SET slug=EXCLUDED.slug,name=EXCLUDED.name,tenant_type=EXCLUDED.tenant_type,
                owner_id=EXCLUDED.owner_id,active=EXCLUDED.active,deleted_at=CASE WHEN EXCLUDED.active THEN NULL ELSE now() END,updated_at=now()
-             WHERE (fuzequality.tenants.slug,fuzequality.tenants.name,fuzequality.tenants.type,fuzequality.tenants.owner_id,fuzequality.tenants.active)
-               IS DISTINCT FROM (EXCLUDED.slug,EXCLUDED.name,EXCLUDED.type,EXCLUDED.owner_id,EXCLUDED.active)
+             WHERE (fuzequality.tenants.slug,fuzequality.tenants.name,fuzequality.tenants.tenant_type,fuzequality.tenants.owner_id,fuzequality.tenants.active)
+               IS DISTINCT FROM (EXCLUDED.slug,EXCLUDED.name,EXCLUDED.tenant_type,EXCLUDED.owner_id,EXCLUDED.active)
              RETURNING id`,
             [tenant.id, tenant.slug, tenant.name, tenant.type, tenant.ownerId ?? null, tenant.active],
           )
@@ -840,15 +2709,23 @@ export class PostgresCatalogStore implements CatalogStore {
         case 'organization.deleted':
           result = await client.query(
             `WITH deactivated_tenant AS (
-               UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now()
-               WHERE id=$1 AND active=true RETURNING id
+               UPDATE fuzequality.tenants
+               SET slug=CASE WHEN $2='hard' THEN $3 ELSE slug END,
+                   name=CASE WHEN $2='hard' THEN 'Deleted organization' ELSE name END,
+                   owner_id=CASE WHEN $2='hard' THEN NULL ELSE owner_id END,
+                   active=false, deleted_at=COALESCE(deleted_at,now()), updated_at=now()
+               WHERE id=$1 AND (
+                 active=true OR ($2='hard' AND (
+                   slug IS DISTINCT FROM $3 OR name IS DISTINCT FROM 'Deleted organization' OR owner_id IS NOT NULL
+                 ))
+               ) RETURNING id
              ), deactivated_memberships AS (
                UPDATE fuzequality.organization_memberships SET active=false, updated_at=now()
                WHERE tenant_id=$1 AND active=true RETURNING tenant_id
              )
              SELECT EXISTS (SELECT 1 FROM deactivated_tenant)
                  OR EXISTS (SELECT 1 FROM deactivated_memberships) AS changed`,
-            [projection.tenantId],
+            [projection.tenantId, projection.cascade ?? 'soft', `deleted-${projection.tenantId}`],
           )
           break
         case 'user.upsert': {
@@ -868,15 +2745,21 @@ export class PostgresCatalogStore implements CatalogStore {
         case 'user.deleted':
           result = await client.query(
             `WITH deactivated_principal AS (
-               UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now()
-               WHERE id=$1 AND active=true RETURNING id
+               UPDATE fuzequality.principals
+               SET email=CASE WHEN $2='hard' THEN $3 ELSE email END,
+                   first_name=CASE WHEN $2='hard' THEN NULL ELSE first_name END,
+                   last_name=CASE WHEN $2='hard' THEN NULL ELSE last_name END,
+                   active=false, deleted_at=COALESCE(deleted_at,now()), updated_at=now()
+               WHERE id=$1 AND (
+                 active=true OR ($2='hard' AND (email IS DISTINCT FROM $3 OR first_name IS NOT NULL OR last_name IS NOT NULL))
+               ) RETURNING id
              ), deactivated_memberships AS (
                UPDATE fuzequality.organization_memberships SET active=false, updated_at=now()
                WHERE principal_id=$1 AND active=true RETURNING principal_id
              )
              SELECT EXISTS (SELECT 1 FROM deactivated_principal)
                  OR EXISTS (SELECT 1 FROM deactivated_memberships) AS changed`,
-            [projection.principalId],
+            [projection.principalId, projection.cascade ?? 'soft', `deleted+${projection.principalId}@redacted.invalid`],
           )
           break
         case 'membership.changed': {
@@ -1018,11 +2901,11 @@ export class PostgresCatalogStore implements CatalogStore {
   async updateRepositoryAdministration(
     id: string,
     tenantId: string,
-    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+    value: { ownership?: RepositoryInput['ownership'] | null; jiraBindings: RepositoryInput['jiraBindings']; storybookBaseUrl?: RepositoryInput['storybookBaseUrl'] | null }
   ) {
     const result = await this.pool.query(
       `UPDATE fuzequality.repositories
-       SET config = config || $3::jsonb, updated_at = now()
+       SET config = (config || $3::jsonb) - ARRAY(SELECT key FROM jsonb_each($3::jsonb) WHERE value = 'null'::jsonb), updated_at = now()
        WHERE id = $1 AND tenant_id = $2 AND enabled = true
        RETURNING id`,
       [id, tenantId, JSON.stringify(value)]
@@ -1032,15 +2915,109 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async setRepositoryStatus(id: string, status: Repository['lastScanStatus']) {
-    await this.pool.query('UPDATE fuzequality.repositories SET last_scan_status=$2, updated_at=now() WHERE id=$1', [id, status])
+    await this.pool.query(
+      `UPDATE fuzequality.repositories
+       SET last_scan_status=$2,last_scan_failure=CASE WHEN $2 <> 'failed' THEN NULL ELSE last_scan_failure END,updated_at=now()
+       WHERE id=$1`,
+      [id, status],
+    )
+  }
+
+  async setRepositoryDefaultBranch(id: string, defaultBranch: string) {
+    await this.pool.query(
+      `UPDATE fuzequality.repositories
+       SET default_branch=$2,updated_at=now()
+       WHERE id=$1`,
+      [id, defaultBranch],
+    )
+  }
+
+  async setRepositoryScanFailure(id: string, failure: NonNullable<Repository['lastScanFailure']>) {
+    await this.pool.query(
+      `UPDATE fuzequality.repositories
+       SET last_scan_status='failed',last_scan_failure=$2::jsonb,updated_at=now()
+       WHERE id=$1 AND last_scan_status IN ('queued','running')`,
+      [id, JSON.stringify(failure)],
+    )
+  }
+
+
+  async setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `WITH current AS (
+           SELECT id,last_analysis
+           FROM fuzequality.repositories
+           WHERE id=$1 AND last_scan_revision=$3
+           FOR UPDATE
+         ), updated AS (
+           UPDATE fuzequality.repositories repository
+           SET last_analysis=$2::jsonb,updated_at=now()
+           FROM current
+           WHERE repository.id=current.id
+             AND repository.last_analysis IS DISTINCT FROM $2::jsonb
+             AND NOT (
+               current.last_analysis->>'revision' = $3
+               AND current.last_analysis->>'status' = 'complete'
+               AND $2::jsonb->>'status' <> 'complete'
+             )
+           RETURNING current.last_analysis
+         )
+         SELECT last_analysis FROM updated`,
+        [id, JSON.stringify(analysis), analysis.revision],
+      )
+      const previousStatus = result.rows[0]?.last_analysis?.status
+      if (result.rowCount && analysis.status === 'complete' && previousStatus !== 'complete') {
+        await client.query(
+          'INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+          [TOPICS.ANALYSIS_COMPLETED, id, JSON.stringify({ repositoryId: id, revision: analysis.revision })],
+        )
+      }
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async queueRepositoryAnalysis(id: string, tenantId: string) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `UPDATE fuzequality.repositories
+         SET last_analysis=jsonb_build_object('revision',last_scan_revision,'status','queued'),updated_at=now()
+         WHERE id=$1 AND tenant_id=$2 AND enabled=true AND last_scan_revision IS NOT NULL
+           AND last_analysis->>'status'='failed'
+         RETURNING last_scan_revision`, [id, tenantId])
+      if (!result.rowCount) { await client.query('ROLLBACK'); return undefined }
+      const revision = result.rows[0].last_scan_revision
+      await client.query('INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+        [TOPICS.ANALYSIS_REQUESTED, id, JSON.stringify({ repositoryId: id, revision })])
+      await client.query('COMMIT')
+      return this.repository(id, tenantId)
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally { client.release() }
   }
 
   async saveScan(result: ScanResult) {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
-      const revision = await client.query(`INSERT INTO fuzequality.repository_revisions (repository_id,commit_sha,branch,scanner_version,config_version,status,scanned_at) VALUES ($1,$2,$3,'v1','v1','complete',$4) ON CONFLICT (repository_id,commit_sha,scanner_version,config_version) DO UPDATE SET status='complete', scanned_at=EXCLUDED.scanned_at RETURNING id`, [result.repository.id, result.revision, result.repository.defaultBranch, result.scannedAt])
-      await client.query(`INSERT INTO fuzequality.scan_runs (repository_id,revision_id,trigger,status,counts,finished_at) VALUES ($1,$2,'manual','complete',$3,now())`, [result.repository.id, revision.rows[0].id, JSON.stringify({ operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length })])
+      const revision = await client.query(`INSERT INTO fuzequality.repository_revisions (repository_id,commit_sha,branch,scanner_version,config_version,status,scanned_at) VALUES ($1,$2,$3,'v1','v1','complete',$4) ON CONFLICT (repository_id,commit_sha,scanner_version,config_version) DO UPDATE SET status='complete',scanned_at=EXCLUDED.scanned_at RETURNING id`, [result.repository.id, result.revision, result.repository.defaultBranch, result.scannedAt])
+      if (result.scanDetails.sourceRevision) await client.query(
+        `INSERT INTO fuzequality.repository_revision_sources (repository_id,source_revision,catalog_revision,scanned_at)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (repository_id,source_revision) DO UPDATE SET catalog_revision=EXCLUDED.catalog_revision,scanned_at=EXCLUDED.scanned_at`,
+        [result.repository.id, result.scanDetails.sourceRevision, result.revision, result.scannedAt],
+      )
+      await client.query(`INSERT INTO fuzequality.scan_runs (repository_id,revision_id,trigger,status,counts,started_at,finished_at) VALUES ($1,$2,$3,'complete',$4,$5,$5)`, [result.repository.id, revision.rows[0].id, result.trigger ?? 'manual', JSON.stringify({ operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length }), result.scannedAt])
       await client.query(
         `UPDATE fuzequality.test_expectations
          SET active=false, updated_at=now()
@@ -1067,12 +3044,24 @@ export class PostgresCatalogStore implements CatalogStore {
       for (const item of result.diagnostics) await client.query(`INSERT INTO fuzequality.scan_diagnostics (repository_id,revision,source_path,category,severity,code,message) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [result.repository.id,result.revision,item.sourcePath,item.category,item.severity,item.code,item.message])
       await client.query('DELETE FROM fuzequality.repository_quality_artifacts WHERE repository_id=$1 AND revision=$2', [result.repository.id, result.revision])
       for (const item of result.qualityArtifacts ?? []) await client.query(
-        `INSERT INTO fuzequality.repository_quality_artifacts (id,repository_id,revision,kind,title,source_path,summary,evidence)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT (repository_id,revision,kind,source_path) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,discovered_at=now()`,
-        [item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence)],
+        `INSERT INTO fuzequality.repository_quality_artifacts (id,logical_id,repository_id,revision,kind,title,source_path,summary,evidence,execution_target)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (id) DO UPDATE SET logical_id=EXCLUDED.logical_id,revision=EXCLUDED.revision,kind=EXCLUDED.kind,title=EXCLUDED.title,source_path=EXCLUDED.source_path,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,execution_target=EXCLUDED.execution_target,discovered_at=now()`,
+        [item.id, item.logicalId ?? item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence), item.execution ? JSON.stringify(item.execution) : null],
       )
-      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails)])
+      await client.query(`UPDATE fuzequality.repositories
+        SET last_scan_status='complete',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,last_scan_failure=NULL,
+          last_analysis=CASE
+            WHEN last_scan_revision=$3
+              AND last_analysis->>'revision'=$3
+              AND last_analysis->>'status'='complete'
+            THEN last_analysis
+            ELSE $5::jsonb
+          END,
+          updated_at=now()
+        WHERE id=$1`, [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails),JSON.stringify({ revision: result.revision, status: 'queued' })])
+      await client.query('INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+        [TOPICS.REPOSITORY_INVENTORY_CHANGED, result.repository.id, JSON.stringify({ repositoryId: result.repository.id, revision: result.revision })])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
@@ -1146,7 +3135,7 @@ export class PostgresCatalogStore implements CatalogStore {
   async rebuildCoverage() {
     const portfolio = await this.portfolio()
     const evaluationRows = await this.pool.query('SELECT * FROM fuzequality.policy_gate_evaluations')
-    const evaluations = evaluationRows.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
+    const evaluations = evaluationRows.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, evidencePassages: row.evidence_passages ?? [], remediationAction: row.remediation_action, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
     const projection = buildQualityIntelligenceProjection(portfolio, { policyGateEvaluations: evaluations })
     const client = await this.pool.connect()
     try {

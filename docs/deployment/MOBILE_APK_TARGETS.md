@@ -2,10 +2,10 @@
 
 ## First rollout wave
 
-`fuzeone/mobile-products.json` is the canonical inventory for the first Android
-rollout wave: the eleven products already declaring mobile support, plus
-FuzeFront and MendysRobotics. FuzeQuality will be added as a separate product
-APK in a later wave.
+`fuzeone/mobile-products.json` is the canonical Android rollout inventory. It
+includes the products already declaring mobile support, FuzeFront,
+MendysRobotics, and the independently packaged FuzeQuality product inside this
+monorepo.
 
 ## Runtime architecture
 
@@ -21,6 +21,11 @@ For example, the FuzeAgent APK opens `https://fuzeagent.fuzefront.com/`.
 That URL must render FuzeAgent without FuzeFront portal chrome. The loaded UI
 then calls relative `/api/...` routes on the same origin. An API response at the
 hostname is not a substitute for the standalone frontend.
+
+FuzeQuality follows the same direct-host convention at
+`https://fuzequality.fuzefront.com/`. Its portal surface remains a same-origin
+Module Federation remote at `https://app.fuzefront.com/app/fuzequality`; the APK
+never wraps that portal route or its navigation chrome.
 
 MendysRobotics follows the same architecture at
 `https://live.mendysrobotics.com/`, with its backend below `/api`.
@@ -64,10 +69,12 @@ locally (set `GH_TOKEN` for private GitHub repositories), or manually dispatch
 `Mobile Android post-production acceptance` on the default branch. The command
 uses FuzeFront's existing `GH_RELEASE_PAT` secret in Actions to inspect the
 private MendysRobotics repository without exposing the token in the report. It
-exits unsuccessfully while any of the 13 products lacks an active Android
+exits unsuccessfully while any inventoried product lacks an active Android
 workflow, a non-empty APK release targeting its default branch, an HTML
 standalone root, a JSON `/api/health`, public Android Digital Asset Links, or
-an installable standalone PWA manifest. The workflow uploads a structured
+an installable standalone PWA manifest. Monorepo products declare an explicit
+workflow path and APK asset prefix so one product's release cannot satisfy
+another product's check. The workflow uploads a structured
 per-product report even when checks fail; it is not a required PR gate while
 the fleet is still being provisioned.
 

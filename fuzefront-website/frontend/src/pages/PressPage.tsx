@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container, HeroPatternOverlay, Section } from '@fuzefront/design-system'
+import { IconTile, Container, Text, HeroPatternOverlay, Section, AmbientGlow, GradientText, InlineLink, PageSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -10,13 +10,13 @@ const pressReleases = [
     date: 'September 2026',
     title: 'FuzeOne launches public website and unified pricing across all 10 products',
     excerpt:
-      'FuzeOne introduces a single entry point for its full product family — FuzeFront, FuzeAgent, FuzeSocial, FuzeFinance, and more — with transparent, unified pricing.',
+      'FuzeOne introduces a single entry point for its full product family — FuzeFront, FuzeSDLC, FuzeInfra, FuzeAgent, and more — with transparent, unified pricing.',
   },
   {
     date: 'General Availability',
-    title: 'FuzeFront Platform reaches general availability',
+    title: 'FuzeFront reaches general availability',
     excerpt:
-      'The Module Federation host shell behind the FuzeOne family is now generally available, bringing enterprise auth, billing, and AI to every product built on it.',
+      'The Module Federation host shell and portal behind the FuzeOne family is now generally available, bringing enterprise auth, governance, and AI to every product built on it.',
   },
 ]
 
@@ -39,7 +39,7 @@ export const PressPage: React.FC = () => {
         className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
         <HeroPatternOverlay />
-        <div className="absolute top-10 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="accent" size={320} opacity={0.15} style={{ top: '2.5rem', right: '25%' }} />
         <Container size="4xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -47,7 +47,7 @@ export const PressPage: React.FC = () => {
             transition={{ duration: 0.6 }}
           >
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
-              Press &amp; <span className="gradient-text">Media</span>
+              Press &amp; <GradientText gradient="var(--primary-gradient)">Media</GradientText>
             </h1>
             <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
               News, announcements, and resources for journalists and media covering FuzeOne.
@@ -57,7 +57,7 @@ export const PressPage: React.FC = () => {
       </section>
 
       {/* Press releases */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="4xl">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-10 flex items-center gap-3">
             <IconTile tone="accent" variant="plain">
@@ -75,12 +75,12 @@ export const PressPage: React.FC = () => {
                   <Calendar size={13} /> {release.date}
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">{release.title}</h3>
-                <p className="text-gray-600 text-sm leading-relaxed">{release.excerpt}</p>
+                <Text as="p" tone="secondary" size="sm" leading="relaxed">{release.excerpt}</Text>
               </div>
             ))}
           </div>
         </Container>
-      </section>
+      </PageSection>
 
       {/* Fact sheet + media kit */}
       <section className="py-24 bg-secondary-50">
@@ -90,7 +90,7 @@ export const PressPage: React.FC = () => {
             <dl className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 shadow-soft">
               {factSheet.map((item) => (
                 <div key={item.label} className="flex justify-between px-5 py-4">
-                  <dt className="text-sm text-gray-600">{item.label}</dt>
+                  <Text as="dt" tone="secondary" size="sm">{item.label}</Text>
                   <dd className="text-sm font-medium text-gray-900">{item.value}</dd>
                 </div>
               ))}
@@ -100,10 +100,15 @@ export const PressPage: React.FC = () => {
           <div>
             <h2 className="text-2xl font-heading font-bold text-gray-900 mb-6">Media kit</h2>
             <div className="bg-white rounded-2xl border border-gray-200 shadow-soft p-6">
-              <p className="text-sm text-gray-600 leading-relaxed mb-5">
+              <Text
+                as="p"
+                tone="secondary"
+                size="sm"
+                style={{ lineHeight: 'var(--leading-relaxed)', marginBlockEnd: 'var(--space-5)' }}
+              >
                 Logos, brand colors, and product screenshots for editorial use. For a custom asset
                 or interview request, reach out to our press team directly.
-              </p>
+              </Text>
               <div className="flex flex-col gap-3">
                 <a
                   href="/logo-icon.svg"
@@ -131,9 +136,9 @@ export const PressPage: React.FC = () => {
         <div className="max-w-2xl mx-auto px-4 text-center">
           <p className="text-gray-600">
             For all press inquiries, contact{' '}
-            <a href="mailto:press@fuzefront.com" className="text-primary-700 hover:underline font-medium">
+            <InlineLink href="mailto:press@fuzefront.com" emphasis>
               press@fuzefront.com
-            </a>
+            </InlineLink>
           </p>
         </div>
       </Section>

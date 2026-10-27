@@ -2,7 +2,7 @@
 /* The authoritative public surface is @fuzefront/design-system's own index.d.ts (components only, via `export type *`). */
 /* Some component files here also declare internal helpers (e.g. passwordMeetsPolicy); those are NOT exported from the package. */
 import * as React from "react";
-import { CSSProperties, ChangeEventHandler, ElementType, HTMLAttributes, JSX, MouseEventHandler, ReactNode } from "react";
+import { CSSProperties, ChangeEventHandler, ElementType, HTMLAttributes, JSX, MouseEventHandler, ReactNode, Ref } from "react";
 
 // ----- RoleBadge (access) -----
 /**
@@ -51,6 +51,29 @@ export interface PricingCardProps
 }
 
 export function PricingCard(props: PricingCardProps): React.JSX.Element;
+
+// ----- AmbientGlow (brand) -----
+/**
+ * The soft, blurred background "glow orb" used for marketing/hero
+ * backdrops and empty-state decoration. Purely decorative — renders
+ * `pointer-events: none` and `aria-hidden` by default.
+ */
+export interface AmbientGlowProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Which brand token paints the glow. `primary` -> `--accent-color` (indigo), `accent` -> `--accent-2` (cyan). */
+  tone?: "primary" | "accent";
+  /** Square side length in px, used when `width`/`height` are not given. */
+  size?: number;
+  /** Width in px — overrides `size` for a non-square glow. */
+  width?: number;
+  /** Height in px — overrides `size` for a non-square glow. */
+  height?: number;
+  /** Gaussian blur radius in px. */
+  blur?: number;
+  /** Fill opacity, 0–1. */
+  opacity?: number;
+}
+
+export function AmbientGlow(props: AmbientGlowProps): React.JSX.Element;
 
 // ----- BrandMark (brand) -----
 /**
@@ -194,6 +217,36 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 export function Badge(props: BadgeProps): React.JSX.Element;
 
+// ----- BlockHeading (core) -----
+/**
+ * A bold sub-heading that introduces a block of content — a placeholder
+ * section's title or a grid-card's title. Composes `Text` and adds the DS
+ * `--text-2xl` size, `--weight-bold` weight, and a `space` prop for the
+ * bottom-margin gap.
+ */
+export interface BlockHeadingProps
+  extends Omit<TextProps, "as" | "tone" | "size" | "spacing"> {
+  /**
+   * Heading element to render. @default "h2"
+   */
+  as?: "h1" | "h2" | "h3" | "h4";
+  /**
+   * Semantic tone, delegated to `Text`'s tone scale.
+   * @default "primary"
+   */
+  tone?: "primary" | "secondary" | "muted" | "danger";
+  /**
+   * Bottom-margin step, from the DS spacing scale (`margin-block-end`).
+   * `md` (default) is `--space-4`, matching the extracted `mb-4`; `sm` is
+   * `--space-2`.
+   * @default "md"
+   */
+  space?: "none" | "sm" | "md";
+  children?: React.ReactNode;
+}
+
+export function BlockHeading(props: BlockHeadingProps): React.JSX.Element;
+
 // ----- Button (core) -----
 /**
  * Pill-ish action button — `primary` is the host shell's accent-glow CTA.
@@ -203,8 +256,14 @@ export function Badge(props: BadgeProps): React.JSX.Element;
  * open-in-new-tab, keyboard link semantics) instead of a `<button>`.
  */
 type ButtonSharedProps = {
-  /** Visual style. `primary` = accent fill with the fuse glow; `danger` = error fill. */
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  /**
+   * Visual style. `primary` = accent fill; `secondary` = neutral raised +
+   * border; `outline` = accent border/text on a light surface; `ghost` =
+   * text-only; `ghost-inverse` = ghost for a dark/brand surface not driven
+   * by `data-theme` (white outline/text, filled-white on hover, legible in
+   * any theme); `danger` = error fill.
+   */
+  variant?: "primary" | "secondary" | "outline" | "ghost" | "ghost-inverse" | "danger";
   size?: "sm" | "md" | "lg";
   /** Append a trailing arrow glyph (used on "Launch app", "Continue"). */
   withArrow?: boolean;
@@ -259,6 +318,24 @@ export interface CaptionProps extends Omit<TextProps, "tone"> {
 
 export function Caption(props: CaptionProps): React.JSX.Element;
 
+// ----- CardTitle (core) -----
+/**
+ * The small semibold heading atop a content card — a feature card's title, a
+ * value-prop card's heading, a press-release card's headline. Composes `Text`
+ * (`size="lg"`, `tone="primary"`, `spacing="sm"`) and adds the DS
+ * `--weight-semibold` weight.
+ */
+export interface CardTitleProps
+  extends Omit<TextProps, "as" | "size" | "weight"> {
+  /**
+   * Heading element to render. @default "h3"
+   */
+  as?: "h1" | "h2" | "h3" | "h4";
+  children?: React.ReactNode;
+}
+
+export function CardTitle(props: CardTitleProps): React.JSX.Element;
+
 // ----- ExternalLink (core) -----
 /**
  * A link to a resource on ANOTHER host, always opened in a new tab. Renders
@@ -274,6 +351,52 @@ export interface ExternalLinkProps
 }
 
 export function ExternalLink(props: ExternalLinkProps): React.JSX.Element;
+
+// ----- GradientText (core) -----
+/**
+ * Inline (or block) text painted with a brand gradient via
+ * `background-clip: text`.
+ */
+export interface GradientTextProps extends React.HTMLAttributes<HTMLElement> {
+  /** Rendered element. @default "span" */
+  as?: "span" | "div" | "h1" | "h2" | "h3" | "p";
+  /**
+   * CSS `<gradient>` value (or `var(--custom-gradient)` reference) painted
+   * across the text. Defaults to the DS "fuse seam" token.
+   * @default "var(--seam)"
+   */
+  gradient?: string;
+  children?: React.ReactNode;
+}
+
+export function GradientText(props: GradientTextProps): React.JSX.Element;
+
+// ----- GroupLabel (core) -----
+/**
+ * A small uppercase heading that introduces a labelled group of content
+ * inside a card or section (e.g. "Responsibilities", "Recommended
+ * products"). Not `Eyebrow` — no pill, no accent dot, no accent color.
+ */
+export interface GroupLabelProps extends React.HTMLAttributes<HTMLElement> {
+  /** Rendered element. @default "h4" */
+  as?: "h4" | "h5" | "h6" | "p" | "span" | "div";
+  /**
+   * Semantic tone, delegated to `Text`'s tone scale: `primary` (gray-900
+   * equivalent), `secondary` (gray-600 equivalent), `muted` (lowest
+   * emphasis).
+   * @default "secondary"
+   */
+  tone?: "primary" | "secondary" | "muted";
+  /**
+   * Bottom-margin gap, from the DS spacing scale: `sm` (`--space-2`) or
+   * `md` (`--space-3`).
+   * @default "sm"
+   */
+  spacing?: "sm" | "md";
+  children?: React.ReactNode;
+}
+
+export function GroupLabel(props: GroupLabelProps): React.JSX.Element;
 
 // ----- IconButton (core) -----
 /**
@@ -304,7 +427,12 @@ export function IconButton(props: IconButtonProps): React.JSX.Element;
  */
 export interface IconTileProps extends React.HTMLAttributes<HTMLSpanElement> {
   children?: React.ReactNode;
-  tone?: "accent" | "info" | "success" | "warning" | "error" | "neutral";
+  /**
+   * `inverse` tints the icon `--primary-foreground` (flat white in both
+   * themes) instead of a hue tone, for an icon on a caller-owned colored or
+   * gradient surface — pair with `variant="plain"`.
+   */
+  tone?: "accent" | "info" | "success" | "warning" | "error" | "neutral" | "inverse";
   size?: "sm" | "md" | "lg";
   /**
    * `soft` (default): fixed box, tone-tinted background, solid-tone icon.
@@ -319,13 +447,105 @@ export interface IconTileProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 export function IconTile(props: IconTileProps): React.JSX.Element;
 
+// ----- InlineLink (core) -----
+/**
+ * A quiet accent-colored link that sits INSIDE a sentence or paragraph (a
+ * `mailto:` contact address, an in-text reference) — no forced new-tab
+ * navigation and no external-arrow glyph. For a link to another host that
+ * should open in a new tab, use `ExternalLink` instead.
+ */
+export interface InlineLinkProps
+  extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
+  /** Bolds the link text (`font-weight: var(--weight-medium)`). Default false. */
+  emphasis?: boolean;
+}
+
+export function InlineLink(props: InlineLinkProps): React.JSX.Element;
+
+// ----- SectionIcon (core) -----
+/**
+ * A tone-colored decorative icon, centered on its own line above a heading,
+ * with a token-driven bottom gap. `children` is the icon element itself
+ * (e.g. `<Crown size={40} />`) — SectionIcon only centers, colors, and
+ * spaces it, never the icon glyph.
+ */
+export interface SectionIconProps extends React.HTMLAttributes<HTMLSpanElement> {
+  children?: React.ReactNode;
+  tone?: "accent" | "info" | "success" | "warning" | "error" | "neutral";
+  /**
+   * Bottom gap to whatever follows (the heading). `md` (`--space-4`, 16px)
+   * or `lg` (default, `--space-6`, 24px).
+   */
+  gap?: "md" | "lg";
+  /** Accessible name, if the icon is not purely decorative (default: `aria-hidden`). */
+  label?: string;
+}
+
+export function SectionIcon(props: SectionIconProps): React.JSX.Element;
+
+// ----- Subheading (core) -----
+/**
+ * A bold `--text-xl` heading that titles a card or opens a numbered
+ * legal-document section. Composes `Text` and adds the DS `--text-xl` size,
+ * `--weight-bold` weight, and a `space` prop for the bottom-margin gap.
+ */
+export interface SubheadingProps extends Omit<TextProps, "tone" | "size"> {
+  /** Rendered element. @default "h2" */
+  as?: "h2" | "h3" | "h4";
+  /**
+   * Semantic tone, delegated to `Text`'s tone scale.
+   * @default "primary"
+   */
+  tone?: "primary" | "secondary" | "muted" | "danger";
+  /**
+   * Bottom-margin gap, from the DS spacing scale.
+   * @default "md"
+   */
+  space?: "xs" | "sm" | "md";
+  children?: React.ReactNode;
+}
+
+export function Subheading(props: SubheadingProps): React.JSX.Element;
+
+// ----- SubsectionHeading (core) -----
+/**
+ * A small bold subsection heading inside a block of body copy (e.g. a
+ * numbered legal-document subsection). Composes `Text` and adds the DS
+ * `--weight-semibold` font weight plus a `space` prop for the top-margin
+ * gap before a subheading that follows a preceding paragraph.
+ */
+export interface SubsectionHeadingProps extends Omit<TextProps, "size"> {
+  /** Rendered element. @default "h3" */
+  as?: "h3" | "h4" | "p" | "div";
+  /**
+   * Semantic tone, delegated to `Text`'s tone scale.
+   * @default "primary"
+   */
+  tone?: "primary" | "secondary" | "muted" | "danger";
+  /**
+   * Top-margin gap before the subheading, from the DS spacing scale — used
+   * when it follows a preceding paragraph within the same section.
+   * @default "none"
+   */
+  space?: "none" | "md" | "lg";
+  /**
+   * Bottom-margin gap before the subheading's own body copy, from the DS
+   * spacing scale.
+   * @default "sm"
+   */
+  spacing?: "none" | "sm";
+  children?: React.ReactNode;
+}
+
+export function SubsectionHeading(props: SubsectionHeadingProps): React.JSX.Element;
+
 // ----- Text (core) -----
 /**
  * Plain text with a semantic color tone from the DS text-color scale.
  */
 export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   /** Rendered element. @default "p" */
-  as?: "p" | "span" | "div" | "label";
+  as?: "p" | "span" | "div" | "label" | "h1" | "h2" | "h3" | "h4";
   /**
    * Semantic tone: `primary` = default reading text, `secondary` =
    * de-emphasized supporting copy, `muted` = lowest-emphasis placeholder /
@@ -335,17 +555,41 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   tone?: "primary" | "secondary" | "muted" | "danger";
   /**
    * Step of the DS type scale. `inherit` (default) reads the surrounding
-   * layout's font size, unchanged from before `size` existed.
+   * layout's font size, unchanged from before `size` existed. `lg` is the
+   * step `CardTitle` builds on; `2xl` the step `BlockHeading` builds on.
    * @default "inherit"
    */
-  size?: "inherit" | "xs" | "sm" | "base" | "md";
+  size?: "inherit" | "xs" | "sm" | "base" | "md" | "lg" | "2xl";
   /**
    * Step of the DS spacing scale applied as `margin-block-end` (a logical
    * property, so it mirrors under RTL). `none` (default) keeps the original
-   * zero-margin behavior.
+   * zero-margin behavior. `lg`/`xl` cover the wider `mb-6`/`mb-8` gap used
+   * under a centered CTA/section heading.
    * @default "none"
    */
-  spacing?: "none" | "sm" | "md";
+  spacing?: "none" | "sm" | "md" | "lg" | "xl";
+  /**
+   * Step of the DS line-height scale. `inherit` (default) reads the
+   * surrounding layout's line-height, unchanged from before `leading`
+   * existed. `relaxed` covers the recurring card/feature-description
+   * paragraph pattern (pairs with `tone="secondary"` `size="sm"`).
+   * @default "inherit"
+   */
+  leading?: "inherit" | "tight" | "snug" | "normal" | "relaxed";
+  /**
+   * Step of the DS font-weight scale. `inherit` (default) applies no inline
+   * override, unchanged from before `weight` existed (the surrounding
+   * stylesheet's weight, e.g. Tailwind preflight's heading reset, applies).
+   * @default "inherit"
+   */
+  weight?: "inherit" | "regular" | "medium" | "semibold" | "bold";
+  /**
+   * Step of the DS spacing scale (same scale as `spacing`) applied as
+   * `margin-block-start` — the logical-property counterpart to `spacing`, so
+   * it also mirrors under RTL. `none` (default) applies no top margin.
+   * @default "none"
+   */
+  spacingTop?: "none" | "sm" | "md" | "lg" | "xl";
   children?: React.ReactNode;
 }
 
@@ -476,6 +720,8 @@ export declare function StatGroup(props: StatGroupProps): JSX.Element;
 export interface AlertProps {
   tone?: "error" | "warning" | "success" | "info";
   title?: string;
+  /** Decorative glyph on the logical start edge; inherits the tone colour. */
+  icon?: ReactNode;
   children?: ReactNode;
   onDismiss?: () => void;
   role?: string;
@@ -512,6 +758,11 @@ export interface ProgressMeterProps extends React.HTMLAttributes<HTMLDivElement>
   label?: React.ReactNode;
   valueLabel?: React.ReactNode;
   tone?: ProgressMeterTone;
+  /**
+   * ARIA role of the track. `progressbar` (default) for task progress; `meter`
+   * for a scalar gauge within a known range (quota used / limit).
+   */
+  role?: "progressbar" | "meter";
 }
 
 export function ProgressMeter(props: ProgressMeterProps): React.JSX.Element;
@@ -627,6 +878,28 @@ export interface StepperProps extends React.HTMLAttributes<HTMLOListElement> {
  */
 export function Stepper(props: StepperProps): React.JSX.Element;
 
+// ----- StrengthMeter (feedback) -----
+export type StrengthLevel = "empty" | "weak" | "fair" | "good" | "strong";
+
+/**
+ * Segmented strength meter — bars lit to a level, tone-tinted, with a caption
+ * row and an optional child slot (a requirements checklist).
+ */
+export interface StrengthMeterProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "children"> {
+  /** Level to render; `empty` lights no bars. Default `empty`. */
+  strength?: StrengthLevel;
+  /** Caption on the logical start of the caption row (e.g. "Password strength"). */
+  label?: React.ReactNode;
+  /** The level word on the logical end, tinted with the tone (e.g. "Strong"). */
+  valueLabel?: React.ReactNode;
+  /** Number of bars (default 4). */
+  bars?: number;
+  /** Rendered below the bars + caption (e.g. a `PasswordChecklist`). */
+  children?: React.ReactNode;
+}
+
+export function StrengthMeter(props: StrengthMeterProps): React.JSX.Element;
+
 // ----- Toast (feedback) -----
 /**
  * A single toast notification — bg-tertiary card with a level-colored left bar.
@@ -725,6 +998,29 @@ export interface FileDropZoneProps extends React.HTMLAttributes<HTMLDivElement> 
 
 export function FileDropZone(props: FileDropZoneProps): React.JSX.Element;
 
+// ----- InlineValidatedInput (forms) -----
+export type InlineValidatedInputState = "idle" | "checking" | "valid" | "invalid";
+
+/**
+ * Text field with a live validation state — END-edge check adornment, success /
+ * error ring, a label row that carries an inline status `accessory`, and
+ * optional help / error lines. Composes `Input` + `FieldLabel`.
+ */
+export interface InlineValidatedInputProps
+  extends Omit<InputProps, "label" | "valid" | "invalid" | "adornment"> {
+  label?: React.ReactNode;
+  /** Inline status shown on the logical end of the label row (announced politely). */
+  accessory?: React.ReactNode;
+  /** Validation state; drives the ring, the adornment and `aria-busy`. Default `idle`. */
+  state?: InlineValidatedInputState;
+  /** Help line below the field; wired to the input via `aria-describedby`. */
+  help?: React.ReactNode;
+  /** Appends a required marker to the label. */
+  required?: boolean;
+}
+
+export function InlineValidatedInput(props: InlineValidatedInputProps): React.JSX.Element;
+
 // ----- Input (forms) -----
 /**
  * Labeled text field — accepts all native input attributes. Focus lights the
@@ -745,6 +1041,19 @@ export interface InputProps
    * Defaults to `true`; set `false` to opt out. No effect on non-password inputs.
    */
   revealToggle?: boolean;
+  /** Accessible name of the reveal toggle while the value is hidden (localizable). Default "Show password". */
+  showPasswordLabel?: string;
+  /** Accessible name of the reveal toggle while the value is shown (localizable). Default "Hide password". */
+  hidePasswordLabel?: string;
+  /**
+   * Decorative node pinned to the logical END edge of the field (mirrors under
+   * RTL). Ignored on a revealable password field, which owns that slot.
+   */
+  adornment?: React.ReactNode;
+  /** Success ring (e.g. an availability check passed). */
+  valid?: boolean;
+  /** Error ring + `aria-invalid` without a message — the explanation is rendered elsewhere. */
+  invalid?: boolean;
 }
 
 export function Input(props: InputProps): React.JSX.Element;
@@ -780,6 +1089,14 @@ export interface PasswordChecklistProps
   rules?: PasswordRule[];
   /** Heading shown above the list; pass "" to hide. */
   title?: string;
+  /** Lay the rules out in this many grid columns (default 1). */
+  columns?: number;
+  /** Tint still-unmet rules with the error colour (e.g. after a rejected submit). Default false. */
+  highlightUnmet?: boolean;
+  /** Visually-hidden suffix announced for a met rule (default " — met"). Localize it. */
+  metLabel?: string;
+  /** Visually-hidden suffix announced for an unmet rule (default " — not met"). Localize it. */
+  unmetLabel?: string;
 }
 
 export function PasswordChecklist(props: PasswordChecklistProps): React.JSX.Element;
@@ -792,6 +1109,55 @@ export namespace PasswordChecklist {
   /** The default policy rules ({@link DEFAULT_PASSWORD_RULES}). */
   const rules: PasswordRule[];
 }
+
+// ----- RadioCardGroup (forms) -----
+export type RadioCardValue = string | number;
+
+export interface RadioCardOption extends Omit<React.HTMLAttributes<HTMLDivElement>, "children" | "title"> {
+  /** Unique, stable value of the option. */
+  value: RadioCardValue;
+  /** Card title — the option's accessible name. May contain inline badges/pills. */
+  label: React.ReactNode;
+  /** Supporting sentence shown under the title; exposed as the accessible description. */
+  description?: React.ReactNode;
+  /** Not selectable, skipped by arrow-key navigation, dimmed. */
+  disabled?: boolean;
+  /**
+   * The option has been chosen but not yet applied (e.g. awaiting a confirm
+   * step). Rendered with a dashed accent border; it is NOT `aria-checked`.
+   */
+  pending?: boolean;
+  /** Extra attributes (data-*, aria-describedby…) are forwarded to the card element. */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
+}
+
+export interface RadioCardGroupProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "defaultValue" | "children"> {
+  options: RadioCardOption[];
+  /** Controlled selected value. */
+  value?: RadioCardValue;
+  /** Initial value when uncontrolled. */
+  defaultValue?: RadioCardValue;
+  /** Called with the new value on click, Space, or arrow-key navigation. Not called when re-selecting the current value. */
+  onChange?: (value: RadioCardValue) => void;
+  /** Disables every card (e.g. while a mutation is in flight). */
+  disabled?: boolean;
+  /** When set, a hidden input carries the selected value for native form posts. */
+  name?: string;
+  /** Accessible name for the group — provide this or `ariaLabelledBy`. */
+  ariaLabel?: string;
+  /** Id of the element that labels the group. */
+  ariaLabelledBy?: string;
+  /** Native ref to the `role="radiogroup"` element. */
+  ref?: React.Ref<HTMLDivElement>;
+}
+
+/**
+ * A radio group rendered as selectable cards with a title and a per-card
+ * description. WAI-ARIA radiogroup semantics, roving focus, arrow keys that
+ * skip disabled cards and flip under `dir="rtl"`, 44px touch targets.
+ */
+export function RadioCardGroup(props: RadioCardGroupProps): React.JSX.Element;
 
 // ----- SearchField (forms) -----
 /**
@@ -811,6 +1177,47 @@ export interface SearchFieldProps
 }
 
 export function SearchField(props: SearchFieldProps): React.JSX.Element;
+
+// ----- SegmentedControl (forms) -----
+export type SegmentValue = string | number;
+
+export interface SegmentedControlOption
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "value" | "children" | "type"> {
+  /** Unique, stable value of the segment. */
+  value: SegmentValue;
+  /** Segment content (usually a short text label). */
+  label: React.ReactNode;
+  /** Not selectable; rendered as a disabled native button. */
+  disabled?: boolean;
+  /** Extra attributes (data-*, aria-*…) are forwarded to the segment's button. */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
+}
+
+export interface SegmentedControlProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "defaultValue" | "children"> {
+  options: SegmentedControlOption[];
+  /** Controlled pressed value. */
+  value?: SegmentValue;
+  /** Initial value when uncontrolled. */
+  defaultValue?: SegmentValue;
+  /** Called with the new value. Not called when the pressed segment is pressed again. */
+  onChange?: (value: SegmentValue) => void;
+  /** Disables every segment. */
+  disabled?: boolean;
+  /** Accessible name for the group — provide this or `ariaLabelledBy`. */
+  ariaLabel?: string;
+  /** Id of the element that labels the group. */
+  ariaLabelledBy?: string;
+  /** Native ref to the `role="group"` element. */
+  ref?: React.Ref<HTMLDivElement>;
+}
+
+/**
+ * A compact single-select button group (`aria-pressed` buttons in a
+ * `role="group"`). Keyboard accessible, RTL-safe, 44px tap targets on touch
+ * devices and below the xs breakpoint.
+ */
+export function SegmentedControl(props: SegmentedControlProps): React.JSX.Element;
 
 // ----- Select (forms) -----
 /** A single choice in a {@link SelectProps.options} list. */
@@ -879,6 +1286,36 @@ export interface ToggleProps {
 }
 
 export declare function Toggle(props: ToggleProps): JSX.Element;
+
+// ----- TurnstileContainer (forms) -----
+export type TurnstileContainerState = "loading" | "ready" | "verified" | "failed";
+
+export interface TurnstileContainerLabels {
+  loading: string;
+  ready: string;
+  verified: string;
+  failed: string;
+  /** Shown as an alert in the `failed` state. */
+  error: string;
+  /** The challenge vendor's name (approved exception to the vendor-name rule). */
+  brand: string;
+}
+
+/**
+ * Shell for a managed anti-abuse challenge widget: the chrome + the
+ * loading / ready / verified / failed states. The widget itself is `children`
+ * and stays mounted in every state.
+ */
+export interface TurnstileContainerProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "children"> {
+  /** Default `loading`. Exposed as `data-state`. */
+  state?: TurnstileContainerState;
+  /** Localizable copy; any omitted key falls back to the English default. */
+  labels?: Partial<TurnstileContainerLabels>;
+  /** The vendor widget (mounted in a slot that persists across states). */
+  children?: React.ReactNode;
+}
+
+export function TurnstileContainer(props: TurnstileContainerProps): React.JSX.Element;
 
 // ----- AppCard (launcher) -----
 /**
@@ -983,6 +1420,20 @@ export interface AuthCardProps extends HTMLAttributes<HTMLDivElement> {
 
 export declare function AuthCard(props: AuthCardProps): JSX.Element;
 
+// ----- BulletList (layout) -----
+export interface BulletListProps extends HTMLAttributes<HTMLElement> {
+  /** Element to render as. Defaults to `ul` (disc marker); `ol` renders a decimal marker. */
+  as?: "ul" | "ol";
+  /** Gap between items, mapped to the DS spacing scale. Defaults to `sm` (--space-2, 8px). */
+  gap?: "xs" | "sm" | "md" | "lg";
+  /** Top margin separating the list from preceding content. Defaults to `none`. */
+  space?: "none" | "sm" | "md";
+  children?: ReactNode;
+  style?: CSSProperties;
+}
+
+export declare function BulletList(props: BulletListProps): JSX.Element;
+
 // ----- Center (layout) -----
 export type CenterProps<E extends React.ElementType = "div"> = {
   /** Element/component to render as (e.g. `"div"`, `"section"`, or an
@@ -1030,6 +1481,40 @@ export interface ContainerProps {
 
 export declare function Container(props: ContainerProps): JSX.Element;
 
+// ----- CtaBand (layout) -----
+export type CtaBandMaxWidth = "2xl" | "3xl" | "4xl" | "5xl" | "6xl" | "7xl" | "full";
+
+export interface CtaBandProps extends HTMLAttributes<HTMLElement> {
+  /** Content column max-width, from Container's `--container-*` scale. Default "3xl". */
+  maxWidth?: CtaBandMaxWidth;
+  /** Element/component to render as. Default "section". */
+  as?: ElementType;
+  className?: string;
+  style?: CSSProperties;
+  children?: ReactNode;
+}
+
+/**
+ * The closing CTA band that caps a marketing page — top-bordered surface,
+ * vertical padding, centered width-capped content.
+ */
+export declare function CtaBand(props: CtaBandProps): JSX.Element;
+
+// ----- CtaHeading (layout) -----
+export interface CtaHeadingProps extends HTMLAttributes<HTMLHeadingElement> {
+  /** Heading element to render. Defaults to `h2`. */
+  as?: ElementType;
+  /** Text alignment. Defaults to `center` — every known call site renders centered. */
+  align?: "left" | "center";
+  /** Bottom-margin step: `none`, `sm` (`--space-2`), or `md` (default, `mb-4`). */
+  space?: "none" | "sm" | "md";
+  className?: string;
+  style?: CSSProperties;
+  children?: ReactNode;
+}
+
+export declare function CtaHeading(props: CtaHeadingProps): JSX.Element;
+
 // ----- Eyebrow (layout) -----
 export interface EyebrowProps extends HTMLAttributes<HTMLSpanElement> {
   children: ReactNode;
@@ -1039,6 +1524,87 @@ export interface EyebrowProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 export declare function Eyebrow(props: EyebrowProps): JSX.Element;
+
+// ----- HeroBand (layout) -----
+export type HeroBandPadding = "sm" | "md" | "lg";
+
+export interface HeroBandProps {
+  /** Element/component to render as. Default "section". */
+  as?: ElementType;
+  /** Vertical padding, from the DS --space-* scale. Default "lg" (--space-24). */
+  padding?: HeroBandPadding;
+  /** Gradient start color (CSS color value). Overrides --hero-band-from. */
+  from?: string;
+  /** Gradient end color (CSS color value). Overrides --hero-band-to. */
+  to?: string;
+  /** Gradient direction (CSS `linear-gradient` direction/angle). Overrides --hero-band-angle. */
+  angle?: string;
+  className?: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+export declare function HeroBand(props: HeroBandProps): JSX.Element;
+
+// ----- HeroContent (layout) -----
+export interface HeroContentProps {
+  /** Element/component to render as. Passed straight through to Container. Default "div". */
+  as?: ElementType;
+  /** Max-width, from the DS --container-* scale. Passed straight through to Container. Default "7xl". */
+  size?: ContainerSize;
+  /** Apply the responsive horizontal gutter. Passed straight through to Container. Default true. */
+  gutter?: boolean;
+  className?: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+/**
+ * Hero content wrapper — Container + `position: relative` (to stack above
+ * absolutely-positioned hero decoration) + `text-align: center`.
+ */
+export declare function HeroContent(props: HeroContentProps): JSX.Element;
+
+// ----- HeroHeading (layout) -----
+/**
+ * The big, bold <h1> page title in a marketing-site hero section (dark
+ * gradient background). Tokens-only: responsive size, extrabold weight, and
+ * the DS's fixed on-dark white text color.
+ */
+export interface HeroHeadingProps extends React.HTMLAttributes<HTMLHeadingElement> {
+  /** Rendered element. @default "h1" */
+  as?: "h1" | "h2";
+  /**
+   * Step of the DS spacing scale applied as `margin-block-end` (a logical
+   * property, so it mirrors under RTL). `lg` = 24px (`--space-6`), `md` =
+   * 16px (`--space-4`), `none` = 0.
+   * @default "lg"
+   */
+  spacing?: "none" | "md" | "lg";
+  children?: React.ReactNode;
+}
+
+export function HeroHeading(props: HeroHeadingProps): React.JSX.Element;
+
+// ----- HeroLead (layout) -----
+export interface HeroLeadProps {
+  /** Element/component to render as. Default "p". */
+  as?: ElementType;
+  className?: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+/**
+ * Centered, responsive-size lead paragraph for a page hero on a dark
+ * gradient surface — pins `data-theme="dark"` so its color token resolves
+ * correctly independent of the ambient page theme. See HeroLead.jsx for the
+ * full rationale (ds-fp:d4affa5c8b4a).
+ */
+export declare function HeroLead(props: HeroLeadProps): JSX.Element;
 
 // ----- HeroPatternOverlay (layout) -----
 /**
@@ -1054,6 +1620,75 @@ export interface HeroPatternOverlayProps extends HTMLAttributes<HTMLDivElement> 
 
 export declare function HeroPatternOverlay(props: HeroPatternOverlayProps): JSX.Element;
 
+// ----- HeroSection (layout) -----
+export type HeroBlobCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export type HeroBlobTone = "primary" | "accent";
+export type HeroBlobSize = "md" | "lg";
+
+export interface HeroBlobSpec {
+  /** Which corner the blurred blob is pinned to. Default "top-left". */
+  corner?: HeroBlobCorner;
+  /** Tint. Default "primary". */
+  tone?: HeroBlobTone;
+  /** Diameter. Default "lg" (320px); "md" is 288px. */
+  size?: HeroBlobSize;
+}
+
+export interface HeroGradientStops {
+  from: string;
+  via: string;
+  to: string;
+}
+
+export interface HeroSectionProps {
+  /** Element/component to render as. Default "section". */
+  as?: ElementType;
+  children?: ReactNode;
+  /** `Container` width for the hero content. Default "4xl". */
+  containerSize?: ContainerSize;
+  /** Text alignment of the inner Container. Default "center". */
+  align?: CSSProperties["textAlign"];
+  /** 0–2 blurred decorative blobs, pinned to a corner. Default none. */
+  decor?: HeroBlobSpec[];
+  /** Render the dot-grid overlay. Default true. */
+  pattern?: boolean;
+  /** Override the three diagonal gradient stops. Defaults to the brand slate→indigo hero gradient. */
+  gradient?: HeroGradientStops;
+  className?: string;
+  style?: CSSProperties;
+  ref?: Ref<HTMLElement>;
+  [key: string]: unknown;
+}
+
+export declare function HeroSection(props: HeroSectionProps): JSX.Element;
+
+// ----- IconListItem (layout) -----
+/**
+ * A row with a tone-colored leading icon, top-aligned (not centered) beside
+ * its text — the icon itself is passed as `icon` (a component, e.g. `CheckCircle2`
+ * from `lucide-react`), `children` is whatever text/content follows it. Only
+ * the row layout and the icon's tone/size/alignment are owned by this
+ * component; callers keep full control of the icon glyph and their own text
+ * styling.
+ */
+export interface IconListItemProps
+  extends React.HTMLAttributes<HTMLElement> {
+  /** Element to render the row as. `li` (default, for a ListStack/`<ul>`) or `div`. */
+  as?: "li" | "div";
+  /** Icon component to render leading the row, e.g. `CheckCircle2`. Omit for no icon. */
+  icon?: React.ComponentType<{ size?: number; className?: string; style?: React.CSSProperties }>;
+  /** Tone applied to the icon color. Defaults to `success`. */
+  tone?: "success" | "warning" | "error" | "accent" | "neutral" | "muted";
+  /** Icon pixel size, passed straight to `icon`. Defaults to `14`. */
+  size?: number;
+  /** Gap between the icon and the content, mapped to the DS spacing scale. Defaults to `sm`. */
+  gap?: "xs" | "sm" | "md" | "lg";
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+}
+
+export function IconListItem(props: IconListItemProps): React.JSX.Element;
+
 // ----- InfoRow (layout) -----
 export interface InfoRowProps {
   label?: string;
@@ -1064,6 +1699,48 @@ export interface InfoRowProps {
 }
 
 export declare function InfoRow(props: InfoRowProps): JSX.Element;
+
+// ----- InverseHeading (layout) -----
+export type InverseHeadingSize = "md" | "lg";
+export type InverseHeadingSpacing = "none" | "sm" | "md";
+
+export interface InverseHeadingProps {
+  /** Element to render as (h1/h2/h3 — pick the right heading level). Default "h2". */
+  as?: ElementType;
+  /** Step of the DS type scale for the mobile -> sm(640px) responsive jump. Default "lg". */
+  size?: InverseHeadingSize;
+  /** Bottom margin, from the DS spacing scale (mb-4 equivalent). Default "md". */
+  spacing?: InverseHeadingSpacing;
+  className?: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+export declare function InverseHeading(props: InverseHeadingProps): JSX.Element;
+
+// ----- Lead (layout) -----
+export type LeadMaxWidth = "2xl" | "3xl" | "4xl" | "none";
+
+export interface LeadProps extends React.HTMLAttributes<HTMLElement> {
+  /** Rendered element. @default "p" */
+  as?: React.ElementType;
+  /**
+   * Step of the DS --container-* content-width scale. `"none"` removes the
+   * cap.
+   * @default "2xl"
+   */
+  maxWidth?: LeadMaxWidth;
+  /** Apply `margin-inline: auto` (logical, RTL-safe) to center the block. @default true */
+  centered?: boolean;
+  children?: React.ReactNode;
+}
+
+/**
+ * Hero/section lead paragraph — replaces the recurring ad-hoc
+ * `className="text-xl text-gray-600 max-w-{2xl,3xl} mx-auto"` pattern.
+ */
+export function Lead(props: LeadProps): React.JSX.Element;
 
 // ----- ListStack (layout) -----
 export interface ListStackProps extends HTMLAttributes<HTMLElement> {
@@ -1076,6 +1753,75 @@ export interface ListStackProps extends HTMLAttributes<HTMLElement> {
 }
 
 export declare function ListStack(props: ListStackProps): JSX.Element;
+
+// ----- PageHeroBand (layout) -----
+export type PageHeroBandSpacing = "default" | "compact";
+
+export interface PageHeroBandGradient {
+  from: string;
+  to: string;
+}
+
+export interface PageHeroBandProps {
+  /** Element/component to render as. Default "section". */
+  as?: ElementType;
+  /** Bottom padding: "default" (--space-20, 80px) or "compact" (--space-16, 64px). Top padding is always --space-28 (112px). */
+  spacing?: PageHeroBandSpacing;
+  /** Override the two diagonal gradient stops. Defaults to the secondary-900 -> secondary-800 brand tone. */
+  gradient?: PageHeroBandGradient;
+  children?: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+  ref?: Ref<HTMLElement>;
+  [key: string]: unknown;
+}
+
+export declare function PageHeroBand(props: PageHeroBandProps): JSX.Element;
+
+// ----- PageHeroTitle (layout) -----
+/**
+ * The big, bold <h1> page title in a marketing-site hero section that sits
+ * on a light gradient background. Tokens-only: responsive size, bold
+ * weight, and the DS's standard on-light primary text color.
+ */
+export interface PageHeroTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {
+  /** Rendered element. @default "h1" */
+  as?: "h1" | "h2";
+  children?: React.ReactNode;
+}
+
+export function PageHeroTitle(props: PageHeroTitleProps): React.JSX.Element;
+
+// ----- PageSection (layout) -----
+export type PageSectionSpacing = "sm" | "md" | "lg";
+export type PageSectionBackground = "white" | "muted" | "transparent";
+
+export interface PageSectionProps {
+  /** Element/component to render as. Default "section". */
+  as?: ElementType;
+  /** Block (top+bottom) padding, from the DS --space-16/20/24 scale. Default "lg". */
+  spacing?: PageSectionSpacing;
+  /** Background surface token. Default "white" (var(--paper)). */
+  background?: PageSectionBackground;
+  className?: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+export declare function PageSection(props: PageSectionProps): JSX.Element;
+
+// ----- PageShell (layout) -----
+export interface PageShellProps {
+  /** Element/component to render as. Default "div". */
+  as?: ElementType;
+  className?: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+export declare function PageShell(props: PageShellProps): JSX.Element;
 
 // ----- Panel (layout) -----
 export interface PanelProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
@@ -1157,6 +1903,73 @@ export interface SectionHeadProps extends HTMLAttributes<HTMLDivElement> {
 
 export declare function SectionHead(props: SectionHeadProps): JSX.Element;
 
+// ----- SectionIntro (layout) -----
+export type SectionIntroHeadingTag = "h1" | "h2";
+export type SectionIntroSpacing = 12 | 14 | 16;
+export type SectionIntroTitleGap = 0 | 3 | 4;
+export type SectionIntroDescriptionMaxWidth = "xl" | "2xl";
+
+export interface SectionIntroProps {
+  /** Element/component to render as. Default "div" — pass `motion.div` to animate it. */
+  as?: ElementType;
+  /** Heading tag for `title`. Default "h2"; use "h1" for a page's own header. */
+  heading?: SectionIntroHeadingTag;
+  /** Optional node rendered above the heading (e.g. an `IconTile`). */
+  icon?: ReactNode;
+  /** Heading content. */
+  title: ReactNode;
+  /** Bottom margin under the heading, on the DS spacing scale. Default 4. */
+  titleGap?: SectionIntroTitleGap;
+  /** Optional lead paragraph rendered below the heading. */
+  description?: ReactNode;
+  /** Max prose width of `description`. Default "2xl" (42rem). */
+  descriptionMaxWidth?: SectionIntroDescriptionMaxWidth;
+  /** Bottom margin of the whole block, on the DS spacing scale. Default 12. */
+  spacing?: SectionIntroSpacing;
+  /** Extra content rendered after `description` (e.g. meta lines). */
+  children?: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+  ref?: Ref<HTMLElement>;
+  [key: string]: unknown;
+}
+
+export declare function SectionIntro(props: SectionIntroProps): JSX.Element;
+
+// ----- SectionLede (layout) -----
+/**
+ * The centered intro paragraph directly under a section heading on a
+ * marketing page. Tokens only: `--text-lg` size, `--text-secondary` tone,
+ * `--container-2xl` (672px, matches `max-w-2xl`) width cap, centered via
+ * `margin-inline: auto`.
+ */
+export interface SectionLedeProps
+  extends React.HTMLAttributes<HTMLElement> {
+  /**
+   * The element to render as.
+   * @default "p"
+   */
+  as?: React.ElementType;
+  children?: React.ReactNode;
+}
+
+export function SectionLede(props: SectionLedeProps): React.JSX.Element;
+
+// ----- SectionTitle (layout) -----
+export interface SectionTitleProps extends HTMLAttributes<HTMLHeadingElement> {
+  /** Heading element to render. Defaults to `h2` (an in-page section); use `h1` for a page's own title. */
+  as?: ElementType;
+  /** Text alignment. Defaults to `center` — every known call site renders centered. */
+  align?: "left" | "center";
+  /** Bottom-margin step: `md` (default, `mb-4`) or `sm` (`mb-3`, the legal-page variant). */
+  space?: "sm" | "md";
+  className?: string;
+  style?: CSSProperties;
+  children?: ReactNode;
+}
+
+export declare function SectionTitle(props: SectionTitleProps): JSX.Element;
+
 // ----- Stack (layout) -----
 export interface StackProps extends HTMLAttributes<HTMLDivElement> {
   children?: ReactNode;
@@ -1168,6 +1981,12 @@ export interface StackProps extends HTMLAttributes<HTMLDivElement> {
   justify?: "start" | "center" | "end" | "between" | "around";
   /** Gap between children, mapped to the spacing scale. Defaults to `sm` (--space-2, 8px). */
   gap?: "xs" | "sm" | "md" | "lg" | "xl";
+  /**
+   * Optional trailing margin-bottom, same spacing scale as `gap`. Omitted by
+   * default (no margin set). For a Stack used as a heading row sitting above
+   * following body copy (icon + title, title + subtitle).
+   */
+  mb?: "xs" | "sm" | "md" | "lg" | "xl";
   /** Allow children to wrap onto multiple lines. */
   wrap?: boolean;
   style?: CSSProperties;
@@ -1237,7 +2056,8 @@ export function BottomNav(props: BottomNavProps): React.JSX.Element;
  *
  * Use on xs/sm screens (<768px). Prefer Modal on md+.
  */
-export interface BottomSheetProps {
+export interface BottomSheetProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "title" | "children" | "style" | "role"> {
   /** When false the sheet is unmounted entirely. */
   open: boolean;
   /** Called when user taps the backdrop or presses Escape. */
@@ -1248,6 +2068,11 @@ export interface BottomSheetProps {
   children?: React.ReactNode;
   /** Extra inline styles applied to the sheet panel. */
   style?: React.CSSProperties;
+  /**
+   * Any other attribute (`data-*`, `aria-describedby`, `aria-busy`, `aria-label`,
+   * `id`…) is forwarded to the `role="dialog"` element.
+   */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
 }
 
 export function BottomSheet(props: BottomSheetProps): React.JSX.Element | null;
@@ -1327,7 +2152,8 @@ export declare function Pagination(props: PaginationProps): JSX.Element;
  * Generic accessible modal shell — backdrop, centered dialog card with the
  * fuse-seam top bar, focus trap, Escape close, and backdrop close.
  */
-export interface ModalProps {
+export interface ModalProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "title" | "children" | "style" | "role"> {
   /** When false the modal is unmounted entirely (render null). */
   open: boolean;
   /** Called when the user presses Escape or clicks the backdrop. */
@@ -1343,6 +2169,11 @@ export interface ModalProps {
   size?: "md" | "lg";
   /** Extra inline styles applied to the dialog card. */
   style?: React.CSSProperties;
+  /**
+   * Any other attribute (`data-*`, `aria-describedby`, `aria-busy`, `aria-label`,
+   * `id`…) is forwarded to the `role="dialog"` element.
+   */
+  [dataAttribute: `data-${string}`]: string | number | boolean | undefined;
 }
 
 export function Modal(props: ModalProps): React.JSX.Element | null;

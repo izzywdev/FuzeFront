@@ -1,0 +1,760 @@
+{
+  "name": "Selection Lists — shared / common lists + copy-on-write fork (SL9)",
+  "description": "Contract-freeze UX artifacts for design-record task 13 of docs/planning/selection-lists-shared-and-fork.md (contract 4.1.0). Approving these frames freezes the visual + interaction model AND the build inventory (5 flows, new components under packages/selection-lists-ui/src/shared-lists/**, no new package, no new host route) for: the common-list badge and read-only detail, the 'Fork to edit' path from 409 fork_required (and its 403 variant), the fork confirmation and every fork result, fork provenance + the informational 'behind source' indicator, the owner's visibility control (platform promotion for platform operators only; demotion locked), the list index with include_shared (grouping, shadowing, visibility filter) and the picker resolving the EFFECTIVE list by key. Loading / empty / error / fail-closed and flag-OFF states, RTL (he/ar) and 375 px are contract. Approval is PER FLOW. Merging an approved flow dispatches UX QA to write ALL-RED Playwright specs against the data-* hooks below; then frontend-engineer implements (design-record task 14). gate-frames-first BLOCKS any change under a flow's implementation.paths until that flow is approved.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "plan": "docs/planning/selection-lists-shared-and-fork.md",
+  "requirement": "docs/planning/selection-lists-shared-and-fork.md §1 (R1–R7), §2 D1/D6/D7/D8/D9/D10/D13, §4, §7, §10 rows 13–15",
+  "buildsOn": "design/frames/selection-lists (approved 4.0.0 frames — unchanged behaviour is referenced there, not redrawn)",
+  "implementation": {
+    "paths": [
+      "packages/selection-lists-ui/src/shared-lists/**"
+    ]
+  },
+  "implementationNote": "Each flow claims exactly two globs: the shared, approval-independent infrastructure directory src/shared-lists/core/** (types, api wrappers, hooks, SharedListsFeatureProvider and their unit tests — no rendering components; see build.sharedInfrastructure) and its OWN component directory (browse/ · fork/ · provenance/ · visibility/ · picker/), which no other flow claims. gate-frames-first accepts a file when ANY claiming flow is approved, so a component directory claimed by one flow only unlocks with that flow's approval; components of an unapproved sibling stay BLOCKED even after another flow is approved. Components live in their owning flow's directory (build.flows[].components) and component tests live beside them. No files live at the src/shared-lists/ root (it is claimed by no flow — a file there is uncovered, not silently approved). The feature-level implementation.paths documents the whole subtree; per-flow paths are what the gate resolves (feature-level paths apply only to a flow that declares none). The sibling selection-lists manifest's claim was narrowed in this same PR from packages/selection-lists-ui/src/** to the files that exist today (src/* and src/test/**) — without that, its approved 4.0.0 flows would also claim src/shared-lists/** and gate-frames-first would pass SL9 code with no SL9 approval. Thin wiring edits to the existing top-level files (SelectionListManagementFlow.tsx, SelectionListAccessFlow.tsx, TranslationWorkbenchFlow.tsx, SelectionListPickerHarness.tsx, api.ts, types.ts, index.ts) remain covered by the approved 4.0.0 flows; behaviour belongs in src/shared-lists/**. frontend/src/App.tsx (host mounting) is deliberately not claimed: claiming it would block every unrelated shell change on this feature's approval.",
+  "entry": "index.html",
+  "contract": {
+    "openapi": "services/selection-list-service/openapi.yaml",
+    "client": "@fuzeone/selection-list-client",
+    "schemas": [
+      "components.schemas.SelectionList",
+      "components.schemas.SelectionListVisibility",
+      "components.schemas.SelectionListForkProvenance",
+      "components.schemas.SelectionListForkRequest",
+      "components.schemas.SelectionListUpdate",
+      "components.schemas.SelectionListItem",
+      "components.schemas.ResolvedSelectionListItem",
+      "components.schemas.Error",
+      "components.schemas.ErrorReason",
+      "components.schemas.SelectionListQuotaStatus"
+    ],
+    "endpoints": [
+      "GET /v1/selection-lists",
+      "GET /v1/selection-lists/{listId}",
+      "PATCH /v1/selection-lists/{listId}",
+      "POST /v1/selection-lists/{listId}/archive",
+      "POST /v1/selection-lists/{listId}/fork",
+      "GET /v1/selection-lists/{listId}/items",
+      "GET /v1/selection-lists/{listId}/translations",
+      "PUT /v1/selection-lists/{listId}/translations/{locale}",
+      "GET /v1/selection-lists/{listId}/access",
+      "GET /v1/selection-lists/quota",
+      "POST /v1/resolve"
+    ],
+    "component": "@fuzeone/selection-lists-ui → VisibilityBadge, ForkBadge, EditableHint, SharedListsToggle, VisibilityFilter, ListSourceGroups, ReadOnlyListNotice, ForkListFlow, ForkToEditButton, ForkRequiredBanner, ForkListDialog, ForkResultNotice, ForkProvenancePanel, BehindSourceIndicator, RevertToCommonConfirm, VisibilityControl, PublishPlatformConfirm, EffectiveListSource",
+    "featureFlag": "fuzefront.selection-lists.shared-lists",
+    "contractGaps": [
+      {
+        "field": "SelectionList.revision",
+        "neededBy": "fork-provenance (BehindSourceIndicator behind / up-to-date)",
+        "proposal": "read-only integer ≥ 1 equal to the event contract's listRevision; additive MINOR (4.2.0)",
+        "owner": "contract-designer",
+        "untilThen": "the 'comparison unavailable' state renders; no inference from updated_at"
+      }
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-shared-index",
+      "file": "01-shared-index.html",
+      "label": "(1a) List index with common lists",
+      "route": "/settings/selection-lists",
+      "flow": "shared-read",
+      "summary": "The org's list index with include_shared=true: an 'Include common lists' switch (default ON while the flag is ON), rows grouped into 'Your organization' and 'Common lists', visibility / fork / your-access markers per row, a source-neutral note on each fork row (a same-key common list is not listed — never claimed hidden, since a purged source looks identical), and the visibility filter that turns shadowing off. Loading, error, two empty states and the flag-OFF absence.",
+      "acceptanceNotes": "Default request: GET /v1/selection-lists?include_shared=true (no visibility param) — a platform list whose key matches one of the org's own readable active lists is NOT in the response and is NOT re-added by the UI; for each loaded row with forked_from set, the panel foot renders a SOURCE-NEUTRAL note naming the fork's key ('<key> is your organization's fork; a common list with the same key is not listed here') — never 'hidden' or 'replaced': the response carries no source-existence metadata, so a fork whose common source was purged (dangling forked_from) is indistinguishable from one shadowing a live common list. Rows are grouped client-side by source (organization_id = active org → 'Your organization', visibility = platform → 'Common lists'); 'Load more' sends page.nextCursor and appends into the groups. Each row renders VisibilityBadge from `visibility` (absent ⇒ private), ForkBadge when `forked_from` is non-null, and EditableHint only when `editable` is present (absent ⇒ no marker; never read as false). The visibility filter renders only while the switch is ON; choosing Private/Organization/Common sends include_shared=true&visibility=private|org|platform, removes grouping and shows shadowed common lists; the filtered page never claims which common lists are replaced. Toggle OFF removes the visibility filter (absent, not disabled), resets it to Any and sends neither include_shared nor visibility — without include_shared the result is only lists the caller holds a role on and visibility would merely filter that set (Common always empty, Organization silently partial); toggling back ON restores the filter at Any. Loading: skeleton rows incl. group headers. Error: retry, filters preserved, nothing changed. Empty (toggle ON): create CTA. Empty (toggle OFF): 'Include common lists' action. Flag OFF: no switch, no filter, no groups, no badges, no Visibility/Your-access columns, requests carry neither param — the approved 4.0.0 index.",
+      "testHooks": [
+        "[data-frame='01-shared-index']",
+        "[data-panel='list-index']",
+        "[data-control='include-shared']",
+        "[data-toolbar='list-index'][data-include-shared='false']",
+        "[data-filter='visibility']",
+        "[data-visibility-filter='platform']",
+        "[data-group='own']",
+        "[data-group='common']",
+        "[data-source='platform']",
+        "[data-badge='common']",
+        "[data-badge='fork']",
+        "[data-editable='false']",
+        "[data-shadow-note='priority']",
+        "[data-action='load-more']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='empty-shared-off']",
+        "[data-state='error']",
+        "[data-state='flag-off']",
+        "[data-action='retry']"
+      ]
+    },
+    {
+      "id": "02-common-detail",
+      "file": "02-common-detail.html",
+      "label": "(1b) Common list — read-only detail",
+      "route": "/settings/selection-lists/:listId",
+      "flow": "shared-read",
+      "summary": "Detail of a platform (common) list read through the shared read by a member of another organization: Common badge, 'Read-only for you', a read-only notice that explains why and what forking does, ownership facts, the value table with no mutation affordances (archived values listed and badged), no Access tab, and a single 'Fork to edit…' action.",
+      "acceptanceNotes": "The read-only notice promises organization-wide switching ONLY for a fork shared with the organization (visibility org, the dialog default); a private draft is used only by people given a role, everyone else keeps the common list. Renders from GET /v1/selection-lists/{listId} (visibility=platform, editable=false, organization_id ≠ active org) and GET …/items?status=all. No '+ Add value', no drag handles, no Edit/Archive/Delete, no Access tab, and GET …/access is never called. 'Fork to edit…' renders only when visibility=platform AND editable=false AND getEffectiveList(key) returns this same list; it opens the fork dialog (05) and is not rendered while any of those three is unknown. Translations tab opens the read-only locale index (03#translations).",
+      "testHooks": [
+        "[data-frame='02-common-detail']",
+        "[data-visibility='platform']",
+        "[data-badge='common']",
+        "[data-editable='false']",
+        "[data-readonly-notice='platform']",
+        "[data-owner-org='platform']",
+        "[data-panel='value-table'][data-readonly='true']",
+        "[data-action='fork-to-edit']",
+        "[data-tab='translations']",
+        "[data-item='front_sli_01jf8k2m3n4p5q6r7s8t9v0wa1']",
+        "[data-archived='true']"
+      ]
+    },
+    {
+      "id": "03-readonly-states",
+      "file": "03-readonly-states.html",
+      "label": "(1c) Read-only detail — states",
+      "route": "/settings/selection-lists/:listId",
+      "flow": "shared-read",
+      "summary": "An org-visible list of the member's own organization (read-only, no fork — fork_not_applicable — and no invented access-request action; states only what created_by proves — user / system / deleted user, never a name), a common list the organization already replaced (open your version, no Fork CTA), the read-only translations tab with navigation to a read-only locale view, and the loading / empty / error / 404 / editable-unknown / flag-OFF states.",
+      "acceptanceNotes": "visibility=org + editable=false: ReadOnlyListNotice(org) with an owner hint derived ONLY from the form of created_by (AuthorPrincipal, decided offline by prefix): usr_… → 'It was created by a user, not set up automatically.'; system:… → 'It was set up automatically for your organization.'; [deleted-user] → 'Its creator's account has been deleted.' — the hint carries data-created-by-kind=user|system|deleted-user, never renders the raw identifier or a display name, and never performs a user/directory lookup (no display-name source is part of contract 4.1.0); never a Fork CTA. Common list whose effective list for its key is a different (own) list: ReadOnlyListNotice(shadowed) with 'Open your version' linking to that list; no Fork CTA; if the effective-list lookup fails the plain notice renders without CTA plus a quiet retry. Read-only translations: locale index without Edit / Auto-fill / Add language, M badge kept; each translated locale's name is a link (data-action=open-locale-readonly) to the read-only locale view at the existing /settings/selection-lists/:listId/translations/:locale route — the approved 4.0.0 locale editor with the same reads rendered readOnly (target column plain text; no inputs, Save, Save all, Mark reviewed or Auto-fill; M badge and per-cell dir=rtl kept); the source locale has no link. Loading: skeleton; badge, notice and CTA wait for list + effective-list answer. Empty: 'No values to pick from', no add CTA. Values error: retry, badge/notice kept. 404 (another org's org list, or no read_shared e.g. developer): 'List not found', never 403. editable absent: 4.0.0 affordances, no read-only marker. Flag OFF: approved 4.0.0 detail, no shared-lists UI, member without a role gets 404.",
+      "testHooks": [
+        "[data-frame='03-readonly-states']",
+        "[data-visibility='org']",
+        "[data-readonly-notice='org']",
+        "[data-owner-hint][data-created-by-kind='user']",
+        "[data-created-by-kind='system']",
+        "[data-created-by-kind='deleted-user']",
+        "[data-editable='false']",
+        "[data-readonly-notice='shadowed']",
+        "[data-action='open-own-version']",
+        "[data-panel='locale-index'][data-readonly='true']",
+        "[data-action='open-locale-readonly']",
+        "[data-locale-link='fr']",
+        "[data-panel='locale-editor'][data-readonly='true']",
+        "[data-locale-view='fr']",
+        "[data-panel='value-table'][data-state='loading']",
+        "[data-panel='value-table'][data-state='empty']",
+        "[data-panel='value-table'][data-state='error']",
+        "[data-panel='value-table'][data-state='not-found']",
+        "[data-error='NOT_FOUND']",
+        "[data-state='editable-unknown']",
+        "[data-state='flag-off']",
+        "[data-action='retry']"
+      ]
+    },
+    {
+      "id": "04-fork-required",
+      "file": "04-fork-required.html",
+      "label": "(2a) 409 fork_required vs 403",
+      "route": "/settings/selection-lists/:listId/translations/:locale",
+      "flow": "fork",
+      "summary": "A mutation on a common list (here: saving a French translation from a stale bookmark) refused with 409 CONFLICT reason fork_required: the typed change is preserved, ForkRequiredBanner offers 'Fork to edit…' using source_list_id from the error body. Side-by-side: 409 fork_required, 403 without SelectionListCatalog:create (no CTA, explanation), 403 on access management of a common list, 404.",
+      "acceptanceNotes": "Branch on code + reason only: CONFLICT + reason=fork_required → ForkRequiredBanner with Fork CTA bound to error.source_list_id (not the URL id); a CONFLICT without reason (or an unknown reason) is the ordinary 4.0.0 conflict copy; FORBIDDEN on a common list → explanation, no Fork CTA; access-management FORBIDDEN → 'managed by the platform'; NOT_FOUND → 'List not found'. The input keeps the typed text. fork_url is relative (/v1/…) and resolved against the same-origin API base; an absolute fork_url is ignored in favour of forkList(sourceListId). Never auto-forks. The banner renders next to the refused control in the value editor, reorder, list settings, translation workbench and auto-fill. Flag OFF: never rendered.",
+      "testHooks": [
+        "[data-frame='04-fork-required']",
+        "[data-panel='mutation-attempt']",
+        "[data-unsaved='true']",
+        "[data-error='CONFLICT'][data-reason='fork_required']",
+        "[data-action='fork-to-edit']",
+        "[data-fork-url]",
+        "[data-action='back-to-list']",
+        "[data-error='FORBIDDEN'][data-case='common-no-create']",
+        "[data-error='FORBIDDEN'][data-case='common-access']",
+        "[data-error='NOT_FOUND']"
+      ]
+    },
+    {
+      "id": "05-fork-dialog",
+      "file": "05-fork-dialog.html",
+      "label": "(2b) Fork confirmation",
+      "route": "/settings/selection-lists/:listId",
+      "flow": "fork",
+      "summary": "ForkListDialog: what is copied (values incl. archived, codes, order, every translation), the key kept, the caller becomes owner, the fork replaces the common list in the org's forms; visibility choice org (default, recommended) | private (draft); no-sync note; optional org_lists quota preview; submitting state; the exact request body.",
+      "acceptanceNotes": "Opens with focus trapped on the selected visibility option; Esc/Cancel close while idle. Visibility options are exactly org and private (SelectionListForkRequest.visibility enum) — no platform option, not even disabled; default org. Confirm sends POST /v1/selection-lists/{sourceId}/fork with body {visibility} only — never id, key or name. While in flight: options locked, dialog not dismissible, and BOTH Cancel and Confirm carry the native disabled attribute (aria-disabled alone does not stop activation), Confirm with a spinner — a second activation can never send a concurrent request. Quota preview renders only when GET /v1/selection-lists/quota succeeds (editors lack read_quota → the block is absent, not an error). No client-side size pre-check: Confirm stays enabled whatever the source's size, because an existing fork the page cannot see (archived, skipped by the key lookup) makes the same request answer 200 with that fork and copy nothing; the 5000-value cap renders only from the service's 400 (06 #too-large). ≥ 40em = DS Modal (data-presentation=modal); < 40em = DS BottomSheet (frame 12). Flag OFF: never mounted.",
+      "testHooks": [
+        "[data-frame='05-fork-dialog']",
+        "[data-dialog='fork'][data-state='idle']",
+        "[data-presentation='modal']",
+        "[data-dialog='fork'][data-state='submitting']",
+        "[data-dialog='fork'][data-state='submitting'] [data-action='confirm-fork'][disabled]",
+        "[data-fork-summary]",
+        "[data-fork-key='priority']",
+        "[data-fork-copied]",
+        "[data-fork-shadows]",
+        "[data-control='fork-visibility']",
+        "[data-visibility-option='org'][aria-checked='true']",
+        "[data-visibility-option='private']",
+        "[data-note='no-sync']",
+        "[data-quota-preview='org_lists']",
+        "[data-fork-request]",
+        "[data-action='confirm-fork']",
+        "[data-action='cancel']"
+      ]
+    },
+    {
+      "id": "06-fork-results",
+      "file": "06-fork-results.html",
+      "label": "(2c) Fork results",
+      "route": "/settings/selection-lists/:listId",
+      "flow": "fork",
+      "summary": "Every answer to POST …/fork: 201 created (navigate to the fork, toast; private-draft variant), 200 existing fork (navigate + 'you're on the existing version'; archived → Restore, with restoring / 403 QUOTA_EXCEEDED / 403 FORBIDDEN), 409 fork_exists, 409 fork_not_applicable, 409 key taken by a non-fork list, 403 QUOTA_EXCEEDED by scope, 400 5000-value cap, 403 FORBIDDEN without create, 404 source gone, network/5xx with idempotent retry.",
+      "acceptanceNotes": "201 → navigate to /settings/selection-lists/{list.id}, toast 'Forked', index cache refreshed; the provenance card lands in 'comparison unavailable' (07 #unknown) — the 201 carries only forked_from.revision and 4.1.0 exposes no source revision, so a new fork is never shown 'up to date'. 200 → navigate to the returned list with the 'existing version' notice (info, not error); if its status is archived show 'Restore your version' (PATCH {status: active}) only when editable; while restoring the button carries native disabled; the restore's 403 is branched on code: QUOTA_EXCEEDED → scope copy (org_lists: organization limit of active lists; user_lists: names the fork's CREATOR, never 'you'; unknown scope → generic), FORBIDDEN → the 4.0.0 permission message; the fork stays archived either way. 409 reason=fork_exists → no link (no id is returned), not retryable; the only way forward named is the existing fork's OWNER (give a role / share with the organization) — never a tenant admin, who holds no instance permission on the fork. 409 reason=fork_not_applicable → explain, reload detail on close. 409 without reason → 'your organization already has a list with this key' — the known collision ONLY: never claims forms use that list, never names or links it (it may be archived, private or unreadable), no lookup. 403 QUOTA_EXCEEDED → copy by scope (org_lists / user_lists / list_items) with limit/current; unknown scope → generic. 400 VALIDATION_ERROR → 'too large to fork', rendered only from the service's answer (no client pre-check, so an existing archived fork still returns 200). 403 FORBIDDEN → explanation; the detail's Fork CTA is replaced by it for the session. 404 → 'no longer available'. Network/5xx → 'couldn't confirm', Try again re-sends the same body (idempotent: a fork created by the lost request returns 200). Refusals render inside the open dialog; nothing navigates.",
+      "testHooks": [
+        "[data-frame='06-fork-results']",
+        "[data-result='created']",
+        "[data-toast='forked']",
+        "[data-result='created-private']",
+        "[data-result='existing']",
+        "[data-result='existing-archived']",
+        "[data-action='restore-fork']",
+        "[data-state='restoring'] [data-action='restore-fork'][disabled]",
+        "[data-case='restore-quota'][data-error='QUOTA_EXCEEDED'][data-quota-scope='org_lists']",
+        "[data-case='restore-quota'] [data-quota-scope='user_lists']",
+        "[data-case='restore-forbidden'][data-error='FORBIDDEN']",
+        "[data-reason='fork_exists']",
+        "[data-reason='fork_not_applicable']",
+        "[data-result='key-conflict']",
+        "[data-error='QUOTA_EXCEEDED'][data-quota-scope='org_lists']",
+        "[data-quota-scope='user_lists']",
+        "[data-quota-scope='list_items']",
+        "[data-case='fork-size-cap']",
+        "[data-case='fork-no-create']",
+        "[data-result='not-found']",
+        "[data-error='network']",
+        "[data-action='retry']",
+        "[data-action='close']"
+      ]
+    },
+    {
+      "id": "07-fork-detail",
+      "file": "07-fork-detail.html",
+      "label": "(3a) Your fork — provenance & behind source",
+      "route": "/settings/selection-lists/:listId",
+      "flow": "fork-provenance",
+      "summary": "An org's fork as an ordinary editable list plus ForkProvenancePanel: source link, forked_at, copied revision, source's current revision and BehindSourceIndicator (behind / up to date / checking / source archived / source gone / check failed / comparison unavailable), 'Copied from' per item via origin_item_id, revert-to-common = archive with in-place confirm, offered only while the source read returned an ACTIVE common list (source archived → 'Archive fork…' with an explicit no-effective-list consequence; source gone (404, purged or unreadable) → the same action with conditional consequence copy; checking / failed → no action), and 403 for non-owners, flag-OFF absence, and the named contract dependency on SelectionList.revision.",
+      "acceptanceNotes": "Provenance facts render immediately from forked_from (never updated). The comparison reads ONE shared-read GET of forked_from.list_id: revision equal → up-to-date; greater → behind (informational only — no merge/sync action exists); status archived → source-archived; 404 → source-gone (no link, no error colour); 5xx/network → check failed + retry; response without a revision → 'comparison unavailable' (never inferred from updated_at). The value editor never waits for the comparison. 'Copied from' maps origin_item_id to the source items already loaded; null = added in the fork. The header archive action follows the provenance read, because the effective-key lookup falls through only to an ACTIVE platform list: behind / up-to-date / unknown (source read returned status active) → 'Revert to common list…' with the revert confirm ('forms go back to the common list'); source-archived or source-gone → 'Archive fork…' (data-action=archive-fork), the word revert never appears, Cancel focused by default: source-archived (the read RETURNED status archived) → confirm data-confirm=archive-fork-no-common stating outright that every form using the key will show 'List unavailable' until the fork is restored; source-gone (404 = purged OR no longer readable by this caller, deliberately indistinguishable) → confirm data-confirm=archive-fork-source-unknown with CONDITIONAL copy ('if no active common list is available to your organization, …') — it never claims every form becomes unavailable; checking / check failed → neither action until the read answers. Both call POST …/archive, and the confirm button carries native disabled while the request is in flight; 403 → 'Only the list's owner can archive it'. No Fork CTA on a fork. Flag OFF: no provenance, badges, column, revert or archive-fork action. DEPENDENCY: behind/up-to-date need SelectionList.revision (absent in 4.1.0) — until then only the unknown state is reachable.",
+      "testHooks": [
+        "[data-frame='07-fork-detail']",
+        "[data-badge='fork']",
+        "[data-editable='true']",
+        "[data-panel='fork-provenance']",
+        "[data-forked-revision='7']",
+        "[data-source-revision='9']",
+        "[data-behind-state='behind']",
+        "[data-behind-state='up-to-date']",
+        "[data-behind-state='checking']",
+        "[data-behind-state='source-archived']",
+        "[data-behind-state='source-gone']",
+        "[data-behind-state='error']",
+        "[data-behind-state='unknown']",
+        "[data-origin-item]",
+        "[data-action='view-source']",
+        "[data-action='revert-to-common']",
+        "[data-confirm='revert-to-common']",
+        "[data-action='confirm-revert']",
+        "[data-panel='revert-gate']",
+        "[data-revert-gate='source-active']",
+        "[data-revert-gate='source-unavailable']",
+        "[data-revert-gate='source-unknown']",
+        "[data-action='archive-fork']",
+        "[data-confirm='archive-fork-no-common']",
+        "[data-confirm='archive-fork-source-unknown']",
+        "[data-source-state='archived']",
+        "[data-source-state='gone']",
+        "[data-consequence='conditional-no-effective-list']",
+        "[data-case='revert-unavailable']",
+        "[data-consequence='no-effective-list']",
+        "[data-action='confirm-archive-fork']",
+        "[data-case='revert-not-owner']",
+        "[data-action='change-visibility']",
+        "[data-state='flag-off']",
+        "[data-action='retry']"
+      ]
+    },
+    {
+      "id": "08-visibility-control",
+      "file": "08-visibility-control.html",
+      "label": "(4a) Visibility control",
+      "route": "/settings/selection-lists/:listId/access",
+      "flow": "visibility",
+      "summary": "VisibilityControl at the top of the Access tab: private ↔ organization for owners with consequences spelled out (fork-specific when forked_from is set), confirm for org → private, saving / saved / 403, read-only statement for non-owners, loading / error, the platform-operator-only 'Every organization' option with typed-key confirmation, the locked state of a common list, 409 visibility_locked and 403 publish refusals, flag-OFF absence.",
+      "acceptanceNotes": "Editable only when GET …/access succeeded (manage_access observed, never guessed); otherwise a read-only statement. Options: private and org for every list; platform ONLY when the shell's active organization is the platform organization AND the list's organization_id is that org — absent otherwise, never disabled. Org → private requires an in-place confirm whose fork-specific consequences (only when forked_from is set) keep stored values apart: common-list ids show the common labels again (a private fork never redirects); ids picked from the fork keep the fork's labels (resolve covers every id of the caller's own org, no per-list read check); members' forms use the common list only if one is active, else 'List unavailable'; private → org saves directly. PATCH /v1/selection-lists/{listId} {visibility}; while saving options are locked and confirm buttons are natively disabled; success toast; FORBIDDEN → previous value restored + 'only the owner'. Choosing Platform marks it pending (data-pending=true, aria-checked=false) and opens the confirmation; Organization stays aria-checked=true with the tab stop until the publish succeeds, and Cancel / Esc / 403 clear the pending mark. Promotion requires typing the list key: the input opens EMPTY (never pre-filled, autocomplete off) and Publish carries native disabled until the value equals the key exactly (case-sensitive, untrimmed); while publishing every control is natively disabled; states it is irreversible, sends {visibility: platform}; 403 → 'You can't publish common lists'. visibility=platform → locked statement, no radio group; a stale demotion answered 409 reason=visibility_locked → explanation + reload. Flag OFF: no control; Access tab is the 4.0.0 panel.",
+      "testHooks": [
+        "[data-frame='08-visibility-control']",
+        "[data-panel='visibility-control']",
+        "[data-control='visibility']",
+        "[data-visibility-option='private']",
+        "[data-visibility-option='org'][aria-checked='true']",
+        "[data-visibility-option='platform']",
+        "[data-scope='platform-org'] [data-visibility-option='org'][aria-checked='true']",
+        "[data-visibility-option='platform'][data-pending='true'][aria-checked='false']",
+        "[data-confirm='visibility-to-private']",
+        "[data-consequence='forms']",
+        "[data-consequence='stored-common']",
+        "[data-consequence='stored-fork']",
+        "[data-action='confirm-visibility']",
+        "[data-state='saving']",
+        "[data-result='visibility-saved']",
+        "[data-case='visibility-not-owner']",
+        "[data-state='read-only']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-scope='platform-org']",
+        "[data-confirm='publish-platform']",
+        "[data-confirm-input='key']",
+        "[data-confirm-state='empty'] [data-confirm-input='key']",
+        "[data-confirm-state='empty'] [data-action='confirm-publish'][disabled]",
+        "[data-confirm-state='matched'] [data-action='confirm-publish']:not([disabled])",
+        "[data-confirm-state='publishing'] [data-action='confirm-publish'][disabled]",
+        "[data-action='confirm-publish']",
+        "[data-state='locked']",
+        "[data-reason='visibility_locked']",
+        "[data-case='publish-forbidden']",
+        "[data-state='flag-off']",
+        "[data-action='retry']"
+      ]
+    },
+    {
+      "id": "09-picker-effective",
+      "file": "09-picker-effective.html",
+      "label": "(5a) Picker — effective list by key",
+      "route": "/embed/selection-list-picker",
+      "flow": "effective-picker",
+      "summary": "The embeddable picker bound by key resolves the EFFECTIVE list: an org with an org-visible fork gets the fork, an org without one gets the common list; private-fork and archived-fork edge cases; opt-in EffectiveListSource caption; loading, error, no-effective-list and flag-OFF states.",
+      "acceptanceNotes": "One lookup: getEffectiveList(key) = GET /v1/selection-lists?key=K&include_shared=true&limit=1, then GET …/items?status=active in sort_order. The picker renders exactly the list returned — never fetches both, never merges, never falls back to a second list after an error. Host props and submitted value shape are unchanged (item id). EffectiveListSource caption renders only with showSource and is derived from the returned list (forked_from / visibility) with no extra request and no behind-source check. Loading: one skeleton at final height. Error (5xx, network, or 403 — e.g. a caller whose only tenant role is developer lacks SelectionListCatalog:list): in-place retry, selection kept, nothing thrown into the host; a 403 is NEVER the not-found state. Empty 200 page (null — no readable active own list and no ACTIVE common list, e.g. fork archived while the source is archived or gone): 'List unavailable', disabled, no throw. Flag OFF: no include_shared, no caption — the approved 4.0.0 lookup.",
+      "testHooks": [
+        "[data-frame='09-picker-effective']",
+        "[data-panel='picker']",
+        "[data-picker='priority']",
+        "[data-effective-source='own']",
+        "[data-effective-source='platform']",
+        "[data-effective-source-caption='own']",
+        "[data-effective-source-caption='platform']",
+        "[data-badge='fork']",
+        "[data-badge='common']",
+        "[data-case='private-fork']",
+        "[data-case='archived-fork']",
+        "[data-effective-inspector]",
+        "[data-combo-control]",
+        "[data-selected-label]",
+        "[data-item='front_sli_01jfq3w8z6y5x4c3b2a1n9m8b6']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-state='not-found']",
+        "[data-state='flag-off']",
+        "[data-error='NOT_FOUND']",
+        "[data-action='retry']"
+      ]
+    },
+    {
+      "id": "10-picker-stored-values",
+      "file": "10-picker-stored-values.html",
+      "label": "(5b) Stored values across a fork",
+      "route": "/embed/selection-list-picker",
+      "flow": "effective-picker",
+      "summary": "A record holding a common item id after the org forked: POST /v1/resolve returns the fork item's label with effective_item_id; the picker shows the fork's label with no visible change, keeps the host's value unless the user picks, and offers an opt-in onEffectiveValue callback for lazy migration. Full resolve outcome matrix; resolving and resolve-failed states.",
+      "acceptanceNotes": "Resolve is one request. A result with effective_item_id renders that result's label and marks the corresponding fork option selected; no badge, notice or dirty marker. The picker's value is NOT rewritten (stored id is re-submitted unless the user picks; a pick emits the fork item id). onEffectiveValue(stored, effective) is called once per redirected id, only after a successful resolve. Private fork → no redirect, common label. Item purged from the fork → common item. A common item archived by the platform after the fork is still redirected while the org's active org-visible fork holds a non-purged copy — label AND status are the fork item's (data-resolve-case=common-archived-redirect); status archived from the common item appears only when no redirect applies. Archived items render greyed + badge and are not newly selectable; ids in `missing` render 'Unknown value' and stay in the form. Resolving: skeleton, control not editable. Resolve failed: retry, stored id untouched, no callback.",
+      "testHooks": [
+        "[data-frame='10-picker-stored-values']",
+        "[data-panel='picker'][data-state='redirected']",
+        "[data-selected-label][data-redirected='true']",
+        "[data-migration='host-opt-in']",
+        "[data-persisted]",
+        "[data-panel='resolve-matrix']",
+        "[data-resolve-case='redirect']",
+        "[data-resolve-case='private-fork']",
+        "[data-resolve-case='fork-item-purged']",
+        "[data-resolve-case='fork-archived']",
+        "[data-resolve-case='common-archived-redirect']",
+        "[data-resolve-case='common-archived']",
+        "[data-resolve-case='missing']",
+        "[data-missing='true']",
+        "[data-state='resolving']",
+        "[data-state='resolve-error']",
+        "[data-error='resolve-failed']",
+        "[data-action='retry']"
+      ]
+    },
+    {
+      "id": "11-rtl-mobile-detail",
+      "file": "11-rtl-mobile-detail.html",
+      "label": "(1d) RTL + 375 px — list detail",
+      "route": "/settings/selection-lists/:listId",
+      "flow": "shared-read",
+      "viewport": "mobile",
+      "summary": "The common-list read-only detail at a 375 CSS-px viewport in English (LTR), Hebrew and Arabic (RTL): collapsed side nav, full-width Fork CTA above the notice, id column dropped, keys/codes as LTR islands, plus the rules the implementation must keep.",
+      "acceptanceNotes": "With locale he or ar the package root has dir=rtl; all layout uses logical properties; keys, codes, ids render dir=ltr with bidi isolation; item codes are never translated; labels come from the service in the requested locale. At ≤ 40em: side nav collapses, item-id column hidden, primary action full-width, touch targets ≥ the DS --touch-target (44 px), no horizontal scroll at 375 px; the Fork CTA box lies inside the viewport. Non-directional glyphs (◎, ⑂) are not mirrored.",
+      "testHooks": [
+        "[data-frame='11-rtl-mobile-detail']",
+        "[data-panel='common-detail-mobile']",
+        "[data-device='375']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-locale='ar'][data-dir='rtl']",
+        "[data-locale='en'][data-dir='ltr']",
+        "[data-badge='common']",
+        "[data-editable='false']",
+        "[data-readonly-notice='platform']",
+        "[data-action='fork-to-edit']",
+        "[data-rules='rtl-mobile']"
+      ]
+    },
+    {
+      "id": "12-rtl-mobile-fork",
+      "file": "12-rtl-mobile-fork.html",
+      "label": "(2d) RTL + 375 px — fork dialog",
+      "route": "/settings/selection-lists/:listId",
+      "flow": "fork",
+      "viewport": "mobile",
+      "summary": "The fork confirmation as the DS BottomSheet at 375 px in English, Hebrew and Arabic: condensed facts, the visibility choice, the no-sync note and stacked actions, with locale quotation marks and <bdi>-isolated org names and keys.",
+      "acceptanceNotes": "Below 40em ForkListDialog renders data-presentation=bottom-sheet with identical content order, hooks and focus rules. At 375×667 the visibility choice, the no-sync note and both actions are visible without scrolling; actions stack with the primary bottom-most and full width (same in RTL). Org names and keys inside RTL sentences are isolated. Swipe-down / scrim dismiss only while idle, never while submitting.",
+      "testHooks": [
+        "[data-frame='12-rtl-mobile-fork']",
+        "[data-dialog='fork'][data-presentation='bottom-sheet']",
+        "[data-device='375']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-locale='ar'][data-dir='rtl']",
+        "[data-control='fork-visibility']",
+        "[data-visibility-option='org'][aria-checked='true']",
+        "[data-fork-key='priority']",
+        "[data-note='no-sync']",
+        "[data-action='confirm-fork']",
+        "[data-action='cancel']",
+        "[data-rules='rtl-mobile-fork']"
+      ]
+    },
+    {
+      "id": "13-rtl-mobile-provenance",
+      "file": "13-rtl-mobile-provenance.html",
+      "label": "(3b) RTL + 375 px — provenance & revert",
+      "route": "/settings/selection-lists/:listId",
+      "flow": "fork-provenance",
+      "viewport": "mobile",
+      "summary": "The fork detail at 375 px in English and Hebrew (RTL): the provenance card stacked (behind; comparison unavailable — the only state reachable under 4.1.0), the gated header action as a full-width button, the revert-to-common and archive-fork (source archived) confirmations as bottom sheets, and checking / check failed / source gone / 403 states.",
+      "acceptanceNotes": "At ≤ 40em the provenance card stacks glyph + title, the recorded facts as a two-column definition list, then View common list full-width; badges wrap; no horizontal scroll at 375 px. The header action follows the same gate as frame 3a: 'Revert to common list…' only after the source read returned an active list, 'Archive fork…' when archived or 404, none while checking or failed. Both confirmations are bottom sheets (role=alertdialog) carrying frame 3a's consequence text, actions stacked full-width with the destructive action last and the safe action holding initial focus; swipe-down dismisses only while idle. With locale he/ar dir=rtl; dates, revisions, keys and names are bidi-isolated; ⑂ is not mirrored. Touch targets ≥ the DS --touch-target (44 px).",
+      "testHooks": [
+        "[data-frame='13-rtl-mobile-provenance']",
+        "[data-device='375']",
+        "[data-panel='fork-detail-mobile']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-panel='fork-provenance']",
+        "[data-behind-state='behind']",
+        "[data-behind-state='unknown']",
+        "[data-behind-state='checking']",
+        "[data-behind-state='error']",
+        "[data-behind-state='source-gone']",
+        "[data-revert-gate='source-active']",
+        "[data-revert-gate='source-unavailable']",
+        "[data-revert-gate='source-unknown']",
+        "[data-confirm='revert-to-common'][data-presentation='bottom-sheet']",
+        "[data-confirm='archive-fork-no-common']",
+        "[data-consequence='no-effective-list']",
+        "[data-initial-focus='true']",
+        "[data-case='revert-not-owner']",
+        "[data-action='retry']",
+        "[data-rules='rtl-mobile-provenance']"
+      ]
+    },
+    {
+      "id": "14-rtl-mobile-visibility",
+      "file": "14-rtl-mobile-visibility.html",
+      "label": "(4b) RTL + 375 px — visibility control",
+      "route": "/settings/selection-lists/:listId/access",
+      "flow": "visibility",
+      "viewport": "mobile",
+      "summary": "VisibilityControl at 375 px in English, Hebrew and Arabic (RTL): full-width radio cards at the top of the Access tab, the organization → private confirmation as a bottom sheet (he), the read-only statement plus saving / saved / 403 (ar), the platform-only publish confirmation with the typed key as a bottom sheet, and loading / error / publishing states.",
+      "acceptanceNotes": "At ≤ 40em the visibility options render as full-width radio cards (DS RadioCardGroup) ≥ 44 px; customer organizations never see the platform option. Organization → Private opens a bottom sheet with frame 4a's consequence lines (fork lines only when forked_from is set) and Cancel holding initial focus; Private → Organization saves directly and toasts. Saving locks the options; 403 keeps the previous setting with the owner-only message. Non-owners see a read-only statement, not a disabled form. Platform publish is a bottom sheet whose key input is dir=ltr, monospaced, with autocapitalize/autocorrect/spellcheck off; Publish enables only on an exact key match and both actions disable while publishing. RTL: names and keys bidi-isolated, locale quotation marks. No horizontal scroll at 375 px.",
+      "testHooks": [
+        "[data-frame='14-rtl-mobile-visibility']",
+        "[data-device='375']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-locale='ar'][data-dir='rtl']",
+        "[data-panel='visibility-control']",
+        "[data-control='visibility']",
+        "[data-visibility-option='private']",
+        "[data-visibility-option='org'][aria-checked='true']",
+        "[data-confirm='visibility-to-private'][data-presentation='bottom-sheet']",
+        "[data-consequence='stored-fork']",
+        "[data-initial-focus='true']",
+        "[data-state='read-only']",
+        "[data-state='saving']",
+        "[data-result='visibility-saved']",
+        "[data-case='visibility-not-owner']",
+        "[data-confirm='publish-platform'][data-presentation='bottom-sheet']",
+        "[data-confirm-input='key']",
+        "[data-confirm-state='publishing']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-rules='rtl-mobile-visibility']"
+      ]
+    },
+    {
+      "id": "15-rtl-mobile-picker",
+      "file": "15-rtl-mobile-picker.html",
+      "label": "(5c) RTL + 375 px — picker, effective list",
+      "route": "/embed/selection-list-picker",
+      "flow": "effective-picker",
+      "viewport": "mobile",
+      "summary": "The picker bound by key at 375 px in a consuming form, in English, Hebrew and Arabic (RTL): the org's fork winning with the opt-in source caption, the common list for an org without a fork, a stored common id rendering the fork's label with no visible change, the no-effective-list state, and loading / error / resolving states.",
+      "acceptanceNotes": "Which list a key means is decided by one service lookup at every width; the phone layout never fetches or shows a second list, and a failed lookup never falls back to a different list. Layout follows selection-lists frame 4d (full field width, menu inline under the control, options ≥ 44 px). The opt-in showSource caption wraps under the control and never widens the field; absent without showSource. A redirected stored value shows the fork label with no badge, notice or dirty marker and submits the stored id unless the user picks. No effective list renders 'List unavailable' in place and does not throw. With dir=rtl from the host the picker mirrors; keys and org names are bidi-isolated; ◎ / ⑂ are not mirrored. No horizontal scroll at 375 px.",
+      "testHooks": [
+        "[data-frame='15-rtl-mobile-picker']",
+        "[data-device='375']",
+        "[data-locale='he'][data-dir='rtl']",
+        "[data-locale='ar'][data-dir='rtl']",
+        "[data-panel='picker']",
+        "[data-effective-source='own']",
+        "[data-effective-source='platform']",
+        "[data-effective-source-caption='own']",
+        "[data-effective-source-caption='platform']",
+        "[data-combo-menu][data-menu-placement='inline']",
+        "[data-redirected='true']",
+        "[data-persisted]",
+        "[data-state='not-found']",
+        "[data-error='NOT_FOUND']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-state='resolving']",
+        "[data-rules='rtl-mobile-picker']"
+      ]
+    }
+  ],
+  "build": {
+    "flows": [
+      {
+        "id": "shared-read",
+        "orchestrator": "SelectionListManagementFlow",
+        "route": "/settings/selection-lists",
+        "story": "design-record task 13 → 14 (SL9)",
+        "orchestratorNote": "The existing, approved 4.0.0 orchestrator is EXTENDED (wiring only); the new behaviour lives in src/shared-lists/browse/**.",
+        "frames": [
+          "01-shared-index",
+          "02-common-detail",
+          "03-readonly-states",
+          "11-rtl-mobile-detail"
+        ],
+        "responsive": {
+          "mobileFrame": "11-rtl-mobile-detail",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
+        "implementation": {
+          "paths": [
+            "packages/selection-lists-ui/src/shared-lists/core/**",
+            "packages/selection-lists-ui/src/shared-lists/browse/**"
+          ]
+        },
+        "components": [
+          "browse/VisibilityBadge",
+          "browse/ForkBadge",
+          "browse/EditableHint",
+          "browse/SharedListsToggle",
+          "browse/VisibilityFilter",
+          "browse/ListSourceGroups",
+          "browse/ReadOnlyListNotice"
+        ],
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:08.934Z"
+      },
+      {
+        "id": "fork",
+        "orchestrator": "ForkListFlow",
+        "route": "/settings/selection-lists/:listId",
+        "story": "design-record task 13 → 14 (SL9)",
+        "routeNote": "No new route: the fork dialog opens over the list detail (and over the translation workbench when a fork_required refusal starts it).",
+        "frames": [
+          "04-fork-required",
+          "05-fork-dialog",
+          "06-fork-results",
+          "12-rtl-mobile-fork"
+        ],
+        "responsive": {
+          "mobileFrame": "12-rtl-mobile-fork",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
+        "implementation": {
+          "paths": [
+            "packages/selection-lists-ui/src/shared-lists/core/**",
+            "packages/selection-lists-ui/src/shared-lists/fork/**"
+          ]
+        },
+        "components": [
+          "fork/ForkListFlow",
+          "fork/ForkToEditButton",
+          "fork/ForkRequiredBanner",
+          "fork/ForkListDialog",
+          "fork/ForkResultNotice"
+        ],
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:17.912Z"
+      },
+      {
+        "id": "fork-provenance",
+        "orchestrator": "ForkProvenancePanel",
+        "route": "/settings/selection-lists/:listId",
+        "story": "design-record task 13 → 14 (SL9)",
+        "contractDependency": "SelectionList.revision (read-only integer ≥ 1, the event contract's listRevision) is not in contract 4.1.0; until an additive MINOR adds it, only the 'comparison unavailable' state of BehindSourceIndicator is reachable. Owner: contract-designer.",
+        "frames": [
+          "07-fork-detail",
+          "13-rtl-mobile-provenance"
+        ],
+        "responsive": {
+          "mobileFrame": "13-rtl-mobile-provenance",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
+        "implementation": {
+          "paths": [
+            "packages/selection-lists-ui/src/shared-lists/core/**",
+            "packages/selection-lists-ui/src/shared-lists/provenance/**"
+          ]
+        },
+        "components": [
+          "provenance/ForkProvenancePanel",
+          "provenance/BehindSourceIndicator",
+          "provenance/RevertToCommonConfirm"
+        ],
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:15.655Z"
+      },
+      {
+        "id": "visibility",
+        "orchestrator": "VisibilityControl",
+        "route": "/settings/selection-lists/:listId/access",
+        "story": "design-record task 13 → 14 (SL9)",
+        "orchestratorNote": "Mounted at the top of the existing SelectionListAccessFlow (wiring only).",
+        "frames": [
+          "08-visibility-control",
+          "14-rtl-mobile-visibility"
+        ],
+        "responsive": {
+          "mobileFrame": "14-rtl-mobile-visibility",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
+        "implementation": {
+          "paths": [
+            "packages/selection-lists-ui/src/shared-lists/core/**",
+            "packages/selection-lists-ui/src/shared-lists/visibility/**"
+          ]
+        },
+        "components": [
+          "visibility/VisibilityControl",
+          "visibility/PublishPlatformConfirm"
+        ],
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:24.240Z"
+      },
+      {
+        "id": "effective-picker",
+        "orchestrator": "SelectionListPicker",
+        "route": "/embed/selection-list-picker",
+        "story": "design-record task 13 → 14 (SL9)",
+        "routeNote": "SelectionListPicker is embeddable; the route is the existing demo/e2e harness. The existing, approved picker is EXTENDED; new logic lives in src/shared-lists/picker/**.",
+        "frames": [
+          "09-picker-effective",
+          "10-picker-stored-values",
+          "15-rtl-mobile-picker"
+        ],
+        "responsive": {
+          "mobileFrame": "15-rtl-mobile-picker",
+          "coveredViewports": [
+            "desktop",
+            "mobile"
+          ]
+        },
+        "implementation": {
+          "paths": [
+            "packages/selection-lists-ui/src/shared-lists/core/**",
+            "packages/selection-lists-ui/src/shared-lists/picker/**"
+          ]
+        },
+        "components": [
+          "picker/EffectiveListSource"
+        ],
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-20T09:07:20.862Z"
+      }
+    ],
+    "components": [
+      "browse/VisibilityBadge",
+      "browse/ForkBadge",
+      "browse/EditableHint",
+      "browse/SharedListsToggle",
+      "browse/VisibilityFilter",
+      "browse/ListSourceGroups",
+      "browse/ReadOnlyListNotice",
+      "fork/ForkListFlow",
+      "fork/ForkToEditButton",
+      "fork/ForkRequiredBanner",
+      "fork/ForkListDialog",
+      "fork/ForkResultNotice",
+      "provenance/ForkProvenancePanel",
+      "provenance/BehindSourceIndicator",
+      "provenance/RevertToCommonConfirm",
+      "visibility/VisibilityControl",
+      "visibility/PublishPlatformConfirm",
+      "picker/EffectiveListSource",
+      "core/useEffectiveList",
+      "core/SharedListsFeatureProvider"
+    ],
+    "extendedComponents": [
+      "SelectionListIndex",
+      "SelectionListDetail",
+      "ValueEditor",
+      "TranslationWorkbench (readOnly mode: locale index + read-only locale view)",
+      "AccessPanel",
+      "SelectionListPicker"
+    ],
+    "packages": [
+      "@fuzeone/selection-lists-ui"
+    ],
+    "packagesNote": "No new package. @fuzeone/selection-lists-ui is extended (0.3.0 → 0.4.0, MINOR: additive props sharedLists / isPlatformOrg / showSource / onEffectiveValue). Its own src/api.ts pattern gains getEffectiveList / forkList / reason-aware errors with exactly the semantics of @fuzeone/selection-list-client 2.1.0 (same query, 201 → created, 200 → existing; SelectionListApiError.reason / sourceListId / forkUrl).",
+    "hostMounting": "No new host routes. frontend/src/App.tsx: the existing /settings/selection-lists, /:listId, /:listId/translations(/:locale) and /:listId/access routes pass sharedLists = useFlag('fuzefront.selection-lists.shared-lists') and isPlatformOrg (active organization type === 'platform') into SharedListsFeatureProvider; the public /embed/selection-list-picker harness reads the same flag. Flag OFF ⇒ every shared-lists element is absent (not disabled) and requests carry no include_shared/visibility.",
+    "designSystemAdditions": [
+      "RadioCardGroup — radio group rendered as selectable cards (ARIA radiogroup, arrow-key roving focus, disabled + description slots). Used by ForkListDialog and VisibilityControl.",
+      "SegmentedControl — single-select button group (aria-pressed). Used by VisibilityFilter."
+    ],
+    "designSystemReuse": [
+      "Badge",
+      "StatusPill",
+      "Alert",
+      "StatusCallout",
+      "Modal",
+      "BottomSheet",
+      "Toggle",
+      "Toast",
+      "Skeleton",
+      "Spinner",
+      "ProgressMeter",
+      "Tabs",
+      "DataTable",
+      "Input",
+      "Breadcrumb",
+      "EmptyState"
+    ],
+    "designSystemAdditionsNote": "Composed locally in frame.css for the frames ONLY. frontend-engineer is the sole editor of design-system/ and adds RadioCardGroup and SegmentedControl as a foundation PR; Tooltip and Combobox were already requested by design/frames/selection-lists and are not re-requested. product-designer specifies the primitives; it does not write them.",
+    "sharedInfrastructure": {
+      "path": "packages/selection-lists-ui/src/shared-lists/core/**",
+      "contents": [
+        "core/useEffectiveList",
+        "core/SharedListsFeatureProvider + useSharedLists (flag, isPlatformOrg)",
+        "core/api (getEffectiveList, forkList, reason-aware errors: reason / sourceListId / forkUrl)",
+        "core/types",
+        "unit tests of the above"
+      ],
+      "rule": "core/** is deliberately approval-independent and is the ONLY path every flow claims: approving any one flow unlocks it. It therefore holds no component that renders UI — types, the api wrappers, hooks, the feature provider and their unit tests only. A rendering component placed in core/** is a review defect; it belongs in its flow's directory, which only that flow claims."
+    }
+  },
+  "stamp": "9d9ffab0e3b288a8eda6e08da301ce3b8b343b15f3b5760e5df6f0528c832aac"
+}

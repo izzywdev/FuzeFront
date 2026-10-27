@@ -18,7 +18,7 @@
   "chrome": { "menu": "host", "topbar": "host" },
   "routing": {
     "path": "/app/fuzequality",
-    "host": "quality.prod.fuzefront.com"
+    "host": "fuzequality.fuzefront.com"
   },
   "visibility": "public",
   "scopeLevel": "both",

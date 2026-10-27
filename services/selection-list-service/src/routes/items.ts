@@ -24,7 +24,19 @@ import { acceptOnlyBodyProps, isItemId, parseLimitParam, registerIdParams } from
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { ENTITY_PREFIXES, mintId } from '@izzywdev/fuzefront-identity';
-import { requireAuthzCheck, requireAuthzCheckWhen } from '../middleware/authz';
+import { requireAuthzCheckWhen } from '../middleware/authz';
+import {
+  assertMayPurgeLocked,
+  assertPlatformWritable,
+  replyPlatformSuspended,
+  PLATFORM_PURGE_DENIED_BODY,
+  PlatformPurgeDenied,
+  requireListMutation,
+  requireListRead,
+  requirePublishForPlatformList,
+} from '../middleware/listAccess';
+import { orgIs, sameOrg, sharedListsOn, writeOrgs } from '../lib/sharedLists';
+import { getReadScope, readableByOrg } from '../services/sharedReads';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkItemQuota, checkActiveItemQuota, QuotaExceededError } from '../services/quota.service';
@@ -126,6 +138,9 @@ function hashText(text: string): string {
   return hash.toString(16);
 }
 
+/** `created_by` shown for rows of another organization's list (never that organization's user ids). */
+const FOREIGN_AUTHOR = 'system:platform';
+
 // ─── Row formatter ────────────────────────────────────────────────────────────
 
 interface ItemRow {
@@ -141,6 +156,7 @@ interface ItemRow {
   seed_key?: string | null;
   seed_version?: number | string | null;
   seed_user_modified?: boolean | null;
+  origin_item_id?: string | null;
   label: string | null;
   description: string | null;
   resolved_locale: string | null;
@@ -158,7 +174,13 @@ function formatSeed(row: ItemRow) {
   };
 }
 
-function formatItem(row: ItemRow) {
+/**
+ * `shared`: the shared-lists flag is ON, so `origin_item_id` is the stored provenance; OFF reports null (4.0.0).
+ * `foreign`: the item belongs to a list of ANOTHER organization (a common list read through visibility): its
+ * author is that organization's business, so `created_by` is rendered as the system principal `system:platform`
+ * (a valid AuthorPrincipal) instead of leaking the platform operator's user id to every tenant.
+ */
+function formatItem(row: ItemRow, shared = false, foreign = false) {
   return {
     id: row.id,
     list_id: row.list_id,
@@ -169,8 +191,9 @@ function formatItem(row: ItemRow) {
     description: row.description ?? null,
     resolved_locale: row.resolved_locale ?? 'en',
     is_machine: row.is_machine ?? false,
-    created_by: row.created_by,
+    created_by: foreign ? FOREIGN_AUTHOR : row.created_by,
     seed: formatSeed(row),
+    origin_item_id: shared ? (row.origin_item_id ?? null) : null,
     created_at: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
@@ -183,19 +206,40 @@ function formatItem(row: ItemRow) {
 // ─── DB helper: get list source_locale + org check ───────────────────────────
 
 async function getListSourceLocale(
+  req: Request,
   listId: string,
   orgId: string,
 ): Promise<string | null> {
+  const scope = orgIs('organization_id', orgId, await writeOrgs(req));
   const result = await db.raw<{ rows: [{ source_locale: string }] }>(
-    `SELECT source_locale FROM selection_lists WHERE id = ? AND organization_id = ?`,
-    [listId, orgId],
+    `SELECT source_locale FROM selection_lists WHERE id = ? AND ${scope.sql}`,
+    [listId, ...scope.params],
   );
   return result.rows[0]?.source_locale ?? null;
 }
 
+/**
+ * Source locale of a list the caller may READ: its own organization's, or (shared-lists flag ON) a common
+ * list. The route guard (`requireListRead`) has already decided Permit-side readability.
+ */
+async function getReadableListSourceLocale(
+  req: Request,
+  listId: string,
+  orgId: string,
+): Promise<{ sourceLocale: string; foreign: boolean } | null> {
+  const readable = readableByOrg('', orgId, await getReadScope(req));
+  const result = await db.raw<{ rows: [{ source_locale: string; organization_id?: string }] }>(
+    `SELECT source_locale, organization_id FROM selection_lists WHERE id = ? AND ${readable.sql}`,
+    [listId, ...readable.params],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return { sourceLocale: row.source_locale, foreign: row.organization_id !== undefined && !sameOrg(row.organization_id, orgId) };
+}
+
 // ─── GET /:listId/items ───────────────────────────────────────────────────────
 
-router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:listId/items', requireListRead(), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -208,12 +252,13 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
 
   const { listId } = req.params;
 
-  // Verify the list exists and belongs to this org
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
-  if (!sourceLocale) {
+  // Verify the list exists and is readable by this org (its own, or a common list)
+  const readableList = await getReadableListSourceLocale(req, listId, req.orgId);
+  if (!readableList) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
   }
+  const { sourceLocale, foreign } = readableList;
 
   // Parse + clamp pagination
   const limit = parseLimitParam(req, res, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
@@ -222,8 +267,9 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
   const rawCursor = req.query.cursor as string | undefined;
   const statusFilter = (req.query.status as string) ?? 'active';
 
-  if (!['active', 'archived'].includes(statusFilter)) {
-    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'status must be active or archived.' });
+  // openapi `listSelectionListItems`: status is `active` (default) | `archived` | `all` (active + archived).
+  if (!['active', 'archived', 'all'].includes(statusFilter)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'status must be one of: active, archived, all.' });
     return;
   }
 
@@ -249,8 +295,12 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
   const localeCoalesce = `COALESCE(${localeChain.map((_, i) => `t${i}.locale`).join(', ')})`;
   const machineCoalesce = `COALESCE(${localeChain.map((_, i) => `t${i}.is_machine`).join(', ')})`;
 
-  const whereClause: string[] = ['i.list_id = ?', 'i.status = ?'];
-  const whereParams: (string | number | boolean | null)[] = [listId, statusFilter];
+  const whereClause: string[] = ['i.list_id = ?'];
+  const whereParams: (string | number | boolean | null)[] = [listId];
+  if (statusFilter !== 'all') {
+    whereClause.push('i.status = ?');
+    whereParams.push(statusFilter);
+  }
 
   if (cursor) {
     whereClause.push('(i.sort_order > ? OR (i.sort_order = ? AND i.id > ?))');
@@ -267,7 +317,7 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         ${labelCoalesce} AS label,
@@ -297,13 +347,16 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
     }
 
     const countResult = await db.raw<{ rows: [{ total: string }] }>(
-      `SELECT COUNT(*) AS total FROM selection_list_items WHERE list_id = ? AND status = ?`,
-      [listId, statusFilter],
+      statusFilter === 'all'
+        ? `SELECT COUNT(*) AS total FROM selection_list_items WHERE list_id = ?`
+        : `SELECT COUNT(*) AS total FROM selection_list_items WHERE list_id = ? AND status = ?`,
+      statusFilter === 'all' ? [listId] : [listId, statusFilter],
     );
     const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
 
+    const shared = await sharedListsOn(req);
     res.status(200).json({
-      items: items.map(formatItem),
+      items: items.map((r) => formatItem(r, shared, foreign)),
       page: {
         nextCursor,
         hasMore,
@@ -321,7 +374,7 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
 
 // ─── POST /:listId/items — create an item ────────────────────────────────────
 
-router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), enforceItemQuota, async (req: Request, res: Response): Promise<void> => {
+router.post('/:listId/items', requireListMutation('add_value'), enforceItemQuota, async (req: Request, res: Response): Promise<void> => {
   // Flag is also checked by enforceItemQuota, but we re-check here so that tests
   // which mock the middleware as a pass-through still see the correct 404 behavior.
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
@@ -375,7 +428,7 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
   }
 
   // Verify the list exists and belongs to this org
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -401,10 +454,12 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
     await db.transaction(async (trx) => {
       // Lock order is ALWAYS org outbox lock -> quota lock -> list row (events/outbox.ts).
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       // Exact quota enforcement: serialise creates for this list, re-check the
       // ceiling under the lock, then insert (see quota.service.ts header).
       await lockQuotaScope(trx, `list_items:${listId}`);
-      await checkItemQuota(listId, req.orgId as string, trx);
+      await checkItemQuota(listId, (await writeOrgs(req)) ?? (req.orgId as string), trx);
 
       let resolvedSortOrder: number;
       if (explicitSortOrder !== undefined) {
@@ -457,7 +512,7 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         t.label,
@@ -471,8 +526,9 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
       [sourceLocale, id],
     );
 
-    res.status(201).json(formatItem(result.rows[0]));
+    res.status(201).json(formatItem(result.rows[0], await sharedListsOn(req)));
   } catch (err: unknown) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
       return;
@@ -493,7 +549,7 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
 // ─── PUT /:listId/items/reorder — whole-collection reorder ───────────────────
 // MUST be declared before /:listId/items/:itemId to prevent "reorder" matching as itemId
 
-router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_value'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:listId/items/reorder', requireListMutation('update_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -528,7 +584,7 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
   }
 
   // Verify list exists + org scope
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -563,6 +619,8 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
     // Apply new sort_order in a transaction (100-gap convention)
     await db.transaction(async (trx) => {
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       for (let i = 0; i < item_ids.length; i++) {
         await trx.raw(
           `UPDATE selection_list_items SET sort_order = ?, updated_at = now() WHERE id = ?`,
@@ -583,7 +641,7 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         t.label,
@@ -598,8 +656,10 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
       [sourceLocale, listId],
     );
 
-    res.status(200).json({ items: result.rows.map(formatItem) });
+    const sharedReorder = await sharedListsOn(req);
+    res.status(200).json({ items: result.rows.map((r) => formatItem(r, sharedReorder)) });
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     getLog(req).error(
       { err, op: 'items PUT /:listId/items/reorder error', userId: req.userId, orgId: req.orgId, params: req.params },
       'items PUT /:listId/items/reorder error failed',
@@ -610,7 +670,7 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
 
 // ─── PATCH /:listId/items/:itemId — partial update ───────────────────────────
 
-router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'update_value'), async (req: Request, res: Response): Promise<void> => {
+router.patch('/:listId/items/:itemId', requireListMutation('update_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -665,7 +725,7 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
   }
 
   // Verify list exists + org scope
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -674,6 +734,8 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
   try {
     const found = await db.transaction(async (trx): Promise<boolean> => {
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       // Verify item exists and belongs to this list (inside the txn: it is also
       // the `before` state the event diff is taken against).
       const existing = await trx.raw<{ rows: [{ id: string; status?: string }] }>(
@@ -687,7 +749,7 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
       // subject to `list_items` too (review M-4), under the create path's lock.
       if (body.status === 'active' && existing.rows[0].status === 'archived') {
         await lockQuotaScope(trx, `list_items:${listId}`);
-        await checkActiveItemQuota(listId, req.orgId as string, trx);
+        await checkActiveItemQuota(listId, (await writeOrgs(req)) ?? (req.orgId as string), trx);
       }
 
       // Update item row — always bump updated_at (plus any changed scalars)
@@ -764,7 +826,7 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         t.label,
@@ -778,8 +840,9 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
       [sourceLocale, itemId],
     );
 
-    res.status(200).json(formatItem(result.rows[0]));
+    res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     if (err instanceof QuotaExceededError) {
       sendQuotaExceeded(res, err);
       return;
@@ -805,7 +868,11 @@ const requireDeleteOnPurge = requireAuthzCheckWhen(
   'delete',
 );
 
-router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remove_value'), requireDeleteOnPurge, async (req: Request, res: Response): Promise<void> => {
+// Purging an item of a COMMON list additionally needs `publish_platform` (platform tenant): it turns the
+// stored ids of every tenant into `missing`.
+const requirePublishOnCommonPurge = requirePublishForPlatformList((req) => req.query.purge === 'true');
+
+router.delete('/:listId/items/:itemId', requireListMutation('remove_value'), requireDeleteOnPurge, requirePublishOnCommonPurge, async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -820,7 +887,7 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
   const purge = req.query.purge === 'true';
 
   // Verify list exists + org scope
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -829,6 +896,8 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
   try {
     const found = await db.transaction(async (trx): Promise<boolean> => {
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       const existing = await trx.raw<{ rows: [{ id: string; code: string }] }>(
         `SELECT id, code FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
         [itemId, listId],
@@ -837,6 +906,10 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
 
       const ctx = eventContextFromRequest(req);
       if (purge) {
+        // The pre-transaction guard decided from an earlier read of the list: re-check it under the org lock
+        // (a promotion to a common list takes the same lock, so what we read now cannot change under us).
+        const listRow = await trx.raw<{ rows: Array<{ visibility: string | null }> }>(`SELECT visibility FROM selection_lists WHERE id = ?`, [listId]);
+        await assertMayPurgeLocked(req, listRow?.rows?.[0]?.visibility);
         await trx.raw(
           `DELETE FROM selection_list_item_translations WHERE item_id = ?`,
           [itemId],
@@ -870,7 +943,7 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
           i.sort_order,
           i.status,
           i.created_by,
-          i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+          i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
           i.created_at,
           i.updated_at,
           t.label,
@@ -883,9 +956,14 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
         `,
         [sourceLocale, itemId],
       );
-      res.status(200).json(formatItem(result.rows[0]));
+      res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
     }
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
+    if (err instanceof PlatformPurgeDenied) {
+      res.status(403).json(PLATFORM_PURGE_DENIED_BODY);
+      return;
+    }
     getLog(req).error(
       { err, op: 'items DELETE /:listId/items/:itemId error', userId: req.userId, orgId: req.orgId, params: req.params },
       'items DELETE /:listId/items/:itemId error failed',
@@ -896,7 +974,7 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
 
 // ─── POST /:listId/items/:itemId/archive — explicit archive ──────────────────
 
-router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList', 'remove_value'), async (req: Request, res: Response): Promise<void> => {
+router.post('/:listId/items/:itemId/archive', requireListMutation('remove_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -910,7 +988,7 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
   const { listId, itemId } = req.params;
 
   // Verify list exists + org scope
-  const sourceLocale = await getListSourceLocale(listId, req.orgId);
+  const sourceLocale = await getListSourceLocale(req, listId, req.orgId);
   if (!sourceLocale) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
     return;
@@ -919,6 +997,8 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
   try {
     const found = await db.transaction(async (trx): Promise<boolean> => {
       await lockOrgOutbox(trx, req.orgId as string);
+      // Suspension of the list's OWNER re-checked FRESH under the lock a deactivation also takes: nothing written yet.
+      await assertPlatformWritable(trx, listId);
       const existing = await trx.raw<{ rows: [{ id: string }] }>(
         `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
         [itemId, listId],
@@ -945,7 +1025,7 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
         i.sort_order,
         i.status,
         i.created_by,
-        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified, i.origin_item_id,
         i.created_at,
         i.updated_at,
         t.label,
@@ -959,8 +1039,9 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
       [sourceLocale, itemId],
     );
 
-    res.status(200).json(formatItem(result.rows[0]));
+    res.status(200).json(formatItem(result.rows[0], await sharedListsOn(req)));
   } catch (err) {
+    if (replyPlatformSuspended(err, res)) return;
     getLog(req).error(
       { err, op: 'items POST /:listId/items/:itemId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },
       'items POST /:listId/items/:itemId/archive error failed',

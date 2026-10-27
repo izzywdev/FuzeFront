@@ -29,9 +29,11 @@ import appRegistryRoutes from './routes/app-registry'
 import portalCatalogRoutes from './routes/portal-catalog'
 import appBuildsRoutes from './routes/app-builds'
 import { ensureBuiltins } from './app-registry/builtins'
+import { provisionDefaultInstalls } from './app-registry/default-installs'
 import { initFeatureFlags } from './config/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
+import type { EntityType } from '@izzywdev/fuzefront-identity'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 
@@ -220,11 +222,24 @@ async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront applications-service...')
 
-    // Step 5 (FFRNT-185): dual-accept windows closed.
-    // All entity types now use mintId() for creation and store bare UUIDs;
-    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
-    // need to be accepted at the request boundary.
-    configureIdentity({ legacyUuidTypes: new Set() })
+    // Dual-accept window for the platform spine types (FFRNT-185 / §8).
+    // The input boundary must track the OUTPUT wire form, which is governed by
+    // the `fuzefront.identity.prefixed-ids` release flag. That flag defaults
+    // OFF and is NOT force-enabled in prod, so every API response still emits
+    // BARE UUIDs (visible e.g. as the org id in the portal). Closing this
+    // window to prefixed-only while output is bare rejects every id the
+    // frontend round-trips — it made org-scoped app installs 422 with
+    // LEGACY_NOT_PERMITTED. parseId still accepts prefixed ids regardless, so
+    // listing these is purely additive; EMPTY this set only once prefixed-id
+    // OUTPUT is confirmed GA (governance/identifier-standard.md §8).
+    configureIdentity({
+      legacyUuidTypes: new Set<EntityType>([
+        'organization',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
     const dbOptions = {
       migrationsTableName: 'knex_migrations_apps',
       migrationsDir: path.join(__dirname, 'migrations'),
@@ -250,6 +265,11 @@ async function startServer() {
     await ensureBuiltins().catch(err =>
       console.error('⚠️  [applications-service] ensureBuiltins failed:', err)
     )
+
+    // Provision operator-configured default app installs (default_install_*),
+    // AFTER built-ins exist. Idempotent: backfills existing users/orgs and picks
+    // up anything new since the last boot. Best-effort; never aborts startup.
+    await provisionDefaultInstalls()
 
     // Install the OpenFeature/Unleash provider so app-registry flags actually
     // consult Unleash. Non-fatal: on failure they keep their in-code fail-safe

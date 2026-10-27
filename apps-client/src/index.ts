@@ -27,7 +27,12 @@ export type {
   RegisterAppRequest,
   HeartbeatRequest,
   ErrorBody,
+  AppCreator,
+  AppPublication,
+  PublicationQueueItem,
   AppRegistryClientConfig,
   ListAppsParams,
   ListAppsResult,
+  ListPublicationRequestsParams,
+  ListPublicationRequestsResult,
 } from './types';

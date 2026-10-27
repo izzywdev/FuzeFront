@@ -53,7 +53,7 @@ jobs:
           packages: 'platform-tools'
 
       - name: Install Bubblewrap CLI
-        run: npm install -g @bubblewrap/cli
+        run: npm install -g @bubblewrap/cli@1.27.0
 
       - name: Pre-configure Bubblewrap to skip interactive JDK/SDK prompts
         run: |
@@ -138,6 +138,7 @@ jobs:
           sleep 1
           # bubblewrap update reads twa-manifest.json and scaffolds the Android Gradle project
           bubblewrap update --skipPwaValidation --skipVersionUpgrade
+          node ../scripts/prepare-bubblewrap-project.mjs .
           kill $HTTP_PID || true
 
       - name: Force minSdkVersion 24 in generated Gradle project
@@ -238,7 +239,7 @@ jobs:
           echo "Found: $DEST"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.version.outputs.slug }}-android-v${{ steps.version.outputs.name }}
           path: ${{ steps.apk.outputs.path }}

@@ -55,7 +55,7 @@ req.log = logger.child({ reqId });
 
 - **One request = one greppable thread.** `grep reqId=abc123` returns the entire lifecycle across every hop in order. This is the difference between reading a story and staring at interleaved noise.
 - **Carry the correlation id across hops** — propagate `reqId` as an outbound header (`x-request-id`) on every external call so the downstream service's logs join the same thread. Bind stable request-scoped context too (`userId`, `orgId`/tenant, route) once on the child so you don't repeat it on every line.
-- **`reqId` correlates one service's own logs. It does not, by itself, link a log line to a distributed trace.** For that — following a request across services in Tempo, or jumping from a Loki log line to the exact span that produced it — see §9 (`trace_id`/`span_id` via `@izzywdev/fuzefront-telemetry`). The two ids are complementary, bound on the SAME child logger, never one replacing the other.
+- **`reqId` correlates one service's own logs. It does not, by itself, link a log line to a distributed trace.** For that — following a request across services in Tempo, or jumping from a Loki log line to that request's span — see §9 (`trace_id`/`span_id` via `@izzywdev/fuzefront-telemetry`). The two ids are complementary, bound on the SAME child logger, never one replacing the other. Note the granularity: `withTraceContext` reads `req.spanId` once, when it builds the child logger, so `span_id` identifies the **request's** span, not whichever child span happened to be active when a given line was emitted. `trace_id` always gets you to the right trace; do not expect `span_id` to pinpoint the span inside it.
 
 ## 5. Secret redaction — MANDATORY, non-negotiable
 
@@ -129,9 +129,13 @@ export const logger = pino({
 // traceparent (or starts a new trace) — it never touches x-request-id or
 // req.reqId, so it is additive to this middleware, not a header-precedence
 // fight. This module only exports the logger and requestLogger; it does NOT
-// import `app`. Mount both in the application bootstrap, tracing FIRST (see §9):
+// import `app`. Mount both in the application bootstrap, tracing FIRST, and
+// call initTelemetry() once per process before either (see §9):
+//   initTelemetry({ serviceName: 'my-service' });   // once, before anything
 //   app.use(tracingMiddleware());   // before requestLogger
 //   app.use(requestLogger);
+// Without initTelemetry() the OTel SDK never starts, so nothing is exported and
+// the ids bound here are the all-zero invalid ones (see §9).
 import { withTraceContext } from '@izzywdev/fuzefront-telemetry';
 
 // request middleware — bind a per-request child logger with a correlation id
@@ -189,7 +193,13 @@ if (user.hasPassword === null) {
 
 ```ts
 // app bootstrap (where `app` is created) — NOT in the logger module
-import { tracingMiddleware, withTraceContext } from '@izzywdev/fuzefront-telemetry';
+import { initTelemetry, tracingMiddleware, withTraceContext } from '@izzywdev/fuzefront-telemetry';
+
+// FIRST, once per process, before anything is mounted. Without it OpenTelemetry
+// stays on its no-op provider: nothing is exported to the Collector, and the
+// ids the middleware binds are the all-zero invalid ones — which still LOOK
+// like ids on a log line, so this is silent when it's wrong.
+initTelemetry({ serviceName: 'my-service' });
 
 app.use(tracingMiddleware());                 // FIRST: sets req.traceId / req.spanId
 
@@ -215,6 +225,16 @@ app.use((req, res, next) => {
 **Package naming:** the canonical source lives in `izzywdev/FuzeFront`'s `packages/telemetry/` as `@fuzefront/telemetry` (that repo's internal workspace scope); it publishes to GitHub Packages as **`@izzywdev/fuzefront-telemetry`** via FuzeFront's own scope-rename publish step — install the published name in any OTHER repo: `npm install @izzywdev/fuzefront-telemetry`. Full contract (transport, env resolution, sampling, reference implementation): `izzywdev/FuzeFront`'s `packages/telemetry/README.md` and `packages/telemetry/docs/TRACE_CONTRACT.md`.
 
 **Known gap — not yet wired into onboarding.** `sdlc-bootstrap` (steps 1–10) does not yet install `@izzywdev/fuzefront-telemetry` or mount `tracingMiddleware()` for a newly onboarded repo; a fresh repo gets `reqId` correlation from this skill but no trace correlation until someone adds it by hand. Adding that as a bootstrap step is a real design decision (every onboarded repo must actually reach FuzeInfra's Collector, and the step would need its own env-resolution default) rather than a one-line addition, so it's recorded here as a gap rather than guessed at — a follow-up to `sdlc-bootstrap` should close it once a rollout owner is assigned.
+
+## Canonical observability standard
+
+This skill is the implementation recipe. The **canonical policy** is the numbered observability standard in **`izzywdev/FuzeFront` → `governance/observability-standard.md`** (logging, trace correlation, RUM, metrics, health, sampling/retention, alerting/SLO, enforcement). Read it for the authoritative rules; **do not restate it** in a repo overlay or here — a copy drifts silently and `governance-sync` will not reconcile it. The non-negotiables this skill implements:
+
+- **Structured logging** — pino JSON, one shared logger per service, no raw `console.*` (§1–§2).
+- **Boundary logging** — every external call logs start/end/elapsed ms; caught errors log with context (§3).
+- **Mandatory redaction** — secrets/credentials never reach a log line (§5).
+- **Trace correlation** — `trace_id`/`span_id` on every line via `@izzywdev/fuzefront-telemetry` (§9).
+- **RUM for frontends** — browser telemetry via `initBrowserTelemetry()` (§9); the standard defines the RUM policy.
 
 ## Related
 - `@izzywdev/fuzefront-telemetry` (§9) — distributed tracing correlated with this skill's `reqId`/pino standard; FuzeInfra's `docs/consuming-repos/OBSERVABILITY_DASHBOARDS.md` is the upstream app-side contract it implements.

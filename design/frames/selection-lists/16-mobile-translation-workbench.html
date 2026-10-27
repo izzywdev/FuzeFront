@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — Translation workbench at 375 px, LTR and RTL (he / ar)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<link rel="stylesheet" href="mobile.css" />
+</head>
+<body>
+<div class="content" data-frame="16-mobile-translation-workbench" style="padding-top: var(--space-12);">
+
+  <h1 class="page-title">Translation workbench — 375 px, English · עברית · العربية</h1>
+  <p class="page-sub">Frames 2a–2c at a phone width. The locale grid becomes one column, the bilingual editor stacks <b>source above
+    translation</b> instead of side by side, “Save all” moves to a sticky bar, and the autofill confirmation becomes a BottomSheet.</p>
+
+  <div class="sl-devices">
+
+    <!-- ===== 1 · EN · locale index ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · translation index</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">CR</div></div>
+        <div class="sl-device__screen" data-panel="translation-index-mobile" data-state="ready">
+          <div class="sl-crumb"><a href="01-list-index.html">Selection Lists</a> · <a href="03-list-detail.html">Countries</a></div>
+          <h2 class="page-title">Translations</h2>
+          <div class="sl-tabs" role="tablist" data-tabs="list-detail">
+            <a class="sl-tab" role="tab" aria-selected="false" href="15-mobile-list-management.html" data-tab="values">Values</a>
+            <a class="sl-tab" role="tab" aria-selected="true" href="07-locale-index.html" data-tab="translations">Translations</a>
+            <a class="sl-tab" role="tab" aria-selected="false" href="17-mobile-access-control.html" data-tab="access">Access</a>
+            <a class="sl-tab" role="tab" aria-selected="false" href="#" data-tab="audit">Audit log</a>
+          </div>
+          <div class="sl-locales">
+            <div class="sl-locale" data-locale="en" data-source="true">
+              <div class="sl-locale__head"><span class="sl-locale__name">English</span><span class="sl-pill sl-pill--source" data-source-locale="true">source</span></div>
+              <div class="sl-meter"><div class="sl-meter__fill sl-meter__fill--ok" style="width: 100%;"></div></div>
+              <span class="sl-locale__pct">100%</span>
+            </div>
+            <a class="sl-locale" href="08-locale-editor.html" data-locale="fr">
+              <div class="sl-locale__head"><span class="sl-locale__name">Français</span><span class="sl-pill sl-pill--machine" data-machine="true">M 248</span></div>
+              <div class="sl-meter"><div class="sl-meter__fill" style="width: 100%;"></div></div>
+              <span class="sl-locale__pct">100% · 248 machine, 2 human</span>
+            </a>
+            <a class="sl-locale" href="08-locale-editor.html" data-locale="es">
+              <div class="sl-locale__head"><span class="sl-locale__name">Español</span><span class="sl-pill sl-pill--warn" data-stale="true">3 stale</span></div>
+              <div class="sl-meter"><div class="sl-meter__fill sl-meter__fill--warn" style="width: 98%;"></div></div>
+              <span class="sl-locale__pct">98% · 3 sources changed</span>
+            </a>
+            <div class="sl-locale" data-locale="ja" data-untranslated="true">
+              <div class="sl-locale__head"><span class="sl-locale__name">日本語</span></div>
+              <div class="sl-meter"><div class="sl-meter__fill" style="width: 0%;"></div></div>
+              <span class="sl-locale__pct">Not started — falls back to English</span>
+              <a class="btn btn-ghost sl-block" href="08-locale-editor.html" data-action="start-translation">Start translation</a>
+              <a class="btn btn-primary sl-block" href="09-autofill-modal.html" data-action="autofill">Autofill with AI</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 2 · EN · locale editor (fr) ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · locale editor (fr)</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">CR</div></div>
+        <div class="sl-device__screen" data-panel="locale-editor-mobile" data-state="ready">
+          <div class="sl-crumb"><a href="07-locale-index.html">Translations</a> · Français</div>
+          <h2 class="page-title">Français <span class="sl-locale__tag">fr</span></h2>
+          <div class="sl-meter" data-progress="fr"><div class="sl-meter__fill" style="width: 100%;"></div></div>
+          <p class="sl-field__hint">250 of 250 · <span class="sl-pill sl-pill--machine" data-machine-count="248">M 248</span> <span class="sl-pill sl-pill--warn" data-stale-count="1">1 changed</span></p>
+
+          <div class="sl-bi" data-row="sli_02h455vb4pex5vsknk084sn02q" style="margin-top: var(--space-4);">
+            <div><div class="sl-bi__label">CA · source en</div><div class="sl-bi__src">Canada</div></div>
+            <div>
+              <label class="sl-bi__label" for="m2-ca">Français</label>
+              <input class="sl-input" id="m2-ca" value="Canada" data-translation-input="item" />
+              <div class="sl-field__hint"><span class="sl-pill sl-pill--machine" data-machine="true">M machine</span></div>
+              <button class="btn btn-ghost sl-block" data-action="mark-reviewed" style="margin-top: var(--space-2);">Mark reviewed</button>
+            </div>
+          </div>
+
+          <div class="sl-bi" data-row="sli_03h455vb4pex5vsknk084sn02q" data-stale="true" style="margin-top: var(--space-5); padding-top: var(--space-4); border-top: var(--mob-hair) solid var(--border-color);">
+            <div><div class="sl-bi__label">GB · source en</div><div class="sl-bi__src">United Kingdom of Great Britain and Northern Ireland</div></div>
+            <div>
+              <label class="sl-bi__label" for="m2-gb">Français</label>
+              <input class="sl-input is-invalid" id="m2-gb" value="Royaume-Uni" data-translation-input="item" />
+              <div class="sl-field__err" data-warning="source-changed"><span aria-hidden="true">⚠</span><span><b>Source changed</b> — re-check, then save.</span></div>
+              <div class="sl-mbtns">
+                <button class="btn btn-ghost" data-action="keep-as-is">Keep as-is</button>
+                <button class="btn btn-ghost" data-action="save-row">Save row</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="sl-bi" data-row="sli_05h455vb4pex5vsknk084sn02q" data-missing="true" style="margin-top: var(--space-5); padding-top: var(--space-4); border-top: var(--mob-hair) solid var(--border-color);">
+            <div><div class="sl-bi__label">MX · source en</div><div class="sl-bi__src">Mexico</div></div>
+            <div>
+              <label class="sl-bi__label" for="m2-mx">Français</label>
+              <input class="sl-input" id="m2-mx" value="" placeholder="Falls back to “Mexico”" data-translation-input="item" />
+            </div>
+          </div>
+
+          <div class="sl-stickybar" data-control="editor-actions">
+            <a class="btn btn-ghost" href="09-autofill-modal.html" data-action="autofill">Autofill missing</a>
+            <button class="btn btn-primary" data-action="save-all">Save all</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 3 · HE · RTL chrome, ar target ===== -->
+    <div>
+      <p class="sl-device__label">he · rtl · 375 · editing ar</p>
+      <div class="sl-device" dir="rtl" lang="he" data-device="375" data-locale="he" data-dir="rtl">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="פתיחת ניווט" data-action="open-drawer">☰</button><div class="wordmark" dir="ltr"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">CR</div></div>
+        <div class="sl-device__screen" data-panel="locale-editor-mobile" data-rtl="true">
+          <div class="sl-crumb"><a href="07-locale-index.html">תרגומים</a> · العربية</div>
+          <h2 class="page-title">العربية <span class="sl-locale__tag" dir="ltr">ar</span></h2>
+          <p class="sl-field__hint">120 מתוך 250 תורגמו</p>
+          <div class="sl-bi" data-row="sli_01h455vb4pex5vsknk084sn02q" style="margin-top: var(--space-4);">
+            <!-- the SOURCE stays LTR: it is still English, even inside a Hebrew UI -->
+            <div dir="ltr" lang="en" data-source-dir="ltr"><div class="sl-bi__label">US · source en</div><div class="sl-bi__src">United States</div></div>
+            <div dir="rtl" lang="ar" data-locale="ar">
+              <label class="sl-bi__label" for="m3-us">العربية</label>
+              <input class="sl-input" dir="rtl" id="m3-us" value="الولايات المتحدة" data-translation-input="item" />
+              <div class="sl-field__hint"><span class="sl-pill sl-pill--machine" data-machine="true">M</span> תרגום מכונה</div>
+            </div>
+          </div>
+          <div class="sl-bi" data-row="sli_02h455vb4pex5vsknk084sn02q" style="margin-top: var(--space-5); padding-top: var(--space-4); border-top: var(--mob-hair) solid var(--border-color);">
+            <div dir="ltr" lang="en" data-source-dir="ltr"><div class="sl-bi__label">CA · source en</div><div class="sl-bi__src">Canada</div></div>
+            <div dir="rtl" lang="ar" data-locale="ar">
+              <label class="sl-bi__label" for="m3-ca">العربية</label>
+              <input class="sl-input" dir="rtl" id="m3-ca" value="كندا" data-translation-input="item" />
+              <div class="sl-field__hint"><span class="sl-pill sl-pill--active" data-machine="false">human</span> תרגום אנושי — לא יידרס</div>
+            </div>
+          </div>
+          <div class="sl-stickybar" data-control="editor-actions">
+            <a class="btn btn-ghost" href="09-autofill-modal.html" data-action="autofill">השלמה אוטומטית</a>
+            <button class="btn btn-primary" data-action="save-all">שמירת הכול</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 4 · EN · autofill sheet ===== -->
+    <div>
+      <p class="sl-device__label">en · ltr · 375 · autofill confirmation</p>
+      <div class="sl-device" dir="ltr" lang="en" data-device="375" data-locale="en" data-dir="ltr">
+        <div class="sl-device__bar"><button class="sl-iconbtn sl-device__menu" aria-label="Open navigation" data-action="open-drawer">☰</button><div class="wordmark"><span class="fuse">Fuze</span>Front</div><span class="spacer"></span><div class="avatar">CR</div></div>
+        <div class="sl-device__screen sl-device__screen--sheet">
+          <div class="sl-device__behind" aria-hidden="true"><h2 class="page-title">日本語</h2></div>
+          <div class="sl-sheet" role="dialog" aria-modal="true" aria-labelledby="m4-t" data-dialog="autofill" data-presentation="bottom-sheet" data-state="idle">
+            <div class="sl-sheet__grab" aria-hidden="true"></div>
+            <div class="sl-modal__head"><h3 class="sl-modal__title" id="m4-t">Autofill 250 strings into 日本語?</h3>
+              <p class="sl-modal__sub">Machine translation from <b>English (en)</b>. Every new row is badged M.</p></div>
+            <div class="sl-modal__body">
+              <p class="sl-field__hint" data-guarantee="human-preserved" style="margin-top: 0;">Human-reviewed strings are <b>never overwritten</b> — the service enforces it, not this switch.</p>
+              <label class="sl-mchoice__opt" data-option="overwrite-machine" style="display: grid;">
+                <input type="checkbox" data-field="overwrite_machine" aria-label="Also replace existing machine translations" />
+                <span><span class="sl-mchoice__title">Also replace existing machine translations</span><span class="sl-mchoice__desc" style="display: block;">Off by default.</span></span>
+              </label>
+            </div>
+            <div class="sl-modal__foot">
+              <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+              <button class="btn btn-primary" data-action="confirm-autofill">Autofill 250 strings</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section" style="margin-top: var(--space-10);">
+    <h2>States at 375 px</h2>
+    <p class="sl-caption">Same states as frames 2a–2c; the edit you typed always survives a failed request.</p>
+    <div class="sl-devices">
+      <div>
+        <p class="sl-device__label">loading</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="locale-editor-mobile" data-state="loading" aria-busy="true">
+          <div class="sl-skel" style="width: 40%; margin-bottom: var(--space-4);"></div><div class="sl-skel" style="width: 92%; margin-bottom: var(--space-4);"></div><div class="sl-skel" style="width: 80%;"></div>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">autofill running</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-dialog="autofill" data-state="running" aria-busy="true">
+          <p class="sl-banner__title">Translating 120 of 250…</p>
+          <div class="sl-meter" data-progress="autofill"><div class="sl-meter__fill" style="width: 48%;"></div></div>
+          <p class="sl-field__hint">Determinate progress; both actions disabled until it finishes.</p>
+          <button class="btn btn-primary sl-block" data-action="confirm-autofill" disabled>Autofilling…</button>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">partial failure</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-dialog="autofill" data-state="partial">
+          <div class="sl-banner sl-banner--warn" data-error="autofill-partial" style="margin-bottom: var(--space-3);">
+            <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+            <div class="sl-banner__body"><p class="sl-banner__title">212 translated, 38 failed</p><p>What was written is kept.</p></div>
+          </div>
+          <button class="btn btn-primary sl-block" data-action="retry-remaining">Retry the remaining 38</button>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">save failed</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="locale-editor-mobile" data-state="error" data-error="save-failed">
+          <input class="sl-input is-invalid" value="États-Unis" aria-label="Français translation of United States" data-translation-input="item" data-unsaved="true" />
+          <p class="sl-field__err"><span aria-hidden="true">⚠</span><span>Couldn't save — your edit is kept and marked unsaved.</span></p>
+          <button class="btn btn-ghost sl-block" data-action="retry">Retry</button>
+        </div></div>
+      </div>
+      <div>
+        <p class="sl-device__label">403 — read-only</p>
+        <div class="sl-device" data-device="375" data-locale="en" data-dir="ltr"><div class="sl-device__screen sl-device__screen--short" data-panel="locale-editor-mobile" data-state="error" data-error="FORBIDDEN">
+          <div class="sl-bi"><div><div class="sl-bi__label">US · source en</div><div class="sl-bi__src">United States</div></div>
+            <div><div class="sl-bi__label">Français</div><input class="sl-input" value="États-Unis" disabled aria-label="Français translation (read-only)" /></div></div>
+          <p class="sl-reason"><span aria-hidden="true">🔒</span><span>Editing translations needs <code class="sl-code">translate</code>. No save bar is shown.</span></p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section">
+    <h2>Rules the implementation must keep</h2>
+    <ul class="sl-mrules" data-rules="mobile-translation-workbench">
+      <li><b>At ≤ 40em</b> the locale grid is one column and the bilingual editor stacks <b>source above translation</b> in each row —
+        the source is never hidden behind a tap, because a translator can't translate what they can't see.</li>
+      <li><b>“Save all” and “Autofill missing” sit in a sticky bar</b> at the bottom of the screen, above the home-indicator inset
+        (<code class="sl-code">--safe-area-bottom</code>). Per-row actions (Mark reviewed, Keep as-is, Save row) are full-width and ≥ 44 px tall.</li>
+      <li><b>RTL is per cell, not per page.</b> In a Hebrew UI editing Arabic, the chrome is RTL, the <b>source</b> stays
+        <code class="sl-code">dir="ltr"</code> (it is English), and the target input is <code class="sl-code">dir="rtl"</code>. Never a per-locale stylesheet.</li>
+      <li><b>The autofill confirmation is a BottomSheet</b> with the same count, source locale and human-preservation guarantee as frame 2c;
+        <code class="sl-code">overwrite_machine</code> defaults off; progress is determinate; a partial failure keeps what was written.</li>
+      <li>Machine output stays badged <b>M</b> and the <b>Source changed</b> warning is inline on its row at every width.</li>
+    </ul>
+  </div>
+
+  <p class="sl-notes">
+    <b>Test hooks:</b> <code>[data-frame='16-mobile-translation-workbench']</code> · <code>[data-device='375']</code> · <code>[data-panel='translation-index-mobile']</code> · <code>[data-panel='locale-editor-mobile']</code> · <code>[data-locale='he'][data-dir='rtl']</code> · <code>[data-source-dir='ltr']</code> · <code>[dir='rtl'][data-locale='ar']</code> · <code>[data-translation-input='item']</code> · <code>[data-warning='source-changed']</code> · <code>[data-control='editor-actions']</code> · <code>[data-action='save-all']</code> · <code>[data-action='autofill']</code> · <code>[data-dialog='autofill'][data-presentation='bottom-sheet']</code> · <code>[data-guarantee='human-preserved']</code> · <code>[data-state='running']</code> · <code>[data-error='autofill-partial']</code> · <code>[data-error='save-failed']</code> · <code>[data-error='FORBIDDEN']</code> · <code>[data-rules='mobile-translation-workbench']</code><br />
+    Playwright drives the real workbench at <code>{ viewport: 375×812, locale: en | he-IL }</code>: no horizontal scroll, the source cell renders above
+    its input, the sticky bar stays inside the viewport while scrolling, and an RTL target input has <code>dir='rtl'</code> while its source has <code>dir='ltr'</code>.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code> / <code>mobile.css</code>.
+  </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="15-mobile-list-management.html" data-nav="prev">← List management — 375 px</a>
+  <span class="caption"><b>(2d) Translation workbench — 375 px</b> · Flow 2 · Translation workbench · frame 16 of 18</span>
+  <a class="btn btn-primary" href="17-mobile-access-control.html" data-nav="next">Access — 375 px →</a>
+</nav>
+</body>
+</html>

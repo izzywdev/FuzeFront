@@ -17,7 +17,7 @@
  * service implementation.
  */
 import { mintTestToken } from '../helpers/auth';
-import { declarePlatformOrg, FAKE_SECURITY_URL, newOrg, newUser, permitPublishAnywhere, PLATFORM_ORG_ID } from '../helpers/shared-lists';
+import { declarePlatformOrg, FAKE_SECURITY_URL, newCodecOrg, newOrg, newUser, orgUuidOf, permitPublishAnywhere, PLATFORM_ORG_ID } from '../helpers/shared-lists';
 
 type Role = 'admin' | 'editor' | 'viewer' | 'developer';
 
@@ -63,6 +63,27 @@ describe('read_shared (D3): customer tenant roles hold it, developer does not', 
     for (const action of ['read', 'add_value', 'update', 'delete', 'manage_access']) {
       expect(await check(u, org, 'admin', org, { type: 'SelectionList', key: 'front_sl_01sl9fakepolicy000000' }, action)).toBe(false);
     }
+  });
+});
+
+describe('organization id renderings: the TypeID and the bare UUID of one org are ONE tenant (as in production)', () => {
+  it('a UUID-claim token is a member of the TypeID tenant (and vice versa); a different org is not', async () => {
+    const o = newCodecOrg();
+    const other = newCodecOrg();
+    const u = newUser('fk');
+    expect(await check(u, o.uuid, 'admin', o.wire, catalog, 'read_shared')).toBe(true);
+    expect(await check(u, o.wire, 'admin', o.uuid, catalog, 'read_shared')).toBe(true);
+    expect(await check(u, o.uuid, 'admin', other.wire, catalog, 'read_shared')).toBe(false);
+  });
+
+  it('publish_platform is effective for the platform org in either rendering, and only for it', async () => {
+    const u = newUser('fk');
+    const uuid = orgUuidOf(PLATFORM_ORG_ID);
+    expect(await check(u, uuid, 'admin', PLATFORM_ORG_ID, catalog, 'publish_platform')).toBe(true);
+    expect(await check(u, PLATFORM_ORG_ID, 'admin', uuid, catalog, 'publish_platform')).toBe(true);
+    expect(await check(u, uuid, 'editor', uuid, catalog, 'publish_platform')).toBe(false);
+    const o = newCodecOrg();
+    expect(await check(u, o.uuid, 'admin', o.uuid, catalog, 'publish_platform')).toBe(false);
   });
 });
 

@@ -17,6 +17,11 @@
 # Optional env:
 #   REGISTRATION_DIR   directory holding manifest.json (default: /registration)
 #   SKIP_ACTIVATE      "true" to register but not activate (staged rollout)
+#   FUZEFRONT_REGISTRATION_PHASE "init" when running before the app container;
+#                       init registration never probes or refreshes its own remote
+#   FUZEFRONT_REMOTE_HEALTH_URL  primary deployed federation asset override
+#   FUZEFRONT_REMOTE_HEALTH_URLS JSON object mapping surface slugs to health URLs
+#   FUZEFRONT_PORTAL_URL          public portal origin used to resolve /apps/... probes
 #
 # Exit codes: 0 = registered/activated (or already was). 1 = anything else.
 
@@ -26,6 +31,7 @@ REGISTRATION_DIR="${REGISTRATION_DIR:-/registration}"
 MANIFEST="${REGISTRATION_DIR}/manifest.json"
 POLICY="${REGISTRATION_DIR}/policy.json"
 BILLING="${REGISTRATION_DIR}/billing-profile.json"
+REGISTRATION_PHASE="${FUZEFRONT_REGISTRATION_PHASE:-post-start}"
 
 # BOTH go to stderr, on purpose. http() returns the HTTP status code on STDOUT and
 # is read via command substitution, so anything else written to stdout would be
@@ -33,6 +39,11 @@ BILLING="${REGISTRATION_DIR}/billing-profile.json"
 # containers send both streams to the pod log, so nothing is lost by this.
 log()  { echo "[fuzefront-register] $*" >&2; }
 die()  { echo "[fuzefront-register] FATAL: $*" >&2; exit 1; }
+
+case "$REGISTRATION_PHASE" in
+  init|post-start) ;;
+  *) die "FUZEFRONT_REGISTRATION_PHASE must be 'init' or 'post-start'" ;;
+esac
 
 # ---- preflight ---------------------------------------------------------------
 [ -n "${FUZEFRONT_API_URL:-}" ] || die "FUZEFRONT_API_URL is not set"
@@ -71,11 +82,6 @@ fi
 API="${FUZEFRONT_API_URL%/}/api/v1/app-registry"
 AUTH="Authorization: Bearer ${FUZEFRONT_REGISTRATION_TOKEN}"
 
-_count=0
-for _m in $MANIFESTS; do _count=$((_count + 1)); done
-log "primary=${SLUG} surfaces=${_count} api=${API}"
-
-# ---- helpers -----------------------------------------------------------------
 # Emits the HTTP status on stdout and writes the body to $2. Retries transient
 # failures (connection refused / 5xx) — the platform may still be starting up.
 http() {
@@ -108,6 +114,114 @@ http() {
 BODY="$(mktemp)"
 # shellcheck disable=SC2064  # expand BODY now, on purpose
 trap "rm -f '$BODY'" EXIT
+
+# An activated registry row is harmful when any suite surface points at a 404 or
+# an HTML ingress fallback. Validate the complete suite before the first registry
+# write so a healthy primary cannot publish broken siblings. A staged first
+# registration may defer the probe; a staged refresh of an active row may not.
+probe_federation_asset() {
+  _url="$1"; _slug="$2"
+  REMOTE_BODY="$(mktemp)"
+  if ! curl -L -fsS --retry 4 --retry-all-errors --retry-delay 2 \
+    --connect-timeout 10 --max-time 30 -o "$REMOTE_BODY" "$_url"; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset for ${_slug} is unreachable at ${_url}"
+  fi
+  # Only an HTML document prefix is invalid. JavaScript bundles may legitimately
+  # contain strings or templates with <html>, <head>, or <body> later in the file.
+  if [ ! -s "$REMOTE_BODY" ] || head -c 512 "$REMOTE_BODY" | \
+    grep -Eiq '^[[:space:]]*(<!doctype[[:space:]]+html|<(html|head|body)([[:space:]>]))'; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset for ${_slug} is empty or HTML at ${_url}"
+  fi
+  if ! grep -Eq '(__federation|(^|[;[:space:]])(const|let|var|function|import|export)[[:space:]])' "$REMOTE_BODY"; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset for ${_slug} does not look like JavaScript at ${_url}"
+  fi
+  rm -f "$REMOTE_BODY"
+  log "federation asset healthy for ${_slug} at ${_url}"
+}
+
+resolve_federation_probe_url() {
+  _candidate="$1"
+  case "$_candidate" in
+    /*)
+      _portal_base="${FUZEFRONT_PORTAL_URL:-${FUZEFRONT_API_URL}}"
+      case "$_portal_base" in
+        http://*|https://*) ;;
+        *) die "FUZEFRONT_PORTAL_URL must be an absolute http(s) URL when probing ${_candidate}" ;;
+      esac
+      _portal_origin="$(printf '%s' "$_portal_base" | sed -E 's#^(https?://[^/]+).*$#\1#')"
+      printf '%s%s\n' "${_portal_origin%/}" "$_candidate"
+      ;;
+    http://*|https://*|file://*) printf '%s\n' "$_candidate" ;;
+    *) die "federation health URL must be absolute or a same-origin /path: ${_candidate}" ;;
+  esac
+}
+
+if [ -n "${FUZEFRONT_REMOTE_HEALTH_URLS:-}" ]; then
+  printf '%s' "$FUZEFRONT_REMOTE_HEALTH_URLS" | jq -e 'type == "object"' >/dev/null 2>&1 \
+    || die "FUZEFRONT_REMOTE_HEALTH_URLS must be a JSON object"
+fi
+
+for _manifest in $MANIFESTS; do
+  jq empty "$_manifest" 2>/dev/null || die "$_manifest is not valid JSON"
+  _slug="$(jq -r '.slug // empty' "$_manifest")"
+  [ -n "$_slug" ] || die "$_manifest has no .slug"
+  _remote=""
+  if [ -n "${FUZEFRONT_REMOTE_HEALTH_URLS:-}" ]; then
+    _remote="$(printf '%s' "$FUZEFRONT_REMOTE_HEALTH_URLS" | jq -r --arg slug "$_slug" '.[$slug] // empty')"
+  fi
+  if [ -z "$_remote" ] && [ "$_manifest" = "$MANIFEST" ] && [ -n "${FUZEFRONT_REMOTE_HEALTH_URL:-}" ]; then
+    _remote="$FUZEFRONT_REMOTE_HEALTH_URL"
+  fi
+  if [ -z "$_remote" ] && [ "$(jq -r '.integration.type // empty' "$_manifest")" = "module-federation" ]; then
+    _remote="$(jq -r '.integration.remoteEntry // empty' "$_manifest")"
+  fi
+  if [ -n "$_remote" ]; then
+    _remote="$(resolve_federation_probe_url "$_remote")"
+  fi
+
+  _probe="false"
+  if [ -n "$_remote" ] && [ "$REGISTRATION_PHASE" = "init" ]; then
+    # An init container runs before the frontend that serves this asset. This is
+    # true on first install and on a cold restart with no healthy replicas, so an
+    # HTTP dependency on the app's own remote would permanently deadlock startup.
+    # Existing rows are also left unchanged below; a post-start Job owns verified
+    # manifest refreshes once the remote is actually available.
+    log "init registration for ${_slug} — deferring federation probe to post-start registration"
+  elif [ -n "$_remote" ]; then
+    # A post-start Job can verify an existing live row before refreshing it. An
+    # absent row has no live portal route to protect, so its first registration
+    # may proceed; the next post-start run verifies it before any refresh.
+    _lookup_code="$(http GET "${API}/apps/${_slug}" "$BODY")"
+    case "$_lookup_code" in
+      200)
+        if [ "${SKIP_ACTIVATE:-false}" != "true" ] || [ "$(jq -r '.status // empty' "$BODY")" = "activated" ]; then
+          _probe="true"
+        fi
+        ;;
+      404)
+        log "first registration for ${_slug} — deferring federation probe until the app can start"
+        ;;
+      401|403)
+        die "auth rejected (HTTP ${_lookup_code}) — check FUZEFRONT_REGISTRATION_TOKEN has the apps:register scope"
+        ;;
+      *)
+        die "unexpected response looking up ${_slug} before federation probe: HTTP ${_lookup_code} $(cat "$BODY")"
+        ;;
+    esac
+  fi
+  [ "$_probe" != "true" ] || [ -z "$_remote" ] || probe_federation_asset "$_remote" "$_slug"
+done
+
+if [ "${SKIP_ACTIVATE:-false}" = "true" ]; then
+  log "SKIP_ACTIVATE=true — inactive registrations defer federation health checks until activation"
+fi
+
+_count=0
+for _m in $MANIFESTS; do _count=$((_count + 1)); done
+log "primary=${SLUG} surfaces=${_count} api=${API}"
 
 # ---- 1+2. register + activate, once per surface ------------------------------
 # Run for the primary manifest and for every apps/*.json sibling. A failure on ANY
@@ -144,13 +258,17 @@ case "$CODE" in
     # Re-PUT the manifest so a redeploy picks up manifest changes (new remoteEntry
     # after a version bump, changed nav placement, …). Without this, the very first
     # registration would be frozen forever and every later manifest edit a no-op.
-    PUT_CODE="$(http PUT "${API}/apps/${SLUG}" "$BODY" "$MANIFEST")"
-    case "$PUT_CODE" in
-      200|204) log "manifest refreshed" ;;
-      # A manifest update is not worth failing the pod over — the app IS registered
-      # and can serve. Report it; the drift shows up in the registry.
-      *) log "WARNING: manifest refresh returned ${PUT_CODE} — continuing with the existing registration" ;;
-    esac
+    if [ "$REGISTRATION_PHASE" = "init" ]; then
+      log "init registration leaves the existing manifest unchanged; post-start registration owns verified refreshes"
+    else
+      PUT_CODE="$(http PUT "${API}/apps/${SLUG}" "$BODY" "$MANIFEST")"
+      case "$PUT_CODE" in
+        200|204) log "manifest refreshed" ;;
+        # A manifest update is not worth failing the pod over — the app IS registered
+        # and can serve. Report it; the drift shows up in the registry.
+        *) log "WARNING: manifest refresh returned ${PUT_CODE} — continuing with the existing registration" ;;
+      esac
+    fi
     ;;
   404)
     log "not registered — registering"

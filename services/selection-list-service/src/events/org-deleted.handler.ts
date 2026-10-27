@@ -2,7 +2,8 @@ import { FuzeEvent, IdentityOrgDeletedPayloadV1 } from '@fuzefront/shared/kafka'
 import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { db } from '../db';
 import { logger, timed } from '../lib/logger';
-import { markOrgProjectionDeleted } from './orgProjection';
+import { futureSkewToleranceMs, isFutureDated, markOrgProjectionDeleted } from './orgProjection';
+import { isProtectedPlatformOrg, recordPlatformDeactivation } from './platformGuard';
 
 /**
  * The stored `organization_id` is TEXT and is whatever the caller's token
@@ -59,6 +60,22 @@ export async function handleOrgDeleted(
   // The event's correlationId is this thread's reqId so one event is one grep.
   const log = logger.child({ reqId: event.correlationId, component: 'org-deleted' });
   log.info({ organizationId, cascade }, 'identity.org.deleted received');
+  // An envelope dated beyond the skew tolerance is REJECTED (acknowledged, nothing applied): a clamp to now would give
+  // the same event a different ordering instant on every redelivery (events/orgProjection.ts `isFutureDated`).
+  if (isFutureDated(event.occurredAt)) {
+    log.warn({ organizationId, topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt, toleranceMs: futureSkewToleranceMs() }, 'REJECTED a future-dated org lifecycle envelope (beyond the clock-skew tolerance): nothing was applied; re-send once the producer clock is right');
+    return ;
+  }
+
+  // The platform organization owns every common list: nothing is deleted, archived or tombstoned for it, whatever the
+  // envelope says (platformGuard.ts). Its deactivation SUSPENDS platform writes instead (fail closed: publish_platform,
+  // platform list/item changes, purge, seeding) while every tenant keeps READING the common lists; reactivation
+  // (identity.org.updated {isActive:true}) resumes. The message is acknowledged (a normal return) so the consumer does
+  // not loop on it. Flag-independent.
+  if (await isProtectedPlatformOrg(db, organizationId)) {
+    await recordPlatformDeactivation(db, organizationId, { topic: event.topic, correlationId: event.correlationId, occurredAt: event.occurredAt }, log, { cascade });
+    return;
+  }
 
   // Tombstone the projection FIRST (infra faults throw -> the message is retried).
   await timed(log, 'db.tombstone-org-projection', () => markOrgProjectionDeleted(db, organizationId), { organizationId });
@@ -96,6 +113,9 @@ export async function handleOrgDeleted(
           // 8. Seed ledger (plan section 13: the HARD purge deletes the org's ledger rows; the soft
           //    cascade keeps them so a restore does not re-seed). Independent of whether any list remains.
           await trx('selection_list_seed_ledger').whereIn('organization_id', orgIds).delete();
+          // 9. Rollout markers (selection_list_rollout_marks, migration 14): same rule as the seed ledger - the hard purge
+          //    deletes them, the soft cascade keeps them so that a restore does not re-run a one-shot rollout job.
+          await trx('selection_list_rollout_marks').whereIn('organization_id', orgIds).delete();
           return listIds.length;
         }),
       { organizationId },

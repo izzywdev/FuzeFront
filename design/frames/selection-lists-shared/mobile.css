@@ -1,0 +1,217 @@
+/* Selection Lists — shared lists: phone-width (375 CSS px) frame chrome for frames 13–15.
+   Linked by the mobile frames 13–15 only, after tokens.css + frame.css. Frames 11/12
+   use the device preview already in frame.css; this file is the same mobile kit as
+   design/frames/selection-lists/mobile.css (kept identical in its shared part so the
+   two feature sets read the same at phone width) plus the shared-lists overrides at
+   the bottom.
+   Feature-local composition ONLY: every value resolves to a fuse-seam token from
+   tokens.css — directly, via calc() on the spacing scale, or via color-mix() on a
+   semantic token. No raw hex, RGB functions, px spacing or font stacks. */
+
+:root {
+  /* DS --touch-target (design-system/tokens/spacing.css, 44 px) expressed on the
+     frames' spacing scale: 11 × --space-1. */
+  --touch-target: calc(var(--space-1) * 11);
+  /* DS --sheet-max-h — bottom sheets never cover the whole screen. */
+  --sheet-max-h: 80dvh;
+  /* DS --safe-area-bottom (home-indicator inset); zero on devices without one. */
+  --safe-area-bottom: env(safe-area-inset-bottom, calc(var(--space-1) * 0));
+  --mob-hair: calc(var(--space-1) / 4);
+  --mob-accent-line: color-mix(in srgb, var(--accent-color) 45%, transparent);
+  --mob-error-line: color-mix(in srgb, var(--error-color) 45%, transparent);
+  --mob-warning-line: color-mix(in srgb, var(--warning-color) 42%, transparent);
+}
+
+/* ---- device preview: a 375 CSS-px viewport inside the review page ----------
+   375 = var(--space-1) * 93.75 — derived from the spacing scale, not a literal. */
+.sl-devices { display: flex; gap: var(--space-8); flex-wrap: wrap; align-items: flex-start; }
+.sl-devices > * { min-width: 0; max-width: 100%; }
+.sl-device {
+  width: calc(var(--space-1) * 93.75); max-width: 100%; flex: none;
+  background: var(--bg-primary); border: calc(var(--mob-hair) * 2) solid var(--border-strong);
+  border-radius: var(--radius-xl); overflow: hidden; box-shadow: var(--shadow-lg);
+}
+.sl-device__label {
+  font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+  letter-spacing: var(--tracking-wide); color: var(--cyan-400); margin: 0 0 var(--space-2);
+}
+.sl-device__bar {
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+  min-height: var(--touch-target);
+  background: var(--bg-secondary); border-bottom: var(--mob-hair) solid var(--border-color);
+}
+.sl-device__bar .wordmark { font-size: var(--text-md); }
+.sl-device__bar .spacer { flex: 1; }
+.sl-device__menu {
+  display: inline-grid; place-items: center; width: var(--touch-target); height: var(--touch-target);
+  margin-inline-start: calc(var(--space-3) * -1); color: var(--text-secondary);
+}
+.sl-device__screen { padding: var(--space-4); min-height: calc(var(--space-16) * 9); position: relative; }
+.sl-device__screen--short { min-height: 0; }
+.sl-device__screen--sheet { display: flex; flex-direction: column; justify-content: flex-end; padding: 0; }
+.sl-device__screen--host { background: var(--bg-secondary); }
+.sl-device__behind { padding: var(--space-4); opacity: 0.35; }
+
+/* phone typography + density */
+.sl-device .page-title { font-size: var(--text-xl); overflow-wrap: anywhere; }
+.sl-device .page-sub { font-size: var(--text-sm); margin-bottom: var(--space-4); }
+.sl-device .sl-crumb { margin-bottom: var(--space-2); }
+
+/* touch targets: every tappable control is at least --touch-target tall */
+.sl-device .btn { min-height: var(--touch-target); padding-block: var(--space-2); }
+.sl-device a.btn, .sl-device a.sl-mrow { text-decoration: none; }
+.sl-device .btn.sl-block { width: 100%; text-align: center; display: inline-flex; align-items: center; justify-content: center; }
+.sl-device .sl-input { min-height: var(--touch-target); font-size: var(--text-lg); }
+.sl-device .sl-combo__control { min-height: var(--touch-target); }
+.sl-device .sl-opt { min-height: var(--touch-target); }
+.sl-device .sl-tab { min-height: var(--touch-target); display: inline-flex; align-items: center; flex: none; }
+.sl-device .sl-chip { min-height: calc(var(--space-1) * 8); }
+.sl-device .sl-chip__x {
+  display: inline-grid; place-items: center; min-width: var(--space-6); min-height: var(--space-6);
+}
+
+/* reflow: everything that is two-up on desktop is one-up on a phone */
+.sl-device .sl-bi,
+.sl-device .sl-locales,
+.sl-device .sl-quota { grid-template-columns: 1fr; }
+.sl-device .sl-tabs { overflow-x: auto; scrollbar-width: none; margin-inline: calc(var(--space-4) * -1); padding-inline: var(--space-4); }
+.sl-device .sl-host { max-width: none; margin: 0; padding: var(--space-4); border-radius: var(--radius-md); }
+.sl-device .sl-host__sub { margin-bottom: var(--space-4); }
+.sl-device .sl-combo__menu { position: static; margin-top: var(--space-2); }
+.sl-device .sl-banner { padding: var(--space-3); font-size: var(--text-sm); }
+.sl-device .sl-banner__title { font-size: var(--text-sm); }
+.sl-device .sl-state { padding: var(--space-8) var(--space-4); }
+.sl-device .sl-persist { overflow-wrap: anywhere; }
+.sl-device .sl-field { margin-bottom: var(--space-4); }
+
+/* ---- stacked rows: a desktop table becomes one card per row ----------------- */
+.sl-mlist { display: flex; flex-direction: column; gap: var(--space-2); }
+.sl-mrow {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3);
+  align-items: center; padding: var(--space-3);
+  background: var(--bg-tertiary); border: var(--mob-hair) solid var(--border-color); border-radius: var(--radius-md);
+  text-decoration: none; color: inherit; min-height: var(--touch-target);
+}
+.sl-mrow--lead { grid-template-columns: auto minmax(0, 1fr) auto; }
+.sl-mrow__title { color: var(--text-primary); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+.sl-mrow__meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+  font-size: var(--text-sm); color: var(--text-tertiary); grid-column: 1 / 2;
+}
+.sl-mrow--lead .sl-mrow__meta { grid-column: 2 / 3; }
+.sl-mrow__end { grid-row: 1 / span 2; grid-column: -2 / -1; display: flex; align-items: center; gap: var(--space-1); }
+.sl-mrow__chev { color: var(--text-tertiary); }
+[dir='rtl'] .sl-mrow__chev { transform: scaleX(-1); }
+.sl-mrow--archived .sl-mrow__title { color: var(--text-tertiary); }
+.sl-mrow--lifted { border-color: var(--accent-color); background: var(--accent-soft); box-shadow: var(--shadow-md); }
+.sl-mrow--ghost { opacity: 0.4; }
+.sl-mrow--error { border-color: var(--mob-error-line); }
+.sl-mrow__full { grid-column: 1 / -1; }
+
+/* a square, touch-sized icon button (row actions, drag handle) */
+.sl-iconbtn {
+  display: inline-grid; place-items: center; width: var(--touch-target); height: var(--touch-target);
+  border-radius: var(--radius-md); border: var(--mob-hair) solid transparent;
+  background: transparent; color: var(--text-secondary); font-family: var(--font-mono); font-size: var(--text-lg);
+  cursor: pointer; flex: none;
+}
+.sl-iconbtn:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.sl-iconbtn[aria-pressed='true'] { color: var(--accent-color); border-color: var(--mob-accent-line); }
+
+/* the touch reorder bar: shown while a row is lifted */
+.sl-movebar {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2);
+  grid-column: 1 / -1; margin-top: var(--space-2);
+}
+.sl-movebar .btn { width: 100%; justify-content: center; display: inline-flex; align-items: center; }
+
+/* a disabled CTA explains itself INLINE on touch — there is no hover to show a tooltip */
+.sl-reason {
+  display: flex; gap: var(--space-2); align-items: flex-start; margin-top: var(--space-2);
+  font-size: var(--text-sm); color: var(--text-secondary);
+}
+
+/* sticky action bar at the bottom of a phone screen (Save all, Confirm).
+   In the app it is position: sticky; bottom: 0 inside the scrolling content. In this
+   review page the device is not a scroll container, so it renders in place at the
+   end of the screen instead of sticking to the review page's own viewport. */
+.sl-stickybar {
+  position: relative; margin: var(--space-4) calc(var(--space-4) * -1) calc(var(--space-4) * -1);
+  padding: var(--space-3) var(--space-4) calc(var(--space-3) + var(--safe-area-bottom));
+  background: var(--bg-secondary); border-top: var(--mob-hair) solid var(--border-color);
+  display: flex; gap: var(--space-2);
+}
+/* two equal buttons side by side (row-level actions) */
+.sl-mbtns { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+.sl-mbtns .btn, .sl-stickybar .btn { flex: 1; justify-content: center; display: inline-flex; align-items: center; }
+
+/* ---- bottom sheet: dialogs at <= 40em become the DS BottomSheet -------------- */
+.sl-sheet {
+  position: relative; max-height: var(--sheet-max-h); overflow: auto;
+  background: var(--bg-tertiary); border-top: var(--mob-hair) solid var(--border-strong);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-lg);
+}
+.sl-sheet__grab {
+  width: var(--space-10); height: var(--space-1); border-radius: var(--radius-pill);
+  background: var(--border-strong); margin: var(--space-2) auto 0;
+}
+.sl-sheet .sl-modal__head { padding: var(--space-4) var(--space-4) var(--space-2); }
+.sl-sheet .sl-modal__body { padding: var(--space-2) var(--space-4) var(--space-4); }
+.sl-sheet .sl-modal__foot {
+  flex-direction: column; align-items: stretch; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) calc(var(--space-4) + var(--safe-area-bottom));
+}
+.sl-sheet .sl-modal__foot .btn { width: 100%; justify-content: center; display: inline-flex; align-items: center; }
+
+/* role / option cards inside sheets (radio list with descriptions) */
+.sl-mchoice { display: flex; flex-direction: column; gap: var(--space-2); }
+.sl-mchoice__opt {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); align-items: start;
+  padding: var(--space-3); min-height: var(--touch-target);
+  border: var(--mob-hair) solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-secondary);
+}
+.sl-mchoice__opt[aria-checked='true'] { border-color: var(--accent-color); background: var(--accent-soft); }
+.sl-mchoice__radio {
+  width: var(--space-4); height: var(--space-4); margin-top: var(--space-1); border-radius: var(--radius-pill);
+  border: calc(var(--mob-hair) * 2) solid var(--border-strong);
+}
+.sl-mchoice__opt[aria-checked='true'] .sl-mchoice__radio { border-color: var(--accent-color); box-shadow: inset 0 0 0 var(--space-1) var(--accent-color); }
+.sl-mchoice__title { color: var(--text-primary); font-weight: var(--weight-medium); }
+.sl-mchoice__desc { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--text-tertiary); }
+
+/* a definition list that replaces a wide matrix table on a phone */
+.sl-mdl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1) var(--space-3); margin: 0; font-size: var(--text-sm); }
+.sl-mdl dt { color: var(--text-tertiary); font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: var(--tracking-wide); padding-top: var(--space-1); }
+.sl-mdl dd { margin: 0; color: var(--text-secondary); }
+
+/* small headings between stacked blocks inside a device */
+.sl-mcase {
+  font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+  text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-4) 0 var(--space-2);
+}
+
+/* rules list under the devices */
+.sl-mrules { margin: 0; padding-inline-start: var(--space-5); color: var(--text-secondary); font-size: var(--text-sm); max-width: 80ch; }
+.sl-mrules li + li { margin-top: var(--space-2); }
+
+/* LTR islands: keys, codes, ids and emails inside RTL text */
+.sl-ltr { direction: ltr; unicode-bidi: isolate; }
+/* frame.css sets text-align: right on [dir='rtl']; an LTR island inside it (the
+   English source cell, an id inspector) must re-align to its own start. */
+.sl-device [dir='rtl'] [dir='ltr'], .sl-device[dir='rtl'] [dir='ltr'] { text-align: start; }
+
+/* ---- the review page itself at a phone width -------------------------------- */
+@media (max-width: 40em) {
+  .content { padding: var(--space-4); padding-bottom: calc(var(--space-16) * 2); }
+  .frame-nav { padding: var(--space-2) var(--space-3); }
+  .frame-nav .caption { display: none; }
+  .sl-devices { gap: var(--space-6); }
+}
+
+/* ---- shared-lists components at phone width --------------------------------- */
+.sl-device .sl-prov { grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); }
+.sl-device .sl-prov > :last-child:not(div) { grid-column: 1 / -1; }
+.sl-device .sl-choice__opt { min-height: var(--touch-target); }
+.sl-device .sl-confirm .sl-head__actions { flex-direction: column; align-items: stretch; }
+.sl-device .sl-toast { max-width: none; }
+.sl-device .sl-source { flex-wrap: wrap; }

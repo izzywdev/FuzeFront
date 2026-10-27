@@ -11,10 +11,18 @@
 // workflow named in governance/required-check-triggers.json regains a `paths:` /
 // `paths-ignore:` filter on its `pull_request:` trigger.
 //
+// The same bug has a second home: a MERGE QUEUE. A queue builds each candidate on a
+// `refs/heads/gh-readonly-queue/...` branch and emits `merge_group`, never `pull_request`.
+// A required context whose workflow has no `merge_group:` trigger is therefore never
+// created for a queue entry, and the entry sits unsatisfied exactly as #286's PRs did —
+// only now it strands the queue rather than one PR. So for every entry the manifest marks
+// `requiredInRuleset`, this script also asserts a `merge_group:` trigger is present.
+//
 // Deliberately dependency-free (no js-yaml) so it runs with a bare `node`, same as
-// scripts/check-workspace-deps.mjs. Only needs to understand ONE shape: a top-level
-// `on: / pull_request: / paths:` (or `paths-ignore:`) block, so a line-based indentation
-// scan is enough — a real YAML parser is not needed to detect the one key that matters.
+// scripts/check-workspace-deps.mjs. It needs to understand only two shapes, both inside
+// the top-level `on:` mapping: a `pull_request:` block containing `paths:`/`paths-ignore:`,
+// and the presence of a `merge_group:` key. A line-based indentation scan is enough — a
+// real YAML parser is not needed to detect the keys that matter.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -84,6 +92,40 @@ function findPathsFilterOnPullRequest(source) {
   return false
 }
 
+// Is there a `merge_group:` key directly inside the top-level `on:` mapping? Accepts the
+// bare `merge_group:` form (which defaults to the `checks_requested` activity type) and a
+// `merge_group:` block with `types:`. Deliberately scoped to `on:`'s direct children so a
+// `merge_group` mentioned in a comment, a job `if:`, or a nested value cannot satisfy it.
+function hasMergeGroupTrigger(source) {
+  const lines = source.split(/\r?\n/)
+  const indentOf = (line) => line.match(/^[ \t]*/)[0].length
+
+  let onIndent = -1
+  let childIndent = -1
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]
+    const line = raw.split('#')[0]
+    if (!line.trim()) continue
+    const indent = indentOf(raw)
+
+    if (onIndent === -1) {
+      if (/^on:\s*$/.test(line.trim()) || /^on:\s*\{/.test(line.trim())) onIndent = indent
+      continue
+    }
+
+    // Left the `on:` block entirely.
+    if (indent <= onIndent && !/^on:/.test(line.trim())) break
+
+    // Only direct children of `on:` count. The first child establishes that depth.
+    if (childIndent === -1) childIndent = indent
+    if (indent !== childIndent) continue
+
+    if (/^merge_group:/.test(line.trim())) return true
+  }
+  return false
+}
+
 let failures = 0
 for (const entry of entries) {
   const { context, file } = entry
@@ -114,10 +156,33 @@ for (const entry of entries) {
   } else {
     console.log(`✓ [${context}] ${file} runs unconditionally on pull_request`)
   }
+
+  // Only contexts the ruleset actually requires need to report for a merge-queue entry.
+  // Demanding it of the others would run them on every queue build for no gating benefit.
+  if (entry.requiredInRuleset === true) {
+    if (!hasMergeGroupTrigger(source)) {
+      console.error(
+        `✗ [${context}] ${file} has no merge_group: trigger.\n` +
+          `  This context is REQUIRED on the branch ruleset. A merge queue builds each\n` +
+          `  candidate on a refs/heads/gh-readonly-queue/... branch and emits merge_group,\n` +
+          `  not pull_request — so this context would never be created for a queue entry,\n` +
+          `  and a required-but-never-reported context counts as unsatisfied. The entry\n` +
+          `  would sit in the queue forever with nothing to re-run (FuzeFront#286, moved\n` +
+          `  into the queue). Add \`merge_group:\` to the workflow's on: block.`
+      )
+      failures++
+    } else {
+      console.log(`✓ [${context}] ${file} also triggers on merge_group`)
+    }
+  }
 }
 
 if (failures > 0) {
   console.error(`\n${failures} required-check workflow(s) failed the trigger check.`)
   process.exit(1)
 }
-console.log(`\n✓ All ${entries.length} required-check workflow(s) run unconditionally on pull_request.`)
+const requiredCount = entries.filter((e) => e.requiredInRuleset === true).length
+console.log(
+  `\n✓ All ${entries.length} listed workflow(s) run unconditionally on pull_request, ` +
+    `and all ${requiredCount} ruleset-required one(s) also trigger on merge_group.`
+)

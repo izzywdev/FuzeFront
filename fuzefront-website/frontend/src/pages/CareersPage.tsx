@@ -2,9 +2,9 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container, HeroPatternOverlay } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroPatternOverlay, Stack, Text, AmbientGlow, GradientText, InlineLink } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
-import { ListStack } from '@fuzefront/design-system'
+import { ListStack, GroupLabel } from '@fuzefront/design-system'
 
 interface Position {
   code: string
@@ -103,7 +103,7 @@ export const CareersPage: React.FC = () => {
         className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
         <HeroPatternOverlay />
-        <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="primary" size={320} style={{ top: '2.5rem', left: '25%' }} />
         <Container size="4xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -111,7 +111,7 @@ export const CareersPage: React.FC = () => {
             transition={{ duration: 0.6 }}
           >
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
-              Join <span className="gradient-text">FuzeOne</span>
+              Join <GradientText gradient="var(--primary-gradient)">FuzeOne</GradientText>
             </h1>
             <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
               We're a small, remote-first team building the operating system for SaaS. Help us
@@ -149,9 +149,9 @@ export const CareersPage: React.FC = () => {
             </h2>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
               Don't see a fit? Email us anyway at{' '}
-              <a href="mailto:hr@fuzefront.com" className="text-primary-700 hover:underline">
+              <InlineLink href="mailto:hr@fuzefront.com">
                 hr@fuzefront.com
-              </a>
+              </InlineLink>
               — we're always looking for great people.
             </p>
           </div>
@@ -170,7 +170,7 @@ export const CareersPage: React.FC = () => {
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center flex-shrink-0">
-                        <Icon size={20} className="text-white" />
+                        <IconTile tone="inverse" variant="plain"><Icon size={20} /></IconTile>
                       </div>
                       <div>
                         <span className="inline-block text-xs font-mono font-semibold text-primary-700 bg-primary-50 rounded px-2 py-0.5 mb-1.5">
@@ -179,12 +179,12 @@ export const CareersPage: React.FC = () => {
                         <h3 className="text-xl font-bold text-gray-900">{position.title}</h3>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-sm text-gray-600">
                           <span>{position.department}</span>
-                          <span className="flex items-center gap-1">
+                          <Stack gap="xs">
                             <MapPin size={13} /> {position.location}
-                          </span>
-                          <span className="flex items-center gap-1">
+                          </Stack>
+                          <Stack gap="xs">
                             <Clock size={13} /> {position.type}
-                          </span>
+                          </Stack>
                         </div>
                       </div>
                     </div>
@@ -197,13 +197,11 @@ export const CareersPage: React.FC = () => {
                     </a>
                   </div>
 
-                  <p className="text-gray-600 text-sm leading-relaxed mb-5">{position.description}</p>
+                  <Text as="p" tone="secondary" size="sm" leading="relaxed" style={{ marginBlockEnd: 'var(--space-5)' }}>{position.description}</Text>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">
-                        Responsibilities
-                      </h4>
+                      <GroupLabel tone="primary">Responsibilities</GroupLabel>
                       <ListStack gap="sm">
                         {position.responsibilities.map((r) => (
                           <li key={r} className="text-sm text-gray-600 flex items-start gap-2">
@@ -214,9 +212,7 @@ export const CareersPage: React.FC = () => {
                       </ListStack>
                     </div>
                     <div>
-                      <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">
-                        Qualifications
-                      </h4>
+                      <GroupLabel tone="primary">Qualifications</GroupLabel>
                       <ListStack gap="sm">
                         {position.qualifications.map((q) => (
                           <li key={q} className="text-sm text-gray-600 flex items-start gap-2">
@@ -230,9 +226,9 @@ export const CareersPage: React.FC = () => {
 
                   <div className="mt-5 pt-5 border-t border-gray-100 text-sm text-gray-600">
                     To apply, send your resume to{' '}
-                    <a href="mailto:hr@fuzefront.com" className="text-primary-700 hover:underline font-medium">
+                    <InlineLink href="mailto:hr@fuzefront.com" emphasis>
                       hr@fuzefront.com
-                    </a>{' '}
+                    </InlineLink>{' '}
                     referencing position code <span className="font-mono font-semibold text-gray-700">{position.code}</span>.
                   </div>
                 </motion.div>
