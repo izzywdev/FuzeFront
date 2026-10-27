@@ -1,10 +1,28 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useCurrentUser } from '../lib/shared'
+
+// Canonical, version-controlled help content lives in docs/help/** (source of record,
+// governed by gate-help-conformance). Until the in-app content-driven renderer ships
+// (tracked follow-up: it needs product-designer frames + ui-runtime-validation), the Help
+// Center renders accurate overviews here and links to the full guides and the Developer
+// Portal. No fact is hard-coded here that is not verified against the current platform.
+const DOCS = 'https://github.com/izzywdev/FuzeFront/tree/master/docs/help'
+const USER_GUIDE = `${DOCS}/user-guide`
+const DEV_GUIDE = `${DOCS}/developer-guide`
+const DEV_PORTAL = 'https://developers.fuzefront.com'
+const ISSUES = 'https://github.com/izzywdev/FuzeFront/issues'
 
 interface TabProps {
   id: string
   label: string
-  icon: string
+}
+
+function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  )
 }
 
 function HelpPage() {
@@ -12,11 +30,11 @@ function HelpPage() {
   const [activeTab, setActiveTab] = useState('getting-started')
 
   const tabs: TabProps[] = [
-    { id: 'getting-started', label: 'Getting Started', icon: '🚀' },
-    { id: 'api-docs', label: 'API Documentation', icon: '📚' },
-    { id: 'developer-guide', label: 'Developer Guide', icon: '👨‍💻' },
-    { id: 'deployment', label: 'Deployment Guide', icon: '🚀' },
-    { id: 'support', label: 'Support', icon: '🆘' },
+    { id: 'getting-started', label: 'Getting Started' },
+    { id: 'user-guide', label: 'User Guide' },
+    { id: 'developer-guide', label: 'Developer Guide' },
+    { id: 'developer-portal', label: 'Developer Portal' },
+    { id: 'support', label: 'Support' },
   ]
 
   const renderTabContent = () => {
@@ -25,201 +43,121 @@ function HelpPage() {
         return (
           <div className="help-content">
             <div className="help-card">
-              <h3>🎯 Welcome to FrontFuse</h3>
+              <h3>Welcome to FuzeFront</h3>
               <p>
-                FrontFuse is a powerful microfrontend hosting platform that
-                enables you to build, deploy, and manage federated applications
-                seamlessly.
+                FuzeFront is a micro-frontend hosting platform. The portal is the host shell:
+                independent applications ("remotes") are mounted into it and run side by side under a
+                single sign-in, a shared design system, and one navigation.
               </p>
 
-              <h4>Quick Start</h4>
+              <h4>Quick start</h4>
               <ol>
                 <li>
-                  <strong>Login</strong>: Use your credentials to access the
-                  platform
+                  <strong>Sign in</strong>: create an account or sign in with your email and
+                  password, or with Google. Authentication is handled by Authentik, and one session
+                  carries across every app in the portal.
                 </li>
                 <li>
-                  <strong>Explore Apps</strong>: Browse available applications
-                  in the dashboard
+                  <strong>Find your apps</strong>: the left sidebar lists the applications available
+                  to you. Select one to launch it inside the portal.
                 </li>
                 <li>
-                  <strong>Navigate</strong>: Use the left sidebar to access
-                  different features
+                  <strong>Set your context</strong>: switch organization, language, and theme from
+                  the top bar.
                 </li>
                 <li>
-                  <strong>Develop</strong>: Create your own pluggable
-                  applications
+                  <strong>Build</strong>: developers can add their own apps — see the{' '}
+                  <ExternalLink href={DEV_GUIDE}>Developer Guide</ExternalLink>.
                 </li>
               </ol>
 
-              <h4>Key Features</h4>
+              <h4>Key capabilities</h4>
               <ul>
                 <li>
-                  🔐 <strong>Secure Authentication</strong>: JWT-based user
-                  sessions
+                  <strong>Single sign-on</strong>: one authenticated session spans every app
+                  mounted in the portal (identity via Authentik/OIDC).
                 </li>
                 <li>
-                  🧩 <strong>Module Federation</strong>: Dynamic loading of
-                  React applications
+                  <strong>Module Federation</strong> for dynamically loading React applications into
+                  the shell.
                 </li>
                 <li>
-                  📱 <strong>Responsive Design</strong>: Works on desktop and
-                  mobile
+                  <strong>Fine-grained authorization</strong> enforced by Permit, scoped to your
+                  organization and role.
                 </li>
                 <li>
-                  🌐 <strong>Multi-language Support</strong>: English and Hebrew
+                  <strong>Responsive and installable</strong> on desktop, as a PWA, and as a signed
+                  Android app.
                 </li>
                 <li>
-                  ⚡ <strong>Real-time Updates</strong>: WebSocket communication
-                </li>
-                <li>
-                  🎨 <strong>Customizable Menus</strong>: Apps can register
-                  their own menu items
+                  <strong>Multi-language</strong>, including right-to-left (English and Hebrew).
                 </li>
               </ul>
 
-              <h4>User Roles</h4>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-                  gap: '1rem',
-                  marginTop: '1rem',
-                }}
-              >
-                <div
-                  style={{
-                    padding: '1rem',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                  }}
-                >
-                  <h5>👤 User</h5>
-                  <p>Access registered applications and personal data</p>
+              <h4>Where to go next</h4>
+              <div className="endpoint-grid">
+                <div className="endpoint-card">
+                  <h5>New to the portal</h5>
+                  <p>
+                    Start with the{' '}
+                    <ExternalLink href={`${USER_GUIDE}/getting-started.md`}>
+                      User Guide
+                    </ExternalLink>
+                    .
+                  </p>
                 </div>
-                <div
-                  style={{
-                    padding: '1rem',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                  }}
-                >
-                  <h5>👑 Admin</h5>
-                  <p>Manage applications, users, and platform settings</p>
+                <div className="endpoint-card">
+                  <h5>Building an app</h5>
+                  <p>
+                    Start with the{' '}
+                    <ExternalLink href={`${DEV_GUIDE}/overview.md`}>Developer Guide</ExternalLink>.
+                  </p>
                 </div>
               </div>
             </div>
           </div>
         )
 
-      case 'api-docs':
+      case 'user-guide':
         return (
           <div className="help-content">
             <div className="help-card">
-              <h3>📚 API Documentation</h3>
+              <h3>User Guide</h3>
               <p>
-                FrontFuse provides a comprehensive REST API for managing
-                applications, authentication, and platform features.
+                Everything you need to use the FuzeFront portal day to day. Full articles are in the{' '}
+                <ExternalLink href={USER_GUIDE}>user guide</ExternalLink>.
               </p>
-
-              <div className="api-section">
-                <h4>🔗 Interactive API Documentation</h4>
-                <p>
-                  Access the full Swagger documentation with interactive
-                  examples:
-                </p>
-                <div className="api-link-container">
-                  <a
-                    href="http://localhost:3001/api-docs"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="api-link"
-                  >
-                    🌐 Open API Documentation
-                  </a>
-                </div>
-                <p>
-                  <small>
-                    Note: The API documentation opens in a new tab and requires
-                    the backend server to be running.
-                  </small>
-                </p>
-              </div>
-
-              <h4>🔑 Authentication</h4>
-              <p>Most API endpoints require authentication via JWT token:</p>
-              <div className="code-block">
-                <pre>{`Authorization: Bearer <your-jwt-token>`}</pre>
-              </div>
-
-              <h4>📋 Main Endpoints</h4>
               <div className="endpoint-grid">
                 <div className="endpoint-card">
-                  <h5>🔐 Authentication</h5>
-                  <ul>
-                    <li>
-                      <code>POST /api/auth/login</code> - User login
-                    </li>
-                    <li>
-                      <code>GET /api/auth/user</code> - Get current user
-                    </li>
-                    <li>
-                      <code>POST /api/auth/logout</code> - User logout
-                    </li>
-                  </ul>
+                  <h5>Navigating the portal</h5>
+                  <p>The sidebar, app launcher, top bar, language and theme.</p>
+                  <ExternalLink href={`${USER_GUIDE}/navigating-the-portal.md`}>Read</ExternalLink>
                 </div>
-
                 <div className="endpoint-card">
-                  <h5>📱 Applications</h5>
-                  <ul>
-                    <li>
-                      <code>GET /api/apps</code> - List all apps
-                    </li>
-                    <li>
-                      <code>POST /api/apps</code> - Register new app
-                    </li>
-                    <li>
-                      <code>PUT /api/apps/:id/activate</code> - Toggle app
-                      status
-                    </li>
-                    <li>
-                      <code>DELETE /api/apps/:id</code> - Remove app
-                    </li>
-                  </ul>
+                  <h5>Organizations &amp; teams</h5>
+                  <p>Organizations, membership roles, and switching between them.</p>
+                  <ExternalLink href={`${USER_GUIDE}/organizations-and-teams.md`}>Read</ExternalLink>
                 </div>
-
                 <div className="endpoint-card">
-                  <h5>💓 Health & Monitoring</h5>
-                  <ul>
-                    <li>
-                      <code>GET /health</code> - Platform health check
-                    </li>
-                    <li>
-                      <code>POST /api/apps/:id/heartbeat</code> - App heartbeat
-                    </li>
-                  </ul>
+                  <h5>Installing &amp; using apps</h5>
+                  <p>Finding, launching, and managing the applications available to you.</p>
+                  <ExternalLink href={`${USER_GUIDE}/installing-and-using-apps.md`}>Read</ExternalLink>
                 </div>
-              </div>
-
-              <h4>🧪 Example Usage</h4>
-              <div className="code-block">
-                <pre>{`// Login to get JWT token
-curl -X POST http://localhost:3001/api/auth/login \\
-  -H "Content-Type: application/json" \\
-  -d '{"email": "admin@frontfuse.dev", "password": "admin123"}'
-
-// Register a new application
-curl -X POST http://localhost:3001/api/apps \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \\
-  -d '{
-    "name": "My App",
-    "url": "https://my-app.netlify.app",
-    "integrationType": "module-federation",
-    "remoteUrl": "https://my-app.netlify.app/assets/remoteEntry.js",
-    "scope": "myApp",
-    "module": "./App"
-  }'`}</pre>
+                <div className="endpoint-card">
+                  <h5>Account &amp; security</h5>
+                  <p>Your profile, sign-in security, two-factor, and active sessions.</p>
+                  <ExternalLink href={`${USER_GUIDE}/account-and-security.md`}>Read</ExternalLink>
+                </div>
+                <div className="endpoint-card">
+                  <h5>Billing &amp; plans</h5>
+                  <p>Subscription plans and what each includes.</p>
+                  <ExternalLink href={`${USER_GUIDE}/billing-and-plans.md`}>Read</ExternalLink>
+                </div>
+                <div className="endpoint-card">
+                  <h5>Mobile app</h5>
+                  <p>Installing FuzeFront as a PWA or the signed Android app.</p>
+                  <ExternalLink href={`${USER_GUIDE}/mobile-app.md`}>Read</ExternalLink>
+                </div>
               </div>
             </div>
           </div>
@@ -229,243 +167,111 @@ curl -X POST http://localhost:3001/api/apps \\
         return (
           <div className="help-content">
             <div className="help-card">
-              <h3>👨‍💻 Developer Guide</h3>
+              <h3>Developer Guide</h3>
               <p>
-                Learn how to create and deploy your own pluggable applications
-                for the FrontFuse platform.
+                Build, register, and deploy your own micro-frontend or service on FuzeFront. Full
+                articles are in the{' '}
+                <ExternalLink href={DEV_GUIDE}>developer guide</ExternalLink>; the live API catalog
+                and sandbox are in the{' '}
+                <ExternalLink href={DEV_PORTAL}>Developer Portal</ExternalLink>.
               </p>
 
-              <h4>🏗️ Architecture Overview</h4>
+              <h4>Architecture</h4>
               <p>
-                FrontFuse uses a hub-and-spoke architecture with these key
-                components:
+                FuzeFront is a Module-Federation <strong>host shell</strong>. Your application is a{' '}
+                <strong>remote</strong> that the shell loads at runtime. The shell owns the shared
+                dependency contract (React and the design system); remotes consume it. The backend
+                (Express/Postgres) is reached through a <strong>same-origin API base</strong>, so the
+                same code works under local TLS and production ingress.
               </p>
-              <ul>
-                <li>
-                  <strong>Platform Core</strong>: Main portal hosting and
-                  managing applications
-                </li>
-                <li>
-                  <strong>Federated Apps</strong>: Independent applications that
-                  integrate seamlessly
-                </li>
-                <li>
-                  <strong>SDK</strong>: Shared utilities and context for
-                  integration
-                </li>
-                <li>
-                  <strong>API</strong>: Backend services for authentication and
-                  management
-                </li>
-              </ul>
 
-              <h4>🚀 Quick Start</h4>
-              <div className="step-by-step">
-                <div className="step">
-                  <h5>1. Create React App</h5>
-                  <div className="code-block">
-                    <pre>{`npm create vite@latest my-frontfuse-app -- --template react-ts
-cd my-frontfuse-app
-npm install`}</pre>
-                  </div>
+              <h4>Start here</h4>
+              <div className="endpoint-grid">
+                <div className="endpoint-card">
+                  <h5>Overview</h5>
+                  <p>The platform, the packages, and where to begin.</p>
+                  <ExternalLink href={`${DEV_GUIDE}/overview.md`}>Read</ExternalLink>
                 </div>
-
-                <div className="step">
-                  <h5>2. Install FrontFuse SDK</h5>
-                  <div className="code-block">
-                    <pre>{`npm install @frontfuse/sdk`}</pre>
-                  </div>
+                <div className="endpoint-card">
+                  <h5>Quickstart</h5>
+                  <p>Build a micro-frontend with Vite and Module Federation.</p>
+                  <ExternalLink href={`${DEV_GUIDE}/quickstart-build-a-microfrontend.md`}>
+                    Read
+                  </ExternalLink>
                 </div>
-
-                <div className="step">
-                  <h5>3. Configure Module Federation</h5>
-                  <div className="code-block">
-                    <pre>{`npm install @originjs/vite-plugin-federation --save-dev`}</pre>
-                  </div>
-                </div>
-
-                <div className="step">
-                  <h5>4. Update vite.config.ts</h5>
-                  <div className="code-block">
-                    <pre>{`import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import federation from '@originjs/vite-plugin-federation'
-
-export default defineConfig({
-  plugins: [
-    react(),
-    federation({
-      name: 'myApp',
-      filename: 'remoteEntry.js',
-      exposes: {
-        './App': './src/App.tsx',
-      },
-      shared: ['react', 'react-dom']
-    })
-  ],
-  build: {
-    modulePreload: false,
-    target: 'esnext',
-    minify: false,
-    cssCodeSplit: false
-  }
-})`}</pre>
-                  </div>
-                </div>
-              </div>
-
-              <h4>🔧 Integration Types</h4>
-              <div className="integration-types">
-                <div className="integration-card">
-                  <h5>🧩 Module Federation (Recommended)</h5>
+                <div className="endpoint-card">
+                  <h5>Module Federation contract</h5>
                   <p>
-                    <strong>Best for:</strong> React applications
+                    The shared-singleton rule: the remote&apos;s React{' '}
+                    <code>requiredVersion</code> must match the host, or the app fails at runtime.
                   </p>
-                  <p>
-                    <strong>Pros:</strong> Shared dependencies, seamless
-                    integration, optimal performance
-                  </p>
+                  <ExternalLink href={`${DEV_GUIDE}/module-federation-contract.md`}>Read</ExternalLink>
                 </div>
-
-                <div className="integration-card">
-                  <h5>🖼️ Iframe</h5>
-                  <p>
-                    <strong>Best for:</strong> Legacy applications, non-React
-                    apps
-                  </p>
-                  <p>
-                    <strong>Pros:</strong> Technology agnostic, easy integration
-                  </p>
+                <div className="endpoint-card">
+                  <h5>Design system</h5>
+                  <p>Extend the shared design system; use tokens, never one-off styles.</p>
+                  <ExternalLink href={`${DEV_GUIDE}/design-system.md`}>Read</ExternalLink>
                 </div>
-
-                <div className="integration-card">
-                  <h5>🧱 Web Components</h5>
-                  <p>
-                    <strong>Best for:</strong> Framework-agnostic components
-                  </p>
-                  <p>
-                    <strong>Pros:</strong> Standard-based, reusable
-                  </p>
+                <div className="endpoint-card">
+                  <h5>Auth &amp; authorization</h5>
+                  <p>Sign in with the shared Authentik identity; authorize with Permit.</p>
+                  <ExternalLink href={`${DEV_GUIDE}/authentication-and-authorization.md`}>
+                    Read
+                  </ExternalLink>
                 </div>
-              </div>
-
-              <h4>📖 Complete Guide</h4>
-              <p>
-                For a comprehensive developer guide with detailed examples, code
-                samples, and best practices:
-              </p>
-              <div className="guide-link-container">
-                <a
-                  href="/docs/developer-guide.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="guide-link"
-                >
-                  📚 View Complete Developer Guide
-                </a>
+                <div className="endpoint-card">
+                  <h5>Registering your app</h5>
+                  <p>The app registry, and how slug, menu label, and serve path relate.</p>
+                  <ExternalLink href={`${DEV_GUIDE}/registering-your-app.md`}>Read</ExternalLink>
+                </div>
+                <div className="endpoint-card">
+                  <h5>Deployment</h5>
+                  <p>GitOps via Helm and Argo — merging to the main branch is the deploy.</p>
+                  <ExternalLink href={`${DEV_GUIDE}/deployment.md`}>Read</ExternalLink>
+                </div>
+                <div className="endpoint-card">
+                  <h5>Troubleshooting</h5>
+                  <p>Invalid hook calls, blank panels, mixed-content, and failed remote loads.</p>
+                  <ExternalLink href={`${DEV_GUIDE}/troubleshooting.md`}>Read</ExternalLink>
+                </div>
               </div>
             </div>
           </div>
         )
 
-      case 'deployment':
+      case 'developer-portal':
         return (
           <div className="help-content">
             <div className="help-card">
-              <h3>🚀 Deployment Guide</h3>
+              <h3>Developer Portal</h3>
               <p>
-                Deploy your FrontFuse applications to production with these
-                step-by-step instructions.
+                The Developer Portal at{' '}
+                <ExternalLink href={DEV_PORTAL}>developers.fuzefront.com</ExternalLink> is the live
+                companion to this guide. It signs in with the same FuzeFront identity and gives
+                developers an aggregated, navigable catalog of the platform&apos;s APIs plus a safe
+                sandbox to try them.
               </p>
-
-              <h4>📦 Build Your Application</h4>
-              <div className="code-block">
-                <pre>{`npm run build`}</pre>
-              </div>
-
-              <h4>☁️ Deployment Options</h4>
-
-              <div className="deployment-options">
-                <div className="deployment-card">
-                  <h5>🌐 Netlify</h5>
-                  <div className="code-block">
-                    <pre>{`# Install Netlify CLI
-npm install -g netlify-cli
-
-# Deploy
-netlify deploy --prod --dir=dist`}</pre>
-                  </div>
-                </div>
-
-                <div className="deployment-card">
-                  <h5>▲ Vercel</h5>
-                  <div className="code-block">
-                    <pre>{`# Install Vercel CLI
-npm install -g vercel
-
-# Deploy
-vercel --prod`}</pre>
-                  </div>
-                </div>
-
-                <div className="deployment-card">
-                  <h5>☁️ AWS S3 + CloudFront</h5>
-                  <div className="code-block">
-                    <pre>{`# Build and sync to S3
-npm run build
-aws s3 sync dist/ s3://your-bucket-name --delete
-aws cloudfront create-invalidation \\
-  --distribution-id YOUR_DISTRIBUTION_ID \\
-  --paths "/*"`}</pre>
-                  </div>
-                </div>
-              </div>
-
-              <h4>📝 Register Your App</h4>
-              <p>Once deployed, register your application with FrontFuse:</p>
-              <div className="code-block">
-                <pre>{`curl -X POST http://localhost:3001/api/apps \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \\
-  -d '{
-    "name": "My App",
-    "url": "https://my-app.netlify.app",
-    "iconUrl": "https://my-app.netlify.app/icon.svg",
-    "integrationType": "module-federation",
-    "remoteUrl": "https://my-app.netlify.app/assets/remoteEntry.js",
-    "scope": "myApp",
-    "module": "./App",
-    "description": "My awesome microfrontend application"
-  }'`}</pre>
-              </div>
-
-              <h4>⚙️ Environment Configuration</h4>
-              <p>Configure your application for different environments:</p>
-              <div className="code-block">
-                <pre>{`// src/config/index.ts
-const config = {
-  development: {
-    apiUrl: 'http://localhost:3001',
-    appUrl: 'http://localhost:3003'
-  },
-  production: {
-    apiUrl: 'https://api.frontfuse.dev',
-    appUrl: 'https://my-app.netlify.app'
-  }
-}
-
-export default config[process.env.NODE_ENV || 'development']`}</pre>
-              </div>
-
-              <h4>✅ Best Practices</h4>
+              <h4>What it offers</h4>
               <ul>
-                <li>🔒 Use HTTPS in production</li>
-                <li>🗜️ Enable gzip compression</li>
-                <li>📱 Test on multiple devices</li>
-                <li>🔍 Monitor application health</li>
-                <li>📊 Set up error tracking</li>
-                <li>🚀 Implement CI/CD pipelines</li>
+                <li>
+                  <strong>API catalog</strong>: the OpenAPI documentation for every service, in one
+                  place.
+                </li>
+                <li>
+                  <strong>Spec viewer</strong>: read each contract with request and response
+                  schemas.
+                </li>
+                <li>
+                  <strong>Try it</strong>: exercise an endpoint in a sandbox that never touches a
+                  production system.
+                </li>
+                <li>
+                  <strong>My access</strong>: see your developer membership and sandbox activity.
+                </li>
               </ul>
+              <p>
+                <ExternalLink href={DEV_PORTAL}>Open the Developer Portal</ExternalLink>
+              </p>
             </div>
           </div>
         )
@@ -474,153 +280,49 @@ export default config[process.env.NODE_ENV || 'development']`}</pre>
         return (
           <div className="help-content">
             <div className="help-card">
-              <h3>🆘 Support & Resources</h3>
-              <p>
-                Get help, report issues, and connect with the FrontFuse
-                community.
-              </p>
+              <h3>Support &amp; resources</h3>
+              <p>Get help, report a problem, and check platform status.</p>
 
-              <h4>📞 Contact Information</h4>
+              <h4>Get help</h4>
               <div className="contact-grid">
                 <div className="contact-card">
-                  <h5>📧 Email Support</h5>
-                  <p>support@frontfuse.dev</p>
-                  <p>
-                    <small>Response time: 24-48 hours</small>
-                  </p>
+                  <h5>Report an issue</h5>
+                  <p>Report bugs and request features on GitHub.</p>
+                  <ExternalLink href={ISSUES}>Open an issue</ExternalLink>
                 </div>
-
                 <div className="contact-card">
-                  <h5>💬 Discord Community</h5>
-                  <p>Join our Discord server for real-time help</p>
-                  <a
-                    href="https://discord.gg/frontfuse"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Join Discord
-                  </a>
+                  <h5>Platform status</h5>
+                  <p>Check the health of the platform and its services.</p>
+                  <a href="/status">View status</a>
                 </div>
-
                 <div className="contact-card">
-                  <h5>🐛 GitHub Issues</h5>
-                  <p>Report bugs and request features</p>
-                  <a
-                    href="https://github.com/your-org/frontfuse/issues"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Open Issue
-                  </a>
+                  <h5>Developer Portal</h5>
+                  <p>Live API catalog and sandbox for developers.</p>
+                  <ExternalLink href={DEV_PORTAL}>Open the portal</ExternalLink>
                 </div>
               </div>
 
-              <h4>📚 Documentation</h4>
+              <h4>Documentation</h4>
               <ul>
                 <li>
-                  <a
-                    href="https://docs.frontfuse.dev"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Official Documentation
-                  </a>
+                  <ExternalLink href={USER_GUIDE}>User Guide</ExternalLink>
                 </li>
                 <li>
-                  <a
-                    href="https://docs.frontfuse.dev/api"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    API Reference
-                  </a>
+                  <ExternalLink href={DEV_GUIDE}>Developer Guide</ExternalLink>
                 </li>
                 <li>
-                  <a
-                    href="https://docs.frontfuse.dev/examples"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Code Examples
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://docs.frontfuse.dev/tutorials"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Video Tutorials
-                  </a>
+                  <ExternalLink href={DEV_PORTAL}>Developer Portal (API reference)</ExternalLink>
                 </li>
               </ul>
 
-              <h4>🔧 Troubleshooting</h4>
-              <div className="troubleshooting-section">
-                <details>
-                  <summary>Module Federation Loading Errors</summary>
-                  <p>
-                    <strong>Error:</strong> "Loading chunk failed"
-                  </p>
-                  <p>
-                    <strong>Solution:</strong> Check that your remoteUrl is
-                    correct and accessible.
-                  </p>
-                </details>
-
-                <details>
-                  <summary>Authentication Issues</summary>
-                  <p>
-                    <strong>Error:</strong> "User is undefined"
-                  </p>
-                  <p>
-                    <strong>Solution:</strong> Ensure your app is wrapped in
-                    PlatformProvider and the user is logged in.
-                  </p>
-                </details>
-
-                <details>
-                  <summary>Menu Items Not Appearing</summary>
-                  <p>
-                    <strong>Solution:</strong> Check that you're calling
-                    addAppMenuItems after authentication with the correct
-                    format.
-                  </p>
-                </details>
-              </div>
-
-              <h4>🤝 Contributing</h4>
-              <p>We welcome contributions! Here's how you can help:</p>
-              <ul>
-                <li>🐛 Report bugs and issues</li>
-                <li>💡 Suggest new features</li>
-                <li>📝 Improve documentation</li>
-                <li>🔧 Submit pull requests</li>
-                <li>🌟 Star the repository</li>
-              </ul>
-
-              <h4>📄 License</h4>
-              <p>
-                FrontFuse is licensed under the MIT License. See the LICENSE
-                file for details.
-              </p>
-
-              <h4>ℹ️ System Information</h4>
               {user && (
                 <div className="system-info">
+                  <h4>Your account</h4>
                   <p>
-                    <strong>User:</strong> {user.firstName} {user.lastName} (
-                    {user.email})
+                    <strong>Signed in as:</strong> {user.firstName} {user.lastName} ({user.email})
                   </p>
                   <p>
-                    <strong>Roles:</strong> {user.roles?.join(', ')}
-                  </p>
-                  <p>
-                    <strong>Platform Version:</strong> 1.0.0
-                  </p>
-                  <p>
-                    <strong>Environment:</strong>{' '}
-                    {process.env.NODE_ENV || 'development'}
+                    <strong>Roles:</strong> {user.roles?.join(', ') || 'member'}
                   </p>
                 </div>
               )}
@@ -636,10 +338,8 @@ export default config[process.env.NODE_ENV || 'development']`}</pre>
   return (
     <div className="help-page">
       <div className="help-header">
-        <h1>🆘 Help & Documentation</h1>
-        <p>
-          Everything you need to know about using and developing with FrontFuse
-        </p>
+        <h1>Help &amp; Documentation</h1>
+        <p>Everything you need to use and build on FuzeFront.</p>
       </div>
 
       <div className="help-tabs">
@@ -649,7 +349,6 @@ export default config[process.env.NODE_ENV || 'development']`}</pre>
             className={`help-tab ${activeTab === tab.id ? 'active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
           >
-            <span className="tab-icon">{tab.icon}</span>
             <span className="tab-label">{tab.label}</span>
           </button>
         ))}
