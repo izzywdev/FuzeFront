@@ -1837,12 +1837,22 @@ function Requirements({ data }: { data: Portfolio }) {
     sourceKey: 'default',
     freshnessStatus: 'unknown',
   })
+  const [retrying, setRetrying] = useState(false)
   useEffect(() => {
     api
       .requirementFreshness()
       .then(setFreshness)
       .catch(() => setFreshness({ sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'failed' }))
   }, [])
+  const retry = async () => {
+    setRetrying(true)
+    try {
+      const result = await api.syncRequirements()
+      setFreshness(result.sync)
+    } finally {
+      setRetrying(false)
+    }
+  }
   return (
     <>
       <PageHeading
@@ -1850,7 +1860,7 @@ function Requirements({ data }: { data: Portfolio }) {
         title="Requirements & inferred flows"
         detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed."
         action={
-          <RequirementFreshnessStatus sync={freshness} />
+          <RequirementFreshnessStatus sync={freshness} onRetry={() => void retry()} retrying={retrying} />
         }
       />
       <div className="requirements-grid">

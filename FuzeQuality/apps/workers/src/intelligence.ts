@@ -105,7 +105,7 @@ await runConsumer(
       if (command) {
         await apiRequest('/api/v1/internal/intelligence/failure', {
           method: 'POST',
-          body: JSON.stringify({ sourceType: 'jira', sourceKey: command.scopeId, code: failureCode(error) }),
+          body: JSON.stringify({ tenantId: command.tenantId, sourceType: 'jira', sourceKey: command.scopeId, code: failureCode(error) }),
         }).catch(() => undefined)
       }
       throw error

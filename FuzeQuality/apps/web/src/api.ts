@@ -158,6 +158,10 @@ async function qualityArtifactsByIdsBatched(id: string, artifactIds: string[], r
 export const api = {
   portfolio: () => request<Portfolio>('/api/v1/portfolio'),
   requirementFreshness: () => request<import('@fuzequality/contracts').SyncCursor>('/api/v1/requirements/freshness'),
+  syncRequirements: () => request<{ status: 'queued'; scopeId: string; incrementalFrom?: string; sync: import('@fuzequality/contracts').SyncCursor }>('/api/v1/jira/sync', {
+    method: 'POST',
+    body: JSON.stringify({ scopeId: 'default' }),
+  }),
   addRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
   repositoryScanHistory: (id: string, cursor?: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryPage | import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),

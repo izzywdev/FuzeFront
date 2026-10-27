@@ -359,7 +359,7 @@ export type SyncCursor = {
   sourceKey: string
   cursor?: string
   lastSuccessAt?: string
-  freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'
+  freshnessStatus: 'unknown' | 'queued' | 'fresh' | 'stale' | 'failed'
   failureCode?: 'JIRA_UNAVAILABLE' | 'INTELLIGENCE_UNAVAILABLE' | 'INTELLIGENCE_TIMEOUT' | 'INTELLIGENCE_INVALID_RESPONSE' | 'SEMANTIC_INDEX_UNAVAILABLE'
 }
 

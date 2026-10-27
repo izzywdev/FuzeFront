@@ -360,11 +360,13 @@ export interface CatalogStore {
   setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>): Promise<void>
   queueRepositoryAnalysis(id: string, tenantId: string): Promise<Repository | undefined>
   saveScan(result: ScanResult): Promise<void>
-  syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor | undefined>
-  markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, code: NonNullable<SyncCursor['failureCode']>): Promise<void>
+  syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string): Promise<SyncCursor | undefined>
+  syncCursorStatuses(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor[]>
+  markSyncQueued(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string): Promise<SyncCursor>
+  markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string, code: NonNullable<SyncCursor['failureCode']>): Promise<void>
   saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
-    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ): Promise<void>
   rebuildCoverage(): Promise<CoverageProjection>
   reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
@@ -375,6 +377,7 @@ export interface CatalogStore {
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
   recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>): Promise<AdminContextAudit>
+  activeTenantIds(): Promise<string[]>
   upsertTenant(tenant: QualityTenant): Promise<boolean>
   deactivateTenant(tenantId: string, cascade?: 'soft' | 'hard'): Promise<boolean>
   upsertPrincipal(principal: QualityPrincipal): Promise<boolean>
@@ -438,7 +441,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
   private decisions: SuggestionDecision[] = []
   private adminContextAudits: AdminContextAudit[] = []
-  private syncCursors: SyncCursor[] = []
+  private syncCursors: Array<SyncCursor & { tenantId: string }> = []
   private scanHistory: Array<{ repositoryId: string; item: RepositoryScanHistoryEntry }> = []
   private sourceCatalogRevisions = new Map<string, string>()
   private exclusions = new Map<string, ExpectationExclusionInput>()
@@ -1071,15 +1074,36 @@ export class MemoryCatalogStore implements CatalogStore {
     return projection
   }
 
-  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string) {
-    return this.syncCursors.find(item => item.sourceType === sourceType && item.sourceKey === sourceKey)
+  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string) {
+    return this.syncCursors.find(item => item.sourceType === sourceType && item.sourceKey === sourceKey && item.tenantId === tenantId)
   }
 
-  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, code: NonNullable<SyncCursor['failureCode']>) {
-    const existing = await this.syncCursor(sourceType, sourceKey)
-    const value: SyncCursor = {
+  async syncCursorStatuses(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    return this.syncCursors.filter(item => item.sourceType === sourceType && item.sourceKey === sourceKey)
+  }
+
+  async markSyncQueued(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string) {
+    const existing = await this.syncCursor(sourceType, sourceKey, tenantId)
+    const value: SyncCursor & { tenantId: string } = {
       sourceType,
       sourceKey,
+      tenantId,
+      cursor: existing?.cursor,
+      lastSuccessAt: existing?.lastSuccessAt,
+      freshnessStatus: 'queued',
+      failureCode: undefined,
+    }
+    if (existing) Object.assign(existing, value)
+    else this.syncCursors.push(value)
+    return value
+  }
+
+  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string, code: NonNullable<SyncCursor['failureCode']>) {
+    const existing = await this.syncCursor(sourceType, sourceKey, tenantId)
+    const value: SyncCursor & { tenantId: string } = {
+      sourceType,
+      sourceKey,
+      tenantId,
       cursor: existing?.cursor,
       lastSuccessAt: existing?.lastSuccessAt,
       freshnessStatus: 'failed',
@@ -1091,7 +1115,7 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
-    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ) {
     for (const result of results) {
       const requirement = { ...result.requirement, tenantId: sync?.tenantId }
@@ -1104,8 +1128,8 @@ export class MemoryCatalogStore implements CatalogStore {
       ]
     }
     if (sync) {
-      const existing = await this.syncCursor(sync.sourceType, sync.sourceKey)
-      const value: SyncCursor = {
+      const existing = await this.syncCursor(sync.sourceType, sync.sourceKey, sync.tenantId)
+      const value: SyncCursor & { tenantId: string } = {
         ...sync,
         cursor: sync.cursor,
         lastSuccessAt: new Date().toISOString(),
@@ -1122,6 +1146,10 @@ export class MemoryCatalogStore implements CatalogStore {
     if (existing) return existing
     this.implementations.push({ ...request, idempotencyKey })
     return request
+  }
+
+  async activeTenantIds() {
+    return [...this.tenants.values()].filter(tenant => tenant.active).map(tenant => tenant.id).sort()
   }
 
   async testImplementation(id: string, tenantId: string) {
@@ -2655,6 +2683,13 @@ export class PostgresCatalogStore implements CatalogStore {
     )
   }
 
+  async activeTenantIds() {
+    const result = await this.pool.query(
+      'SELECT id FROM fuzequality.tenants WHERE active=true ORDER BY id',
+    )
+    return result.rows.map(row => String(row.id))
+  }
+
   async upsertTenant(tenant: QualityTenant): Promise<boolean> {
     const result = await this.pool.query(
       `INSERT INTO fuzequality.tenants (id,slug,name,tenant_type,owner_id,active,deleted_at,updated_at)
@@ -3113,10 +3148,10 @@ export class PostgresCatalogStore implements CatalogStore {
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
 
-  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string) {
     const result = await this.pool.query(
-      'SELECT * FROM fuzequality.sync_cursors WHERE source_type=$1 AND source_key=$2',
-      [sourceType, sourceKey],
+      'SELECT * FROM fuzequality.sync_cursors WHERE source_type=$1 AND source_key=$2 AND tenant_id=$3',
+      [sourceType, sourceKey, tenantId],
     )
     const row = result.rows[0]
     if (!row) return undefined
@@ -3130,18 +3165,52 @@ export class PostgresCatalogStore implements CatalogStore {
     } as SyncCursor
   }
 
-  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, code: NonNullable<SyncCursor['failureCode']>) {
+  async syncCursorStatuses(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    const result = await this.pool.query(
+      'SELECT * FROM fuzequality.sync_cursors WHERE source_type=$1 AND source_key=$2',
+      [sourceType, sourceKey],
+    )
+    return result.rows.map(row => ({
+      sourceType: row.source_type,
+      sourceKey: row.source_key,
+      cursor: row.cursor ?? undefined,
+      lastSuccessAt: row.last_success_at?.toISOString(),
+      freshnessStatus: row.freshness_status,
+      failureCode: row.failure_code ?? undefined,
+    } as SyncCursor))
+  }
+
+  async markSyncQueued(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string) {
+    const result = await this.pool.query(
+      `INSERT INTO fuzequality.sync_cursors (source_type,source_key,tenant_id,freshness_status,failure_code)
+       VALUES ($1,$2,$3,'queued',NULL)
+       ON CONFLICT (tenant_id,source_type,source_key) DO UPDATE SET freshness_status='queued',failure_code=NULL
+       RETURNING *`,
+      [sourceType, sourceKey, tenantId],
+    )
+    const row = result.rows[0]
+    return {
+      sourceType: row.source_type,
+      sourceKey: row.source_key,
+      cursor: row.cursor ?? undefined,
+      lastSuccessAt: row.last_success_at?.toISOString(),
+      freshnessStatus: row.freshness_status,
+      failureCode: row.failure_code ?? undefined,
+    } as SyncCursor
+  }
+
+  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string, tenantId: string, code: NonNullable<SyncCursor['failureCode']>) {
     await this.pool.query(
-      `INSERT INTO fuzequality.sync_cursors (source_type,source_key,freshness_status,failure_code)
-       VALUES ($1,$2,'failed',$3)
-       ON CONFLICT (source_type,source_key) DO UPDATE SET freshness_status='failed',failure_code=EXCLUDED.failure_code`,
-      [sourceType, sourceKey, code],
+      `INSERT INTO fuzequality.sync_cursors (source_type,source_key,tenant_id,freshness_status,failure_code)
+       VALUES ($1,$2,$3,'failed',$4)
+       ON CONFLICT (tenant_id,source_type,source_key) DO UPDATE SET freshness_status='failed',failure_code=EXCLUDED.failure_code`,
+      [sourceType, sourceKey, tenantId, code],
     )
   }
 
   async saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
-    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId: string }
   ) {
     const client = await this.pool.connect()
     try {
@@ -3164,11 +3233,11 @@ export class PostgresCatalogStore implements CatalogStore {
       }
       if (sync) {
         await client.query(
-          `INSERT INTO fuzequality.sync_cursors (source_type,source_key,cursor,last_success_at,freshness_status,failure_code)
-           VALUES ($1,$2,$3,now(),'fresh',NULL)
-           ON CONFLICT (source_type,source_key) DO UPDATE SET
+          `INSERT INTO fuzequality.sync_cursors (source_type,source_key,tenant_id,cursor,last_success_at,freshness_status,failure_code)
+           VALUES ($1,$2,$3,$4,now(),'fresh',NULL)
+           ON CONFLICT (tenant_id,source_type,source_key) DO UPDATE SET
              cursor=EXCLUDED.cursor,last_success_at=EXCLUDED.last_success_at,freshness_status='fresh',failure_code=NULL`,
-          [sync.sourceType, sync.sourceKey, sync.cursor],
+          [sync.sourceType, sync.sourceKey, sync.tenantId, sync.cursor],
         )
       }
       await client.query('COMMIT')

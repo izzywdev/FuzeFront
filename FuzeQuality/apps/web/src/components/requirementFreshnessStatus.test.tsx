@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RequirementFreshnessStatus } from './requirementFreshnessStatus'
 
 afterEach(cleanup)
@@ -29,5 +29,21 @@ describe('RequirementFreshnessStatus', () => {
 
     expect(screen.getByLabelText('Requirement analysis freshness')).toHaveTextContent('Jira fresh')
     expect(screen.getByLabelText('Requirement analysis freshness')).not.toHaveTextContent('unavailable')
+  })
+
+  it('offers a reviewed retry only for failed analysis and exposes queued state', () => {
+    const onRetry = vi.fn()
+    const { rerender } = render(<RequirementFreshnessStatus sync={{
+      sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'failed', failureCode: 'INTELLIGENCE_TIMEOUT',
+    }} onRetry={onRetry} />)
+
+    screen.getByRole('button', { name: 'Retry requirement analysis' }).click()
+    expect(onRetry).toHaveBeenCalledOnce()
+
+    rerender(<RequirementFreshnessStatus sync={{
+      sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'queued',
+    }} onRetry={onRetry} />)
+    expect(screen.getByLabelText('Requirement analysis freshness')).toHaveTextContent('Jira queued')
+    expect(screen.queryByRole('button', { name: 'Retry requirement analysis' })).not.toBeInTheDocument()
   })
 })
