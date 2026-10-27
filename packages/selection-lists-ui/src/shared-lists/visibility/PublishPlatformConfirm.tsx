@@ -72,7 +72,11 @@ export function PublishPlatformConfirm({
     <ConfirmSurface
       confirm="publish-platform"
       presentation={presentation}
-      title={MSG.publishTitle(target.name)}
+      title={
+        <>
+          Publish “<bdi>{target.name}</bdi>” to every organization?
+        </>
+      }
       attrs={{ 'data-confirm-state': state, 'data-scope': 'platform-org' }}
       busy={publishing}
       onDismiss={onCancel}

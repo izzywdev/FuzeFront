@@ -499,7 +499,8 @@ function AccessPanel({ listId, organizationName, activeOrganizationId }: AccessP
       {/* SL9 visibility control: renders nothing while the shared-lists flag is OFF. */}
       <VisibilityControl
         listId={listId}
-        access={accessProbe}
+        // A later 403 (e.g. the roster refresh after demoting yourself) revokes what the first read proved.
+        access={panelForbidden ? 'forbidden' : accessProbe}
         onRetryAccess={loadGrants}
         organizationName={organizationName}
         activeOrganizationId={activeOrganizationId}
@@ -686,6 +687,7 @@ export function SelectionListAccessFlow({
 
   return (
     <AccessPanel
+      key={listId}
       listId={listId}
       organizationName={organizationName}
       activeOrganizationId={activeOrganizationId}

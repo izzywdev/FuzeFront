@@ -46,7 +46,11 @@ export function MakePrivateConfirm({
     <ConfirmSurface
       confirm="visibility-to-private"
       presentation={presentation}
-      title={MSG.toPrivateTitle(target.name)}
+      title={
+        <>
+          Make <bdi>{target.name}</bdi> private?
+        </>
+      }
       onDismiss={onCancel}
       actions={({ stacked }) => (
         <>

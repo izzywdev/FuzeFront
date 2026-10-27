@@ -303,7 +303,16 @@ function savedBody(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function VisibilityControl({
+/**
+ * Keyed by list: a confirmation, an in-flight save and a notice belong to ONE
+ * list, so navigating to another list's Access tab (same mounted tree) starts
+ * from a clean control instead of re-binding a pending confirm to the new list.
+ */
+export function VisibilityControl(props: VisibilityControlProps) {
+  return <VisibilityControlForList key={props.listId} {...props} />
+}
+
+function VisibilityControlForList({
   listId,
   access,
   onRetryAccess,
@@ -476,10 +485,10 @@ export function VisibilityControl({
   if (busy === 'direct') {
     return wrap(
       <Shell state="saving" busy>
-        <p style={statement}>
+        <div style={statement}>
           <Spinner size={16} label="Saving" />
           <span>{MSG.saving}</span>
-        </p>
+        </div>
       </Shell>
     )
   }

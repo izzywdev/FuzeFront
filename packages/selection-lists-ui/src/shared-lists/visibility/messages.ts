@@ -45,13 +45,10 @@ export const MSG = {
 
   // Confirmations.
   cancel: 'Cancel',
-  toPrivateTitle: (name: string) => `Make ${name} private?`,
   toPrivateWithoutRole: 'Members without a role can no longer see it.',
   toPrivateNothingDeleted:
     'Nothing is deleted; switch back to Organization at any time.',
   makePrivate: 'Make private',
-  publishTitle: (name: string) =>
-    `Publish “${name}” to every organization?`,
   publishLineRead:
     'Every organization can read it and pick its values; organizations that want changes will fork it.',
   publishLineIrreversible:
