@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Portfolio } from '@fuzequality/contracts'
-import { MemoryCatalogStore } from './store'
+import { MemoryCatalogStore, PostgresCatalogStore } from './store'
 
 describe('MemoryCatalogStore tenant isolation', () => {
   it('returns only repository-owned evidence and fails closed for legacy requirement intelligence', async () => {
@@ -60,6 +60,30 @@ describe('MemoryCatalogStore tenant isolation', () => {
 
     const updated = await store.updateRepositoryAdministration('repo-a', 'tenant-a', value)
     expect(updated).toMatchObject(value)
+
+    const cleared = await store.updateRepositoryAdministration('repo-a', 'tenant-a', {
+      ownership: null,
+      jiraBindings: [],
+      storybookBaseUrl: null,
+    })
+    expect(cleared).toMatchObject({ jiraBindings: [] })
+    expect(cleared?.ownership).toBeUndefined()
+    expect(cleared?.storybookBaseUrl).toBeUndefined()
+  })
+
+  it('removes explicit repository-administration clears from Postgres JSON configuration', async () => {
+    const query = vi.fn().mockResolvedValue({ rowCount: 0, rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+
+    await store.updateRepositoryAdministration('repo-a', 'tenant-a', {
+      ownership: null,
+      jiraBindings: [],
+      storybookBaseUrl: null,
+    })
+
+    expect(String(query.mock.calls[0][0])).toContain("(config || $3::jsonb) - ARRAY(SELECT key FROM jsonb_each($3::jsonb) WHERE value = 'null'::jsonb)")
+    expect(JSON.parse(query.mock.calls[0][1][2])).toEqual({ ownership: null, jiraBindings: [], storybookBaseUrl: null })
   })
 
   it('shows reviewed AI expectations and applies tenant-scoped exclusions until expiry', async () => {

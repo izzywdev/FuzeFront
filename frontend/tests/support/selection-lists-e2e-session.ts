@@ -44,6 +44,20 @@ import type { ConsoleMessage, Page } from '@playwright/test'
  *    `console.error('Failed to load registered apps:', …)`, which trips the
  *    suite's own runtime console-clean assertions. Mocked to an empty,
  *    successful list so it is silent.
+ * 6. `GET /api/organizations` — WorkspaceProvisioningGate still refreshes its
+ *    context in the background after the session-ready fast path renders the
+ *    shell. Without a backend, Vite's SPA fallback returns `index.html`; that
+ *    is not an organization array and crashes the bridge effect before the
+ *    selection-list route can mount.
+ * 7. `POST /v1/traces` — browser telemetry flushes route/API spans to the
+ *    same-origin OTLP endpoint. The static preview has no collector, so the
+ *    harness acknowledges this exact transport instead of hiding its 404 as
+ *    generic console noise.
+ * 8. `POST /api/organizations/:id/session-token` — once the background
+ *    membership refresh selects the mocked organization, the shell performs
+ *    its normal membership-proved token exchange for organization-scoped
+ *    services. Return a short-lived harness token so the secure path remains
+ *    exercised without a Security backend.
  *
  * The 4 gated flows' spec files (list-management, translation-workbench,
  * access-control) call this once per test, before navigating; the picker
@@ -89,6 +103,41 @@ export async function mockAuthenticatedSelectionListsSession(page: Page): Promis
       contentType: 'application/json',
       body: JSON.stringify({ apps: [] }),
     })
+  })
+
+  await page.route('**/api/organizations', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        organizations: [
+          {
+            id: 'org_e2e_selection_lists',
+            name: 'Selection Lists E2E',
+            slug: 'selection-lists-e2e',
+            type: 'organization',
+            user_role: 'admin',
+          },
+        ],
+      }),
+    })
+  })
+
+  await page.route('**/api/organizations/org_e2e_selection_lists/session-token', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        token: 'e2e-selection-lists-org-token',
+        tokenType: 'Bearer',
+        expiresIn: 900,
+        organizationId: 'org_e2e_selection_lists',
+      }),
+    })
+  })
+
+  await page.route('**/v1/traces', async route => {
+    await route.fulfill({ status: 200, body: '' })
   })
 
   await stubExternalFonts(page)

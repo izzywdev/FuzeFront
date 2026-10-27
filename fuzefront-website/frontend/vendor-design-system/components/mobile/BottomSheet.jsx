@@ -8,8 +8,11 @@ import React, { useEffect, useRef } from "react";
  * both call onClose.
  *
  * On md+ screens (≥768px) prefer Modal instead.
+ *
+ * Any other prop (`data-*`, `aria-describedby`, `aria-busy`, `aria-label`, `id`…)
+ * is forwarded to the `role="dialog"` element, exactly as `Modal` does.
  */
-export function BottomSheet({ open, onClose, title, children, style }) {
+export function BottomSheet({ open, onClose, title, children, style, ...rest }) {
   const sheetRef = useRef(null);
   const titleId = useRef(
     "sheet-title-" + Math.random().toString(36).slice(2, 8)
@@ -79,12 +82,16 @@ export function BottomSheet({ open, onClose, title, children, style }) {
     >
       {/* Sheet panel */}
       <div
+        {...rest}
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={title ? titleId : undefined}
+        aria-labelledby={title ? titleId : rest["aria-labelledby"]}
         tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          rest.onClick?.(e);
+          e.stopPropagation();
+        }}
         style={{
           width: "100%",
           maxHeight: "var(--sheet-max-h)",

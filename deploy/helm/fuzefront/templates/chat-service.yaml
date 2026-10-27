@@ -48,6 +48,14 @@ spec:
               value: "http://fuzefront-security:{{ .Values.securityService.port }}"
             - name: KAFKA_BROKERS
               value: {{ .Values.chatService.kafka.brokers | quote }}
+            # @fuzefront/telemetry (initTelemetry() in src/index.ts) reads this
+            # standard OTel env var for its OTLP exporter target. Without it the
+            # package falls back to packages/telemetry's docker-compose default
+            # (`otel-collector:4317`), which has no in-cluster DNS entry — spans
+            # fail to export silently and nothing reaches Tempo/Grafana. See
+            # values.yaml's chatService.otel.endpoint comment.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.chatService.otel.endpoint | quote }}
             {{- if .Values.fuzeinfra.redis.host }}
             # Shared FuzeInfra Redis backs chat-service's per-user rate limiter
             # (rate-limit-redis) with a cross-replica store. chat-service is the

@@ -1,5 +1,7 @@
 export interface Config {
   port: number;
+  /** Shared secret (bearer) required on POST /send. Empty = /send rejects everything. */
+  authSecret: string;
   kafka: {
     brokers: string[];
     clientId: string;
@@ -28,6 +30,7 @@ export function loadConfig(): Config {
 
   return {
     port: parseInt(process.env.PORT || '3003', 10),
+    authSecret: process.env.EMAIL_AUTH_SECRET || '',
     kafka: {
       brokers,
       clientId: process.env.KAFKA_CLIENT_ID || 'email-service',

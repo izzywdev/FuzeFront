@@ -33,9 +33,11 @@
 //
 //  4. The selection_list_access table is a READ-MODEL MIRROR — it is never
 //     consulted for authorization. It is updated by grantListOwner() and
-//     src/routes/access.ts's PUT/DELETE handlers for display purposes and
-//     for the last-owner guard. countActiveOwners() (routes/access.ts) reads
-//     ONLY this mirror and is untouched by this migration.
+//     src/routes/access.ts's PUT/DELETE handlers for display purposes and as
+//     the CANDIDATE set of the last-owner guard — the guard itself asks the
+//     Security API (services/authority.ts hasConfirmedOtherOwner, review M-2).
+//     countActiveOwners() below is a mirror-only count (diagnostics), not the
+//     guard.
 //
 //  5. `resource` is what makes a grant/revoke/check INSTANCE-scoped (ReBAC).
 //     Every call site that has a listId passes
@@ -55,10 +57,12 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { AuthzClient, createAuthzClient } from '@fuzefront/auth';
+import { permitKeyedClient, permitSubjectKey, permitTenantKey } from '../lib/permitKeys';
 import type { Knex } from 'knex';
 import { db } from '../db';
 import { isAuthzEnforced, FLAGS, FlagContext } from './authz.flags';
 import { createLoggedFetch, getLog, timed } from '../lib/logger';
+import { writeOrgs } from '../lib/sharedLists';
 import { getGrantToken } from '../lib/machineIdentity';
 
 // ---------------------------------------------------------------------------
@@ -79,7 +83,8 @@ const SECURITY_SERVICE_URL = process.env.SECURITY_SERVICE_URL ?? 'http://fuzefro
  *
  * Setting `SECURITY_SERVICE_URL` explicitly opts OUT of the no-op: the
  * integration/acceptance suite runs the service under NODE_ENV=test (so the
- * FLAGS_FORCE_ON escape hatch works) against a stand-in Security API
+ * offline OpenFeature provider can install — it is refused in production)
+ * against a stand-in Security API
  * (tests/selection-list-service/helpers/fake-security-api.mjs) and needs REAL
  * decisions — an allow-all client cannot exercise a single denial path.
  * Unit tests never set it, so they keep the no-op.
@@ -130,9 +135,16 @@ let _authzClient: AuthzClient = isNoOpMode
     // propagation on every Security API call; behaviour is otherwise unchanged.
     createAuthzClient({ baseUrl: SECURITY_SERVICE_URL, fetch: createLoggedFetch() });
 
-/** Returns the active authz client (real or no-op). */
+let _keyed: { inner: AuthzClient; wrapped: AuthzClient } | null = null;
+
+/**
+ * Returns the active authz client (real, no-op or an injected double), wrapped so that EVERY tenant / subject it
+ * sends to the Security API is in the form Permit provisions (the bare UUID; see lib/permitKeys.ts). The one
+ * boundary: no call site converts ids itself, and a malformed id is refused rather than passed through.
+ */
 export function getAuthzClient(): AuthzClient {
-  return _authzClient;
+  if (!_keyed || _keyed.inner !== _authzClient) _keyed = { inner: _authzClient, wrapped: permitKeyedClient(_authzClient) };
+  return _keyed.wrapped;
 }
 
 /**
@@ -248,7 +260,15 @@ export function requireAuthzCheck(resource: string, action: string) {
         const exists = await timed(
           getLog(req),
           'db.selection_lists.exists',
-          () => db('selection_lists').where({ id: listId, organization_id: orgId }).first('id'),
+          async () => {
+            // 4.0.0: exact match on the claim. With shared lists ON (and the platform org resolved) every
+            // rendering of the caller's org matches, so a list stored under the org's other rendering
+            // (a common list owned by the platform org) is the caller's list too.
+            const orgs = await writeOrgs(req);
+            return orgs
+              ? db('selection_lists').where({ id: listId }).whereIn('organization_id', orgs).first('id')
+              : db('selection_lists').where({ id: listId, organization_id: orgId }).first('id');
+          },
           { listId, orgId },
         );
         if (!exists) {
@@ -394,7 +414,7 @@ export async function filterReadable<T extends { id: string }>(
  * succeeded, so a thrown grant can never leave a mirror row claiming success.
  *
  * AUTHENTICATION OF THE WRITE. The grant is made with this service's MACHINE
- * identity (`getGrantToken()`: OAuth client_credentials, scope `authz:admin`),
+ * identity (`getGrantToken()`: projected Kubernetes workload token, scope `selection-list:owner-grant`),
  * never the end user's token: the end user has no standing to write their own
  * role, and the Security API denies non-admin human grant calls (review C-1).
  * `grantedBy` is recorded on the mirror row as the acting user; the Security API
@@ -408,10 +428,13 @@ export async function grantListOwner(
   executor: Knex | Knex.Transaction = db,
 ): Promise<void> {
   const machineToken = await getGrantToken();
+  // The mirror records what was actually sent to the Security API: the Permit keys (bare UUIDs).
+  const subject = permitSubjectKey(userId);
+  const tenant = permitTenantKey(orgId);
   await getAuthzClient().grant(
     {
-      subject: userId,
-      tenant: orgId,
+      subject,
+      tenant,
       role: 'list-owner',
       resource: { type: 'SelectionList', key: listId },
     },
@@ -424,10 +447,10 @@ export async function grantListOwner(
   await executor('selection_list_access')
     .insert({
       list_id: listId,
-      user_id: userId,
+      user_id: subject,
       role: 'list-owner',
       granted_by: grantedBy,
-      org_id: orgId,
+      org_id: tenant,
       granted_at: db.fn.now(),
       updated_at: db.fn.now(),
       revoked_at: null,
@@ -437,17 +460,17 @@ export async function grantListOwner(
 }
 
 // ---------------------------------------------------------------------------
-// countActiveOwners — last-owner guard helper (UNCHANGED by this migration)
+// countActiveOwners — mirror-only owner count (NOT the last-owner guard)
 // ---------------------------------------------------------------------------
 
 /**
  * Returns the number of active (non-revoked) list-owner assignments for listId
  * in the read-model mirror.
  *
- * Used ONLY for the last-owner guard (409 check before demotion / revocation).
- * NOT used for authorization. Reads the local mirror table exclusively — it
- * has nothing to do with Permit or the Security API, and this migration does
- * not touch it.
+ * A diagnostic count of mirror rows. The last-owner guard (409 before a
+ * demotion / revocation) no longer trusts it: it asks the Security API
+ * (services/authority.ts, review M-2). NOT used for authorization. Reads the
+ * local mirror table exclusively.
  */
 export async function countActiveOwners(listId: string): Promise<number> {
   const result = await db('selection_list_access')

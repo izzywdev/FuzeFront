@@ -124,6 +124,7 @@
           <div class="hint">Didn't get it? <a href="#" data-action="resend-code">Resend</a> — check the number is right.</div>
           <div class="actions">
             <button class="btn btn-primary" data-action="activate-factor">Turn on</button>
+            <button class="btn btn-ghost" data-action="change-number">Use a different number</button>
           </div>
         </div>
       </div>
@@ -133,6 +134,8 @@
       <div class="card" data-component="sms-enroll" data-state="error-invalid" data-available="true">
         <div class="card__seam"></div>
         <div class="card__body">
+          <div class="steps"><span>1 · Your number</span><span>›</span><b>2 · Confirm</b></div>
+          <label>Enter the code we texted to •••• •• 4471</label>
           <div class="otp is-error" data-component="otp-input" role="group" aria-label="One-time code">
             <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 1" />
             <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 2" />
@@ -143,6 +146,11 @@
           </div>
           <div class="field-error" data-error="invalid-code"><span aria-hidden="true">⚠</span>
             That code is wrong or has expired. Request a new one and enter it within a few minutes.</div>
+          <div class="actions">
+            <button class="btn btn-ghost" data-action="change-number">Use a different number</button>
+          </div>
+          <p class="hint">“Use a different number” discards the pending (not yet active) phone factor and returns to
+            step 1 with the previous number prefilled, so a typo can be fixed without starting over.</p>
         </div>
       </div>
     </main>

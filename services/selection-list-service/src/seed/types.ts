@@ -66,6 +66,14 @@ export interface SeedApplyRequest {
   requestId: string | null;
   lists: SelectionListSeedListSpecV1[];
   /**
+   * Who wrote the non-source translations in `lists`. 'human' (default, and always the case for
+   * `seed.requested`): written with `is_machine = false`. 'machine': the pack's translations are
+   * machine/AI output with no native review - written with `is_machine = true`, kept out of the
+   * "was this edited by a human" hash, and replaced by reviewed text when a later pack version
+   * ships it. Only platform packs can say 'machine' (platform.ts); the Kafka contract has no such field.
+   */
+  translationProvenance?: 'human' | 'machine';
+  /**
    * The introspected token `subject` (plan section 8), set by the consumer AFTER it
    * verified the attestation (active, scope `selection-lists:seed`). Required for an
    * app source (missing = ATTESTATION_INVALID); ignored for `platform`. The token
@@ -74,6 +82,17 @@ export interface SeedApplyRequest {
   attestedSubject?: string | null;
   /** Envelope correlation id for every event this request writes (defaults to the current request id / event id). */
   correlationId?: string;
+  /**
+   * Honour the seed lists' `visibility` (HTTP contract 4.1.0). Set by the CALLER from the release flag
+   * `fuzefront.selection-lists.shared-lists` (the library reads no flags): false/absent => `visibility` is
+   * IGNORED and every list is seeded `private`, the 4.0.0 behaviour. True =>
+   *   `org` seeds a list every member of the organization can read; `private` is the default;
+   *   `platform` (platform packs only; an app request carrying it is a VALIDATION_ERROR) seeds a common list
+   *   ONCE, into the platform organization, and is SKIPPED (no row, no result entry) for every other org.
+   * Visibility is applied at CREATION only: a later pack version never changes the visibility of a list it
+   * already seeded (an access setting a human may have chosen; existing data is migrated by the rollout job).
+   */
+  honorVisibility?: boolean;
   /**
    * 'projection' (default): the org must be known and active in the org projection
    * (`selection_list_ref_index`) - ORG_UNKNOWN / ORG_INACTIVE otherwise.

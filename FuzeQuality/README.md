@@ -135,7 +135,7 @@ scoped `ff_live_` service tokens, and namespaced `fuzequality` product-policy
 authorization. The scaffold's `FUZEQUALITY_API_TOKEN` is development-only and
 must not be deployed as the production security boundary.
 
-GitHub App permissions are read-only `Metadata`, `Contents`, and `Pull requests`.
+GitHub App permissions are read-only `Metadata` and `Pull requests`, write `Actions`, and write `Contents` so reviewed workflow dispatches can use deterministic immutable revision tags instead of mutable branches.
 Subscribe it to push, repository, installation, and default-branch events. Never
 store a PAT or installation token in a repository URL.
 
@@ -150,6 +150,12 @@ The complete registration, webhook, rotation, and verification contract is in
 - AI suggestions remain proposed until confirmed.
 - Storybook stories are documentation evidence, not executed test evidence.
 - Scanner checkouts use short-lived GitHub App tokens and temporary directories.
+- A performance workflow is dispatchable only when it is a checked-in
+  `workflow_dispatch` file under `.github/workflows/` and explicitly declares
+  `FUZEQUALITY_PERFORMANCE: load` or `FUZEQUALITY_PERFORMANCE: stress` in its
+  workflow-level `env` map.
+  Filename discovery alone produces inventory evidence and never execution
+  authority.
 - Invalid Kafka messages are routed to per-topic `.dlq` topics.
 
 The intelligence worker builds immutable, content-addressed Chroma collections

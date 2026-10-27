@@ -39,10 +39,12 @@
   .callout--warn .callout__ico { background: rgba(245,185,80,0.18); color: var(--warning-color); }
   .field-error { color: var(--error-color); font-size: var(--text-xs); margin: 0 0 var(--space-3); }
   .actions { margin-top: var(--space-4); display: flex; gap: var(--space-3); }
+  .ind-note { margin: var(--space-4) 0 0; padding: var(--space-3); border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-md); color: var(--text-tertiary); font-size: var(--text-xs); line-height: 1.5; }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" data-frame="06-states" data-route="/account/security/password">
   <h1>Password reset — states &amp; errors</h1>
   <p class="lead">Every one of these is contract: the UI must render each, not just the happy path. This is
     how a reset that mailed into the void, and a policy rejection with no message, get designed out before build.</p>
@@ -91,21 +93,41 @@
       </div>
     </div>
 
-    <!-- GENERIC FAILURE -->
+    <!-- DEFINITE FAILURE (server answered with a rejection: nothing changed) -->
     <div class="state-block" data-state="error">
-      <p class="state-label">Something went wrong · retry</p>
+      <p class="state-label">Definite failure · server answered with a 4xx rejection (e.g. <code class="mono">429 RATE_LIMITED</code>) · retry</p>
       <div class="card">
         <div class="card__seam"></div>
         <div class="callout callout--error" role="alert">
           <span class="callout__ico" aria-hidden="true">!</span>
           <div>
             <p class="callout__title">We couldn't update your password</p>
-            <p class="callout__text">Something went wrong on our side. Your password is unchanged — try again.</p>
+            <p class="callout__text">The change wasn’t saved. Your password is unchanged — try again.</p>
           </div>
         </div>
         <div class="actions">
           <button class="btn btn-primary" data-action="retry">Try again</button>
         </div>
+      </div>
+    </div>
+
+    <!-- INDETERMINATE (network error / 5xx after submit: outcome unknown) -->
+    <div class="state-block" data-state="indeterminate">
+      <p class="state-label">Change · outcome unknown · network error or <code class="mono">5xx</code> after submit · no retry</p>
+      <div class="card" data-error="change-indeterminate">
+        <div class="card__seam"></div>
+        <div class="callout callout--warn" role="alert">
+          <span class="callout__ico" aria-hidden="true">?</span>
+          <div>
+            <p class="callout__title">We couldn't confirm the change.</p>
+            <p class="callout__text">Try signing in with your new password. If that doesn't work, your old password still does.</p>
+          </div>
+        </div>
+        <div class="actions">
+          <a href="05-signed-in.html" class="btn btn-primary" data-action="back-to-security">Back to security</a>
+        </div>
+        <p class="ind-note">No “Try again”: the server may have saved the new password and lost the reply, so a retry
+          would fail on the old current password. Never say “unchanged” here, and clear both password fields.</p>
       </div>
     </div>
 
@@ -144,7 +166,7 @@
 </div>
 
 <nav class="frame-nav">
-  <span class="caption"><b>States</b> · submitting · expired token · policy rejection · failure · already-has-password (409) · wrong current</span>
+  <span class="caption"><b>States</b> · submitting · expired token · policy rejection · definite failure · outcome unknown · already-has-password (409) · wrong current</span>
   <span>
     <a href="05-signed-in.html" class="btn btn-ghost">← Change / set</a>
     <a href="index.html" class="btn btn-primary">Overview ↩</a>

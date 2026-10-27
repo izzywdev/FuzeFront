@@ -34,6 +34,10 @@ class SelectionListApiError(Exception):
         self.limit: int | None = extra.get("limit")  # type: ignore[assignment]
         self.current: int | None = extra.get("current")  # type: ignore[assignment]
         self.details: list | None = extra.get("details")  # type: ignore[assignment]
+        # 4.1.0: refinement of a CONFLICT, and the fork hints that come with fork_required.
+        self.reason: str | None = extra.get("reason")  # type: ignore[assignment]
+        self.fork_url: str | None = extra.get("fork_url")  # type: ignore[assignment]
+        self.source_list_id: str | None = extra.get("source_list_id")  # type: ignore[assignment]
 
     @property
     def is_quota_exceeded(self) -> bool:
@@ -50,11 +54,44 @@ class SelectionListApiError(Exception):
         """True for a duplicate ``key``/``code``, or a last-owner removal."""
         return self.code == "CONFLICT"
 
+    @property
+    def is_fork_required(self) -> bool:
+        """
+        True when the caller tried to change a common (``platform``) list it holds
+        no role on and may fork it (4.1.0): call
+        ``client.fork_list(err.source_list_id)`` and edit the fork instead.
+        """
+        return self.code == "CONFLICT" and self.reason == "fork_required"
+
     def __repr__(self) -> str:
         return (
             f"SelectionListApiError(code={self.code!r}, status={self.status}, "
             f"message={str(self)!r})"
         )
+
+
+MAX_EFFECTIVE_LOOKUP_PAGES = 10
+"""
+Upper bound on pages ``get_effective_list`` walks. The service paginates BEFORE
+it drops rows the caller cannot read, so a key lookup can meet a few empty,
+non-terminal pages; this stops a misbehaving service from being walked forever.
+Same bound as the TS client and ``@fuzeone/selection-lists-ui``.
+"""
+
+
+class EffectiveLookupIncompleteError(Exception):
+    """
+    Raised by ``get_effective_list`` when it followed
+    ``MAX_EFFECTIVE_LOOKUP_PAGES`` empty, non-terminal pages without finding the
+    list or reaching the end. Never returned as ``None``: an exhausted walk is an
+    unknown answer, not "no list".
+    """
+
+    incomplete = True
+
+    def __init__(self, pages: int) -> None:
+        super().__init__(f"Effective list lookup incomplete after {pages} pages")
+        self.pages = pages
 
 
 def _code_from_status(status: int) -> str:

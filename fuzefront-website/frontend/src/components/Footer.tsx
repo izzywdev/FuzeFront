@@ -1,19 +1,21 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Mail, Github, Twitter, Linkedin, Youtube } from 'lucide-react'
-import { Logo, ListStack } from '@fuzefront/design-system'
+import { Logo, ListStack, Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const footerNavigation = {
   products: [
-    { name: 'FuzeFront Platform', href: '/products/fuzefront' },
-    { name: 'FuzeAgent', href: '/products/fuzeagent' },
-    { name: 'FuzeSocial', href: '/products/fuzesocial' },
-    { name: 'FuzeFinance', href: '/products/fuzefinance' },
-    { name: 'FuzeKeys', href: '/products/fuzekeys' },
-    { name: 'FuzeBI', href: '/products/fuzebi' },
-    { name: 'FuzeHub', href: '/products/fuzehub' },
+    { name: 'FuzeFront', href: '/products/fuzefront' },
+    { name: 'FuzeSDLC', href: '/products/fuzesdlc' },
+    { name: 'FuzeInfra', href: '/products/fuzeinfra' },
+    { name: 'FuzePlan', href: '/products/fuzeplan' },
     { name: 'FuzeX', href: '/products/fuzex' },
+    { name: 'FuzeAgent', href: '/products/fuzeagent' },
+    { name: 'FuzeKeys', href: '/products/fuzekeys' },
+    { name: 'FuzePicker', href: '/products/fuzepicker' },
+    { name: 'FuzeQuality', href: '/products/fuzequality' },
+    { name: 'FuzeDeploy', href: '/products/fuzedeploy' },
   ],
   company: [
     { name: 'About', href: '/about' },
@@ -62,10 +64,10 @@ export const Footer: React.FC = () => {
               <Logo src="/logo-icon.svg" name="FuzeOne" size="md" style={{ width: 36, height: 36 }} />
               <span className="font-heading font-bold text-xl text-[var(--text-primary)]">FuzeOne</span>
             </Link>
-            <p className="text-[var(--text-secondary)] mb-6 text-sm leading-relaxed max-w-sm">
+            <Text as="p" tone="secondary" size="sm" leading="relaxed" spacing="lg" className="max-w-sm">
               The operating system for your SaaS. Enterprise auth, billing, AI, and
               Module Federation architecture — all in one platform.
-            </p>
+            </Text>
             <div className="flex items-center space-x-3 mb-6">
               <Mail size={15} className="text-[var(--accent-color)] flex-shrink-0" />
               <a

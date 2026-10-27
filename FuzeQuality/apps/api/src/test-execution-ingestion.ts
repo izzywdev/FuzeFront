@@ -1,0 +1,395 @@
+import { normalizeWorkflowPath, testExecutionInputSchema, type QualityArtifact, type ScanResult, type TestExecution } from '@fuzequality/contracts'
+import { preferredWorkflowExecutionKind } from '@fuzequality/contracts/workflow-execution'
+import { linkExecutionArtifacts } from '@fuzequality/core'
+import type { WorkflowExecutionCommand } from '@fuzequality/github-app'
+
+type ThresholdInput = ReturnType<typeof testExecutionInputSchema.parse>['thresholds'][number]
+type ExecutionInput = ReturnType<typeof testExecutionInputSchema.parse>
+
+type WorkflowExecutionIdentity = Pick<
+  TestExecution,
+  'repositoryId' | 'revision' | 'name' | 'workflowPath'
+>
+
+/** Link a workflow run only to policy/gate evidence from its source revision. */
+export async function linkExecutionToRevisionArtifacts(
+  execution: WorkflowExecutionIdentity,
+  tenantId: string,
+  resolveCatalogRevision: (
+    repositoryId: string,
+    tenantId: string,
+    sourceRevision: string
+  ) => Promise<string | undefined>,
+  loadArtifacts: (
+    repositoryId: string,
+    tenantId: string,
+    revision: string
+  ) => Promise<QualityArtifact[]>
+) {
+  const catalogRevision = await resolveCatalogRevision(
+    execution.repositoryId,
+    tenantId,
+    execution.revision,
+  )
+  if (!catalogRevision) return { policyArtifactIds: [], gateArtifactIds: [], policyGatePairs: [] }
+  const artifacts = await loadArtifacts(
+    execution.repositoryId,
+    tenantId,
+    catalogRevision
+  )
+  const links = linkExecutionArtifacts(
+    execution.name,
+    artifacts,
+    execution.workflowPath
+  )
+  const workflowPath = normalizeWorkflowPath(execution.workflowPath)
+  const classifiedArtifacts = workflowPath
+    ? artifacts.filter(artifact =>
+        ['load-test', 'stress-test', 'post-production-test', 'integration-test'].includes(artifact.kind) &&
+        normalizeWorkflowPath(artifact.sourcePath) === workflowPath
+      )
+    : []
+  const kind = preferredWorkflowExecutionKind(classifiedArtifacts)
+  return {
+    ...links,
+    ...(kind ? { kind } : {}),
+  }
+}
+
+type RevisionArtifactLinks = Awaited<ReturnType<typeof linkExecutionToRevisionArtifacts>>
+
+export function mergeExecutionEvidenceLinks(
+  existing: WorkflowExecutionCommand['evidenceLinks'],
+  discovered: WorkflowExecutionCommand['evidenceLinks'],
+) {
+  const links = new Map<string, WorkflowExecutionCommand['evidenceLinks'][number]>()
+  // Provider results are the freshest observation and must survive the local
+  // response cap. First-write wins so they also retain the provider's latest
+  // label when an older retained link has the same stable kind and URL.
+  for (const link of [...discovered, ...existing]) {
+    const key = `${link.kind}:${link.url}`
+    if (!links.has(key)) links.set(key, link)
+  }
+  return [...links.values()].slice(0, 100)
+}
+
+const githubWorkflowArtifactUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+\/artifacts\/\d+$/i
+
+/**
+ * A complete provider inventory is authoritative for GitHub-owned artifact
+ * download links. Remove links that the provider no longer returns (normally
+ * expired or deleted artifacts), while retaining producer-owned external
+ * evidence and the stable run-level artifacts page.
+ */
+export function reconcileCompleteExecutionEvidenceLinks(
+  existing: WorkflowExecutionCommand['evidenceLinks'],
+  discovered: WorkflowExecutionCommand['evidenceLinks'],
+) {
+  return mergeExecutionEvidenceLinks(
+    existing.filter(link => !githubWorkflowArtifactUrl.test(link.url)),
+    discovered,
+  )
+}
+
+type ArtifactEvidenceResult = {
+  links: TestExecution['evidenceLinks']
+  unverifiedLinks?: TestExecution['evidenceLinks']
+  truncated: boolean
+}
+
+const artifactEvidenceErrorCodes = new Set<NonNullable<TestExecution['evidenceCollection']>['errorCode']>([
+  'PROVIDER_TIMEOUT',
+  'PROVIDER_UNAVAILABLE',
+  'PROVIDER_RESPONSE_INVALID',
+  'PROVIDER_RESULT_LIMIT_EXCEEDED',
+])
+
+/**
+ * Refreshes provider-hosted artifacts without rewriting the immutable outcome
+ * of an exact execution attempt. Provider failures are retained as explicit
+ * evidence state so the portal never presents an unchecked empty result as a
+ * verified absence of artifacts.
+ */
+export async function refreshExecutionArtifactEvidence<T extends Pick<TestExecution, 'evidenceLinks' | 'evidenceCollection'>>(
+  execution: T,
+  collect: () => Promise<ArtifactEvidenceResult>,
+  checkedAt = new Date().toISOString(),
+  failureMode: 'preserve' | 'throw' = 'preserve',
+): Promise<T & { evidenceCollection: NonNullable<TestExecution['evidenceCollection']> }> {
+  try {
+    const discovered = await collect()
+    const issues: NonNullable<TestExecution['evidenceCollection']>['issues'] = [
+      ...(discovered.truncated ? ['provider-result-limit-exceeded' as const] : []),
+      ...(discovered.unverifiedLinks?.length ? ['attempt-provenance-unverified' as const] : []),
+    ]
+    return {
+      ...execution,
+      // Any partial provider observation is non-authoritative. In particular,
+      // artifacts without exact-attempt provenance must not make an earlier
+      // verified GitHub link look deleted in the durable record or refresh UI.
+      evidenceLinks: issues.length
+        ? mergeExecutionEvidenceLinks(execution.evidenceLinks, discovered.links)
+        : reconcileCompleteExecutionEvidenceLinks(execution.evidenceLinks, discovered.links),
+      evidenceCollection: issues.length
+        ? {
+            status: 'partial', checkedAt, issues,
+            ...(discovered.truncated ? { errorCode: 'PROVIDER_RESULT_LIMIT_EXCEEDED' as const } : {}),
+            ...(discovered.unverifiedLinks?.length ? { unverifiedLinks: discovered.unverifiedLinks } : {}),
+          }
+        : { status: 'complete', checkedAt },
+    }
+  } catch (error) {
+    // Interactive reconciliation must report a failed provider lookup to the
+    // operator. Webhook ingestion uses the default preserve mode so provider
+    // outages never discard previously verified evidence or reject delivery.
+    if (failureMode === 'throw') throw error
+    // A retry failure must not downgrade evidence already proven complete or
+    // partial. This mirrors store merge precedence and keeps the API response
+    // consistent with the durable record.
+    if (execution.evidenceCollection?.status === 'complete' || execution.evidenceCollection?.status === 'partial') {
+      return execution as T & { evidenceCollection: NonNullable<TestExecution['evidenceCollection']> }
+    }
+    const candidate = error && typeof error === 'object' && 'code' in error
+      ? String(error.code)
+      : 'PROVIDER_UNAVAILABLE'
+    const errorCode = artifactEvidenceErrorCodes.has(candidate as NonNullable<TestExecution['evidenceCollection']>['errorCode'])
+      ? candidate as NonNullable<TestExecution['evidenceCollection']>['errorCode']
+      : 'PROVIDER_UNAVAILABLE'
+    return {
+      ...execution,
+      evidenceCollection: { status: 'unavailable', checkedAt, errorCode },
+    }
+  }
+}
+
+/**
+ * Builds a GitHub webhook execution with exact-revision catalog evidence.
+ * Catalog-derived links and performance kind are authoritative over the
+ * workflow-name heuristic; all other execution identity remains provider-owned.
+ */
+export function webhookExecutionRecord(
+  execution: WorkflowExecutionCommand & { evidenceCollection?: TestExecution['evidenceCollection'] },
+  tenantId: string,
+  links: RevisionArtifactLinks,
+): TestExecution {
+  const gateEvaluations = links.policyGatePairs.map(pair => ({
+    ...pair,
+    status: execution.status,
+  }))
+  return {
+    ...execution,
+    id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`,
+    tenantId,
+    thresholds: [],
+    policyArtifactIds: links.policyArtifactIds,
+    gateArtifactIds: links.gateArtifactIds,
+    gateEvaluations,
+    kind: links.kind ?? execution.kind,
+  }
+}
+
+/**
+ * Repairs workflow evidence that arrived before its asynchronous repository
+ * scan. Only the scan's exact source revision is eligible, and an existing
+ * producer/catalog linkage is never replaced.
+ */
+export async function reconcileExecutionEvidenceForScan(
+  result: ScanResult,
+  tenantId: string,
+  loadExecutions: (repositoryId: string, tenantId: string, revision: string) => Promise<TestExecution[]>,
+  saveExecution: (execution: TestExecution) => Promise<void>,
+) {
+  const sourceRevision = result.scanDetails.sourceRevision
+  if (!sourceRevision) return 0
+  const artifacts = result.qualityArtifacts ?? []
+  const executions = await loadExecutions(result.repository.id, tenantId, sourceRevision)
+  let reconciled = 0
+  for (const execution of executions) {
+    if (execution.policyArtifactIds.length || execution.gateArtifactIds.length || execution.gateEvaluations.length) continue
+    const links = await linkExecutionToRevisionArtifacts(
+      execution,
+      tenantId,
+      async (repositoryId, candidateTenantId, candidateSourceRevision) =>
+        repositoryId === result.repository.id && candidateTenantId === tenantId && candidateSourceRevision === sourceRevision
+          ? result.revision
+          : undefined,
+      async (repositoryId, candidateTenantId, candidateCatalogRevision) =>
+        repositoryId === result.repository.id && candidateTenantId === tenantId && candidateCatalogRevision === result.revision
+          ? artifacts
+          : [],
+    )
+    const kind = links.kind ?? execution.kind
+    if (!links.policyArtifactIds.length && !links.gateArtifactIds.length && kind === execution.kind) continue
+    await saveExecution({
+      ...execution,
+      kind,
+      policyArtifactIds: links.policyArtifactIds,
+      gateArtifactIds: links.gateArtifactIds,
+      gateEvaluations: links.policyGatePairs.map(pair => ({ ...pair, status: execution.status })),
+    })
+    reconciled += 1
+  }
+  return reconciled
+}
+
+export type ExecutionEvidencePreparation =
+  | { ok: true; execution: ExecutionInput }
+  | {
+      ok: false
+      code: 'EXECUTION_EVIDENCE_REVISION_UNANALYZED' | 'EXECUTION_EVIDENCE_REFERENCE_INVALID'
+      error: string
+      invalidPolicyArtifactIds?: string[]
+      invalidGateArtifactIds?: string[]
+    }
+
+/**
+ * Bounds producer-supplied policy/gate evidence to the catalog generated from
+ * the execution's exact source revision. When the producer supplies no links,
+ * scanner-reviewed workflow linkage may fill them in without guessing pairs.
+ */
+export async function prepareExecutionEvidence(
+  execution: ExecutionInput,
+  resolveCatalogRevision: (
+    repositoryId: string,
+    tenantId: string,
+    sourceRevision: string
+  ) => Promise<string | undefined>,
+  loadArtifacts: (
+    repositoryId: string,
+    tenantId: string,
+    revision: string
+  ) => Promise<QualityArtifact[]>
+): Promise<ExecutionEvidencePreparation> {
+  const explicitPolicyArtifactIds = [...new Set([
+    ...execution.policyArtifactIds,
+    ...execution.gateEvaluations.map(item => item.policyArtifactId),
+  ])]
+  const explicitGateArtifactIds = [...new Set([
+    ...execution.gateArtifactIds,
+    ...execution.gateEvaluations.map(item => item.gateArtifactId),
+  ])]
+  const hasExplicitReferences =
+    explicitPolicyArtifactIds.length > 0 || explicitGateArtifactIds.length > 0
+  const catalogRevision = await resolveCatalogRevision(
+    execution.repositoryId,
+    execution.tenantId,
+    execution.revision,
+  )
+
+  if (!catalogRevision) {
+    if (!hasExplicitReferences) return { ok: true, execution }
+    return {
+      ok: false,
+      code: 'EXECUTION_EVIDENCE_REVISION_UNANALYZED',
+      error: 'Policy/gate evidence requires an analyzed catalog for the execution revision',
+    }
+  }
+
+  const artifacts = await loadArtifacts(
+    execution.repositoryId,
+    execution.tenantId,
+    catalogRevision,
+  )
+  const artifactsById = new Map(artifacts.flatMap(artifact => [
+    [artifact.id, artifact] as const,
+    ...(artifact.logicalId ? [[artifact.logicalId, artifact] as const] : []),
+  ]))
+  const invalidPolicyArtifactIds = explicitPolicyArtifactIds.filter(
+    id => artifactsById.get(id)?.kind !== 'policy'
+  )
+  const invalidGateArtifactIds = explicitGateArtifactIds.filter(
+    id => artifactsById.get(id)?.kind !== 'gate'
+  )
+  if (invalidPolicyArtifactIds.length || invalidGateArtifactIds.length) {
+    return {
+      ok: false,
+      code: 'EXECUTION_EVIDENCE_REFERENCE_INVALID',
+      error: 'Policy/gate evidence does not belong to the execution revision',
+      ...(invalidPolicyArtifactIds.length ? { invalidPolicyArtifactIds } : {}),
+      ...(invalidGateArtifactIds.length ? { invalidGateArtifactIds } : {}),
+    }
+  }
+
+  if (hasExplicitReferences) {
+    const canonicalIdentity = (id: string) => {
+      const artifact = artifactsById.get(id)!
+      return artifact.logicalId ?? artifact.id
+    }
+    const gateEvaluations = [...new Map(execution.gateEvaluations.map(item => {
+      const canonical = {
+        ...item,
+        policyArtifactId: canonicalIdentity(item.policyArtifactId),
+        gateArtifactId: canonicalIdentity(item.gateArtifactId),
+      }
+      return [`${canonical.policyArtifactId}\u0000${canonical.gateArtifactId}`, canonical]
+    })).values()]
+    return {
+      ok: true,
+      execution: {
+        ...execution,
+        policyArtifactIds: [...new Set(explicitPolicyArtifactIds.map(canonicalIdentity))],
+        gateArtifactIds: [...new Set(explicitGateArtifactIds.map(canonicalIdentity))],
+        gateEvaluations,
+      },
+    }
+  }
+
+  const links = linkExecutionArtifacts(
+    execution.name,
+    artifacts,
+    execution.workflowPath,
+  )
+  const gateEvaluations = links.policyGatePairs.map(pair => ({
+    ...pair,
+    status: execution.status,
+  }))
+  return {
+    ok: true,
+    execution: {
+      ...execution,
+      policyArtifactIds: links.policyArtifactIds,
+      gateArtifactIds: links.gateArtifactIds,
+      gateEvaluations,
+    },
+  }
+}
+
+export function thresholdPassed(threshold: ThresholdInput): boolean {
+  switch (threshold.operator) {
+    case 'lt': return threshold.observed < threshold.target
+    case 'lte': return threshold.observed <= threshold.target
+    case 'gt': return threshold.observed > threshold.target
+    case 'gte': return threshold.observed >= threshold.target
+    case 'eq': return threshold.observed === threshold.target
+  }
+}
+
+/**
+ * Gives legacy S2S producers a durable external identity without weakening the
+ * database invariant. Callers that know their provider identity keep it;
+ * callers using the older payload shape use the generated row id consistently.
+ */
+export function executionRecord(
+  execution: ExecutionInput,
+  id: string,
+): TestExecution {
+  const policyArtifactIds = [...new Set([
+    ...execution.policyArtifactIds,
+    ...execution.gateEvaluations.map(item => item.policyArtifactId),
+  ])]
+  const gateArtifactIds = [...new Set([
+    ...execution.gateArtifactIds,
+    ...execution.gateEvaluations.map(item => item.gateArtifactId),
+  ])]
+  return {
+    id,
+    ...execution,
+    externalRunId: execution.externalRunId ?? id,
+    policyArtifactIds,
+    gateArtifactIds,
+    thresholds: execution.thresholds.map(threshold => ({
+      ...threshold,
+      passed: thresholdPassed(threshold),
+    })),
+  }
+}

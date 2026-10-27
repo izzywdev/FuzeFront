@@ -12,6 +12,7 @@ export declare const TOPICS: {
     readonly IDENTITY_ORG_DELETED: "identity.org.deleted";
     readonly IDENTITY_MEMBERSHIP_ADDED: "identity.membership.added";
     readonly IDENTITY_MEMBERSHIP_REMOVED: "identity.membership.removed";
+    readonly IDENTITY_AUTHORIZATION_CHANGED: "identity.authorization.changed";
     readonly NOTIFY_EMAIL_REQUESTED: "notify.email.requested";
     readonly NOTIFY_EMAIL_STATUS: "notify.email.status";
     readonly BILLING_USAGE_RECORDED: "billing.usage.recorded";
@@ -23,10 +24,13 @@ export declare const TOPICS: {
     readonly BILLING_PAYMENT_METHOD_UPDATED: "billing.payment_method.updated";
     readonly PORTAL_CREATED: "portal.created";
     readonly CHAT_RESPONSE_CHUNK: "chat.response.chunk";
+    readonly CONFIG_CHANGED: "config.changed";
     readonly SELECTION_LISTS_LIST_CREATED: "selection-lists.list.created";
     readonly SELECTION_LISTS_LIST_UPDATED: "selection-lists.list.updated";
     readonly SELECTION_LISTS_LIST_ARCHIVED: "selection-lists.list.archived";
     readonly SELECTION_LISTS_LIST_DELETED: "selection-lists.list.deleted";
+    readonly SELECTION_LISTS_LIST_FORKED: "selection-lists.list.forked";
+    readonly SELECTION_LISTS_VISIBILITY_CHANGED: "selection-lists.visibility.changed";
     readonly SELECTION_LISTS_ITEM_CREATED: "selection-lists.item.created";
     readonly SELECTION_LISTS_ITEM_UPDATED: "selection-lists.item.updated";
     readonly SELECTION_LISTS_ITEM_ARCHIVED: "selection-lists.item.archived";
