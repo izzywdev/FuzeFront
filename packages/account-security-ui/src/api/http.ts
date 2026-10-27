@@ -21,11 +21,14 @@ export class HttpError extends Error {
   body: unknown
   /** Provider-neutral error code from the Security contract's ErrorBody, when present. */
   code?: string
-  constructor(status: number, message: string, body: unknown) {
+  /** `Retry-After` (whole seconds, > 0) from the response, when present and valid. */
+  retryAfter?: number
+  constructor(status: number, message: string, body: unknown, retryAfter?: number) {
     super(message)
     this.name = 'HttpError'
     this.status = status
     this.body = body
+    if (retryAfter !== undefined && Number.isInteger(retryAfter) && retryAfter > 0) this.retryAfter = retryAfter
     if (body && typeof body === 'object' && 'code' in (body as Record<string, unknown>)) {
       this.code = String((body as Record<string, unknown>).code)
     }
@@ -40,7 +43,9 @@ export class HttpClient {
   constructor(opts: HttpClientOptions = {}) {
     this.baseUrl = opts.baseUrl ?? ''
     this.getToken = opts.getToken
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch
+    // Bound to globalThis: a bare `window.fetch` reference invoked as a method of
+    // this instance (`this.fetchImpl(...)`) throws "Illegal invocation" in browsers.
+    this.fetchImpl = opts.fetchImpl ?? ((input, init) => globalThis.fetch(input, init))
   }
 
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -62,7 +67,7 @@ export class HttpClient {
         (data && typeof data === 'object' && 'error' in (data as Record<string, unknown>)
           ? String((data as Record<string, unknown>).error)
           : res.statusText) || `Request failed with ${res.status}`
-      throw new HttpError(res.status, message, data)
+      throw new HttpError(res.status, message, data, parseRetryAfter(res.headers?.get?.('Retry-After')))
     }
     return data as T
   }
@@ -76,6 +81,13 @@ export class HttpClient {
   delete<T>(path: string): Promise<T> {
     return this.request<T>('DELETE', path)
   }
+}
+
+/** `Retry-After` as delta-seconds: a positive integer, else undefined (HTTP-date / junk = unknown). */
+export function parseRetryAfter(raw: string | null | undefined): number | undefined {
+  if (!raw || !/^\d+$/.test(raw.trim())) return undefined
+  const n = Number(raw.trim())
+  return n > 0 ? n : undefined
 }
 
 function safeJson(text: string): unknown {

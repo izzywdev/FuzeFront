@@ -36,6 +36,29 @@ export interface FlagDescriptor {
  */
 export const FLAG_KEYS = {
   ACCOUNT_SECURITY_HUB: 'fuzefront.account-security.hub',
+  /**
+   * FFRNT-140 — password reset / change-password / set-first-password UI
+   * (`@fuzefront/account-security-ui` PasswordResetFlow | ChangePasswordFlow |
+   * SetPasswordFlow). Gates the /account/security/password surface (the
+   * unauthenticated /reset route is owned by @fuzefront/auth-ui). Default OFF. Release flag. Owner: frontend-engineer.
+   * Removal criterion: password flows GA at 100% of users; flag-OFF path
+   * unexercised. Web-exposed (read via `useFlag()`).
+   */
+  ACCOUNT_SECURITY_PASSWORD_RESET: 'fuzefront.account-security.password-reset',
+  /**
+   * FFRNT-141 — MFA management UI (overview, authenticator + SMS enrolment,
+   * recovery codes, remove factor) and the desktop login step-up
+   * (MfaStepUpFlow). Default OFF. Release flag. Owner: frontend-engineer.
+   * Removal criterion: MFA management GA at 100% of users.
+   */
+  SECURITY_MFA_MANAGEMENT: 'fuzefront.security.mfa-management',
+  /**
+   * FFRNT-362 — mobile (375px / TWA) MFA step-up, phone contact verification
+   * and the combined security-status panel. Default OFF. Release flag.
+   * Owner: frontend-engineer. Removal criterion: mobile step-up GA at 100%
+   * of users.
+   */
+  SECURITY_MFA_STEPUP_MOBILE: 'fuzefront.security.mfa-stepup-mobile',
   BILLING_INVOICE_HISTORY: 'fuzefront.billing.invoice-history',
   /**
    * Gates showing org-context required apps as disabled in non-org context.
@@ -351,6 +374,11 @@ export const PLAN_FLAGS = {
 
 export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   { key: FLAG_KEYS.ACCOUNT_SECURITY_HUB, type: 'release', default: false },
+  // FFRNT-140/141/362 — read in the browser via `useFlag()` (authenticated
+  // surfaces) and the pre-auth override (/reset, /login/mfa step-up).
+  { key: FLAG_KEYS.ACCOUNT_SECURITY_PASSWORD_RESET, type: 'release', default: false },
+  { key: FLAG_KEYS.SECURITY_MFA_MANAGEMENT, type: 'release', default: false },
+  { key: FLAG_KEYS.SECURITY_MFA_STEPUP_MOBILE, type: 'release', default: false },
   { key: FLAG_KEYS.BILLING_INVOICE_HISTORY, type: 'release', default: false },
   // Kill-switch semantics: default ON (gating active), OFF is break-glass. The
   // taxonomy rule (kill-switch => default ON) is what makes default `true` correct.

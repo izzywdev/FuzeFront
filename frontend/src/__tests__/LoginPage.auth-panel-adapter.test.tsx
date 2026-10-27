@@ -11,9 +11,8 @@
  *      inline catch block produced (mapAuthError in LoginPage.tsx), via
  *      AuthPanel's own alert — not the raw axios message.
  *   3. A social-callback result that resolves to an mfa_required challenge
- *      shows the page-level notice (separate from AuthPanel's own
- *      form-submit notice, since AuthPanel has no prop to surface an
- *      externally-sourced result).
+ *      hands off to the MFA step-up (never a dead-end notice: a server
+ *      challenge must always be answerable — see LoginStepUp.tsx).
  *
  * NOTE: these cover the flag-OFF (default) signup — the current single-name
  * form. The confirm-password field, password-policy checklist gating submit and
@@ -148,7 +147,7 @@ describe('LoginPage <-> AuthPanel adapter', () => {
     expect(screen.queryByText(/request failed with status code/i)).not.toBeInTheDocument()
   })
 
-  it('shows the page-level notice when the social-callback exchange resolves to an mfa_required challenge', async () => {
+  it('renders the MFA step-up when the social-callback exchange resolves to an mfa_required challenge', async () => {
     locationStub = setLocation('/login')
     vi.mocked(authAPI.handleAuthCallback).mockResolvedValue({
       result: {
@@ -161,8 +160,9 @@ describe('LoginPage <-> AuthPanel adapter', () => {
     render(<LoginPage />)
 
     await waitFor(() =>
-      expect(screen.getByText(/additional verification is required/i)).toBeInTheDocument()
+      expect(document.querySelector('[data-component="mfa-challenge"]')).toBeTruthy()
     )
+    expect(screen.queryByText(/additional verification is required/i)).not.toBeInTheDocument()
     // Not the credentials-form submit path — getCurrentUser must not be called.
     expect(authAPI.getCurrentUser).not.toHaveBeenCalled()
   })

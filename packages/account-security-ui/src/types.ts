@@ -116,3 +116,105 @@ export interface AccountSecurityClient {
    */
   setPassword?(newPassword: string): Promise<IdentityConnections>
 }
+
+// ---------------------------------------------------------------------------
+// Password reset / change (FFRNT-140) — frames: design/frames/password-reset
+// ---------------------------------------------------------------------------
+
+/**
+ * Password operations. `requestPasswordReset` / `confirmPasswordReset` /
+ * `setPassword` are in the frozen contract. `changePassword` is
+ * `POST /v1/security/password/change` (backend #1555): 204 | 400 INVALID_CREDENTIALS
+ * (wrong current) | 422 PASSWORD_POLICY | 409 NO_PASSWORD (set one instead).
+ */
+export interface PasswordClient {
+  /** `POST /v1/security/session/password/reset-request` — always 202. */
+  requestPasswordReset(email: string): Promise<void>
+  /** `POST /v1/security/session/password/reset-confirm` — 200 `{reset:true}` | 400. */
+  confirmPasswordReset(token: string, newPassword: string): Promise<void>
+  /** `POST /v1/security/password` — 200 | 409 (one exists) | 400 (policy). */
+  setPassword(newPassword: string): Promise<IdentityConnections>
+  /** `POST /v1/security/password/change` — see interface docs. */
+  changePassword(currentPassword: string, newPassword: string): Promise<void>
+}
+
+// ---------------------------------------------------------------------------
+// MFA (FFRNT-141 / FFRNT-362) — frames: design/frames/mfa-management, mfa-stepup-mobile
+// ---------------------------------------------------------------------------
+
+/** Factor kinds (contract `MfaFactorType`). */
+export type MfaFactorType = components['schemas']['MfaFactorType']
+/** An enrolled / pending factor (contract `MfaFactor`). `label` is a neutral hint. */
+export type MfaFactor = components['schemas']['MfaFactor']
+/** Enrolment material (contract `MfaEnrollResult`). */
+export type MfaEnrollResult = components['schemas']['MfaEnrollResult']
+/** Minimal factor reference offered in a step-up challenge. */
+export interface MfaFactorRef {
+  factorId: string
+  type: MfaFactorType
+}
+/** Recovery-code proof for `POST /mfa/verify` (contract `MfaRecoveryVerifyRequest`, a `MfaVerifyRequest` variant). */
+export type MfaRecoveryVerifyRequest = components['schemas']['MfaRecoveryVerifyRequest']
+/** Status of the current recovery-code set (contract `RecoveryCodesStatus`) — counts only, never codes. */
+export type RecoveryCodesStatusResult = components['schemas']['RecoveryCodesStatus']
+/** Ack of `POST /mfa/challenge` (contract `MfaChallengeAck`). */
+export type MfaChallengeAck = components['schemas']['MfaChallengeAck']
+/** Contact-verification state (contract `VerificationStatus`). */
+export interface VerificationStatus {
+  emailVerified: boolean
+  phoneVerified: boolean
+  phone?: string
+}
+/** Session minted by a successful step-up (`POST /mfa/verify` 200). */
+export interface MfaSession {
+  token: string
+  sessionId?: string
+  user?: unknown
+}
+
+/** Factor management (authenticated). */
+export interface MfaClient {
+  getMethods(): Promise<AuthMethods>
+  /** `GET /v1/security/mfa/factors` → `{ items }`. */
+  listFactors(): Promise<MfaFactor[]>
+  /** `POST /v1/security/mfa/factors` → 201. */
+  enrollFactor(req: { type: MfaFactorType; phone?: string; email?: string }): Promise<MfaEnrollResult>
+  /** `POST /v1/security/mfa/factors/{id}/activate` — wrong code rejects (401/400). */
+  activateFactor(factorId: string, code: string): Promise<MfaFactor>
+  /** `DELETE /v1/security/mfa/factors/{id}` — 204; 409 when it is the only factor under enforced MFA. */
+  removeFactor(factorId: string): Promise<void>
+  /** `POST /v1/security/mfa/recovery-codes` — codes are returned ONCE. */
+  regenerateRecoveryCodes(): Promise<string[]>
+  /** `GET /v1/security/mfa/recovery-codes` → `{ remaining, total }` (counts only). */
+  getRecoveryCodesStatus(): Promise<RecoveryCodesStatusResult>
+}
+
+/** Login step-up (pre-auth; the challengeId is the credential). */
+export interface StepUpClient {
+  /** `POST /v1/security/mfa/challenge` → 202 ack. */
+  challengeMfa(challengeId: string, factorId: string): Promise<MfaChallengeAck>
+  /** `POST /v1/security/mfa/verify` → 200 session | 401. */
+  verifyMfa(challengeId: string, factorId: string, code: string): Promise<MfaSession>
+  /**
+   * `POST /v1/security/mfa/verify` with `{ challengeId, recoveryCode }` → 200 session |
+   * 401 `RECOVERY_CODE_INVALID` (challenge stays live) | 401 `NOT_ACTIVE` (challenge gone) | 429.
+   */
+  verifyRecoveryCode(challengeId: string, recoveryCode: string): Promise<MfaSession>
+}
+
+/** Contact verification (authenticated). */
+export interface ContactClient {
+  /** `POST /v1/security/verify/phone/start` → 202. */
+  startPhoneVerification(phone: string): Promise<void>
+  /** `POST /v1/security/verify/phone/confirm` → 200 status | 401/400. */
+  confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus>
+  /** `GET /v1/security/verify/status`. */
+  getVerificationStatus(): Promise<VerificationStatus>
+}
+
+/** Everything `createAccountSecurityClient` returns. */
+export type FullAccountSecurityClient = AccountSecurityClient &
+  PasswordClient &
+  MfaClient &
+  StepUpClient &
+  ContactClient

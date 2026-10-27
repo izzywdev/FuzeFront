@@ -1,4 +1,5 @@
 import type { AccountSecurityMessages } from '../messages'
+import { flowsEn } from '../flows/en'
 
 export const en: AccountSecurityMessages = {
   page: {
@@ -102,4 +103,5 @@ export const en: AccountSecurityMessages = {
     alreadyLinkedTitle: '{provider} is already connected',
     alreadyLinkedText: 'This provider is already one of your ways to sign in.',
   },
+  ...flowsEn,
 }
