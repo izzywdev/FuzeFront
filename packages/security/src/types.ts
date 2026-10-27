@@ -24,7 +24,7 @@
  */
 import type { components } from './generated';
 
-export const SECURITY_CONTRACT_VERSION = '1.3.0' as const;
+export const SECURITY_CONTRACT_VERSION = '1.5.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -90,6 +90,7 @@ export type SecurityErrorCode =
   | 'LAST_FACTOR'
   | 'NO_PASSWORD'
   | 'RATE_LIMITED'
+  | 'RECOVERY_CODE_INVALID'
   | 'UNKNOWN';
 
 /** Supported social provider slugs. Extensible; `google` is first. */
@@ -97,6 +98,20 @@ export type SocialProvider = 'google';
 
 /** Neutral MFA factor type. `webauthn` reserved for later. */
 export type MfaFactorType = 'totp' | 'sms' | 'email' | 'webauthn';
+
+/**
+ * Consumer-product sign-in handoff (marketplace token handoff, #238). A
+ * registered "broker client" (e.g. the Mendys datasets marketplace) sends its
+ * user to this app's own themed sign-in UI with `?client=&redirect_uri=`;
+ * after the user authenticates, the SPA mints a one-time code
+ * (`POST /broker/handoff`) and the product's BACKEND redeems it
+ * server-to-server (`POST /broker/token-exchange`). See the `broker` tag in
+ * `openapi.yaml` for the full contract and boundary-guarantee rationale.
+ */
+export type BrokerClient = components['schemas']['BrokerClient'];
+export type BrokerHandoffRequest = components['schemas']['BrokerHandoffRequest'];
+export type BrokerHandoffResult = components['schemas']['BrokerHandoffResult'];
+export type BrokerTokenExchangeRequest = components['schemas']['BrokerTokenExchangeRequest'];
 
 /** Captcha capability for pre-auth forms (mirrors API `AuthMethods.captcha`). */
 export interface CaptchaMethod {
@@ -159,6 +174,13 @@ export type SessionResult =
       status: 'mfa_required';
       challengeId: string;
       factors: { factorId: string; type: MfaFactorType }[];
+      /**
+       * True when the user holds an unused recovery code, so
+       * `POST /mfa/verify` with `{ challengeId, recoveryCode }` can succeed.
+       * Offer "use a recovery code" ONLY when `true`; absent/false = not
+       * available (fail-closed). Since contract 1.4.0.
+       */
+      recoveryAvailable?: boolean;
     };
 
 /** Contact-ownership verification status for the current user. */
@@ -238,3 +260,15 @@ export interface SubjectAttributesWriteResult {
   attributes: Record<string, AttributeValue>;
   updatedAt: number;
 }
+
+/**
+ * Exclusive step-up proof for `POST /mfa/verify`. The generated
+ * `components['schemas']['MfaVerifyRequest']` is a plain union, which TypeScript
+ * lets a caller satisfy with a MIXED body (`{challengeId, factorId, code,
+ * recoveryCode}`) that the server rejects with 400 MALFORMED. Use this type for
+ * request construction so the mix is a compile error. (`generated.ts` is emitted
+ * by openapi-typescript and is never hand-edited.)
+ */
+export type MfaVerifyRequest =
+  | (components['schemas']['MfaFactorVerifyRequest'] & { recoveryCode?: never })
+  | (components['schemas']['MfaRecoveryVerifyRequest'] & { factorId?: never; code?: never });

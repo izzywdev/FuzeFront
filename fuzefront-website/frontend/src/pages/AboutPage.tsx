@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container, TextLink, HeroPatternOverlay, Section, ResponsiveGrid, Wrap } from '@fuzefront/design-system'
+import { Center, IconTile, Container, TextLink, HeroPatternOverlay, Section, ResponsiveGrid, Wrap, Text, AmbientGlow, GradientText, PageSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -77,8 +77,8 @@ export const AboutPage: React.FC = () => {
         className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
         <HeroPatternOverlay />
-        <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="primary" size={320} style={{ top: '2.5rem', left: '25%' }} />
+        <AmbientGlow tone="accent" size={288} opacity={0.15} style={{ bottom: 0, right: '25%' }} />
         <Container size="4xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -86,7 +86,7 @@ export const AboutPage: React.FC = () => {
             transition={{ duration: 0.6 }}
           >
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
-              About <span className="gradient-text">FuzeOne</span>
+              About <GradientText gradient="var(--primary-gradient)">FuzeOne</GradientText>
             </h1>
             <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
               We're building the operating system for SaaS — integrated platforms that eliminate
@@ -112,7 +112,7 @@ export const AboutPage: React.FC = () => {
       </section>
 
       {/* Values */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="7xl">
           <motion.div
             ref={valuesRef}
@@ -126,16 +126,16 @@ export const AboutPage: React.FC = () => {
               return (
                 <motion.div key={value.title} variants={fadeUp} className="group">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center mb-5 shadow-medium group-hover:scale-110 transition-transform duration-300">
-                    <Icon size={22} className="text-white" />
+                    <IconTile tone="inverse" variant="plain"><Icon size={22} /></IconTile>
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">{value.title}</h3>
-                  <p className="text-gray-600 text-sm leading-relaxed">{value.description}</p>
+                  <Text as="p" tone="secondary" size="sm" leading="relaxed">{value.description}</Text>
                 </motion.div>
               )
             })}
           </motion.div>
         </Container>
-      </section>
+      </PageSection>
 
       {/* Leadership */}
       <Section padding="lg" divider>
@@ -182,7 +182,7 @@ export const AboutPage: React.FC = () => {
                     </TextLink>
                   </div>
                   <p className="text-sm text-primary-700 font-medium mb-3">{person.title}</p>
-                  <p className="text-gray-600 text-sm leading-relaxed">{person.bio}</p>
+                  <Text as="p" tone="secondary" size="sm" leading="relaxed">{person.bio}</Text>
                 </div>
               </motion.div>
             ))}
@@ -221,7 +221,7 @@ export const AboutPage: React.FC = () => {
                     <IconTile tone="accent" size="sm" style={{ flexShrink: 0 }}>
                       <Icon size={18} />
                     </IconTile>
-                    <p className="text-gray-700 text-sm leading-relaxed pt-1.5">{item.text}</p>
+                    <Text as="p" tone="primary" size="sm" leading="relaxed" className="pt-1.5">{item.text}</Text>
                   </motion.div>
                 )
               })}

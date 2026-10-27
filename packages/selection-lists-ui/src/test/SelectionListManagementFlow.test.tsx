@@ -382,7 +382,9 @@ describe('frame 03 — list detail / value editor', () => {
     await renderLoadedDetail()
     expect(m.getSelectionList).toHaveBeenCalledWith('sl_01')
     expect(m.listItems).toHaveBeenCalledWith('sl_01')
-    expect(m.probeReorderPermission).toHaveBeenCalledWith('sl_01')
+    // `HEAD …/items/reorder` is not a contract operation (404 on every editable list, a
+    // console error): permission comes from the list's `editable` hint and the reorder's own answer.
+    expect(m.probeReorderPermission).not.toHaveBeenCalled()
   })
 
   it('renders values in sort_order regardless of response order', async () => {
@@ -830,8 +832,8 @@ describe('frame 03 — list detail / value editor', () => {
       expect(ids).not.toContain('sli_2')
     })
 
-    it('fail-closed: roles without update_value get NO drag handles and a FORBIDDEN notice', async () => {
-      m.probeReorderPermission.mockResolvedValue(false)
+    it('fail-closed: a list the caller can only read (`editable: false`) gets NO drag handles and a FORBIDDEN notice', async () => {
+      m.getSelectionList.mockResolvedValue(makeList({ editable: false }))
       await renderLoadedDetail()
       expect(qa('[data-drag-handle]')).toHaveLength(0)
       expect(q('[data-reorderable] [data-error="FORBIDDEN"]')).toHaveTextContent(
@@ -841,8 +843,28 @@ describe('frame 03 — list detail / value editor', () => {
       expect(itemOrder()).toEqual(['sli_1', 'sli_2', 'sli_3'])
     })
 
+    it('`editable` absent (unknown) or true keeps the drag handles — the reorder itself decides', async () => {
+      await renderLoadedDetail()
+      expect(qa('[data-drag-handle]').length).toBeGreaterThan(0)
+      expect(q('[data-reorderable] [data-error="FORBIDDEN"]')).toBeNull()
+    })
+
+    it('a 403 on the reorder PUT (a role without update_value) restores the order and removes the handles', async () => {
+      m.reorderItems.mockRejectedValue(apiError(403, 'FORBIDDEN', 'update_value required'))
+      await renderLoadedDetail()
+      fireEvent.keyDown(handle('AT'), { key: ' ' })
+      fireEvent.keyDown(handle('AT'), { key: 'ArrowDown' })
+      fireEvent.keyDown(handle('AT'), { key: ' ' })
+      await waitFor(() => expect(m.reorderItems).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(qa('[data-drag-handle]')).toHaveLength(0))
+      expect(q('[data-reorderable] [data-error="FORBIDDEN"]')).toHaveTextContent(
+        'You do not have permission to reorder items.',
+      )
+      expect(itemOrder()).toEqual(['sli_1', 'sli_2', 'sli_3'])
+    })
+
     it('keyboard reorder is a no-op without permission', async () => {
-      m.probeReorderPermission.mockResolvedValue(false)
+      m.getSelectionList.mockResolvedValue(makeList({ editable: false }))
       await renderLoadedDetail()
       expect(screen.queryByLabelText('Reorder AT')).toBeNull()
       expect(m.reorderItems).not.toHaveBeenCalled()

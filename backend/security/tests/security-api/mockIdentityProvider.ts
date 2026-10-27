@@ -9,6 +9,7 @@
  *
  * This is a TEST FIXTURE (a contract mock), NOT the product implementation.
  */
+import { ChallengeNotActiveError, RecoveryCodeInvalidError } from '../../src/providers/errors'
 import {
   IdentityProvider,
   BrokeredSession,
@@ -360,6 +361,17 @@ export class MockIdentityProvider implements IdentityProvider {
     this.mfaChallenges.delete(challengeId)
     for (const u of this.users.values()) if (u.id === ch.userId) return this.mint(u)
     throw new ProviderError('INVALID_CODE', 'user gone', 401)
+  }
+
+  /** Mock holds no recovery codes: any code on a live challenge is invalid. */
+  async verifyMfaRecovery(challengeId: string): Promise<BrokeredSession> {
+    if (!this.mfaChallenges.has(challengeId)) throw new ChallengeNotActiveError()
+    throw new RecoveryCodeInvalidError()
+  }
+
+  async getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }> {
+    this.userByToken(token)
+    return { remaining: 0, total: 0 }
   }
 
   /** Called by the route when password login hits an MFA-enabled account. */

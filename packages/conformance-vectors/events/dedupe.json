@@ -1,0 +1,103 @@
+{
+  "description": "Consumer dedupe (standard section 4.1): the (consumer, eventId) pair is processed at most once; the second delivery is a no-op and must not re-run the handler effect. The same eventId for a DIFFERENT consumer is independent.",
+  "semantics": {
+    "deliveryOutcomes": [
+      "applied",
+      "duplicate"
+    ],
+    "effect": "each applied delivery increments `effects` by 1 for that consumer"
+  },
+  "cases": [
+    {
+      "name": "same-event-twice",
+      "deliveries": [
+        {
+          "consumer": "c1",
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q"
+        },
+        {
+          "consumer": "c1",
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q"
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "duplicate"
+      ],
+      "expectedEffects": {
+        "c1": 1
+      }
+    },
+    {
+      "name": "redelivery-after-other-event",
+      "deliveries": [
+        {
+          "consumer": "c1",
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q"
+        },
+        {
+          "consumer": "c1",
+          "eventId": "evt_01h455vb4pex5vsknk084sn03q"
+        },
+        {
+          "consumer": "c1",
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q"
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "applied",
+        "duplicate"
+      ],
+      "expectedEffects": {
+        "c1": 2
+      }
+    },
+    {
+      "name": "same-event-different-consumers",
+      "deliveries": [
+        {
+          "consumer": "c1",
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q"
+        },
+        {
+          "consumer": "c2",
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q"
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "applied"
+      ],
+      "expectedEffects": {
+        "c1": 1,
+        "c2": 1
+      }
+    },
+    {
+      "name": "triple-delivery",
+      "deliveries": [
+        {
+          "consumer": "c1",
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q"
+        },
+        {
+          "consumer": "c1",
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q"
+        },
+        {
+          "consumer": "c1",
+          "eventId": "evt_01h455vb4pex5vsknk084sn02q"
+        }
+      ],
+      "expectedOutcomes": [
+        "applied",
+        "duplicate",
+        "duplicate"
+      ],
+      "expectedEffects": {
+        "c1": 1
+      }
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container, ResponsiveGrid, Wrap } from '@fuzefront/design-system'
+import { AmbientGlow, IconTile, Container, SectionIcon, Stack } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -81,7 +81,13 @@ export const FuzeHubPage: React.FC = () => {
       <section className="bg-secondary-900 pt-28 pb-24 relative overflow-hidden">
         <div className="absolute inset-0 hero-pattern opacity-10" />
         {/* Accent glow */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-primary-600/10 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow
+          tone="primary"
+          width={600}
+          height={400}
+          opacity={0.1}
+          style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+        />
 
         <Container size="5xl" className="relative text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
@@ -94,7 +100,7 @@ export const FuzeHubPage: React.FC = () => {
             <p className="text-lg text-secondary-300 max-w-2xl mx-auto mb-10">
               Real-time monitoring, deployment dashboards, team activity feeds, and integrated alerting — across every Fuze product and your own services. No more tab-switching.
             </p>
-            <Wrap gap={4} justify="center">
+            <div className="flex flex-col sm:flex-row justify-center gap-4">
               <a
                 href="https://app.fuzefront.com/signup"
                 className="btn-primary flex items-center justify-center gap-2 text-base"
@@ -108,7 +114,7 @@ export const FuzeHubPage: React.FC = () => {
               >
                 Talk to sales
               </Link>
-            </Wrap>
+            </div>
           </motion.div>
         </Container>
       </section>
@@ -184,19 +190,19 @@ export const FuzeHubPage: React.FC = () => {
           <h2 className="text-2xl font-heading font-bold text-white mb-10 text-center">
             Who uses FuzeHub
           </h2>
-          <ResponsiveGrid columns={2} gap="md">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {useCases.map((useCase) => (
               <div key={useCase.title} className="bg-secondary-900 rounded-xl border border-secondary-700 p-5">
-                <div className="flex items-center gap-2 mb-2">
+                <Stack gap="sm" mb="sm">
                   <IconTile tone="accent" variant="plain">
                     <Zap size={16} />
                   </IconTile>
                   <h3 className="font-semibold text-white text-sm">{useCase.title}</h3>
-                </div>
+                </Stack>
                 <p className="text-secondary-400 text-sm leading-relaxed">{useCase.description}</p>
               </div>
             ))}
-          </ResponsiveGrid>
+          </div>
         </Container>
       </section>
 
@@ -208,14 +214,16 @@ export const FuzeHubPage: React.FC = () => {
           transition={{ duration: 0.6 }}
           className="max-w-2xl mx-auto px-4 text-center"
         >
-          <CheckCircle2 size={40} className="text-primary-400 mx-auto mb-6" />
+          <SectionIcon tone="accent">
+            <CheckCircle2 size={40} />
+          </SectionIcon>
           <h2 className="text-3xl font-heading font-bold text-white mb-4">
             Ready for full operational visibility?
           </h2>
           <p className="text-secondary-400 mb-8">
             FuzeHub is included in Growth and Enterprise plans. Start your 14-day trial.
           </p>
-          <Wrap gap={4} justify="center">
+          <div className="flex flex-col sm:flex-row justify-center gap-4">
             <a
               href="https://app.fuzefront.com/signup"
               className="btn-primary flex items-center justify-center gap-2"
@@ -226,7 +234,7 @@ export const FuzeHubPage: React.FC = () => {
             <Link to="/pricing" className="btn-ghost">
               Compare plans
             </Link>
-          </Wrap>
+          </div>
         </motion.div>
       </section>
     </div>
