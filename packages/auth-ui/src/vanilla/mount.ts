@@ -6,6 +6,7 @@
  * `window.FuzeFrontAuthUI.mount(container, opts)`.
  */
 import type {
+  AuthenticatedMeta,
   AuthTransport,
   AuthMethods,
   AuthLabels,
@@ -35,8 +36,12 @@ export interface VanillaMountOptions {
   variant?: AuthPanelVariant
   mode?: AuthPanelMode
   transport: AuthTransport
-  onAuthenticated: (session: AuthenticatedSession) => void
+  onAuthenticated: (session: AuthenticatedSession, meta?: AuthenticatedMeta) => void
   onMfaRequired?: (challenge: MfaRequiredChallenge) => void
+  /** Sign-in mode shows a "Forgot password?" link to this href (fuzefront.auth.experience). Omit for no link. */
+  forgotPasswordHref?: string
+  /** Optional SPA handler; the href is still rendered for semantics / middle-click. */
+  onForgotPassword?: () => void
   /** Unlike the React `AuthPanel`, defaults OFF here — an explicit opt-in for
    * non-React hosts that may not want the Google button rendered at all. */
   social?: boolean
@@ -116,8 +121,8 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
   const alertHost = el('div')
   const form = el('form', 'fzf-auth-panel__form')
   const nameRow = el('div', 'fzf-auth-panel__name-row')
-  const firstNameField = field('fzf-auth-vanilla-firstName', labels.firstNameLabel, 'text', 'given-name')
-  const lastNameField = field('fzf-auth-vanilla-lastName', labels.lastNameLabel, 'text', 'family-name')
+  // ONE optional full-name field (the contract's single `name`; first/last are gone in 1.0.0).
+  const nameField = field('fzf-auth-vanilla-name', labels.nameLabel, 'text', 'name')
   const emailField = field('fzf-auth-vanilla-email', labels.emailLabel, 'email', 'email')
   const passwordField = field('fzf-auth-vanilla-password', labels.passwordLabel, 'password', 'current-password')
   const submitBtn = el('button')
@@ -128,10 +133,8 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
   const toggleBtn = el('button')
   toggleBtn.type = 'button'
 
-  firstNameField.wrap.style.flex = '1'
-  lastNameField.wrap.style.flex = '1'
-  nameRow.appendChild(firstNameField.wrap)
-  nameRow.appendChild(lastNameField.wrap)
+  nameField.wrap.style.flex = '1'
+  nameRow.appendChild(nameField.wrap)
 
   applyButtonStyle(submitBtn, 'primary')
   applyButtonStyle(toggleBtn, 'secondary')
@@ -139,6 +142,12 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
   form.appendChild(nameRow)
   form.appendChild(emailField.wrap)
   form.appendChild(passwordField.wrap)
+  const forgotLink = el('a', 'fzf-auth-panel__forgot') as HTMLAnchorElement
+  if (opts.forgotPasswordHref) {
+    forgotLink.href = opts.forgotPasswordHref
+    forgotLink.textContent = labels.forgotPassword
+    form.appendChild(forgotLink)
+  }
   form.appendChild(submitBtn)
 
   toggleWrap.appendChild(togglePrompt)
@@ -199,6 +208,7 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
   function render() {
     subtitle.textContent = mode === 'signin' ? labels.signInSubtitle : labels.signUpSubtitle
     nameRow.style.display = mode === 'signup' ? 'flex' : 'none'
+    forgotLink.style.display = mode === 'signin' ? '' : 'none'
     nameRow.style.gap = 'var(--space-3)'
     const disabled = pending !== null
     submitBtn.disabled = disabled
@@ -226,27 +236,31 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
     pending = 'credentials'
     setAlert(null, '')
     render()
+    // Snapshot BEFORE the awaits: the user can keep typing while the request is
+    // in flight, and the callback must report the address that was SUBMITTED.
+    const submittedEmail = emailField.input.value
+    const submittedPassword = passwordField.input.value
+    const submittedName = nameField.input.value.trim() || undefined
     try {
       if (mode === 'signup') {
         const session = await opts.transport.signup({
-          email: emailField.input.value,
-          password: passwordField.input.value,
-          firstName: firstNameField.input.value || undefined,
-          lastName: lastNameField.input.value || undefined,
+          email: submittedEmail,
+          password: submittedPassword,
+          name: submittedName,
         })
-        opts.onAuthenticated(session)
+        opts.onAuthenticated(session, { mode: 'signup', email: submittedEmail })
         return
       }
       const result = await opts.transport.login({
-        email: emailField.input.value,
-        password: passwordField.input.value,
+        email: submittedEmail,
+        password: submittedPassword,
       })
       if (result.status === 'mfa_required') {
         setAlert('info', labels.mfaNotice)
         opts.onMfaRequired?.(result)
         return
       }
-      opts.onAuthenticated(result)
+      opts.onAuthenticated(result, { mode: 'signin', email: submittedEmail })
     } catch (err) {
       const message = err instanceof Error ? err.message : undefined
       setAlert('error', message || labels.genericError)
@@ -266,6 +280,13 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
 
   form.addEventListener('submit', handleSubmit)
   toggleBtn.addEventListener('click', handleToggle)
+  const handleForgot = (e: Event) => {
+    if (opts.onForgotPassword) {
+      e.preventDefault()
+      opts.onForgotPassword()
+    }
+  }
+  forgotLink.addEventListener('click', handleForgot)
 
   render()
   container.appendChild(root)
@@ -288,6 +309,7 @@ export function mount(container: HTMLElement, opts: VanillaMountOptions): Vanill
       destroyed = true
       form.removeEventListener('submit', handleSubmit)
       toggleBtn.removeEventListener('click', handleToggle)
+      forgotLink.removeEventListener('click', handleForgot)
       container.removeChild(root)
     },
   }

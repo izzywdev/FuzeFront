@@ -24,7 +24,8 @@
     <a class="flow-card" href="01-signup.html" data-nav="01-signup">
       <span class="flow-card__step">STEP 01 · /signup</span>
       <h2 class="flow-card__title">Create account</h2>
-      <p class="flow-card__desc">Name, inline email availability (✓ / taken), password + strength meter
+      <p class="flow-card__desc">Optional full name (one i18n-safe field), inline email availability
+        (✓ / taken), password + strength meter &amp; live requirements checklist
         (12+ upper/lower/digit/symbol), confirm-match, Cloudflare Turnstile, Google.</p>
     </a>
     <a class="flow-card" href="02-signin.html" data-nav="02-signin">
@@ -54,8 +55,10 @@
     <a class="flow-card" href="06-states.html" data-nav="06-states">
       <span class="flow-card__step">REF · states</span>
       <h2 class="flow-card__title">All states</h2>
-      <p class="flow-card__desc">Availability idle/checking/available/taken/error, strength weak→strong,
-        confirm mismatch, Turnstile loading/verified/failed, submit-in-flight, form errors, MFA, verify-gate.</p>
+      <p class="flow-card__desc">Signup empty/initial, availability idle/checking/available/taken/error,
+        strength weak→strong + checklist, weak-password inline &amp; post-submit, confirm mismatch,
+        Turnstile loading/verified/failed, submit-in-flight, email-exists conflict,
+        service-unavailable (browser flow), MFA, verify-gate.</p>
     </a>
   </div>
 
@@ -76,8 +79,10 @@
         <h3>Components</h3>
         <ul>
           <li><code>AuthCard</code></li>
+          <li><code>FullNameField</code> <span class="chip chip--new">new</span> (single optional <code>name</code>)</li>
           <li><code>InlineAvailabilityField</code> <span class="chip chip--new">new</span></li>
           <li><code>PasswordStrengthMeter</code> <span class="chip chip--new">new</span></li>
+          <li><code>PasswordPolicyChecklist</code> <span class="chip chip--new">new</span></li>
           <li><code>PasswordConfirmField</code> <span class="chip chip--new">new</span></li>
           <li><code>TurnstileField</code> <span class="chip chip--new">new</span></li>
           <li><code>ResendCooldownButton</code> <span class="chip chip--new">new</span></li>

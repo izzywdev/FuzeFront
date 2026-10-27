@@ -1,0 +1,17 @@
+<!-- @dsCard group="Brand" height=180 -->
+<style>@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");</style>
+<style>
+  body { margin: 0; padding: 28px; background: var(--bg-primary); display: flex; flex-direction: column; gap: 22px; }
+  .lbl { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; color: var(--text-tertiary); text-transform: lowercase; }
+  .seam { border-radius: var(--radius-pill); height: 2px; width: 100%; background: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%); }
+  .seam.glow { box-shadow: 0 0 8px var(--accent-color), 0 0 16px var(--accent-soft); }
+  .row { display: flex; align-items: center; gap: 16px; height: 48px; }
+  .vseam { border-radius: var(--radius-pill); width: 2px; height: 100%; background: linear-gradient(180deg, var(--accent-color) 0%, var(--accent-2) 100%); }
+  .panel { color: var(--text-secondary); font-family: var(--font-sans); font-size: 0.8125rem; }
+</style>
+<div class="lbl">horizontal</div>
+<div class="seam"></div>
+<div class="lbl">horizontal · glow</div>
+<div class="seam glow"></div>
+<div class="lbl">vertical</div>
+<div class="row"><span class="panel">host shell</span><div class="vseam"></div><span class="panel">mounted module</span></div>

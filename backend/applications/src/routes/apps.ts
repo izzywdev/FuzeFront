@@ -5,6 +5,10 @@ import { authenticateToken, requireRole } from '../middleware/auth'
 import { App } from '../types/shared'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
+import {
+  ScopeLevel,
+  enforceOrgInstallMode,
+} from '../app-registry/app-governance'
 
 const router = express.Router()
 
@@ -177,9 +181,13 @@ router.get('/', authenticateToken, async (req: any, res) => {
         } catch {
           manifest = {}
         }
-        const isOrgLevelOnly = Boolean(
-          manifest.orgLevelOnly || manifest.installMode === 'everyone'
-        )
+        const a = app as any
+        // Governance is DB-authoritative (admin UI edits these columns), not
+        // manifest-derived. Surface them so the admin Edit form pre-fills.
+        const orgInstallMode = a.org_install_mode ?? 'both'
+        const scopeLevel = app.scope_level ?? 'both'
+        // orgLevelOnly = truly org-only (no personal) = scope, not org mode.
+        const orgLevelOnly = scopeLevel === 'organization'
         return {
           id: app.id,
           name: app.name,
@@ -193,13 +201,16 @@ router.get('/', authenticateToken, async (req: any, res) => {
           scope: app.scope,
           module: app.module,
           description: app.description,
-          scopeLevel: app.scope_level ?? 'both',
-          orgLevelOnly: isOrgLevelOnly,
-          installMode:
-            manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
-          organizationInstallMode:
-            manifest.organizationInstallMode ??
-            (isOrgLevelOnly ? 'everyone' : (manifest.installMode ?? 'both')),
+          scopeLevel,
+          orgInstallMode,
+          orgLevelOnly,
+          installMode: orgLevelOnly ? orgInstallMode : 'both',
+          organizationInstallMode: orgInstallMode,
+          personalRemovable: a.personal_removable !== false,
+          orgRemovable: a.org_removable !== false,
+          systemApp: Boolean(a.system_app),
+          defaultInstallPersonal: Boolean(a.default_install_personal),
+          defaultInstallOrg: Boolean(a.default_install_org),
           requiresOrgContext: Boolean(
             manifest.requiresOrgContext || app.scope_level === 'organization'
           ),
@@ -538,6 +549,211 @@ router.put(
     } catch (error) {
       console.error('Error updating app status:', error)
       res.status(500).json({ error: 'Failed to update app status' })
+    }
+  }
+)
+
+// PUT /api/apps/:id - Update an app's editable fields (admin only).
+// This is what the /admin "Edit" form saves; before this route existed the
+// edit submit was a no-op stub, so editing any app did nothing. Only the
+// allow-listed presentation/integration fields are writable here — never id,
+// slug, owner, builtin, status or install records (identifier-standard BOPLA:
+// no client-supplied identity for the resource being updated).
+router.put(
+  '/:id',
+  authenticateToken,
+  requireRole(['admin']),
+  async (req: any, res) => {
+    try {
+      const { id } = req.params
+      const existing = await db('apps').where('id', id).first()
+      if (!existing) {
+        return res
+          .status(404)
+          .json({ error: 'App not found', code: 'APP_NOT_FOUND' })
+      }
+
+      const body = req.body ?? {}
+      const trim = (v: unknown) => (typeof v === 'string' ? v.trim() : v)
+      const urlRegex = /^https?:\/\/.+/i
+      const patch: Record<string, unknown> = {}
+
+      // name — required-if-present, unique, <=255
+      if (body.name !== undefined) {
+        const name = trim(body.name)
+        if (typeof name !== 'string' || name.length === 0) {
+          return res.status(400).json({ error: 'Name cannot be empty' })
+        }
+        if (name.length > 255) {
+          return res
+            .status(400)
+            .json({ error: 'App name is too long (maximum 255 characters)' })
+        }
+        patch.name = name
+      }
+
+      // url — http(s), <=255
+      if (body.url !== undefined) {
+        const url = trim(body.url)
+        if (typeof url !== 'string' || !urlRegex.test(url)) {
+          return res
+            .status(400)
+            .json({ error: 'URL must be a valid HTTP or HTTPS URL' })
+        }
+        if (url.length > 255) {
+          return res
+            .status(400)
+            .json({ error: 'URL is too long (maximum 255 characters)' })
+        }
+        patch.url = url
+      }
+
+      // iconUrl — optional, http(s) when non-empty
+      if (body.iconUrl !== undefined) {
+        const iconUrl = trim(body.iconUrl)
+        if (typeof iconUrl === 'string' && iconUrl.length > 0) {
+          if (iconUrl.length > 255 || !urlRegex.test(iconUrl)) {
+            return res
+              .status(400)
+              .json({ error: 'Icon URL must be a valid HTTP or HTTPS URL' })
+          }
+          patch.icon_url = iconUrl
+        } else {
+          patch.icon_url = null
+        }
+      }
+
+      if (body.integrationType !== undefined) {
+        const integrationType = trim(body.integrationType)
+        const valid = ['iframe', 'module-federation', 'web-component', 'spa']
+        if (!valid.includes(integrationType as string)) {
+          return res.status(400).json({
+            error: `Invalid integration type. Must be one of: ${valid.join(', ')}`,
+          })
+        }
+        patch.integration_type = integrationType
+      }
+
+      if (body.remoteUrl !== undefined) {
+        const remoteUrl = trim(body.remoteUrl)
+        if (typeof remoteUrl === 'string' && remoteUrl.length > 0) {
+          if (remoteUrl.length > 255 || !urlRegex.test(remoteUrl)) {
+            return res
+              .status(400)
+              .json({ error: 'remoteUrl must be a valid HTTP or HTTPS URL' })
+          }
+          patch.remote_url = remoteUrl
+        } else {
+          patch.remote_url = null
+        }
+      }
+
+      if (body.scope !== undefined) {
+        const scope = trim(body.scope)
+        patch.scope =
+          typeof scope === 'string' && scope.length > 0 ? scope : null
+      }
+      if (body.module !== undefined) {
+        const mod = trim(body.module)
+        patch.module = typeof mod === 'string' && mod.length > 0 ? mod : null
+      }
+      if (body.description !== undefined) {
+        const description = trim(body.description)
+        patch.description =
+          typeof description === 'string' ? description : null
+      }
+
+      // scopeLevel — the install-scope enum (personal|organization|both).
+      if (body.scopeLevel !== undefined) {
+        const scopeLevel = trim(body.scopeLevel)
+        if (!VALID_SCOPE_LEVELS.includes(scopeLevel as any)) {
+          return res.status(400).json({
+            error: `Invalid scopeLevel. Must be one of: ${VALID_SCOPE_LEVELS.join(', ')}`,
+          })
+        }
+        patch.scope_level = scopeLevel
+      }
+
+      // Operator-governed fields (admin UI). orgInstallMode is kept consistent
+      // with the org-level-only rule via enforceOrgInstallMode.
+      if (body.orgInstallMode !== undefined) {
+        const m = trim(body.orgInstallMode)
+        if (!['self', 'everyone', 'both'].includes(m as string)) {
+          return res.status(400).json({
+            error: 'Invalid orgInstallMode. Must be self, everyone, or both.',
+          })
+        }
+        patch.org_install_mode = m
+      }
+      const boolField = (key: string, col: string) => {
+        if (body[key] !== undefined) patch[col] = Boolean(body[key])
+      }
+      boolField('personalRemovable', 'personal_removable')
+      boolField('orgRemovable', 'org_removable')
+      boolField('systemApp', 'system_app')
+      boolField('defaultInstallPersonal', 'default_install_personal')
+      boolField('defaultInstallOrg', 'default_install_org')
+
+      // Keep org-level-only coherent: if the effective scope is organization and
+      // the org mode would default to 'both', store 'everyone'.
+      const effScopeLevel = (patch.scope_level ?? existing.scope_level) as
+        | ScopeLevel
+        | undefined
+      if (effScopeLevel) {
+        patch.org_install_mode = enforceOrgInstallMode(
+          effScopeLevel,
+          (patch.org_install_mode as any) ?? existing.org_install_mode
+        )
+      }
+
+      if (Object.keys(patch).length === 0) {
+        return res
+          .status(400)
+          .json({ error: 'No editable fields supplied', code: 'NO_FIELDS' })
+      }
+
+      patch.updated_at = db.fn.now()
+
+      try {
+        await db('apps').where('id', id).update(patch)
+      } catch (err: any) {
+        if (err?.code === '23505') {
+          return res
+            .status(409)
+            .json({ error: 'An app with this name already exists' })
+        }
+        throw err
+      }
+
+      const row = await db('apps').where('id', id).first()
+      const dto: any = {
+        id: row.id,
+        name: row.name,
+        url: row.url,
+        iconUrl: row.icon_url,
+        isActive: row.is_active,
+        integrationType: row.integration_type,
+        remoteUrl: row.remote_url,
+        scope: row.scope,
+        module: row.module,
+        description: row.description,
+        visibility: row.visibility,
+        scopeLevel: row.scope_level,
+        orgInstallMode: row.org_install_mode,
+        personalRemovable: row.personal_removable,
+        orgRemovable: row.org_removable,
+        systemApp: row.system_app,
+        defaultInstallPersonal: row.default_install_personal,
+        defaultInstallOrg: row.default_install_org,
+      }
+      const prefixed = await isPrefixedIdsEnabled({
+        orgId: req.user?.organizationId,
+        userId: req.user?.id,
+      })
+      res.json(prefixDtoIds(dto, prefixed, { id: 'app' }))
+    } catch (error) {
+      console.error('Error updating app:', error)
+      res.status(500).json({ error: 'Failed to update app' })
     }
   }
 )

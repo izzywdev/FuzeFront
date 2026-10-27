@@ -49,7 +49,43 @@ export type Repository = RepositoryInput & {
   lastScanRevision?: string
   lastScanStatus: 'never' | 'queued' | 'running' | 'complete' | 'failed'
   lastScanDetails?: RepositoryScanDetails
+  lastScanFailure?: RepositoryScanFailure
+  /** Revision-scoped lifecycle for deterministic governance plus reviewed LiteLLM proposals. */
+  lastAnalysis?: RepositoryAnalysisStatus
 }
+
+export type RepositoryAnalysisStatus = {
+  revision: string
+  status: 'queued' | 'running' | 'complete' | 'failed'
+  startedAt?: string
+  finishedAt?: string
+  counts?: { deterministic: number; evaluations: number; proposed: number }
+  /** Stable, non-sensitive failure classification; raw provider errors are never exposed. */
+  errorCode?: 'INTELLIGENCE_UNAVAILABLE' | 'INTELLIGENCE_TIMEOUT'
+}
+
+export type RepositoryProcessingStatus = Pick<Repository,
+  'id' | 'lastScanAt' | 'lastScanRevision' | 'lastScanStatus' | 'lastScanDetails' | 'lastScanFailure' | 'lastAnalysis'
+>
+
+export const repositoryScanFailureSchema = z.object({
+  code: z.enum(['SCAN_TRANSPORT_LIMIT_EXCEEDED', 'SCAN_PROCESSING_FAILED']),
+  message: z.string().trim().min(1).max(500),
+  sourceRevision: z.string().regex(/^[0-9a-f]{40}$/i).optional(),
+  observedBytes: z.number().int().positive().optional(),
+  maxBytes: z.number().int().positive().optional(),
+  failedAt: z.string().datetime(),
+}).strict().superRefine((failure, context) => {
+  if (failure.code !== 'SCAN_TRANSPORT_LIMIT_EXCEEDED') return
+  if (failure.observedBytes === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['observedBytes'], message: 'Required for transport-limit failures' })
+  }
+  if (failure.maxBytes === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['maxBytes'], message: 'Required for transport-limit failures' })
+  }
+})
+
+export type RepositoryScanFailure = z.infer<typeof repositoryScanFailureSchema>
 
 /** Local, event-carried projection of the FuzeFront identity hierarchy. */
 export type QualityTenant = {
@@ -77,12 +113,19 @@ export type QualityMembership = {
 }
 
 export type RepositoryScanHistoryEntry = {
+  /** Stable scan-run identity used for audit links and keyset pagination. */
+  id: string
   revision: string
   branch: string
   status: Repository['lastScanStatus']
   scannedAt?: string
   trigger: 'manual' | 'push' | 'reconcile'
   counts: { operations: number; surfaces: number; tests: number; diagnostics: number }
+}
+
+export type RepositoryScanHistoryPage = {
+  items: RepositoryScanHistoryEntry[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 export type RepositoryScanCandidate = {
@@ -378,7 +421,7 @@ export type SuggestionDecision = {
 
 export type ScanDiagnostic = {
   sourcePath: string
-  category: 'openapi' | 'test' | 'frontend' | 'storybook'
+  category: 'openapi' | 'test' | 'frontend' | 'storybook' | 'repository'
   severity: 'error' | 'warning'
   code: string
   message: string
@@ -392,6 +435,8 @@ export type CatalogScanDiagnostic = ScanDiagnostic & {
 export type ScanResult = {
   repository: Repository
   revision: string
+  /** Origin of the scan request retained in repository audit history. */
+  trigger: RepositoryScanHistoryEntry['trigger']
   operations: ApiOperation[]
   surfaces: FrontendSurface[]
   tests: TestCase[]
@@ -405,13 +450,31 @@ export type ScanResult = {
 
 /** Deterministic repository evidence used as input to reviewed quality analysis. */
 export type QualityArtifact = {
+  /** Revision-scoped observation identity. */
   id: string
+  /** Stable repository identity used to aggregate the same artifact across revisions. */
+  logicalId?: string
+  /** Catalog revision that owns this observation. Present on persisted API records. */
+  revision?: string
   repositoryId: string
-  kind: 'route' | 'policy' | 'gate' | 'test-plan' | 'load-test' | 'stress-test'
+  kind: 'route' | 'story' | 'documentation' | 'policy' | 'gate' | 'test-plan' | 'integration-test' | 'post-production-test' | 'load-test' | 'stress-test'
   title: string
   sourcePath: string
   summary: string
   evidence: string[]
+  /** Scanner-verified execution entry point. Its absence means inventory-only evidence. */
+  execution?: {
+    provider: 'github-actions'
+    workflowPath: string
+    trigger: 'workflow_dispatch'
+    /** Required workflow inputs that have no repository-defined default. */
+    requiredInputs?: string[]
+  }
+}
+
+export type QualityArtifactPage = {
+  items: QualityArtifact[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 export type RepositoryQualitySnapshot = {
@@ -441,12 +504,26 @@ export type RepositoryFlowCandidate = {
     model: string
     promptVersion: string
     schemaVersion: string
+    /** Total repository artifacts available before prompt bounding. */
+    inputArtifactCount?: number
+    /** Repository artifacts whose IDs and bounded content were sent to LiteLLM. */
+    promptArtifactCount?: number
+    /** True when artifact selection or source-byte limits omitted input evidence. */
+    promptTruncated?: boolean
+    /** Review telemetry for repository artifact references returned by the model. */
+    grounding?: {
+      referencedArtifactCount: number
+      groundedArtifactCount: number
+      rejectedArtifactCount: number
+      ungroundedStepCount: number
+    }
   }
   source: 'deterministic' | 'litellm'
   createdAt: string
 }
 
 export type RepositoryFlowReviewHistoryEntry = {
+  id: string
   candidateId: string
   tenantId: string
   status: 'confirmed' | 'rejected'
@@ -455,18 +532,41 @@ export type RepositoryFlowReviewHistoryEntry = {
   createdAt: string
 }
 
+export type RepositoryFlowReviewHistoryPage = {
+  items: RepositoryFlowReviewHistoryEntry[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
+export type RepositoryFlowCandidatePage = {
+  items: RepositoryFlowCandidate[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
 /** A reviewable relationship between a detected repository policy and CI gate. */
 export type PolicyGateEvaluation = {
   id: string
   repositoryId: string
   tenantId: string
   revision: string
-  kind: 'unguarded-policy' | 'guard-without-policy' | 'contradictory-policy' | 'ambiguous-policy'
+  kind: 'guarded-policy' | 'unguarded-policy' | 'guard-without-policy' | 'contradictory-policy' | 'ambiguous-policy'
   severity: 'high' | 'medium' | 'low'
   title: string
   detail: string
   policyArtifactIds: string[]
   gateArtifactIds: string[]
+  /** Detector confidence, not a claim that the policy itself is correct. */
+  confidence: number
+  /** Repository locations and matched subjects that bounded this finding. */
+  scope: { sourcePaths: string[]; subjects: string[] }
+  /** Exact repository passages that caused the deterministic finding. */
+  evidencePassages?: Array<{
+    artifactId: string
+    sourcePath: string
+    text: string
+    signal: 'policy' | 'gate' | 'obligation' | 'prohibition' | 'ambiguous'
+  }>
+  /** The concrete, review-only remediation proposed by the detector. */
+  remediationAction: 'build-gate' | 'build-policy' | 'disambiguate-policy' | 'align-policy-gate'
   recommendation: string
   /** Human review is required before a remediation recommendation is acted on. */
   reviewStatus: 'proposed' | 'accepted' | 'dismissed'
@@ -474,6 +574,26 @@ export type PolicyGateEvaluation = {
   reviewedBy?: string
   reviewReason?: string
   createdAt: string
+}
+
+export type PolicyGateEvaluationPage = {
+  items: PolicyGateEvaluation[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
+export type PolicyGateReviewHistoryEntry = {
+  id: string
+  evaluationId: string
+  tenantId: string
+  status: 'accepted' | 'dismissed'
+  reviewedBy: string
+  reason?: string
+  createdAt: string
+}
+
+export type PolicyGateReviewHistoryPage = {
+  items: PolicyGateReviewHistoryEntry[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 export type TestExecution = {
@@ -487,29 +607,260 @@ export type TestExecution = {
   /** Provider retry/rerun attempt; a new attempt is retained as new evidence. */
   attempt: number
   revision: string
+  /** Provider-owned source branch/ref when the execution supplies one. */
+  branch?: string
+  /** GitHub workflow head repository (`owner/name`), retained to reject fork evidence. */
+  headRepository?: string
   kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
   status: 'passed' | 'failed' | 'cancelled' | 'running'
   name: string
+  /** Repository-relative CI workflow that produced this execution. */
+  workflowPath?: string
   sourceUrl?: string
   startedAt?: string
   completedAt?: string
   policyArtifactIds: string[]
   gateArtifactIds: string[]
+  /** Explicit per-pair outcomes; never inferred from unrelated policy/gate lists. */
+  gateEvaluations: TestExecutionGateEvaluation[]
+  /** Measured pass/fail evidence retained exactly with this run attempt. */
+  thresholds: TestExecutionThreshold[]
+  /** Durable or provider-hosted evidence produced by this exact run attempt. */
+  evidenceLinks: TestExecutionEvidenceLink[]
+  /** Outcome of the provider artifact lookup; absent for producers that do not support discovery. */
+  evidenceCollection?: TestExecutionEvidenceCollection
   summary?: string
 }
+
+/**
+ * Exact execution evidence plus the analyzed catalog revision that owns its
+ * policy/gate artifact identifiers. `revision` remains the provider source
+ * revision (for GitHub Actions, the workflow head SHA).
+ */
+export type TestExecutionDetail = TestExecution & {
+  catalogRevision?: string
+}
+
+export type TestExecutionPage = {
+  items: TestExecution[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
+export type TestExecutionEvidenceLink = {
+  kind: 'video' | 'report' | 'trace' | 'screenshot' | 'log' | 'other'
+  name: string
+  url: string
+}
+
+export type TestExecutionEvidenceCollection = {
+  status: 'complete' | 'partial' | 'unavailable'
+  checkedAt: string
+  errorCode?: 'PROVIDER_TIMEOUT' | 'PROVIDER_UNAVAILABLE' | 'PROVIDER_RESPONSE_INVALID' | 'PROVIDER_RESULT_LIMIT_EXCEEDED'
+  issues?: Array<'provider-result-limit-exceeded' | 'attempt-provenance-unverified'>
+  /** Run-level artifacts withheld from exact-attempt evidence. */
+  unverifiedLinks?: TestExecutionEvidenceLink[]
+}
+
+const httpsEvidenceUrlSchema = z.string().url().max(2000).refine(
+  value => value.startsWith('https://'),
+  'Execution evidence URL must use HTTPS',
+)
+
+const testExecutionEvidenceLinkFields = {
+  kind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']),
+  name: z.string().trim().min(1).max(200),
+  url: httpsEvidenceUrlSchema,
+}
+
+export const testExecutionEvidenceCollectionSchema = z.object({
+  status: z.enum(['complete', 'partial', 'unavailable']),
+  checkedAt: z.string().datetime(),
+  errorCode: z.enum(['PROVIDER_TIMEOUT', 'PROVIDER_UNAVAILABLE', 'PROVIDER_RESPONSE_INVALID', 'PROVIDER_RESULT_LIMIT_EXCEEDED']).optional(),
+  issues: z.array(z.enum(['provider-result-limit-exceeded', 'attempt-provenance-unverified'])).max(2).optional(),
+  /** Run-level artifacts that could not be proven to belong to this exact retry attempt. */
+  unverifiedLinks: z.array(z.object(testExecutionEvidenceLinkFields).strict()).max(99).optional(),
+}).strict().superRefine((collection, context) => {
+  if (collection.status === 'complete' && collection.errorCode) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Completed evidence collection cannot include an error code' })
+  }
+  if (collection.status === 'unavailable' && !collection.errorCode) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Unavailable evidence collection requires an error code' })
+  }
+  if (collection.status === 'partial' && collection.errorCode !== 'PROVIDER_RESULT_LIMIT_EXCEEDED' && !collection.issues?.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['issues'], message: 'Partial evidence collection requires at least one collection issue' })
+  }
+  if (collection.status === 'partial' && collection.errorCode && collection.errorCode !== 'PROVIDER_RESULT_LIMIT_EXCEEDED') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['errorCode'], message: 'Partial evidence collection only supports the provider result-limit error code' })
+  }
+  if (collection.status !== 'partial' && (collection.issues?.length || collection.unverifiedLinks?.length)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['issues'], message: 'Only partial evidence collection may retain collection issues' })
+  }
+  if (collection.unverifiedLinks?.length && !collection.issues?.includes('attempt-provenance-unverified')) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['unverifiedLinks'], message: 'Unverified links require an attempt provenance issue' })
+  }
+})
+
+export const testExecutionEvidenceLinkSchema = z.object({
+  ...testExecutionEvidenceLinkFields,
+}).strict()
+
+export type TestExecutionGateEvaluation = {
+  policyArtifactId: string
+  gateArtifactId: string
+  status: 'passed' | 'failed' | 'cancelled' | 'running'
+  detail?: string
+}
+
+/** GitHub qualifies workflow_run.path with @ref; catalog artifacts use the repository path. */
+export function normalizeWorkflowPath(path?: string) {
+  if (!path) return undefined
+  return path.match(/^(.+\.ya?ml)@.+$/i)?.[1] ?? path
+}
+
+export const testExecutionGateEvaluationSchema = z.object({
+  policyArtifactId: z.string().trim().min(1).max(500),
+  gateArtifactId: z.string().trim().min(1).max(500),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']),
+  detail: z.string().trim().min(1).max(1000).optional(),
+}).strict()
+
+export type TestExecutionThreshold = {
+  metric: string
+  observed: number
+  unit?: string
+  operator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq'
+  target: number
+  /** Derived by FuzeQuality from observed/operator/target, never trusted from a producer. */
+  passed: boolean
+}
+
+export const testExecutionThresholdInputSchema = z.object({
+  metric: z.string().trim().min(1).max(200),
+  observed: z.number().finite(),
+  unit: z.string().trim().min(1).max(50).optional(),
+  operator: z.enum(['lt', 'lte', 'gt', 'gte', 'eq']),
+  target: z.number().finite(),
+}).strict()
 
 export const testExecutionInputSchema = z.object({
   repositoryId: z.string().uuid(), tenantId: z.string().min(1), revision: z.string().min(1).max(200),
   provider: z.enum(['github-actions', 'external']).default('external'),
   externalRunId: z.string().trim().min(1).max(500).optional(),
   attempt: z.number().int().positive().default(1),
+  branch: z.string().trim().min(1).max(500).optional(),
+  headRepository: z.string().trim().max(255).regex(/^[^/\s]+\/[^/\s]+$/).optional(),
   kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
   status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
-  sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
-  policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]), summary: z.string().max(5000).optional(),
-}).strict()
+  workflowPath: z.string().trim().min(1).max(1000).optional(),
+  sourceUrl: httpsEvidenceUrlSchema.optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
+  policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]),
+  gateEvaluations: z.array(testExecutionGateEvaluationSchema).max(100).default([]),
+  thresholds: z.array(testExecutionThresholdInputSchema).max(100).default([]),
+  evidenceLinks: z.array(testExecutionEvidenceLinkSchema).max(100).default([]),
+  evidenceCollection: testExecutionEvidenceCollectionSchema.optional(),
+  summary: z.string().max(5000).optional(),
+}).strict().superRefine((execution, context) => {
+  if (execution.status === 'running' && execution.completedAt) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Running execution cannot include a completion timestamp',
+      path: ['completedAt'],
+    })
+  }
+  if (
+    execution.startedAt &&
+    execution.completedAt &&
+    Date.parse(execution.completedAt) < Date.parse(execution.startedAt)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Execution completion timestamp cannot precede its start timestamp',
+      path: ['completedAt'],
+    })
+  }
+  const pairs = new Set<string>()
+  for (const [index, evaluation] of execution.gateEvaluations.entries()) {
+    const pair = `${evaluation.policyArtifactId}\u0000${evaluation.gateArtifactId}`
+    if (pairs.has(pair)) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Duplicate policy/gate evaluation pair',
+      path: ['gateEvaluations', index],
+    })
+    pairs.add(pair)
+  }
+}).transform(execution => ({
+  ...execution,
+  ...(execution.workflowPath
+    ? { workflowPath: normalizeWorkflowPath(execution.workflowPath)! }
+    : {}),
+}))
 
 export const performanceTestRequestSchema = z.object({ artifactId: z.string().min(1).max(500) }).strict()
+
+const workflowDispatchInputNameSchema = z.string().regex(
+  /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/,
+  'Workflow input names must be bounded GitHub identifiers',
+)
+
+export const workflowDispatchRequestSchema = z.object({
+  inputs: z.record(
+    workflowDispatchInputNameSchema,
+    z.string().trim().min(1).max(256),
+  ).refine(
+    inputs => Object.keys(inputs).length <= 20,
+    'At most 20 workflow inputs are allowed',
+  ).default({}),
+}).strict()
+
+export const testSuiteDispatchStatusSchema = z.enum([
+  'dispatching',
+  'accepted',
+  'failed',
+])
+
+export const testSuiteDispatchExecutionResultSchema = z.object({
+  id: z.string().trim().min(1).max(500),
+  provider: z.enum(['github-actions', 'external']),
+  externalRunId: z.string().trim().min(1).max(500),
+  attempt: z.number().int().positive(),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']),
+  sourceUrl: httpsEvidenceUrlSchema.optional(),
+  evidenceLinks: z.array(testExecutionEvidenceLinkSchema).max(100).optional(),
+  evidenceCollection: testExecutionEvidenceCollectionSchema.optional(),
+  startedAt: z.string().datetime().optional(),
+  completedAt: z.string().datetime().optional(),
+}).strict()
+
+export const testSuiteDispatchSchema = z.object({
+  id: z.string().uuid(),
+  repositoryId: z.string().uuid(),
+  tenantId: z.string().trim().min(1).max(200),
+  artifactId: z.string().trim().min(1).max(500),
+  artifactLogicalId: z.string().trim().min(1).max(500),
+  artifactKind: z.enum([
+    'integration-test',
+    'post-production-test',
+    'load-test',
+    'stress-test',
+  ]),
+  workflowPath: z.string().trim().min(1).max(1000),
+  ref: z.string().trim().min(1).max(500),
+  sourceRevision: z.string().regex(/^[0-9a-f]{40}$/i),
+  requestedBy: z.string().trim().min(1).max(200),
+  inputNames: z.array(workflowDispatchInputNameSchema).max(20),
+  status: testSuiteDispatchStatusSchema,
+  error: z.string().trim().min(1).max(2000).optional(),
+  requestedAt: z.string().datetime(),
+  completedAt: z.string().datetime().optional(),
+  executionResult: testSuiteDispatchExecutionResultSchema.optional(),
+}).strict()
+
+export type TestSuiteDispatch = z.infer<typeof testSuiteDispatchSchema>
+
+export type TestSuiteDispatchPage = {
+  items: TestSuiteDispatch[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
 
 export type Portfolio = {
   repositories: Repository[]
@@ -597,6 +948,7 @@ export const eventEnvelopeSchema = <T extends z.ZodTypeAny>(payload: T) =>
 export const scanRequestedSchema = z.object({
   repositoryId: z.string().uuid(),
   commitSha: z.string().regex(/^[0-9a-f]{40}$/i, 'An immutable 40-character commit SHA is required'),
+  defaultBranch: z.string().trim().min(1).max(255).optional(),
   trigger: z.enum(['manual', 'push', 'reconcile']),
 })
 
@@ -622,12 +974,25 @@ export const expectationExclusionSchema = z.object({
   expiresAt: z.string().datetime().refine(value => new Date(value).getTime() > Date.now(), 'Expiry must be in the future'),
 })
 
+/** Relationship-only contract emitted by FuzeX for QA traceability. */
+export const designTestLinkEventSchema = z.object({
+  tenantId: z.string().uuid(),
+  traceLinkId: z.string().trim().min(1).max(200),
+  fuzexProjectId: z.string().trim().min(1).max(200),
+  targetKind: z.enum(['flow-step', 'frame', 'component']),
+  targetRef: z.string().trim().min(1).max(1_000),
+  testCaseId: z.string().trim().min(1).max(500),
+}).strict()
+export type DesignTestLinkEvent = z.infer<typeof designTestLinkEventSchema>
+
 export const TOPICS = {
   TENANT_SEEDED: 'fuzequality.tenant.seeded',
   TENANT_DELETED: 'fuzequality.tenant.deleted',
   PRINCIPAL_SEEDED: 'fuzequality.principal.seeded',
   PRINCIPAL_DELETED: 'fuzequality.principal.deleted',
   ORGANIZATION_MEMBERSHIP_CHANGED: 'fuzequality.organization-membership.changed',
+  DESIGN_TEST_LINK_VERIFIED: 'fuzequality.design.test-link.verified',
+  DESIGN_TEST_LINK_REVOKED: 'fuzequality.design.test-link.revoked',
   REPOSITORY_SCAN_REQUESTED: 'fuzequality.repository.scan.requested',
   REPOSITORY_INVENTORY_CHANGED: 'fuzequality.repository.inventory.changed',
   REQUIREMENT_SYNC_REQUESTED: 'fuzequality.requirement.sync.requested',

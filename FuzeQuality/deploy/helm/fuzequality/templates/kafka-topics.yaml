@@ -27,6 +27,8 @@ spec:
                 fuzequality.principal.seeded
                 fuzequality.principal.deleted
                 fuzequality.organization-membership.changed
+                fuzequality.design.test-link.verified
+                fuzequality.design.test-link.revoked
                 fuzequality.repository.scan.requested
                 fuzequality.repository.inventory.changed
                 fuzequality.requirement.sync.requested

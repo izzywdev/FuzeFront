@@ -12,17 +12,19 @@ import {
 import { db } from '../config/database'
 import { logger } from '../lib/logger'
 import { enqueueEvent } from '@fuzefront/core'
-import { emitMembershipRemoved } from '../events/membershipEvents'
+import { emitAuthorizationChanged, emitMembershipAdded, emitMembershipRemoved } from '../events/membershipEvents'
 import { TOPICS } from '@fuzefront/shared/kafka'
 import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 import { defaultEventPublisher } from '../services/eventPublisher'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
-import { permitSchema } from '../permit/schema'
+import { permitSchema, MEMBERSHIP_ROLE_RANK } from '../permit/schema'
 import { EMPLOYEE_ROLE_CATALOG_ENTRY, resolveEmployeeStatus } from '../services/employeeRole'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 import { isMemberDirectoryEnabled } from '../utils/memberDirectoryFlag'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
+import { assertTenantMatches, sessionTenantId } from '../middleware/tenant-context'
+import { mintOrgSessionToken, OrgSessionError } from '../services/orgSessionToken'
 
 const router = express.Router()
 
@@ -82,6 +84,17 @@ function validateOrganizationInput(data: any) {
   return errors
 }
 
+// Organization types a client may NOT request on create. `platform` is the
+// operator-owned root org marker; it is seeded by migration only.
+const RESERVED_ORGANIZATION_TYPES = ['platform']
+
+function isReservedOrganizationType(type: unknown): boolean {
+  return (
+    typeof type === 'string' &&
+    RESERVED_ORGANIZATION_TYPES.includes(type.trim().toLowerCase())
+  )
+}
+
 function sanitizeInput(data: any) {
   return {
     name: data.name?.trim(),
@@ -113,6 +126,17 @@ async function requireOrgAdminOrOwner(userId: string, orgId: string): Promise<bo
 // POST /api/organizations - Create a new organization
 router.post('/', authenticateToken, async (req: any, res) => {
   try {
+    // `type: 'platform'` is a trust marker downstream (org projection
+    // `org_type`) and must only ever be minted by a migration/operator path
+    // (see the root platform organization seed migration) — never by an
+    // authenticated caller over HTTP. Reject BEFORE any lookup/insert/event so
+    // nothing is persisted and no identity.org.created is emitted.
+    if (isReservedOrganizationType(req.body?.type)) {
+      return res.status(403).json({
+        error: 'Organization type "platform" is reserved and cannot be set via this endpoint',
+      })
+    }
+
     const input = sanitizeInput(req.body)
     const validationErrors = validateOrganizationInput(input)
 
@@ -206,17 +230,14 @@ router.post('/', authenticateToken, async (req: any, res) => {
           parentId: input.parent_id ?? null,
           ownerId: req.user.id,
           isActive: true,
-          settings: input.settings,
-          metadata: input.metadata,
         },
         `identity-org-created-${organizationId}`
       )
-      await enqueueEvent(
-        trx,
-        TOPICS.IDENTITY_MEMBERSHIP_ADDED,
-        { organizationId, userId: req.user.id, role: 'owner' },
-        `identity-membership-added-${uuidv4()}`
-      )
+      await emitMembershipAdded(trx, {
+        organizationId,
+        userId: req.user.id,
+        role: 'owner',
+      })
     })
 
     // Fetch the created organization
@@ -271,6 +292,50 @@ router.post('/', authenticateToken, async (req: any, res) => {
   }
 })
 
+/**
+ * POST /api/organizations/:id/session-token
+ *
+ * Exchange the caller's session token for a short-lived ORG-SCOPED token
+ * (`{ userId, sessionId, tid, orgId, kind: 'fuze-org-session' }`), minted only
+ * after the caller's ACTIVE membership of :id is verified. This is the verified
+ * source of the `orgId` claim for org-scoped services (selection-list-service);
+ * see services/orgSessionToken.ts for the full rationale and the fail-closed
+ * rules. The org comes from the path, but the CLAIM in the minted token is the
+ * product of the membership check, which is what downstream services trust.
+ *
+ * 200 -> { token, tokenType: 'Bearer', expiresIn, organizationId }
+ * 400 invalid org id · 401 bad/revoked/expired/non-session token · 403 not an
+ * active member (also for a nonexistent org: no existence oracle).
+ */
+router.post('/:id/session-token', authenticateToken, async (req: any, res) => {
+  try {
+    const authHeader = req.headers['authorization']
+    const sessionToken =
+      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+        ? authHeader.slice('Bearer '.length)
+        : ''
+    const result = await mintOrgSessionToken({
+      sessionToken,
+      userId: req.user.id,
+      organizationId: req.params.id,
+      tenantAccepts: tid => assertTenantMatches(req, tid).ok,
+      tenantId: sessionTenantId(),
+    })
+    res.setHeader('Cache-Control', 'no-store')
+    res.json(result)
+  } catch (error) {
+    if (error instanceof OrgSessionError) {
+      logger.info(
+        { userId: req.user?.id, reason: error.code, status: error.status },
+        'org-session: exchange refused'
+      )
+      return res.status(error.status).json({ error: error.message, code: error.code })
+    }
+    logger.error({ err: error }, 'org-session: exchange failed')
+    res.status(500).json({ error: 'Failed to create organization session token' })
+  }
+})
+
 // GET /api/organizations - List organizations with filtering and pagination
 router.get('/', authenticateToken, async (req: any, res) => {
   try {
@@ -295,34 +360,52 @@ router.get('/', authenticateToken, async (req: any, res) => {
     const sortField = validSortFields.includes(sort) ? sort : 'name'
     const sortOrder = ['asc', 'desc'].includes(order) ? order : 'asc'
 
-    // Build query. Also project the caller's own membership role (via the
-    // left-join below) as `user_role` so the UI can show "your role" and
-    // distinguish a real member from someone merely seeing a platform org.
+    // Build query. Also project the caller's own membership role as
+    // `user_role` so the UI can show "your role" and distinguish a real member
+    // from someone merely seeing a platform org.
+    //
+    // FFRNT-378: a user may hold MORE THAN ONE active membership row for the
+    // same org (e.g. viewer + owner). A LEFT JOIN on organization_memberships
+    // fanned that out to one result row per membership, so the org appeared
+    // TWICE in the switcher (each row carrying a different user_role). Instead,
+    // keep the query one-row-per-org and derive `user_role` from a correlated
+    // subquery that returns the single HIGHEST-ranked active role
+    // (MEMBERSHIP_ROLE_RANK: owner > admin > member > viewer > developer), and
+    // gate visibility with EXISTS. Count, sort and pagination below then
+    // operate on orgs, not on membership rows, so none of them double-count.
+    const rankCase =
+      'CASE om.role ' +
+      Object.entries(MEMBERSHIP_ROLE_RANK)
+        .map(([, n]) => `WHEN ? THEN ${n}`)
+        .join(' ') +
+      ' ELSE 0 END'
+    const rankRoles = Object.keys(MEMBERSHIP_ROLE_RANK)
     let query = db('organizations')
-      .select('organizations.*', 'organization_memberships.role as user_role')
-      .leftJoin('organization_memberships', function () {
-        this.on(
-          'organizations.id',
-          '=',
-          'organization_memberships.organization_id'
+      .select(
+        'organizations.*',
+        db.raw(
+          `(SELECT om.role FROM organization_memberships om
+              WHERE om.organization_id = organizations.id
+                AND om.user_id = ?
+                AND om.status = 'active'
+              ORDER BY ${rankCase} DESC
+              LIMIT 1) as user_role`,
+          [req.user.id, ...rankRoles]
         )
-          .andOn(
-            'organization_memberships.user_id',
-            '=',
-            db.raw('?', [req.user.id])
-          )
-          .andOn(
-            'organization_memberships.status',
-            '=',
-            db.raw('?', ['active'])
-          )
-      })
+      )
       .where(function () {
-        // User can see organizations they are members of, or public organizations
-        this.whereNotNull('organization_memberships.id').orWhere(
-          'organizations.type',
-          'platform'
-        )
+        // A user sees orgs they are an active member of, plus the single
+        // canonical platform root (every user has a baseline membership there,
+        // but new users may not yet — so keep it visible by id). Scoping to
+        // ROOT_ORG_ID, not type='platform', stops any other/legacy platform org
+        // leaking into every user's switcher as a phantom "Guest" tile.
+        this.whereExists(function () {
+          this.select(db.raw('1'))
+            .from('organization_memberships as om2')
+            .whereRaw('om2.organization_id = organizations.id')
+            .andWhere('om2.user_id', req.user.id)
+            .andWhere('om2.status', 'active')
+        }).orWhere('organizations.id', ROOT_ORG_ID)
       })
 
     // Apply filters
@@ -449,10 +532,12 @@ router.get(
         })
         .where('organizations.id', id)
         .where(function () {
-          // User can see organizations they are members of, or public organizations
+          // Visible if the caller is an active member, or it is the canonical
+          // platform root. Scoped to ROOT_ORG_ID (not type='platform') so a
+          // legacy/phantom platform org is not readable by non-members.
           this.whereNotNull('organization_memberships.id').orWhere(
-            'organizations.type',
-            'platform'
+            'organizations.id',
+            ROOT_ORG_ID
           )
         })
         .first()
@@ -565,8 +650,6 @@ router.put(
             parentId: updatedOrganization.parent_id ?? null,
             ownerId: updatedOrganization.owner_id ?? null,
             isActive: !!updatedOrganization.is_active,
-            settings: parseJsonb(updatedOrganization.settings),
-            metadata: parseJsonb(updatedOrganization.metadata),
           },
           `identity-org-updated-${uuidv4()}`
         )
@@ -603,10 +686,36 @@ router.put(
   }
 )
 
+// The platform root organization is the anchor for every portal-scope check
+// and every user's baseline membership — it can never be deleted by anyone.
+// This guard runs BEFORE the permission middleware (and before the owner check,
+// transaction and outbox emit) so the answer is a consistent ROOT_ORG_PROTECTED
+// regardless of the caller's role. Guard by the well-known id AND by
+// type='platform' so any future platform/system org is covered too.
+async function protectRootOrganization(req: any, res: any, next: any) {
+  try {
+    const { id } = req.params
+    const targetOrg = await db('organizations').where('id', id).first()
+    if (!targetOrg) {
+      return res.status(404).json({ error: 'Organization not found' })
+    }
+    if (id === ROOT_ORG_ID || targetOrg.type === 'platform') {
+      return res.status(403).json({
+        error: 'The platform root organization cannot be deleted',
+        code: 'ROOT_ORG_PROTECTED',
+      })
+    }
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
+
 // DELETE /api/organizations/:id - Deactivate organization
 router.delete(
   '/:id',
   authenticateToken,
+  protectRootOrganization,
   PermissionMiddleware.canDeleteOrganization,
   async (req: any, res) => {
     try {
@@ -1556,13 +1665,25 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: any, res) =>
       return res.status(403).json({ error: 'Cannot change the role of an owner' })
     }
 
-    await db('organization_memberships')
-      .where('id', memberId)
-      .update({ role })
+    // Role changes alter authorization.  Keep the membership mutation and the
+    // tenant-scoped invalidation event in one transaction so consumers never
+    // observe a committed role without a durable invalidation signal.
+    const updated = await db.transaction(async trx => {
+      await trx('organization_memberships')
+        .where('id', memberId)
+        .update({ role })
 
-    const updated = await db('organization_memberships')
-      .where('id', memberId)
-      .first()
+      const changed = await trx('organization_memberships')
+        .where('id', memberId)
+        .first()
+
+      await emitAuthorizationChanged(trx, {
+        organizationId: id,
+        userId: membership.user_id,
+        role,
+      }, 'membership_role_changed')
+      return changed
+    })
 
     // Assign Permit role — non-blocking
     try {

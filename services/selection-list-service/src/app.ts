@@ -13,6 +13,7 @@
 // requires a Bearer token carrying an orgId claim, so resolution is org-scoped.
 
 import express, { Application } from 'express';
+import { tracingMiddleware } from '@fuzefront/telemetry';
 import { requestLogger } from './lib/logger';
 import { asyncHandler, errorHandler } from './lib/http';
 import { metricsMiddleware } from './lib/metrics';
@@ -23,6 +24,7 @@ import healthRouter from './routes/health';
 import docsRouter from './routes/docs';
 import quotaRouter from './routes/quota';
 import listsRouter from './routes/lists';
+import forkRouter from './routes/fork';
 import itemsRouter from './routes/items';
 import translationsRouter from './routes/translations';
 import accessRouter from './routes/access';
@@ -30,6 +32,10 @@ import resolveRouter from './routes/resolve';
 
 export function createApp(): Application {
   const app = express();
+  // Starts/continues a per-request span, exposing req.traceId/req.spanId —
+  // mounted BEFORE requestLogger so lib/logger.ts's withTraceContext() call
+  // can bind trace_id/span_id onto the request's child logger.
+  app.use(tracingMiddleware());
   // First: binds reqId + request-scoped pino child logger (and ALS context)
   // for every route, including /health and /docs.
   app.use(requestLogger);
@@ -61,6 +67,7 @@ export function createApp(): Application {
   app.use('/v1/selection-lists', quotaRouter);
 
   app.use('/v1/selection-lists', listsRouter);
+  app.use('/v1/selection-lists', forkRouter);
   app.use('/v1/selection-lists', itemsRouter);
   app.use('/v1/selection-lists', translationsRouter);
   app.use('/v1/selection-lists', accessRouter);

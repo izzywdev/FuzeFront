@@ -5,6 +5,7 @@
 //   1. Validate required env vars (JWT_SECRET).
 //   2. Run pending DB migrations (idempotent knex migrate:latest), then validate the seed packs +
 //      seed-sources file and sync the seed allowlist table (fatal when invalid).
+//   2b. Verify SELECTION_LIST_PLATFORM_ORG_ID against the org projection (fatal on a contradiction).
 //   3. Initialize the family flag client (Unleash via @fuzefront/feature-flags;
 //      bounded, never fatal — fail-closed OFF when unreachable/unconfigured).
 //   4. Start the HTTP server on $PORT (default 3008 = the chart's selectionListService.port).
@@ -25,6 +26,7 @@
 // (knex skips already-applied migrations).
 
 import type { Server } from 'http';
+import { initTelemetry, type TelemetryHandle } from '@fuzefront/telemetry';
 import { createApp } from './app';
 import { db } from './db';
 import { run as runMigrations } from './db/migrate';
@@ -34,11 +36,26 @@ import { closeFeatureFlags, initFeatureFlags } from './lib/featureFlags';
 import { installProcessHandlers } from './lib/http';
 import { logger } from './lib/logger';
 import { logMachineIdentityStatus } from './lib/machineIdentity';
+import { verifyPlatformOrgConfig } from './lib/sharedLists';
 import { initSeeding } from './seed';
 import { isReconcilerEnabled, ReconcilerHandle, startReconciler } from './seed/reconciler';
 
 /** Hard ceiling on graceful shutdown; after this the process exits regardless. */
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below (see
+// backend/security/src/index.ts for the full rationale). Sends OTLP to
+// FuzeInfra's Collector; endpoint/protocol/sampling default from OTEL_* env.
+// npm_package_version is only set by an npm lifecycle script; the production
+// Dockerfile runs `node dist/index.js` directly, so it's always undefined
+// there and every span's service.version would be silently empty. Read the
+// version straight from package.json instead.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SERVICE_VERSION: string = require('../package.json').version;
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'selection-list-service',
+  serviceVersion: SERVICE_VERSION,
+});
 
 let server: Server | undefined;
 let disconnectConsumers: (() => Promise<void>) | null = null;
@@ -81,6 +98,9 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
     server.close(() => resolve());
   });
   await db.destroy().catch((err) => logger.warn({ err }, 'DB pool close failed during shutdown'));
+  // Flush any spans still buffered before the process exits — otherwise the
+  // last few requests before shutdown silently never reach Tempo.
+  await telemetry.shutdown().catch((err) => logger.warn({ err }, 'telemetry shutdown failed during shutdown'));
   process.exit(exitCode);
 }
 
@@ -117,6 +137,18 @@ async function main(): Promise<void> {
     await initSeeding(db);
   } catch (err) {
     logger.fatal({ err }, 'Seed packs / seed-sources invalid or allowlist sync failed');
+    await db.destroy().catch(() => {});
+    process.exit(1);
+  }
+
+  // Platform organization (common lists, design record D2): SELECTION_LIST_PLATFORM_ORG_ID is the ONLY source
+  // (no fallback to the org projection: its org_type is user-controllable). It must be an org_... TypeID and
+  // must not be contradicted by the org projection. Unset => platform features are disabled (fail closed);
+  // an unconfirmed value is accepted with a warning.
+  try {
+    await verifyPlatformOrgConfig(db);
+  } catch (err) {
+    logger.fatal({ err }, 'SELECTION_LIST_PLATFORM_ORG_ID is invalid or contradicted by the org projection — refusing to start');
     await db.destroy().catch(() => {});
     process.exit(1);
   }

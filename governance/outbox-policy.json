@@ -1,0 +1,34 @@
+{
+  "$comment": [
+    "FuzeFront's own policy, baselined from `--report` on 2026-10-05 (FuzeSDLC v1.23.0 gates). mode=ratchet: knownUnhandled only shrinks. The gate scripts and Harden Gate jobs arrive via governance-sync; this file sits here until then.",
+    "Policy for scripts/gate_outbox.py (gate-outbox) -- data-consistency-standard.md section 3: no direct producer call for a domain topic outside the transactional-outbox relay.",
+    "allowedPaths lists the ONLY places a producer may be called: the outbox relay module and the producer package. It is a per-repo fact, so it is declared here, not baked into the gate. The values below are the family conventions; replace them with this repo's real paths.",
+    "minFilesScanned is the non-vacuity floor: a scan that sees fewer source files than this FAILS, because a moved source tree would otherwise scan nothing and pass. Set it to roughly 80% of what `--report` prints as scanned.",
+    "knownUnhandled is a RATCHET, not an allowlist. An entry is only ever REMOVED. A new offender fails the gate immediately, and the gate also fails if a listed entry is now compliant (or gone) and has not been removed here in the same PR -- otherwise the list rots into a permanent exemption nobody revisits.",
+    "exempt[] is a declared, reasoned decision (reason >= 40 chars; standard section 13), not a way to make a red gate green. A name that matches nothing fails (stale exemption); a name in both exempt and knownUnhandled fails.",
+    "This file is SEEDED from FuzeSDLC and owned by THIS repo from then on: governance-sync does not overwrite it. Seed the baseline with `--report`, whose last block is a suggested knownUnhandled (replace, do not append).",
+    "knownUnhandled entries here are repo-relative FILE paths that call a producer directly today.",
+    "exclude[] is a list of path globs never scanned (vendored trees, generated code that this repo does not own). It is not an exemption: no reason is recorded, so use it only for code that is not this repo's to fix; use exempt[] (with a reason) for this repo's own code."
+  ],
+  "owner": "@izzywdev",
+  "mode": "ratchet",
+  "minFilesScanned": 1200,
+  "allowedPaths": [
+    "shared/src/kafka/**",
+    "backend/core/src/events/**"
+  ],
+  "exclude": [
+    "FuzeQuality/**"
+  ],
+  "knownUnhandled": [
+    "backend/applications/src/app-registry/events.ts",
+    "backend/security/src/services/eventPublisher.ts",
+    "backend/src/services/eventPublisher.ts",
+    "services/billing-service/src/kafka/producer.ts",
+    "services/chat-service/src/billing/emitter.ts",
+    "services/chat-service/src/connectors/gmail-injection.ts",
+    "services/email-service/src/handlers/email-requested.handler.ts",
+    "services/selection-list-service/src/events/outboxPublisher.ts"
+  ],
+  "exempt": []
+}

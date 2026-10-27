@@ -1,0 +1,15 @@
+{
+  "manifestVersion": "1",
+  "slug": "iframe-example",
+  "name": "Iframe Example",
+  "menuLabel": "Iframe Example",
+  "description": "Minimal iframe integration example (docs/examples/iframe-integration). Not a real product.",
+  "mode": "portal",
+  "integration": {
+    "type": "iframe",
+    "url": "http://localhost:5180/"
+  },
+  "nav": { "section": "platform", "order": 999 },
+  "chrome": { "menu": "host", "topbar": "host" },
+  "visibility": "private"
+}

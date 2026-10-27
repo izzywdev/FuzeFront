@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const portfolio = {
-  repositories: [{ id: 'repo-1', tenantId: 'tenant-1', owner: 'izzywdev', name: 'FuzeService', canonicalUrl: 'https://github.com/izzywdev/FuzeService', defaultBranch: 'main', kind: 'service', enabled: true, lastScanStatus: 'complete', lastScanRevision: 'abcdef123456', jiraBindings: [] }],
+  repositories: [{ id: 'repo-1', tenantId: 'tenant-1', owner: 'izzywdev', name: 'FuzeService', canonicalUrl: 'https://github.com/izzywdev/FuzeService', defaultBranch: 'main', kind: 'service', enabled: true, lastScanStatus: 'complete', lastScanRevision: 'abcdef123456', lastScanDetails: { sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', catalogRevision: 'abcdef123456', scannerVersion: '1.5.0', configVersion: 'config-1', partial: false, candidates: [], counts: { candidates: 0, operations: 1, frontendSurfaces: 1, tests: 0, diagnostics: 1 } }, jiraBindings: [] }],
   operations: [{ id: 'api-1', repositoryId: 'repo-1', documentPath: 'openapi.yaml', method: 'post', path: '/apps/{slug}/suspend', tags: ['apps'], summary: 'Suspend app', security: true, parameters: [], responses: ['200'] }],
   surfaces: [{ id: 'ui-1', repositoryId: 'repo-1', name: 'PlanPicker', packageName: '@fuze/ui', sourcePath: 'src/PlanPicker.tsx', kind: 'component', public: true, states: ['default'], hasStory: false, stories: [] }],
   tests: [],
@@ -28,7 +28,11 @@ const portfolio = {
       analysis: { promptVersion: 'fuzequality-flow-v1', schemaVersion: '1.0', model: 'quality-analysis' },
     },
   }],
-  diagnostics: [],
+  diagnostics: [{
+    repositoryId: 'repo-1', revision: 'abcdef123456', sourcePath: 'docs/oversized-journey.md',
+    category: 'repository', severity: 'error', code: 'unreadable-quality-evidence',
+    message: 'File exceeds 5 MB scan limit: docs/oversized-journey.md',
+  }],
 }
 
 const documentedStoryPortfolio = {
@@ -43,17 +47,22 @@ const documentedStoryPortfolio = {
 
 const qualityArtifacts = [
   { id: 'route-artifact', repositoryId: 'repo-1', kind: 'route', title: 'Suspend app route', sourcePath: 'src/routes/apps.ts', summary: 'Authenticated suspension route', evidence: ['POST /apps/{slug}/suspend'] },
+  { id: 'story-artifact', repositoryId: 'repo-1', kind: 'story', title: 'App settings / Suspended', sourcePath: 'src/AppSettings.stories.tsx', summary: 'Storybook interaction surface', evidence: ['app-settings--suspended'] },
+  { id: 'documentation-artifact', repositoryId: 'repo-1', kind: 'documentation', title: 'Application suspension journey', sourcePath: 'docs/suspension.md', summary: 'Repository documentation: Application suspension journey', evidence: ['An administrator suspends an application.'] },
+  { id: 'test-plan-artifact', repositoryId: 'repo-1', kind: 'test-plan', title: 'administrator suspends an application', sourcePath: 'tests/suspension.spec.ts', summary: 'e2e playwright test discovered during repository analysis', evidence: ['test:suspension'] },
+  { id: 'test-plan-artifact-retry', repositoryId: 'repo-1', kind: 'test-plan', title: 'administrator suspends an application', sourcePath: 'tests/suspension.spec.ts', summary: 'e2e playwright test discovered during repository analysis', evidence: ['test:suspension:retry'] },
   { id: 'policy-artifact', repositoryId: 'repo-1', kind: 'policy', title: 'Administrative suspension policy', sourcePath: 'docs/policies/apps.md', summary: 'Only administrators may suspend apps', evidence: ['role=administrator'] },
   { id: 'gate-artifact', repositoryId: 'repo-1', kind: 'gate', title: 'Suspension authorization gate', sourcePath: '.github/workflows/quality.yml', summary: 'Checks the administrator boundary', evidence: ['npm run test:authorization'] },
-  { id: 'load-artifact', repositoryId: 'repo-1', kind: 'load-test', title: 'Application API load test', sourcePath: '.github/workflows/load.yml', summary: 'Sustained application API load', evidence: ['p95 < 500ms'] },
+  { id: 'shared-integration-artifact', repositoryId: 'repo-1', kind: 'integration-test', title: 'Application API integration alias', sourcePath: '.github/workflows/load.yml', summary: 'Shared workflow integration classification', evidence: ['npm run test:integration'], execution: { provider: 'github-actions', workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' } },
+  { id: 'load-artifact', logicalId: 'workflow:.github/workflows/load.yml', repositoryId: 'repo-1', kind: 'load-test', title: 'Application API load test', sourcePath: '.github/workflows/load.yml', summary: 'Sustained application API load', evidence: ['p95 < 500ms'], execution: { provider: 'github-actions', workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' } },
 ]
 
 const repositoryFlowCandidates = [{
   id: 'candidate-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Suspend an application', confidence: 0.94,
-  evidence: ['src/routes/apps.ts:42', 'frontend/src/pages/AppSettings.tsx:88'],
-  steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['POST /apps/{slug}/suspend'] }],
-  wireframe: { kind: 'sequence', nodes: [{ label: 'App settings', targetIds: ['AppSettings'] }, { label: 'Confirm suspension', targetIds: ['SuspendDialog'] }, { label: 'Suspended state', targetIds: ['AppStatus'] }] },
-  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'repository-flow-v1', schemaVersion: '1.0' },
+  evidence: [],
+  steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['route-artifact'] }],
+  wireframe: { kind: 'sequence', nodes: [{ label: 'App settings', targetIds: ['story-artifact'] }, { label: 'Confirm suspension', targetIds: ['route-artifact'] }, { label: 'Suspended state', targetIds: ['story-artifact'] }] },
+  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'fuzequality-repository-flow-v3', schemaVersion: '1.0' },
   status: 'proposed', source: 'litellm', createdAt: '2026-10-08T09:00:00.000Z',
 }, {
   id: 'candidate-deterministic', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Indexed suspension route', confidence: 1,
@@ -66,20 +75,37 @@ const repositoryFlowCandidates = [{
 const policyGateEvaluations = [{
   id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'unguarded-policy', severity: 'high',
   title: 'Suspension policy requires a protected gate', detail: 'The policy is not enforced on every production path.', policyArtifactIds: ['policy-artifact'], gateArtifactIds: [],
+  confidence: 0.75, scope: { sourcePaths: ['docs/policies/apps.md'], subjects: ['suspension'] }, evidencePassages: [{ artifactId: 'policy-artifact', sourcePath: 'docs/policies/apps.md', text: 'Only administrators may suspend apps.', signal: 'obligation' }],
   recommendation: 'Require the authorization suite before production deployment.', reviewStatus: 'accepted', reviewedAt: '2026-10-08T10:00:00.000Z', reviewedBy: 'quality-owner', reviewReason: 'Required for every production release.', createdAt: '2026-10-08T09:30:00.000Z',
 }]
 
 const testExecutions = [{
   id: 'execution-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'post-production', status: 'failed', name: 'Production suspension journey',
   provider: 'github-actions', externalRunId: '123', attempt: 2,
+  branch: 'main', headRepository: 'izzywdev/FuzeService',
+  workflowPath: '.github/workflows/post-prod.yml',
   sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/123', startedAt: '2026-10-08T11:00:00.000Z', completedAt: '2026-10-08T11:02:00.000Z',
   policyArtifactIds: ['policy-artifact'], gateArtifactIds: ['gate-artifact'], summary: 'Authorization assertion failed.',
+  gateEvaluations: [{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', status: 'failed', detail: 'The production authorization assertion failed.' }],
+  thresholds: [], evidenceLinks: [],
+}, {
+  id: 'execution-load-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'load', status: 'failed', name: 'Application API load test',
+  provider: 'github-actions', externalRunId: '456', attempt: 1, workflowPath: '.github/workflows/load.yml',
+  branch: 'main', headRepository: 'izzywdev/FuzeService',
+  sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/456', startedAt: '2026-10-09T11:00:00.000Z', completedAt: '2026-10-09T11:05:00.000Z',
+  policyArtifactIds: [], gateArtifactIds: [], summary: 'p95 latency exceeded the release threshold.', gateEvaluations: [], evidenceLinks: [],
+  thresholds: [{ metric: 'p95 latency', observed: 640, unit: 'ms', operator: 'lte', target: 500, passed: false }],
 }]
+
+let latestDispatchAuditUnavailable = false
 
 async function mockQualityApi(page: Page, fixture = portfolio) {
   let suggestionConfirmed = false
   let flowCandidates = repositoryFlowCandidates
   let flowReviewHistory = [{
+    id: 'flow-review-initial',
+    candidateId: 'candidate-1',
+    tenantId: 'tenant-1',
     status: 'rejected' as const,
     reviewedBy: 'platform-owner',
     reason: 'The first analysis missed the administrator boundary.',
@@ -96,8 +122,41 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       suggestions: suggestionConfirmed ? [] : fixture.suggestions,
     })
     if (url.pathname.endsWith('/requirements/freshness')) return respond({ freshnessStatus: 'fresh', lastSuccessAt: '2026-09-14T00:00:00.000Z' })
+    if (url.pathname.endsWith('/scan-history')) {
+      const cursor = url.searchParams.get('cursor')
+      return respond(cursor
+        ? {
+            items: [{ id: '00000000-0000-4000-8000-000000000001', revision: 'older123456789', branch: 'main', status: 'complete', scannedAt: '2026-10-09T09:00:00.000Z', trigger: 'push', counts: { operations: 1, surfaces: 1, tests: 2, diagnostics: 0 } }],
+            page: { nextCursor: null, hasMore: false },
+          }
+        : {
+            items: [{ id: '00000000-0000-4000-8000-000000000002', revision: 'latest12345678', branch: 'main', status: 'complete', scannedAt: '2026-10-10T10:00:00.000Z', trigger: 'manual', counts: { operations: 2, surfaces: 3, tests: 4, diagnostics: 0 } }],
+            page: { nextCursor: 'scan-page-2', hasMore: true },
+          })
+    }
+    if (url.pathname.endsWith('/quality-artifacts/by-ids')) {
+      const ids = new Set(url.searchParams.getAll('id'))
+      return respond({
+        items: qualityArtifacts.filter(artifact =>
+          ids.has(artifact.id) || ids.has(artifact.logicalId ?? artifact.id)
+        ),
+      })
+    }
     if (url.pathname.endsWith('/quality-artifacts')) return respond(qualityArtifacts)
-    if (url.pathname.endsWith('/flow-candidates')) return respond(flowCandidates)
+    if (url.pathname.endsWith('/flow-candidates')) {
+      const filtered = flowCandidates.filter(flow =>
+        (!url.searchParams.get('source') || flow.source === url.searchParams.get('source')) &&
+        (!url.searchParams.get('status') || flow.status === url.searchParams.get('status')) &&
+        (!url.searchParams.get('revision') || flow.revision === url.searchParams.get('revision')) &&
+        (!url.searchParams.get('model') || flow.analysis?.model === url.searchParams.get('model')) &&
+        (!url.searchParams.get('promptVersion') || flow.analysis?.promptVersion === url.searchParams.get('promptVersion')) &&
+        (!url.searchParams.get('schemaVersion') || flow.analysis?.schemaVersion === url.searchParams.get('schemaVersion'))
+      )
+      return respond(filtered)
+    }
+    if (url.pathname.endsWith('/flow-candidates/candidate-1') && method === 'GET') {
+      return respond(flowCandidates.find(flow => flow.id === 'candidate-1'))
+    }
     if (url.pathname.endsWith('/flow-candidates/candidate-1/history')) return respond(flowReviewHistory)
     if (url.pathname.endsWith('/flow-candidates/candidate-1/review') && method === 'POST') {
       const payload = route.request().postDataJSON() as { status: 'confirmed' | 'rejected', reason?: string }
@@ -109,16 +168,107 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
         reviewedBy: 'quality-reviewer',
         reviewReason: payload.reason,
       } : flow)
-      flowReviewHistory = [{ status: payload.status, reviewedBy: 'quality-reviewer', reason: payload.reason, createdAt: reviewedAt }, ...flowReviewHistory]
+      flowReviewHistory = [{ id: 'flow-review-latest', candidateId: 'candidate-1', tenantId: 'tenant-1', status: payload.status, reviewedBy: 'quality-reviewer', reason: payload.reason, createdAt: reviewedAt }, ...flowReviewHistory]
       return respond(flowCandidates[0])
     }
     if (url.pathname.endsWith('/policy-gate-evaluations')) return respond(policyGateEvaluations)
     if (url.pathname.endsWith('/policy-gate-evaluations/evaluation-1/history')) return respond([
-      { status: 'accepted', reviewedBy: 'quality-owner', reason: 'Required for every production release.', createdAt: '2026-10-08T10:00:00.000Z' },
-      { status: 'dismissed', reviewedBy: 'platform-owner', reason: 'Initial evidence was incomplete.', createdAt: '2026-10-08T09:45:00.000Z' },
+      { id: 'policy-review-2', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'accepted', reviewedBy: 'quality-owner', reason: 'Required for every production release.', createdAt: '2026-10-08T10:00:00.000Z' },
+      { id: 'policy-review-1', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'dismissed', reviewedBy: 'platform-owner', reason: 'Initial evidence was incomplete.', createdAt: '2026-10-08T09:45:00.000Z' },
     ])
+    if (url.pathname.endsWith('/performance-test-executions/latest')) {
+      return respond({ items: testExecutions.filter(execution =>
+        execution.kind === 'load' || execution.kind === 'stress'
+      ) })
+    }
+    if (url.pathname.endsWith('/integration-test-executions/latest')) {
+      return respond({ items: testExecutions.filter(execution => execution.kind === 'integration') })
+    }
+    if (url.pathname.endsWith('/post-production-test-executions/latest')) {
+      return respond({ items: testExecutions.filter(execution => execution.kind === 'post-production') })
+    }
+    if (url.pathname.endsWith('/execution-trend')) return respond({
+      items: [
+        { date: '2026-10-09', passed: 0, failed: 1, cancelled: 0, running: 0 },
+        { date: '2026-10-08', passed: 0, failed: 1, cancelled: 0, running: 0 },
+      ],
+      page: { nextCursor: null, hasMore: false },
+    })
+    if (url.pathname.endsWith('/test-executions/execution-1')) return respond({
+      ...testExecutions[0],
+      catalogRevision: 'execution-catalog-revision',
+    })
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
-    if (url.pathname.endsWith('/execution-performance')) return respond([{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', passed: 2, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
+    if (url.pathname.endsWith('/execution-performance')) return respond([{ repositoryId: 'repo-1', policyArtifactId: 'policy-artifact', policyTitle: 'Administrative suspension policy', policySourcePath: 'docs/policies/apps.md', gateArtifactId: 'gate-artifact', gateTitle: 'Admin authorization gate', gateSourcePath: '.github/workflows/authorization.yml', passed: 2, failed: 1, cancelled: 0, running: 0, revisionCount: 3, latestRevision: 'abcdef123456', latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
+    if (url.pathname.endsWith('/test-suite-dispatches/latest')) {
+      if (latestDispatchAuditUnavailable) {
+        return respond({ error: 'Dispatch audit unavailable', code: 'AUDIT_UNAVAILABLE' }, 503)
+      }
+      return respond({ items: [] })
+    }
+    if (decodeURIComponent(url.pathname).endsWith('/test-suites/workflow:.github/workflows/load.yml/dispatches')) return respond({
+      items: [
+        {
+          id: '00000000-0000-4000-8000-000000000003',
+          repositoryId: 'repo-1',
+          tenantId: 'tenant-1',
+          artifactId: 'load-artifact',
+          artifactLogicalId: 'workflow:.github/workflows/load.yml',
+          artifactKind: 'load-test',
+          workflowPath: '.github/workflows/load.yml',
+          ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          requestedBy: 'quality-reviewer',
+          inputNames: [],
+          status: 'accepted',
+          requestedAt: '2026-10-22T22:00:00.000Z',
+          completedAt: '2026-10-22T22:00:01.000Z',
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000002',
+          repositoryId: 'repo-1',
+          tenantId: 'tenant-1',
+          artifactId: 'load-artifact',
+          artifactLogicalId: 'workflow:.github/workflows/load.yml',
+          artifactKind: 'load-test',
+          workflowPath: '.github/workflows/load.yml',
+          ref: '9999999999999999999999999999999999999999',
+          sourceRevision: '9999999999999999999999999999999999999999',
+          requestedBy: 'release-operator',
+          inputNames: ['duration', 'profile'],
+          status: 'failed',
+          requestedAt: '2026-10-22T21:00:00.000Z',
+          completedAt: '2026-10-22T21:00:01.000Z',
+          error: 'Provider unavailable',
+        },
+      ],
+      page: { nextCursor: null, hasMore: false },
+    })
+    if (url.pathname.endsWith('/test-suites/load-artifact/execute') && method === 'POST') return respond({
+      status: 'dispatched',
+      artifactId: 'load-artifact',
+      artifactKind: 'load-test',
+      workflowPath: '.github/workflows/load.yml',
+      ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      auditPersistence: 'persisted',
+      dispatch: {
+        id: '00000000-0000-4000-8000-000000000003',
+        repositoryId: 'repo-1',
+        tenantId: 'tenant-1',
+        artifactId: 'load-artifact',
+        artifactLogicalId: 'workflow:.github/workflows/load.yml',
+        artifactKind: 'load-test',
+        workflowPath: '.github/workflows/load.yml',
+        ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        requestedBy: 'quality-reviewer',
+        inputNames: [],
+        status: 'accepted',
+        requestedAt: '2026-10-22T22:00:00.000Z',
+        completedAt: '2026-10-22T22:00:01.000Z',
+      },
+    }, 202)
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
     if (url.pathname.endsWith('/organization/members') && method === 'GET') return respond(members)
@@ -148,7 +298,11 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
 }
 
 test.describe('FuzeQuality implemented UX flows', () => {
-  test.beforeEach(async ({ page }) => { await mockQualityApi(page); await page.goto('/') })
+  test.beforeEach(async ({ page }) => {
+    latestDispatchAuditUnavailable = false
+    await mockQualityApi(page)
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+  })
 
   test('loads the portfolio and navigates every implemented workspace', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /See what the platform promises/i })).toBeVisible()
@@ -161,27 +315,114 @@ test.describe('FuzeQuality implemented UX flows', () => {
     }
   })
 
+  test('uses host-owned chrome when mounted as a federated portal remote', async ({ page }) => {
+    await page.addInitScript(() => {
+      const menuItems: unknown[] = []
+      ;(window as any).__QUALITY_PORTAL_MENU__ = menuItems
+      ;(window as any).__FUZEFRONT__ = {
+        navigate: (path: string) => window.history.pushState({}, '', path),
+        menu: {
+          add: (_appId: string, items: unknown[]) => menuItems.push(...items),
+          remove: () => undefined,
+        },
+      }
+    })
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await expect(page).toHaveURL(/\/app\/fuzequality\/repositories$/)
+    await expect(page.getByRole('heading', { name: 'Repository inventory' })).toBeVisible()
+    await page.evaluate(() => {
+      window.history.pushState({}, '', '/app/fuzequality/operations')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+
+    await expect(page.locator('aside.sidebar')).toHaveCount(0)
+    await expect(page.locator('.topbar')).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (window as any).__QUALITY_PORTAL_MENU__.map((item: any) => item.id))).toContain('operations')
+  })
+
+  test('keeps standalone navigation deep-linkable', async ({ page }) => {
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await expect(page).toHaveURL(/\/repositories$/)
+    await expect(page.getByRole('heading', { name: 'Repository inventory' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Operations' }).click()
+    await expect(page).toHaveURL(/\/operations$/)
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toBeVisible()
+  })
+
   test('reviews repository flows, governance history, and execution evidence together', async ({ page }) => {
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
     await expect(page.getByRole('heading', { name: 'Quality intelligence' })).toBeVisible()
+    await expect(page.getByText('Repository analysis diagnostics')).toBeVisible()
+    await expect(page.getByText('unreadable-quality-evidence')).toBeVisible()
 
     const originSummary = page.getByLabel('UX flow origin summary')
     await expect(originSummary).toContainText('1 deterministic flow')
     await expect(originSummary).toContainText('1 FuzeInfra LiteLLM proposal')
     await expect(page.getByText('Suspend an application', { exact: true })).toBeVisible()
     const flowCard = page.getByText('Suspend an application', { exact: true }).locator('..')
+    await expect(flowCard.getByText('Repository izzywdev/FuzeService')).toBeVisible()
     await expect(page.getByText('FuzeInfra LiteLLM proposal', { exact: true })).toBeVisible()
     const analysisProvenance = page.getByLabel('Suspend an application analysis provenance')
     await expect(analysisProvenance).toContainText('fuzeinfra-litellm')
     await expect(analysisProvenance).toContainText('quality-analysis')
-    await expect(analysisProvenance).toContainText('repository-flow-v1')
+    await expect(analysisProvenance).toContainText('fuzequality-repository-flow-v3')
     await expect(analysisProvenance).toContainText('1.0')
     await expect(page.getByText('Deterministic repository evidence', { exact: true })).toBeVisible()
     await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Storybook states' })).toBeVisible()
+    await expect(page.getByText('App settings / Suspended', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Repository documentation' })).toBeVisible()
+    await expect(page.getByText('Application suspension journey', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Existing test plans' })).toBeVisible()
+    await expect(page.getByText('administrator suspends an application', { exact: true })).toHaveCount(2)
+    await expect(page.getByText('test:suspension', { exact: true })).toBeVisible()
+    await expect(page.getByText('test:suspension:retry', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Suspend an application wireframe')).toContainText('App settings')
+    const detailRequest = page.waitForRequest(request =>
+      request.url().endsWith('/flow-candidates/candidate-1')
+    )
+    await flowCard.getByRole('button', { name: 'Inspect flow and wireframe' }).click()
+    await detailRequest
+    const flowInspector = page.getByRole('dialog', { name: 'Suspend an application' })
+    await expect(flowInspector.getByLabel('Flow wireframe')).toContainText('Confirm suspension')
+    await expect(flowInspector.getByLabel('Flow steps')).toContainText('the application is suspended')
+    await expect(flowInspector.getByLabel('Flow provenance')).toContainText('fuzeinfra-litellm')
+    await expect(flowInspector.getByLabel('Flow provenance')).toContainText('src/routes/apps.ts')
+    await page.keyboard.press('Escape')
+    await expect(flowInspector).toBeHidden()
+    const modelRequest = page.waitForRequest(request =>
+      new URL(request.url()).searchParams.get('model') === 'quality-analysis'
+    )
+    await page.getByLabel('Analysis model').fill('quality-analysis')
+    await modelRequest
+    const promptRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.searchParams.get('model') === 'quality-analysis' &&
+        url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v3'
+    })
+    await page.getByLabel('Prompt version').fill('fuzequality-repository-flow-v3')
+    await promptRequest
+    const schemaRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v3' &&
+        url.searchParams.get('schemaVersion') === '1.0'
+    })
+    await page.getByLabel('Schema version').fill('1.0')
+    await schemaRequest
+    await expect(originSummary).toContainText('0 deterministic flows')
+    await expect(originSummary).toContainText('1 FuzeInfra LiteLLM proposal')
     await flowCard.getByText('Source evidence', { exact: true }).click()
     await expect(flowCard.getByText('Revision abcdef123456')).toBeVisible()
-    await expect(flowCard.getByText('src/routes/apps.ts:42')).toBeVisible()
+    await expect(
+      flowCard.getByText('route · src/routes/apps.ts', { exact: true })
+    ).toBeVisible()
+    await expect(flowCard.getByText('Artifact: Suspend app route')).toBeVisible()
+    await expect(flowCard.getByLabel('selects Suspend targets')).toContainText(
+      'route · src/routes/apps.ts · Suspend app route'
+    )
 
     await flowCard.getByLabel('Optional review rationale').fill('Matches the protected suspension journey.')
     const flowReviewRequest = page.waitForRequest(request => request.url().endsWith('/flow-candidates/candidate-1/review'))
@@ -189,6 +430,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     expect((await flowReviewRequest).postDataJSON()).toEqual({
       status: 'confirmed',
       reason: 'Matches the protected suspension journey.',
+      expectedReviewedAt: null,
     })
     await expect(flowCard.getByLabel('Current UX flow review')).toContainText('quality-reviewer')
     await expect(flowCard.getByLabel('Current UX flow review')).toContainText('Matches the protected suspension journey.')
@@ -201,23 +443,84 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(flowHistory.getByText('The first analysis missed the administrator boundary.')).toBeVisible()
 
     await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Decisive policy passages')).toContainText('Only administrators may suspend apps.')
     await page.getByText('Review history', { exact: true }).click()
     await expect(page.getByText('quality-owner', { exact: true })).toBeVisible()
     await expect(page.getByText('Initial evidence was incomplete.')).toBeVisible()
 
     await expect(page.getByText('Production suspension journey', { exact: true })).toBeVisible()
-    await expect(page.getByText('Authorization assertion failed.')).toBeVisible()
-    const executionMetadata = page.getByLabel('Execution provider metadata')
+    await expect(page.getByText('Authorization assertion failed.', { exact: true })).toBeVisible()
+    const productionExecution = page.getByText('Production suspension journey', { exact: true }).locator('..')
+    const executionMetadata = productionExecution.getByLabel('Execution provider metadata')
     await expect(executionMetadata.locator('[data-field="provider-run-id"]')).toContainText('github-actions · 123')
     await expect(executionMetadata.locator('[data-field="attempt"]')).toContainText('2')
+    await expect(executionMetadata.locator('[data-field="workflow-path"]')).toContainText('.github/workflows/post-prod.yml')
     await expect(executionMetadata.locator('[data-field="duration"]')).toContainText('2m 0s')
-    await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
-    await expect(page.getByText('policy-artifact → gate-artifact')).toBeVisible()
+    await expect(productionExecution.getByLabel('Policy gate linkage quality')).toContainText(
+      'Explicit outcome linkage'
+    )
+    const gateEvidence = page.getByLabel('Policy gate evidence')
+    // Summary rows only have stable artifact IDs. Historical titles and paths are
+    // resolved from the execution's exact catalog revision inside the inspector.
+    await expect(gateEvidence.getByText('policy-artifact')).toBeVisible()
+    await expect(gateEvidence.getByText('gate-artifact')).toBeVisible()
+    await expect(gateEvidence).not.toContainText('docs/policies/apps.md')
+    await expect(productionExecution.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
+    const executionDetailRequest = page.waitForRequest(request =>
+      request.url().endsWith('/test-executions/execution-1')
+    )
+    const executionArtifactRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/quality-artifacts/by-ids') &&
+        url.searchParams.get('revision') === 'execution-catalog-revision'
+    })
+    await productionExecution.getByRole('button', { name: 'Inspect execution detail' }).click()
+    await executionDetailRequest
+    await executionArtifactRequest
+    const executionInspector = page.getByRole('dialog', { name: 'Production suspension journey' })
+    await expect(executionInspector.getByText('Administrative suspension policy')).toBeVisible()
+    await expect(executionInspector.getByText('Suspension authorization gate')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(executionInspector).toBeHidden()
+    const latestLoad = page.getByLabel('Latest execution for Application API load test')
+    await expect(latestLoad).toContainText('failed · abcdef123456')
+    await expect(latestLoad).toContainText('p95 latency exceeded the release threshold.')
+    await expect(latestLoad.getByLabel('Execution evidence coverage')).toContainText(
+      '1 thresholds · 0 artifacts · 0 policy–gate outcomes'
+    )
+    await expect(latestLoad.getByLabel('Policy gate linkage quality')).toContainText(
+      'No policy–gate linkage'
+    )
+    await expect(latestLoad.getByLabel('Execution threshold evidence')).toContainText('640 ms ≤ 500 ms')
+    await expect(latestLoad.getByText('Failed', { exact: true })).toBeVisible()
+    const integrationAlias = page.getByText('Application API integration alias', { exact: true }).locator('..')
+    await expect(integrationAlias).toContainText(
+      'Inventory only · this shared workflow is dispatched and recorded as load evidence before integration evidence.'
+    )
+    await expect(integrationAlias.getByRole('button', { name: /Run analyzed revision/ })).toHaveCount(0)
+    await expect(page.getByLabel('Latest execution for Application API integration alias')).toHaveCount(0)
+    const providerRequest = page.waitForRequest(request =>
+      request.url().includes('/test-executions?provider=github-actions')
+    )
+    await page.getByLabel('Ingestion provider').selectOption('github-actions')
+    await providerRequest
+    const revisionRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/test-executions') &&
+        url.searchParams.get('provider') === 'github-actions' &&
+        url.searchParams.get('revision') === 'abcdef123456'
+    })
+    await page.getByLabel('Source revision').fill('abcdef123456')
+    await revisionRequest
+    await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toBeVisible()
+    await expect(page.getByLabel('Evidence repository')).toHaveText('izzywdev/FuzeService')
+    await expect(page.getByText('docs/policies/apps.md → .github/workflows/authorization.yml')).toBeVisible()
     await expect(page.getByText('2 passed · 1 failed · 0 cancelled · 0 running')).toBeVisible()
+    await expect(page.getByText('Observed across 3 source revisions')).toHaveAttribute('title', 'abcdef123456')
   })
 
   test('keeps deterministic UX-flow evidence useful without AI proposals', async ({ page }) => {
-    await page.route('**/api/v1/repositories/repo-1/flow-candidates', route => route.fulfill({
+    await page.route(url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates', route => route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([repositoryFlowCandidates[1]]),
@@ -229,6 +532,1121 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(originSummary).toContainText('No AI proposals are available for this revision.')
     await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
     await expect(page.getByText('Suspend app route', { exact: true })).toBeVisible()
+  })
+
+  test('batches large execution evidence lookups at the backend contract limit', async ({ page }) => {
+    const policyIds = Array.from({ length: 100 }, (_, index) => `policy-${index}`)
+    const gateIds = Array.from({ length: 100 }, (_, index) => `gate-${index}`)
+    const requestedBatches: string[][] = []
+    await page.route(
+      url => url.pathname.endsWith('/test-executions/execution-1'),
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...testExecutions[0],
+          catalogRevision: 'execution-catalog-revision',
+          policyArtifactIds: policyIds,
+          gateArtifactIds: gateIds,
+          gateEvaluations: [],
+        }),
+      }),
+    )
+    await page.route(
+      url => url.pathname.endsWith('/quality-artifacts/by-ids'),
+      route => {
+        const searchParams = new URL(route.request().url()).searchParams
+        if (searchParams.get('revision') === 'execution-catalog-revision') {
+          requestedBatches.push(searchParams.getAll('id'))
+        }
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) })
+      },
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const productionExecution = page.getByText('Production suspension journey', { exact: true }).locator('..')
+    await productionExecution.getByRole('button', { name: 'Inspect execution detail' }).click()
+
+    await expect.poll(() => requestedBatches.length).toBe(2)
+    expect(requestedBatches.map(batch => batch.length)).toEqual([100, 100])
+    expect(new Set(requestedBatches.flat())).toEqual(new Set([...policyIds, ...gateIds]))
+  })
+
+  test('continues bounded UX-flow and policy history pages', async ({ page }) => {
+    const olderFlow = {
+      ...repositoryFlowCandidates[0],
+      id: 'candidate-older',
+      title: 'Historical suspension flow',
+      createdAt: '2026-10-07T09:00:00.000Z',
+    }
+    const olderEvaluation = {
+      ...policyGateEvaluations[0],
+      id: 'evaluation-older',
+      title: 'Historical suspension policy finding',
+      createdAt: '2026-10-07T09:30:00.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates',
+      route => {
+        const url = new URL(route.request().url())
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(url.searchParams.get('cursor')
+            ? { items: [olderFlow], page: { nextCursor: null, hasMore: false } }
+            : { items: [repositoryFlowCandidates[0]], page: { nextCursor: 'flow-page-2', hasMore: true } }),
+        })
+      }
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route => {
+        const url = new URL(route.request().url())
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(url.searchParams.get('cursor')
+            ? { items: [olderEvaluation], page: { nextCursor: null, hasMore: false } }
+            : { items: [policyGateEvaluations[0]], page: { nextCursor: 'policy-page-2', hasMore: true } }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Load more UX-flow history' }).click()
+    await expect(page.getByText(olderFlow.title, { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Load more policy and gate history' }).click()
+    await expect(page.getByText(olderEvaluation.title, { exact: true })).toBeVisible()
+  })
+
+  test('continues immutable CI and post-production execution evidence', async ({ page }) => {
+    const olderExecution = {
+      ...testExecutions[0],
+      id: 'execution-older',
+      externalRunId: '654320',
+      name: 'Historical production suspension journey',
+      completedAt: '2026-10-07T09:00:00.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-executions',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [olderExecution], page: { nextCursor: null, hasMore: false } }
+            : { items: [testExecutions[0]], page: { nextCursor: 'execution-page-2', hasMore: true } }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Load more execution evidence' }).click()
+    await expect(page.getByText(olderExecution.name, { exact: true })).toBeVisible()
+  })
+
+  test('does not present continuation history as the latest performance outcome', async ({ page }) => {
+    const historicalLoad = {
+      ...testExecutions[0],
+      id: 'execution-historical-load',
+      externalRunId: '654319',
+      kind: 'load',
+      name: 'Historical load continuation',
+      workflowPath: '.github/workflows/load.yml',
+      completedAt: '2026-10-06T09:00:00.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/performance-test-executions/latest',
+      route => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Latest performance evidence unavailable' }),
+      }),
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-executions',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [historicalLoad], page: { nextCursor: null, hasMore: false } }
+            : { items: [], page: { nextCursor: 'execution-page-2', hasMore: true } }),
+        })
+      },
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await expect(page.getByText(/Latest execution evidence is temporarily unavailable/)).toBeVisible()
+    await page.getByRole('button', { name: 'Load more execution evidence' }).click()
+    await expect(page.getByText(historicalLoad.name, { exact: true })).toBeVisible()
+    const latestOutcome = page.getByLabel('Latest execution for Application API load test')
+    await expect(latestOutcome).toContainText('No matching execution has been ingested for this workflow yet.')
+    await expect(latestOutcome).not.toContainText(historicalLoad.name)
+  })
+
+  test('renders the complete paginated execution outcome trend', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/execution-trend'),
+      async route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? {
+                items: [{ date: '2026-09-01', passed: 4, failed: 2, cancelled: 0, running: 0 }],
+                page: { nextCursor: null, hasMore: false },
+              }
+            : {
+                items: [{ date: '2026-10-01', passed: 8, failed: 1, cancelled: 0, running: 0 }],
+                page: { nextCursor: 'older-days', hasMore: true },
+              }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const trend = page.getByLabel('Execution outcome trend')
+    await expect(page.getByText(/fork runs are excluded even when branch names match/i)).toBeVisible()
+    await expect(trend).toContainText('2026-10-01')
+    await expect(trend).toContainText('8 passed')
+    await expect(trend).not.toContainText('2026-09-01')
+    await page.getByRole('button', { name: 'Load more outcome trend' }).click()
+    await expect(trend).toContainText('2026-09-01')
+    await expect(trend).toContainText('2 failed')
+  })
+
+  test('reapplies active execution filters after provider evidence reconciliation', async ({ page }) => {
+    let reconciled = false
+    let filteredHistoryRequests = 0
+    let filteredTrendRequests = 0
+    const unavailableExecution = {
+      ...testExecutions[0],
+      summary: 'Provider evidence is unavailable.',
+      evidenceCollection: {
+        status: 'unavailable',
+        checkedAt: '2026-10-18T04:00:00.000Z',
+        errorCode: 'PROVIDER_TIMEOUT',
+      },
+    }
+    await page.route(
+      url => url.pathname.endsWith('/test-executions/evidence/refresh'),
+      route => {
+        reconciled = true
+        return route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ...unavailableExecution,
+            evidenceCollection: { status: 'complete', checkedAt: '2026-10-18T05:00:00.000Z' },
+          }),
+        })
+      },
+    )
+    await page.route(
+      url => url.pathname.endsWith('/test-executions'),
+      route => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get('evidenceCollectionStatus') === 'unavailable') {
+          filteredHistoryRequests += 1
+          return route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify(reconciled ? [] : [unavailableExecution]),
+          })
+        }
+        return route.fulfill({ contentType: 'application/json', body: '[]' })
+      },
+    )
+    await page.route(
+      url => url.pathname.endsWith('/execution-trend'),
+      route => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get('evidenceCollectionStatus') === 'unavailable') {
+          filteredTrendRequests += 1
+          return route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify(reconciled ? [] : [{
+              date: '2026-10-18', total: 1, passed: 0, failed: 1, cancelled: 0,
+              running: 0, passRate: 0, durationSampleCount: 1, averageDurationMs: 120_000,
+              maximumDurationMs: 120_000, retryAttemptCount: 0, successfulRetryCount: 0,
+              recoveredRunCount: 0,
+            }]),
+          })
+        }
+        return route.fulfill({ contentType: 'application/json', body: '[]' })
+      },
+    )
+    await page.route(
+      url => url.pathname.endsWith('/execution-performance'),
+      route => route.fulfill({ contentType: 'application/json', body: '[]' }),
+    )
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('combobox', { name: 'Evidence collection state', exact: true }).selectOption('unavailable')
+    const executionRow = page.getByText('Provider evidence is unavailable.').locator('..')
+    await expect(executionRow).toBeVisible()
+    await expect(page.getByLabel('Execution outcome trend')).toContainText('2026-10-18')
+    await executionRow.getByRole('button', { name: 'Refresh provider evidence' }).click()
+
+    await expect(page.getByText('No execution evidence received')).toBeVisible()
+    await expect(page.getByLabel('Execution outcome trend')).toContainText('No timestamped outcomes for this filter.')
+    expect(filteredHistoryRequests).toBeGreaterThanOrEqual(2)
+    expect(filteredTrendRequests).toBeGreaterThanOrEqual(2)
+  })
+
+  test('discards an obsolete outcome-trend page after the filter changes', async ({ page }) => {
+    let releaseOlderPage: () => void = () => undefined
+    const olderPageRequested = new Promise<void>(resolve => {
+      releaseOlderPage = resolve
+    })
+    await page.route(
+      url => url.pathname.endsWith('/execution-trend'),
+      async route => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get('cursor')) {
+          await olderPageRequested
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              items: [{ date: '2026-09-01', passed: 4, failed: 2, cancelled: 0, running: 0 }],
+              page: { nextCursor: null, hasMore: false },
+            }),
+          })
+        }
+        const filtered = url.searchParams.get('status') === 'passed'
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [{ date: filtered ? '2026-10-11' : '2026-10-01', passed: filtered ? 3 : 8, failed: filtered ? 0 : 1, cancelled: 0, running: 0 }],
+            page: { nextCursor: filtered ? null : 'older-days', hasMore: !filtered },
+          }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const trend = page.getByLabel('Execution outcome trend')
+    await expect(trend).toContainText('2026-10-01')
+    await page.getByRole('button', { name: 'Load more outcome trend' }).click()
+    await page.getByRole('combobox', { name: /^Outcome/ }).selectOption('passed')
+    await expect(trend).toContainText('2026-10-11')
+    releaseOlderPage()
+    await expect(trend).not.toContainText('2026-09-01')
+  })
+
+  test('continues bounded policy-gate performance aggregates', async ({ page }) => {
+    const currentPair = { repositoryId: 'repo-1', policyArtifactId: 'policy-current', gateArtifactId: 'gate-current', failed: 3, passed: 1, cancelled: 0, running: 0 }
+    const olderPair = { repositoryId: 'repo-1', policyArtifactId: 'policy-historical', gateArtifactId: 'gate-historical', failed: 1, passed: 4, cancelled: 0, running: 0 }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/execution-performance',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [olderPair], page: { nextCursor: null, hasMore: false } }
+            : { items: [currentPair], page: { nextCursor: 'performance-page-2', hasMore: true } }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Load more policy-gate performance' }).click()
+    await expect(page.getByText('policy-historical → gate-historical', { exact: true })).toBeVisible()
+  })
+
+  test('keeps gate outcomes scoped to the selected policy-gate pair', async ({ page }) => {
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Inspect execution evidence' }).click()
+
+    const scopedRequests = Promise.all([
+      page.waitForRequest(request => {
+        const url = new URL(request.url())
+        return url.pathname.endsWith('/test-executions') && url.searchParams.get('gateOutcome') === 'failed'
+      }),
+      page.waitForRequest(request => {
+        const url = new URL(request.url())
+        return url.pathname.endsWith('/execution-trend') && url.searchParams.get('gateOutcome') === 'failed'
+      }),
+      page.waitForRequest(request => {
+        const url = new URL(request.url())
+        return url.pathname.endsWith('/execution-performance') && url.searchParams.get('gateOutcome') === 'failed'
+      }),
+    ])
+    await page.getByRole('combobox', { name: 'Gate outcome' }).selectOption('failed')
+
+    for (const request of await scopedRequests) {
+      const url = new URL(request.url())
+      expect(url.searchParams.get('policyArtifactId')).toBe('policy-artifact')
+      expect(url.searchParams.get('gateArtifactId')).toBe('gate-artifact')
+    }
+  })
+
+  test('labels filtered execution performance from the selected historical catalog', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/execution-performance'),
+      route => {
+        const historical = new URL(route.request().url()).searchParams.get('revision') === 'historical-source-revision'
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{
+            repositoryId: 'repo-1',
+            policyArtifactId: 'policy-artifact',
+            policyTitle: historical ? 'Historical suspension policy' : 'Administrative suspension policy',
+            policySourcePath: historical ? 'docs/policies/apps-v1.md' : 'docs/policies/apps.md',
+            gateArtifactId: 'gate-artifact',
+            gateTitle: historical ? 'Historical authorization gate' : 'Admin authorization gate',
+            gateSourcePath: historical ? '.github/workflows/authorization-v1.yml' : '.github/workflows/authorization.yml',
+            total: 1,
+            passed: 0,
+            failed: 1,
+            cancelled: 0,
+            running: 0,
+            passRate: 0,
+          }]),
+        })
+      },
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toBeVisible()
+    await page.getByLabel('Source revision').fill('historical-source-revision')
+    await expect(page.getByText('Historical suspension policy → Historical authorization gate')).toBeVisible()
+    await expect(page.getByText('docs/policies/apps-v1.md → .github/workflows/authorization-v1.yml')).toBeVisible()
+    await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toHaveCount(0)
+  })
+
+  test('continues immutable UX-flow and governance review audit pages', async ({ page }) => {
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates/candidate-1/history',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [{ id: 'flow-review-1', candidateId: 'candidate-1', tenantId: 'tenant-1', status: 'confirmed', reviewedBy: 'flow-reviewer-1', createdAt: '2026-10-08T08:00:00.000Z' }], page: { nextCursor: null, hasMore: false } }
+            : { items: [{ id: 'flow-review-2', candidateId: 'candidate-1', tenantId: 'tenant-1', status: 'rejected', reviewedBy: 'flow-reviewer-2', createdAt: '2026-10-08T09:00:00.000Z' }], page: { nextCursor: 'flow-review-page-2', hasMore: true } }),
+        })
+      }
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations/evaluation-1/history',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [{ id: 'policy-review-1', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'accepted', reviewedBy: 'governance-reviewer-1', createdAt: '2026-10-08T08:00:00.000Z' }], page: { nextCursor: null, hasMore: false } }
+            : { items: [{ id: 'policy-review-2', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'dismissed', reviewedBy: 'governance-reviewer-2', createdAt: '2026-10-08T09:00:00.000Z' }], page: { nextCursor: 'policy-review-page-2', hasMore: true } }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const flowCard = page.getByText('Suspend an application', { exact: true }).locator('..')
+    await flowCard.getByText('UX flow review history', { exact: true }).click()
+    await expect(page.getByText('flow-reviewer-2', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Load more UX flow decisions' }).click()
+    await expect(page.getByText('flow-reviewer-1', { exact: true })).toBeVisible()
+
+    await page.getByText('Review history', { exact: true }).click()
+    await expect(page.getByText('governance-reviewer-2', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Load more governance decisions' }).click()
+    await expect(page.getByText('governance-reviewer-1', { exact: true })).toBeVisible()
+  })
+
+  test('bounds historical UX-flow evidence and resolves referenced artifact IDs', async ({ page }) => {
+    const historicalCandidates = Array.from({ length: 22 }, (_, index) => ({
+      ...repositoryFlowCandidates[0],
+      id: `historical-candidate-${index}`,
+      revision: `historical-revision-${String(index).padStart(2, '0')}`,
+      title: `Historical flow ${index}`,
+      evidence: [`historical-artifact-${index}`],
+      steps: repositoryFlowCandidates[0].steps.map(step => ({
+        ...step,
+        targetIds: [`historical-artifact-${index}`],
+      })),
+      createdAt: new Date(Date.UTC(2026, 9, 10) - index * 86_400_000).toISOString(),
+    }))
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates',
+      route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(historicalCandidates),
+      })
+    )
+    const requestedArtifactIds: string[] = []
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts/by-ids',
+      route => {
+        const url = new URL(route.request().url())
+        requestedArtifactIds.push(...url.searchParams.getAll('id'))
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: url.searchParams.getAll('id')
+              .filter(id => id.startsWith('historical-artifact-'))
+              .map(id => ({
+                ...qualityArtifacts[2],
+                id,
+                title: `Resolved ${id}`,
+                sourcePath: `docs/${id}.md`,
+              })),
+          }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const historyLimit = page.getByRole('status').filter({
+      hasText: 'Historical evidence is prefetched for the 20 newest revisions',
+    })
+    await expect(historyLimit).toContainText(
+      'Historical evidence is prefetched for the 20 newest revisions'
+    )
+    await expect(historyLimit).toContainText('2 older revisions remain visible')
+    await expect(page.getByText('Historical flow 21', { exact: true })).toBeVisible()
+    await expect.poll(() => requestedArtifactIds.includes('historical-artifact-19')).toBe(true)
+    expect(requestedArtifactIds).not.toContain('historical-artifact-20')
+    expect(requestedArtifactIds).not.toContain('historical-artifact-21')
+    const flowCard = page.getByText('Historical flow 19', { exact: true }).locator('..')
+    await flowCard.getByText('Source evidence', { exact: true }).click()
+    await expect(flowCard.getByText('documentation · docs/historical-artifact-19.md', { exact: true })).toBeVisible()
+  })
+
+  test('loads artifact context for governance revisions introduced by continuation', async ({ page }) => {
+    const historicalEvaluation = {
+      ...policyGateEvaluations[0],
+      id: 'evaluation-historical',
+      revision: 'historical-governance-revision',
+      title: 'Historical suspension policy finding',
+      policyArtifactIds: ['historical-policy-artifact'],
+      createdAt: '2026-10-07T09:30:00.000Z',
+    }
+    const historicalArtifact = {
+      ...qualityArtifacts[5],
+      id: 'historical-policy-artifact',
+      title: 'Historical administrative suspension policy',
+      sourcePath: 'docs/policies/historical-apps.md',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route => {
+        const url = new URL(route.request().url())
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(url.searchParams.get('revision')
+            ? policyGateEvaluations
+            : url.searchParams.get('cursor')
+              ? { items: [historicalEvaluation], page: { nextCursor: null, hasMore: false } }
+              : { items: policyGateEvaluations, page: { nextCursor: 'policy-page-2', hasMore: true } }),
+        })
+      }
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts/by-ids',
+      route => {
+        const url = new URL(route.request().url())
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: url.searchParams.getAll('id').includes(historicalArtifact.id)
+              ? [historicalArtifact]
+              : qualityArtifacts.filter(artifact => url.searchParams.getAll('id').includes(artifact.id)),
+          }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByLabel('Governance revision').selectOption('all')
+    await page.getByRole('button', { name: 'Load more policy and gate history' }).click()
+
+    const evidence = page.getByLabel(`${historicalEvaluation.title} evidence`)
+    await expect(evidence.getByText(historicalArtifact.title, { exact: true })).toBeVisible()
+    await expect(evidence.getByText(`policy · ${historicalArtifact.sourcePath}`, { exact: true })).toBeVisible()
+    await expect(evidence.getByText(historicalArtifact.id, { exact: true })).toHaveCount(0)
+  })
+
+  test('preserves a completed governance review while history continuation resolves', async ({ page }) => {
+    const proposed = {
+      ...policyGateEvaluations[0],
+      reviewStatus: 'proposed',
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      reviewReason: undefined,
+    }
+    const continued = {
+      ...proposed,
+      id: 'evaluation-page-2',
+      title: 'Continued governance finding',
+    }
+    let releaseContinuation = () => undefined
+    const continuation = new Promise<void>(resolve => {
+      releaseContinuation = resolve
+    })
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      async route => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get('cursor')) {
+          await continuation
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ items: [proposed, continued], page: { nextCursor: null, hasMore: false } }),
+          })
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: [proposed], page: { nextCursor: 'policy-page-2', hasMore: true } }),
+        })
+      }
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations/evaluation-1/review',
+      route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...proposed,
+          reviewStatus: 'accepted',
+          reviewedAt: '2026-10-11T12:00:00.000Z',
+          reviewedBy: 'quality-reviewer',
+        }),
+      })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Load more policy and gate history' }).click()
+    await page.getByLabel('Governance rationale required to accept anomaly').fill('The policy needs an explicit release gate.')
+    await page.getByRole('button', { name: 'Accept recommendation' }).click()
+    await expect(page.getByText('high · unguarded-policy · accepted', { exact: true })).toBeVisible()
+    releaseContinuation()
+
+    await expect(page.getByText(continued.title, { exact: true })).toBeVisible()
+    await expect(page.getByText('high · unguarded-policy · accepted', { exact: true })).toBeVisible()
+  })
+
+  test('continues bounded repository evidence only after explicit review', async ({ page }) => {
+    const cursors: Array<string | null> = []
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts',
+      route => {
+        const url = new URL(route.request().url())
+        const cursor = url.searchParams.get('cursor')
+        cursors.push(cursor)
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? {
+                items: [{ ...qualityArtifacts[2], id: 'documentation-page-2', title: 'Continuation evidence' }],
+                page: { nextCursor: null, hasMore: false },
+              }
+            : {
+                items: Array.from({ length: 12 }, (_, index) => ({
+                  ...qualityArtifacts[2],
+                  id: `documentation-page-1-${index}`,
+                  title: index === 0 ? 'Initial evidence' : `Initial evidence ${index + 1}`,
+                })),
+                page: { nextCursor: 'artifact-page-2', hasMore: true },
+              }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(page.getByText('Initial evidence', { exact: true })).toBeVisible()
+    await expect(page.getByText('Continuation evidence', { exact: true })).toHaveCount(0)
+    expect(cursors.length).toBeGreaterThan(0)
+    expect(cursors.every(cursor => cursor === null)).toBe(true)
+    await page.getByRole('button', { name: 'Load more repository evidence' }).click()
+    await expect(page.getByText('Continuation evidence', { exact: true })).toBeVisible()
+    expect(cursors[0]).toBeNull()
+    expect(cursors).toContain('artifact-page-2')
+  })
+
+  test('keeps discovered tests and governance visible when latest performance evidence is unavailable', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/performance-test-executions/latest'),
+      route => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Execution history temporarily unavailable' }),
+      })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(page.getByText('Application API load test', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: 'Latest execution evidence is temporarily unavailable' })).toBeVisible()
+  })
+
+  test('retains execution and policy-gate evidence when the outcome trend is unavailable', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/execution-trend'),
+      route => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Execution trend temporarily unavailable' }),
+      })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(page.getByText('Production suspension journey', { exact: true })).toBeVisible()
+    await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: 'Execution outcome trend is temporarily unavailable for 1 repository' })).toBeVisible()
+  })
+
+  test('keeps historical UX-flow proposals visible but review-locked', async ({ page }) => {
+    await page.route(
+      url =>
+        url.pathname ===
+        '/api/v1/repositories/repo-1/flow-candidates',
+      route =>
+        route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify([
+            {
+              ...repositoryFlowCandidates[0],
+              revision: 'historical-revision',
+            },
+          ]),
+        })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const flowCard = page
+      .getByText('Suspend an application', { exact: true })
+      .locator('..')
+    await expect(flowCard.getByText(/Historical proposal/)).toBeVisible()
+    await expect(flowCard.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    await expect(flowCard.getByRole('button', { name: 'Reject' })).toBeDisabled()
+    await expect(
+      flowCard.getByLabel('Optional review rationale')
+    ).toBeDisabled()
+  })
+
+  test('dispatches a reviewed load workflow with visible execution handoff', async ({ page }) => {
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    page.once('dialog', dialog => dialog.accept())
+    const dispatchRequest = page.waitForRequest(request =>
+      request.url().endsWith('/test-suites/load-artifact/execute')
+    )
+
+    await page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' }).click()
+
+    expect((await dispatchRequest).method()).toBe('POST')
+    const dispatchStatus = page.getByRole('status').filter({
+      hasText: 'Dispatched .github/workflows/load.yml',
+    })
+    await expect(dispatchStatus).toContainText(
+      'Dispatched .github/workflows/load.yml from aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa at analyzed commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    )
+    await expect(dispatchStatus).toContainText(
+      'GitHub Actions will report the run as execution evidence.'
+    )
+    await expect(page.getByRole('status').filter({
+      hasText: 'Latest controlled dispatch · accepted',
+    })).toContainText(
+      'revision aaaaaaaaaaaa · requested by quality-reviewer · no workflow inputs'
+    )
+
+    await page.getByText('Controlled dispatch history', { exact: true }).click()
+    await expect(page.getByText('Provider unavailable', { exact: false })).toBeVisible()
+    await expect(page.getByText(/Requested by release-operator/)).toContainText(
+      'reviewed inputs: duration, profile'
+    )
+  })
+
+  test('warns against duplicate dispatch when accepted workflow audit finalization is pending', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/test-suites/load-artifact/execute'),
+      route => route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'dispatched',
+          artifactId: 'load-artifact',
+          artifactKind: 'load-test',
+          workflowPath: '.github/workflows/load.yml',
+          ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          auditPersistence: 'pending',
+          dispatch: {
+            id: '00000000-0000-4000-8000-000000000004',
+            repositoryId: 'repo-1',
+            tenantId: 'tenant-1',
+            artifactId: 'load-artifact',
+            artifactLogicalId: 'workflow:.github/workflows/load.yml',
+            artifactKind: 'load-test',
+            workflowPath: '.github/workflows/load.yml',
+            ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            requestedBy: 'quality-reviewer',
+            inputNames: [],
+            status: 'accepted',
+            requestedAt: '2026-10-23T01:00:00.000Z',
+            completedAt: '2026-10-23T01:00:01.000Z',
+          },
+        }),
+      }),
+    )
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    page.once('dialog', dialog => dialog.accept())
+
+    await page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' }).click()
+
+    const warning = page.getByRole('alert').filter({
+      hasText: 'could not finalize the audit after retries',
+    })
+    await expect(warning).toContainText('Do not dispatch it again')
+    await expect(page.getByRole('status').filter({
+      hasText: 'Latest controlled dispatch · accepted',
+    })).toBeVisible()
+  })
+
+  test('warns before retrying when a failed dispatch audit remains unresolved', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/test-suites/load-artifact/execute'),
+      route => route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'GitHub dispatch timed out',
+          code: 'TEST_DISPATCH_FAILED',
+          auditPersistence: 'pending',
+        }),
+      }),
+    )
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    page.once('dialog', dialog => dialog.accept())
+
+    await page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' }).click()
+
+    const warning = page.getByRole('alert').filter({
+      hasText: 'could not finalize the failure audit after retries',
+    })
+    await expect(warning).toContainText('Dispatch failed: GitHub dispatch timed out')
+    await expect(warning).toContainText('Verify GitHub Actions before retrying')
+  })
+
+  test('blocks workflow dispatch until the latest audit can be verified', async ({ page }) => {
+    latestDispatchAuditUnavailable = true
+    await page.reload()
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const run = page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' })
+    const warning = page.getByRole('alert').filter({
+      hasText: 'New dispatch is blocked to prevent duplicate GitHub Actions runs',
+    })
+    await expect(warning).toBeVisible()
+    await expect(run).toBeDisabled()
+
+    latestDispatchAuditUnavailable = false
+    await page.getByRole('button', { name: 'Retry dispatch audit' }).click()
+
+    await expect(run).toBeEnabled()
+    await expect(warning).toHaveCount(0)
+  })
+
+  test('continues every latest-dispatch audit page before enabling a workflow run', async ({ page }) => {
+    const requestedCursors: Array<string | null> = []
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',
+      route => {
+        const url = new URL(route.request().url())
+        const cursor = url.searchParams.get('cursor')
+        requestedCursors.push(cursor)
+        const dispatch = {
+          id: cursor
+            ? '00000000-0000-4000-8000-000000000012'
+            : '00000000-0000-4000-8000-000000000011',
+          repositoryId: 'repo-1',
+          tenantId: 'tenant-1',
+          artifactId: cursor ? 'load-artifact' : 'retired-post-production-artifact',
+          artifactLogicalId: cursor
+            ? 'workflow:.github/workflows/load.yml'
+            : 'workflow:.github/workflows/retired-post-production.yml',
+          artifactKind: cursor ? 'load-test' : 'post-production-test',
+          workflowPath: cursor
+            ? '.github/workflows/load.yml'
+            : '.github/workflows/retired-post-production.yml',
+          ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          requestedBy: 'quality-reviewer',
+          inputNames: [],
+          status: 'accepted',
+          requestedAt: cursor ? '2026-10-22T22:00:00.000Z' : '2026-10-22T23:00:00.000Z',
+          completedAt: cursor ? '2026-10-22T22:00:01.000Z' : '2026-10-22T23:00:01.000Z',
+        }
+        return route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [dispatch],
+            page: cursor
+              ? { nextCursor: null, hasMore: false }
+              : { nextCursor: 'latest-dispatch-page-2', hasMore: true },
+          }),
+        })
+      },
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect.poll(() => [...new Set(requestedCursors)]).toEqual([null, 'latest-dispatch-page-2'])
+    await expect(page.getByText(/Latest controlled dispatch · accepted/)).toHaveCount(2)
+    await expect(page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' })).toBeEnabled()
+  })
+
+  test('retains controlled dispatch evidence across analyzed artifact revisions', async ({ page }) => {
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [{
+            id: '00000000-0000-4000-8000-000000000001',
+            repositoryId: 'repo-1',
+            tenantId: 'tenant-1',
+            artifactId: 'load-artifact-prior-revision',
+            artifactLogicalId: 'workflow:.github/workflows/load.yml',
+            artifactKind: 'load-test',
+            workflowPath: '.github/workflows/load.yml',
+            ref: '8888888888888888888888888888888888888888',
+            sourceRevision: '8888888888888888888888888888888888888888',
+            requestedBy: 'prior-release-operator',
+            inputNames: [],
+            status: 'accepted',
+            requestedAt: '2026-10-21T22:00:00.000Z',
+            completedAt: '2026-10-21T22:00:01.000Z',
+          }],
+        }),
+      }),
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const retained = page.getByRole('status').filter({
+      hasText: 'Latest controlled dispatch · accepted',
+    })
+    await expect(retained).toContainText('revision 888888888888')
+    await expect(retained).toContainText('requested by prior-release-operator')
+  })
+
+  test('keeps retired workflow dispatch evidence inspectable after repository analysis removes it', async ({ page }) => {
+    const retiredDispatch = {
+      id: '00000000-0000-4000-8000-000000000004',
+      repositoryId: 'repo-1',
+      tenantId: 'tenant-1',
+      artifactId: 'retired-load-artifact',
+      artifactLogicalId: 'workflow:.github/workflows/retired-load.yml',
+      artifactKind: 'load-test',
+      workflowPath: '.github/workflows/retired-load.yml',
+      ref: '7777777777777777777777777777777777777777',
+      sourceRevision: '7777777777777777777777777777777777777777',
+      requestedBy: 'release-auditor',
+      inputNames: ['profile'],
+      status: 'accepted',
+      requestedAt: '2026-10-20T22:00:00.000Z',
+      completedAt: '2026-10-20T22:00:01.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify(qualityArtifacts),
+      }),
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [retiredDispatch] }),
+      }),
+    )
+    await page.route(
+      url => decodeURIComponent(url.pathname) === '/api/v1/repositories/repo-1/test-suites/workflow:.github/workflows/retired-load.yml/dispatches',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [retiredDispatch],
+          page: { nextCursor: null, hasMore: false },
+        }),
+      }),
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Retired controlled workflows' })).toBeVisible()
+    await expect(page.getByText('.github/workflows/retired-load.yml', { exact: true })).toBeVisible()
+    const historyRequest = page.waitForRequest(request =>
+      request.url().includes('/test-suites/workflow%3A.github%2Fworkflows%2Fretired-load.yml/dispatches')
+    )
+    await page.getByText('Controlled dispatch history').click()
+    expect((await historyRequest).method()).toBe('GET')
+    await expect(page.getByText(/Requested by release-auditor/)).toBeVisible()
+  })
+
+  test('does not classify a current workflow beyond the first artifact page as retired', async ({ page }) => {
+    const currentDispatch = {
+      id: '00000000-0000-4000-8000-000000000005',
+      repositoryId: 'repo-1',
+      tenantId: 'tenant-1',
+      artifactId: 'load-artifact-prior-revision',
+      artifactLogicalId: 'workflow:.github/workflows/load.yml',
+      artifactKind: 'load-test',
+      workflowPath: '.github/workflows/load.yml',
+      ref: '6666666666666666666666666666666666666666',
+      sourceRevision: '6666666666666666666666666666666666666666',
+      requestedBy: 'release-auditor',
+      inputNames: [],
+      status: 'accepted',
+      requestedAt: '2026-10-20T23:00:00.000Z',
+      completedAt: '2026-10-20T23:00:01.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: qualityArtifacts.filter(artifact => artifact.id !== 'load-artifact'),
+          page: { nextCursor: 'artifact-page-2', hasMore: true },
+        }),
+      }),
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-suite-dispatches/latest',
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [currentDispatch] }),
+      }),
+    )
+    const exactLookup = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/quality-artifacts/by-ids') &&
+        url.searchParams.get('revision') === 'abcdef123456' &&
+        url.searchParams.getAll('id').includes(currentDispatch.artifactLogicalId)
+    })
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await exactLookup
+    await expect(page.getByRole('button', { name: 'Load more repository evidence' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Retired controlled workflows' })).toHaveCount(0)
+  })
+
+  test('keeps failed policy-gate review rationale available for retry', async ({ page }) => {
+    const proposedEvaluation = {
+      ...policyGateEvaluations[0],
+      reviewStatus: 'proposed',
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      reviewReason: undefined,
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([proposedEvaluation]),
+      })
+    )
+    await page.route('**/api/v1/repositories/repo-1/policy-gate-evaluations/evaluation-1/review', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Governance review service unavailable' }),
+    }))
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const rationale = page.getByLabel('Governance rationale required to accept anomaly')
+    await rationale.fill('The gate owner is not identified.')
+
+    await page.getByRole('button', { name: 'Dismiss' }).click()
+
+    await expect(page.getByRole('alert')).toHaveText(
+      'Governance review service unavailable'
+    )
+    await expect(rationale).toHaveValue('The gate owner is not identified.')
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+  })
+
+  test('keeps historical governance findings visible but review-locked', async ({ page }) => {
+    const historicalEvaluation = {
+      ...policyGateEvaluations[0],
+      revision: 'historical-revision',
+      reviewStatus: 'proposed',
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      reviewReason: undefined,
+    }
+    await page.route(
+      url =>
+        url.pathname ===
+        '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([historicalEvaluation]),
+        })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByLabel('Governance revision').selectOption('all')
+
+    await expect(
+      page.getByText(/Historical governance finding/)
+    ).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Accept recommendation' })
+    ).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
+    await expect(
+      page.getByLabel('Governance rationale required to accept anomaly')
+    ).toBeDisabled()
+  })
+
+  test('scopes governance findings to the current analysis by default', async ({ page }) => {
+    const currentRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return (
+        url.pathname.endsWith('/policy-gate-evaluations') &&
+        url.searchParams.get('revision') === 'abcdef123456'
+      )
+    })
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await currentRequest
+
+    const historyRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return (
+        url.pathname.endsWith('/policy-gate-evaluations') &&
+        !url.searchParams.has('revision')
+      )
+    })
+    await page.getByLabel('Governance revision').selectOption('all')
+    await historyRequest
   })
 
   test('keeps a failed UX flow review actionable', async ({ page }) => {
@@ -274,7 +1692,9 @@ test.describe('FuzeQuality implemented UX flows', () => {
       }
     })
     await page.reload()
-    await page.getByRole('button', { name: 'Repositories' }).click()
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('fuzefront:navigate', {
+      detail: { id: 'repositories', section: 'repositories', route: '/repositories' },
+    })))
     await expect(page.getByRole('heading', { name: 'OrganizationOne' })).toBeVisible()
 
     const personalReload = page.waitForRequest(request => request.url().endsWith('/api/v1/portfolio'))
@@ -355,6 +1775,103 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect((await scan).postDataJSON()).toEqual({})
   })
 
+  test('keeps a failed LiteLLM retry actionable beside its repository', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/portfolio'),
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...portfolio,
+          repositories: [{
+            ...portfolio.repositories[0],
+            lastAnalysis: {
+              revision: 'abcdef123456',
+              status: 'failed',
+              startedAt: '2026-10-23T18:00:00.000Z',
+              errorCode: 'INTELLIGENCE_UNAVAILABLE',
+            },
+          }],
+        }),
+      }),
+    )
+    await page.route(
+      url => url.pathname.endsWith('/repositories/repo-1/analysis-retries'),
+      route => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'FuzeInfra retry queue unavailable' }),
+      }),
+    )
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Repositories' }).click()
+
+    await expect(page.getByText('Reviewed analysis unavailable; deterministic evidence remains available.')).toBeVisible()
+    await page.getByRole('button', { name: 'Retry reviewed analysis' }).click()
+    await expect(page.getByRole('alert')).toHaveText('FuzeInfra retry queue unavailable')
+    await expect(page.getByRole('heading', { name: 'Add repository' })).not.toBeVisible()
+  })
+
+  test('surfaces exhausted repository-analysis setup and requeues it from the repository card', async ({ page }) => {
+    let retryRequested = false
+    await page.route(
+      url => url.pathname.endsWith('/portfolio'),
+      route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...portfolio,
+          repositories: [{
+            ...portfolio.repositories[0],
+            lastAnalysis: {
+              revision: 'abcdef123456',
+              status: 'failed',
+              finishedAt: '2026-10-23T18:15:00.000Z',
+              errorCode: 'INTELLIGENCE_UNAVAILABLE',
+            },
+          }],
+        }),
+      }),
+    )
+    await page.route(
+      url => url.pathname.endsWith('/repositories/repo-1/analysis-retries'),
+      route => {
+        retryRequested = true
+        return route.fulfill({
+          status: 202,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'repo-1',
+            lastScanStatus: 'complete',
+            lastScanRevision: 'abcdef123456',
+            lastAnalysis: { revision: 'abcdef123456', status: 'queued' },
+          }),
+        })
+      },
+    )
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Repositories' }).click()
+    await expect(page.getByText(/could not start after bounded retries/)).toBeVisible()
+    await page.getByRole('button', { name: 'Retry reviewed analysis' }).click()
+    await expect.poll(() => retryRequested).toBe(true)
+    await expect(page.getByLabel('Repository analysis status')).toContainText('analysis queued')
+  })
+
+  test('continues bounded repository analysis history', async ({ page }) => {
+    await page.getByRole('button', { name: 'Repositories' }).click()
+    await page.getByText('Scan history', { exact: true }).click()
+    await expect(page.getByText(/latest123456/)).toBeVisible()
+
+    const continuation = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/scan-history') && url.searchParams.get('cursor') === 'scan-page-2'
+    })
+    await page.getByRole('button', { name: 'Load more scan history' }).click()
+    await continuation
+
+    await expect(page.getByText(/older123456/)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Load more scan history' })).toHaveCount(0)
+  })
+
   test('shows the frontend visual-reference gap and supports review decisions', async ({ page }) => {
     await page.getByRole('button', { name: 'Frontend inventory' }).click()
     await page.getByRole('button', { name: 'Visual reference' }).click()
@@ -416,5 +1933,84 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await page.getByRole('button', { name: 'AI review queue' }).click()
     await page.getByRole('button', { name: 'Reject' }).click()
     await expect(page.getByText('Review queue cleared')).toBeVisible()
+  })
+})
+
+test.describe('FuzeQuality standalone Security session', () => {
+  test('keeps alternate MFA methods available during a notification outage', async ({ page }) => {
+    let challengeAttempts = 0
+    await page.route('**/api/v1/**', async route => {
+      const url = new URL(route.request().url())
+      const method = route.request().method()
+      const respond = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+      if (url.pathname.endsWith('/security/session') && method === 'POST') {
+        return respond({
+          status: 'mfa_required',
+          challengeId: 'challenge-1',
+          factors: [
+            { factorId: 'sms-1', type: 'sms' },
+            { factorId: 'totp-1', type: 'totp' },
+          ],
+        })
+      }
+      if (url.pathname.endsWith('/security/mfa/challenge')) {
+        challengeAttempts += 1
+        return challengeAttempts === 1
+          ? respond({ error: 'Text delivery unavailable' }, 503)
+          : respond({ challengeId: 'challenge-1', factorId: 'totp-1', delivered: false }, 202)
+      }
+      return respond({})
+    })
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await page.getByLabel('Email').fill('mfa@example.com')
+    await page.getByLabel('Password').fill('secret')
+    await page.getByRole('button', { name: 'Sign in securely' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible()
+    await expect(page.getByRole('alert')).toHaveText('Text delivery unavailable')
+    await expect(page.getByText('Choose another verification method to continue.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Verify and continue' })).toBeDisabled()
+    await page.getByLabel('Verification method').selectOption('totp-1')
+    await expect(page.getByText('Enter the current code from your authenticator app.')).toBeVisible()
+  })
+
+  test('completes MFA before loading tenant-scoped quality evidence', async ({ page }) => {
+    let portfolioHeaders: Record<string, string> = {}
+    await page.route('**/api/v1/**', async route => {
+      const url = new URL(route.request().url())
+      const method = route.request().method()
+      const respond = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+      if (url.pathname.endsWith('/security/session') && method === 'POST') {
+        return respond({ status: 'mfa_required', challengeId: 'challenge-1', factors: [{ factorId: 'totp-1', type: 'totp' }] })
+      }
+      if (url.pathname.endsWith('/security/mfa/challenge')) {
+        return respond({ challengeId: 'challenge-1', factorId: 'totp-1', delivered: false }, 202)
+      }
+      if (url.pathname.endsWith('/security/mfa/verify')) {
+        return respond({ token: 'verified-token', sessionId: 'session-1' })
+      }
+      if (url.pathname.endsWith('/security/session') && method === 'GET') {
+        return respond({ identity: { tenantId: 'tenant-mfa' } })
+      }
+      if (url.pathname.endsWith('/portfolio')) {
+        portfolioHeaders = route.request().headers()
+        return respond(portfolio)
+      }
+      return respond({})
+    })
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await page.getByLabel('Email').fill('mfa@example.com')
+    await page.getByLabel('Password').fill('secret')
+    await page.getByRole('button', { name: 'Sign in securely' }).click()
+    await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible()
+    await expect(page.getByText('Enter the current code from your authenticator app.')).toBeVisible()
+    await page.getByLabel('Verification code').fill('123456')
+    await page.getByRole('button', { name: 'Verify and continue' }).click()
+
+    await expect(page.getByRole('heading', { name: /See what the platform promises/i })).toBeVisible()
+    expect(portfolioHeaders.authorization).toBe('Bearer verified-token')
+    expect(portfolioHeaders['x-fuzefront-tenant-id']).toBe('tenant-mfa')
   })
 })

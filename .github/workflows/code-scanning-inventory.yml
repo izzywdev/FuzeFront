@@ -1,0 +1,59 @@
+name: Code-scanning inventory (read-only)
+
+# Answers "how many open code-scanning alerts are there, and what are they"
+# from inside Actions, where the job token can hold `security-events: read`.
+#
+# This exists because that question is NOT answerable from an ordinary session
+# or PAT here: GET /code-scanning/alerts answers
+#   403 "Resource not accessible by integration"
+# and names the scope it wants in the response header
+#   X-Accepted-Github-Permissions: security_events=read
+# so an agent or a maintainer without that scope can only guess at the count.
+# Guessing at a security inventory is how a wrong number gets repeated, so the
+# measurement lives here instead, runnable by anyone with the repo.
+#
+# READ-ONLY BY CONSTRUCTION. Permissions are `security-events: read`, so this
+# workflow CANNOT dismiss an alert even if its script were changed to try.
+# Dismissing stays with codeql-triage.yml, which is manual-dispatch and
+# tightly path/rule-scoped — an inventory must never quietly close anything.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: read
+
+jobs:
+  inventory:
+    name: Code-scanning inventory
+    runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own, and this one only paginates an API.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      # Written to the step summary so the result is readable in the UI without
+      # downloading anything — job logs are not always reachable.
+      - name: Inventory open alerts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node scripts/code-scanning-inventory.mjs | tee inventory.md
+          cat inventory.md >> "$GITHUB_STEP_SUMMARY"
+
+      # The raw payload, so a disputed count can be regrouped without the scope.
+      - name: Upload raw alert payload
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: code-scanning-inventory
+          path: inventory.md
+          retention-days: 30
