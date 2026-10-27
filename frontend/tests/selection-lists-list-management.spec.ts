@@ -108,23 +108,34 @@ const MOCK_ITEM_ARCHIVED = {
   source_hash: 'def456',
 }
 
+/**
+ * Quota responses use the contract's `SelectionListQuotaStatus` envelope,
+ * exactly as `GET /v1/selection-lists/quota` sends it:
+ * `{ organization_id, quotas: [{ scope, applies_to, limit, current }] }` (4 entries).
+ * (An earlier revision of these mocks served `{ scopes: [...] }`, a shape the
+ * service never emits, which is how the UI shipped reading the wrong key.)
+ */
+const MOCK_QUOTA_ORG_ID = 'org_01h455vb4pex5vsknk084sn02q'
+
 /** Quota response at-limit. */
 const MOCK_QUOTA_AT_LIMIT = {
-  scopes: [
-    { scope: 'org_lists', current: 100, limit: 100 },
-    { scope: 'user_lists', current: 25, limit: 25 },
-    { scope: 'list_items', current: null, limit: 1000 },
-    { scope: 'list_locales', current: null, limit: 11 },
+  organization_id: MOCK_QUOTA_ORG_ID,
+  quotas: [
+    { scope: 'org_lists', applies_to: 'organization', current: 100, limit: 100 },
+    { scope: 'user_lists', applies_to: 'user', current: 25, limit: 25 },
+    { scope: 'list_items', applies_to: 'list', current: null, limit: 1000 },
+    { scope: 'list_locales', applies_to: 'list', current: null, limit: 11 },
   ],
 }
 
 /** Quota response near-limit (>=80%). */
 const MOCK_QUOTA_NEAR_LIMIT = {
-  scopes: [
-    { scope: 'org_lists', current: 85, limit: 100 },
-    { scope: 'user_lists', current: 21, limit: 25 },
-    { scope: 'list_items', current: null, limit: 1000 },
-    { scope: 'list_locales', current: null, limit: 11 },
+  organization_id: MOCK_QUOTA_ORG_ID,
+  quotas: [
+    { scope: 'org_lists', applies_to: 'organization', current: 85, limit: 100 },
+    { scope: 'user_lists', applies_to: 'user', current: 21, limit: 25 },
+    { scope: 'list_items', applies_to: 'list', current: null, limit: 1000 },
+    { scope: 'list_locales', applies_to: 'list', current: null, limit: 11 },
   ],
 }
 
