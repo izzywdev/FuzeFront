@@ -1,12 +1,16 @@
 # Runbook — selection-lists production rollout
 
-**Status: PREPARED, NOT ENABLED.** `selectionListService.enabled` is `false` in
-`deploy/helm/fuzefront/values-prod.yaml` and both Unleash flags are OFF. Nothing in
-this runbook enables anything. The one-line change that **does** enable the workload is
-the **last step** of this document ([section 8](#8-the-last-step-the-one-line-prod-values-flip)),
-and it must not be committed, staged or pre-merged ahead of time. An earlier draft kept
-that change as a "DO NOT MERGE" commit on a long-lived branch; that branch was retired in
-favour of this written step.
+**Status (updated 2026-10-26, `origin/master` @ `bac173471`): workload ENABLED; flag state UNVERIFIED; shared lists have no UI.**
+`selectionListService.enabled` is `true` in `deploy/helm/fuzefront/values-prod.yaml` (flipped by #1592 on
+2026-10-21, together with the pinned `platformOrgId` that `gate-platform-org-pin` requires), so the
+section 8 "last step" has been **executed**; sections 2-4 and 8 are kept as the checklist to
+re-verify and as the record. All three release flags (`fuzefront.selection-lists.service`,
+`.seed-defaults`, `.shared-lists`) default OFF and fail closed; **what they are set to in the live
+Unleash, whether the pod is healthy, and whether the P6 broker ACLs hold cannot be read from this
+repo** and are therefore marked UNVERIFIED below. Note that the owner-directed `all-flags` set of
+`prod-unleash-ops` ("bulk GA", 2026-10-18) lists the master and `seed-defaults` flags but **not** `shared-lists`,
+so if it was dispatched the base feature may already be ON while shared lists are still OFF. Nothing in this
+runbook enables any flag.
 
 This is the readiness checklist plus the enable / ramp / rollback procedure. Read these first
 for the parts it does not repeat:
@@ -18,7 +22,7 @@ for the parts it does not repeat:
 
 ## How to read this document: facts vs. things in flight
 
-This runbook was rewritten on **2026-10-05** against `origin/master` @ `86ccadee`. The platform
+This runbook was rewritten on **2026-10-05** against `origin/master` @ `86ccadee`; the status block, P1-P5, M5/M6, D1-D5, 3(a)/(c)/(h), sections 8 and 10 were re-verified against `bac173471` on **2026-10-26** (live-cluster, Unleash, Permit and Kafka state is still not readable from the repo). The platform
 around the service is changing quickly, so every prerequisite in section 2 is tagged with one of:
 
 | Tag | Meaning |
@@ -33,9 +37,10 @@ Anything marked IN FLIGHT below may have merged, changed shape, been split, or b
 
 | Switch | Where | Effect |
 |---|---|---|
-| Helm `selectionListService.enabled` | `values-prod.yaml` (GitOps; **merge = production deploy**) | Creates the Deployment/Service/Ingress/Middleware/NetworkPolicy and the per-service database Job. The feature is **still dark**: the API answers 404 and the shell hides the UI until the flag is on. |
+| Helm `selectionListService.enabled` | `values-prod.yaml` (GitOps; **merge = production deploy**; **already `true`** since #1592) | Creates the Deployment/Service/Ingress/Middleware/NetworkPolicy and the per-service database Job. The feature is **dark** until the flag is on: the API answers 404 and the shell hides the UI. |
 | Unleash flag `fuzefront.selection-lists.service` | Unleash prod, via `prod-unleash-ops` | Turns the feature on for the targeted % of orgs/users: the API stops 404ing, the shell sidebar entry and `/settings/selection-lists*` routes appear. |
 | Unleash flag `fuzefront.selection-lists.seed-defaults` | Unleash prod | Separately gates seeding the platform default lists into orgs (see the seeding runbook). Not needed to use lists, only to get the three default lists automatically. |
+| Unleash flag `fuzefront.selection-lists.shared-lists` (SL9) | Unleash prod | Gates every shared/common-list and fork behaviour (section 10). Additionally requires the master flag. No workflow enables it; see `selection-lists-flag-rollout.md`, "Third flag". |
 
 Order is always: **prerequisites, then workload (flags OFF), verify it is healthy and 404s, then ramp the flags.**
 
@@ -47,14 +52,14 @@ Every row must hold before the final step. Rows marked IN FLIGHT must be re-chec
 
 | # | Prerequisite | State when written | What to check |
 |---|---|---|---|
-| P1 | **Database password sealed** (`Secret/selection-list-secrets`, key `DB_PASSWORD`, read by the per-service DB bootstrap Job **and** the Deployment) | **IN FLIGHT.** Only `deploy/contabo/sealed/selection-list-service-secrets.yaml.template` exists on master; no real `selection-list-secrets.yaml`. The password is minted and sealed by the `rotate-sealed-secret` workflow so no human sees it. A PR titled "chore(secrets): seal DB_PASSWORD in fuzefront/selection-list-secrets" (#1295) was open. **Check the PR/merge state before relying on this.** | `ls deploy/contabo/sealed/selection-list-secrets.yaml`; Argo `fuzefront-sealed` Synced; `kubectl -n fuzefront get secret selection-list-secrets` (UNVERIFIED). **Merge it in its own change, before the final step:** the DB bootstrap Job is a pre-upgrade hook that runs before the sealed-secret sync, so enabling both in one change fails the Job on a missing Secret and fails the whole Argo sync. |
-| P2 | **Service machine identity** (OAuth `client_credentials`, scope `authz:admin`) for Security API grant/revoke (creator `list-owner` on create, access grants, seeded-list owner grants). Without it grants **fail closed** (creates 500, no access can be granted) | **IN FLIGHT.** Today the Deployment reads `SERVICE_CLIENT_ID`/`SERVICE_CLIENT_SECRET` from `selection-list-secrets` (`optional: true`); nothing provisions them. A PR "feat(selection-list): mint the service's S2S identity in-cluster (PreSync register Job)" (#1299) moves this to an in-namespace register Job that writes a separate `Secret/selection-list-s2s`, gated by `selectionListService.s2s.register.enabled`. That PR also changes the Authentik scope mapping so the `authz:admin` scope is not clamped away. **Check the PR/merge state before relying on this**; if it does not land, the identity has to be provisioned another way (`docs/runbooks/s2s-client-credentials.md`). | Mint one real `client_credentials` token and introspect it: the introspected `scope` must contain `authz:admin` (the Security API reads that standard claim). UNVERIFIED live. |
-| P3 | **Kafka topics exist with the intended settings** (13 change topics, 2 outcome topics, `seed.requested` + DLQ with 1-day retention because its messages carry bearer tokens) | **IN FLIGHT.** `kafkaTopics.enabled` is `false` in `values-prod.yaml` (the old post-upgrade hook wedged Argo syncs). A PR "fix(helm): make kafka-topics Job non-blocking and enable it in prod" (#1298) reworks it into a bounded last-wave Job. **Check the PR/merge state before relying on this.** Until it lands, topics rely on broker auto-create with default retention. | `kubectl -n fuzefront get jobs -l app.kubernetes.io/component=kafka-topics`; list topics via the FuzeInfra `cluster-query` workflow. Detail: seeding runbook section 2.3. |
-| P4 | **All three Unleash flags exist in Unleash, OFF** (`fuzefront.selection-lists.service`, `fuzefront.selection-lists.seed-defaults`, and the SL9 `fuzefront.selection-lists.shared-lists`, the last created by the same `flags=selection-lists-create` dispatch once this lands) | **Creation is wired; verify it ran.** The `selection-lists-create` set of `prod-unleash-ops` (#1296, plus the SL9 third flag) creates all three flags OFF and never enables anything. It has to be dispatched once after the SL9 flag-registration PR merges, so a third flag may be missing until then. **Check the live state; do not assume.** | Unleash prod admin UI or API: **all three** keys (`fuzefront.selection-lists.service`, `fuzefront.selection-lists.seed-defaults`, `fuzefront.selection-lists.shared-lists`) exist, environment `production` disabled. Never create them by hand in the UI if the workflow can. |
-| P5 | **Shared-lists / fork contract** (a list that an org shares with others, and forking a shared list into an org's own copy) | **IN FLIGHT.** A contract PR was reported open but no PR for it was found when this was written, so its number is not recorded here. It changes the API contract, so it is a reason to hold a GA, not a hard blocker for a pilot of the existing contract (4.0.0). **Find the PR and check its merge state before relying on this**; if it lands before the first ramp step, re-read the authz section of this runbook, because sharing changes who can read what. | `services/selection-list-service/openapi.yaml` `info.version` and the contract changelog; `gh pr list --search "selection list shared fork"`. |
-| P6 | **HARD PREREQUISITE: broker ACLs on the `identity.*` topics verified** (only the identity service may produce `identity.org.*` / `identity.user.*`; only the seed senders may produce `selection-lists.seed.requested`) | **FuzeInfra#1394.** **Do not enable the service in production until this is verified.** Rationale (owner decision): the service deliberately does NOT authenticate event producers in-process (no first-writer-wins owner hardening, no Security-API check before destructive org cascades). Its protection against forged events is therefore the broker: without ACLs any in-cluster workload that can reach Kafka could forge `identity.org.deleted` for an ordinary org (archive or purge a tenant's lists), `identity.user.deleted` (anonymise authorship, revoke a user's grants), `identity.org.created` (swap the owner used for seeded-list owner grants), `seed.requested` (write amplification up to the per-source caps) or flood a topic. The platform org is immune to deletion (it is only suspended) but the rest are accepted residual risks until the ACLs hold. The full list is in the design record, section 12 (Risks). | Ask FuzeInfra (via `@fuze`) for the verified ACL state of the three topic families, or `kafka-acls --list` through the `cluster-query` workflow: produce rights on `identity.org.*` / `identity.user.*` held by the identity service principal only, and on `selection-lists.seed.requested` by the registered seed senders only. UNVERIFIED when written. |
+| P1 | **Database password sealed** (`Secret/selection-list-secrets`, key `DB_PASSWORD`, read by the per-service DB bootstrap Job **and** the Deployment) | **MERGED** (file present). `deploy/contabo/sealed/selection-list-secrets.yaml` exists on master alongside the `.template`. The password is minted and sealed by the `rotate-sealed-secret` workflow so no human sees it. Whether the Secret is Synced in the cluster is UNVERIFIED. | `ls deploy/contabo/sealed/selection-list-secrets.yaml`; Argo `fuzefront-sealed` Synced; `kubectl -n fuzefront get secret selection-list-secrets` (UNVERIFIED). **Merge it in its own change, before the final step:** the DB bootstrap Job is a pre-upgrade hook that runs before the sealed-secret sync, so enabling both in one change fails the Job on a missing Secret and fails the whole Argo sync. |
+| P2 | **Service machine identity** (OAuth `client_credentials`, scope `authz:admin`) for Security API grant/revoke (creator `list-owner` on create, access grants, seeded-list owner grants). Without it grants **fail closed** (creates 500, no access can be granted) | **MERGED, and different from the original plan.** The Deployment no longer uses OAuth client credentials: it mounts a projected ServiceAccount token (path `fuzefront-security`, audience `fuzefront-security`, 600 s; `templates/selection-list-service-deployment.yaml`) and `src/lib/machineIdentity.ts` exchanges it for exactly two Security-API scopes, `selection-list:owner-grant` and `selection-list:grant-cleanup` (never `authz:admin`). The earlier `SERVICE_CLIENT_ID`/`_SECRET` / register-Job (#1299) design is not what ships. | The pod log line `projected workload identity configured for owner bootstrap and stale-grant cleanup` at startup (or the ERROR `projected workload token missing …`); then create one list as an org admin and confirm the creator is `list-owner`. UNVERIFIED live. |
+| P3 | **Kafka topics exist with the intended settings** (13 change topics, 2 outcome topics, `seed.requested` + DLQ with 1-day retention because its messages carry bearer tokens) | **MERGED.** `kafkaTopics.enabled: true` in `values-prod.yaml` (#1298: a non-blocking, bounded Job instead of the old wedging post-upgrade hook); the SL9 topics `selection-lists.list.forked` and `selection-lists.visibility.changed` are declared in `values.yaml`. Whether the Job completed on the cluster is UNVERIFIED; change-event `.dlq` topics are not declared and rely on broker auto-create. | `kubectl -n fuzefront get jobs -l app.kubernetes.io/component=kafka-topics`; list topics via the FuzeInfra `cluster-query` workflow. Detail: seeding runbook section 2.3. |
+| P4 | **All three Unleash flags exist in Unleash, OFF** (`fuzefront.selection-lists.service`, `fuzefront.selection-lists.seed-defaults`, and the SL9 `fuzefront.selection-lists.shared-lists`, the last created by the same `flags=selection-lists-create` dispatch once this lands) | **Creation is wired; verify it ran.** The `selection-lists-create` set of `prod-unleash-ops` creates all three flags OFF and never enables anything (create-only; an existing flag is left untouched). It must have been dispatched **after** the SL9 flag-registration change for the third flag to exist. **Check the live state; do not assume.** | Unleash prod admin UI or API: **all three** keys (`fuzefront.selection-lists.service`, `fuzefront.selection-lists.seed-defaults`, `fuzefront.selection-lists.shared-lists`) exist, environment `production` disabled. Never create them by hand in the UI if the workflow can. |
+| P5 | **Shared-lists / fork contract and service** (a list that an org shares with others, and forking a common list into an org's own copy) | **MERGED, dark.** Contract 4.1.0 (`openapi.yaml` `info.version: 4.1.0`) and the service implementation are on master; every behaviour is behind `fuzefront.selection-lists.shared-lists` (OFF). Sharing changes who can read what, so run section 10 and re-read the authz section **before** that flag is ever turned on. The UI for it is **not** merged (no shell code reads the flag yet). | `services/selection-list-service/openapi.yaml` `info.version`; section 10; `docs/guides/SELECTION_LIST_SERVICE.md` § "Shared lists, common lists and forks". |
+| P6 | **HARD PREREQUISITE: broker ACLs on the `identity.*` topics verified** (only the identity service may produce `identity.org.*` / `identity.user.*`; only the seed senders may produce `selection-lists.seed.requested`) | **FuzeInfra#1394.** **Do not turn the flags on in production until this is verified.** (The workload was deployed by #1592 without any in-repo record that the ACLs were verified, so treat this as an OPEN prerequisite for the first ramp step, and for the shared-lists flag in particular.) Rationale (owner decision): the service deliberately does NOT authenticate event producers in-process (no first-writer-wins owner hardening, no Security-API check before destructive org cascades). Its protection against forged events is therefore the broker: without ACLs any in-cluster workload that can reach Kafka could forge `identity.org.deleted` for an ordinary org (archive or purge a tenant's lists), `identity.user.deleted` (anonymise authorship, revoke a user's grants), `identity.org.created` (swap the owner used for seeded-list owner grants), `seed.requested` (write amplification up to the per-source caps) or flood a topic. The platform org is immune to deletion (it is only suspended) but the rest are accepted residual risks until the ACLs hold. The full list is in the design record, section 12 (Risks). | Ask FuzeInfra (via `@fuze`) for the verified ACL state of the three topic families, or `kafka-acls --list` through the `cluster-query` workflow: produce rights on `identity.org.*` / `identity.user.*` held by the identity service principal only, and on `selection-lists.seed.requested` by the registered seed senders only. UNVERIFIED when written. |
 
-**Hard prerequisite:** Broker ACLs on the `identity.*` Kafka topics verified (FuzeInfra#1394) before enabling the service in production.
+**Hard prerequisite:** Broker ACLs on the `identity.*` Kafka topics verified (FuzeInfra#1394) before the service is exposed to users in production (flags ON). The absence of in-process producer authentication is an **accepted residual risk** until then.
 
 ### 2.2 Already on master (re-read if master moved)
 
@@ -64,18 +69,18 @@ Every row must hold before the final step. Rows marked IN FLIGHT must be re-chec
 | M2 | `SelectionList` and `SelectionListCatalog` declared in the Permit policy-as-code | **MERGED** (live Permit sync **UNVERIFIED**) | `backend/src/permit/schema.ts`, `backend/security/src/permit/schema.ts`. The `permit-schema-sync` Job applies it where `permit.enabled`; confirm in the Permit dashboard that `SelectionList` and `SelectionListCatalog` and their roles exist, otherwise every check denies |
 | M3 | Per-service database and login role `selection_list_svc` created by a pre-upgrade Job from the password in P1 | **MERGED** | `templates/service-db-bootstrap-job.yaml`, `values.yaml` `selectionListService.db.*`, `docs/runbooks/per-service-database-and-role.md` |
 | M4 | Flag client in the image and initialised at startup; `/ready` checks the DB; `/metrics`; crash containment | **MERGED** | `src/lib/featureFlags.ts`, `src/routes/health.ts`, `src/lib/http.ts` |
-| M5 | Seeding (platform pack, consumers, reconciler, owner grants) | **MERGED**, behind `seed-defaults` and `SEED_RECONCILER_ENABLED` | seeding runbook. The pack's 10 non-English locales are **machine-translated, pending native review**; they are stored `is_machine: true` (runbook section 2.5; pack-provenance fix is PR #1301, check its merge state) |
-| M6 | Image built and bumped by `release.yml` | **MERGED**; tag at time of writing `cb3b372f527a` (`values-prod.yaml`), which contains the SL8 hardening | Re-check that the tag at the time of the final step contains every selection-list commit you rely on: `git merge-base --is-ancestor <commit> <tag-commit>`. UNVERIFIED that the image exists in GHCR: `docker manifest inspect ghcr.io/izzywdev/fuzefront-selection-list-service:<tag>` |
+| M5 | Seeding (platform pack, consumers, reconciler, owner grants, SL9 seed-list `visibility`) | **MERGED**, behind `seed-defaults` and `SEED_RECONCILER_ENABLED` (not set by the chart); seed-list `visibility` additionally behind `shared-lists` | seeding runbook. The pack's 10 non-English locales are **machine-translated, pending native review**; they are stored `is_machine: true` (runbook section 2.5; pack-provenance fix is PR #1301, check its merge state) |
+| M6 | Image built and bumped by `release.yml` | **MERGED**; tag at time of writing `dbe338ab82c8` (`values-prod.yaml`); re-check that it contains the SL9 service commits you rely on | Re-check that the tag at the time of the final step contains every selection-list commit you rely on: `git merge-base --is-ancestor <commit> <tag-commit>`. UNVERIFIED that the image exists in GHCR: `docker manifest inspect ghcr.io/izzywdev/fuzefront-selection-list-service:<tag>` |
 
 ### 2.3 Open decisions and known gaps (owner call before the first ramp step)
 
 | # | Item | Why it matters |
 |---|---|---|
-| D1 | **No FuzeFront-issued token carries an org claim the service reads** (authz review **I-1**). The session JWT carries `tid`; the service reads `orgId` / `organization_id` / `organizationId`. The shell UI client sets no `Authorization` header (re-check whether the shell injects one). Until an org-scoped token path exists, every route answers 401 | Fails closed, but it means the ramp cannot work for real users. UI visible + API 401 is the symptom. Decide the org-scoped token (Authentik `organization_id` claim vs a FuzeFront org-session token) before enabling |
-| D2 | Authz review **M-2** (last-owner guard counts the mirror, not the Security API; deleted users and purged lists keep stale grants) and **M-4** (`user_lists` / `list_locales` quotas not enforced; no rate limiting) are **open** | Accept for a closed pilot or fix first; record the decision |
+| D1 | **Org-scoped token path.** Resolved in code since the first draft: `POST /api/organizations/{orgId}/session-token` (`backend/security/src/services/orgSessionToken.ts`) mints a short-lived `fuze-org-session` token after the active-membership proof, and the shell injects it (`frontend/src/lib/selectionListsAuth.ts`, #1312); see the guide's "Authentication and the org claim". The authz review's I-1 row is a 2026-10-05 snapshot and still reads OPEN | Verify end to end on the first ramp step: UI visible + API 401 means the exchange is failing |
+| D2 | Authz review **M-2** and **M-4**: resolved in code since the first draft (the last-owner guard asks the Security API, `src/services/authority.ts`; `user_lists` / `list_locales` / the archived-rows ceiling are enforced, `src/services/quota.service.ts`; ingress rate limits `selectionListService.ingress.rateLimit.*`). The review's table is a snapshot and still reads OPEN | Confirm in the guide's "Access control" and "Quota" sections; record the decision |
 | D3 | `POST /tenants` and `GET /tenants` on the Security API are still open to any authenticated caller (residual of authz review C-1) | Platform-wide, not specific to this service |
-| D4 | The MCP gateway (`selectionListsMcp.enabled: false`) points at host `selection-list-service` but the Service is named `fuzefront-selection-list-service` (authz review I-1c) | Keep the gateway **off** until fixed |
-| D5 | `selection_list_access` mirror lags a Security-API-only grant; app-seeded lists get no owner grant | seeding runbook section 6 |
+| D4 | The MCP gateway (`selectionListsMcp.enabled: false`): its upstream now targets `fuzefront-selection-list-service` (`templates/selection-list-service-mcp-gateway.yaml`), so the host mismatch of authz review I-1c is fixed | Still keep the gateway **off** until an owner decision; it is dark by default |
+| D5 | `selection_list_access` mirror lags a Security-API-only grant; app-seeded lists get no owner grant (the org owner is granted on platform-seeded lists only). Seed-list `visibility: org` (shared-lists flag ON) is the member-visibility fix, and nothing that ships declares it | seeding runbook section 6 |
 
 ### 2.4 Platform organization: configurable everywhere, derived and enforced in production
 
@@ -103,7 +108,7 @@ Every row must hold before the final step. Rows marked IN FLIGHT must be re-chec
 | Check | Evidence | Status |
 |---|---|---|
 | Image built by `release.yml` and tag bumped in `values-prod.yaml` | step "Build & push selection-list-service" in `.github/workflows/release.yml`; the bump anchors on the `repository:` line followed directly by `tag:` | VERIFIED (read) |
-| Pinned tag is a real, recent build containing the hardening | `values-prod.yaml` `tag: cb3b372f527a` contains #1289 (`git merge-base --is-ancestor 37ed4c5e cb3b372f`) | VERIFIED (read); registry presence UNVERIFIED |
+| Pinned tag is a real, recent build containing the hardening | `values-prod.yaml` `tag: dbe338ab82c8` (bumped by `release.yml`; check each commit you depend on with `git merge-base --is-ancestor <commit> <tag-commit>`) | tag VERIFIED (read); contents and registry presence UNVERIFIED |
 | Image boots | `Dockerfile` ships `@fuzefront/auth` and `@fuzefront/feature-flags` with their runtime deps | VERIFIED (read); runtime UNVERIFIED |
 
 ### (b) Database
@@ -125,7 +130,7 @@ Every row must hold before the final step. Rows marked IN FLIGHT must be re-chec
 | `KAFKA_BROKERS` | `fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092` (same broker Service as chat/applications). Service-name resolution UNVERIFIED: `-n fuzeinfra get svc` | wired |
 | `FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED` | `authzEnabled: true`, declared so the manifest states the posture; **in production authz is always enforced regardless** | wired |
 | `UNLEASH_URL` / `UNLEASH_APP_NAME` / `UNLEASH_CLIENT_TOKEN` | prod `featureFlags.*` -> `unleash-secrets/UNLEASH_CLIENT_TOKEN` (`optional: true`). The service now calls `init()` | wired; token presence UNVERIFIED |
-| `SELECTION_LIST_SERVICE_CLIENT_ID` / `_SECRET` | today `selection-list-secrets/SERVICE_CLIENT_ID|SECRET` (`optional`); **P2** moves them to `selection-list-s2s` | wired; credential missing until **P2** |
+| Projected workload token (no client id/secret) | `volumes: fuzefront-workload-token` (ServiceAccount token, audience `fuzefront-security`), read by `src/lib/machineIdentity.ts`; see **P2** | wired |
 | Permit PDP / API keys | intentionally absent: authorization goes through the Security API | VERIFIED (read) |
 
 ### (d) Kafka consumers
@@ -156,7 +161,7 @@ Declared in policy-as-code (**M2**). Live application of the schema is UNVERIFIE
 
 ### (h) Observability
 
-Structured pino logging with a per-request `reqId`; `/metrics` (above). **No dashboards or alerts** exist for this service (UNVERIFIED in the live cluster). Interim ramp signals: pod status/restarts, `kubectl logs` for `level>=50`, ingress 5xx for `app.fuzefront.com/api/v1/selection-lists`, `knex_migrations` row count = the number of migrations (10 at the time of writing).
+Structured pino logging with a per-request `reqId`; `/metrics` (above). **No dashboards or alerts** exist for this service (UNVERIFIED in the live cluster). Interim ramp signals: pod status/restarts, `kubectl logs` for `level>=50`, ingress 5xx for `app.fuzefront.com/api/v1/selection-lists`, `knex_migrations` row count = the number of migrations (13 at the time of writing: `ls services/selection-list-service/src/db/migrations`).
 
 ### (i) Rollback
 
@@ -243,6 +248,8 @@ Edge probe (not cluster): `curl -s -o /dev/null -w '%{http_code}\n' https://app.
 
 ## 8. The last step: the one-line prod values flip
 
+> **EXECUTED.** #1592 (2026-10-21) flipped `selectionListService.enabled` to `true` in `values-prod.yaml`, and `platformOrgId: org_0000000000000000000000000g` is pinned there (`python3 scripts/gate_platform_org_pin.py` prints PASS, `RULE APPLIED enabled-requires-pinned`). The text below is kept as the record and as the rollback reference (`git revert` of that commit disables the workload); it is **not** a pending step. The PR description of #1592 records a purely additive render diff; the P1/P3 ordering caveats below were not re-verified by this docs pass.
+
 **Do this only after every row in sections 2 and 4 is satisfied, in a deploy window, as its own PR.** Merging it deploys to production. It is the only change that creates the workload; the flags stay OFF until section 5.
 
 The whole change, in `deploy/helm/fuzefront/values-prod.yaml` (the first key under `selectionListService:`, currently line 1035):
@@ -276,11 +283,13 @@ App code / API / authz policy (`backend-engineer`, authz review), the shell UI a
 
 ## 10. Shared lists (SL9): data jobs to run BEFORE turning `fuzefront.selection-lists.shared-lists` on
 
-This section applies to the second flag (`fuzefront.selection-lists.shared-lists`, design record
-`docs/planning/selection-lists-shared-and-fork.md`, section 9). That flag has never been ON in production, so the audit
-below is expected to return **no rows** and the data jobs are expected to find only the seeded lists. Run them anyway:
-with the flag ON the service treats the bare-UUID and the `org_…` rendering of one organization id as the same
-organization, and the database constraint `UNIQUE (organization_id, key)` does not (it compares the stored text).
+This section applies to the third flag (`fuzefront.selection-lists.shared-lists`, design record
+`docs/planning/selection-lists-shared-and-fork.md`, section 9). The workload has been deployed in production only since
+#1592 (2026-10-21) and was dark behind the master flag, so the audit below is expected to return **no rows**
+(unless the master flag was ramped on an image that predates the cross-rendering key rule below) and the data jobs are
+expected to find only the seeded lists. Run them anyway: with the flag ON the service treats the bare-UUID and the
+`org_…` rendering of one organization id as the same organization, and the database constraint
+`UNIQUE (organization_id, key)` does not (it compares the stored text).
 
 ### 10.0 The four jobs: what they are, the order, how to run them
 
@@ -768,3 +777,48 @@ COMMIT;
 
 The optional later "collapse untouched forks" job of the design record (archive a fork so the org falls through to the common
 list, after migrating consumers' stored values with the `itemMap`) is **not** built and not scheduled: an owner decision.
+
+### 10.6 Pre-flight before turning `shared-lists` ON (read-only checks) and what stays dark
+
+Nothing in this repo turns the flag on; these are the checks to run first. The flag is rollout only; every read and
+write is still authorized by Permit.
+
+1. **Master flag and scope.** `fuzefront.selection-lists.shared-lists` also needs `fuzefront.selection-lists.service`.
+   Enable it **globally** (`selection-lists-flag-rollout.md`, "Third flag": an org-only or user-only constraint splits the
+   service from the browser).
+2. **The platform organization is confirmed by the projection.** `values-prod.yaml` pins
+   `SELECTION_LIST_PLATFORM_ORG_ID` to `org_0000000000000000000000000g`, but the service serves, creates, forks and
+   resolves common lists only once the org projection confirms that id (`resolvePlatformOrgId`,
+   `services/selection-list-service/src/lib/sharedLists.ts`). Read-only check on the service database:
+
+   ```sql
+   SELECT wire_id, org_type, status, is_active, suspended_at
+     FROM selection_list_ref_index
+    WHERE entity_type = 'organization' AND wire_id = 'org_0000000000000000000000000g';
+   ```
+
+   Expect exactly one row with `org_type = 'platform'`, `status = 'active'`, `is_active = true`, `suspended_at IS NULL`.
+   No row, a typeless row, another type or `is_active = false` means **every platform feature stays disabled** (service
+   warn `… is not (yet) confirmed as an active platform org by the org projection`); an invalid id or a contradicted row
+   makes the pod refuse to start. The row is written only by `identity.org.created` / `identity.org.updated`; the root
+   org is created by a migration (`backend/security/src/migrations/014_seed_root_platform_organization.ts`), so confirm
+   that identity has emitted an event for it (an `identity.org.updated` for the platform org with type `platform`,
+   `isActive: true` creates the row). Whether that has happened is **UNVERIFIED** from this repo.
+3. **Permit** has `SelectionListCatalog:read_shared` and `publish_platform` (M2); without them every shared read and every
+   publish is denied (fail closed).
+4. **Broker ACLs** (P6) verified, the section 10.1-10.2 audit returns 0 rows, the 10.0 jobs have run in their order (10.4 before the flag, 10.5 after the common lists are published), and the P1-P4 rows hold.
+5. **After the flag is ON**, with a platform operator token (acting in the platform org, holding `publish_platform`):
+   create a `platform` list, then as an ordinary org member confirm `GET /v1/selection-lists?key=<key>&include_shared=true`
+   returns it (follow `page.nextCursor` until `hasMore` is false: a page can be empty and not last), fork it, confirm the
+   fork shadows it and `POST /v1/resolve` of a common item id returns `effective_item_id`. The shell has no UI for any of
+   this yet.
+
+**Rollback** = turn the flag OFF: shared reads, `include_shared`, fork and the resolve redirect stop and the service reverts
+to 4.0.0 behaviour. Data created while ON (visibility values, forks, common lists) remains. The platform-suspension and
+common-list purge guards (10.3) and the cross-rendering key uniqueness rule apply regardless of the flag.
+
+**Not built (do not plan around them):** the shared-lists UI (frames approved; implementation and RED specs were open PRs on
+2026-10-26), platform pack v2 (new orgs seeding `org` visibility, design record §9.4), the optional "collapse untouched forks" job
+(see the end of 10.5), and `SelectionList.revision` (fork provenance can show only "comparison unavailable"). The data jobs that set
+`visibility = 'org'` on already-seeded lists and retro-fork the per-org copies of the platform pack (design record §9.4, §9.6) are
+built: sections 10.4 and 10.5.

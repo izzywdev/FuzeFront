@@ -24,12 +24,22 @@ name: gate-ds-artifact
 #
 # NO `paths:` FILTER, deliberately — the same load-bearing rule as gate-deployable-paths.yml
 # and gate-sealed-keys.yml. A path-filtered workflow never runs on a PR that misses the
-# filter, so if this context is ever added to the "Protect Master" required-check ruleset
-# (see docs/design-system/README.md), a required-but-never-reported context would leave the
-# PR permanently blocked. The producer is dependency-free (bare `node`, no `npm ci`) and
-# finishes in well under a second, so running it unconditionally costs nothing.
+# filter, so if this context is ever added to the required-check ruleset (see
+# docs/design-system/README.md and docs/runbooks/widen-required-checks.md), a
+# required-but-never-reported context would leave the PR permanently blocked. The producer
+# is dependency-free (bare `node`, no `npm ci`) and finishes in well under a second, so
+# running it unconditionally costs nothing.
+#
+# `merge_group:` IS PRESENT so this context is safe to require. A merge queue emits
+# `merge_group`, never `pull_request`; a required context with no merge_group trigger is
+# never created for a queue entry and strands it (FuzeFront#286 in the queue). This check
+# is a pure regenerate-and-diff of the committed mirror against source — it reads no PR
+# context — so it behaves identically under merge_group, pull_request and push. The guard
+# scripts/check-required-check-triggers.mjs will require merge_group here once this
+# context's requiredInRuleset flips to true.
 on:
   pull_request:
+  merge_group:
   push:
     branches: [master]
 

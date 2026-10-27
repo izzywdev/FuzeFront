@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Building, Rocket, RefreshCw, Code, ArrowRight } from 'lucide-react'
-import { Center } from '@fuzefront/design-system'
+import { Center, Text } from '@fuzefront/design-system'
 
 const solutions = [
   {
@@ -81,9 +81,9 @@ export const SolutionsPage: React.FC = () => {
                     {solution.name}
                   </h3>
                   
-                  <p className="text-gray-600 mb-6">
+                  <Text tone="secondary" spacing="lg">
                     {solution.description}
-                  </p>
+                  </Text>
                   
                   <ul className="space-y-2 mb-8">
                     {solution.features.map((feature, featureIndex) => (

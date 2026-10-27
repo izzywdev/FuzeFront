@@ -10,6 +10,12 @@
 import jwt from 'jsonwebtoken'
 import { AuthentikIdentityProvider, MfaRequiredError, ConflictError, UnauthorizedError, InvalidInputError } from '../src/providers/authentik/AuthentikIdentityProvider'
 import * as totp from '../src/providers/authentik/totp'
+import {
+  currentTenantOrUndefined,
+  getTenantById,
+  resetTenantRegistryForTests,
+  runWithTenant,
+} from '../src/providers/authentik/tenants'
 import type { NotificationClient } from '../src/providers/authentik/notifications'
 
 // Test-only JWT signing secret. Overridable via TEST_JWT_SECRET; the fallback is
@@ -350,6 +356,89 @@ describe('isSessionActive (validateSession backing check)', () => {
       expect(await p.isSessionActive(u, s)).toBe(false)
     }
     expect(db).not.toHaveBeenCalled()
+  })
+
+  describe('tenant boundary (every tenant shares one signing secret and sessions carry no tenant)', () => {
+    const tenant = (id: string, host: string) => ({
+      id,
+      hosts: [host],
+      issuerUrl: `https://${host}/application/o/${id}/`,
+      baseUrl: `http://authentik-${id}:9000`,
+      clientId: `${id}-oidc-client`,
+      redirectUri: `https://${host}/api/auth/oidc/callback`,
+      enrollmentFlowSlug: `${id}-enrollment`,
+      appBaseUrl: `https://${host}`,
+    })
+    let savedTenants: string | undefined
+    beforeEach(() => {
+      savedTenants = process.env.SECURITY_TENANTS
+      process.env.SECURITY_TENANTS = JSON.stringify([
+        tenant('fuzefront', 'app.fuzefront.com'),
+        tenant('mendys', 'live.mendysrobotics.com'),
+      ])
+      resetTenantRegistryForTests()
+    })
+    afterEach(() => {
+      if (savedTenants === undefined) delete process.env.SECURITY_TENANTS
+      else process.env.SECURITY_TENANTS = savedTenants
+      resetTenantRegistryForTests()
+    })
+    const on = (id: string, fn: () => Promise<boolean>) => runWithTenant(getTenantById(id)!, fn)
+    const liveSession = () => {
+      const db = makeFakeDb()
+      seed(db)
+      return newProvider(db)
+    }
+
+    it('is true for a session on the tenant that minted it', async () => {
+      // @fuzequality api validateSession
+      const p = liveSession()
+      expect(await on('fuzefront', () => p.isSessionActive(USER_A, SESS, 'fuzefront'))).toBe(true)
+      expect(await on('mendys', () => p.isSessionActive(USER_A, SESS, 'mendys'))).toBe(true)
+    })
+
+    it("is false for another tenant's session presented on this tenant's host", async () => {
+      // @fuzequality api validateSession
+      // The reported case: a live tenant-A session (tid=fuzefront) asked about on a
+      // tenant-B host. The row exists, belongs to the user and is unexpired, so
+      // only the tenant check can refuse it.
+      const p = liveSession()
+      expect(await on('mendys', () => p.isSessionActive(USER_A, SESS, 'fuzefront'))).toBe(false)
+      expect(await on('fuzefront', () => p.isSessionActive(USER_A, SESS, 'mendys'))).toBe(false)
+    })
+
+    it('is false, fail-closed, when the token carries no tenant claim in multi-tenant mode', async () => {
+      // @fuzequality api validateSession
+      const p = liveSession()
+      expect(await on('fuzefront', () => p.isSessionActive(USER_A, SESS))).toBe(false)
+      expect(await on('fuzefront', () => p.isSessionActive(USER_A, SESS, undefined))).toBe(false)
+    })
+
+    it('is false when there is no tenant context at all in multi-tenant mode', async () => {
+      // @fuzequality api validateSession
+      expect(await liveSession().isSessionActive(USER_A, SESS, 'fuzefront')).toBe(false)
+    })
+
+    it('does not query the store for a tenant mismatch', async () => {
+      // @fuzequality api validateSession
+      const db: any = jest.fn(() => {
+        throw new Error('store must not be queried across a tenant boundary')
+      })
+      const p = newProvider(db)
+      expect(await on('mendys', () => p.isSessionActive(USER_A, SESS, 'fuzefront'))).toBe(false)
+      expect(db).not.toHaveBeenCalled()
+    })
+
+    it('single-tenant mode: a token with no tenant claim is still active, a foreign one is not', async () => {
+      // @fuzequality api validateSession
+      delete process.env.SECURITY_TENANTS
+      resetTenantRegistryForTests()
+      const p = liveSession()
+      expect(await p.isSessionActive(USER_A, SESS)).toBe(true) // pre-tenancy token
+      const own = currentTenantOrUndefined()!.id
+      expect(await p.isSessionActive(USER_A, SESS, own)).toBe(true)
+      expect(await p.isSessionActive(USER_A, SESS, 'some-other-tenant')).toBe(false)
+    })
   })
 
   it('rejects, rather than answering, when the session store cannot be read', async () => {
