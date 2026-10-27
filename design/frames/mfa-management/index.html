@@ -92,15 +92,15 @@
       <div class="seam"></div>
       <div class="step">Frame 04 · …/mfa/recovery-codes</div>
       <h3>Recovery codes</h3>
-      <p>Shown once, never retrievable again. Copy/download, then regenerate (which invalidates the old set).</p>
-      <div class="states"><span class="tag">shown once</span><span class="tag">regenerate confirm</span></div>
+      <p>Shown once, never retrievable again. Returning visits show <b>counts only</b> (<code>GET /mfa/recovery-codes</code> → <code>{remaining, total}</code>) — no code tiles, because the API never returns codes again.</p>
+      <div class="states"><span class="tag">shown once</span><span class="tag warn">loading</span><span class="tag">N of M left</span><span class="tag warn">running low</span><span class="tag err">all used</span><span class="tag">never generated</span><span class="tag err">count load error + retry</span><span class="tag">regenerate confirm</span><span class="tag">375px</span></div>
     </a>
     <a href="05-step-up-challenge.html" class="frame-link" data-nav="05-step-up-challenge">
       <div class="seam"></div>
       <div class="step">Frame 05 · /login/mfa</div>
       <h3>Step-up challenge (mid sign-in)</h3>
       <p>Login returned <code>mfa_required</code>. Pick a factor, enter the code, complete sign-in. Fail-closed on bad/expired code; delivery failure is surfaced.</p>
-      <div class="states"><span class="tag">TOTP prompt</span><span class="tag">choose factor</span><span class="tag err">invalid / expired</span></div>
+      <div class="states"><span class="tag">TOTP prompt</span><span class="tag">choose factor</span><span class="tag">recovery not offered</span><span class="tag err">invalid / expired</span><span class="tag err">too many attempts (429)</span><span class="tag err">delivery failed</span></div>
     </a>
     <a href="06-remove-factor.html" class="frame-link" data-nav="06-remove-factor">
       <div class="seam"></div>
@@ -108,6 +108,13 @@
       <h3>Remove a method</h3>
       <p>Confirm removal. <b>Fail-closed:</b> removing your only remaining factor while two-factor is required is blocked (409) — you can't lock yourself out.</p>
       <div class="states"><span class="tag">confirm</span><span class="tag err">remove-last blocked (409)</span></div>
+    </a>
+    <a href="07-recovery-code-entry.html" class="frame-link" data-nav="07-recovery-code-entry">
+      <div class="seam"></div>
+      <div class="step">Frame 07 · /login/mfa (from frame 05)</div>
+      <h3>Recovery-code entry (step-up)</h3>
+      <p>One text field for an opaque recovery code (not OTP cells), sent as <code>{challengeId, recoveryCode}</code>. Offered only when <code>recoveryAvailable</code> is true.</p>
+      <div class="states"><span class="tag">entry</span><span class="tag">verifying</span><span class="tag err">code didn't work (401)</span><span class="tag err">too many attempts (429)</span><span class="tag err">sign-in expired (NOT_ACTIVE)</span><span class="tag err">couldn't check</span></div>
     </a>
   </div>
 
@@ -135,10 +142,25 @@
         <span class="chip pkg">@fuzefront/account-security-ui</span>
         <span class="chip pkg">@fuzefront/security-client (existing)</span>
       </dd>
+      <dt>Revision note</dt>
+      <dd>Recovery-code redemption (contract 1.3.0, #1660) <b>does not change this inventory</b>. Recovery entry is a
+        state of <span class="chip">MfaChallengeCard</span> inside <span class="chip flow">MfaStepUpFlow</span>, built from the
+        existing DS <code>CodeField</code> + <code>StatusCallout</code>; the count states belong to
+        <span class="chip">RecoveryCodesPanel</span> (DS <code>Skeleton</code> + <code>StatusCallout</code>). No new
+        component, package or DS primitive.</dd>
       <dt>Missing DS primitive</dt>
       <dd><span class="chip">OtpInput</span> — a segmented one-time-code field is not yet in
         <code>@fuzefront/design-system</code>. Named here for <code>frontend-engineer</code> to add as a
         foundation primitive; not styled one-off.</dd>
+    </dl>
+  </div>
+
+  <div class="inv" data-open-questions>
+    <h3>Recovery-code revision — open question for the owner</h3>
+    <dl>
+      <dt>After a recovery sign-in</dt>
+      <dd>Not framed: a “you used a recovery code — N left” prompt after signing in. Assumed <b>not in scope</b>. The
+        count is already visible under Security → Recovery codes.</dd>
     </dl>
   </div>
 
