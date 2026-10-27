@@ -383,7 +383,13 @@ Consumer AuthN endpoints:
 - `GET /api/v1/security/social/{provider}/start` → provider consent →
   `GET /api/v1/security/social/callback` returns a single-use `?code=`, which you
   exchange at `POST /api/v1/security/session/exchange` (no token in the URL).
-- `POST /api/v1/security/signup` — server-brokered account creation.
+- `POST /api/v1/security/signup` — server-brokered account creation. Body is
+  `{ email, password, name?, turnstileToken? }` (contract 1.1.0: one `name`, no
+  `firstName`/`lastName`; errors include `CAPTCHA_FAILED` 400 and
+  `PASSWORD_POLICY` 422). `GET /api/v1/security/signup/email-available` backs the
+  inline check, and `GET /methods` advertises `captcha`/`passwordPolicy`. The
+  stricter behaviour is gated by `fuzefront.auth.experience` (default OFF); see
+  [`AUTH_EXPERIENCE_SIGNUP.md`](./AUTH_EXPERIENCE_SIGNUP.md).
 - `GET /api/v1/security/session` — the current stable `Identity` ("me");
   `DELETE /api/v1/security/session` — logout.
 
@@ -393,6 +399,70 @@ parse the JWT or fetch a JWKS. `Identity` is invariant across the token-format
 migration. See
 [`docs/consumers/onboarding-authn-authz.md`](../consumers/onboarding-authn-authz.md)
 for the step-by-step recipe.
+
+### Checking that a session is still live (backend services)
+
+A FuzeFront session token stays cryptographically valid until its `exp` (24h)
+even after the user logs out or revokes the device; only FuzeFront's session
+store knows. A backend that verifies session tokens itself
+(`@izzywdev/fuzefront-auth` ≥ 0.4.0 / Python `fuzefront-auth` ≥ 0.2.0, in
+`legacy-hs256` mode) therefore **refuses a token that names a session** unless
+you supply a `sessionValidator` (`session_validator` in Python). Build it on
+`POST /api/v1/security/sessions/validate`:
+
+- **Caller:** a service, not a user. Send a workload token (see
+  `@izzywdev/fuzefront-service-auth`) whose scope includes `sessions:validate`.
+  A user session token is rejected (401), and a token without the scope is 403.
+- **Body:** `{ "userId": "...", "sessionId": "...", "tenantId": "..." }`, taken
+  from the token's `userId`, `sessionId` and `tid` claims after you have verified
+  its signature. Nothing else is accepted. `tenantId` may be omitted only for a
+  token with no `tid` (single-tenant deployments).
+- **Answer:** `200 { "active": true }` only for a live session that belongs to
+  that user. An unknown, revoked, expired or wrong-user session is the same
+  `200 { "active": false }`, with no reason.
+- **Tenants.** Every tenant's sessions share one signing secret and the package
+  verifiers do not look at `tid`, so this call is where the tenant boundary is
+  enforced for you. When multi-tenant identity is on, a session is active only
+  for the tenant that minted it: call the security service on **the host that
+  belongs to your own tenant** (the tenant is chosen from the request `Host`), and
+  send the token's `tid` as `tenantId`. A token minted for another tenant, or
+  one with no `tid`, comes back inactive.
+- **An outage must throw, not return `false`.** A `503` (or any non-2xx, or a
+  network error) means "could not check", not "revoked". Let the validator raise;
+  the auth package turns that into a retryable 503 for your caller. Returning
+  `false` on error would sign every user out whenever the session store blinks.
+  Treat anything other than a strict `active === true` as inactive.
+
+```ts
+const sessionValidator = async (userId: string, sessionId: string, claims: Record<string, unknown>) => {
+  const res = await fetch(`${SECURITY_SERVICE_URL}/api/v1/security/sessions/validate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${await auth.getToken()}` },
+    body: JSON.stringify({ userId, sessionId, tenantId: claims.tid }), // undefined is omitted
+  })
+  if (!res.ok) throw new Error(`session validity check failed: ${res.status}`) // outage or misconfig: throw
+  return (await res.json()).active === true
+}
+```
+
+```python
+def session_validator(user_id, session_id, claims):
+    body = {"userId": user_id, "sessionId": session_id}
+    if claims.get("tid"):  # omit it rather than send null, which is a 400
+        body["tenantId"] = claims["tid"]
+    r = httpx.post(
+        f"{SECURITY_SERVICE_URL}/api/v1/security/sessions/validate",
+        json=body,
+        headers={"Authorization": f"Bearer {service_token()}"},
+        timeout=3,
+    )
+    r.raise_for_status()  # non-2xx raises: the package answers 503, never "revoked"
+    return r.json().get("active") is True
+```
+
+If you cannot call it, the only alternative is the explicit opt-out
+(`allowUnvalidatedSessions: true` / `allow_unvalidated_sessions=True`), which
+knowingly accepts that a logged-out session keeps working for up to 24h.
 
 ---
 

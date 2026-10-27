@@ -9,6 +9,7 @@
  *
  * This is a TEST FIXTURE (a contract mock), NOT the product implementation.
  */
+import { ChallengeNotActiveError, RecoveryCodeInvalidError } from '../../src/providers/errors'
 import {
   IdentityProvider,
   BrokeredSession,
@@ -228,8 +229,9 @@ export class MockIdentityProvider implements IdentityProvider {
     const u = this.seedUser({
       email: input.email,
       password: input.password,
-      firstName: input.firstName,
-      lastName: input.lastName,
+      // Contract 1.0.0: signup carries one `name`; the mock stores it as the
+      // display name (firstName slot) — it deliberately does not split it.
+      firstName: input.name,
       roles: ['user'],
       mfaEnabled: false,
     })
@@ -361,6 +363,17 @@ export class MockIdentityProvider implements IdentityProvider {
     throw new ProviderError('INVALID_CODE', 'user gone', 401)
   }
 
+  /** Mock holds no recovery codes: any code on a live challenge is invalid. */
+  async verifyMfaRecovery(challengeId: string): Promise<BrokeredSession> {
+    if (!this.mfaChallenges.has(challengeId)) throw new ChallengeNotActiveError()
+    throw new RecoveryCodeInvalidError()
+  }
+
+  async getRecoveryCodesStatus(token: string): Promise<{ remaining: number; total: number }> {
+    this.userByToken(token)
+    return { remaining: 0, total: 0 }
+  }
+
   /** Called by the route when password login hits an MFA-enabled account. */
   openMfaChallenge(email: string): { challengeId: string; factors: MfaFactor[] } {
     const u = this.users.get(email.toLowerCase())!
@@ -438,6 +451,11 @@ export class MockIdentityProvider implements IdentityProvider {
     for (const [t, userId] of [...this.sessions.entries()]) {
       if (userId === u.id && t !== token) this.sessions.delete(t)
     }
+  }
+
+  async isSessionActive(userId: string, sessionId: string): Promise<boolean> {
+    // Mirrors the real provider: active only for the user the session belongs to.
+    return this.sessions.get(sessionId) === userId
   }
 
   // ── Sign-in connections ──

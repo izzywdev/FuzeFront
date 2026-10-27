@@ -34,6 +34,18 @@
 //     removal criterion: seeding ON for all orgs for 30 days with zero
 //     selection-lists.seed.failed in the window -> remove flag + both guards.
 //
+//   fuzefront.selection-lists.shared-lists        (SL9: shared/common lists + copy-on-write fork)
+//     type: release | default: OFF | owner: izzywdev
+//     Gates EVERYTHING user-visible in the 4.1.0 feature: non-private visibility, include_shared /
+//     visibility on the listing, shared reads, the fork operation, common-list resolve, the fork redirect,
+//     seed-list `visibility`. While OFF the service answers as 4.0.0 in behaviour (every list reports
+//     visibility "private", forked_from null, origin_item_id null). Requires, and is evaluated after,
+//     the master gate. Read via isSharedListsEnabled(); fails closed (OFF). It is rollout convenience
+//     ONLY: authorization (Permit via the Security API) never routes through it.
+//     Registry ref: packages/feature-flags/flag-registry.yaml (registered by feature-flags-engineer)
+//     removal criterion: ON for all orgs for 30 days with no fork/shared-read incidents -> remove the
+//     flag and the OFF branches (middleware/listAccess.ts, lib/sharedLists.ts, routes/*, resolve.ts).
+//
 // The in-code default is OFF (release fail-safe) so an Unleash outage degrades
 // safely: the route acts as if the service does not yet exist for the org.
 
@@ -70,6 +82,14 @@ export const FLAGS = {
    * `FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS` in @fuzefront/feature-flags.
    */
   SELECTION_LISTS_SEED_DEFAULTS: 'fuzefront.selection-lists.seed-defaults',
+  /**
+   * Gates the shared/common-lists + copy-on-write-fork feature (HTTP contract 4.1.0). Release flag,
+   * default OFF. Server-side here; the shell UI reads it through the web catalog. See module doc above.
+   */
+  // Registered in @fuzefront/feature-flags (`FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS`, flag-registry.yaml). Like the
+  // other two keys, this service mirrors the literal key rather than importing the package constant: the package is
+  // lazy-required (see resolveClient) so the service degrades to fail-safe defaults when it is absent.
+  SELECTION_LISTS_SHARED_LISTS: 'fuzefront.selection-lists.shared-lists',
 } as const
 
 // Test/DI seam — pin flag values in unit tests with an in-memory client.
@@ -152,6 +172,27 @@ export async function isSeedDefaultsEnabled(
     return await client.getBooleanValue(FLAGS.SELECTION_LISTS_SEED_DEFAULTS, false, buildFlagContext(ctx))
   } catch (err) {
     logger.warn({ err, flag: FLAGS.SELECTION_LISTS_SEED_DEFAULTS }, 'flag evaluation failed — using fail-safe default OFF')
+    return false
+  }
+}
+
+/**
+ * Release flag (default OFF): shared/common lists + fork (HTTP contract 4.1.0) for the org in `ctx`.
+ *
+ * Callers are request handlers/middleware that already passed the master gate
+ * (`requireSelectionListsFlag`); the seed library calls it with `{ organizationId }`. OFF is the
+ * fail-safe: no client, any client error, or an unreachable Unleash yields false, and the service
+ * behaves exactly as 4.0.0. Never throws. NEVER a substitute for a Permit check.
+ */
+export async function isSharedListsEnabled(
+  ctx?: Partial<FlagContext>
+): Promise<boolean> {
+  const client = resolveClient()
+  if (!client) return false // fail-safe: release default OFF
+  try {
+    return await client.getBooleanValue(FLAGS.SELECTION_LISTS_SHARED_LISTS, false, buildFlagContext(ctx))
+  } catch (err) {
+    logger.warn({ err, flag: FLAGS.SELECTION_LISTS_SHARED_LISTS }, 'flag evaluation failed — using fail-safe default OFF')
     return false
   }
 }

@@ -4,7 +4,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { I18nProvider } from '@fuzefront/i18n'
-import { initBrowserTelemetry } from '@fuzefront/telemetry/browser'
+import { initBrowserRum, initBrowserTelemetry } from '@fuzefront/telemetry/browser'
 import { AppProvider } from './lib/shared'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
@@ -29,6 +29,17 @@ import { registerServiceWorker } from './registerServiceWorker'
 initBrowserTelemetry({
   serviceName: 'fuzefront-frontend',
   otlpEndpoint: import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT,
+})
+
+// Real-user monitoring (observability-standard P31–P37): Core Web Vitals,
+// navigation/resource timing, uncaught errors + unhandled rejections and
+// deliberate client logs, beaconed to the SAME-ORIGIN `/api/v1/rum` ingest
+// route tagged with trace_id / session id / release. Rate-limited, sampled and
+// redacted client-side; fails open, so it can never break the shell.
+initBrowserRum({
+  serviceName: 'fuzefront-frontend',
+  release: import.meta.env.VITE_APP_RELEASE || import.meta.env.MODE,
+  sampleRate: Number(import.meta.env.VITE_RUM_SAMPLE_RATE ?? 1),
 })
 
 // Enhanced console logging for debugging

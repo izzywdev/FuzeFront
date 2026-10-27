@@ -33,6 +33,8 @@ describe('classifyAuthError', () => {
     expect(classifyAuthError(httpErr(400, 'EXPIRED'))).toBe('expired')
     expect(classifyAuthError(httpErr(400, 'INVALID_CODE'))).toBe('expired')
     expect(classifyAuthError(httpErr(503, 'PROVIDER_UNAVAILABLE'))).toBe('unavailable')
+    expect(classifyAuthError(httpErr(400, 'CAPTCHA_FAILED'))).toBe('captcha')
+    expect(classifyAuthError({ status: 400, code: 'CAPTCHA_FAILED' }, { malformedIsPolicy: true })).toBe('captcha')
     expect(classifyAuthError(httpErr(400, 'MALFORMED'))).toBe('unknown')
     expect(classifyAuthError(httpErr(400, 'MALFORMED'), { badRequestIsExpired: true })).toBe('expired')
     expect(classifyAuthError(httpErr(400, 'TOKEN_EXPIRED'))).toBe('expired')
@@ -75,7 +77,8 @@ describe('PasswordStrengthMeter', () => {
     const meter = container.querySelector('[data-pwmeter]')!
     expect(meter).toHaveAttribute('data-strength', 'good')
     expect(screen.getByText('Good')).toBeInTheDocument()
-    expect(container.querySelectorAll('.fzf-pwmeter__bar--on')).toHaveLength(3)
+    expect(container.querySelectorAll('[data-on="true"]')).toHaveLength(3)
+    expect(meter).toHaveAttribute('data-state', 'pw-good')
     rerender(<PasswordStrengthMeter value="abc" />)
     expect(container.querySelector('[data-pwmeter]')).toHaveAttribute('data-strength', 'weak')
   })

@@ -4,6 +4,10 @@ import React, { useEffect, useRef } from "react";
  * Generic accessible modal shell — backdrop + centered dialog card with the
  * fuse-seam top bar. Focus-traps Tab/Shift+Tab inside; closes on Escape and
  * backdrop click.
+ *
+ * Any other prop (`data-*`, `aria-describedby`, `aria-busy`, `aria-label`, `id`…)
+ * is forwarded to the `role="dialog"` element so callers can hang test hooks and
+ * extra ARIA on the dialog itself. `role`, `aria-modal` and `tabIndex` are fixed.
  */
 export function Modal({
   open,
@@ -12,6 +16,7 @@ export function Modal({
   children,
   size = "md",
   style,
+  ...rest
 }) {
   const dialogRef = useRef(null);
   const titleId = useRef(
@@ -93,10 +98,11 @@ export function Modal({
     >
       {/* Dialog card */}
       <div
+        {...rest}
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={title ? titleId : undefined}
+        aria-labelledby={title ? titleId : rest["aria-labelledby"]}
         tabIndex={-1}
         style={{
           position: "relative",
@@ -112,7 +118,10 @@ export function Modal({
           flexDirection: "column",
           ...style,
         }}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          rest.onClick?.(e);
+          e.stopPropagation();
+        }}
       >
         {/* Seam top bar — 2px gradient matching .auth-form seam pattern */}
         <div

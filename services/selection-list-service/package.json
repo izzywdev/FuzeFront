@@ -1,6 +1,6 @@
 {
   "name": "selection-list-service",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "Org-scoped, translatable selection lists microservice for FuzeFront",
   "private": true,
   "main": "dist/index.js",
@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "dev": "nodemon --exec ts-node src/index.ts",
     "test": "jest",
-    "migrate": "ts-node src/db/migrate.ts"
+    "migrate": "ts-node src/db/migrate.ts",
+    "rollout": "ts-node src/rollout/cli.ts"
   },
   "engines": {
     "node": ">=24.0.0",

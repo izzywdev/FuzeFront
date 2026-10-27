@@ -20,6 +20,16 @@
 // but never asks the Security API fails its row. A future route cannot silently
 // miss a check.
 
+// The platform-org suspension reads (a tiny projection query, see lib/sharedLists.suspendedOrgs) are out of scope
+// for this mocked 4.0.0 suite: nothing is suspended. Their real behaviour is pinned against Postgres in
+// shared-lists.platform-org-guard / suspension-race / suspension-owner.
+jest.mock('../src/lib/sharedLists', () => ({
+  ...jest.requireActual('../src/lib/sharedLists'),
+  suspendedOrgs: async () => [],
+  suspendedOrgsFor: async () => [],
+  orgWritesSuspended: async () => false,
+}));
+
 jest.mock('../src/db', () => {
   const chain: any = {};
   chain.where = () => chain;
@@ -44,6 +54,7 @@ import jwt from 'jsonwebtoken';
 import type { AuthzClient } from '@fuzefront/auth';
 import { createApp } from '../src/app';
 import { setFlagClient } from '../src/flags';
+import { allFlagsExceptShared, allFlagsOn } from './helpers/flagClient';
 import { db } from '../src/db';
 import {
   _setAuthzClientForTesting,
@@ -52,15 +63,16 @@ import {
   SELECTION_LIST_CATALOG_RESOURCE,
   SELECTION_LIST_RESOURCE,
 } from '../src/middleware/authz';
+import { usr, org, permitKey } from './helpers/ids';
 
 const ENV_VAR = 'FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED';
 const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-authz-matrix';
 
-const USER = 'usr_01testuserid0000000000000';
-const ORG = 'org_01testorgid00000000000000';
+const USER = usr('testuser');
+const ORG = org('testorg');
 const LIST = 'front_sl_01testlistid000000000000';
 const ITEM = 'front_sli_01testitemid00000000000';
-const OTHER_USER = 'usr_01otheruserid000000000000';
+const OTHER_USER = usr('otheruser');
 
 const CATALOG = SELECTION_LIST_CATALOG_RESOURCE;
 const LIST_RES = SELECTION_LIST_RESOURCE;
@@ -85,6 +97,8 @@ interface Row {
   body?: unknown;
   /** ordered SelectionList* checks the route must ask for */
   checks: Expected[];
+  /** run with the shared-lists release flag ON (the route does not exist while it is OFF) */
+  shared?: true;
 }
 
 const onList = (action: string): Expected[] => [{ type: LIST_RES, key: LIST, action }];
@@ -109,6 +123,8 @@ const MATRIX: Row[] = [
   },
   { route: 'DELETE /v1/selection-lists/:listId', checks: onList('delete') },
   { route: 'POST /v1/selection-lists/:listId/archive', checks: onList('delete') },
+  // 4.1.0 fork (shared-lists flag ON only: while OFF it is a 404 and asks nothing, pinned below)
+  { route: 'POST /v1/selection-lists/:listId/fork', body: {}, shared: true, checks: [{ type: CATALOG, action: 'create' }] },
 
   { route: 'GET /v1/selection-lists/:listId/items', checks: onList('read') },
   { route: 'POST /v1/selection-lists/:listId/items', body: { code: 'c', label: 'L' }, checks: onList('add_value') },
@@ -181,7 +197,7 @@ afterAll(() => {
 beforeEach(() => {
   asked.length = 0;
   decide = () => true;
-  setFlagClient({ getBooleanValue: async () => true });
+  setFlagClient({ getBooleanValue: allFlagsExceptShared });
   _setAuthzClientForTesting(recordingClient());
   (db.raw as unknown as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
   (db.transaction as unknown as jest.Mock).mockClear();
@@ -200,6 +216,7 @@ const concrete = (route: string): { method: string; url: string } => {
 };
 
 async function fire(row: Row): Promise<request.Response> {
+  setFlagClient({ getBooleanValue: row.shared ? allFlagsOn : allFlagsExceptShared });
   const { method, url } = concrete(row.route);
   let req: request.Test = (request(app) as any)[method](url).set(bearerHeader());
   if (row.query) req = req.query(row.query);
@@ -253,8 +270,8 @@ describe('authz matrix — every mounted /v1 route is covered, and asks the righ
       );
       // Every check is made for the CALLER in the caller's tenant.
       for (const q of asked.filter((x) => x.resource.type === LIST_RES || x.resource.type === CATALOG)) {
-        expect(q.subject).toBe(USER);
-        expect(q.tenant).toBe(ORG);
+        expect(q.subject).toBe(permitKey(USER)); // the Security API is sent Permit's key (bare UUID)
+        expect(q.tenant).toBe(permitKey(ORG));
       }
     },
   );
@@ -266,11 +283,11 @@ describe('authz matrix — every mounted /v1 route is covered, and asks the righ
       for (const q of asked) {
         if (q.resource.type === CATALOG) {
           expect(q.resource).toEqual({ type: CATALOG }); // no key, ever
-          expect(['list', 'create', 'read_quota', 'resolve']).toContain(q.action);
+          expect(['list', 'create', 'read_quota', 'resolve', 'read_shared', 'publish_platform']).toContain(q.action);
         }
         if (q.resource.type === LIST_RES) {
           expect(q.resource.key).toBe(LIST);
-          expect(['list', 'create', 'read_quota', 'resolve']).not.toContain(q.action);
+          expect(['list', 'create', 'read_quota', 'resolve', 'read_shared', 'publish_platform']).not.toContain(q.action);
         }
       }
     }
@@ -377,8 +394,8 @@ describe('GET /v1/selection-lists — the catalog `list` action only authorizes 
     const kept = await filterReadable(req, [{ id: A }, { id: B }]);
     expect(kept.map((r) => r.id)).toEqual([A, B]);
     expect((client.bulkCheck as jest.Mock).mock.calls[0][0]).toEqual([
-      { subject: USER, tenant: ORG, resource: { type: LIST_RES, key: A }, action: 'read' },
-      { subject: USER, tenant: ORG, resource: { type: LIST_RES, key: B }, action: 'read' },
+      { subject: permitKey(USER), tenant: permitKey(ORG), resource: { type: LIST_RES, key: A }, action: 'read' },
+      { subject: permitKey(USER), tenant: permitKey(ORG), resource: { type: LIST_RES, key: B }, action: 'read' },
     ]);
   });
 });
