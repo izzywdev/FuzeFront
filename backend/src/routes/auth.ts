@@ -672,9 +672,19 @@ router.post('/logout', authenticateToken, async (req: any, res) => {
   }
 })
 
+// Authenticated session mutation — throttle to block brute-force/abuse of the
+// membership check while leaving normal user-driven context switches unaffected.
+const sessionActiveOrgRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again later.' },
+})
+
 // Persist the user-selected context in the authenticated server session so
 // connector delegation never trusts a browser-supplied organization id.
-router.patch('/session/active-organization', authenticateToken, async (req: any, res) => {
+router.patch('/session/active-organization', sessionActiveOrgRateLimiter, authenticateToken, async (req: any, res) => {
   const supplied = req.body?.organizationId
   if (supplied !== null && typeof supplied !== 'string') {
     return res.status(400).json({ error: 'organizationId must be a string or null' })

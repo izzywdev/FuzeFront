@@ -87,6 +87,48 @@ paths:
           description: Session revoked
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /auth/session/active-organization:
+    patch:
+      tags: [auth]
+      summary: Set the active organization on the authenticated session
+      operationId: setSessionActiveOrganization
+      description: >-
+        Persists the user-selected organization context on the server-side
+        session so connector delegation never trusts a browser-supplied
+        organization id. The caller must be an active member of the supplied
+        organization; `null` clears the context (personal scope).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                organizationId:
+                  type: string
+                  nullable: true
+                  description: Organization id to make active, or null for personal scope.
+              required: [organizationId]
+      responses:
+        '200':
+          description: Active organization persisted on the session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  activeOrganizationId:
+                    type: string
+                    nullable: true
+                required: [activeOrganizationId]
+        '400':
+          description: Invalid or missing organization identifier
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is not an active member of the organization
   /auth/oidc/login:
     get:
       tags: [auth]
