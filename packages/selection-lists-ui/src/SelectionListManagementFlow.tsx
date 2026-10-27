@@ -28,6 +28,15 @@ import {
   unwrapCursor,
   probeReorderPermission,
 } from './api'
+import { useSharedLists } from './shared-lists/core'
+import {
+  SharedListDetail,
+  SharedListIndexPanel,
+} from './shared-lists/browse'
+import {
+  ForkProvenanceBoundary,
+  useForkProvenanceContext,
+} from './shared-lists/provenance'
 
 // ── Regex for the key validation: ^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$ ─────────
 const KEY_REGEX = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/
@@ -550,6 +559,9 @@ function SortableItemList({
   onReordered: (newOrder: SelectionListItem[]) => void
   onReloadRequested: () => void
 }) {
+  // Fork provenance (SL9, flag ON and the list is a fork): `null` otherwise, and
+  // a row then carries nothing extra.
+  const provenance = useForkProvenanceContext()
   const [orderedItems, setOrderedItems] = useState(items)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -672,6 +684,7 @@ function SortableItemList({
           key={item.id}
           data-item={item.id}
           data-archived={item.status === 'archived' ? 'true' : undefined}
+          {...provenance?.originAttributes(item)}
           data-dragging={dragIdx === idx ? 'true' : undefined}
           data-drop-target={dragIdx !== null && dragIdx !== idx ? 'true' : undefined}
           style={{
@@ -716,6 +729,9 @@ function SortableItemList({
                 Archived
               </span>
             )}
+            {provenance && (
+              <span style={{ display: 'block', marginBlockStart: 'var(--space-1)' }}>{provenance.copiedFrom(item)}</span>
+            )}
           </div>
           {/* Actions */}
           {item.status !== 'archived' && (
@@ -741,14 +757,18 @@ function SortableItemList({
 }
 
 // ── SelectionListDetail (frames 03, 04, 05) ────────────────────────────────────
-function SelectionListDetail({
+// `headerExtra` is the shared-lists marker row (visibility / fork / your access),
+// passed only while the release flag is ON and the list is editable.
+function LegacyListDetail({
   listId,
   onNavigateToTranslations,
   onNavigateToAccess,
+  headerExtra,
 }: {
   listId: string
   onNavigateToTranslations: () => void
   onNavigateToAccess: () => void
+  headerExtra?: React.ReactNode
 }) {
   const [list, setList] = useState<SelectionList | null>(null)
   const [items, setItems] = useState<SelectionListItem[]>([])
@@ -839,8 +859,10 @@ function SelectionListDetail({
         <h2 style={{ fontSize: 'var(--text-xl)' }}>{list?.name ?? listId}</h2>
         {list?.is_machine && <span data-machine="true" style={s.badge}>M</span>}
         {list?.status === 'archived' && <span data-status="archived" style={{ ...s.badge, background: 'var(--bg-muted)' }}>Archived</span>}
+        {headerExtra}
       </div>
 
+      <ForkProvenanceBoundary listId={listId} onChangeVisibility={onNavigateToAccess} onArchived={loadData}>
       {/* Tab strip */}
       <div data-tabs="list-detail" style={{ display: 'flex', gap: 'var(--space-2)', borderBottom: '2px solid var(--border-color)', marginBottom: 'var(--space-4)' }}>
         <button data-tab="translations" style={{ ...s.btnGhost, borderBottom: '2px solid var(--accent)', borderRadius: 0 }} onClick={onNavigateToTranslations}>
@@ -896,6 +918,7 @@ function SelectionListDetail({
           />
         )}
       </div>
+      </ForkProvenanceBoundary>
 
       {/* Value modal */}
       {valueModal && (
@@ -940,7 +963,7 @@ function SelectionListDetail({
 }
 
 // ── SelectionListIndex (frame 01) ─────────────────────────────────────────────
-function SelectionListIndex({
+function LegacySelectionListIndex({
   onSelectList,
   onNewList,
 }: {
@@ -1112,6 +1135,107 @@ function SelectionListIndex({
         newListDisabled={ctaDisabled}
       />
     </div>
+  )
+}
+
+// ── Shared-lists variants (flag `fuzefront.selection-lists.shared-lists` ON) ───
+// The approved 4.0.0 index / detail above are untouched; the orchestrator mounts
+// these instead ONLY while the release flag is ON (behaviour lives in
+// `./shared-lists/browse`).
+const INDEX_PATH = '/settings/selection-lists'
+const listPath = (list: { id: string }) => `${INDEX_PATH}/${list.id}`
+
+function SharedSelectionListIndex({
+  onSelectList,
+  onNewList,
+}: {
+  onSelectList: (list: { id: string }) => void
+  onNewList: () => void
+}) {
+  const [quota, setQuota] = useState<QuotaStatus | null>(null)
+  const [quotaLoading, setQuotaLoading] = useState(true)
+  const [quotaError, setQuotaError] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    getQuota().then(
+      q => {
+        if (!live) return
+        setQuota(q)
+        setQuotaLoading(false)
+      },
+      () => {
+        if (!live) return
+        setQuotaError(true)
+        setQuotaLoading(false)
+      }
+    )
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const atLimit = quota?.scopes.some(sc => sc.current !== null && sc.current >= sc.limit) ?? false
+  // Fail-open: if the quota read failed, never disable the CTA
+  const ctaDisabled = !quotaError && atLimit
+
+  return (
+    <div data-frame="01-list-index" style={s.frame}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+        <h2 style={{ fontSize: 'var(--text-xl)' }}>Selection Lists</h2>
+        <button
+          data-action="new-list"
+          disabled={ctaDisabled}
+          data-quota-state={ctaDisabled ? 'at-limit' : undefined}
+          data-tooltip={ctaDisabled ? 'quota' : undefined}
+          style={{ ...s.btn, opacity: ctaDisabled ? 0.6 : 1 }}
+          onClick={onNewList}
+        >
+          New list
+        </button>
+      </div>
+      <SharedListIndexPanel
+        hrefForList={listPath}
+        onOpenList={onSelectList}
+        onNewList={onNewList}
+        newListDisabled={ctaDisabled}
+      />
+      <QuotaPanel
+        quota={quota}
+        quotaLoading={quotaLoading}
+        quotaError={quotaError}
+        newListDisabled={ctaDisabled}
+      />
+    </div>
+  )
+}
+
+function SelectionListIndex(props: {
+  onSelectList: (list: { id: string }) => void
+  onNewList: () => void
+}) {
+  const { enabled } = useSharedLists()
+  return enabled ? <SharedSelectionListIndex {...props} /> : <LegacySelectionListIndex {...props} />
+}
+
+function SelectionListDetail(props: {
+  listId: string
+  onNavigateToTranslations: () => void
+  onNavigateToAccess: () => void
+}) {
+  const { enabled } = useSharedLists()
+  const navigate = useNavigate()
+  if (!enabled) return <LegacyListDetail {...props} />
+  return (
+    <SharedListDetail
+      listId={props.listId}
+      renderEditor={({ header }) => <LegacyListDetail {...props} headerExtra={header} />}
+      hrefForList={listPath}
+      onOpenList={list => navigate(listPath(list))}
+      onOpenTranslations={props.onNavigateToTranslations}
+      onBackToIndex={() => navigate(INDEX_PATH)}
+      indexHref={INDEX_PATH}
+    />
   )
 }
 
