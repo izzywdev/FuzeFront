@@ -113,6 +113,9 @@ export async function handleOrgDeleted(
           // 8. Seed ledger (plan section 13: the HARD purge deletes the org's ledger rows; the soft
           //    cascade keeps them so a restore does not re-seed). Independent of whether any list remains.
           await trx('selection_list_seed_ledger').whereIn('organization_id', orgIds).delete();
+          // 9. Rollout markers (selection_list_rollout_marks, migration 14): same rule as the seed ledger - the hard purge
+          //    deletes them, the soft cascade keeps them so that a restore does not re-run a one-shot rollout job.
+          await trx('selection_list_rollout_marks').whereIn('organization_id', orgIds).delete();
           return listIds.length;
         }),
       { organizationId },

@@ -579,6 +579,16 @@ Order matters (fail-closed authz): **Permit schema → service → flag → data
 Existing app packs (`seed.requested`) keep seeding `private` until each app opts
 into `visibility: org` in a new pack version.
 
+**Implemented (task 10).** Steps 4 and 6, and the pre-flag duplicate audit and reconcile, are idempotent,
+flag-independent CLI jobs in the service image (`services/selection-list-service/src/rollout/`; operator procedure,
+dry-run output and rollback for each in `docs/runbooks/selection-lists-rollout.md` §10.0–10.5):
+`visibility-org` (step 4), `retro-forks` (step 6), `audit` and `reconcile-duplicates`. Two points the design text above
+leaves open, settled by the code: (1) step 6 converts a copy only when its **current key equals the common list's key** and
+its seed provenance matches — the `list.forked` contract says a fork keeps its source key, so a copy a user renamed cannot be
+announced as a fork and is reported instead; (2) step 6 emits a synthetic `selection-lists.list.forked` (with the `itemMap` of
+code-matched items) for each converted copy, so read models learn the provenance. Step 5 (publishing the common lists) and the
+pack-version bump of step 4 are **not** part of these jobs.
+
 ## 10. Implementation wave — ordered task list
 
 Every stream gates on this contract PR being **merged**.
