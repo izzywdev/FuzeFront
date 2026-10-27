@@ -586,39 +586,6 @@ const DEFAULT_HANDLERS: ApiHandler[] = [
   }),
 ]
 
-/**
- * The 4.0.0 WRITABLE translation workbench's reads — NOT the service. Its client (`getLocaleIndex` / `getLocaleEditor`,
- * packages/selection-lists-ui/src/api.ts) reads `GET …/translations` as `{ locales: [{ locale, is_source, … }] }` and
- * `GET …/translations/{locale}` as `{ locale, translations: [...] }`. The service answers a top-level array for the first
- * (openapi 4.2.0 `TranslationLocaleStatus`) and has no route for the second, so that workbench cannot load against it (a
- * 4.0.0 client/service gap, reported in docs/planning/selection-lists-shared-ui-red-specs.md).
- *
- * The fork specs that drive the 4.0.0 workbench to its refused Save (frame 04) need the page up, so they opt in with
- * `api.use(...LEGACY_WORKBENCH_READS)`. The shared-lists read-only views never do: they read the real shapes (the defaults).
- */
-export const LEGACY_WORKBENCH_READS: ApiHandler[] = [
-  on('GET', /^\/v1\/selection-lists\/[^/]+\/translations$/, () =>
-    json(200, {
-      locales: [
-        { locale: 'en', is_source: true, translated: 5, total: 5, machine_count: 0, stale_count: 0 },
-        { locale: 'fr', is_source: false, translated: 5, total: 5, machine_count: 2, stale_count: 0 },
-        { locale: 'he', is_source: false, translated: 5, total: 5, machine_count: 0, stale_count: 0 },
-      ],
-    }),
-  ),
-  on('GET', /^\/v1\/selection-lists\/[^/]+\/translations\/[a-z-]+$/, call => {
-    const locale = call.path.split('/')[5]
-    return json(200, {
-      locale,
-      translations: [
-        { item_id: COMMON_ITEM_IDS.low, locale, label: locale === 'he' ? 'נמוכה' : 'Basse', is_machine: false, source_hash: 'h1', source_hash_current: 'h1' },
-        { item_id: COMMON_ITEM_IDS.normal, locale, label: locale === 'he' ? 'רגילה' : 'Normale', is_machine: true, source_hash: 'h2', source_hash_current: 'h2' },
-        { item_id: COMMON_ITEM_IDS.high, locale, label: locale === 'he' ? 'גבוהה' : 'Haute', is_machine: true, source_hash: 'h3', source_hash_current: 'h3' },
-      ],
-    })
-  }),
-]
-
 export interface Api {
   readonly world: World
   readonly calls: ApiCall[]
@@ -739,13 +706,9 @@ export interface ExpectedRefusal {
  * Every `expectRuntimeClean` call tolerates exactly these (and nothing else) unless it passes its own `expected`.
  */
 export const EXPECTED_REFUSALS: readonly ExpectedRefusal[] = [
-  {
-    // The 4.0.0 value editor probes reorder permission with `HEAD …/items/reorder` (`probeReorderPermission`). HEAD is not an
-    // operation of the contract (reorder is PUT), so the service — like the mock — answers 404, and Chromium logs it.
-    name: '4.0.0 reorder-permission probe (HEAD) answers 404',
-    status: 404,
-    path: /\/v1\/selection-lists\/[^/]+\/items\/reorder$/,
-  },
+  // Empty on purpose: the quota-403 entry went with the real-envelope default (finding 5) and the reorder-probe entry
+  // (`HEAD …/items/reorder` -> 404, finding 10) went when the value editor stopped probing. A new entry needs a named,
+  // contract-explained refusal — never a way to silence a real error.
 ]
 
 /** The console errors that are NOT an expected refusal (what `expectRuntimeClean` asserts to be empty). */

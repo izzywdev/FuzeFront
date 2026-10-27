@@ -81,6 +81,29 @@ describe('list detail with the provenance boundary mounted', () => {
     expect(row(FORK_ITEM.blocker)).toHaveTextContent('added in this fork')
   })
 
+  it('a fork\'s value editor is a table (frame 07): "Copied from" is a column, each value a row of cells', async () => {
+    mockApi()
+    renderDetail(true)
+    const table = await screen.findByRole('table', { name: 'Values' })
+    expect(within(table).getByRole('columnheader', { name: 'Value' })).toBeVisible()
+    expect(within(table).getByRole('columnheader', { name: 'Copied from' })).toBeVisible()
+    await waitFor(() => expect(row(FORK_ITEM.low)).toHaveTextContent('common “Low”'))
+    const low = row(FORK_ITEM.low)
+    expect(low).toHaveAttribute('role', 'row')
+    const cell = low.querySelector('[data-copied-from]')!.closest('[role="cell"]') as HTMLElement
+    expect(cell).not.toBeNull()
+    expect(cell).toHaveTextContent('common “Low”')
+    // the label is its own cell, not part of the clickable value (clicking it must not open the editor)
+    expect(cell.closest('[role="button"]')).toBeNull()
+    // a row's direct children are cells; drag-reorder and the value button are still there
+    for (const child of Array.from(low.children)) expect(child).toHaveAttribute('role', 'cell')
+    expect(low.querySelector('[data-drag-handle]')).not.toBeNull()
+    expect(within(low).getAllByRole('button').length).toBeGreaterThanOrEqual(3)
+    // editing a value still works from the row
+    await userEvent.click(within(low).getAllByRole('button').find(b => /Low/.test(b.textContent ?? '') && !b.hasAttribute('data-drag-handle'))!)
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
   it('"Change who can see it" leads to the Access tab', async () => {
     mockApi()
     renderDetail(true)
@@ -112,6 +135,7 @@ describe('list detail with the provenance boundary mounted', () => {
     expect(document.querySelector('[data-panel="fork-provenance"]')).toBeNull()
     expect(document.querySelector('[data-origin-item]')).toBeNull()
     expect(document.querySelector('[data-copied-from]')).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
     expect(callsOf(fetchMock).some(c => c[0].includes('front_sl_01jf8k2m3n4p5q6r7s8t9v0w1x'))).toBe(false)
   })
 
@@ -122,6 +146,7 @@ describe('list detail with the provenance boundary mounted', () => {
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(3))
     expect(document.querySelector('[data-panel="fork-provenance"]')).toBeNull()
     expect(document.querySelector('[data-origin-item]')).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
     expect(within(document.body).queryByRole('button', { name: /revert|archive fork/i })).toBeNull()
   })
 })
