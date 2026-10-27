@@ -31,7 +31,8 @@ const CSS = `
     }
     .fz-sl-head { flex-direction: column; align-items: stretch; }
     .fz-sl-cta { display: flex; inline-size: 100%; }
-    .fz-sl-cta > * { inline-size: 100%; min-block-size: var(--touch-target); }
+    /* !important: the design system's Button sets an inline \`width: auto\`, which an author rule cannot beat. */
+    .fz-sl-cta > * { inline-size: 100% !important; min-block-size: var(--touch-target); }
     .fz-sl-link, .fz-sl-tab { min-block-size: var(--touch-target); display: inline-flex; align-items: center; }
     .fz-sl-table th, .fz-sl-table td { padding-inline: var(--space-2); }
   }
