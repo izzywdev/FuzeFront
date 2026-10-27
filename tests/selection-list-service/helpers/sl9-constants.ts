@@ -25,3 +25,14 @@ export const DECOY_PLATFORM_ORG_ID = testOrg('decoyplatform');
 export const UNCONFIRMED_PLATFORM_ORG_ID = testOrg('unconfirmedplat');
 /** Configured by the "deactivated" instance; projected as type platform but is_active=false until a test activates it. */
 export const DEACTIVATED_PLATFORM_ORG_ID = testOrg('deactivatedplat');
+
+// ---- platform-org SUSPENSION fixtures (contract/shared-lists-platform-suspension.test.ts) ----
+
+/**
+ * The platform org of the two dedicated SUSPENSION instances (CI ports 3016 flags ON / 3017 shared-lists flag OFF). The suite
+ * deactivates and reactivates it, so it must be NOBODY else's platform org: suspending the main one would fail every
+ * parallel suite's writes. The suite confirms it in the projection through the identity.org.created handler (no SQL back
+ * door) and tells the stand-in Security API publish_platform is effective in its tenant. A literal in ci.yml (the service
+ * refuses any value that is not a canonical TypeID), pinned by contract/harness-ids.test.ts.
+ */
+export const SUSPENDABLE_PLATFORM_ORG_ID = testOrg('suspendableplat');

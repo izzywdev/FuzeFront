@@ -70,6 +70,30 @@ class SelectionListApiError(Exception):
         )
 
 
+MAX_EFFECTIVE_LOOKUP_PAGES = 10
+"""
+Upper bound on pages ``get_effective_list`` walks. The service paginates BEFORE
+it drops rows the caller cannot read, so a key lookup can meet a few empty,
+non-terminal pages; this stops a misbehaving service from being walked forever.
+Same bound as the TS client and ``@fuzeone/selection-lists-ui``.
+"""
+
+
+class EffectiveLookupIncompleteError(Exception):
+    """
+    Raised by ``get_effective_list`` when it followed
+    ``MAX_EFFECTIVE_LOOKUP_PAGES`` empty, non-terminal pages without finding the
+    list or reaching the end. Never returned as ``None``: an exhausted walk is an
+    unknown answer, not "no list".
+    """
+
+    incomplete = True
+
+    def __init__(self, pages: int) -> None:
+        super().__init__(f"Effective list lookup incomplete after {pages} pages")
+        self.pages = pages
+
+
 def _code_from_status(status: int) -> str:
     """
     Best-effort code when a response carries no parseable contract body.
