@@ -151,6 +151,29 @@ export const DEFAULT_PERMIT_ROLE = 'viewer'
  */
 export const PERMIT_TENANT_ROLE_CHAIN = ['viewer', 'editor', 'admin'] as const
 
+/**
+ * Rank of each DB membership role, highest number = most authority. Used to
+ * collapse multiple `organization_memberships` rows for the SAME org to a
+ * single "highest effective role" (FFRNT-378 — the org switcher listed an org
+ * twice when a user held two membership rows for it, e.g. viewer + owner).
+ *
+ * Distinct from MEMBERSHIP_TO_PERMIT_ROLE, which is lossy at the top (owner and
+ * admin both map to Permit `admin`, so it cannot break an owner/admin tie);
+ * here `owner` strictly outranks `admin`. `developer` is the dev-portal-only
+ * marker (orthogonal to org authority) and ranks lowest so a real org role
+ * always wins the collapse.
+ */
+export const MEMBERSHIP_ROLE_RANK: Record<
+  'owner' | 'admin' | 'member' | 'viewer' | 'developer',
+  number
+> = {
+  owner: 5,
+  admin: 4,
+  member: 3,
+  viewer: 2,
+  developer: 1,
+}
+
 export const permitSchema: PermitSchema = {
   resources: [
     {

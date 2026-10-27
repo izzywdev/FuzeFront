@@ -55,15 +55,19 @@ Lists carry `visibility` (`private` / `org` / `platform`), `forked_from` and a
 caller-relative `editable` hint; items carry `origin_item_id`. `org` lists are
 pickable by every member of their org and `platform` lists are common lists
 pickable by every org — read-only without an instance role. The service
-implements this behind the default-OFF flag
-`fuzefront.selection-lists.shared-lists` (see
-`docs/planning/selection-lists-shared-and-fork.md`).
+implements all of it (design record:
+`docs/planning/selection-lists-shared-and-fork.md`), **dark behind the release
+flag `fuzefront.selection-lists.shared-lists`** (default OFF; it also needs
+`fuzefront.selection-lists.service`). While the flag is OFF `include_shared` /
+`visibility` are ignored, `forkList` answers `404`, a non-`private` `visibility`
+on create/PATCH is a `400`, and every list reads `visibility: 'private'`,
+`forked_from: null`, items `origin_item_id: null`, with no `editable`. The
+shared-lists UI is not built yet.
 
-All four fields are **optional** in the 4.1.0 types (`visibility?`,
-`forked_from?`, `editable?`, `origin_item_id?`) because the running service
-omits `editable` while `fuzefront.selection-lists.shared-lists` is OFF (and a
-pre-4.1.0 service omits all four).
-Absent means the 4.0.0 state: `visibility` = `'private'`, `forked_from` /
+All four fields are still typed **optional** in the 4.1.0 types (`visibility?`,
+`forked_from?`, `editable?`, `origin_item_id?`) because the spec types them
+optional (the service always emits the first, second and fourth, and `editable`
+while the flag is ON). Absent means the 4.0.0 state: `visibility` = `'private'`, `forked_from` /
 `origin_item_id` = `null`, `editable` = unknown (test `editable === false`, never
 `!editable`). A later contract MINOR tightens them to required.
 
@@ -89,7 +93,25 @@ any listing you walk by hand: a short or empty page is not the end — only
 `hasMore === false` is (`paginate` already does this).
 
 `getLists({ include_shared: true })` adds lists readable through visibility
-(the default is unchanged). `resolveIds` resolves common-list ids in every org
+(the default is unchanged).
+
+**Pages can be shorter than `limit`, even empty, and still not be the last.**
+The service filters unreadable lists *after* it paginates, so follow
+`page.nextCursor` until `page.hasMore` is `false` (`paginate()` does) and never
+stop on a short or empty page. `getEffectiveList` asks for `limit: 1`, so the
+first row in database order for the key can be one the caller cannot read (for
+example a colleague's `private` fork) while the common list is on the next page;
+since 2.2.0 it follows the cursor for that reason (above). On 2.1.x it returned
+`null` there — look the key up with
+`paginate((p) => client.getLists({ ...p, key, include_shared: true }))` and take
+the first item instead.
+
+`forkList` answers `201` (`created: true`) or `200` (the org already holds a
+fork you can read); a fork you cannot read is `409` `reason: 'fork_exists'`,
+your own org's list is `409` `reason: 'fork_not_applicable'`, a key already used
+by a different list is a plain `409`, over 5000 items is `400`, and quota is
+`403` `QUOTA_EXCEEDED`. A `platform` list is never demoted: `409`
+`reason: 'visibility_locked'`. `resolveIds` resolves common-list ids in every org
 and, where the org holds an `org`-visible fork, answers from the fork item with
 `effective_item_id` set.
 
@@ -113,16 +135,23 @@ yours to render; the helper answers only the revision question.
 
 ## Install
 
-`selection-list-client` is a root `package.json` workspace, so `packages-publish`
-publishes it whenever its version changes. GitHub Packages requires the owner's
-scope, so it is published as **`@izzywdev/fuzeone-selection-list-client`** (the
-source tree keeps the canonical `@fuzeone/selection-list-client`; the rename is
-`scripts/publish-packages.mjs`'s scope alias). To try an unpublished build:
+`selection-list-client` is a root `package.json` `workspaces` entry, which is the
+one list `scripts/publish-packages.mjs` reads, so `packages-publish.yml` builds
+and publishes it to GitHub Packages as
+`@izzywdev/fuzeone-selection-list-client` (the owner-scope alias of this
+canonical name) on a version bump merged to `master`. Whether a given version is
+in the registry is not something this repo can show; check it with
+`gh api users/izzywdev/packages/npm/fuzeone-selection-list-client/versions --jq '[.[].name]'`.
+Inside this repo no mapping is needed (it links from the tree). To test an
+unpublished build:
 
 ```bash
 cd selection-list-client && npm install && npm run build && npm pack
-npm install /path/to/fuzeone-selection-list-client-<version>.tgz
+npm install /path/to/fuzeone-selection-list-client-2.2.0.tgz
 ```
+
+See `docs/guides/SELECTION_LIST_SERVICE.md` for the registry `.npmrc` and the
+alias.
 
 ## Scripts
 
