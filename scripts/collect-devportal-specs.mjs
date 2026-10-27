@@ -25,6 +25,7 @@ const repoRoot = join(__dirname, '..');
 
 // repo: always 'fuzefront' for specs harvested from this checkout.
 const SOURCES = [
+  { service: 'fuzepicker', specPath: 'services/fuzepicker/openapi.yaml' },
   { service: 'app-registry-service', specPath: 'services/app-registry-service/openapi.yaml' },
   { service: 'billing-service', specPath: 'services/billing-service/openapi.yaml' },
   { service: 'chat-service', specPath: 'services/chat-service/openapi.yaml' },
@@ -35,6 +36,7 @@ const SOURCES = [
   { service: 'portal-service', specPath: 'services/portal-service/openapi.yaml' },
   { service: 'selection-list-service', specPath: 'services/selection-list-service/openapi.yaml' },
   { service: 'sms-service', specPath: 'services/sms-service/openapi.yaml' },
+  { service: 'email-service', specPath: 'services/email-service/openapi.yaml' },
   { service: 'devportal-service', specPath: 'services/devportal-service/openapi.yaml' },
   { service: 'auth', specPath: 'packages/auth/openapi.yaml' },
   { service: 'security', specPath: 'packages/security/openapi.yaml' },

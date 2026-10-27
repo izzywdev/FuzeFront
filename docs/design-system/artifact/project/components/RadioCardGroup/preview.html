@@ -1,0 +1,21 @@
+<!-- @dsCard group="Forms" height=292 static -->
+<style>@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");</style>
+<style>
+  body { margin: 0; padding: var(--space-6); background: var(--bg-primary); font-family: var(--font-sans); }
+  .tag { display: inline-block; margin-bottom: var(--space-3); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0; color: var(--accent-color); background: var(--accent-soft); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+  pre { margin: 0; padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: auto; }
+  code { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); white-space: pre; }
+  .n { color: var(--text-primary); }
+</style>
+<span class="tag">RadioCardGroup · usage</span>
+<pre><code>&lt;span id="vis-label"&gt;Who can see this list&lt;/span&gt;
+&lt;RadioCardGroup
+  ariaLabelledBy="vis-label"
+  value={visibility}
+  onChange={setVisibility}
+  options={[
+    { value: "private", label: &lt;&gt;Only people with a role &lt;Badge&gt;Private&lt;/Badge&gt;&lt;/&gt;, description: "Everyone else keeps using the common list." },
+    { value: "org", label: "Everyone in Acme Logistics", description: "Every member can read it and pick its values." },
+    { value: "platform", label: "Every organization", description: "Publishes it as a common list.", disabled: !canPublish },
+  ]}
+/&gt;</code></pre>

@@ -1,7 +1,7 @@
 /**
  * Wire types for the selection-list-service.
  *
- * Hand-authored from `services/selection-list-service/openapi.yaml` v4.0.0 and
+ * Hand-authored from `services/selection-list-service/openapi.yaml` v4.1.0 and
  * kept in lockstep with it. The spec is the source of truth: when it changes,
  * `contract-designer` amends the spec, bumps `info.version`, and updates this
  * file in the same PR. Nothing here may describe a shape the spec does not.
@@ -124,6 +124,14 @@ export type SelectionListAccessRole =
   | 'list-translator'
   | 'list-viewer'
 
+/**
+ * Who may **read** a list without an instance grant (contract 4.1.0).
+ * `private` (default) — only instance-role holders; `org` — every member of the
+ * owning org; `platform` — a common list readable by every org. Visibility
+ * never confers a mutation.
+ */
+export type SelectionListVisibility = 'private' | 'org' | 'platform'
+
 /** The ceiling a `QUOTA_EXCEEDED` decision was made against. */
 export type QuotaScope = 'org_lists' | 'user_lists' | 'list_items' | 'list_locales'
 
@@ -176,6 +184,22 @@ export interface SeedProvenance {
   user_modified: boolean
 }
 
+/**
+ * Read-only provenance of a forked list (contract `SelectionListForkProvenance`,
+ * 4.1.0). Records the moment of copying; never updated. `list_id` may since
+ * have been purged.
+ */
+export interface SelectionListForkProvenance {
+  /** The source (common) list. */
+  list_id: SelectionListId
+  /** The source list's owning org (the platform org for a common list). */
+  organization_id: OrganizationId
+  /** The source's revision (`listRevision`) when copied. */
+  revision: number
+  /** RFC 3339 time of the fork. */
+  forked_at: string
+}
+
 /* -------------------------------------------------------------------------- */
 /* Selection lists                                                             */
 /* -------------------------------------------------------------------------- */
@@ -204,12 +228,81 @@ export interface SelectionList {
   item_count?: number
   /** Seed provenance; `null` for a user-authored list. Always present, read-only. */
   seed: SeedProvenance | null
+  /**
+   * Who may read it without a grant (4.1.0). Optional until the implementation
+   * ships behind `fuzefront.selection-lists.shared-lists`: **absent means
+   * `private`** (a 4.0.0-behaviour service omits it). Tightened to required in
+   * a later contract MINOR.
+   */
+  visibility?: SelectionListVisibility
+  /**
+   * Fork provenance; `null` unless made by `forkList` (4.1.0). Optional until
+   * the implementation ships: **absent means `null`** (not a fork).
+   */
+  forked_from?: SelectionListForkProvenance | null
+  /**
+   * Caller-relative hint (4.1.0): `true` when the caller holds a write role on
+   * the list. `false` for a list read only through visibility — show it
+   * read-only (and, for `platform`, offer "fork to edit"). Not an authorization.
+   * Optional until the implementation ships: **absent means unknown** — behave
+   * as at 4.0.0 and let each mutation's own authorization decide; never read
+   * absence as `false`.
+   */
+  editable?: boolean
+  /**
+   * The list's current revision (4.2.0): the same per-list counter the event
+   * contract carries as `listRevision` — `1` at creation, +1 per change event
+   * the service commits about the list or anything inside it, never
+   * decreasing. Compare a fork's `forked_from.revision` with its source's
+   * `revision` to tell whether the fork is behind (see `compareForkToSource`).
+   * Optional until the implementation ships: **absent means unknown** — never
+   * infer a revision from `updated_at`.
+   */
+  revision?: number
   /** Who created the list: a user, a system principal (seeding), or the deleted-user sentinel. */
   created_by: AuthorPrincipal
   /** RFC 3339 creation timestamp. */
   created_at: string
   /** RFC 3339 last-modification timestamp. */
   updated_at: string
+}
+
+/**
+ * Whether a fork is behind its source (contract 4.2.0):
+ * - `'behind'` — the source's current `revision` is greater than the
+ *   `forked_from.revision` captured at copy time: the source changed after the
+ *   fork was made (informational; there is no merge or sync operation);
+ * - `'up-to-date'` — the two revisions are equal;
+ * - `'unknown'` — either side carries no usable revision (a service that does
+ *   not emit `SelectionList.revision` yet), the first argument is not a fork,
+ *   or the second is not its source. Render "comparison unavailable".
+ */
+export type ForkSourceComparison = 'behind' | 'up-to-date' | 'unknown'
+
+/**
+ * Compare a fork with a fresh read of its source (`getList(fork.forked_from.list_id)`).
+ *
+ * Only revisions are compared — never `updated_at`. Whether the source is
+ * archived (`status`) or gone (`404`) is the caller's to render; this answers
+ * the revision question alone.
+ */
+export function compareForkToSource(
+  fork: Pick<SelectionList, 'forked_from'>,
+  source: Pick<SelectionList, 'id' | 'revision'>,
+): ForkSourceComparison {
+  const provenance = fork.forked_from
+  if (!provenance || provenance.list_id !== source.id) return 'unknown'
+  const now = source.revision
+  const then = provenance.revision
+  if (!isRevision(now) || !isRevision(then)) return 'unknown'
+  if (now > then) return 'behind'
+  if (now === then) return 'up-to-date'
+  // A revision never decreases, so this is not a state the contract allows; do not guess.
+  return 'unknown'
+}
+
+function isRevision(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1
 }
 
 /** Body for `POST /v1/selection-lists`. Carries no `id` — the service mints it. */
@@ -222,6 +315,17 @@ export interface SelectionListCreate {
   name: string
   /** Optional description in `source_locale`. */
   description?: string
+  /**
+   * Defaults to `private`. `platform` needs `publish_platform` and a caller
+   * acting in the platform org (4.1.0).
+   */
+  visibility?: SelectionListVisibility
+}
+
+/** Body for `POST /v1/selection-lists/{listId}/fork` (4.1.0). No id, no key. */
+export interface SelectionListForkRequest {
+  /** `org` (default) — the org's version for every member; `private` — a draft. */
+  visibility?: 'private' | 'org'
 }
 
 /** Body for `PATCH /v1/selection-lists/{listId}`. At least one field required. */
@@ -236,6 +340,11 @@ export interface SelectionListUpdate {
   name?: string
   /** New description for the `source_locale`; `null` clears it. */
   description?: string | null
+  /**
+   * New visibility (4.1.0). Needs `manage_access`; `platform` is operator-only
+   * and one-way (`CONFLICT` / `visibility_locked` on a demotion).
+   */
+  visibility?: SelectionListVisibility
 }
 
 /** Query parameters for `GET /v1/selection-lists`. */
@@ -244,8 +353,15 @@ export interface ListSelectionListsParams extends PageParams {
   status?: StatusFilter
   /** Preferred locale for the resolved `name`/`description`. */
   locale?: Locale
-  /** Exact-match filter on the org-unique list `key`. */
+  /** Exact-match filter on the org-unique list `key` (the effective list with `include_shared`). */
   key?: string
+  /**
+   * Also return lists readable through visibility (`org`, `platform`), not only
+   * granted ones (4.1.0). Defaults to `false` (the 4.0.0 result set).
+   */
+  include_shared?: boolean
+  /** Only lists with this visibility; also disables platform-list shadowing. */
+  visibility?: SelectionListVisibility
 }
 
 /* -------------------------------------------------------------------------- */
@@ -274,6 +390,13 @@ export interface SelectionListItem {
   is_machine: boolean
   /** Seed provenance; `null` for a user-authored item. Always present, read-only. */
   seed: SeedProvenance | null
+  /**
+   * On a forked item, the source item it was copied from; `null` otherwise
+   * (4.1.0). The mapping for migrating stored values to the fork. Optional
+   * until the implementation ships behind `fuzefront.selection-lists.shared-lists`:
+   * **absent means `null`** (not a forked item).
+   */
+  origin_item_id?: SelectionListItemId | null
   /** Who created the item: a user, a system principal (seeding), or the deleted-user sentinel. */
   created_by: AuthorPrincipal
   /** RFC 3339 creation timestamp. */
@@ -517,6 +640,11 @@ export interface ResolvedSelectionListItem {
   is_machine: boolean
   /** Lifecycle state — `archived` items still resolve; style them as retired. */
   status: LifecycleStatus
+  /**
+   * Present only when the id belongs to a common list and the result came from
+   * the caller org's `org`-visible fork: the fork item's id (4.1.0).
+   */
+  effective_item_id?: SelectionListItemId
 }
 
 /**
@@ -546,6 +674,15 @@ export type SelectionListErrorCode =
   | 'CONFLICT'
   | 'QUOTA_EXCEEDED'
 
+/**
+ * Refines a `CONFLICT` (4.1.0). Treat an unknown value as a plain `CONFLICT`.
+ */
+export type SelectionListErrorReason =
+  | 'fork_required'
+  | 'fork_exists'
+  | 'fork_not_applicable'
+  | 'visibility_locked'
+
 /** One field-level validation problem. */
 export interface SelectionListErrorDetail {
   /** JSON pointer to the offending property. */
@@ -568,4 +705,10 @@ export interface SelectionListErrorBody {
   current?: number
   /** Field-level problems. Present only on `VALIDATION_ERROR`. */
   details?: SelectionListErrorDetail[]
+  /** Refinement of a `CONFLICT` (4.1.0). */
+  reason?: SelectionListErrorReason | (string & {})
+  /** With `fork_required`: same-origin-relative path of the fork operation. */
+  fork_url?: string
+  /** With `fork_required`: the common list the caller tried to change. */
+  source_list_id?: SelectionListId
 }

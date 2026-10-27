@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 """Fail closed when the deployed credential service lacks our runtime protocol."""
+import http.client
 import json
 import sys
 import urllib.request
@@ -11,7 +11,11 @@ REQUIRED_PROTOCOL = "google-shared-v1"
 def check_dependency() -> None:
     request = urllib.request.Request(
         HEALTH_URL,
-        headers={"Accept": "application/json", "Cache-Control": "no-cache"},
+        headers={
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "User-Agent": "FuzeFront-release-preflight/1.0",
+        },
     )
     with urllib.request.urlopen(request, timeout=10) as response:
         if response.status != 200:
@@ -31,7 +35,7 @@ def check_dependency() -> None:
 def main() -> int:
     try:
         check_dependency()
-    except Exception:  # noqa: BLE001
+    except (OSError, ValueError, http.client.HTTPException):
         # Health bodies and exception details are deliberately not reflected.
         print(
             "::error::FuzeKeys production must be healthy and advertise "

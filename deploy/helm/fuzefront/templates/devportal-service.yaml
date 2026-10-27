@@ -36,6 +36,14 @@ spec:
               value: "production"
             - name: PORT
               value: {{ .Values.devportalService.port | quote }}
+            # @fuzefront/telemetry (initTelemetry() in src/index.ts) reads this
+            # standard OTel env var for its OTLP exporter target. Without it the
+            # package falls back to packages/telemetry's docker-compose default
+            # (`otel-collector:4317`), which has no in-cluster DNS entry — spans
+            # fail to export silently and nothing reaches Tempo/Grafana. See
+            # values.yaml's devportalService.otel.endpoint comment.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.devportalService.otel.endpoint | quote }}
             - name: DB_HOST
               value: {{ .Values.fuzeinfra.postgres.host | quote }}
             - name: DB_PORT
@@ -51,6 +59,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
                   key: DB_PASSWORD
+            - name: DB_SSL
+              value: {{ .Values.devportalService.dbSsl | quote }}
             - name: JWT_SECRET
               # governance/architecture-guidelines.md §1 — devportal-service
               # VERIFIES the same platform-issued session token every other

@@ -1,14 +1,16 @@
-import { TOPICS, requirementSyncRequestedSchema, type Portfolio } from '@fuzequality/contracts'
+import { TOPICS, requirementSyncRequestedSchema, type Portfolio, type QualityArtifact, type Repository } from '@fuzequality/contracts'
 import {
   ChromaClient,
   LiteLlmEmbeddingProvider,
   LiteLlmFlowAnalyzer,
+  LiteLlmRepositoryFlowAnalyzer,
   SemanticCandidateIndex,
   repositoryScopeForRequirement,
   suggestionsFromAnalysis,
 } from '@fuzequality/core'
 import { apiRequest, failureCode, runConsumer } from './runtime'
 import { searchJira } from './jira'
+import { isRepositoryAnalysisTopic, reportExhaustedRepositoryAnalysis, repositoryQualityArtifactsPath, runTrackedRepositoryInventoryAnalysis, shouldRunRepositoryAnalysis } from './repository-analysis'
 
 await runConsumer(
   'fuzequality-intelligence-v1',
@@ -16,6 +18,31 @@ await runConsumer(
   async (topic, payload, _correlationId, { heartbeat }) => {
     const command = topic === TOPICS.REQUIREMENT_SYNC_REQUESTED ? requirementSyncRequestedSchema.parse(payload) : undefined
     try {
+    // Repository analysis does not need retrieval. Keep it independent of
+    // Chroma so a semantic-index outage cannot suppress persisted flow and
+    // governance evidence for a newly scanned revision.
+    if (!command && isRepositoryAnalysisTopic(topic)) {
+      const inventory = payload as { repositoryId: string; revision: string }
+      const repository = await apiRequest<Repository>(`/api/v1/internal/repositories/${encodeURIComponent(inventory.repositoryId)}`)
+      if (!shouldRunRepositoryAnalysis(repository, inventory.revision)) return
+      const artifacts = await apiRequest<QualityArtifact[]>(repositoryQualityArtifactsPath(inventory.repositoryId, inventory.revision))
+      const analyzer = new LiteLlmRepositoryFlowAnalyzer(
+        process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1',
+        process.env.FUZEQUALITY_LLM_MODEL ?? 'quality-analysis',
+        process.env.LITELLM_MASTER_KEY,
+        fetch,
+        Number(process.env.FUZEQUALITY_REPOSITORY_ANALYSIS_TIMEOUT_MS),
+      )
+      const analysisPath = `/api/v1/internal/repositories/${encodeURIComponent(inventory.repositoryId)}/analysis-status`
+      await runTrackedRepositoryInventoryAnalysis(repository, inventory.revision, artifacts, {
+        analyzer,
+        persistCandidates: candidates => apiRequest('/api/v1/internal/repository-flow-candidates', { method: 'POST', body: JSON.stringify({ candidates }) }),
+        persistEvaluations: evaluations => apiRequest('/api/v1/internal/policy-gate-evaluations', { method: 'POST', body: JSON.stringify({ evaluations }) }),
+        persistStatus: status => apiRequest(analysisPath, { method: 'POST', body: JSON.stringify(status) }),
+        heartbeat,
+      })
+      return
+    }
     const portfolio = await apiRequest<Portfolio>('/api/v1/portfolio')
     const embeddingModel = process.env.FUZEQUALITY_EMBEDDING_MODEL ?? 'text-embedding-3-small'
     const index = new SemanticCandidateIndex(
@@ -81,5 +108,32 @@ await runConsumer(
       }
       throw error
     }
-  }
+  },
+  {
+    onExhausted: (topic, payload, _correlationId, error) => reportExhaustedRepositoryAnalysis(
+      topic,
+      payload,
+      error,
+      {
+        persistStatus: async (repositoryId, status) => {
+          // If analysis reached the tracked phase, retain its original start
+          // time. Setup failures remain distinguishable because their queued
+          // state has no start time yet.
+          const repository = await apiRequest<Repository>(
+            `/api/v1/internal/repositories/${encodeURIComponent(repositoryId)}`,
+          )
+          const startedAt = repository.lastAnalysis?.revision === status.revision
+            ? repository.lastAnalysis.startedAt
+            : undefined
+          await apiRequest(
+            `/api/v1/internal/repositories/${encodeURIComponent(repositoryId)}/analysis-status`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ ...status, ...(startedAt ? { startedAt } : {}) }),
+            },
+          )
+        },
+      },
+    ).then(() => undefined),
+  },
 )

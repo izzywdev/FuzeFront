@@ -14,10 +14,11 @@ import { mintTestToken } from '../helpers/auth';
 import { rawFetch } from '../helpers/client';
 import { closeDb } from '../helpers/db';
 import { allEvents, eventsFrom, OutboxRow, payloadErrors, TOPICS, topicsOf } from '../helpers/outbox';
+import { testOrg, testUser } from '../helpers/ids';
 
-const ORG = 'org_01test0000000outbox00000000';
-const USER_A = 'usr_01test0000000outboxusera000';
-const USER_B = 'usr_01test0000000outboxuserb000';
+const ORG = testOrg('outbox');
+const USER_A = testUser('outboxusera');
+const USER_B = testUser('outboxuserb');
 
 const tokenA = () => mintTestToken({ userId: USER_A, organizationId: ORG });
 const tokenB = () => mintTestToken({ userId: USER_B, organizationId: ORG });
@@ -379,7 +380,7 @@ describe('P1: no event for a rejected request, and none for a request that chang
       out['patchSame'] = (await call('PATCH', L(id), { name: 'Stable' })).status;
       out['itemPatchSame'] = (await call('PATCH', `${L(id)}/items/${item}`, { label: 'Label NOOP' })).status;
       out['accessSame'] = (await call('PUT', `${L(id)}/access/${USER_B}`, { role: 'list-viewer' })).status;
-      out['revokeMissing'] = (await call('DELETE', `${L(id)}/access/usr_01test0000000outboxnogrant00`)).status;
+      out['revokeMissing'] = (await call('DELETE', `${L(id)}/access/${testUser('outboxnogrant')}`)).status;
       out['translationMissing'] = (await call('DELETE', `${L(id)}/translations/ja`)).status;
       return out;
     });
@@ -466,7 +467,7 @@ describe('per-org ordering: seq reflects the order the org\'s requests committed
   });
 
   it('events of another org never appear under this org\'s key (organization_id is the ordering key)', async () => {
-    const other = 'org_01test0000000outbox00000001';
+    const other = testOrg('outbox00000001');
     const tok = mintTestToken({ userId: USER_A, organizationId: other });
     const res = await rawFetch('/v1/selection-lists', { method: 'POST', token: tok, body: JSON.stringify({ key: `ob-o-${rnd()}-${rnd()}`, name: 'Other org' }) });
     expect(res.status).toBe(201);

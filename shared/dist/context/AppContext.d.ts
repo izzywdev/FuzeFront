@@ -49,7 +49,7 @@ type AppAction = {
 };
 export declare function AppProvider({ children }: {
     children: ReactNode;
-}): import("react/jsx-runtime").JSX.Element;
+}): React.JSX.Element;
 export declare function useAppContext(): {
     state: AppState;
     dispatch: React.Dispatch<AppAction>;

@@ -67,4 +67,22 @@ export {
   probeReorderPermission,
   unwrapItems,
   unwrapCursor,
+  configureSelectionListsAuth,
 } from './api'
+export type { SelectionListsAuth } from './api'
+
+// ── Shared lists (SL9, contract 4.1.0) ───────────────────────────────────────
+// Host-facing surface only: the feature provider (release flag + platform-org
+// hint) and the types a consumer of `onEffectiveValue` / the flag needs. The
+// flows import the rest from './shared-lists/core' directly.
+export {
+  SHARED_LISTS_FLAG_KEY,
+  SharedListsFeatureProvider,
+  useSharedLists,
+} from './shared-lists/core'
+export type {
+  SharedList,
+  SharedListsContextValue,
+  SharedListsFeatureProviderProps,
+  SelectionListVisibility,
+} from './shared-lists/core'

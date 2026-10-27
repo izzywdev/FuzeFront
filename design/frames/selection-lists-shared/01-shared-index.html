@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — List index with common lists</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher" aria-label="App launcher">▦</div>
+    <div class="avatar" title="Dana Okafor · admin of Acme Logistics">DO</div>
+  </header>
+  <div class="body">
+    <nav class="side" aria-label="Primary">
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Applications</a>
+      <div class="section-label">Organization</div>
+      <a class="nav-item" href="#"><span class="ico">☺</span> Members</a>
+      <a class="nav-item active" href="01-shared-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">⚙</span> Settings</a>
+    </nav>
+    <main class="content" data-frame="01-shared-index">
+
+      <div class="sl-head">
+        <div>
+          <h1 class="page-title">Selection Lists</h1>
+          <p class="page-sub">The values your organization's forms offer — your own lists, and the common lists FuzeFront provides to every organization.</p>
+        </div>
+        <div class="sl-head__actions">
+          <a class="btn btn-primary" href="../selection-lists/02-new-list.html" data-action="new-list">+ New list</a>
+        </div>
+      </div>
+
+      <div class="sl-toolbar" data-toolbar="list-index">
+        <input class="sl-input sl-search" type="search" placeholder="Search by name or key" aria-label="Search lists" data-filter="search" />
+        <select class="sl-input sl-select" aria-label="Status" data-filter="status">
+          <option value="active" selected>Active</option>
+          <option value="archived">Archived</option>
+          <option value="all">All</option>
+        </select>
+        <div class="sl-seg" role="group" aria-label="Visibility" data-filter="visibility">
+          <button class="sl-seg__opt" aria-pressed="true" data-visibility-filter="any">Any</button>
+          <button class="sl-seg__opt" aria-pressed="false" data-visibility-filter="private">Private</button>
+          <button class="sl-seg__opt" aria-pressed="false" data-visibility-filter="org">Organization</button>
+          <a class="sl-seg__opt" aria-pressed="false" href="#filtered" data-visibility-filter="platform">Common</a>
+        </div>
+        <span class="grow"></span>
+        <!-- SharedListsToggle → include_shared. Default ON when the flag is ON: without it a member with
+             no instance roles sees an empty index although every form offers them values. -->
+        <span class="sl-toggle" role="switch" aria-checked="true" tabindex="0" data-control="include-shared">
+          <span class="sl-toggle__track"><span class="sl-toggle__thumb"></span></span>
+          Include common lists
+        </span>
+      </div>
+
+      <section class="sl-panel" data-panel="list-index" data-state="ready" data-include-shared="true">
+        <div class="sl-panel__seam"></div>
+        <table class="sl-table">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col" class="sl-hide-sm">Key</th>
+              <th scope="col">Visibility</th>
+              <th scope="col">Your access</th>
+              <th scope="col" class="num sl-hide-sm">Values</th>
+              <th scope="col" class="sl-hide-sm">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="sl-group-row" data-group="own"><td colspan="6"><b>Your organization</b> · Acme Logistics · 3 loaded</td></tr>
+            <tr data-list="priority" data-source="own">
+              <td class="name"><a href="07-fork-detail.html">Priority</a></td>
+              <td class="sl-hide-sm"><span class="sl-key">priority</span></td>
+              <td><span class="sl-vis sl-vis--org" data-visibility="org">◉ Organization</span> <span class="sl-fork" data-badge="fork" title="forked_from: common list priority">⑂ Fork</span></td>
+              <td><span class="sl-rw" data-editable="true">✎ You can edit</span></td>
+              <td class="num sl-hide-sm">5</td>
+              <td class="muted sl-hide-sm">2 days ago</td>
+            </tr>
+            <tr data-list="lead-sources" data-source="own">
+              <td class="name"><a href="03-readonly-states.html">Lead sources</a></td>
+              <td class="sl-hide-sm"><span class="sl-key">lead-sources</span></td>
+              <td><span class="sl-vis sl-vis--org" data-visibility="org">◉ Organization</span></td>
+              <td><span class="sl-ro" data-editable="false"><span aria-hidden="true">🔒</span> Read-only</span></td>
+              <td class="num sl-hide-sm">3</td>
+              <td class="muted sl-hide-sm">Sep 30</td>
+            </tr>
+            <tr data-list="warehouse-zones" data-source="own">
+              <td class="name"><a href="../selection-lists/03-list-detail.html">Warehouse zones</a></td>
+              <td class="sl-hide-sm"><span class="sl-key">warehouse-zones</span></td>
+              <td><span class="sl-vis sl-vis--private" data-visibility="private">○ Private</span></td>
+              <td><span class="sl-rw" data-editable="true">✎ You can edit</span></td>
+              <td class="num sl-hide-sm">12</td>
+              <td class="muted sl-hide-sm">Sep 12</td>
+            </tr>
+            <tr class="sl-group-row" data-group="common"><td colspan="6"><b>Common lists</b> · provided by FuzeFront to every organization · 2 loaded</td></tr>
+            <tr data-list="yes-no" data-source="platform">
+              <td class="name"><a href="02-common-detail.html">Yes / No</a></td>
+              <td class="sl-hide-sm"><span class="sl-key">yes-no</span></td>
+              <td><span class="sl-vis sl-vis--platform" data-visibility="platform" data-badge="common">◎ Common</span></td>
+              <td><span class="sl-ro" data-editable="false"><span aria-hidden="true">🔒</span> Read-only</span></td>
+              <td class="num sl-hide-sm">2</td>
+              <td class="muted sl-hide-sm">Aug 28</td>
+            </tr>
+            <tr data-list="work-status" data-source="platform">
+              <td class="name"><a href="02-common-detail.html">Work status</a></td>
+              <td class="sl-hide-sm"><span class="sl-key">work-status</span></td>
+              <td><span class="sl-vis sl-vis--platform" data-visibility="platform" data-badge="common">◎ Common</span></td>
+              <td><span class="sl-ro" data-editable="false"><span aria-hidden="true">🔒</span> Read-only</span></td>
+              <td class="num sl-hide-sm">6</td>
+              <td class="muted sl-hide-sm">Aug 28</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="sl-panel__foot">
+          <span class="sl-shadow-note" data-shadow-note="priority"><span aria-hidden="true">⑂</span> <span class="sl-key">priority</span> is your organization's fork; a common list with the same key is not listed here.
+            <a href="#filtered" data-action="show-shadowed">Show common lists only</a></span>
+          <button class="btn btn-ghost sl-btn-sm" data-action="load-more">Load more</button>
+        </div>
+      </section>
+      <p class="sl-field__hint">The note is driven by a loaded row with <code class="sl-code">forked_from</code> set, and is deliberately
+        <b>source-neutral</b>: the <code class="sl-code">include_shared</code> response carries no source-existence metadata, so a fork whose common
+        source was purged (dangling <code class="sl-code">forked_from</code>, legal per design record §5) looks exactly like one that shadows a live
+        common list. The copy therefore never says a common list “is hidden” or “replaced” — only that this row is a fork and that no common list
+        with that key is listed. Whether one exists is answered on the fork's own page (frame 7 provenance).</p>
+
+      <div class="sl-section" id="filtered">
+        <h2>Visibility filter set → shadowing off (administrator view)</h2>
+        <p class="sl-caption">The filter exists only while <b>Include common lists</b> is ON, so a choice other than <b>Any</b> always sends
+          <code class="sl-code">include_shared=true&amp;visibility=…</code>, which the service treats as
+          “show me exactly these” and stops hiding common lists behind forks. Here: <b>Common</b>. The common <b>Priority</b> reappears
+          next to the others. No grouping — the filter already is the group.</p>
+        <section class="sl-panel" data-panel="list-index" data-state="ready" data-visibility-filter-active="platform">
+          <div class="sl-panel__seam"></div>
+          <table class="sl-table">
+            <thead><tr><th scope="col">Name</th><th scope="col" class="sl-hide-sm">Key</th><th scope="col">Visibility</th><th scope="col">Your access</th></tr></thead>
+            <tbody>
+              <tr data-list="priority" data-source="platform">
+                <td class="name"><a href="03-readonly-states.html#shadowed">Priority</a></td>
+                <td class="sl-hide-sm"><span class="sl-key">priority</span></td>
+                <td><span class="sl-vis sl-vis--platform" data-badge="common">◎ Common</span></td>
+                <td><span class="sl-ro"><span aria-hidden="true">🔒</span> Read-only</span></td>
+              </tr>
+              <tr data-list="yes-no" data-source="platform">
+                <td class="name"><a href="02-common-detail.html">Yes / No</a></td><td class="sl-hide-sm"><span class="sl-key">yes-no</span></td>
+                <td><span class="sl-vis sl-vis--platform" data-badge="common">◎ Common</span></td>
+                <td><span class="sl-ro"><span aria-hidden="true">🔒</span> Read-only</span></td>
+              </tr>
+              <tr data-list="work-status" data-source="platform">
+                <td class="name"><a href="02-common-detail.html">Work status</a></td><td class="sl-hide-sm"><span class="sl-key">work-status</span></td>
+                <td><span class="sl-vis sl-vis--platform" data-badge="common">◎ Common</span></td>
+                <td><span class="sl-ro"><span aria-hidden="true">🔒</span> Read-only</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+        <p class="sl-field__hint">The filtered page does <b>not</b> mark which common lists your organization has replaced: it holds only
+          <code class="sl-code">platform</code> rows, so the answer is not on the page, and guessing it from an earlier page would be wrong after any
+          change. Opening a common list asks the service once (<code class="sl-code">getEffectiveList(key)</code>) and the detail says so —
+          see <a href="03-readonly-states.html#shadowed">“your organization uses its own version”</a>.</p>
+      </div>
+
+      <div class="sl-section">
+        <h2>States</h2>
+        <div class="sl-grid2">
+          <div>
+            <p class="sl-case">Loading</p>
+            <div class="sl-panel" data-panel="list-index" data-state="loading">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-panel__body" aria-busy="true">
+                <div class="sl-skel" style="width: 30%;"></div>
+                <div class="sl-skel" style="width: 92%;"></div>
+                <div class="sl-skel" style="width: 86%;"></div>
+                <div class="sl-skel" style="width: 30%;"></div>
+                <div class="sl-skel" style="width: 90%;"></div>
+              </div>
+            </div>
+            <p class="sl-field__hint">Group headers are skeletons too — they appear with the rows, never before (no empty “Common lists” header flashing).</p>
+          </div>
+          <div>
+            <p class="sl-case">Error</p>
+            <div class="sl-panel" data-panel="list-index" data-state="error">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-state">
+                <div class="sl-state__ico" aria-hidden="true">⚠</div>
+                <h3 class="sl-state__title">Couldn't load lists</h3>
+                <p class="sl-state__body">Nothing was changed. The toggle and filters keep their values for the retry.</p>
+                <button class="btn btn-ghost" data-action="retry">Retry</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p class="sl-case">Empty — common lists ON, nothing readable at all</p>
+            <div class="sl-panel" data-panel="list-index" data-state="empty">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-state">
+                <div class="sl-state__ico" aria-hidden="true">☰</div>
+                <h3 class="sl-state__title">No lists yet</h3>
+                <p class="sl-state__body">Your organization has no lists, and no common lists are published. Create one to start offering values in forms.</p>
+                <a class="btn btn-primary" href="../selection-lists/02-new-list.html" data-action="new-list">+ New list</a>
+              </div>
+            </div>
+            <p class="sl-field__hint">“+ New list” shows only after a successful load; a <code class="sl-code">403</code> on create is the approved 4.0.0 handling.</p>
+          </div>
+          <div>
+            <p class="sl-case">Empty — common lists OFF, no roles</p>
+            <div class="sl-panel" data-panel="list-index" data-state="empty-shared-off" data-include-shared="false">
+              <div class="sl-panel__seam"></div>
+              <div class="sl-state">
+                <div class="sl-state__ico" aria-hidden="true">○</div>
+                <h3 class="sl-state__title">No lists you have a role on</h3>
+                <p class="sl-state__body">You can still read your organization's shared lists and the common lists — they're hidden by the toggle.</p>
+                <button class="btn btn-ghost" data-action="enable-include-shared">Include common lists</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: var(--space-6);" id="shared-off">
+          <p class="sl-case">Common lists OFF — the visibility filter is removed and reset</p>
+          <div class="sl-toolbar" data-toolbar="list-index" data-include-shared="false">
+            <input class="sl-input sl-search" type="search" placeholder="Search by name or key" aria-label="Search lists" />
+            <select class="sl-input sl-select" aria-label="Status"><option selected>Active</option></select>
+            <span class="grow"></span>
+            <span class="sl-toggle" role="switch" aria-checked="false" tabindex="0" data-control="include-shared">
+              <span class="sl-toggle__track"><span class="sl-toggle__thumb"></span></span>
+              Include common lists
+            </span>
+          </div>
+          <p class="sl-field__hint">Turning the switch OFF removes the visibility filter (not disabled — absent) and resets it
+            to <b>Any</b>; the request is <code class="sl-code">GET /v1/selection-lists?status=&amp;cursor=</code> with neither
+            <code class="sl-code">include_shared</code> nor <code class="sl-code">visibility</code>. Without <code class="sl-code">include_shared</code> the result
+            is only the lists you hold a role on and <code class="sl-code">visibility</code> merely filters that set — “Common” would always come back empty
+            and “Organization” would silently omit every list you read through membership. Turning the switch back ON restores the filter at
+            <b>Any</b>; a filter choice is never carried across the switch.</p>
+        </div>
+
+        <div style="margin-top: var(--space-6);">
+          <p class="sl-case">Feature flag OFF — <code class="sl-code">fuzefront.selection-lists.shared-lists</code></p>
+          <div class="sl-panel" data-panel="list-index" data-state="flag-off" data-flag="shared-lists:off">
+            <div class="sl-panel__seam"></div>
+            <div class="sl-panel__body">
+              <div class="sl-toolbar" style="margin-bottom: var(--space-4);">
+                <input class="sl-input sl-search" type="search" placeholder="Search by name or key" aria-label="Search lists" />
+                <select class="sl-input sl-select" aria-label="Status"><option selected>Active</option></select>
+              </div>
+              <table class="sl-table">
+                <thead><tr><th scope="col">Name</th><th scope="col" class="sl-hide-sm">Key</th><th scope="col">Status</th></tr></thead>
+                <tbody>
+                  <tr><td class="name">Warehouse zones</td><td class="sl-hide-sm"><span class="sl-key">warehouse-zones</span></td><td><span class="sl-pill sl-pill--active">active</span></td></tr>
+                </tbody>
+              </table>
+              <p class="sl-field__hint">Absent, not disabled: no “Include common lists” switch, no visibility filter, no group rows, no Visibility or
+                Your-access columns, no badges. Requests carry neither <code class="sl-code">include_shared</code> nor <code class="sl-code">visibility</code> —
+                exactly the approved 4.0.0 index (<code class="sl-code">selection-lists/01-list-index</code>).</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='01-shared-index']</code> · <code>[data-panel='list-index']</code> · <code>[data-control='include-shared']</code> · <code>[data-toolbar='list-index'][data-include-shared='false']</code> · <code>[data-filter='visibility']</code> · <code>[data-visibility-filter='platform']</code> · <code>[data-group='own']</code> · <code>[data-group='common']</code> · <code>[data-source='platform']</code> · <code>[data-badge='common']</code> · <code>[data-badge='fork']</code> · <code>[data-editable='false']</code> · <code>[data-shadow-note='priority']</code> · <code>[data-action='load-more']</code> · <code>[data-state='loading']</code> · <code>[data-state='empty']</code> · <code>[data-state='empty-shared-off']</code> · <code>[data-state='error']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
+        Contract: <code>GET /v1/selection-lists?include_shared=true&amp;status=&amp;cursor=</code> (shadowing on) · <code>?include_shared=true&amp;visibility=platform|org|private</code> (shadowing off) · switch OFF: neither param.
+        Rows read <code>visibility</code>, <code>forked_from</code>, <code>editable</code>; an absent <code>editable</code> renders <b>no</b> access marker (unknown ≠ read-only).<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="index.html" data-nav="prev">← All frames</a>
+  <span class="caption"><b>(1a) List index with common lists</b> · Flow 1 · Shared read · frame 1 of 15</span>
+  <a class="btn btn-primary" href="02-common-detail.html" data-nav="next">Common list detail →</a>
+</nav>
+</body>
+</html>

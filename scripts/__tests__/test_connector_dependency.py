@@ -30,6 +30,7 @@ class ConnectorDependencyTest(unittest.TestCase):
             self.assertEqual(request.full_url, "https://api.keys.prod.fuzefront.com/health")
             self.assertEqual(probe.call_args.kwargs["timeout"], 10)
             self.assertEqual(request.get_header("Cache-control"), "no-cache")
+            self.assertEqual(request.get_header("User-agent"), "FuzeFront-release-preflight/1.0")
 
     def test_missing_wrong_protocol_or_unhealthy_service_fails(self):
         for body in (

@@ -21,10 +21,16 @@ if (process.exitCode) process.exit()
 
 const twa = readJson('android/twa-manifest.json')
 const assetlinks = readJson('frontend/public/.well-known/assetlinks.json')
-const androidTarget = assetlinks.find((entry) => entry?.target?.namespace === 'android_app')?.target
+const androidTarget = assetlinks.find((entry) =>
+  entry?.relation?.includes('delegate_permission/common.handle_all_urls') &&
+  entry?.target?.namespace === 'android_app'
+)?.target
 
 if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$/.test(twa.packageId || '')) {
   fail(`invalid Android packageId: ${JSON.stringify(twa.packageId)}`)
+}
+if (!Number.isInteger(twa.minSdkVersion) || twa.minSdkVersion < 24) {
+  fail('TWA minSdkVersion must be an integer of at least 24; androidbrowserhelper:2.7.4 requires Android API 24')
 }
 const allowedHost = /^[a-z0-9-]+\.fuzefront\.com$/.test(twa.host || '') || twa.host === 'live.mendysrobotics.com'
 if (!allowedHost) {
@@ -36,9 +42,11 @@ if (twa.webManifestUrl !== `https://${twa.host}/manifest.webmanifest`) fail('TWA
 if (androidTarget?.package_name !== twa.packageId) fail('assetlinks package_name does not match TWA packageId')
 const fingerprints = androidTarget?.sha256_cert_fingerprints || []
 const twaFingerprints = twa.fingerprints?.map((item) => item.value) || []
+const isFingerprint = (fingerprint) => /^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/i.test(fingerprint)
 if (!twa.signingKey?.alias) fail('TWA signing key alias is required')
 if (twaFingerprints.length === 0) fail('at least one TWA signing fingerprint is required')
 for (const fingerprint of twaFingerprints) {
+  if (!isFingerprint(fingerprint)) fail(`invalid TWA signing fingerprint: ${JSON.stringify(fingerprint)}`)
   if (!fingerprints.includes(fingerprint)) fail('TWA signing fingerprint is absent from assetlinks.json')
 }
 

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Org invitations v2 — Root customer invite</title>
+<link rel="stylesheet" href="tokens.css" />
+</head>
+<body>
+<div class="shell" data-frame="05-root-customer-invite">
+  <div class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <span class="badge" style="color:var(--cyan-400);border-color:rgba(41,211,230,0.4)">Root · FuzeOne</span>
+    <div class="launch-btn" aria-hidden="true">▦</div>
+    <div class="avatar">IZ</div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Root organization</div>
+      <a class="nav-item"><span class="ico">📊</span> Overview</a>
+      <a class="nav-item"><span class="ico">👥</span> Directory</a>
+      <a class="nav-item active" data-nav="customers"><span class="ico">🛍️</span> Customers</a>
+      <a class="nav-item"><span class="ico">🧑‍💼</span> Staff</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Invite a customer</h1>
+      <p class="page-sub">As the root owner you invite an external person as a <b>customer</b> — by personal email
+        (e.g. Gmail) or WhatsApp. Member type is fixed to Customer here; role defaults to Viewer and is adjustable.</p>
+
+      <section class="ffi-panel" data-panel="root-customer-invite" style="max-width:560px">
+        <div class="ffi-panel__seam"></div>
+        <div class="ffi-panel__head">
+          <h2 class="ffi-panel__title">New customer invitation</h2>
+        </div>
+        <div style="padding:0 var(--space-5) var(--space-5); display:flex; flex-direction:column; gap:var(--space-5)">
+
+          <div class="ffi-field">
+            <span class="ffi-label">Send via</span>
+            <div class="ffi-seg" role="group" aria-label="Channel" data-field="channel">
+              <button type="button" class="ffi-seg__opt" data-option="email" data-selected="true" aria-pressed="true">
+                <span class="ico" aria-hidden="true">✉️</span> Email</button>
+              <button type="button" class="ffi-seg__opt" data-option="whatsapp" data-selected="false" aria-pressed="false">
+                <span class="ico" aria-hidden="true">💬</span> WhatsApp</button>
+            </div>
+          </div>
+
+          <div class="ffi-field" data-channel-field="email">
+            <label class="ffi-label" for="rc-email">Personal email<span class="req">*</span></label>
+            <input class="ffi-input" id="rc-email" type="email" inputmode="email"
+                   placeholder="pat.rivera@gmail.com" value="pat.rivera@gmail.com" data-input="customer-email" />
+            <p class="ffi-hint">Any email works — this person doesn't need an existing FuzeFront account.</p>
+          </div>
+
+          <div class="ffi-field">
+            <span class="ffi-label">Role<span class="req">*</span></span>
+            <div class="ffi-roles" role="radiogroup" aria-label="Role" data-field="role">
+              <label class="ffi-role" data-selected="false" data-role-option="member">
+                <span class="ffi-role__radio" aria-hidden="true"></span>
+                <span><span class="ffi-role__name">Member</span>
+                  <span class="ffi-role__desc">Can use the apps you share with them.</span></span>
+              </label>
+              <label class="ffi-role" data-selected="true" data-role-option="viewer">
+                <span class="ffi-role__radio" aria-hidden="true"></span>
+                <span><span class="ffi-role__name">Viewer</span>
+                  <span class="ffi-role__desc">Read-only. The usual starting point for a customer.</span></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="ffi-field">
+            <span class="ffi-label">Member type</span>
+            <div class="ffi-seg" role="group" aria-label="Member type" data-field="member-type" aria-disabled="true">
+              <button type="button" class="ffi-seg__opt" data-option="customer" data-selected="true" aria-pressed="true">
+                <span class="ico" aria-hidden="true">🛍️</span> Customer</button>
+            </div>
+            <p class="ffi-hint">Fixed to Customer on the root customer surface.</p>
+          </div>
+
+          <div class="ffi-preview" data-panel="customer-preview" aria-live="polite">
+            <div class="ffi-preview__row"><span class="ffi-preview__k">Invite</span>
+              <span class="ffi-preview__v" data-review="address">pat.rivera@gmail.com</span>
+              <span class="ffi-chan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg> email</span></div>
+            <div class="ffi-preview__row"><span class="ffi-preview__k">As</span>
+              <span class="ffi-tag ffi-tag--viewer" data-review="role"><span class="ffi-tag__dot"></span>Viewer</span>
+              <span class="ffi-tag ffi-tag--customer" data-review="member-type"><span class="ffi-tag__dot"></span>Customer</span></div>
+          </div>
+
+          <button class="btn btn-primary" data-action="send-customer-invite" style="justify-content:center">
+            Send customer invitation</button>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption">Frame (e) · <b>Root customer invite</b> — root owner invites external (Gmail / WhatsApp) as Customer · POST /invitations</span>
+  <span class="links">
+    <a href="04-accept-signup-bind.html" class="btn btn-ghost">← Sign up &amp; bind</a>
+    <a href="06-states.html" class="btn btn-ghost">Next: States →</a>
+  </span>
+</div>
+</body>
+</html>
