@@ -1,5 +1,6 @@
 import React from 'react'
 import { Input } from '@fuzefront/design-system'
+import { AUTH_INPUT_STYLE } from '../controlStyles'
 import { DEFAULT_SIGNUP_LABELS, type SignUpLabels } from '../signup/labels'
 
 export interface FullNameFieldProps {
@@ -49,6 +50,7 @@ export function FullNameField({
         value={value}
         disabled={disabled}
         aria-describedby={helpId}
+        style={AUTH_INPUT_STYLE}
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
       />
       <p className="fzf-su-help" id={helpId} data-i18n="auth.signup.fullName.help">

@@ -17,7 +17,7 @@
  * service implementation.
  */
 import { mintTestToken } from '../helpers/auth';
-import { declarePlatformOrg, FAKE_SECURITY_URL, newOrg, newUser, permitPublishAnywhere, PLATFORM_ORG_ID } from '../helpers/shared-lists';
+import { declarePlatformOrg, denyCatalogAction, FAKE_SECURITY_URL, newCodecOrg, newOrg, newUser, orgUuidOf, permitPublishAnywhere, PLATFORM_ORG_ID } from '../helpers/shared-lists';
 
 type Role = 'admin' | 'editor' | 'viewer' | 'developer';
 
@@ -66,6 +66,27 @@ describe('read_shared (D3): customer tenant roles hold it, developer does not', 
   });
 });
 
+describe('organization id renderings: the TypeID and the bare UUID of one org are ONE tenant (as in production)', () => {
+  it('a UUID-claim token is a member of the TypeID tenant (and vice versa); a different org is not', async () => {
+    const o = newCodecOrg();
+    const other = newCodecOrg();
+    const u = newUser('fk');
+    expect(await check(u, o.uuid, 'admin', o.wire, catalog, 'read_shared')).toBe(true);
+    expect(await check(u, o.wire, 'admin', o.uuid, catalog, 'read_shared')).toBe(true);
+    expect(await check(u, o.uuid, 'admin', other.wire, catalog, 'read_shared')).toBe(false);
+  });
+
+  it('publish_platform is effective for the platform org in either rendering, and only for it', async () => {
+    const u = newUser('fk');
+    const uuid = orgUuidOf(PLATFORM_ORG_ID);
+    expect(await check(u, uuid, 'admin', PLATFORM_ORG_ID, catalog, 'publish_platform')).toBe(true);
+    expect(await check(u, PLATFORM_ORG_ID, 'admin', uuid, catalog, 'publish_platform')).toBe(true);
+    expect(await check(u, uuid, 'editor', uuid, catalog, 'publish_platform')).toBe(false);
+    const o = newCodecOrg();
+    expect(await check(u, o.uuid, 'admin', o.uuid, catalog, 'publish_platform')).toBe(false);
+  });
+});
+
 describe('publish_platform (D5): admin only, effective only in the platform org tenant', () => {
   it.each<[Role, boolean]>([
     ['admin', true],
@@ -93,5 +114,22 @@ describe('publish_platform (D5): admin only, effective only in the platform org 
     expect(await check(u, lenient, 'admin', lenient, catalog, 'publish_platform')).toBe(true);
     expect(await check(u, lenient, 'editor', lenient, catalog, 'publish_platform')).toBe(false); // still admin-only
     expect(await check(u, strict, 'admin', strict, catalog, 'publish_platform')).toBe(false);
+  });
+});
+
+describe('deny-catalog-action: withdraws ONE catalog action from ONE subject in ONE tenant (harness fixture)', () => {
+  it('the subject loses exactly that action, in that tenant, in either id rendering; everybody else and every other action are untouched', async () => {
+    const o = newCodecOrg();
+    const other = newOrg('denyother');
+    const victim = newUser('fkdeny');
+    const bystander = newUser('fkdeny');
+    // positive control first: an editor holds read_shared, resolve and create
+    for (const action of ['read_shared', 'resolve', 'create']) expect(await check(victim, o.wire, 'editor', o.wire, catalog, action)).toBe(true);
+    await denyCatalogAction(o.uuid, victim, 'read_shared'); // named by the OTHER rendering of the tenant
+    expect(await check(victim, o.wire, 'editor', o.wire, catalog, 'read_shared')).toBe(false);
+    expect(await check(victim, o.uuid, 'editor', o.uuid, catalog, 'read_shared')).toBe(false);
+    for (const action of ['resolve', 'create', 'list']) expect(await check(victim, o.wire, 'editor', o.wire, catalog, action)).toBe(true);
+    expect(await check(bystander, o.wire, 'editor', o.wire, catalog, 'read_shared')).toBe(true);
+    expect(await check(victim, other, 'editor', other, catalog, 'read_shared')).toBe(true); // another tenant
   });
 });

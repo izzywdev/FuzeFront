@@ -54,7 +54,11 @@
         },
         "approved": false,
         "approvedBy": null,
-        "approvedAt": null
+        "approvedAt": null,
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "developers.fuzefront.com is a standalone developer-workstation property, separate from the mobile-required FuzeFront end-user shell (.fuze/manifest.json); its home screen is designed desktop-only alongside the rest of the portal."
+        }
       },
       {
         "id": "catalog",
@@ -68,7 +72,11 @@
         },
         "approved": false,
         "approvedBy": null,
-        "approvedAt": null
+        "approvedAt": null,
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "The API spec catalog on developers.fuzefront.com is a developer-desktop browsing surface on a property outside the mobile-required end-user shell; no phone layout is designed."
+        }
       },
       {
         "id": "spec-viewer",
@@ -82,7 +90,11 @@
         },
         "approved": false,
         "approvedBy": null,
-        "approvedAt": null
+        "approvedAt": null,
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "The OpenAPI spec viewer is an inherently wide, schema/code-dense developer surface (two-pane reference + try panel); it has no phone layout and lives on the desktop developer-portal property."
+        }
       },
       {
         "id": "playground",
@@ -96,7 +108,11 @@
         },
         "approved": false,
         "approvedBy": null,
-        "approvedAt": null
+        "approvedAt": null,
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "The interactive API request playground (request builder + response inspector) is a developer-workstation tool requiring a wide layout; it is part of the desktop developer-portal property."
+        }
       },
       {
         "id": "my-access",
@@ -110,7 +126,11 @@
         },
         "approved": false,
         "approvedBy": null,
-        "approvedAt": null
+        "approvedAt": null,
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Developer access / credentials management on the developer-portal property (developers.fuzefront.com) is desktop-only, consistent with the rest of that workstation property."
+        }
       }
     ],
     "components": [
@@ -421,5 +441,5 @@
       ]
     }
   ],
-  "stamp": "36eced6c6a10e316ab2ef2d2532f408d09e60831ecc87c7f65d84a50bb85a85c"
+  "stamp": "78be3b08d2bedfdb5fcd6bc6e7a5638bc056aba92fff7b06186fbf8d58e94a9f"
 }

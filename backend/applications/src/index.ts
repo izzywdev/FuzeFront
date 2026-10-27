@@ -223,15 +223,12 @@ async function startServer() {
     console.log('🔄 Starting FuzeFront applications-service...')
 
     // Dual-accept window for the platform spine types (FFRNT-185 / §8).
-    // The input boundary must track the OUTPUT wire form, which is governed by
-    // the `fuzefront.identity.prefixed-ids` release flag. That flag defaults
-    // OFF and is NOT force-enabled in prod, so every API response still emits
-    // BARE UUIDs (visible e.g. as the org id in the portal). Closing this
-    // window to prefixed-only while output is bare rejects every id the
-    // frontend round-trips — it made org-scoped app installs 422 with
-    // LEGACY_NOT_PERMITTED. parseId still accepts prefixed ids regardless, so
-    // listing these is purely additive; EMPTY this set only once prefixed-id
-    // OUTPUT is confirmed GA (governance/identifier-standard.md §8).
+    // Output is ALWAYS the TypeID wire form now (the prefixed-ids release flag
+    // was retired at 100 %), but INPUT still accepts bare
+    // UUIDs for these types: older clients, cached shells and JWT-derived ids
+    // may still send them. Emptying this set is a separate, behaviour-changing
+    // step (it starts rejecting bare UUIDs) — see
+    // docs/planning/identity-rollout-ffrnt-185.md (governance/identifier-standard.md §8).
     configureIdentity({
       legacyUuidTypes: new Set<EntityType>([
         'organization',

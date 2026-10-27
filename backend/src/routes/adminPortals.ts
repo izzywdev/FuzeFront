@@ -17,7 +17,6 @@ import {
 import { provisionPortal, SlugTakenError } from '../services/portalProvisioning'
 import { isPortalsDirectoryEnabled } from '../utils/portalsDirectoryFlag'
 import { resolvePortalReadManageCapabilities } from '../utils/portalReadManageCapabilities'
-import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
 
 type Middleware = (request: Request, response: Response, next: NextFunction) => unknown
@@ -186,12 +185,11 @@ export function createAdminPortalStore(injectedDatabase?: Knex): AdminPortalStor
 
 /** Prefix a portal DTO's `id` and `organizationId`, plus each nested domain's `portalId`. */
 async function prefixPortalDto(dto: any, userId?: string): Promise<any> {
-  const prefixed = await isPrefixedIdsEnabled({ userId })
-  const top = prefixDtoIds(dto, prefixed, { id: 'portal', organizationId: 'organization' })
+  const top = prefixDtoIds(dto, { id: 'portal', organizationId: 'organization' })
   return {
     ...top,
     domains: Array.isArray(dto.domains)
-      ? dto.domains.map((d: any) => prefixDtoIds(d, prefixed, { portalId: 'portal' }))
+      ? dto.domains.map((d: any) => prefixDtoIds(d, { portalId: 'portal' }))
       : top.domains ?? [],
   }
 }

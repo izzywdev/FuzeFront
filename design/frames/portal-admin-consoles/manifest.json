@@ -137,7 +137,11 @@
           "02-create-portal",
           "03-portal-detail",
           "04-master-states"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Master-admin portal management console at /admin/portals (list / create / configure white-label portals) is operator admin tooling with wide management tables; no end-user mobile flow."
+        }
       },
       {
         "id": "portal-console",
@@ -172,7 +176,11 @@
           "06-users",
           "07-catalog",
           "09-portal-states"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Per-portal admin console at /portal/admin (overview / users / catalog management) is a portal-operator workstation surface; no end-user mobile layout is designed."
+        }
       },
       {
         "id": "portal-billing",
@@ -201,7 +209,11 @@
         "frames": [
           "08-billing",
           "09-portal-states"
-        ]
+        ],
+        "responsive": {
+          "exempt": true,
+          "exemptReason": "Portal billing administration at /portal/admin/billing is a gated operator console (invoices, plan, usage); no end-user mobile surface."
+        }
       }
     ],
     "components": [
@@ -433,5 +445,5 @@
       ]
     }
   ],
-  "stamp": "c295cdea480c6baad0ecd61f71f5a501e52acb358e55848450e0e0e750061cd0"
+  "stamp": "a55e85f5a0bb6f2cf2f0ca38359578d54a3914895f1872a2185b02bb2eb250a8"
 }

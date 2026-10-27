@@ -15,7 +15,7 @@ import express, { Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { getIdentityProvider } from '../providers/factory'
-import { TokenError } from '../providers/errors'
+import { TokenError, RecoveryCodeInvalidError, ChallengeNotActiveError } from '../providers/errors'
 import {
   MfaRequiredError,
   ConflictError,
@@ -37,6 +37,13 @@ import type {
   SessionContext,
 } from '../providers/IdentityProvider'
 import { authenticateToken } from '../middleware/auth'
+import { putBrokerCode, takeBrokerCode } from '../services/brokerCodes'
+import {
+  getBrokerClient,
+  getBrokerClientPublicBranding,
+  isAllowedRedirectUri,
+  verifyClientSecret,
+} from '../services/brokerClients'
 import { db } from '../config/database'
 import { resolveEmployeeStatus } from '../services/employeeRole'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
@@ -230,7 +237,158 @@ function authenticatedSession(session: BrokeredSession) {
 }
 
 /** Map a thrown provider error to a fail-closed HTTP response. */
+function mfaRequiredBody(err: MfaRequiredError) {
+  return {
+    status: 'mfa_required',
+    challengeId: err.challengeId,
+    factors: err.factors,
+    recoveryAvailable: err.recoveryAvailable === true,
+  }
+}
+
+// ── MFA step-up failed-attempt limiter ───────────────────────────────────────
+// ONE limiter for POST /mfa/verify, shared by the factor-code and recovery-code
+// shapes (so alternating shapes buys no extra guesses). Counts FAILED attempts
+// (401) per client IP and per challengeId; a key at its cap answers 429
+// RATE_LIMITED before any proof is evaluated. Successes are never counted.
+// In-process (matches the in-process challenge store); per-replica under HPA.
+const MFA_VERIFY_WINDOW_MS = 15 * 60_000
+// Per-IP is DEFENCE IN DEPTH, deliberately high: the primary guard is the
+// per-challenge counter (created only for real challenges). If the trusted hop
+// count is ever mis-set so many users share one `req.ip`, a low per-IP cap would
+// become a global lockout; 100 failures / 15 min keeps that blast radius far
+// from a handful of mistyped codes while still stopping a single-source spray.
+export const MFA_VERIFY_MAX_FAILS_PER_IP = 100
+const MFA_VERIFY_MAX_FAILS_PER_CHALLENGE = 5
+const MFA_VERIFY_MAX_KEYS = 10_000
+const mfaVerifyFails = new Map<string, { count: number; resetAt: number }>()
+// In-flight attempts, reserved synchronously BEFORE the provider is invoked so a
+// concurrent burst cannot slip past the cap before any failure is recorded.
+const mfaVerifyPending = new Map<string, number>()
+
+function mfaFailKeys(req: Request): Array<{ key: string; max: number }> {
+  const keys = [{ key: `ip:${req.ip ?? 'unknown'}`, max: MFA_VERIFY_MAX_FAILS_PER_IP }]
+  const cid = req.body?.challengeId
+  if (typeof cid === 'string' && cid.length > 0 && cid.length <= 256) {
+    keys.push({ key: `ch:${cid}`, max: MFA_VERIFY_MAX_FAILS_PER_CHALLENGE })
+  }
+  return keys
+}
+
+/**
+ * Atomically (single sync tick) check the cap counting recorded failures AND
+ * in-flight attempts, and reserve a slot on every key. Returns the reserved
+ * keys, or null when any key is at its cap (nothing reserved).
+ */
+function reserveMfaVerifyAttempt(req: Request): { keys: string[] } | { retryAfterSec: number } {
+  const now = Date.now()
+  const keys = mfaFailKeys(req)
+  // Seconds until the LAST exhausted counter frees up (max over exhausted keys),
+  // rounded up, never below 1.
+  let retryMs = 0
+  let blocked = false
+  for (const { key, max } of keys) {
+    let e = mfaVerifyFails.get(key)
+    if (e && e.resetAt <= now) {
+      mfaVerifyFails.delete(key)
+      e = undefined
+    }
+    if ((e?.count ?? 0) + (mfaVerifyPending.get(key) ?? 0) >= max) {
+      blocked = true
+      // Failures exhausted -> wait for the window; only in-flight -> retry soon.
+      retryMs = Math.max(retryMs, e && e.count >= max ? e.resetAt - now : 1000)
+    }
+  }
+  if (blocked) return { retryAfterSec: Math.max(1, Math.ceil(retryMs / 1000)) }
+  for (const { key } of keys) mfaVerifyPending.set(key, (mfaVerifyPending.get(key) ?? 0) + 1)
+  return { keys: keys.map(k => k.key) }
+}
+
+function releaseMfaVerifyAttempt(keys: string[]): void {
+  for (const key of keys) {
+    const n = (mfaVerifyPending.get(key) ?? 0) - 1
+    if (n <= 0) mfaVerifyPending.delete(key)
+    else mfaVerifyPending.set(key, n)
+  }
+}
+
+function capFor(key: string): number {
+  return key.startsWith('ch:') ? MFA_VERIFY_MAX_FAILS_PER_CHALLENGE : MFA_VERIFY_MAX_FAILS_PER_IP
+}
+
+/**
+ * Make room for ONE new key. Order: expired entries first, then the
+ * least-recently-touched entries that are NOT over their limit (Map insertion
+ * order is the LRU order: touches delete+re-set). Blocked counters are never
+ * evicted. Returns false when only blocked entries remain: the caller then
+ * admits the new key UNTRACKED rather than rejecting it, so a flood of one-off
+ * keys (e.g. spoofed addresses) can never lock legitimate users out globally.
+ */
+function makeRoomForMfaVerifyKey(now: number): boolean {
+  if (mfaVerifyFails.size < MFA_VERIFY_MAX_KEYS) return true
+  for (const [k, e] of mfaVerifyFails) if (e.resetAt <= now) mfaVerifyFails.delete(k)
+  if (mfaVerifyFails.size < MFA_VERIFY_MAX_KEYS) return true
+  for (const [k, e] of mfaVerifyFails) {
+    if (e.count < capFor(k) && !mfaVerifyPending.has(k)) {
+      mfaVerifyFails.delete(k)
+      return true
+    }
+  }
+  return false
+}
+
+function recordMfaVerifyFailure(req: Request, opts: { skipChallenge?: boolean } = {}): void {
+  const now = Date.now()
+  for (const { key } of mfaFailKeys(req)) {
+    if (opts.skipChallenge && key.startsWith('ch:')) continue
+    const e = mfaVerifyFails.get(key)
+    if (e && e.resetAt > now) {
+      // Touch: move to the most-recently-used end.
+      mfaVerifyFails.delete(key)
+      e.count++
+      mfaVerifyFails.set(key, e)
+    } else {
+      mfaVerifyFails.delete(key)
+      if (!makeRoomForMfaVerifyKey(now)) continue // untracked, bounded
+      mfaVerifyFails.set(key, { count: 1, resetAt: now + MFA_VERIFY_WINDOW_MS })
+    }
+  }
+}
+
+/** Test seam: clear limiter state. */
+/** Test seam: shrink-free fill of the failure map to its bound. */
+export function __fillMfaVerifyLimiterForTest(count = 1): void {
+  const resetAt = Date.now() + MFA_VERIFY_WINDOW_MS
+  for (let i = 0; mfaVerifyFails.size < MFA_VERIFY_MAX_KEYS; i++) {
+    mfaVerifyFails.set(`filler:${i}`, { count, resetAt })
+  }
+}
+
+/** Test seams for the limiter's bounded-memory behaviour. */
+export function __recordSpoofedFailureForTest(ip: string): void {
+  recordMfaVerifyFailure({ ip, body: {} } as unknown as Request, { skipChallenge: true })
+}
+export function __mfaVerifyLimiterSizeForTest(): number {
+  return mfaVerifyFails.size
+}
+export function __mfaVerifyLimiterHasForTest(key: string): boolean {
+  return mfaVerifyFails.has(key)
+}
+
+export function resetMfaVerifyLimiter(): void {
+  mfaVerifyFails.clear()
+  mfaVerifyPending.clear()
+}
+
 function sendError(res: Response, err: unknown): void {
+  if (err instanceof ChallengeNotActiveError) {
+    res.status(401).json({ error: err.message, code: 'NOT_ACTIVE' })
+    return
+  }
+  if (err instanceof RecoveryCodeInvalidError) {
+    res.status(401).json({ error: err.message, code: 'RECOVERY_CODE_INVALID' })
+    return
+  }
   if (err instanceof LastFactorError) {
     res.status(409).json({ error: err.message, code: 'LAST_FACTOR' })
     return
@@ -384,7 +542,7 @@ router.post('/session', async (req: Request, res: Response) => {
     res.status(200).json(authenticatedSession(session))
   } catch (err) {
     if (err instanceof MfaRequiredError) {
-      res.status(200).json({ status: 'mfa_required', challengeId: err.challengeId, factors: err.factors })
+      res.status(200).json(mfaRequiredBody(err))
       return
     }
     sendError(res, err)
@@ -455,7 +613,7 @@ router.post('/session/exchange', async (req: Request, res: Response) => {
     res.status(200).json(authenticatedSession(session))
   } catch (err) {
     if (err instanceof MfaRequiredError) {
-      res.status(200).json({ status: 'mfa_required', challengeId: err.challengeId, factors: err.factors })
+      res.status(200).json(mfaRequiredBody(err))
       return
     }
     sendError(res, err)
@@ -623,6 +781,102 @@ router.get('/social/google/callback', async (req: Request, res: Response) => {
     // Fail-closed: neutral error back to the app. Never surface tokens or vendor.
     res.redirect(302, `${destOrigin}/?error=authentication_failed`)
   }
+})
+
+// ── Broker (consumer-product sign-in handoff, #238) ────────────────────────
+//
+// A registered consumer product ("broker client") sends its user to this
+// app's OWN themed sign-in UI with `?client=&redirect_uri=`. After the user
+// authenticates via the EXISTING session/social/signup surfaces above, the
+// SPA calls `POST /broker/handoff` with its just-established bearer token;
+// the product's BACKEND then redeems the returned single-use code
+// server-to-server via `POST /broker/token-exchange`. No bearer token is
+// ever put in a URL, fragment, or referrer — see packages/security/openapi.yaml
+// (`broker` tag) for the full contract and the boundary-guarantee rationale.
+
+const BROKER_HANDOFF_CODE_TTL_MS = 2 * 60 * 1000 // short-lived; single-use
+
+// GET /v1/security/broker/clients/{client} — public branding lookup.
+router.get('/broker/clients/:client', (req: Request, res: Response) => {
+  const result = getBrokerClientPublicBranding(req.params.client)
+  if (!result) {
+    res.status(404).json({ error: 'Unknown broker client', code: 'NOT_FOUND' })
+    return
+  }
+  res.status(200).json(result)
+})
+
+// POST /v1/security/broker/handoff — mint a one-time handoff code.
+//
+// Requires the bearer session the SPA just established via session/social/
+// signup — this endpoint does not itself authenticate the user. Validates
+// `redirectUri` against the client's registered allowlist (EXACT match only)
+// before minting anything.
+router.post('/broker/handoff', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const client = req.body?.client
+    const redirectUri = req.body?.redirectUri
+    if (typeof client !== 'string' || !client || typeof redirectUri !== 'string' || !redirectUri) {
+      res.status(400).json({ error: 'client and redirectUri are required', code: 'MALFORMED' })
+      return
+    }
+    if (!getBrokerClient(client)) {
+      res.status(400).json({ error: 'Unknown broker client', code: 'UNKNOWN_CLIENT' })
+      return
+    }
+    if (!isAllowedRedirectUri(client, redirectUri)) {
+      res
+        .status(400)
+        .json({ error: 'redirectUri is not registered for this client', code: 'REDIRECT_URI_NOT_ALLOWED' })
+      return
+    }
+    // Re-validates the bearer session is live and hydrates the user — the
+    // SAME path GET /session uses. A revoked/expired/invalid token fails
+    // closed here (sendError below), never minting a code for a dead session.
+    const { user } = await getIdentityProvider().getUserInfo(token)
+    const code = crypto.randomBytes(32).toString('hex')
+    // SAME single-use store `social/callback` -> `session/exchange` uses — one
+    // code format, one redemption path (backend/security/src/services/brokerCodes.ts).
+    putBrokerCode(code, {
+      token,
+      sessionId: crypto.randomUUID(),
+      user,
+      expiresAt: Date.now() + BROKER_HANDOFF_CODE_TTL_MS,
+    })
+    const dest = new URL(redirectUri)
+    dest.searchParams.set('code', code)
+    res.status(200).json({ redirectUri: dest.toString() })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// POST /v1/security/broker/token-exchange — server-to-server code redemption.
+//
+// Called by the PRODUCT'S BACKEND (never the browser). Fail-closed and
+// deliberately undifferentiated: an unknown client, a wrong clientSecret, and
+// an unknown/expired/already-redeemed code all return the SAME generic 401 —
+// never a distinguishable response that would make this a guessing oracle.
+// The code is consumed (single-use) on lookup regardless of outcome.
+router.post('/broker/token-exchange', (req: Request, res: Response) => {
+  const client = req.body?.client
+  const clientSecret = req.body?.clientSecret
+  const code = req.body?.code
+  const wellFormed =
+    typeof client === 'string' && !!client && typeof clientSecret === 'string' && typeof code === 'string' && !!code
+  // Always take the code (single-use, consumed regardless of outcome) when the
+  // body is well-formed enough to contain one, so a malformed/missing code
+  // never short-circuits before the client-secret check runs — both checks
+  // happen before either can affect the (identical) response.
+  const entry = wellFormed ? takeBrokerCode(code) : null
+  const credsOk = wellFormed && verifyClientSecret(client, clientSecret)
+  if (!wellFormed || !credsOk || !entry) {
+    res.status(401).json({ error: 'Invalid client credentials or code', code: 'UNAUTHORIZED' })
+    return
+  }
+  res.status(200).json(authenticatedSession({ token: entry.token, sessionId: entry.sessionId, user: entry.user }))
 })
 
 // ── Signup ──────────────────────────────────────────────────────────────────
@@ -877,6 +1131,14 @@ router.post('/tokens/workload', async (req: Request, res: Response) => {
     }
     const workload = await authenticateKubernetesWorkload(serviceAccountToken)
     const ttl = Math.min(workload.tokenTtlSeconds ?? 600, 900)
+    // Service-to-service, which the rule's own message exempts ("Service-to-service
+    // tokens are exempt"): this mints kind 'fuze-workload' for aud
+    // 'fuzefront-services', never a user/session token. The pod identity is proved
+    // by Kubernetes TokenReview (authenticateKubernetesWorkload) and the allowed
+    // service, audience and scopes come from the repo-owned FuzeWorkloadIdentity
+    // resource, not from the caller. TTL is capped at 900s and no reusable
+    // bootstrap secret is stored.
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const accessToken = jwt.sign({
       kind: 'fuze-workload',
       sub: workload.service,
@@ -935,14 +1197,19 @@ router.post('/tokens/exchange', async (req: Request, res: Response) => {
     // A requested tenant is a selector, never proof of membership.
     const previous = (subject as any).actor
     const isDelegated = (subject as any).tokenKind === 'fuze-delegation'
-    let tenant: string
+    // A connector credential can be personal (user + provider) or shared in
+    // the user's selected organization (organization + user + provider).
+    // The optional organization is a selector only; membership is proven
+    // below before it is embedded in a delegation token.
+    let tenant: string | null = null
     try {
-      tenant = canonicalSessionTenant(isDelegated ? subject.tenantId : req.body?.tenant)
+      const sourceTenant = isDelegated ? subject.tenantId : req.body?.tenant
+      tenant = sourceTenant == null ? null : canonicalSessionTenant(sourceTenant)
       if (req.body?.tenant !== undefined && canonicalSessionTenant(req.body.tenant) !== tenant) {
         return void res.status(403).json({ error: 'Delegation tenant cannot change' })
       }
     } catch {
-      return void res.status(400).json({ error: 'Canonical organization tenant is required' })
+      return void res.status(400).json({ error: 'Canonical organization tenant is required when supplied' })
     }
     if (isDelegated) {
       if ((subject as any).audience !== actor.subject || !isSubset(scopes, subject.scope)) {
@@ -953,10 +1220,12 @@ router.post('/tokens/exchange', async (req: Request, res: Response) => {
       const session = await getIdentityProvider().getUserInfo(subjectToken)
       if (session.identity.userId !== subject.subject) throw new UnauthorizedError('Subject session mismatch')
     }
-    let verifiedTenant: string | null
-    try { verifiedTenant = await proveSessionTenant(subject.subject, tenant) }
-    catch { return void res.status(503).json({ error: 'Tenant verification unavailable' }) }
-    if (!verifiedTenant) return void res.status(403).json({ error: 'Active tenant membership required' })
+    let verifiedTenant: string | null = null
+    if (tenant) {
+      try { verifiedTenant = await proveSessionTenant(subject.subject, tenant) }
+      catch { return void res.status(503).json({ error: 'Tenant verification unavailable' }) }
+      if (!verifiedTenant) return void res.status(403).json({ error: 'Active tenant membership required' })
+    }
     const claims: DelegationClaims = {
       kind: 'fuze-delegation',
       sub: subject.subject,
@@ -966,6 +1235,15 @@ router.post('/tokens/exchange', async (req: Request, res: Response) => {
       act: { sub: actor.subject, ...(previous ? { previous } : {}) },
       jti: crypto.randomUUID(),
     }
+    // This IS FuzeFront's identity service performing RFC 8693 delegated token
+    // exchange (issuer 'fuzefront-security', kind 'fuze-delegation') — the same
+    // issuer as routes/auth.ts /login, not a product self-minting a user token.
+    // Same justification as services/orgSessionToken.ts and routes/internal.ts.
+    // The subject token is verified before this point: getUserInfo() checks
+    // session revocation (introspection alone does not), proveSessionTenant()
+    // requires active tenant membership, and a delegated exchange cannot expand
+    // its audience or scopes.
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const accessToken = jwt.sign(claims, delegationSigningKey(), {
       algorithm: 'HS256',
       expiresIn: DELEGATION_TOKEN_TTL_SECONDS,
@@ -1057,6 +1335,17 @@ router.post('/mfa/recovery-codes', async (req: Request, res: Response) => {
   }
 })
 
+router.get('/mfa/recovery-codes', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const { remaining, total } = await getIdentityProvider().getRecoveryCodesStatus(token)
+    res.status(200).json({ remaining, total })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 // ── MFA login step-up ─────────────────────────────────────────────────────
 router.post('/mfa/challenge', async (req: Request, res: Response) => {
   try {
@@ -1071,19 +1360,58 @@ router.post('/mfa/challenge', async (req: Request, res: Response) => {
 })
 
 router.post('/mfa/verify', async (req: Request, res: Response) => {
+  const log = withReqId(req.get('x-request-id') ?? undefined, req as any)
+  const reservation = reserveMfaVerifyAttempt(req)
+  if (!('keys' in reservation)) {
+    log.warn({ route: 'mfa/verify' }, 'mfa verify: rate limited')
+    res.setHeader('Retry-After', String(reservation.retryAfterSec))
+    res.status(429).json({ error: 'Too many attempts, please try again later', code: 'RATE_LIMITED' })
+    return
+  }
   try {
-    if (!req.body?.challengeId || !req.body?.factorId || !req.body?.code) {
-      throw new InvalidInputError('challengeId, factorId and code are required')
+    const body = req.body ?? {}
+    let session
+    if (Object.prototype.hasOwnProperty.call(body, 'recoveryCode')) {
+      // Recovery variant: exactly { challengeId, recoveryCode }, nothing else.
+      const extra = Object.keys(body).filter(k => k !== 'challengeId' && k !== 'recoveryCode')
+      if (
+        extra.length > 0 ||
+        typeof body.challengeId !== 'string' || !body.challengeId ||
+        typeof body.recoveryCode !== 'string' || body.recoveryCode.length < 1 || body.recoveryCode.length > 64
+      ) {
+        throw new InvalidInputError('body must be { challengeId, recoveryCode } or { challengeId, factorId, code }')
+      }
+      log.info({ route: 'mfa/verify', proof: 'recovery' }, 'mfa verify: recovery attempt')
+      session = await getIdentityProvider().verifyMfaRecovery(
+        body.challengeId,
+        body.recoveryCode,
+        sessionContext(req)
+      )
+    } else {
+      if (!body.challengeId || !body.factorId || !body.code) {
+        throw new InvalidInputError('challengeId, factorId and code are required')
+      }
+      session = await getIdentityProvider().verifyMfa(
+        body.challengeId,
+        body.factorId,
+        body.code,
+        sessionContext(req)
+      )
     }
-    const session = await getIdentityProvider().verifyMfa(
-      req.body.challengeId,
-      req.body.factorId,
-      req.body.code,
-      sessionContext(req)
-    )
     res.status(200).json({ token: session.token, sessionId: session.sessionId, user: toApiUser(session.user) })
   } catch (err) {
+    if (
+      err instanceof RecoveryCodeInvalidError ||
+      err instanceof ChallengeNotActiveError ||
+      err instanceof UnauthorizedError
+    ) {
+      // A non-existent/expired/in-flight challenge must not mint per-challenge
+      // entries (attacker-controlled ids); it still counts against the IP.
+      recordMfaVerifyFailure(req, { skipChallenge: err instanceof ChallengeNotActiveError })
+    }
     sendError(res, err)
+  } finally {
+    releaseMfaVerifyAttempt(reservation.keys)
   }
 })
 
@@ -1192,7 +1520,8 @@ router.delete('/sessions/:id', async (req: Request, res: Response) => {
 
 /** Scope a service's workload token must carry to ask whether a session is live. */
 const SESSION_VALIDATE_SCOPE = 'sessions:validate'
-const SESSION_VALIDATE_FIELDS = ['userId', 'sessionId'] as const
+const SESSION_VALIDATE_REQUIRED = ['userId', 'sessionId'] as const
+const SESSION_VALIDATE_OPTIONAL = ['tenantId'] as const // the token's `tid` claim
 const SESSION_VALIDATE_MAX_LEN = 128
 
 /**
@@ -1240,22 +1569,35 @@ router.post('/sessions/validate', async (req: Request, res: Response) => {
       throw new InvalidInputError('userId and sessionId are required')
     }
     for (const key of Object.keys(body)) {
-      if (!(SESSION_VALIDATE_FIELDS as readonly string[]).includes(key)) {
+      if (
+        !(SESSION_VALIDATE_REQUIRED as readonly string[]).includes(key) &&
+        !(SESSION_VALIDATE_OPTIONAL as readonly string[]).includes(key)
+      ) {
         throw new InvalidInputError(`unexpected property: ${key}`)
       }
     }
-    for (const key of SESSION_VALIDATE_FIELDS) {
-      const v = body[key]
-      if (typeof v !== 'string' || v.length === 0 || v.length > SESSION_VALIDATE_MAX_LEN) {
+    const isBounded = (v: unknown) =>
+      typeof v === 'string' && v.length > 0 && v.length <= SESSION_VALIDATE_MAX_LEN
+    for (const key of SESSION_VALIDATE_REQUIRED) {
+      if (!isBounded(body[key])) {
         throw new InvalidInputError(`${key} is required (1-${SESSION_VALIDATE_MAX_LEN} characters)`)
       }
+    }
+    // Optional, but when present it must be a well-formed string: a wrong-typed
+    // `tenantId` is a client bug, not a way to skip the tenant check.
+    if (body.tenantId !== undefined && !isBounded(body.tenantId)) {
+      throw new InvalidInputError(`tenantId must be 1-${SESSION_VALIDATE_MAX_LEN} characters when present`)
     }
   } catch (err) {
     return void sendError(res, err)
   }
 
   try {
-    const active = await getIdentityProvider().isSessionActive(req.body.userId, req.body.sessionId)
+    const active = await getIdentityProvider().isSessionActive(
+      req.body.userId,
+      req.body.sessionId,
+      req.body.tenantId
+    )
     res.status(200).json({ active: active === true })
   } catch (err) {
     // Fail closed AND distinguishable: never `{ active: true }`, never a quiet

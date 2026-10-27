@@ -1,0 +1,87 @@
+{{- if and .Values.selectionListService.enabled .Values.selectionListService.rolloutJob.enabled }}
+{{- /*
+SL9 rollout data jobs (docs/runbooks/selection-lists-rollout.md section 10): ONE job per render, run by the service's
+own image as `node dist/rollout/cli.js <job> --<mode>`. DEFAULT-DISABLED (rolloutJob.enabled: false renders nothing,
+so enabling it is always a deliberate values change that goes through review and Argo).
+
+  job   audit | reconcile-duplicates | visibility-org | retro-forks
+  mode  dry-run (the default: prints the report, writes NOTHING) | apply
+
+The values are validated here rather than coerced: an unknown job/mode, or `audit` with `apply` (the audit has no
+write mode), fails the render loudly instead of producing a Job that exits 1 in the cluster. It is flag-independent
+(it reads no Unleash flag), idempotent, and safe while the Deployment is serving (it takes the same per-organization
+outbox lock every writer takes). Read the report with the pod logs:
+  kubectl -n <ns> logs job/fuzefront-selection-list-rollout-<job>-<mode>
+The Job is a post-install/post-upgrade hook: it runs on every sync while enabled, so set `enabled: false` again in the
+next change once the report has been read (the finished Job is garbage-collected by ttlSecondsAfterFinished).
+*/}}
+{{- $rj := .Values.selectionListService.rolloutJob }}
+{{- if not (has $rj.job (list "audit" "reconcile-duplicates" "visibility-org" "retro-forks")) }}
+{{- fail (printf "selectionListService.rolloutJob.job must be one of audit, reconcile-duplicates, visibility-org, retro-forks (got %q)" (toString $rj.job)) }}
+{{- end }}
+{{- if not (has $rj.mode (list "dry-run" "apply")) }}
+{{- fail (printf "selectionListService.rolloutJob.mode must be dry-run or apply (got %q)" (toString $rj.mode)) }}
+{{- end }}
+{{- if and (eq $rj.job "audit") (eq $rj.mode "apply") }}
+{{- fail "selectionListService.rolloutJob: the audit is read-only and has no apply mode; use mode dry-run" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-selection-list-rollout-{{ $rj.job }}-{{ $rj.mode }}
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: selection-list-rollout
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "30"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  # No automatic retry: the jobs are idempotent, but an exit code 2 (findings / a blocked item) or 3 (a precondition
+  # that is not met) is an answer for the operator, not a transient failure to repeat.
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ $rj.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ $rj.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: selection-list-rollout
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: selection-list-rollout
+          # The SAME image as the service, so the job is exactly the code the running service has.
+          image: "{{ .Values.selectionListService.image.repository }}:{{ .Values.selectionListService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["node", "dist/rollout/cli.js", {{ $rj.job | quote }}, {{ printf "--%s" $rj.mode | quote }}]
+          env:
+            - name: NODE_ENV
+              value: "production"
+            # The service's own database identity (same values as the Deployment): its own role and password.
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.selectionListService.dbName | quote }}
+            - name: DB_USER
+              value: {{ .Values.selectionListService.db.role | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.selectionListService.db.secretName | quote }}
+                  key: {{ .Values.selectionListService.db.passwordKey | quote }}
+            - name: DB_SSL
+              value: {{ .Values.selectionListService.db.ssl | quote }}
+            # retro-forks identifies the common lists by their owner; the job reads it exactly as the service does
+            # (it must also be confirmed by the org projection). Empty = the job reports the precondition and exits 3.
+            - name: SELECTION_LIST_PLATFORM_ORG_ID
+              value: {{ .Values.selectionListService.platformOrgId | quote }}
+          resources:
+            {{- toYaml $rj.resources | nindent 12 }}
+{{- end }}

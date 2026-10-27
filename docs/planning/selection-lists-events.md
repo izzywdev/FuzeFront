@@ -5,7 +5,10 @@ the transactional outbox + per-org ordered relay (SL6, #1265), the seed core lib
 pack and allowlist (#1270), and the `identity.org.created` / `selection-lists.seed.requested`
 consumers (#1271) are **merged**; the reconciler/backfill (§7.1 step 6) landed in SL7 (§13.0.4), and
 SL8 added the `identity.org.updated` consumer, the org-owner `list-owner` grant on seeded lists and
-the canonical flag context (§13.0.5). Seeding is gated by two default-OFF flags
+the canonical flag context (§13.0.5). SL9 (updated 2026-10-26) added the producer side of
+`selection-lists.list.forked` and `selection-lists.visibility.changed` (`@fuzefront/shared` 1.3.0; emitted via the
+outbox, dark behind the third flag `fuzefront.selection-lists.shared-lists`, see
+`docs/planning/selection-lists-shared-and-fork.md`). Seeding is gated by two default-OFF flags
 (`fuzefront.selection-lists.service` and `fuzefront.selection-lists.seed-defaults`) and by the
 allowlist, which ships with only the internal `platform` source — so **nothing is live**. What
 integrators and operators should read instead of this design document:

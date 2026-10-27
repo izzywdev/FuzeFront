@@ -2,6 +2,7 @@
 // Permit. Runs the original 001-009 migration chain against the existing
 // `knex_migrations` table (002/006 are no-op tombstones; applications-service
 // owns apps DDL). Dual-serves alongside the old monolith until Phase 3 cutover.
+import { resolveTrustProxyHops } from './config/trustProxy'
 import dotenv from 'dotenv'
 import { createServer } from 'http'
 import {
@@ -67,8 +68,9 @@ const PORT = process.env.PORT || 3002
 const app = createExpressApp({ serviceName: 'security-service', preMiddleware: [tracingMiddleware()] })
 // Behind the k8s ingress every request otherwise carries the ingress IP —
 // trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
-// the real client from X-Forwarded-For.
-app.set('trust proxy', 1)
+// the real client from X-Forwarded-For. The hop count is explicit config
+// (src/config/trustProxy.ts); client-supplied left-hand XFF entries are ignored.
+app.set('trust proxy', resolveTrustProxyHops())
 const httpServer = createServer(app)
 const startTime = Date.now()
 
@@ -158,13 +160,12 @@ async function startServer() {
     console.log('🔄 Starting FuzeFront security-service...')
 
     // Dual-accept window for the platform spine types (FFRNT-185 / §8).
-    // The input boundary must track the OUTPUT wire form, governed by the
-    // `fuzefront.identity.prefixed-ids` release flag. That flag defaults OFF
-    // and is NOT force-enabled in prod, so API responses still emit BARE UUIDs.
-    // Closing this window to prefixed-only while output is bare rejects every
-    // id the frontend round-trips. parseId still accepts prefixed ids too, so
-    // listing these is purely additive; EMPTY this set only once prefixed-id
-    // OUTPUT is confirmed GA (governance/identifier-standard.md §8).
+    // Output is ALWAYS the TypeID wire form now (the prefixed-ids release flag
+    // was retired at 100 %), but INPUT still accepts bare
+    // UUIDs for these types: older clients, cached shells and JWT-derived ids
+    // may still send them. Emptying this set is a separate, behaviour-changing
+    // step (it starts rejecting bare UUIDs) — see
+    // docs/planning/identity-rollout-ffrnt-185.md (governance/identifier-standard.md §8).
     configureIdentity({
       legacyUuidTypes: new Set<EntityType>([
         'organization',
