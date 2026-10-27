@@ -284,6 +284,7 @@ export function ConfirmSurface({
         style={styles.sheet}
       >
         <div
+          data-grab=""
           aria-hidden="true"
           style={styles.grab}
           onTouchStart={event => {
